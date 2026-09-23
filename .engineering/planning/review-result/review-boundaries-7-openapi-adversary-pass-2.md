@@ -57,7 +57,7 @@ test null_empty_and_escaped_unknown_unit_fields_refuse ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.01s
 
 stderr:
-   Compiling ess-openapi v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
+   Compiling ess-openapi v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
     Finished `test` profile [unoptimized] target(s) in 0.21s
      Running tests/adversary_pass2.rs (target/debug/deps/adversary_pass2-07c047cb8bb2a2e3)
 exit: 0
@@ -160,7 +160,7 @@ test same_path_projection_refusal_preserves_the_unadmitted_input ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
 stderr:
-   Compiling ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.20s
      Running tests/openapi_adversary_pass2.rs (target/debug/deps/openapi_adversary_pass2-966dc5657edb9f75)
 exit: 0
@@ -454,7 +454,7 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 stderr:
-   Compiling ess-openapi v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
+   Compiling ess-openapi v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
     Finished `test` profile [unoptimized] target(s) in 0.28s
      Running unittests src/main.rs (target/debug/deps/ess-bdf16dcf99d99666)
      Running tests/authored_scenarios.rs (target/debug/deps/authored_scenarios-2a52915173d4466e)
@@ -502,8 +502,8 @@ exit: 0
 $ cargo clippy --locked --offline -p ess-openapi -p ess-cli --all-targets -- -D warnings
 stdout:
 stderr:
-    Checking ess-openapi v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
-    Checking ess-cli v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/edge/ess-cli)
+    Checking ess-openapi v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
+    Checking ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 0.18s
 exit: 0
 ```
@@ -523,7 +523,7 @@ Nothing found in this bounded second review. No judgement-only findings are retu
 
 6. Paths, environment and process closure
 
-No deliberate file was written outside the assigned worktree. Offline Cargo can update existing bookkeeping at /home/timo/.cargo/.global-cache and reuse /home/timo/.cargo/.package-cache and dependency caches; individual incidental entries were not traced. No dependency or compiler cache was pruned.
+No deliberate file was written outside the assigned worktree. Offline Cargo can update existing bookkeeping at ~/.cargo/.global-cache and reuse ~/.cargo/.package-cache and dependency caches; individual incidental entries were not traced. No dependency or compiler cache was pruned.
 
 The assigned shared sccache socket was checked by a local connection and returned ECONNREFUSED before any Cargo execution. Per the coordinator's explicit environment correction, RUSTC_WRAPPER and SCCACHE_SERVER_UDS were unset, CARGO_TARGET_DIR was unset, and all compilation used this unit's existing target. No replacement daemon was started and this pass deliberately used no shared sccache content. The failed socket probe is retained verbatim:
 
@@ -535,22 +535,22 @@ Exact selected environment (unlisted inherited variables were not copied into ev
 
 ```json
 {
-  "TMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/tmp",
+  "TMPDIR": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/tmp",
   "CARGO_INCREMENTAL": "0",
   "CARGO_PROFILE_DEV_DEBUG": "0",
   "CARGO_PROFILE_TEST_DEBUG": "0",
   "CARGO_CACHE_RUSTC_INFO": "0",
   "CARGO_BUILD_JOBS": "4",
   "CARGO_NET_OFFLINE": "true",
-  "GOCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/go-cache",
-  "GOMODCACHE": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/go-mod-cache",
-  "GOTMPDIR": "/home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/tmp",
+  "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/go-cache",
+  "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/go-mod-cache",
+  "GOTMPDIR": "~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2/tmp",
   "GOPROXY": "off",
   "GOSUMDB": "off"
 }
 ```
 
-All deliberate new test sources are the two files listed above. Assigned pass evidence and fixtures live under /home/timo/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2: brief.md, environment.json, sccache-probe.txt, pre-execution-tests.sha256, final-tests.sha256, focused-01 through focused-07 argv/stdout/stderr/status, focused-evidence.md, suite-01 argv/stdout/stderr/status/counts, fmt-final and clippy-final argv/stdout/stderr/status, final-tracked-diff.stat, final-untracked-test-diff.stat, final-tests.patch, final-status.txt, final-disk.txt, preserved-first-report.sha256, this report, tmp, go-cache, go-mod-cache and same-path-* CLI per-call input/argv/stdout/stderr/status files. Existing suite tests also create ordinary worktree-local target fixtures, including first-review CLI scratch; they did not rewrite the immutable first-review report.
+All deliberate new test sources are the two files listed above. Assigned pass evidence and fixtures live under ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-2: brief.md, environment.json, sccache-probe.txt, pre-execution-tests.sha256, final-tests.sha256, focused-01 through focused-07 argv/stdout/stderr/status, focused-evidence.md, suite-01 argv/stdout/stderr/status/counts, fmt-final and clippy-final argv/stdout/stderr/status, final-tracked-diff.stat, final-untracked-test-diff.stat, final-tests.patch, final-status.txt, final-disk.txt, preserved-first-report.sha256, this report, tmp, go-cache, go-mod-cache and same-path-* CLI per-call input/argv/stdout/stderr/status files. Existing suite tests also create ordinary worktree-local target fixtures, including first-review CLI scratch; they did not rewrite the immutable first-review report.
 
 The focused recording process, full suite session 39603 and formatting/Clippy process all completed and their child Cargo statuses are retained. There are no pending agent-owned subprocesses or daemon lifecycles. The final disk check remained above the 8 GiB floor:
 

@@ -35,7 +35,7 @@ cargo test --locked -p ess-composition downstream_operation_construction_require
 ```
 
 ```text
-   Compiling ess-composition v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition)
+   Compiling ess-composition v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition)
     Finished `test` profile [unoptimized] target(s) in 0.51s
      Running unittests src/lib.rs (target/debug/deps/ess_composition-13563bcd6ceb4522)
 
@@ -46,30 +46,30 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/composition.rs (target/debug/deps/composition-0fbadb9df0767612)
 
 running 1 test
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/lib.rs" "-o" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/lib.rs" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/selected.rs" "--extern" "composition_fixture=/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/selected.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/constructor.rs" "--extern" "composition_fixture=/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/constructor.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
 exit: exit status: 1
 stdout:
 
 stderr:
 error[E0624]: associated function `new` is private
-  --> /home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/constructor.rs:1:88
+  --> ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/constructor.rs:1:88
    |
  1 | pub fn operation() -> composition_fixture::Operation { composition_fixture::Operation::new("todo", "workbench.usage.RecordUsage", co...
    |                                                                                        ^^^ private associated function
    |
-  ::: /home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/lib.rs:61:5
+  ::: ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/lib.rs:61:5
    |
 61 |     const fn new(service_key: &'static str, semantic: &'static str, kind: OperationKind) -> Self {
    |     -------------------------------------------------------------------------------------------- private associated function defined here
@@ -78,13 +78,13 @@ error: aborting due to 1 previous error
 
 For more information about this error, try `rustc --explain E0624`.
 
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/fields.rs" "--extern" "composition_fixture=/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/fields.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
 exit: exit status: 1
 stdout:
 
 stderr:
 error[E0451]: fields `service_key`, `semantic` and `kind` of struct `Operation` are private
- --> /home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/fields.rs:1:89
+ --> ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/fields.rs:1:89
   |
 1 | ...ion_fixture::Operation { service_key: "todo", semantic: "workbench.usage.RecordUsage", kind: composition_fixture::OperationKind::C...
   |                             ^^^^^^^^^^^          ^^^^^^^^ private field                   ^^^^ private field
@@ -121,19 +121,19 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/composition.rs (target/debug/deps/composition-0fbadb9df0767612)
 
 running 1 test
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/lib.rs" "-o" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/libcomposition_fixture.rlib"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/lib.rs" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/libcomposition_fixture.rlib"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--test" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs" "--extern" "composition_fixture=/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/libcomposition_fixture.rlib" "-o" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/client_boundary_tests"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--test" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/libcomposition_fixture.rlib" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/client_boundary_tests"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/client_boundary_tests" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
+command: "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/client_boundary_tests" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
 exit: exit status: 0
 stdout:
 
@@ -145,19 +145,19 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 
 stderr:
 
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/lib.rs" "-o" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/libcomposition_fixture.rlib"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/lib.rs" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/libcomposition_fixture.rlib"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "/home/timo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--test" "-D" "warnings" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs" "--extern" "composition_fixture=/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/libcomposition_fixture.rlib" "-o" "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/client_boundary_tests"
+command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--test" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/libcomposition_fixture.rlib" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/client_boundary_tests"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/client_boundary_tests" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
+command: "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/client_boundary_tests" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
 exit: exit status: 101
 stdout:
 
@@ -174,7 +174,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; 
 
 stderr:
 
-thread 'compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged' (2604437) panicked at /home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs:139:5:
+thread 'compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged' (2604437) panicked at ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs:139:5:
 assertion `left == right` failed
   left: []
  right: [123, 34, 100, 101, 116, 97, 105, 108, 115, 34, 58, 123, 34, 116, 105, 116, 108, 101, 34, 58, 34, 73, 110, 98, 111, 120, 34, 125, 125]
@@ -233,7 +233,7 @@ elapsed_seconds: 0.410 user_seconds: 0.529 system_seconds: 0.263
 The final package run executed 12 cases, 0 failed/ignored, in three summaries. The original generated-client child executed its same three distinct cases, all passing:
 
 ```text
-command: "/home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-client-runtime-2607470/client_boundary_tests" "--nocapture" "--test-threads=1"
+command: "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-client-runtime-2607470/client_boundary_tests" "--nocapture" "--test-threads=1"
 exit: exit status: 0
 stdout:
 
@@ -281,7 +281,7 @@ cee8bed7df2bcf936a482ad8c4c79c7045b803ece402590ac73c9308e25860f3  website/docs/r
 48292c59c73e812efabbd03dee3fb4bf2edcbc145cecc1c0c90fd724ea27969e  Cargo.lock
 ```
 
-frozen-source-check.log/exit and retained-fixtures-check.log/exit both passed: production/API docs, public pages, every existing fixture/golden covered by the supplied manifest, and Cargo.lock remain unchanged. final-status.txt contains only the additive composition.rs modification. additive-tests.patch preserves the complete test-only patch. execution.sha256 identifies all retained top-level logs/statuses/disk records and generated probe source/command logs, including each control/mutant copy. The first and final source manifests are included in that evidence manifest. Every artifact path is relative to /home/timo/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1 unless stated otherwise.
+frozen-source-check.log/exit and retained-fixtures-check.log/exit both passed: production/API docs, public pages, every existing fixture/golden covered by the supplied manifest, and Cargo.lock remain unchanged. final-status.txt contains only the additive composition.rs modification. additive-tests.patch preserves the complete test-only patch. execution.sha256 identifies all retained top-level logs/statuses/disk records and generated probe source/command logs, including each control/mutant copy. The first and final source manifests are included in that evidence manifest. Every artifact path is relative to ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1 unless stated otherwise.
 
 This report is final and will not be overwritten. I relinquish all writes to source, build and scratch on return. The coordinator owns retention, planning records, integration and delivery; this report grants no approval.
 

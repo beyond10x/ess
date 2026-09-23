@@ -6,19 +6,24 @@ status: proposed
 title: 09 — Conformance observes implementations independently
 relations:
 - decides: initiative:ess-evolution
-revision: 1
+revision: 2
 ---
 ## Context
+
 Tests derived from implementation lowering can reproduce its defects.
 
 ## Decision
-Extend existing conformance runners, Go/fault injection and versioned formats; expected behavior comes from upstream scenarios and targets return observations.
+
+Expected behavior comes from upstream scenarios and independent fixtures. Targets return observations; runners judge them. Preserve existing conformance runners/formats and exercise recorded execution, actual service behavior and Connectors independently.
 
 ## Rejected alternatives
-Generating expectations from implementation code or target plans; silent missing capabilities.
+
+Generating expectations from implementation code or target plans, silent missing capabilities, and treating selected-zero or skipped required lanes as success.
 
 ## Compatibility and migration
-Retain all versions/defaults. Add opt-in UI scenarios and emitters; prove wrong-field, dropped-patch, transition, revocation and UI-binding mutations fail.
+
+Retain existing versions/defaults. Prove sensitivity to wrong fields, dropped state/event updates, incorrect transitions and bypassed revocation. Generic UI scenarios, emitters and UI-action mutation acceptance are deferred to task:deferred-protocol-ui-bindings.
 
 ## Acceptance evidence
-Operator decision: supplied implementation plan, 2026-09-10. See docs/design/ess-evolution/feature-preservation.md and acceptance.md. Implementation and runtime acceptance are not yet established.
+
+Operator-approved revision ess-evolution-20260915/1, recorded by approval-record:ess-evolution-20260915, supersedes the broader 2026-09-10 scope. See docs/design/ess-evolution/acceptance.md. New runtime and migration evidence remains outstanding.

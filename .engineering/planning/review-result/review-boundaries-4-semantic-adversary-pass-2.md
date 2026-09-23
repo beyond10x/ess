@@ -42,13 +42,13 @@ Every command used assigned-tree cwd and its own target with the exact environme
 File: crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs. RED: a valid network component owns probe.core; changing only its served Items view summary changes actual OpenAPI content but retains its contract digest and no OpenAPI obligation.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 served_view_change_reaches_its_openapi_artifact -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 served_view_change_reaches_its_openapi_artifact -- --exact --nocapture
 ```
 
 Exit 101. Full raw output (adversary2-isolated-01b.log):
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 1.33s
      Running tests/review_adversary_f01_pass2.rs (target/debug/deps/review_adversary_f01_pass2-c2309f25ac1af007)
 
@@ -106,13 +106,13 @@ error: test failed, to rerun pass `-p ess-diff --test review_adversary_f01_pass2
 File: crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs. RED: changing reusable Row's invariant changes actual OpenAPI content but retains its contract digest and no OpenAPI obligation.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 reusable_row_invariant_change_reaches_its_openapi_artifact -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 reusable_row_invariant_change_reaches_its_openapi_artifact -- --exact --nocapture
 ```
 
 Exit 101. Full raw output (adversary2-isolated-02.log):
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 1.30s
      Running tests/review_adversary_f01_pass2.rs (target/debug/deps/review_adversary_f01_pass2-c2309f25ac1af007)
 
@@ -174,13 +174,13 @@ error: test failed, to rerun pass `-p ess-diff --test review_adversary_f01_pass2
 File: crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs. GREEN: switching equal-field reusable row types emits independent residual coverage and Whole, both alone and beside a classified summary change.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 switching_equal_row_shapes_retains_independent_residual_coverage -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 switching_equal_row_shapes_retains_independent_residual_coverage -- --exact --nocapture
 ```
 
 Exit 0. Full raw output (adversary2-isolated-03.log):
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 1.31s
      Running tests/review_adversary_f01_pass2.rs (target/debug/deps/review_adversary_f01_pass2-c2309f25ac1af007)
 
@@ -196,13 +196,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; fini
 File: crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs. GREEN: reversing valid ranked fields remains ordered through checked diff/2 serialization and refuses the legacy writer.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 ranking_precedence_survives_the_checked_delta_roundtrip -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 ranking_precedence_survives_the_checked_delta_roundtrip -- --exact --nocapture
 ```
 
 Exit 0. Full raw output (adversary2-isolated-04b.log):
 
 ```text
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 1.35s
      Running tests/review_adversary_f01_pass2.rs (target/debug/deps/review_adversary_f01_pass2-c2309f25ac1af007)
 
@@ -218,13 +218,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; fini
 File: crates/generate/ess-gen/tests/review_adversary_f01_pass2.rs. GREEN: duplicate digest aliases and duplicate identical system keys are refused; a single old source alias remains accepted.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01_pass2 duplicate_digest_aliases_and_duplicate_system_keys_are_unreadable -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01_pass2 duplicate_digest_aliases_and_duplicate_system_keys_are_unreadable -- --exact --nocapture
 ```
 
 Exit 0. Full raw output (adversary2-isolated-05.log):
 
 ```text
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
     Finished `test` profile [unoptimized] target(s) in 0.22s
      Running tests/review_adversary_f01_pass2.rs (target/debug/deps/review_adversary_f01_pass2-f07c90bf79ce56f2)
 
@@ -240,7 +240,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 File: crates/generate/ess-gen/tests/review_adversary_f01_pass2.rs. GREEN: an incomplete authoritative schema stamp cannot borrow valid provenance from model example or description text.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01_pass2 incomplete_authoritative_stamp_cannot_fall_back_to_model_provenance -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01_pass2 incomplete_authoritative_stamp_cannot_fall_back_to_model_provenance -- --exact --nocapture
 ```
 
 Exit 0. Full raw output (adversary2-isolated-06.log):
@@ -261,7 +261,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 File: crates/generate/ess-gen/tests/review_adversary_f01_pass2.rs. GREEN: paired emitted YAML refuses two source aliases even when their hashes agree.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01_pass2 paired_yaml_refuses_mixed_digest_aliases_even_when_hashes_agree -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01_pass2 paired_yaml_refuses_mixed_digest_aliases_even_when_hashes_agree -- --exact --nocapture
 ```
 
 Exit 0. Full raw output (adversary2-isolated-07.log):
@@ -282,13 +282,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 File: crates/generate/ess-synth/tests/clap.rs. GREEN: the actual clap emitter's one Cargo manifest admits exactly its plan provenance; removing origin version is refused.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-synth --test clap review_second_pass_actual_clap_manifest_retains_complete_comment_admission -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-synth --test clap review_second_pass_actual_clap_manifest_retains_complete_comment_admission -- --exact --nocapture
 ```
 
 Exit 0. Full raw output (adversary2-isolated-08.log):
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
     Finished `test` profile [unoptimized] target(s) in 1.53s
      Running tests/clap.rs (target/debug/deps/clap-0c2dabea6c1dfa62)
 
@@ -304,7 +304,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; fini
 File: crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs. RED: directly seeding the served view (without a component seed) still omits its reusable Row invariant and retains the same view slice digest.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 reusable_row_type_belongs_to_the_view_slice_it_supplies -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 reusable_row_type_belongs_to_the_view_slice_it_supplies -- --exact --nocapture
 ```
 
 Exit 101. Full raw output (adversary2-isolated-09.log):
@@ -340,15 +340,15 @@ These are not regressions or compatibility results. The first attempted case 01 
 Setup 01, exit 101; command:
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 served_view_change_reaches_its_openapi_artifact -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 served_view_change_reaches_its_openapi_artifact -- --exact --nocapture
 ```
 
 Full raw output:
 
 ```text
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
 error[E0432]: unresolved import `ess_compiler::SourceMap`
  --> crates/verify/ess-diff/tests/review_adversary_f01_pass2.rs:3:27
   |
@@ -362,7 +362,7 @@ error: could not compile `ess-diff` (test "review_adversary_f01_pass2") due to 1
 Setup 04, exit 101; command:
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 ranking_precedence_survives_the_checked_delta_roundtrip -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01_pass2 ranking_precedence_survives_the_checked_delta_roundtrip -- --exact --nocapture
 ```
 
 Full raw output:
@@ -397,15 +397,15 @@ Part 2 was written to this report before this suite command began. Its initial c
 ### Four-package tests
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --no-fail-fast
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --no-fail-fast
 ```
 
 Exit 101. Full raw output:
 
 ```text
-   Compiling ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
     Finished `test` profile [unoptimized] target(s) in 1.36s
      Running unittests src/lib.rs (target/debug/deps/ess_compiler-b4c0bc8f0757838a)
 
@@ -1243,7 +1243,7 @@ error: 1 target failed:
 ### Package formatting check
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package ess-compiler --package ess-diff --package ess-gen --package ess-synth -- --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package ess-compiler --package ess-diff --package ess-gen --package ess-synth -- --check
 ```
 
 Exit 0. Full raw output:
@@ -1254,15 +1254,15 @@ Exit 0. Full raw output:
 ### Strict Clippy, all targets
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
 ```
 
 Exit 0. Full raw output:
 
 ```text
-    Checking ess-synth v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
-    Checking ess-diff v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-synth)
+    Checking ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
     Finished `dev` profile [unoptimized] target(s) in 0.15s
 ```
 

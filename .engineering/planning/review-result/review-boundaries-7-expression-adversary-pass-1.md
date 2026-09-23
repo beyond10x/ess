@@ -66,12 +66,12 @@ Ten compiler cases and four authored conformance cases were added. Their asserti
 
 The original authored documents omitted a command timeline. Their four initial focused executions failed due to the existing NothingHappens scenario admission rule; three also returned the intended expression refusal. This is a fixture setup failure, not a typechecking finding. The correction adds a no-input ZObserve command and a single valid timeline step. It changes only this pass's newly added test fixture/helper and no assertion. The original focused output is retained below and in focused-11.log through focused-14.log. Corrected focused executions follow those original outputs.
 
-All commands use the assigned tree's own target with CARGO_TARGET_DIR unset; TMPDIR=/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/adversary-pass-1; RUSTC_WRAPPER=/usr/bin/sccache; SCCACHE_SERVER_UDS=/home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock; CARGO_INCREMENTAL=0; CARGO_PROFILE_DEV_DEBUG=0; CARGO_PROFILE_TEST_DEBUG=0; CARGO_CACHE_RUSTC_INFO=0; CARGO_BUILD_JOBS=4; CARGO_NET_OFFLINE=true. The socket was checked as listening before use. No new daemon or shared Cargo build directory was created.
+All commands use the assigned tree's own target with CARGO_TARGET_DIR unset; TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/adversary-pass-1; RUSTC_WRAPPER=/usr/bin/sccache; SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock; CARGO_INCREMENTAL=0; CARGO_PROFILE_DEV_DEBUG=0; CARGO_PROFILE_TEST_DEBUG=0; CARGO_CACHE_RUSTC_INFO=0; CARGO_BUILD_JOBS=4; CARGO_NET_OFFLINE=true. The socket was checked as listening before use. No new daemon or shared Cargo build directory was created.
 
 ```console
 cargo test --locked --offline -p ess-compiler --test adversary_expression_pass1 map_values_bind_nested_lists_and_restore_the_outer_binder -- --exact --nocapture
-   Compiling ess-domain v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/specify/ess-domain)
-   Compiling ess-compiler v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/specify/ess-compiler)
+   Compiling ess-domain v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/specify/ess-domain)
+   Compiling ess-compiler v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/specify/ess-compiler)
     Finished `test` profile [unoptimized] target(s) in 4.12s
      Running tests/adversary_expression_pass1.rs (target/debug/deps/adversary_expression_pass1-fdfc9b2597c5bae3)
 
@@ -202,7 +202,7 @@ exit: 0
 
 ```console
 cargo test --locked --offline -p ess-conformance --test adversary_expression_pass1 malformed_bound_operands_refuse_before_the_collection_projection_gap -- --exact --nocapture
-   Compiling ess-conformance v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/verify/ess-conformance)
+   Compiling ess-conformance v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 0.41s
      Running tests/adversary_expression_pass1.rs (target/debug/deps/adversary_expression_pass1-692cdd3d83e19b32)
 
@@ -301,7 +301,7 @@ exit: 101
 
 ```console
 cargo test --locked --offline -p ess-conformance --test adversary_expression_pass1 malformed_bound_operands_refuse_before_the_collection_projection_gap -- --exact --nocapture
-   Compiling ess-conformance v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/verify/ess-conformance)
+   Compiling ess-conformance v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/verify/ess-conformance)
     Finished `test` profile [unoptimized] target(s) in 0.24s
      Running tests/adversary_expression_pass1.rs (target/debug/deps/adversary_expression_pass1-692cdd3d83e19b32)
 
@@ -361,7 +361,7 @@ cargo test --locked --offline -p ess-domain -p ess-compiler -p ess-conformance
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-   Compiling ess-compiler v0.19.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/specify/ess-compiler)
+   Compiling ess-compiler v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/crates/specify/ess-compiler)
     Finished `test` profile [unoptimized] target(s) in 1.22s
      Running unittests src/lib.rs (target/debug/deps/ess_compiler-c9815f0625d45c0f)
 
@@ -1235,11 +1235,11 @@ The supplied canonical-byte comparison was read as implementor/coordinator conte
 
 6. Paths outside the assigned worktree
 
-- /home/timo/.cache/sccache — normal shared compilation-cache side effects through the already running authorized cache; cache location confirmed by sccache --show-stats. No cleanup was attempted.
-- /home/timo/.cargo/.global-cache — normal shared Cargo cache metadata side effects; the file modification time advanced during the runs. Concurrent builds also use this metadata, so this pass does not attribute every observed byte to itself.
-- /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock — connection to the pre-existing listening shared cache socket; no new socket or cache daemon was created by this pass.
+- ~/.cache/sccache — normal shared compilation-cache side effects through the already running authorized cache; cache location confirmed by sccache --show-stats. No cleanup was attempted.
+- ~/.cargo/.global-cache — normal shared Cargo cache metadata side effects; the file modification time advanced during the runs. Concurrent builds also use this metadata, so this pass does not attribute every observed byte to itself.
+- ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock — connection to the pre-existing listening shared cache socket; no new socket or cache daemon was created by this pass.
 
-Cargo's existing /home/timo/.cargo/.package-cache and /home/timo/.cargo/.package-cache-mutate were used as shared dependency lock files; their observed file modification times remain 2021-07-13 and 2024-08-15. No dependency source downloads or new external scratch/build directory were requested. Every report, raw log, argv/exit record and temporary fixture produced by this pass is inside /home/timo/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/adversary-pass-1; compiled artifacts are inside this worktree's own target. No /tmp, Go cache, live service, integration or publication operation was used.
+Cargo's existing ~/.cargo/.package-cache and ~/.cargo/.package-cache-mutate were used as shared dependency lock files; their observed file modification times remain 2021-07-13 and 2024-08-15. No dependency source downloads or new external scratch/build directory were requested. Every report, raw log, argv/exit record and temporary fixture produced by this pass is inside ~/.local/state/worktree/trees/b10x/ess/review-expression-typechecking/target/review-boundaries-7/adversary-pass-1; compiled artifacts are inside this worktree's own target. No /tmp, Go cache, live service, integration or publication operation was used.
 
 ```findings
 []

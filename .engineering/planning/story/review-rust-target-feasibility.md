@@ -127,8 +127,8 @@ The published SDK reader `6e5141f` was built again against all seven ESS package
 
 Final SDK proof completed 2026-09-05T22:03:52.706889+00:00. Raw records:
 
-- /home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/record.json: SHA256 `5499066b645737047b57cd82cea66344608f6a96ed1d412b8d03b6998f502473`.
-- /home/timo/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/final-matrix/record.json: SHA256 `8408362d20b3ffc3b08f9eb06f19c02d68ec90c2c1fdb7ef0c3447e29436e44c`.
+- ~/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/record.json: SHA256 `5499066b645737047b57cd82cea66344608f6a96ed1d412b8d03b6998f502473`.
+- ~/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/final-matrix/record.json: SHA256 `8408362d20b3ffc3b08f9eb06f19c02d68ec90c2c1fdb7ef0c3447e29436e44c`.
 
 Public catalog delivery and task-owned resource cleanup remain pending in their companion records. No version bump or tag was created.
 

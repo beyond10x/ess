@@ -3,23 +3,40 @@ format: aep.planning-md/1
 id: migration-plan:ess-evolution
 kind: migration-plan
 status: draft
-title: Incremental ESS runtime and application migration
+title: ESS runtime and six planning-store migration
 relations:
 - delivers: initiative:ess-evolution
-revision: 1
+revision: 4
 ---
 ## Plan
-See docs/design/ess-evolution/migration.md. Providers precede consumers. Keep old readers and original inputs until migration acceptance passes. Never dual-write authorities. Preserve a second internal adopter's working-tree edits.
+
+Follow docs/design/ess-evolution/migration.md and approved revision ess-evolution-20260915/1. Providers precede consumers. Preserve every primary edit and original legacy source. Select one planning journal lineage; never concatenate independently advanced journals or dual-write authorities.
 
 ## AEP
-One owning story includes configuration, inventory dry-run, identity/revision/relation/body/evidence/history migration, divergence refusal, staged verification, projection drift/rebuild and removal of hybrid runtime selection. Database/Eventlog/ER prerequisites stay in their owning repositories. Journal plus blobs are authoritative and tracked. Direct Markdown edits are drift. Post-commit projection failure reports a receipt; projection retry must not repeat mutation. A snapshot-only import is an explicit legacy boundary.
 
-## Services
-Extract reusable lowering from Service SDK into ESS and retain compatible SDK entrypoints. New runtime version selects ER explicitly. Legacy event-only histories are converted explicitly and never described as complete DecisionRecords.
+Exactly one owning AEP story includes aep.project/2, explicit authority/defaults, inventory and dry-run migration, Markdown/hybrid/SQLite/PostgreSQL inputs, identity/revision/relation/body/evidence/history preservation, divergence refusal, staged verification, source-fence recheck, configuration switch, drift refusal and projection rebuild. Record incomplete historical knowledge as an explicit legacy import boundary, never invented commands.
 
-## Applications
-Protobuf remains authoritative until descriptor, wire and consumer gates pass. Generate only owned Flutter composition around existing widgets. Keep server business state, Go transport/downstream adapters and separate native/web media bindings. Connectors retains describe/invoke/serve and reviewed local management behavior. Advance its exact ESS dependency and lockfiles only with compatibility evidence.
+Track Eventlog manifest, journal, blobs and required durable metadata under .engineering/state/. Markdown under .engineering/planning/ remains tracked and derived. Direct Markdown edits are drift. A committed mutation followed by projection failure returns its durable receipt; rebuilding must not execute the mutation again.
+
+## Participating stores
+
+Rehearse on preserved snapshots, then migrate Eventlog, Entity Runtime, Service SDK, ESS, Connectors v2 and AEP in that order, using the explicitly qualified new AEP executable. Verify history, queries, mutation, restart and rebuild after each cutover. Retain legacy recovery copies. Once new writes commit, recovery follows Eventlog rather than reviving a stale writer. Remove hybrid selection from new runtime configuration.
+
+## Services and Connectors
+
+Extract reusable ESS service lowering; retain public SDK entrypoints and old artifact readers. Opt-in runtime/realization /4 selects ER. Preserve complete decision history and explicit legacy boundaries. Migrate Connectors local metadata to ER/Eventlog SQLite while preserving credential references, revision/fence/audit behavior and qualified Secret Service custody. Update exact ESS/AEP pins and both workspace lockfile surfaces with compatibility evidence, retaining the existing pinned correction until equivalence is verified.
 
 ## Rollout
-Local acceptance is the completion boundary. No releases, deployment or documentation publication is authorized by completion of a generator.
 
+Affected Eventlog-backed runtimes use Rust 1.91; independent pure libraries retain their supported minima. Generic protobuf/UI/Flutter work is deferred separately under task:deferred-protocol-ui-bindings. Local acceptance is the completion boundary; source publication, releases and deployment remain separate.
+
+## Owning AEP migration record
+
+AEP now owns story:eventlog-planning-authority-migration, covering the implementation and every
+real cutover in Eventlog -> Entity Runtime -> Service SDK -> ESS -> Connectors v2 -> AEP order.
+Its accepted direction is AEP docs/design/eventlog-planning-authority-v0.1.md; the coordinate model
+specs/planning-migration/ validated before the story was filed. This is a draft implementation
+owner, not migrated authority. AEP dependency-blocker:recorded-eventlog-runtime names the still-open
+provider/ER adapter/bridge proof. No duplicate per-repository migration story is needed.
+
+Source: Atlas ADR0050 and local-evidence:ess-evolution/waves/0005-aep-migration/README.md.

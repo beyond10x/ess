@@ -188,7 +188,7 @@ Pending coordinator work: the separate Rust feasibility unit is still evolving. 
 
 Writes outside the worktree: none.
 
-All pass output lives under `/home/timo/.local/state/worktree/trees/b10x/ess/review-format-catalog/target/review-boundaries-5/`: this report, read-only command/output captures named `adversary-*`, final clean-state captures and report checksum. The existing fixture helper was read and executed unchanged. No tracked or untracked source, document or test was written. No AEP command, Git mutation, build, live service request, publication or cleanup operation was performed. No active process is retained by this pass. Writes are relinquished with this report; fixes belong to the coordinator's routed implementor.
+All pass output lives under `~/.local/state/worktree/trees/b10x/ess/review-format-catalog/target/review-boundaries-5/`: this report, read-only command/output captures named `adversary-*`, final clean-state captures and report checksum. The existing fixture helper was read and executed unchanged. No tracked or untracked source, document or test was written. No AEP command, Git mutation, build, live service request, publication or cleanup operation was performed. No active process is retained by this pass. Writes are relinquished with this report; fixes belong to the coordinator's routed implementor.
 
 ```findings
 - file: docs/design/review-format-catalog.md

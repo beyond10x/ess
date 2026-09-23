@@ -40,3 +40,5 @@ website/static/lab/
 # page (docs/plan/). The decision was recorded in docs/plan/gap-register.md, which no longer exists
 # and was not recovered; this line is what survives of it — delete the line to reverse.
 .engineering/runs/
+.engineering/.aep-planning-writer*.lock
+.engineering/migrations/

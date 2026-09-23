@@ -196,7 +196,7 @@ Full raw source/toolchain/environment/argv/status/log evidence is retained under
   {
     "step": "planning",
     "argv": [
-      "/home/timo/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader/target/debug/aep",
+      "~/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader/target/debug/aep",
       "plan",
       "artifact",
       "validate"

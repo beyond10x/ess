@@ -45,7 +45,7 @@ website/docs/reference/cli.md's new Composition clients example writes target/co
 ```
 
 ```text
-error: inspecting output parent /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-9/composition-cli-example/output: No such file or directory (os error 2)
+error: inspecting output parent ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-9/composition-cli-example/output: No such file or directory (os error 2)
 ```
 
 ## Disposition

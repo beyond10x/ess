@@ -178,7 +178,7 @@ The resumed run at64f6f07 reran the failed full test lane and every remaining st
   {
     "step": "planning",
     "argv": [
-      "/home/timo/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader/target/debug/aep",
+      "~/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader/target/debug/aep",
       "plan",
       "artifact",
       "validate"
@@ -198,7 +198,7 @@ The resumed run at64f6f07 reran the failed full test lane and every remaining st
 ## Planning output, verbatim
 
 ```text
-138 file(s) in /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 138 artifact(s)
+138 file(s) in ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/.engineering/planning: 138 artifact(s)
 18 review(s) recorded no findings block:
   - review-result:normalization-base64-adversary-pass2-public states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere
   - review-result:normalization-raw-json-adversary-pass1-public states its findings as prose only — nothing can enumerate what it found, so                  the next review starts from nowhere

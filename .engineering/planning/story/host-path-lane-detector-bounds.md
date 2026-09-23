@@ -37,5 +37,5 @@ fixed.
 
 ## Not in scope
 
-The blockers pass 2 found — the surviving `/root/` mutant, the `$HOME` dependency and the panic on a
+The blockers pass 2 found — the surviving `~/` mutant, the `$HOME` dependency and the panic on a
 tracked file the working tree lacks — are corrected in wave 22 itself and are not this story's.

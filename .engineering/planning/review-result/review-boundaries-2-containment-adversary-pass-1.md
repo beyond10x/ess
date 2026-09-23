@@ -29,7 +29,7 @@ Process deviation: after the full package suites, I mistakenly ran cargo fmt --a
 
 2. New cases and their first isolated executions
 
-All commands below ran in /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment. TMPDIR and build target remained within this worktree. The exact first-run outputs are reproduced below; each selected exactly one case.
+All commands below ran in ~/.local/state/worktree/trees/b10x/ess/review-output-containment. TMPDIR and build target remained within this worktree. The exact first-run outputs are reproduced below; each selected exactly one case.
 
 1. crates/edge/ess-cli/tests/output_containment.rs:206 — RED
 
@@ -42,7 +42,7 @@ env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/sccache CARG
 Exit status: 101.
 
 ```text
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.23s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -56,9 +56,9 @@ failures:
 thread 'composition_companion_outputs_cannot_collide_with_the_generated_client_tree' (183772) panicked at crates/edge/ess-cli/tests/output_containment.rs:246:5:
 companion/generated destination collisions must refuse before writes:
 --out out/Cargo.toml: exit Some(0), client manifest preserved false, source parent absent false; stderr: 
---out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-183771-2/out/src
+--out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-183771-2/out/src
 --client-plan-out out/Cargo.toml: exit Some(0), client manifest preserved false, source parent absent false; stderr: 
---client-plan-out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-183771-4/out/src
+--client-plan-out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-183771-4/out/src
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 
@@ -123,7 +123,7 @@ env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/sccache CARG
 Exit status: 0.
 
 ```text
-   Compiling ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
+   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
     Finished `test` profile [unoptimized] target(s) in 0.81s
      Running tests/docs.rs (target/debug/deps/docs-530499ed1f64a736)
 
@@ -168,7 +168,7 @@ env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/sccache CARG
 Exit status: 101.
 
 ```text
-   Compiling ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `test` profile [unoptimized] target(s) in 0.20s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -241,9 +241,9 @@ failures:
 thread 'composition_companion_outputs_cannot_collide_with_the_generated_client_tree' (191165) panicked at crates/edge/ess-cli/tests/output_containment.rs:246:5:
 companion/generated destination collisions must refuse before writes:
 --out out/Cargo.toml: exit Some(0), client manifest preserved false, source parent absent false; stderr: 
---out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-191161-11/out/src
+--out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-191161-11/out/src
 --client-plan-out out/Cargo.toml: exit Some(0), client manifest preserved false, source parent absent false; stderr: 
---client-plan-out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-191161-18/out/src
+--client-plan-out out/src: exit Some(1), client manifest preserved true, source parent absent false; stderr: error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2/ess-output-191161-18/out/src
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 
@@ -541,8 +541,8 @@ env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/sccache CARG
 Exit status: 0.
 
 ```text
-    Checking ess-gen v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
-    Checking ess-cli v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/generate/ess-gen)
+    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
     Finished `dev` profile [unoptimized] target(s) in 0.33s
 ```
 
@@ -580,9 +580,9 @@ The implementation first validates only client_artifacts at main.rs:1862, then w
 
 6. Writes and retained scratch
 
-Authored paths outside the worktree: none. All added test files, fixture temporary directories, logs, and compiler target output stayed inside /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment. Cargo used the prescribed shared sccache service; its ordinary existing cache activity was not independently inventoried or assigned a new output location.
+Authored paths outside the worktree: none. All added test files, fixture temporary directories, logs, and compiler target output stayed inside ~/.local/state/worktree/trees/b10x/ess/review-output-containment. Cargo used the prescribed shared sccache service; its ordinary existing cache activity was not independently inventoried or assigned a new output location.
 
-Retained scratch directory: /home/timo/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2.
+Retained scratch directory: ~/.local/state/worktree/trees/b10x/ess/review-output-containment/target/review-boundaries-2.
 Retained pass files: adversary-pass-1.md, adversary-tests.patch, adversary-case-1.log through adversary-case-5.log, adversary-ess-cli-suite.log, adversary-ess-gen-suite.log, adversary-package-fmt.log, adversary-clippy.log, and the extra-check log adversary-fmt.log. Existing fixture Drop implementations cleaned only their synthetic per-test directories after execution. The coordinator owns all worktree and build-directory cleanup.
 
 ```findings

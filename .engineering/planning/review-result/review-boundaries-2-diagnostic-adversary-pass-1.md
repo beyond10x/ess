@@ -43,7 +43,7 @@ Command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/scc
 Exit status: 0.
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 0.19s
      Running tests/secret_boundary.rs (target/debug/deps/secret_boundary-9f7580c6900df241)
 
@@ -95,7 +95,7 @@ Command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/scc
 Exit status: 0.
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `test` profile [unoptimized] target(s) in 0.21s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -148,7 +148,7 @@ Strict lint command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=
 Exit status: 0.
 
 ```text
-    Checking ess-kubernetes v0.18.0 (/home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+    Checking ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
     Finished `dev` profile [unoptimized] target(s) in 0.15s
 ```
 
@@ -172,7 +172,7 @@ Nothing found.
 
 Outside the assigned worktree: none. Deliberate source writes are exactly the two test paths in the leading diff.
 
-Assigned scratch: /home/timo/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/target/review-boundaries-2/. Retained files are adversary-case-1.log, adversary-case-2.log, adversary-case-3.log, adversary-suite.log, adversary-fmt.log, adversary-clippy.log, adversary-tests.patch and adversary-pass-1.md. The existing test fixture_root helper also retains its generated Rust fake binaries, synthetic invocation logs and observation fixtures beneath this worktree's Cargo target temporary directory, as it did for the implementation's tests. No external target directory was selected.
+Assigned scratch: ~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/target/review-boundaries-2/. Retained files are adversary-case-1.log, adversary-case-2.log, adversary-case-3.log, adversary-suite.log, adversary-fmt.log, adversary-clippy.log, adversary-tests.patch and adversary-pass-1.md. The existing test fixture_root helper also retains its generated Rust fake binaries, synthetic invocation logs and observation fixtures beneath this worktree's Cargo target temporary directory, as it did for the implementation's tests. No external target directory was selected.
 
 ```findings
 []

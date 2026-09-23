@@ -68,7 +68,7 @@ final integrated bytes before execution. Source pass 2 may add tests but no impl
 
 Only the four named scripts, their fixed mapper/input contracts, root's separately authorized Task/sleep probe result and six historical receipt-shape files were inspected. No audited script was imported or executed. No report.json was read.
 
-All relative paths below start at the ESS coordinator /home/timo/.local/state/worktree/trees/b10x/ess/wt-752828a285ba. Script paths are abbreviated only after the following exact inventory.
+All relative paths below start at the ESS coordinator ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba. Script paths are abbreviated only after the following exact inventory.
 
 | Abbreviation | Exact reviewed path | SHA-256 |
 |---|---|---|
@@ -151,7 +151,7 @@ No JSON-schema/type contradiction was found between Wrapper's emitted receipt sh
 
 The historical-shape exception was explicitly supplied by root after the opening task. Its exact prefix is:
 
-/home/timo/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/coverage-writer/final-exports-attempt2/controls
+~/.local/state/worktree/trees/b10x/ess/ess-conformance-coverage-writer/target/review-boundaries-11/coverage-writer/final-exports-attempt2/controls
 
 Read only R01-go-host-filter's go-run.command/receipt, R03-rust-suite5-report1-no-destination's cli-run.command/receipt, profile producer.json and source-manifest.json. The latter was used for manifest shape/count/hash, not to inspect the source paths it lists. No new writer report or active unit source was opened. The initial prefix without -writer did not exist and yielded only absent-path observations.
 

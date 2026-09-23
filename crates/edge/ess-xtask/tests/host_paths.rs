@@ -53,40 +53,38 @@
 //!
 //! What it does not read at all, tree by tree:
 //!
-//! * `.engineering/` — unread, 61 files, 32806 lines: the planning store. Those counts are
+//! * `.engineering/` — unread, 3 files, 4 lines: the planning store. Those counts are
 //!   measured on every run by
 //!   [`every_unread_tree_that_carries_the_class_is_named_in_the_module_documentation`], which is
-//!   the only reason to believe them. **Why it is unread today is a smaller claim than it looks,
-//!   and the honest form of it is that the question is open**:
-//!   `story:scrub-the-planning-store-or-say-why-not` holds it.
+//!   the only reason to believe them. They were 61 files and 32806 lines until 2026-09-22.
 //!
-//!   What is settled: `.engineering/planning/journal.jsonl` is append-only and committed, and 87
-//!   of those lines are in it. `aep-backend-markdown`'s journal states the contract of itself —
-//!   rewriting a line to claim something else *"is exactly what append-only forbids"* — and `aep
-//!   plan artifact validate` reads such a rewrite as forgery. Those 87 lines therefore have no
-//!   remedy at all, and the store cannot be made clean by scrubbing.
+//!   **The question this bullet used to hold open is answered, and not the way it expected.** It
+//!   argued that the store could not be made clean by scrubbing, because
+//!   `.engineering/planning/journal.jsonl` is append-only and 87 of the carrying lines were in it:
+//!   rewriting one *"is exactly what append-only forbids"*, and `aep plan artifact validate` reads
+//!   such a rewrite as forgery. That was right about scrubbing a store, and it missed the other
+//!   move. When the store was migrated to Eventlog authority the import read a *source*, and the
+//!   source was rewritten before it was read — 101830 absolute paths across 81 files, to the
+//!   portable `~/…` spelling this lane admits. The event log was built from clean bytes and never
+//!   carried them, so the journal projected out of it carries none either.
 //!
-//!   What is **not** settled is everything else, and an earlier revision of this bullet decided it
-//!   with a sentence that was false. It argued that carving the journal out of a widened scan
-//!   would exempt *the file holding the largest single share of the defect*. In the unit this
-//!   bullet counts in — lines — the journal holds 87 of 32806, which is 0.27%, and one document,
-//!   `.engineering/planning/review-result/authored-discovery-source-pass1.md`, holds 28730. A
-//!   carve-out would cover 59 of the 60 files and 99.7% of the carrying lines. By findings rather
-//!   than lines the journal is first, 32163 of 65838 — so the two units answer the question
-//!   oppositely and neither of them settles it. The comparison is recorded here because it was
-//!   made, not because it decides anything.
+//!   Doing it the other way round is what does not work, and the reason is worth keeping: a body
+//!   corrected after the import appends a *new* blob and leaves the old one reachable, because a
+//!   blob is addressed by a digest over its own bytes. The string stays in the history that gets
+//!   published. `story:scrub-the-planning-store-or-say-why-not` is closed by the migration, not by
+//!   a scan widening.
 //!
-//!   The other 59 files are store bodies, and `AGENTS.md` holds the store to being *"mutated only
-//!   through `aep artifact` — never by editing a store file"*, so scrubbing them is not a change
-//!   this lane or its tests may make; it is the store owner's, and that is what the story above is
-//!   for. Until it answers, this tree is unread, and this bullet says so rather than implying the
-//!   question was settled.
+//!   What the detector still finds is this lane's own subject matter: the bare markers, and one
+//!   account name carrying a combining mark, quoted in `story:host-path-lane-detector-bounds` and
+//!   in the wave-22 adversary results that measured the class — documents *about* the detector,
+//!   written to exercise the bound the second paragraph of this module already admits it has.
+//!   Refusing those would delete the remedy along with the defect, which is the same reason the
+//!   portable spelling is admitted above.
 //!
 //!   `layout.rs` also excludes this tree, and an earlier revision cited that as *the same reason*.
 //!   It is not authority to borrow: [`SCANNED_PREFIXES`] below says in its own words that the two
 //!   scans refuse different things — a stale repository-relative citation is not a defect and a
-//!   workstation path is — and that doc is right, so the appeal was the thing to fix. What the two
-//!   share is a fact, not a verdict: nothing under the store can be corrected after the fact.
+//!   workstation path is — and that doc is right, so the appeal was the thing to fix.
 //!
 //! That is the whole of that list.
 //!
