@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/agent-plugin-0.30.0
+repository: ess
+publishedAt: 2026-09-23T16:00:00Z
+title: ESS ships its own agent plugin, and the binary prints its skills
+summary: >-
+  The ESS agent plugin (ess@ess) now ships from this repository at the binary's version, with skills for writing, retrofitting and conformance-testing a specification. `ess skill` prints the same skills from the binary, and the release gate refuses a plugin version that differs from the workspace.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.30.0
+  version: 0.30.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

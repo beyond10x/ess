@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.30.0](#ess-ships-its-own-agent-plugin-and-the-binary-prints-its-skills) | ESS ships its own agent plugin, and the binary prints its skills | capability | significant |
 | [0.29.0](#verify-retries-against-their-original-command-results) | Verify retries against their original command results | capability | significant |
 | [0.28.0](#conformance-observes-history-and-independently-arranged-failures) | Conformance observes history and independently arranged failures | capability | significant |
 | [0.27.0](#an-enum-variant-carries-its-own-wire-spelling) | An enum variant carries its own wire spelling | capability | significant |
@@ -23,6 +24,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.30.0 — 2026-09-23
+
+### ESS ships its own agent plugin, and the binary prints its skills
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.30.0)
+
+The ESS agent plugin (ess@ess) now ships from this repository at the binary's version, with skills for writing, retrofitting and conformance-testing a specification. `ess skill` prints the same skills from the binary, and the release gate refuses a plugin version that differs from the workspace.
 
 ## 0.29.0 — 2026-09-22
 

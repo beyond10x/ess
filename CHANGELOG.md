@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-09-23
+
 ### Added
 
 - The ESS agent plugin lives in this repository. `plugins/ess/` carries the skills `ess` (front
