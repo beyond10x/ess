@@ -2,6 +2,10 @@
 
 The contract for changing this repository. Organization-wide rules live in `atlas/AGENTS.md`.
 
+Here to **use** ESS in another repository rather than change this one? Run `ess skill`, or read
+[`plugins/ess/skills/ess/SKILL.md`](plugins/ess/skills/ess/SKILL.md). The rest of this file does not
+apply to you.
+
 ## Serves
 
 - **O2 — decisions as data, with evidence.** ESS makes system structure, semantics, projections,
@@ -126,6 +130,26 @@ cargo update --manifest-path fuzz/Cargo.toml --offline --workspace
 
 Same shape as the schema projection above: a bump leaves a derived artifact behind, nothing
 downstream complains, and one task in the gate is the only thing that knows.
+
+**A version bump also touches the two plugin manifests**,
+`plugins/ess/.claude-plugin/plugin.json` and `plugins/ess/.codex-plugin/plugin.json`.
+`cargo xtask plugin check`, which `cargo xtask release verify` runs, refuses a manifest whose
+version differs from `[workspace.package]`.
+
+## Agent plugin
+
+`plugins/ess/` is the ESS agent plugin; `.claude-plugin/marketplace.json` and
+`.agents/plugins/marketplace.json` serve it under marketplace identity `ess`. `ess-cli`'s `build.rs`
+embeds `plugins/ess/skills/**` and `plugins/ess/agents/**` into the binary, and `ess skill` prints
+them, so the binary, the plugin and the skills are one version at every tag.
+
+- Behaviour lives in skills. An `agents/*.md` file is a thin Claude wrapper that names its skill as
+  `` `ess skill <name>` ``; Codex has no plugin agents.
+- A skill spells every command by area. `skill::tests::no_embedded_file_teaches_a_flat_spelling`
+  refuses a flat one.
+- `skill` is the one first-level verb outside the four areas (`TOOLS` in
+  `crates/edge/ess-cli/src/main.rs`). Do not add a second without the same reason: it reads no
+  specification.
 
 **Reading a failed `Gate` without the log.** The Actions log endpoint redirects to a zip and
 `b10x-gates api` reports `GitHub response invalid`, so it is not a route. The **check-run

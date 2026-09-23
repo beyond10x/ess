@@ -78,8 +78,9 @@ The source checkout’s workspace version is `0.29.0` and includes separately do
 
 [ess-source-support-end]: #
 
-The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`. Earlier flat spellings
-remain hidden aliases with the same accepted-command output and exit status.
+The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`, then `skill`, which
+prints the embedded agent guidance. Earlier flat spellings remain hidden aliases with the same
+accepted-command output and exit status.
 
 Compilation and projection remain deterministic and offline. Live Kubernetes import and the
 commands named `execute`, `publish`, `fetch`, and `reconcile` are explicit credential edges; they do
