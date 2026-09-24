@@ -12,10 +12,10 @@ unit: story:review-browser-replay-fidelity — source pass 2, correction-1 worki
 verdict: nothing found
 cases: executed 31→34, red 0
 origin: introduced 0 / pre-existing 0 / undecided 0
-wrote-outside-worktree: 9043 inventoried paths under ~/.cache/ess-w15-browser-adversary-2-tmp
+wrote-outside-worktree: 9043 inventoried paths under home-path:sha256:c5da8c9b27a908849ec8900b18aab2274dedd15dbb637c05d3c3e42deb05409d
 needs-coordinator: none; root retains AEP, Git, integration and delivery gates
 
-`git --no-pager diff --no-index --stat ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-15/preparation/browser-source-pass-2/handed-source/crates/edge/ess-cli/tests/replay_fidelity_browser.rs ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/crates/edge/ess-cli/tests/replay_fidelity_browser.rs`
+`git --no-pager diff --no-index --stat home-path:sha256:30d2605a6fbaf38abab022ac4e34783a348357451b16c28b60998f192cc556d0 home-path:sha256:5a87e3a9592d9496641e0c41696a5a055ed88b3392331025c2fa6f34ba5140d6`
 
 ```text
  .../edge/ess-cli/tests/replay_fidelity_browser.rs  | 157 +++++++++++++++++++++
@@ -50,7 +50,7 @@ command, stdout/stderr and direct 101 are retained below. No product assertion-r
 
 `cargo test -p ess-cli --locked --offline --test replay_fidelity_browser adversary2_exact_metadata_and_literal_lookalikes_keep_distinct_kinds -- --exact --nocapture --test-threads=1`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/focused-metadata
+Receipt: home-path:sha256:9c6f4c11ab63e14133e73e20047c9589850526a80653fe7e0eea794fa1938662
 
 stdout (verbatim):
 ```text
@@ -69,7 +69,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 29 filtered out;
 
 stderr (verbatim):
 ```text
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (home-path:sha256:370279bda7398b81442ee6c2276ba6c714e822f2f6eb795a8d423e0f562fafae)
     Finished `test` profile [unoptimized] target(s) in 0.56s
      Running tests/replay_fidelity_browser.rs (target/debug/deps/replay_fidelity_browser-3b05a0461d802984)
 
@@ -83,7 +83,7 @@ Direct exit 101; duration 1.000878987 seconds; resource stop None.
 
 `cargo test -p ess-cli --locked --offline --test replay_fidelity_browser adversary2_exact_metadata_and_literal_lookalikes_keep_distinct_kinds -- --exact --nocapture --test-threads=1`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/focused-metadata-admitted
+Receipt: home-path:sha256:5d5ab600c68f678efca1d3eede883e0fac5f6889cc5d0ba9f1f901b12e4e55cc
 
 stdout (verbatim):
 ```text
@@ -97,7 +97,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; fin
 
 stderr (verbatim):
 ```text
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (home-path:sha256:370279bda7398b81442ee6c2276ba6c714e822f2f6eb795a8d423e0f562fafae)
     Finished `test` profile [unoptimized] target(s) in 0.54s
      Running tests/replay_fidelity_browser.rs (target/debug/deps/replay_fidelity_browser-3b05a0461d802984)
 ```
@@ -106,7 +106,7 @@ Direct exit 0; duration 2.501331111 seconds; resource stop None.
 
 `cargo test -p ess-cli --locked --offline --test replay_fidelity_browser adversary2_reused_creation_alias_is_diagnostic_and_preserves_prior_prefix -- --exact --nocapture --test-threads=1`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/focused-reused-alias
+Receipt: home-path:sha256:529d34c99881575671f0ca82f80528fd1e5635ee2abd45f1b153671eeb74825b
 
 stdout (verbatim):
 ```text
@@ -128,7 +128,7 @@ Direct exit 0; duration 3.501355733 seconds; resource stop None.
 
 `cargo test -p ess-cli --locked --offline --test replay_fidelity_browser adversary2_switching_to_a_distinct_authored_scenario_cancels_pending_play -- --exact --nocapture --test-threads=1`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/focused-scenario-select
+Receipt: home-path:sha256:af41d80bc7a6af312411e6f44cb8e5fa50fe418289f65b3e2a9a789680c6d1ae
 
 stdout (verbatim):
 ```text
@@ -162,7 +162,7 @@ this pass does not claim the combined 321 package total as its own execution.
 
 `rustfmt --edition 2021 --config skip_children=true target/review-boundaries-15/adversary-pass-2/replay_fidelity_format.rs`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/format-additions
+Receipt: home-path:sha256:20270e5d02bdd8eaca7b7f9f63a41e33fe0640f37e2cf1048cd883057efa2e8d
 
 stdout (verbatim):
 ```text
@@ -176,7 +176,7 @@ Direct exit 0; duration 0.500629787 seconds; resource stop None.
 
 `cargo test -p ess-cli --locked --offline --test replay_fidelity_browser --test coverage_browser -- --nocapture --test-threads=1`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/combined-browser
+Receipt: home-path:sha256:e630dee0f6d3eaa2bc779008a6a513104785df2c010af57dde1dc8505c3a6795
 
 stdout (verbatim):
 ```text
@@ -229,7 +229,7 @@ test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 stderr (verbatim):
 ```text
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (home-path:sha256:370279bda7398b81442ee6c2276ba6c714e822f2f6eb795a8d423e0f562fafae)
     Finished `test` profile [unoptimized] target(s) in 0.53s
      Running tests/coverage_browser.rs (target/debug/deps/coverage_browser-2a9fe7f1faee6112)
      Running tests/replay_fidelity_browser.rs (target/debug/deps/replay_fidelity_browser-3b05a0461d802984)
@@ -239,7 +239,7 @@ Direct exit 0; duration 153.187460535 seconds; resource stop None.
 
 `cargo fmt --package ess-conformance --package ess-cli --check`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/package-fmt
+Receipt: home-path:sha256:98efcadb78f8266143e5a336dbd18a8f0fc7c6fc14b117aaad94e7fc2c0ba39e
 
 stdout (verbatim):
 ```text
@@ -253,7 +253,7 @@ Direct exit 0; duration 0.500603235 seconds; resource stop None.
 
 `cargo clippy -p ess-conformance -p ess-cli --all-targets --locked --offline -- -D warnings`
 
-Receipt: ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2/implementation/package-clippy
+Receipt: home-path:sha256:6ad2183b7105be972fa699acdd8093ce5a539067e262b34344e41d49916d6cce
 
 stdout (verbatim):
 ```text
@@ -261,7 +261,7 @@ stdout (verbatim):
 
 stderr (verbatim):
 ```text
-    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/crates/edge/ess-cli)
+    Checking ess-cli v0.20.0 (home-path:sha256:370279bda7398b81442ee6c2276ba6c714e822f2f6eb795a8d423e0f562fafae)
     Finished `dev` profile [unoptimized] target(s) in 0.34s
 ```
 
@@ -327,11 +327,11 @@ processes/sessions: none. The handoff is quiescent.
 
 6. Written paths and retained outputs
 
-Every external write in this pass is under ~/.cache/ess-w15-browser-adversary-2-tmp.
+Every external write in this pass is under home-path:sha256:6a2d92b0c6320f353fc62c38f3c0a7d39fca7f7c0f165e22482cf7e7ea4dc959
 The full 9043-path absolute list is outside-worktree-paths.txt, SHA256 e77a833fa6f13e2df5b5e9d312b24e59efa027213513d2b0fef8704a726e48c3.
 It includes fixture inputs, emitted assets, CLI receipts, Firefox profiles and BiDi records.
 No other external writable root was used; inherited HOME was preserved. New scratch/XDG/log writes
-are confined to ~/.local/state/worktree/trees/b10x/ess/ess-browser-replay-fidelity/target/review-boundaries-15/adversary-pass-2. Compilation reused target/debug and the private unit Cargo home. Exact executed
+are confined to home-path:sha256:3727e67f42bd41d4e21c3956f1dfe22644718caf2c7d65831df2a36cc2356ecf Compilation reused target/debug and the private unit Cargo home. Exact executed
 binary hashes are retained separately; historical build trees and old TMP evidence were not recounted
 or cleaned. Root retains the full mutable build roots and owns subsequent lifecycle decisions.
 

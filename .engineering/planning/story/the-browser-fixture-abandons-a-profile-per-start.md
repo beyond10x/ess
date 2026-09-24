@@ -23,7 +23,7 @@ The count is larger than it looks. `browse()` in `replay_fidelity_browser.rs:277
 per **call**, not per test, so one package run makes **81 browser starts**: 69 in
 `replay_fidelity_browser`, 10 in `coverage_browser`, 1 each in the two writer adversaries.
 
-`~/.claude/settings.json` sets `TMPDIR` away from `/tmp` for agent sessions, but a run made with the
+`home-path:sha256:048ae0e839a625fe37021cb5f2e81d14bd375f12b400388daa174059871af359` sets `TMPDIR` away from `/tmp` for agent sessions, but a run made with the
 default `TMPDIR` puts 1.6 GB per run against the 25 G per-user `/tmp` quota, where an over-quota
 write fails with `EDQUOT` while `df` still shows free space.
 

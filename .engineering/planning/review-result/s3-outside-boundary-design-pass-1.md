@@ -27,7 +27,7 @@ implemented without weakening an existing gate.
 | `ess/consumer-outside-boundary/system.yaml` | `55cf51f5120a58a67a801afefe2631420859cce5270424417d2a416275e523d9` | match |
 | `ess/consumer-outside-boundary/domains/outside_boundary.yaml` | `1c4a4fc420edd10fcc6b136624490d5391d61ada649b0631f6e7f845c2856f57` | match |
 
-Recomputed in `~/.local/state/worktree/trees/b10x/ess/ess-evolution-s3-authored-boundaries-20260915`
+Recomputed in `home-path:sha256:a6903a16002380dc2cabb2e88f61492ff4c07066db697f6d99c3369b695a9135`
 (`sha256sum`, exit 0). All three equal the brief and `s3-boundary-amendment/RESULT.md`. Inherited
 earlier changes in that tree were excluded from review; canonical source was read from the read-only
 sibling `ess-evolution-scope-20260915` throughout.
@@ -275,7 +275,7 @@ G1.
 
 ## Sources inspected
 
-Canonical read-only tree `~/.local/state/worktree/trees/b10x/ess/ess-evolution-scope-20260915`:
+Canonical read-only tree `home-path:sha256:5a3bf71c0326fdcf5dcaba328e029a61b282ee5d99ef77c7036c708035ea94c9`:
 `crates/edge/ess-xtask/src/consumer_coverage/{enforce,reconciliation,model_behavior,mod,proposal,consumer,rust,aggregate,account,preservation}.rs`;
 `consumer_coverage/{initial-baseline.json,profiles.json,reviewed-model-behavior.json}`;
 `crates/specify/ess-domain/src/spec.rs`; `crates/specify/ess-domain/Cargo.toml`;

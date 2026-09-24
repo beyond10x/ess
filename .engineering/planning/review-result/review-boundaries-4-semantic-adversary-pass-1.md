@@ -49,15 +49,15 @@ Before-count source: assigned brief and committed implementor report, compiler50
 ess-diff/tests/review_adversary_f01.rs — red; changed owner of an existing external ref must produce independent residual coverage.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 moved_outcome_reference_retains_its_owner -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 moved_outcome_reference_retains_its_owner -- --exact --nocapture
 ```
 
 Exit 101. Raw first isolated output:
 
 ```text
-   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-   Compiling ess-conformance v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-conformance)
-   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-gen v0.18.0 (home-path:sha256:04bbfdd4b69bd27d7ed3eeacefe496038df4eb37a9b7d42350d192d03a628362)
+   Compiling ess-conformance v0.18.0 (home-path:sha256:18738e674361a0e03e04950cc243b2fd8b8f4c1ed10398950abf48310d99fac1)
+   Compiling ess-diff v0.18.0 (home-path:sha256:6b34911c4f9aab8fc361d6bca3e53fdbc6339edeba96fbf3ffa7194ade3d3279)
     Finished `test` profile [unoptimized] target(s) in 6.45s
      Running tests/review_adversary_f01.rs (target/debug/deps/review_adversary_f01-6987b431560f169a)
 
@@ -100,7 +100,7 @@ error: test failed, to rerun pass `-p ess-diff --test review_adversary_f01`
 ess-diff/tests/review_adversary_f01.rs — red; the same ref movement beside a classified summary must still force whole coverage.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 moved_outcome_reference_is_independent_of_a_classified_edit -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 moved_outcome_reference_is_independent_of_a_classified_edit -- --exact --nocapture
 ```
 
 Exit 101. Raw first isolated output:
@@ -162,13 +162,13 @@ error: test failed, to rerun pass `-p ess-diff --test review_adversary_f01`
 ess-diff/tests/review_adversary_f01.rs — green; actual billing.email naming defaults are equivalent despite source digest changing.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 explicit_domain_naming_defaults_remain_semantically_equivalent -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 explicit_domain_naming_defaults_remain_semantically_equivalent -- --exact --nocapture
 ```
 
 Exit 0. Raw first isolated output:
 
 ```text
-   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (home-path:sha256:6b34911c4f9aab8fc361d6bca3e53fdbc6339edeba96fbf3ffa7194ade3d3279)
     Finished `test` profile [unoptimized] target(s) in 0.68s
      Running tests/review_adversary_f01.rs (target/debug/deps/review_adversary_f01-6987b431560f169a)
 
@@ -185,7 +185,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; fini
 ess-diff/tests/review_adversary_f01.rs — green; actual Account and Invoice schemas and mint digests change and both artifacts are owed.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 ownership_cardinality_invalidates_both_emitted_schema_ends -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 ownership_cardinality_invalidates_both_emitted_schema_ends -- --exact --nocapture
 ```
 
 Exit 0. Raw first isolated output:
@@ -207,13 +207,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; fini
 ess-gen/tests/review_adversary_f01.rs — red; missing system in actual emitted structured attribution must be unreadable.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01 structured_stamp_requires_the_complete_emitted_envelope -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01 structured_stamp_requires_the_complete_emitted_envelope -- --exact --nocapture
 ```
 
 Exit 101. Raw first isolated output:
 
 ```text
-   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-gen v0.18.0 (home-path:sha256:04bbfdd4b69bd27d7ed3eeacefe496038df4eb37a9b7d42350d192d03a628362)
     Finished `test` profile [unoptimized] target(s) in 0.24s
      Running tests/review_adversary_f01.rs (target/debug/deps/review_adversary_f01-d8564f620078ebe8)
 
@@ -241,7 +241,7 @@ error: test failed, to rerun pass `-p ess-gen --test review_adversary_f01`
 ess-gen/tests/review_adversary_f01.rs — green; complete-profile and duplicate authoritative location admission.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01 conflicting_locations_and_every_malformed_profile_are_refused -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01 conflicting_locations_and_every_malformed_profile_are_refused -- --exact --nocapture
 ```
 
 Exit 0. Raw first isolated output:
@@ -263,7 +263,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 ess-gen/tests/review_adversary_f01.rs — green; HTML and Rust-style headers cannot fall back from unknown profile to JSON body.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01 complete_comments_do_not_admit_an_unknown_profile_via_body_markers -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-gen --test review_adversary_f01 complete_comments_do_not_admit_an_unknown_profile_via_body_markers -- --exact --nocapture
 ```
 
 Exit 0. Raw first isolated output:
@@ -285,7 +285,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 ess-diff/tests/review_adversary_f01.rs — red; the actual impact artifact-reader caller must owe incomplete attribution.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 incomplete_schema_stamp_is_owed_by_the_real_impact_reader -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 incomplete_schema_stamp_is_owed_by_the_real_impact_reader -- --exact --nocapture
 ```
 
 Exit 101. Raw first isolated output:
@@ -318,13 +318,13 @@ error: test failed, to rerun pass `-p ess-diff --test review_adversary_f01`
 ess-diff/tests/review_adversary_f01.rs — green; full pre-F01 suite/4 vector including authored scenario is byte identical and round trips.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 complete_generated_and_authored_suite_four_bytes_remain_frozen -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 complete_generated_and_authored_suite_four_bytes_remain_frozen -- --exact --nocapture
 ```
 
 Exit 0. Raw first isolated output:
 
 ```text
-   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (home-path:sha256:6b34911c4f9aab8fc361d6bca3e53fdbc6339edeba96fbf3ffa7194ade3d3279)
     Finished `test` profile [unoptimized] target(s) in 1.43s
      Running tests/review_adversary_f01.rs (target/debug/deps/review_adversary_f01-6987b431560f169a)
 
@@ -341,7 +341,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; fini
 ess-diff/tests/review_adversary_f01.rs — green; concrete relation change uses current formats and cannot be serialized or read as legacy.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 relation_delta_versions_refuse_relabeling_and_public_serialize_bypasses -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 relation_delta_versions_refuse_relabeling_and_public_serialize_bypasses -- --exact --nocapture
 ```
 
 Exit 0. Raw first isolated output:
@@ -363,7 +363,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; fini
 Initial case03 applied RawSpecFile.naming on the system-only header. That property describes a domain, so system assembly retained its default and the source digests were equal. The test stopped at its changed-input guard; it demonstrated no product defect. A follow-up case03b mistakenly selected billing.invoice, whose existing overrides are wire=invoices and display=Invoicing; replacing them by invoice was a real semantic change, so its empty-delta expectation was invalid. The corrected case03c uses billing.email, asserts both existing overrides are absent, writes its already effective email defaults, and passes. Both original raw outputs remain preserved below; no compiler/cache/setup failure occurred.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 explicit_system_naming_defaults_remain_semantically_equivalent -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 explicit_system_naming_defaults_remain_semantically_equivalent -- --exact --nocapture
 ```
 
 Exit101, invalid fixture expectation, not a finding:
@@ -393,13 +393,13 @@ error: test failed, to rerun pass `-p ess-diff --test review_adversary_f01`
 ```
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 explicit_domain_naming_defaults_remain_semantically_equivalent -- --exact --nocapture
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked -p ess-diff --test review_adversary_f01 explicit_domain_naming_defaults_remain_semantically_equivalent -- --exact --nocapture
 ```
 
 Exit101, invalid fixture expectation, not a finding:
 
 ```text
-   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+   Compiling ess-diff v0.18.0 (home-path:sha256:6b34911c4f9aab8fc361d6bca3e53fdbc6339edeba96fbf3ffa7194ade3d3279)
     Finished `test` profile [unoptimized] target(s) in 0.30s
      Running tests/review_adversary_f01.rs (target/debug/deps/review_adversary_f01-6987b431560f169a)
 
@@ -464,14 +464,14 @@ Executed counts:
 All 483 existing cases passed. The ten added cases executed, six green and four red. The two invalid fixture assumptions are preserved in part2 and excluded from this red count.
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked --no-fail-fast -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --offline --locked --no-fail-fast -p ess-compiler -p ess-diff -p ess-gen -p ess-synth
 ```
 
 Exit101. Complete raw output:
 
 ```text
-   Compiling ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
-   Compiling ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
+   Compiling ess-diff v0.18.0 (home-path:sha256:6b34911c4f9aab8fc361d6bca3e53fdbc6339edeba96fbf3ffa7194ade3d3279)
+   Compiling ess-gen v0.18.0 (home-path:sha256:04bbfdd4b69bd27d7ed3eeacefe496038df4eb37a9b7d42350d192d03a628362)
     Finished `test` profile [unoptimized] target(s) in 1.52s
      Running unittests src/lib.rs (target/debug/deps/ess_compiler-b4c0bc8f0757838a)
 
@@ -1275,7 +1275,7 @@ error: 2 targets failed:
 ```
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth -- --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt -p ess-compiler -p ess-diff -p ess-gen -p ess-synth -- --check
 ```
 
 Exit0. Complete raw output:
@@ -1285,14 +1285,14 @@ Exit0. Complete raw output:
 ```
 
 ```sh
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p ess-compiler -p ess-diff -p ess-gen -p ess-synth --all-targets -- -D warnings
 ```
 
 Exit0. Complete raw output:
 
 ```text
-    Checking ess-gen v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/generate/ess-gen)
-    Checking ess-diff v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-semantic-diff-coverage/crates/verify/ess-diff)
+    Checking ess-gen v0.18.0 (home-path:sha256:04bbfdd4b69bd27d7ed3eeacefe496038df4eb37a9b7d42350d192d03a628362)
+    Checking ess-diff v0.18.0 (home-path:sha256:6b34911c4f9aab8fc361d6bca3e53fdbc6339edeba96fbf3ffa7194ade3d3279)
     Finished `dev` profile [unoptimized] target(s) in 0.21s
 
 ```

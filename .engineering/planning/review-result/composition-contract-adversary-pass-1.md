@@ -35,7 +35,7 @@ cargo test --locked -p ess-composition downstream_operation_construction_require
 ```
 
 ```text
-   Compiling ess-composition v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition)
+   Compiling ess-composition v0.19.0 (home-path:sha256:caa70c2ef9ae02796dff0ce5bab54d226dd41fef1797b9041f07a71ec1a1cd02)
     Finished `test` profile [unoptimized] target(s) in 0.51s
      Running unittests src/lib.rs (target/debug/deps/ess_composition-13563bcd6ceb4522)
 
@@ -46,30 +46,30 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/composition.rs (target/debug/deps/composition-0fbadb9df0767612)
 
 running 1 test
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/lib.rs" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "home-path:sha256:70be3785f39b1d498f2f0714373987405d81e333024100a031ed224142eaff56" "-o" "home-path:sha256:47c155c20234ab8e504a0fe89fa6d67beac8e2e8bad8681bc6a460ae1ea3d952"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/selected.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--crate-type=lib" "-D" "warnings" "home-path:sha256:d2016ece43ed99c3311acd5605ea8f1ee3e55e76ec45733b86fb63b80e8f6dfb" "--extern" "composition_fixture=home-path:sha256:47c155c20234ab8e504a0fe89fa6d67beac8e2e8bad8681bc6a460ae1ea3d952" "--out-dir" "home-path:sha256:af4f33d4a92bcca8b718d6bf7052f61168a5c06030c7e6f929f3b9462a8393ea"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/constructor.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--crate-type=lib" "-D" "warnings" "home-path:sha256:30a307ad011df4ae155bcbbb8bd8b5b6f500f393a34bb514b80987e91f559275" "--extern" "composition_fixture=home-path:sha256:47c155c20234ab8e504a0fe89fa6d67beac8e2e8bad8681bc6a460ae1ea3d952" "--out-dir" "home-path:sha256:af4f33d4a92bcca8b718d6bf7052f61168a5c06030c7e6f929f3b9462a8393ea"
 exit: exit status: 1
 stdout:
 
 stderr:
 error[E0624]: associated function `new` is private
-  --> ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/constructor.rs:1:88
+  --> home-path:sha256:b035a2a5a087acefda1b862e082b52e8a13e86d006c6f3754a8c904d200a95bd
    |
  1 | pub fn operation() -> composition_fixture::Operation { composition_fixture::Operation::new("todo", "workbench.usage.RecordUsage", co...
    |                                                                                        ^^^ private associated function
    |
-  ::: ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/lib.rs:61:5
+  ::: home-path:sha256:48fc1ab0028babcc9cb3b8145f55a7547c954e6db34b98a7001d2a21793e9815
    |
 61 |     const fn new(service_key: &'static str, semantic: &'static str, kind: OperationKind) -> Self {
    |     -------------------------------------------------------------------------------------------- private associated function defined here
@@ -78,13 +78,13 @@ error: aborting due to 1 previous error
 
 For more information about this error, try `rustc --explain E0624`.
 
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/fields.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/libcomposition_fixture.rlib" "--out-dir" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--crate-type=lib" "-D" "warnings" "home-path:sha256:1748532fff5b850f40c7c6576ecb8fbcc5dd71acd30c893907e6419f1a1606c7" "--extern" "composition_fixture=home-path:sha256:47c155c20234ab8e504a0fe89fa6d67beac8e2e8bad8681bc6a460ae1ea3d952" "--out-dir" "home-path:sha256:af4f33d4a92bcca8b718d6bf7052f61168a5c06030c7e6f929f3b9462a8393ea"
 exit: exit status: 1
 stdout:
 
 stderr:
 error[E0451]: fields `service_key`, `semantic` and `kind` of struct `Operation` are private
- --> ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-descriptor-2601509/fields.rs:1:89
+ --> home-path:sha256:6bb6fdfd6f39eb5b47c8e78a3a04ef58956bc68f4b3f389d9a3712e42831fe12
   |
 1 | ...ion_fixture::Operation { service_key: "todo", semantic: "workbench.usage.RecordUsage", kind: composition_fixture::OperationKind::C...
   |                             ^^^^^^^^^^^          ^^^^^^^^ private field                   ^^^^ private field
@@ -121,19 +121,19 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/composition.rs (target/debug/deps/composition-0fbadb9df0767612)
 
 running 1 test
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/lib.rs" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/libcomposition_fixture.rlib"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "home-path:sha256:d6a2f597a986d99d62d524bdb8843886f714ab500a29bb0cf236d5118d169658" "-o" "home-path:sha256:772052bc4633456ee8032025eb6de0237cc01f18f2a7008536e6d818e9c95af1"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--test" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/libcomposition_fixture.rlib" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/client_boundary_tests"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--test" "-D" "warnings" "home-path:sha256:15b1fdc0c87806e25a24c1ad8d238e6c38697d2a4ecb01c0be829fb2343fd923" "--extern" "composition_fixture=home-path:sha256:772052bc4633456ee8032025eb6de0237cc01f18f2a7008536e6d818e9c95af1" "-o" "home-path:sha256:a9365cfb89170555b552ee58381779df64d700027e24ed109187ae01e0676e27"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-control-2604310/client_boundary_tests" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
+command: "home-path:sha256:a9365cfb89170555b552ee58381779df64d700027e24ed109187ae01e0676e27" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
 exit: exit status: 0
 stdout:
 
@@ -145,19 +145,19 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; fini
 
 stderr:
 
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/lib.rs" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/libcomposition_fixture.rlib"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--crate-type=lib" "--crate-name=composition_fixture" "-D" "warnings" "home-path:sha256:72be1bc21fbc7b0679947a4803fdef46ec5c7f418d9c36a3487af2e3e2da1a59" "-o" "home-path:sha256:b23c55f06e21858cb37e0186cf7f15ad46a9e43f4daae5ae55bf50bbc4a6ef19"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc" "--edition=2021" "--test" "-D" "warnings" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs" "--extern" "composition_fixture=~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/libcomposition_fixture.rlib" "-o" "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/client_boundary_tests"
+command: "home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535" "--edition=2021" "--test" "-D" "warnings" "home-path:sha256:15b1fdc0c87806e25a24c1ad8d238e6c38697d2a4ecb01c0be829fb2343fd923" "--extern" "composition_fixture=home-path:sha256:b23c55f06e21858cb37e0186cf7f15ad46a9e43f4daae5ae55bf50bbc4a6ef19" "-o" "home-path:sha256:17f0d997af90c53a839c91d182cf7467c2c970f6d11ebdd014b34815fe3eb817"
 exit: exit status: 0
 stdout:
 
 stderr:
 
-command: "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-adversary-forwarding-mutant-2604310/client_boundary_tests" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
+command: "home-path:sha256:17f0d997af90c53a839c91d182cf7467c2c970f6d11ebdd014b34815fe3eb817" "compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged" "--exact" "--nocapture" "--test-threads=1"
 exit: exit status: 101
 stdout:
 
@@ -174,7 +174,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; 
 
 stderr:
 
-thread 'compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged' (2604437) panicked at ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/crates/specify/ess-composition/tests/fixtures/client_boundary.rs:139:5:
+thread 'compatible_and_incompatible_titles_reach_the_same_selected_operation_unchanged' (2604437) panicked at home-path:sha256:41ecc362f763422cd464ce09a6d864331f21c0bcd7679062b8d664359349282c
 assertion `left == right` failed
   left: []
  right: [123, 34, 100, 101, 116, 97, 105, 108, 115, 34, 58, 123, 34, 116, 105, 116, 108, 101, 34, 58, 34, 73, 110, 98, 111, 120, 34, 125, 125]
@@ -233,7 +233,7 @@ elapsed_seconds: 0.410 user_seconds: 0.529 system_seconds: 0.263
 The final package run executed 12 cases, 0 failed/ignored, in three summaries. The original generated-client child executed its same three distinct cases, all passing:
 
 ```text
-command: "~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1/tmp/ess-composition-client-runtime-2607470/client_boundary_tests" "--nocapture" "--test-threads=1"
+command: "home-path:sha256:d065652704b82648c53ac2e3f2a933583de7956e3eb294e1023518d090d86f80" "--nocapture" "--test-threads=1"
 exit: exit status: 0
 stdout:
 
@@ -281,7 +281,7 @@ cee8bed7df2bcf936a482ad8c4c79c7045b803ece402590ac73c9308e25860f3  website/docs/r
 48292c59c73e812efabbd03dee3fb4bf2edcbc145cecc1c0c90fd724ea27969e  Cargo.lock
 ```
 
-frozen-source-check.log/exit and retained-fixtures-check.log/exit both passed: production/API docs, public pages, every existing fixture/golden covered by the supplied manifest, and Cargo.lock remain unchanged. final-status.txt contains only the additive composition.rs modification. additive-tests.patch preserves the complete test-only patch. execution.sha256 identifies all retained top-level logs/statuses/disk records and generated probe source/command logs, including each control/mutant copy. The first and final source manifests are included in that evidence manifest. Every artifact path is relative to ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-1 unless stated otherwise.
+frozen-source-check.log/exit and retained-fixtures-check.log/exit both passed: production/API docs, public pages, every existing fixture/golden covered by the supplied manifest, and Cargo.lock remain unchanged. final-status.txt contains only the additive composition.rs modification. additive-tests.patch preserves the complete test-only patch. execution.sha256 identifies all retained top-level logs/statuses/disk records and generated probe source/command logs, including each control/mutant copy. The first and final source manifests are included in that evidence manifest. Every artifact path is relative to home-path:sha256:e63c21f6f5b75b8e024253d7bf050ce671bc6abca0c08380a47523ea062c722c unless stated otherwise.
 
 This report is final and will not be overwritten. I relinquish all writes to source, build and scratch on return. The coordinator owns retention, planning records, integration and delivery; this report grants no approval.
 

@@ -56,7 +56,7 @@ Read the complete corrected design, immutable first report, repository/worktree 
 relevant compiler, domain, and synthesis sources needed to recheck both findings and the surrounding
 contract. No tests, builds, services, credentials, SQL/database operations, network operations, or
 source/store edits were executed. The sole outside write was
-`~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-design-review-2.md`.
+`home-path:sha256:0035c821691cdc42a64b54e28a0ab3161c4e03be3ebfd49665732cd4907d3176`.
 Lease `ess-evolution-service-contract-design-review-2-sol-20260915` was released on completion.
 
 ```findings

@@ -31,7 +31,7 @@ The no-index stat exits 1 because the added file differs from `/dev/null`; it is
 
 ## 1. Subject and test additions
 
-Tree: `~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity`; branch `impl/review-schema-resource-identity`; base `e283a26cf0176e96e41b13e5e8b79cd1a82ab88d`. The complete adversary charter, own AGENTS, original and adversary briefs, accepted binding, active story revision 11, frozen nine-path diff, new inherited tests and fixtures, relevant callers, and entire implementor report were read before writing probes. The implementor report SHA-256 is `73b736a6f1480333ed568f6a4b6fe5c262728188f05f5d0d9b2782a5c74cdfe8`.
+Tree: `home-path:sha256:fdacacd14a9612706930568791a9daa8981c54063df8f404335c14408300a31b`; branch `impl/review-schema-resource-identity`; base `e283a26cf0176e96e41b13e5e8b79cd1a82ab88d`. The complete adversary charter, own AGENTS, original and adversary briefs, accepted binding, active story revision 11, frozen nine-path diff, new inherited tests and fixtures, relevant callers, and entire implementor report were read before writing probes. The implementor report SHA-256 is `73b736a6f1480333ed568f6a4b6fe5c262728188f05f5d0d9b2782a5c74cdfe8`.
 
 The baseline is the supplied implementor execution: 167 passed, 0 failed, 0 ignored, 26 summaries in 30.009861360 seconds. It was not rerun before the additional case existed. Six cases were written together, and the first selected admission case was executed alone before any integration-target or package suite. All scenarios invoke the actual compiled `ess` binary; none substitute a schema checker.
 
@@ -55,23 +55,23 @@ Every command below used the assigned tree as cwd. `commands.json` records exact
 ### First case alone
 
 ```sh
-env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin':"$PATH" RUSTC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc' RUSTDOC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc' CARGO_HOME='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/cargo-home' TMPDIR='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/tmp' GOCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-mod' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli' cargo test --locked -p ess-cli --test schema_registry_identity_adversary an_unselected_invalid_resource_blocks_both_documented_pairs -- --exact --nocapture
+env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='home-path:sha256:a9a4ee005c11e6521496e0ff1529308e5862b5557e282198cc56ffef84499fb5':"$PATH" RUSTC='home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535' RUSTDOC='home-path:sha256:cfcca0fbc01edced245f4082ef3f4032907e9866e0d726bc4bd1861d26fbd53d' CARGO_HOME='home-path:sha256:d27a52575d7b6f62e327f4192dbc66f2d6ff08729fdd23c71c21c7abf6337a0e' TMPDIR='home-path:sha256:8b4441750e613c1101778e0861f6cd38967983532d50853c8cbc1b631f92769e' GOCACHE='home-path:sha256:9e9ac035306fdaa6b53e8690b4003e561504414dd6ff9472dc78ff5f078bf016' GOMODCACHE='home-path:sha256:541e6dbdfe211ec992e0bc9ddb49fa8e458d18362bde9d1ea60fb9b93d48c8bb' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='home-path:sha256:f4f6ff5e38acffba0155ff5afcd0e7e7231c73c129092cd1e28238200d5690ec' cargo test --locked -p ess-cli --test schema_registry_identity_adversary an_unselected_invalid_resource_blocks_both_documented_pairs -- --exact --nocapture
 ```
 
 Exit 0. Complete captured output:
 
 ```text
-   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (home-path:sha256:c6d47d8a7a81bff2524f196d51e2b6c0c82c84df66dc7b337ca866289e92cac7)
     Finished `test` profile [unoptimized] target(s) in 0.29s
      Running tests/schema_registry_identity_adversary.rs (target/debug/deps/schema_registry_identity_adversary-13ce93394dad40e9)
 
 running 1 test
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-unresolved-3501646-0/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-invalid-3501646-1/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-relative-3501646-2/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-unresolved-3501646-3/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-invalid-3501646-4/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-relative-3501646-5/calls/00 exit Some(1)
+CLI receipt home-path:sha256:fd53a1496aa81e01d3cb29953ba3a6fb6da20468617ea4b8449026e542b72d4e exit Some(1)
+CLI receipt home-path:sha256:1bfc1c6633a871d17459147e3e11ce27fe000a3722723a4ed9c5c60bb65657d2 exit Some(1)
+CLI receipt home-path:sha256:80ea564cec9789daa224403f8c0db9c7f60cb24c2f821f881fcca2716530d3dd exit Some(1)
+CLI receipt home-path:sha256:a87634b109c89e90bd6cf271ece6b1d0d70ee945179d848f2d346b03649143d8 exit Some(1)
+CLI receipt home-path:sha256:97e303a689edd5bb08f6ae857aeb9d1a1b68d4dcb1e695c5f7d8a232adabca1b exit Some(1)
+CLI receipt home-path:sha256:274e762fffb52e18fd3f9484aa0dc474a6586c7c7121e33dc323a2ccb9295c2f exit Some(1)
 test an_unselected_invalid_resource_blocks_both_documented_pairs ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.12s
@@ -86,7 +86,7 @@ sys 0.12
 The first target run passed five cases and failed one assertion in my new test. This is not a product finding: the actual generated Money.currency schema declares only `{"type":"string"}`; it has no enum. My initial `"BOGUS"` mutation was therefore still valid, and the CLI correctly returned 0. The exact original new target is preserved in `initial-adversary-test-exact.rs`, SHA-256 `11bd8c39b20638da01e79098d348d067d1b564fe298fdbb6a986c45791b7e190`, matching `source-before.sha256`. `initial-adversary-test.rs` also retains the earlier scratch copy with its one trailing blank line omitted; it is not described as byte-identical.
 
 ```sh
-env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin':"$PATH" RUSTC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc' RUSTDOC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc' CARGO_HOME='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/cargo-home' TMPDIR='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/tmp' GOCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-mod' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli' cargo test --locked -p ess-cli --test schema_registry_identity_adversary -- --nocapture
+env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='home-path:sha256:a9a4ee005c11e6521496e0ff1529308e5862b5557e282198cc56ffef84499fb5':"$PATH" RUSTC='home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535' RUSTDOC='home-path:sha256:cfcca0fbc01edced245f4082ef3f4032907e9866e0d726bc4bd1861d26fbd53d' CARGO_HOME='home-path:sha256:d27a52575d7b6f62e327f4192dbc66f2d6ff08729fdd23c71c21c7abf6337a0e' TMPDIR='home-path:sha256:8b4441750e613c1101778e0861f6cd38967983532d50853c8cbc1b631f92769e' GOCACHE='home-path:sha256:9e9ac035306fdaa6b53e8690b4003e561504414dd6ff9472dc78ff5f078bf016' GOMODCACHE='home-path:sha256:541e6dbdfe211ec992e0bc9ddb49fa8e458d18362bde9d1ea60fb9b93d48c8bb' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='home-path:sha256:f4f6ff5e38acffba0155ff5afcd0e7e7231c73c129092cd1e28238200d5690ec' cargo test --locked -p ess-cli --test schema_registry_identity_adversary -- --nocapture
 ```
 
 Exit 101. Complete captured output:
@@ -96,21 +96,21 @@ Exit 101. Complete captured output:
      Running tests/schema_registry_identity_adversary.rs (target/debug/deps/schema_registry_identity_adversary-13ce93394dad40e9)
 
 running 6 tests
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-typescript-boundaries-3502897-3/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-unresolved-3502897-0/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-inline-3502897-2/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-text-3502897-5/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-decoded-ids-3502897-4/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-root-3502897-1/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-typescript-boundaries-3502897-3/calls/01 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-typescript-source-3502897-9/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-invalid-3502897-6/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-text-3502897-5/calls/01 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-typescript-source-3502897-9/calls/01 exit Some(1)
+CLI receipt home-path:sha256:5373e1ae8a43d44cb54de6bdf4f3b6c93b9bc3602a1608033bb226aa87163240 exit Some(1)
+CLI receipt home-path:sha256:8c1db31c0b0cf199a70f1c9f35975005f3014e177ab1ed365ba9296291ea02dc exit Some(1)
+CLI receipt home-path:sha256:40d19cd3b67fa5029d1c6ffaca10a06881fbc55837072611fac531acefd159a4 exit Some(1)
+CLI receipt home-path:sha256:d5d4862cd17aa5b8e5a1f648b1381af6335504caa80f485d87613fe29adca2b3 exit Some(0)
+CLI receipt home-path:sha256:ca77311b1223ba3dd1ee4f3ffbbe560d426e18f9f6ac23e465132a699b2a98b5 exit Some(1)
+CLI receipt home-path:sha256:9f4b13b0b81fd72d1c4b11eadebaa6bf591a0c2f899d9e2bc0dd326e57bc05ba exit Some(0)
+CLI receipt home-path:sha256:cd62383b8b6190457813ec9d957c6e014d7ceb566529d243eecb07045317c9eb exit Some(0)
+CLI receipt home-path:sha256:2071ab679216e286c39b1d6401b7d0e82f5ba3a6196b0beddbe5192773fb29a1 exit Some(1)
+CLI receipt home-path:sha256:ae5fc01ee1f7219046082f10d528aa0ae9af565604e907ef0ce70e3eb975851b exit Some(1)
+CLI receipt home-path:sha256:7fc976d4b2a97463d53289ca60a6d5d1a5fa09201abd8b7886b007789ca13510 exit Some(1)
+CLI receipt home-path:sha256:541fb54df64a7b65f44f9872c5e973547d9283a2d30f78ccf432868f3f9dec1d exit Some(1)
 test registry_admission_and_selected_typescript_projection_have_distinct_boundaries ... ok
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-renamed-3502897-8/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-inline-3502897-7/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-root-3502897-1/calls/01 exit Some(0)
+CLI receipt home-path:sha256:ba4b06fdd513780a04c4a09346ac908050e9d337a9e3ab88b8aea5b0d6ac0f2b exit Some(0)
+CLI receipt home-path:sha256:2b994af669ee18e1e4370d0e3535715d52fa478b22c05fc7f8dda77eb90669aa exit Some(1)
+CLI receipt home-path:sha256:67e387a8986640054ea726508cf33f936f3a22b87fd6c1f0af4e3e0ce2fbf02d exit Some(0)
 
 thread 'envelope_definitions_cannot_shadow_either_payload_resource_root' (3502900) panicked at crates/edge/ess-cli/tests/schema_registry_identity_adversary.rs:143:9:
 assertion `left == right` failed: Output { status: ExitStatus(unix_wait_status(0)), stdout: "{\n  \"issues\": [],\n  \"schema_count\": 2,\n  \"valid\": [\n    {\n      \"instance\": \"instances/one.json\",\n      \"schema\": \"registry/z-unrelated.schema.json\",\n      \"schema_id\": \"urn:example:adversary-invoice-envelope:1\"\n    }\n  ]\n}\n", stderr: "" }
@@ -119,23 +119,23 @@ assertion `left == right` failed: Output { status: ExitStatus(unix_wait_status(0
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test envelope_definitions_cannot_shadow_either_payload_resource_root ... FAILED
 test inlining_idless_generated_payloads_breaks_their_original_root_references ... ok
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-relative-3502897-10/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-text-3502897-5/calls/02 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-renamed-3502897-8/calls/01 exit Some(1)
+CLI receipt home-path:sha256:8024ccf922b6b5a59c78e07ea94466320f0164d3802cb35485820f0d9d44ca24 exit Some(1)
+CLI receipt home-path:sha256:aef15d08be160d49bbdd0281299f375de67f92d8cd0d906161feb1c81d283ece exit Some(1)
+CLI receipt home-path:sha256:7bd23c696db3c54921446354954c028b4b62e3c7fea1b542277fb11e03beb9af exit Some(1)
 test decoded_duplicate_ids_are_collisions_and_filenames_supply_no_identity ... ok
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-array-3502897-12/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-unresolved-3502897-11/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-array-3502897-12/calls/01 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-array-3502897-12/calls/02 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-invalid-3502897-13/calls/00 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-null-3502897-14/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-relative-3502897-15/calls/00 exit Some(1)
+CLI receipt home-path:sha256:0c7f1fa28e5282a0e80297daa7476d9edb2a778ffe39e6f0d307226381129db9 exit Some(0)
+CLI receipt home-path:sha256:2d7202382ac7cc9b181fedcbeb98ddb277f5f5e1ec0416cca8564c47dde2395d exit Some(1)
+CLI receipt home-path:sha256:1fa45ad7ddec015d5de156960d31add13e2db6832bfa9514df5b4d7211e1a122 exit Some(1)
+CLI receipt home-path:sha256:b7d471b5802e3883519b046376d41ea0f7f3829b21858cf036f8417e3febcabd exit Some(1)
+CLI receipt home-path:sha256:dfafa03ece25879c54cd915d0ac29995a7d2c7b6dda99f5456007f1c4256531a exit Some(1)
+CLI receipt home-path:sha256:46cbde6ba234798c17df6fe5274dfb21cb534f557127a2db0fc2286ba32828d2 exit Some(0)
+CLI receipt home-path:sha256:ff420bc228f7523ffda3d36f68bd26b7ad6a8a889c3ca83533df1955b2281166 exit Some(1)
 test an_unselected_invalid_resource_blocks_both_documented_pairs ... ok
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-null-3502897-14/calls/01 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-null-3502897-14/calls/02 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-boolean-3502897-16/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-boolean-3502897-16/calls/01 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-boolean-3502897-16/calls/02 exit Some(1)
+CLI receipt home-path:sha256:b434ba5e7b8b925f446fe993460ae94d1008ecc22d5fbfcf642336c05d816e7e exit Some(1)
+CLI receipt home-path:sha256:692f09866a26b7b1f6fa084be9bb1ae5ae91cb8106de28fff45c8a9d0356ce7a exit Some(1)
+CLI receipt home-path:sha256:4ce5b74ddb3273458c3ccae1f03ee415c780b568418bbc40c45771ea3fa565b0 exit Some(0)
+CLI receipt home-path:sha256:494209daf5981da13a84a2577ade54ca19e95a071e5adad7755683192b754cc5 exit Some(1)
+CLI receipt home-path:sha256:1950e32c2a417822f5de140c2438b71a511360eb1d2b6d66ed5e9a88b350ebf2 exit Some(1)
 test the_selected_schema_checks_its_selector_and_nonobject_payload_as_one_instance ... ok
 
 failures:
@@ -154,7 +154,7 @@ sys 0.13
 The coordinator was notified. Only my new probe input was changed from `json!("BOGUS")` to `json!(false)`, retaining the expected refusal and payload pointer; every inherited assertion stayed byte-identical. The new target alone was formatted with:
 
 ```sh
-~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustfmt --edition 2021 crates/edge/ess-cli/tests/schema_registry_identity_adversary.rs
+home-path:sha256:8fca48d6521ce6c3ac3a302bd90935cb1182a820ab163cd1a7db2a16a4e5e5de --edition 2021 crates/edge/ess-cli/tests/schema_registry_identity_adversary.rs
 ```
 
 Exit 0, no output. This was the only manual test-data correction; there were no compiler/setup failures and no production repair. The original implementor's separately reported TypeScript diagnostic-substring correction was not changed or reclassified as a defect.
@@ -162,21 +162,21 @@ Exit 0, no output. This was the only manual test-data correction; there were no 
 ### Corrected root-reference case alone
 
 ```sh
-env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin':"$PATH" RUSTC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc' RUSTDOC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc' CARGO_HOME='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/cargo-home' TMPDIR='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/tmp' GOCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-mod' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli' cargo test --locked -p ess-cli --test schema_registry_identity_adversary envelope_definitions_cannot_shadow_either_payload_resource_root -- --exact --nocapture
+env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='home-path:sha256:a9a4ee005c11e6521496e0ff1529308e5862b5557e282198cc56ffef84499fb5':"$PATH" RUSTC='home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535' RUSTDOC='home-path:sha256:cfcca0fbc01edced245f4082ef3f4032907e9866e0d726bc4bd1861d26fbd53d' CARGO_HOME='home-path:sha256:d27a52575d7b6f62e327f4192dbc66f2d6ff08729fdd23c71c21c7abf6337a0e' TMPDIR='home-path:sha256:8b4441750e613c1101778e0861f6cd38967983532d50853c8cbc1b631f92769e' GOCACHE='home-path:sha256:9e9ac035306fdaa6b53e8690b4003e561504414dd6ff9472dc78ff5f078bf016' GOMODCACHE='home-path:sha256:541e6dbdfe211ec992e0bc9ddb49fa8e458d18362bde9d1ea60fb9b93d48c8bb' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='home-path:sha256:f4f6ff5e38acffba0155ff5afcd0e7e7231c73c129092cd1e28238200d5690ec' cargo test --locked -p ess-cli --test schema_registry_identity_adversary envelope_definitions_cannot_shadow_either_payload_resource_root -- --exact --nocapture
 ```
 
 Exit 0. Complete captured output:
 
 ```text
-   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/crates/edge/ess-cli)
+   Compiling ess-cli v0.19.0 (home-path:sha256:c6d47d8a7a81bff2524f196d51e2b6c0c82c84df66dc7b337ca866289e92cac7)
     Finished `test` profile [unoptimized] target(s) in 0.26s
      Running tests/schema_registry_identity_adversary.rs (target/debug/deps/schema_registry_identity_adversary-13ce93394dad40e9)
 
 running 1 test
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-root-3505422-0/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-invoice-root-3505422-0/calls/01 exit Some(1)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-root-3505422-1/calls/00 exit Some(0)
-CLI receipt ~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/selected-cli/schema-id-attack-source-root-3505422-1/calls/01 exit Some(1)
+CLI receipt home-path:sha256:7b29be892616eae8ce523aa8b20ccd25d4864359f989e34714d7c95bd1bb78ec exit Some(0)
+CLI receipt home-path:sha256:161ebd154acb553a5f2e41766cee1db7f22b22b38b38f6da1432b637cb4cb350 exit Some(1)
+CLI receipt home-path:sha256:e948c8343068b77ef834e7c61840c48437a9516ea4bce63b54761fb4a608d64c exit Some(0)
+CLI receipt home-path:sha256:e0e624651df2987a7dff1099228d779a1b73d592f1d4ef918562211cca716020 exit Some(1)
 test envelope_definitions_cannot_shadow_either_payload_resource_root ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.14s
@@ -193,7 +193,7 @@ The corrected isolated execution reached all four CLI calls, including the sourc
 The complete package suite ran only after those selected executions. It executed 173 cases: all 167 inherited cases plus all six added cases. No ignored or filtered cases are included in the count. There were 27 summaries, 173 passed, 0 failed and 0 ignored; wall time was 21.48 seconds. No test or production behavior changed after this run.
 
 ```sh
-env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin':"$PATH" RUSTC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc' RUSTDOC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc' CARGO_HOME='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/cargo-home' TMPDIR='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/tmp' GOCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-mod' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/full-cli' ESS_SCHEMA_IDENTITY_EVIDENCE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/inherited-cli' cargo test --locked -p ess-cli --no-fail-fast
+env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='home-path:sha256:a9a4ee005c11e6521496e0ff1529308e5862b5557e282198cc56ffef84499fb5':"$PATH" RUSTC='home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535' RUSTDOC='home-path:sha256:cfcca0fbc01edced245f4082ef3f4032907e9866e0d726bc4bd1861d26fbd53d' CARGO_HOME='home-path:sha256:d27a52575d7b6f62e327f4192dbc66f2d6ff08729fdd23c71c21c7abf6337a0e' TMPDIR='home-path:sha256:8b4441750e613c1101778e0861f6cd38967983532d50853c8cbc1b631f92769e' GOCACHE='home-path:sha256:9e9ac035306fdaa6b53e8690b4003e561504414dd6ff9472dc78ff5f078bf016' GOMODCACHE='home-path:sha256:541e6dbdfe211ec992e0bc9ddb49fa8e458d18362bde9d1ea60fb9b93d48c8bb' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' ESS_SCHEMA_IDENTITY_ADVERSARY_EVIDENCE='home-path:sha256:ecd06fcf4b4955ef0193d8b879818146257be1316a3796302cde8fd88b80c28a' ESS_SCHEMA_IDENTITY_EVIDENCE='home-path:sha256:ef920cda4f11235c9f6239f37b856457b8c45600e5496a6b0b0d988f5ade6def' cargo test --locked -p ess-cli --no-fail-fast
 ```
 
 Exit 0. Complete captured output:
@@ -543,7 +543,7 @@ sys 16.19
 ### Formatting and strict Clippy
 
 ```sh
-env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin':"$PATH" RUSTC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc' RUSTDOC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc' CARGO_HOME='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/cargo-home' TMPDIR='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/tmp' GOCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-mod' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' cargo fmt -p ess-cli -- --check
+env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='home-path:sha256:a9a4ee005c11e6521496e0ff1529308e5862b5557e282198cc56ffef84499fb5':"$PATH" RUSTC='home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535' RUSTDOC='home-path:sha256:cfcca0fbc01edced245f4082ef3f4032907e9866e0d726bc4bd1861d26fbd53d' CARGO_HOME='home-path:sha256:d27a52575d7b6f62e327f4192dbc66f2d6ff08729fdd23c71c21c7abf6337a0e' TMPDIR='home-path:sha256:8b4441750e613c1101778e0861f6cd38967983532d50853c8cbc1b631f92769e' GOCACHE='home-path:sha256:9e9ac035306fdaa6b53e8690b4003e561504414dd6ff9472dc78ff5f078bf016' GOMODCACHE='home-path:sha256:541e6dbdfe211ec992e0bc9ddb49fa8e458d18362bde9d1ea60fb9b93d48c8bb' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' cargo fmt -p ess-cli -- --check
 ```
 
 Exit 0. Complete captured output:
@@ -555,13 +555,13 @@ sys 0.03
 ```
 
 ```sh
-env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin':"$PATH" RUSTC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc' RUSTDOC='~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustdoc' CARGO_HOME='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/cargo-home' TMPDIR='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/tmp' GOCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1/go-mod' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' cargo clippy --locked -p ess-cli --all-targets -- -D warnings
+env -u CARGO_TARGET_DIR -u RUSTC_WRAPPER -u SCCACHE_SERVER_UDS PATH='home-path:sha256:a9a4ee005c11e6521496e0ff1529308e5862b5557e282198cc56ffef84499fb5':"$PATH" RUSTC='home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535' RUSTDOC='home-path:sha256:cfcca0fbc01edced245f4082ef3f4032907e9866e0d726bc4bd1861d26fbd53d' CARGO_HOME='home-path:sha256:d27a52575d7b6f62e327f4192dbc66f2d6ff08729fdd23c71c21c7abf6337a0e' TMPDIR='home-path:sha256:8b4441750e613c1101778e0861f6cd38967983532d50853c8cbc1b631f92769e' GOCACHE='home-path:sha256:9e9ac035306fdaa6b53e8690b4003e561504414dd6ff9472dc78ff5f078bf016' GOMODCACHE='home-path:sha256:541e6dbdfe211ec992e0bc9ddb49fa8e458d18362bde9d1ea60fb9b93d48c8bb' CARGO_INCREMENTAL='0' CARGO_PROFILE_DEV_DEBUG='0' CARGO_PROFILE_TEST_DEBUG='0' CARGO_CACHE_RUSTC_INFO='0' CARGO_BUILD_JOBS='2' CARGO_NET_OFFLINE='true' cargo clippy --locked -p ess-cli --all-targets -- -D warnings
 ```
 
 Exit 0. Complete captured output:
 
 ```text
-    Checking ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/crates/edge/ess-cli)
+    Checking ess-cli v0.19.0 (home-path:sha256:c6d47d8a7a81bff2524f196d51e2b6c0c82c84df66dc7b337ca866289e92cac7)
     Finished `dev` profile [unoptimized] target(s) in 0.15s
 real 0.19
 user 0.12
@@ -639,7 +639,7 @@ No URI-alias equivalence, historical immutability enforcement, new namespace, ho
 
 All 15 coordinator-supplied final-source entries match their before/after SHA-256 values, including both generated originals, all original nine changed paths, the accepted binding and both production schema-contract owners. Cargo.lock is also unchanged. `final-source.json` lists these 16 preserved inputs plus the new target (17 entries). The final added target SHA-256 is `e63647b37bea4d95e80376d0d8d092a70005d0b6274ab1ac45c9c9b5ae1ae0e0`. The entire final tests-only patch is `tests-only.patch`, SHA-256 `070214f055f28eaa2ffce8a228c0b97c42174d0926eaa9d8f7744426949757a7`.
 
-All scratch paths are beneath `~/.local/state/worktree/trees/b10x/ess/ess-schema-resource-identity/target/review-boundaries-10/schema-resource-identity/adversary-pass-1`. Build artifacts use this tree's target; Cargo uses the assigned unit Cargo home with its existing read-only cache inputs. TMPDIR, GOCACHE and GOMODCACHE point beneath this scratch. No cleanup, Git mutation, planning/store mutation, external integration call or extra agent was invoked. Read-only toolchain and cache inputs are not claimed as writes. No process syscall trace was run; the outside-path statement reports configured/observed writes, not a fabricated filesystem attestation.
+All scratch paths are beneath `home-path:sha256:a870ca43234a818a98480fde52b22107893786f34e73c5a490304f25beac031d`. Build artifacts use this tree's target; Cargo uses the assigned unit Cargo home with its existing read-only cache inputs. TMPDIR, GOCACHE and GOMODCACHE point beneath this scratch. No cleanup, Git mutation, planning/store mutation, external integration call or extra agent was invoked. Read-only toolchain and cache inputs are not claimed as writes. No process syscall trace was run; the outside-path statement reports configured/observed writes, not a fabricated filesystem attestation.
 
 Every path written outside this worktree: **none**.
 

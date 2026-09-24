@@ -21,7 +21,7 @@ pin `ess-compiler`, `ess-domain`, `ess-gen` and `ess-synth` by git revision (`ag
 Twenty crates sit flat under `crates/`. `infra-*` is a second bounded context that shares only
 `ess-primitives` with the specification side, and `AGENTS.md` keeps `EssIr` and `InfraIr` apart by
 rule; nothing in the tree shows either fact. Same operator finding as AEP's `epic:area-layout`;
-analysis in `~/.cache/beyond10x-notes/2026-09-03-aep-ess-structure.md`.
+analysis in `home-path:sha256:72832b6cc0394f68b41c2907feb0f1dd84ae512843f6fcf90309afea591197e5`.
 
 ## Scope
 

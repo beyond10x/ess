@@ -19,7 +19,7 @@ needs-coordinator: route the introduced prose correction; retain the full integr
  1 file changed, 200 insertions(+)
 ```
 
-This pass covers base `60279c34737863b59e9b46fa4fb07deaf1b010a3` to subject `254db232b785ba3ed6166e9cd5f23e2ad7fe9679`, branch `impl/review-public-support-claims`, unit `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims`. The only working-tree change is 200 lines appended inside the existing `#[cfg(test)] mod tests` of `crates/edge/ess-xtask/src/support.rs`. The executable brief expressly assigns this private test block despite the generic charter's test-file rule. No production line, existing case, documentation, Taskfile, binding, planning record or Git state was changed. `final-input-verification.json` proves the original module prefix and old tests remain byte-identical. `attack.diff` is the complete actual diff, not a proposed fix. `subject.diff` retains all eight implementation-file changes.
+This pass covers base `60279c34737863b59e9b46fa4fb07deaf1b010a3` to subject `254db232b785ba3ed6166e9cd5f23e2ad7fe9679`, branch `impl/review-public-support-claims`, unit `home-path:sha256:acdb5db22a43eff8a5b5418e2870cf8f7793501f1b7f8d02b69df19b86520bbe`. The only working-tree change is 200 lines appended inside the existing `#[cfg(test)] mod tests` of `crates/edge/ess-xtask/src/support.rs`. The executable brief expressly assigns this private test block despite the generic charter's test-file rule. No production line, existing case, documentation, Taskfile, binding, planning record or Git state was changed. `final-input-verification.json` proves the original module prefix and old tests remain byte-identical. `attack.diff` is the complete actual diff, not a proposed fix. `subject.diff` retains all eight implementation-file changes.
 
 1. Added cases and original focused observations
 
@@ -37,13 +37,13 @@ The seven cases were written before any test/build/CLI producer executed. Each w
 
 Original focused run: focus-readme
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_adjacent_readme_is_selected_without_authored_flags -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_adjacent_readme_is_selected_without_authored_flags -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: ~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136
+retained fixture: home-path:sha256:1f0b8b377df83b764d5ace4b79c2f8be9cc05377edfd520265c3adcc9fec7373
 actual CLI included adjacent README in index.html without --front-page, --include or --asset; siblings and downloads stayed absent
 test support::tests::adversary_adjacent_readme_is_selected_without_authored_flags ... ok
 
@@ -85,7 +85,7 @@ stderr, verbatim:
    Compiling digest v0.11.3
    Compiling serde_yaml v0.9.34+deprecated
    Compiling anstyle-parse v1.0.0
-   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.20.0 (home-path:sha256:1b00646688afa17cde381b40b42106bc0a23e3bf4042fbc30a942633688559f5)
    Compiling cfg-if v1.0.4
    Compiling cpufeatures v0.3.1
    Compiling is_terminal_polyfill v1.70.2
@@ -95,7 +95,7 @@ stderr, verbatim:
    Compiling anstyle v1.0.14
    Compiling sha2 v0.11.0
    Compiling anstream v1.0.0
-   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/specify/ess-domain)
+   Compiling ess-domain v0.20.0 (home-path:sha256:2e463812af66aed4bca58761c91b267bb0c5de49793e995308d4c485bc88c52d)
    Compiling unicase v2.9.0
    Compiling anyhow v1.0.104
    Compiling strsim v0.11.1
@@ -104,26 +104,26 @@ stderr, verbatim:
    Compiling bitflags v2.13.1
    Compiling clap_lex v1.1.0
    Compiling clap_builder v4.6.6
-   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/specify/ess-compiler)
+   Compiling ess-compiler v0.20.0 (home-path:sha256:8e0420f349b5c06c949a577e8cf35f05162fea5d6456ace84be26dbfcd13a276)
    Compiling clap_derive v4.6.4
-   Compiling ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen)
+   Compiling ess-gen v0.20.0 (home-path:sha256:29bfeb93ded7bbfd98181ac11be33d81c42f3f0165599676dabacb73344eeeaa)
    Compiling clap v4.6.6
-   Compiling ess-xtask v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.20.0 (home-path:sha256:90f5735c096ee7c4d65afd655ee3d8601ab5544ea3046dff69ad23dd597a2358)
     Finished `test` profile [unoptimized] target(s) in 15.20s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-readme/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:1757ce895d1c7ce56315290794412c86bf7bd3ad8b805d740848ad895e58cc98`.
 
 Original focused run: focus-roots
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_actual_explicit_site_and_combined_maps_keep_distinct_roots -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_actual_explicit_site_and_combined_maps_keep_distinct_roots -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: ~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1485522-1788757095485334854
+retained fixture: home-path:sha256:7a7af31e2e0e4318b828c31431f20503a85cbbbfc6ddc9160e03c74fa56fb030
 test support::tests::adversary_actual_explicit_site_and_combined_maps_keep_distinct_roots ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.78s
@@ -136,17 +136,17 @@ stderr, verbatim:
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-roots/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:b5a66503c6eae14526e5d7f013b560f67e263e7f3580fb9c1dc009d490da497b`.
 
 Original focused run: focus-rows
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_all_real_material_rows_refuse_cell_removal_duplicate_and_order_drift -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_all_real_material_rows_refuse_cell_removal_duplicate_and_order_drift -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: ~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1485680-1788757098951191381
+retained fixture: home-path:sha256:6fbdafbb83c7ec900311de0064a27a5a4cc7b714eca49290e134bb24ca050016
 all 20 actual rows attacked: 120 independent refusals
 test support::tests::adversary_all_real_material_rows_refuse_cell_removal_duplicate_and_order_drift ... ok
 
@@ -160,11 +160,11 @@ stderr, verbatim:
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-rows/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:dd3ab838c38395c1e697cdf93f178458c945a1b3a5fb806338606ca7db996e86`.
 
 Original focused run: focus-version
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_real_source_version_drift_keeps_release_bytes_independent -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_real_source_version_drift_keeps_release_bytes_independent -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
@@ -182,17 +182,17 @@ stderr, verbatim:
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-version/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:5df317279fdd480b94057064359755a845809d5deaaa7189498c4779e7d5c859`.
 
 Original focused run: focus-metadata
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_actual_help_missing_target_metadata_cannot_borrow_neighbor_values -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_actual_help_missing_target_metadata_cannot_borrow_neighbor_values -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: ~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1486137-1788757100006691523
+retained fixture: home-path:sha256:d205abb920027dfbd9aa43aeed89be5bdbbdba1241f7e0481ae4396a06818313
 test support::tests::adversary_actual_help_missing_target_metadata_cannot_borrow_neighbor_values ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.10s
@@ -205,17 +205,17 @@ stderr, verbatim:
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-metadata/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:5e2de8f7b4d982dad846c12a9903876f31256989b4ef74159437ba99215399f6`.
 
 Original focused run: focus-refusal
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_actual_cli_refusal_is_not_a_successful_support_observation -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_actual_cli_refusal_is_not_a_successful_support_observation -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: ~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1486227-1788757100480343873
+retained fixture: home-path:sha256:63003cba5c23faad562db7d00bb2dd2ad3f3c413771eab191175b1fcf8c51981
 test support::tests::adversary_actual_cli_refusal_is_not_a_successful_support_observation ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.20s
@@ -228,17 +228,17 @@ stderr, verbatim:
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-refusal/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:e18f6407d44a3eed570200a9eef2864610bd8141c451de4ad512bdde908f0e78`.
 
 Original focused run: focus-docsir
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_real_docs_ir_marker_is_nested_json_not_visible_marker_text -- --exact --nocapture`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask --bin ess-xtask support::tests::adversary_real_docs_ir_marker_is_nested_json_not_visible_marker_text -- --exact --nocapture`
 
 stdout, verbatim:
 ```text
 
 running 1 test
-retained fixture: ~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1486351-1788757101172716407
+retained fixture: home-path:sha256:078939d893b2099c7c53d84b7199b9e2f4f48b052b4ebf882a205a1075c60a8c
 test support::tests::adversary_real_docs_ir_marker_is_nested_json_not_visible_marker_text ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.10s
@@ -251,13 +251,13 @@ stderr, verbatim:
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/focus-docsir/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:d41b64029ee0a9c9956da7c3f4d432a3052804a135b386e52eca7a40c29f2f79`.
 
 2. Package execution and remaining local checks
 
 The baseline 29 is the actual implementor handoff: 24 unit and 5 layout tests. It was not re-executed before adding cases. Its complete report, final-package receipt/stdout/stderr and immutable census are retained under `target/review-boundaries-14/public-support/implementation` and hashed by `implementor-command-readback.json` / `implementor-input-inventory.json`. The first package execution after additions ran 31 unit + 5 layout tests and passed. The final package run below used the final formatted source; the earlier package and first formatting refusal remain retained. Formatting changes only wrapped four newly added assertions/prints; the mutation-count print now says “mutation refusals.”
 
-Command: `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-12/preparation/toolchain-snapshot/bin/cargo test --locked -p ess-xtask`
+Command: `home-path:sha256:dabeb2bcd0c107e3ac4da1ee67f2574e325891593b2f2d3542dccc0803641474 test --locked -p ess-xtask`
 
 stdout, verbatim:
 ```text
@@ -311,13 +311,13 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 stderr, verbatim:
 ```text
-   Compiling ess-xtask v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.20.0 (home-path:sha256:90f5735c096ee7c4d65afd655ee3d8601ab5544ea3046dff69ad23dd597a2358)
     Finished `test` profile [unoptimized] target(s) in 0.61s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-ec09005f8fd97d8f)
      Running tests/layout.rs (target/debug/deps/layout-2c4124a758c7a7b2)
 ```
 
-Direct exit: 0. Receipt: `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/commands/final-package/receipt.json`.
+Direct exit: 0. Receipt: `home-path:sha256:82ba6307199480dd9a937cee0c2986b18151fc3b71e06e56dd9269c3dce57fb4`.
 
 | Label | Direct exit | Seconds | Free before | Free after |
 |---|---:|---:|---:|---:|
@@ -344,9 +344,9 @@ Final formatter, strict package Clippy (`--all-targets -- -D warnings`), actual 
 |---|---|---|---|
 | website/docs/concepts/ess.md:160 | contract-drift / blocker | NEEDS-CHANGE / introduced | The concept page says authored pages require explicit selection, but explicit site generation automatically includes an adjacent README.md as index.html without authored-selection flags. |
 
-What was measured: `support::tests::adversary_adjacent_readme_is_selected_without_authored_flags`, support.rs:697, runs the actual public CLI through the changed xtask `cli_output` route. Its exact arguments are retained in `~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/argv.txt`. The observed JSON map `~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/actual-cli-stdout.json` (3728199 bytes, SHA256 `7718625882c23fddf2f7c3ac0cd744a5ef92867b739169c2402ff37b9d7145c9`) has `site/index.html.contents` containing `ADVERSARY_README_DEFAULT`. There is no `--front-page`, `--include` or `--asset` argument. Unselected sibling and download sentinels are absent. Direct test exit 0, one case executed; original stdout is quoted above. This passing positive control exposes a false prose guarantee, not an execution failure.
+What was measured: `support::tests::adversary_adjacent_readme_is_selected_without_authored_flags`, support.rs:697, runs the actual public CLI through the changed xtask `cli_output` route. Its exact arguments are retained in `home-path:sha256:db0870e57d53fb110cd67637293b365eac339c5e76dd1b5f7a8f94494739d6d6`. The observed JSON map `home-path:sha256:8109b2e0e4b6f77819c7617fb9a8c00fc2346f614c4e7490e8aa286f36e4abc2` (3728199 bytes, SHA256 `7718625882c23fddf2f7c3ac0cd744a5ef92867b739169c2402ff37b9d7145c9`) has `site/index.html.contents` containing `ADVERSARY_README_DEFAULT`. There is no `--front-page`, `--include` or `--asset` argument. Unselected sibling and download sentinels are absent. Direct test exit 0, one case executed; original stdout is quoted above. This passing positive control exposes a false prose guarantee, not an execution failure.
 
-What reaches it: any valid specification directory with an adjacent README and `ess generate --kind site --path <directory>`. `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/src/main.rs`:149–152 documents this default; :2370–2372 dispatches explicit Site to the site renderer. `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/src/site.rs`:320–339 chooses `directory.join("README.md")` when `front_page` is absent and reads it as `index.html`; :340–348 separately restricts additional pages/assets to explicit inputs. The new paragraph at `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/concepts/ess.md`:159–160 broadly says “Authored pages and downloads require explicit selection.” The complete subject diff adds that sentence. Thus the contradiction is introduced by this unit even though the correctly observed default behavior already exists. The base was read without moving the checkout; no base test run is needed to attribute the newly added sentence.
+What reaches it: any valid specification directory with an adjacent README and `ess generate --kind site --path <directory>`. `home-path:sha256:41a95f1d0e8c455fc3ca565ed21b6be9b42ee80a3ff2963ffb691b885baa69bd`:149–152 documents this default; :2370–2372 dispatches explicit Site to the site renderer. `home-path:sha256:ebe1a35b8f5cc46a5accb538715e95db4d74a4a591be0e37fc9d162b3d53d4b8`:320–339 chooses `directory.join("README.md")` when `front_page` is absent and reads it as `index.html`; :340–348 separately restricts additional pages/assets to explicit inputs. The new paragraph at `home-path:sha256:70bf93b147c29fc4c54db14d8cc35b931e5c517d64c15edec8c59cccdf28b7b6`:159–160 broadly says “Authored pages and downloads require explicit selection.” The complete subject diff adds that sentence. Thus the contradiction is introduced by this unit even though the correctly observed default behavior already exists. The base was read without moving the checkout; no base test run is needed to attribute the newly added sentence.
 
 The bounded correction is to state the adjacent README front-page default and reserve explicit-selection wording for additional authored pages/downloads. This belongs to the current public-claims unit; no new authored-discovery implementation, new manifest or follow-up story is needed. I left the production prose unchanged for its owner. “Blocker” here means this accuracy story should correct the false statement before delivery; it does not claim a new runtime defect or evidence of unintended publication in a live system.
 
@@ -383,183 +383,183 @@ Exact directly inspected input table (source rows are the original subject hashe
 
 | Absolute input path | Bytes | SHA256 | Read extent |
 |---|---:|---|---|
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/CHANGELOG.md | 63660 | `04c7a77afd7539d0333f4e1f5282aceb224d49abb2dd97c1a1d4e4f77d35d211` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 3–14,148–196 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/Cargo.lock | 33730 | `8ca4848311f5c82eef7e170f3b8562fe0132b874b9b6f630f2bd28e7d7fc5842` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/Cargo.toml | 3785 | `f806132b62b38f010175cfdcb8fbe627f25bf0d3aec08a923959224a66718c10` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 39–46 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/Taskfile.yml | 7315 | `3245661ae1bc707e5657abd4d7af13e1cb1e09806a95d684c5b315d7d4047e2c` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject; lines 38–46,95–131,144–160 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/b10x.docs.yaml | 2340 | `af67e8dbbd482583c9c72afc2cf7800f134dcda7ac6cd129381e21aaace0df49` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/src/coverage.rs | 8137 | `fa6bfe23553296e53cf7e8b60ff2021ce6ac886bff32cdd741607e4907a82982` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 203–205 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/src/main.rs | 139710 | `1332526c7fe67a3e92a23724e862ed0cc86ccd14c3f7ea5bfa0797c13937a029` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 140–157,379–384,449–450,453–461,501–520,576–580,584–601,615–638,640–649,1275–1279,1481–1486,1634–1745,2355–2379,2518–2522,2915–2968,2976–3058,3065–3075,3078–3091,3094–3099,3199–3207 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/src/schema.rs | 10135 | `345f81fc51f463bf2e68e1f28ea2a90c48e5cc4ef4d45391b3e8476f8838a8c2` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 15–36,73–83 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/src/site.rs | 11531 | `1e179ed7f2684bfd3c51e7c231a27371cc21e0d294c0a05aadd23b29489843bd` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 67–71,152–155,310–350 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/tests/authored_site.rs | 8138 | `542c3fcecae0bd29ab58de89e947da89fc96a3258dc7b31a80b31860b70abec4` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 85–111 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/tests/count_reports.rs | 6049 | `518bd521c0d361f080f552fdf1617b9ee3e7ba32a4fbc90077af7e98ae8a7a0b` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 5–34,62–117 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/tests/coverage_browser.rs | 17051 | `27c79ffc2f5b74d9696fa0ffb1c245d0b3e46c9d2add1d613b7804e3bd62d7f9` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 9,211,311 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-cli/tests/coverage_cli.rs | 16006 | `6602c0ec47f090bbac6a0566fd9ded620f9d35494b3d814be1712982a5f7f424` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 246–299 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-xtask/Cargo.toml | 373 | `4f06e40288fd75aae6294ab55ef016d3d541edce2198b4f396ecaa0e7d180357` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 10–16 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-xtask/src/main.rs | 38863 | `c583a1c3487f6ad9f726704c1d028c463ae10f5deaef39bbb863405e915b6b2c` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject; lines 105–144,466–535 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-xtask/src/support.rs | 30361 | `ba8aafa8d6baf66b7178f8190756702254c6be0222bf2b92f59c55e84d84dc6c` | complete original Git subject module, all 676 lines, complete added test block and diff; subject hash shown, final hash in final-source.json |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-deployment/src/runtime.rs | 33627 | `b119a25325ba7e01bb533febbd6a59f4be26e122d72bfcdfc9fd1f8f4bc12138` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 482–531,622–685 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-deployment/tests/deployment.rs | 43648 | `189c6584925154335c7c2c7b1777f79222c5e2391202ab115ec2d8ef8f4cbbc3` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 313–334,447–458 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/asyncapi.rs | 38193 | `30fc11197be98c2faefee61fe01b17d12d640410167fc59c0823b62dec356034` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 154,187–190 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/docs.rs | 117964 | `1084bb9132beb7e7301e1896389039d18b0632fa180a5ed277734dd33a4debe6` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 69–105 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/document.rs | 16611 | `bf3c6a1ec618a2e7269a4e1eef51e03d341608d427981b16dac38929a92a0d6c` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 54–55 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/html.rs | 41762 | `966e43244a9910acba981def0173681a881c9231538ef4d90ea899e819943aa3` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 51–58,625–642 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/lib.rs | 3657 | `eb1b0e45d1c5ebb81dfb5e44b83e1417772d6935604fe1154d8323918c3a057e` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 46–59 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/openapi.rs | 58326 | `5843677bd6366f299fa3801cfb6859b4f613299519bd8e172110c830bf455262` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 210,239–254 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-gen/src/schema.rs | 10462 | `ab84031634a24d71e24643f321d7902230a4213b5964f0c7577e2903f6068f49` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 66,103–144 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-openapi/src/accounting.rs | 11074 | `65ada37ec0bd9bc917bf5a89b20c60742a0045b172447a99358c5324fe05b7b9` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 9–14,140–150,224–253 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-openapi/src/lib.rs | 52059 | `52105880e6cb92a786a81053de8a7a82ad042e5cec2a6b32611da0cfac5ec9dd` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 495–508,1232–1240 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-openapi/tests/accounting.rs | 11063 | `a885f1b32597fdb5323c7ee2d1fe754edb496de8c17124d5546b22ce0db7d168` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 15–60,77–88 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-synth/src/clap/mod.rs | 6391 | `b29f950bf6e7acc80d6912469a179da316fffd6e3ff488b24b887f711e8440d5` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 23–32,62–65,101–105 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-synth/src/clap/tree.rs | 18456 | `028b76d8d982388d1360e5cc886e010994623e4c369adf1303878e178918296c` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 453 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-synth/src/lib.rs | 14718 | `d4e0b1da54d0a1c798c931c6251555805a209feeb75f9c03dccbd0fa760f2e7b` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 80–115 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-synth/tests/clap.rs | 9950 | `c28481cf6d6ea2782b87145facac138c9d3b9502c315c574b27f6a567aca3c7f` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 249–279 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/generate/ess-synth/tests/feasibility.rs | 44608 | `2d3356a2ba97f0492b4bfa55144cdee4719b80eb0ca7b904489c0f4dbcc0649e` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 50–84 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/infra/ess-kubernetes/src/lib.rs | 7832 | `e4ad23c6773b62cf59b56497b5620cb0b83abde5bbaaef2a4462f7f061fb4fc4` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 54–112 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/infra/infra-project/src/lib.rs | 3875 | `9adacde58ea017936b1501279fefbc54fa3e808a543eaed5985c2a54cc504b3d` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 8–35 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/infra/infra-project/src/project.rs | 66265 | `26324788584cf0ef89346f51cc936fa1b1901dbbf41444108aba4a81a926524b` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 552–574 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/infra/infra-project/tests/projection.rs | 24637 | `3abdb915961028a6dc532571d2cf3a1361404e2f128ec9cb37ff2d6ed5a72214` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 113–179,438–478 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/verify/ess-conformance/src/counts.rs | 17936 | `291d118f03e11fbc301db50d3f5c5a0481d7d550201255865fd43ae96fbdb76d` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 12–15,319–345 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/verify/ess-conformance/src/coverage.rs | 33620 | `4f244ec4872b5c7cdd0756d5d149eafd5b3ba988b6c30a6eff87b223fded3128` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 358–366 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/verify/ess-conformance/src/web_replay.rs | 8656 | `30a6a29bf8aabd3d62f6ba285dd4f4921ae6e7f86af77538ea4d27fb37cf0ba3` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 1,120–129 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/concepts/ess.md | 17908 | `866072d59e394eeceb88b2917b27cb0b6bb4d37b24063346d0999c3813f1ee24` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/guides/synthesize.md | 8742 | `2ceb397d668905b076e18e19e0e0356d566d195ae66a85281adf14187f6fbf95` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/guides/verify-conformance.md | 9713 | `035e4897f23f69e7e1ba236c807c000405d88edfe2a2a999135ac629746db52b` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject; lines 145–150 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/reference/cli.md | 16656 | `14d2339613e34e6087edbc080f0551406617a7688ed83ab32af18c348eb93f46` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/reference/formats.md | 38918 | `3301a66f41e6e3c6fcc0997dbc5889ddfaad9ae68b1307bcbedea16194e2b24e` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 8–15,39–79,163–176 |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/website/docs/status/where-this-stands.md | 10520 | `197040308ec97e642410f468fc3a85cf4b6d29155a1740aef46e1669b3e90edc` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/AGENTS.md | 7816 | `9f7275e26a79f61a1f5560cfaa64584c4e6df9461496c8005bb34a583b3419ec` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/.engineering/planning/story/review-public-support-claims.md | 6754 | `882faaf36f46d29c89653e7fdf7642daad0a91e0f79559b836d7011923bc6b0f` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/docs/design/review-public-support-claims.md | 19869 | `79840752b56b0a0995866240040411a7467ea7087b4caa83ba08714cd74defa7` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/brief.md | 4595 | `6854212c33786f1c86251ec8edab83415ee07025eefbad90c052a3d6236e8c64` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/environment.json | 3509 | `96719b0d9e049313032a7e6c735e15ff1c6484f62124e5250c651bf552b3f1eb` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1/toolchain-manifest.json | 87168 | `387c58849c86996b2aa20d63de19d6e4d925c91552682ed5eb49a1b0a1ce731d` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/brief.md | 6722 | `ae393081a4e44209cf266a57a38e117b11d6e6dab1eb25cfa7ce0aec99a9dd91` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/implementation/report.md | 41716 | `20f61ec77772038624a76beb43ebaa8289d95a9584cabe5c0100c60df608ed00` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/implementation/seal.json | 3348 | `bc5643d58336211d1027d0ba7b98d97b4d1b11f68315776521b818272d63ee86` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/implementation/matrix-accounting.json | 19043 | `23b3450692eac66f29469b8dce5c7c49ec19cfcdda34514bbbe2a5ce4497b244` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/implementation/readback-v2/link-readback.json | 7199 | `4842165c013f53307204fd26fe71e88107c6593a187f33c89a6589ebce121852` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/implementation/readback-v2/release-local-readback.json | 558 | `614f81b0dbfb9831824ec67d25c84cacf4d1f50d5ea0d503c377a9d37461b482` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/implementation/readback-v2/evidence-owner-hashes.json | 13819 | `1fc9df1bf28e24c19a3372796fe2c400e57812237c6695a27a00e3c13cbe9f9e` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/crates/edge/ess-xtask/tests/layout.rs | 13810 | `ea030972952a17c01f410a527ef4dd59f92766f627517c38096dc24baafdd328` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/.cargo/config.toml | 53 | `f151f199a14cb96356203380ebe3a999ac897365b507eddbd2f17d172a6c1ca2` | complete text or structured metadata read |
-| ~/.codex/plugins/cache/beyond10x/aep-drive/0.8.0/agents/adversary.md | 19212 | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-14/preparation/unit-handoff/verified.json | 8393 | `89ece113f6a00f75e05255e3f81f9ad258b80d64e4ed91efc1d5b44de779c53c` | complete text or structured metadata read |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/latest-release-readback.json | 714 | `3ba3aac290074895cb94d45a87837941beb5d6a34eec596f0bb61c3f534dd5e8` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/latest-release.json | 18435 | `2ce2479a525e9ffbffb5778333109e16995d1a323df7fabc89c7365435f449a7` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-source/CHANGELOG.md | 62196 | `4ee501ce2b077d0a05febf8e53eff29302eecdae703b8be8973c9f9318d7d8fe` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-source/crates/edge/ess-cli/src/coverage.rs.stderr | 120 | `f7fc44a9abf1420095647c5f77b7dcb8259ef11a6646fb0a23d2c2fba76a2bcb` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-source/crates/edge/ess-cli/src/main.rs | 140226 | `f468192fd7aa10ca4b84a9615ef52e086ca5a649b0c355011209c3d1c8937cc6` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-source/crates/verify/ess-conformance/src/coverage.rs.stderr | 130 | `a08b9661603d15723f6f4d293941459399f9b164e29dbf044a629618d27f0f89` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-source-readback.json | 970 | `ddc13436aaa9f9a0549dc48288f3053e0384ea6dca56f92d40bf1ca9dddc764f` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-tag-remote.json | 257 | `d9b9d7ddb341d35b89eb71c53c251f5b47d3f3a11a0dba94954234c18e1b4382` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-tag-remote.stderr | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
-| ~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/public-support/inputs/release/release-tag-remote.stdout | 119 | `6885346b1d437701244c3e3a3443ad34fdb7aaca04126a62723ed7891670e7db` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:4a67fc9f38ed314baad6a20a035f1e87db09e682f62776c2660e824f7b1ecd56 | 63660 | `04c7a77afd7539d0333f4e1f5282aceb224d49abb2dd97c1a1d4e4f77d35d211` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 3–14,148–196 |
+| home-path:sha256:6d457353280d5cb46071dcdfc37ea92a6df4858447c5339e6d12099a9e258210 | 33730 | `8ca4848311f5c82eef7e170f3b8562fe0132b874b9b6f630f2bd28e7d7fc5842` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed |
+| home-path:sha256:4cbb18188e19b3409d257ec7819c40299782a82610b73785d5397f03ac555882 | 3785 | `f806132b62b38f010175cfdcb8fbe627f25bf0d3aec08a923959224a66718c10` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 39–46 |
+| home-path:sha256:a683efcb3cc39e942cec1a909996f2291f36d04add8360359cd094023373faee | 7315 | `3245661ae1bc707e5657abd4d7af13e1cb1e09806a95d684c5b315d7d4047e2c` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject; lines 38–46,95–131,144–160 |
+| home-path:sha256:285fc4f9d2210b67a81c40c5959ea6bf5504e10ddbb1be92c5d50a589b431977 | 2340 | `af67e8dbbd482583c9c72afc2cf7800f134dcda7ac6cd129381e21aaace0df49` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed |
+| home-path:sha256:33425ebbd484344767a03e83262a2f89c387121fe158ae405828ff3abdd1cb3e | 8137 | `fa6bfe23553296e53cf7e8b60ff2021ce6ac886bff32cdd741607e4907a82982` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 203–205 |
+| home-path:sha256:41a95f1d0e8c455fc3ca565ed21b6be9b42ee80a3ff2963ffb691b885baa69bd | 139710 | `1332526c7fe67a3e92a23724e862ed0cc86ccd14c3f7ea5bfa0797c13937a029` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 140–157,379–384,449–450,453–461,501–520,576–580,584–601,615–638,640–649,1275–1279,1481–1486,1634–1745,2355–2379,2518–2522,2915–2968,2976–3058,3065–3075,3078–3091,3094–3099,3199–3207 |
+| home-path:sha256:2eb82a0d86d6aae7f12ac0087d7ce12b00503814e2fe3d6c1132c8090628e7d7 | 10135 | `345f81fc51f463bf2e68e1f28ea2a90c48e5cc4ef4d45391b3e8476f8838a8c2` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 15–36,73–83 |
+| home-path:sha256:ebe1a35b8f5cc46a5accb538715e95db4d74a4a591be0e37fc9d162b3d53d4b8 | 11531 | `1e179ed7f2684bfd3c51e7c231a27371cc21e0d294c0a05aadd23b29489843bd` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 67–71,152–155,310–350 |
+| home-path:sha256:7f2f74e6ec80dac6eeba2bc74a6144dc04f9c9975badcd77b81e353624c0999a | 8138 | `542c3fcecae0bd29ab58de89e947da89fc96a3258dc7b31a80b31860b70abec4` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 85–111 |
+| home-path:sha256:12dc0a243d3d1b7cd14b9adb3e51bd8233281ab675c3ae23eb200ea5e5a47899 | 6049 | `518bd521c0d361f080f552fdf1617b9ee3e7ba32a4fbc90077af7e98ae8a7a0b` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 5–34,62–117 |
+| home-path:sha256:ba49195d715de33be242c3e79650ac833be8d4e62514ba688c31662d226012ac | 17051 | `27c79ffc2f5b74d9696fa0ffb1c245d0b3e46c9d2add1d613b7804e3bd62d7f9` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 9,211,311 |
+| home-path:sha256:f602feaf850c17e8b75608ff44d47c014cebe53b0f544bf181ac375334f042d3 | 16006 | `6602c0ec47f090bbac6a0566fd9ded620f9d35494b3d814be1712982a5f7f424` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 246–299 |
+| home-path:sha256:12d39830f4b8e3766fed9f01dafab6c92b674433f2491f17bf17803e7c29bb0a | 373 | `4f06e40288fd75aae6294ab55ef016d3d541edce2198b4f396ecaa0e7d180357` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 10–16 |
+| home-path:sha256:55e04fe65df87063a6040390e2751c82168abc9f1c89652171aec772ff8d4506 | 38863 | `c583a1c3487f6ad9f726704c1d028c463ae10f5deaef39bbb863405e915b6b2c` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject; lines 105–144,466–535 |
+| home-path:sha256:f25dd2680558fa693af2b786cc17d13ebaecb02a346ca7b44bcf0189d2973dce | 30361 | `ba8aafa8d6baf66b7178f8190756702254c6be0222bf2b92f59c55e84d84dc6c` | complete original Git subject module, all 676 lines, complete added test block and diff; subject hash shown, final hash in final-source.json |
+| home-path:sha256:c22c2a1c5618d1f6826a2e326b9946c85ff279f9e345877a9d69f958fcae2ee5 | 33627 | `b119a25325ba7e01bb533febbd6a59f4be26e122d72bfcdfc9fd1f8f4bc12138` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 482–531,622–685 |
+| home-path:sha256:812f2a3e5cea93edd9dd1c805dd4cdf3b2f248e541a18a4616c0b87b3e1abfd5 | 43648 | `189c6584925154335c7c2c7b1777f79222c5e2391202ab115ec2d8ef8f4cbbc3` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 313–334,447–458 |
+| home-path:sha256:addc79ffacb845e38d982f699a9f7e5c221620957a65b8e59bf893061cbec233 | 38193 | `30fc11197be98c2faefee61fe01b17d12d640410167fc59c0823b62dec356034` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 154,187–190 |
+| home-path:sha256:59dc3822928f289574c55f863c3e5592667774f5d48c5fe16731b744cb1ec6e6 | 117964 | `1084bb9132beb7e7301e1896389039d18b0632fa180a5ed277734dd33a4debe6` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 69–105 |
+| home-path:sha256:c71b55a41bd4e7fc4b1edf22fc65ef50cdbe738127cccba8f4ef5971c3ef93ce | 16611 | `bf3c6a1ec618a2e7269a4e1eef51e03d341608d427981b16dac38929a92a0d6c` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 54–55 |
+| home-path:sha256:9816397f164058ea22fd412ba977cf7ee954fa4d77c4d7ded867ce3d9bb3ab07 | 41762 | `966e43244a9910acba981def0173681a881c9231538ef4d90ea899e819943aa3` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 51–58,625–642 |
+| home-path:sha256:a4dcb2b4661c8d5e3ce0f50b7d5fd897271823433759e11e1dbc294c53fb06b0 | 3657 | `eb1b0e45d1c5ebb81dfb5e44b83e1417772d6935604fe1154d8323918c3a057e` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 46–59 |
+| home-path:sha256:efe5c73bc2076c289c9de5b8cef3216c008c608b5c1219e09e0a83eeaa5e91a3 | 58326 | `5843677bd6366f299fa3801cfb6859b4f613299519bd8e172110c830bf455262` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 210,239–254 |
+| home-path:sha256:5340953980d41b74744bff1349399a1cdee40d8281d29a06df1662aece5e1e42 | 10462 | `ab84031634a24d71e24643f321d7902230a4213b5964f0c7577e2903f6068f49` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 66,103–144 |
+| home-path:sha256:f03763035c00c10c79b04fad5f2b415c71d7c3a9747bdb0a343c370204360e88 | 11074 | `65ada37ec0bd9bc917bf5a89b20c60742a0045b172447a99358c5324fe05b7b9` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 9–14,140–150,224–253 |
+| home-path:sha256:7d9c99d07f57f35f3c7e8ba3d3a754ede97d7c86027d25e5b75e46ab476d8167 | 52059 | `52105880e6cb92a786a81053de8a7a82ad042e5cec2a6b32611da0cfac5ec9dd` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 495–508,1232–1240 |
+| home-path:sha256:3745c741b80380c13a072b958dd120e069d8f8cb90b4cffc51139ed1b94ad108 | 11063 | `a885f1b32597fdb5323c7ee2d1fe754edb496de8c17124d5546b22ce0db7d168` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 15–60,77–88 |
+| home-path:sha256:c1430320c41b7d4a3ae2360e1b945e5f70808b5832249f868a617d1c9b1f9d27 | 6391 | `b29f950bf6e7acc80d6912469a179da316fffd6e3ff488b24b887f711e8440d5` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 23–32,62–65,101–105 |
+| home-path:sha256:80c2ad969994005ebe26f504c6cd2a21fcf5d8d579edee828b700c5ce86e7bbb | 18456 | `028b76d8d982388d1360e5cc886e010994623e4c369adf1303878e178918296c` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 453 |
+| home-path:sha256:de13ea99c1d86f1ac7137661c831665c2b23fc16d778def9280ed5a09ec5a198 | 14718 | `d4e0b1da54d0a1c798c931c6251555805a209feeb75f9c03dccbd0fa760f2e7b` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 80–115 |
+| home-path:sha256:0d843c954f20fca35df63323745ee00e38f8b74c86dbb026b122614aca3f2885 | 9950 | `c28481cf6d6ea2782b87145facac138c9d3b9502c315c574b27f6a567aca3c7f` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 249–279 |
+| home-path:sha256:95e68e79e7fce3cea0e0ddb43c5958f5acda0fc9a84c2c4b1df6857e652fa89d | 44608 | `2d3356a2ba97f0492b4bfa55144cdee4719b80eb0ca7b904489c0f4dbcc0649e` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 50–84 |
+| home-path:sha256:b9de196dfa6610578fb532097fb42ee81f1d4784cd04ac38b76cb1543b36a04c | 7832 | `e4ad23c6773b62cf59b56497b5620cb0b83abde5bbaaef2a4462f7f061fb4fc4` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 54–112 |
+| home-path:sha256:3b977705f60388cb85380e20f0671724ccc0bdd3f8480292da9b7ecff5a64f15 | 3875 | `9adacde58ea017936b1501279fefbc54fa3e808a543eaed5985c2a54cc504b3d` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 8–35 |
+| home-path:sha256:20ad71512ce97d952ff02cebfb6265ca50af551ca0fb5fa15942bc14ebd56670 | 66265 | `26324788584cf0ef89346f51cc936fa1b1901dbbf41444108aba4a81a926524b` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 552–574 |
+| home-path:sha256:b0d352731352ea2181429a16027f0f9bd269e895b83a9ff31a423d57fab05cf7 | 24637 | `3abdb915961028a6dc532571d2cf3a1361404e2f128ec9cb37ff2d6ed5a72214` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 113–179,438–478 |
+| home-path:sha256:73ab424636e61011c75ad78269615e144b3dc9b84a8199cf22bac083215b3da1 | 17936 | `291d118f03e11fbc301db50d3f5c5a0481d7d550201255865fd43ae96fbdb76d` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 12–15,319–345 |
+| home-path:sha256:1296960875fc3a6b1a9775c5ed60b4785e52a16c0b474c00ecf90f3f41d88453 | 33620 | `4f244ec4872b5c7cdd0756d5d149eafd5b3ba988b6c30a6eff87b223fded3128` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 358–366 |
+| home-path:sha256:972c72928794a436df8eb8785e4e28747ac91c30b2d568d26c923c0a85fde56d | 8656 | `30a6a29bf8aabd3d62f6ba285dd4f4921ae6e7f86af77538ea4d27fb37cf0ba3` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 1,120–129 |
+| home-path:sha256:70bf93b147c29fc4c54db14d8cc35b931e5c517d64c15edec8c59cccdf28b7b6 | 17908 | `866072d59e394eeceb88b2917b27cb0b6bb4d37b24063346d0999c3813f1ee24` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
+| home-path:sha256:523b687a018b9aebdf34d006d92d37b88a174f32ccfdc702a5085612258f7703 | 8742 | `2ceb397d668905b076e18e19e0e0356d566d195ae66a85281adf14187f6fbf95` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
+| home-path:sha256:736e1fa6c489e0d8dc1f7cbf9a9b6b4c28db5275925dab35d8671a62723fad1c | 9713 | `035e4897f23f69e7e1ba236c807c000405d88edfe2a2a999135ac629746db52b` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject; lines 145–150 |
+| home-path:sha256:3cfd3915e0eff13be1325b3281b17fab9921cb916c6788023e69fea628e4853e | 16656 | `14d2339613e34e6087edbc080f0551406617a7688ed83ab32af18c348eb93f46` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
+| home-path:sha256:4121cb065375b80886a45517df1c25b64ce683262b3cd1d8eb819bc0f1802736 | 38918 | `3301a66f41e6e3c6fcc0997dbc5889ddfaad9ae68b1307bcbedea16194e2b24e` | whole Git blob hashed and compared to exact base; semantic source review of listed lines; full eight-file subject diff reviewed; lines 8–15,39–79,163–176 |
+| home-path:sha256:6288fb8aa5521e8b8a88b9bd929683a4eb79f85d182a41ece6f61aea1b854cf5 | 10520 | `197040308ec97e642410f468fc3a85cf4b6d29155a1740aef46e1669b3e90edc` | complete three-dot change diff and relevant complete sections; full payload hash verified against exact Git subject |
+| home-path:sha256:c96122e5dc9ddc3a492135cc66dbce946403db82c64d90e090e819af55427895 | 7816 | `9f7275e26a79f61a1f5560cfaa64584c4e6df9461496c8005bb34a583b3419ec` | complete text or structured metadata read |
+| home-path:sha256:20d61068eea651b76789965ddb1eb60613e5d12922124a8f34e07e0a26bccf71 | 6754 | `882faaf36f46d29c89653e7fdf7642daad0a91e0f79559b836d7011923bc6b0f` | complete text or structured metadata read |
+| home-path:sha256:b4d56d0af490a2004b419bfcbedbeb4e090e1b70ffa85c159c15d346c02bd2b4 | 19869 | `79840752b56b0a0995866240040411a7467ea7087b4caa83ba08714cd74defa7` | complete text or structured metadata read |
+| home-path:sha256:45199365ad5c226913764f27feffa6aeab1c482cf57d2f80bfd7de710de2472c | 4595 | `6854212c33786f1c86251ec8edab83415ee07025eefbad90c052a3d6236e8c64` | complete text or structured metadata read |
+| home-path:sha256:48db003184005cbafa375708d51d54880db9445da4c7f4e9dd7f9731a173fbf5 | 3509 | `96719b0d9e049313032a7e6c735e15ff1c6484f62124e5250c651bf552b3f1eb` | complete text or structured metadata read |
+| home-path:sha256:1abe18c8e77f30302d9de72e8be5050c36ced983218aa1a0cd3f176ca1047164 | 87168 | `387c58849c86996b2aa20d63de19d6e4d925c91552682ed5eb49a1b0a1ce731d` | complete text or structured metadata read |
+| home-path:sha256:cb84554fff1a3245666cebf25654645235ea7fbfd78416e8a3fcdb06a9fd30eb | 6722 | `ae393081a4e44209cf266a57a38e117b11d6e6dab1eb25cfa7ce0aec99a9dd91` | complete text or structured metadata read |
+| home-path:sha256:4914d8772ebbdec4b567c85b388092f966ca822d5b0d845922740c342029c006 | 41716 | `20f61ec77772038624a76beb43ebaa8289d95a9584cabe5c0100c60df608ed00` | complete text or structured metadata read |
+| home-path:sha256:0927e45bd8ddd6a53fb5f6254f234731fd1b02f54a92c19bafec17e18b142b6b | 3348 | `bc5643d58336211d1027d0ba7b98d97b4d1b11f68315776521b818272d63ee86` | complete text or structured metadata read |
+| home-path:sha256:c87e7bb54c7127c749db06b1cc2a9d280682559482c642a03f03a5d2d9994b5e | 19043 | `23b3450692eac66f29469b8dce5c7c49ec19cfcdda34514bbbe2a5ce4497b244` | complete text or structured metadata read |
+| home-path:sha256:ba248afd09565e94fdf66fd3e537f8728a4ef5e973147adfe6fa764ab6418556 | 7199 | `4842165c013f53307204fd26fe71e88107c6593a187f33c89a6589ebce121852` | complete text or structured metadata read |
+| home-path:sha256:53a4ff41c2197f97b4d711c3f4d22aaa5746ea64ae8a490722126a836ed841b3 | 558 | `614f81b0dbfb9831824ec67d25c84cacf4d1f50d5ea0d503c377a9d37461b482` | complete text or structured metadata read |
+| home-path:sha256:a47d4ff87cb9d4c77e4434bce5c3a7d611830a384cc18f4dd42040a4ad5f86ee | 13819 | `1fc9df1bf28e24c19a3372796fe2c400e57812237c6695a27a00e3c13cbe9f9e` | complete text or structured metadata read |
+| home-path:sha256:c9946c51ebe61cd4d30bc11d517c4430d13c1e67f6fb7ad1df6a3bcd889b5b90 | 13810 | `ea030972952a17c01f410a527ef4dd59f92766f627517c38096dc24baafdd328` | complete text or structured metadata read |
+| home-path:sha256:f79bfd0ca4f0aa2993a1417af285fb2caed942acdfcd01fcc5276f884f9dfe8d | 53 | `f151f199a14cb96356203380ebe3a999ac897365b507eddbd2f17d172a6c1ca2` | complete text or structured metadata read |
+| home-path:sha256:e82505babddc671cebf5b7f4c841d234b8ece153cba47dc082beaaf48b4a8210 | 19212 | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` | complete text or structured metadata read |
+| home-path:sha256:71b24e9d3bf9d8fcd3188f17c1248126a63a5c09dea34b14de38266ea78cb68a | 8393 | `89ece113f6a00f75e05255e3f81f9ad258b80d64e4ed91efc1d5b44de779c53c` | complete text or structured metadata read |
+| home-path:sha256:2dd8371178f08a655a77bd8367f948945a419e9b65da56284e7b52c1c9b64f4e | 714 | `3ba3aac290074895cb94d45a87837941beb5d6a34eec596f0bb61c3f534dd5e8` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:c23643b1a106a3b9a23fe5790a669f48d09f1a2c1b9d310ec1be279b10696725 | 18435 | `2ce2479a525e9ffbffb5778333109e16995d1a323df7fabc89c7365435f449a7` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:a8b649d21e14a939f67bf05383606eeb65753fd6f68990691919cd1fa12052c5 | 62196 | `4ee501ce2b077d0a05febf8e53eff29302eecdae703b8be8973c9f9318d7d8fe` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:a645852fe18e252d96a83fbbd1946b0ebaead51f07c502fa1d067ed4dbf98c98 | 120 | `f7fc44a9abf1420095647c5f77b7dcb8259ef11a6646fb0a23d2c2fba76a2bcb` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:ecd17951e4b48a734eba11dc48a3016f270a4eb93ae16e00f68c4b8add607726 | 140226 | `f468192fd7aa10ca4b84a9615ef52e086ca5a649b0c355011209c3d1c8937cc6` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:9d38d59b6004cad5053faf96e9d211db429efa9abef8142404270139ed662570 | 130 | `a08b9661603d15723f6f4d293941459399f9b164e29dbf044a629618d27f0f89` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:036f2bd9c775d5c7ae3bc4684ddd3b9f3ad6270da6464995e7aa0380d8dbd437 | 970 | `ddc13436aaa9f9a0549dc48288f3053e0384ea6dca56f92d40bf1ca9dddc764f` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:6283b80942d722ac4db83e3f15f89b1aaa7b786f62087f0f4f8bd8d82fc43448 | 257 | `d9b9d7ddb341d35b89eb71c53c251f5b47d3f3a11a0dba94954234c18e1b4382` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:e9728a8b47d368849602a86306bf4febfc7c31a01704934c53a1d189640edd02 | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
+| home-path:sha256:cb042f84bc2b8a1097e344c30085198a8089e0253f1dc392aec108cfb936f6c1 | 119 | `6885346b1d437701244c3e3a3443ad34fdb7aaca04126a62723ed7891670e7db` | whole retained release payload hashed; structured release metadata parsed; release-source qualification reviewed, no release binary/network execution |
 
 6. Resource, outside writes and quiescent seal
 
 Every build/test/check producer records free space before and after. The minimum recorded producer value was 12018524160 bytes, above the 8,589,934,592-byte floor. Final input/copy preparation measured 11,850,391,552 bytes free. No resource refusal or agent cleanup occurred.
 
-Assigned scratch is `~/.local/state/worktree/trees/b10x/ess/ess-public-support-claims/target/review-boundaries-14/adversary-pass-1` and the only assigned external producer temporary root is `~/.cache/ess-w14-support-adversary1-tmp`. Outside scratch/TMP, the tracked tests-only file changed and this unit's `target/debug` build products plus `target/ess-support-check` probe reports were written. No other tree's target, production/documentation source, Git/store/lifecycle state, network service or real executor was used. The full native census covers the ENTIRE unit target and assigned temporary root, not only scratch. It includes hidden names, empty directories, raw native path bytes, lstat identity, regular payload SHA256 and literal symlink targets without traversal. The census excludes only itself and the final seal to avoid self-reference. A second name/identity pass checks stability before sealing; those final control writes subsequently change their parent-directory metadata. Special files, if any, are metadata-only and explicitly identified.
+Assigned scratch is `home-path:sha256:3793e0e1bb07d21a5e77a4187c6e311202310e39de755d764a82d1bd9e92eea7` and the only assigned external producer temporary root is `home-path:sha256:71ba2ecbb519a482e315da08c6ab7e520f30a0537d2ef0de19e6981e169b707e`. Outside scratch/TMP, the tracked tests-only file changed and this unit's `target/debug` build products plus `target/ess-support-check` probe reports were written. No other tree's target, production/documentation source, Git/store/lifecycle state, network service or real executor was used. The full native census covers the ENTIRE unit target and assigned temporary root, not only scratch. It includes hidden names, empty directories, raw native path bytes, lstat identity, regular payload SHA256 and literal symlink targets without traversal. The census excludes only itself and the final seal to avoid self-reference. A second name/identity pass checks stability before sealing; those final control writes subsequently change their parent-directory metadata. Special files, if any, are metadata-only and explicitly identified.
 
 Every retained external path, fully expanded:
 
 ```text
-~/.cache/ess-w14-support-adversary1-tmp
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1486351-1788757101172716407
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1486351-1788757101172716407/actual-document.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1486351-1788757101172716407/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1487950-1788757121168985848
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1487950-1788757121168985848/actual-document.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1487950-1788757121168985848/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1500101-1788757261108486127
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1500101-1788757261108486127/actual-document.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-docs-ir-1500101-1788757261108486127/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1486137-1788757100006691523
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1486137-1788757100006691523/actual-help.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1486137-1788757100006691523/missing-metadata-help.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1486137-1788757100006691523/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1487950-1788757121511481480
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1487950-1788757121511481480/actual-help.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1487950-1788757121511481480/missing-metadata-help.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1487950-1788757121511481480/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1500101-1788757261398942050
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1500101-1788757261398942050/actual-help.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1500101-1788757261398942050/missing-metadata-help.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-metadata-1500101-1788757261398942050/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/README.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/actual-cli-stdout.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/argv.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/download.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/sibling.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1478052-1788757044487537136/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045/README.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045/actual-cli-stdout.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045/argv.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045/download.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045/sibling.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1487950-1788757121168940045/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954/README.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954/actual-cli-stdout.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954/argv.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954/download.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954/sibling.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-readme-1500101-1788757261108454954/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1486227-1788757100480343873
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1486227-1788757100480343873/actual-refusal.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1486227-1788757100480343873/missing-input-refusal.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1486227-1788757100480343873/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1487950-1788757121168855170
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1487950-1788757121168855170/actual-refusal.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1487950-1788757121168855170/missing-input-refusal.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1487950-1788757121168855170/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1500101-1788757261108355466
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1500101-1788757261108355466/actual-refusal.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1500101-1788757261108355466/missing-input-refusal.txt
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-refusal-1500101-1788757261108355466/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1485522-1788757095485334854
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1485522-1788757095485334854/observed-maps.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1485522-1788757095485334854/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1487950-1788757121168880702
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1487950-1788757121168880702/observed-maps.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1487950-1788757121168880702/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1500101-1788757261108418936
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1500101-1788757261108418936/observed-maps.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-roots-1500101-1788757261108418936/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1485680-1788757098951191381
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1485680-1788757098951191381/actual-expected.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1485680-1788757098951191381/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1487950-1788757123772970509
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1487950-1788757123772970509/actual-expected.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1487950-1788757123772970509/system.yaml
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1500101-1788757263483549360
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1500101-1788757263483549360/actual-expected.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-support-adversary-rows-1500101-1788757263483549360/system.yaml
+home-path:sha256:71ba2ecbb519a482e315da08c6ab7e520f30a0537d2ef0de19e6981e169b707e
+home-path:sha256:078939d893b2099c7c53d84b7199b9e2f4f48b052b4ebf882a205a1075c60a8c
+home-path:sha256:3e55932ad9aa16db79161e5d806be41557a59169f0a7d5fb7db8ec415a64b5a6
+home-path:sha256:c35dff588d91414fdd9cc52799f2b7bc6783956ba5da82db592e238bb7d30f01
+home-path:sha256:2cecae1dd53fbeb141c6b718ee79af60feea636a02d5ef859b54de53e6143815
+home-path:sha256:ceed1a31263729671e149a3b72b4bd11be7200e010b3845e3bebf5fc5cd3e27e
+home-path:sha256:4f72b38d3daf2dd1cb6bffc39bddb431c13c4286b531a8c16b165101fc4bacdb
+home-path:sha256:86a17ec41169fa48d8ad2e104e8997d5ce508285833b84e98101a1e92e2457e8
+home-path:sha256:60b2e97afb0d6c2df926d9838c2b68df7eb93db3cbb291ff048c1df72fcf1d52
+home-path:sha256:5e4c0bfa91ca9984740c5e71606580422d92468bce7400abeff0f75f9d336ff9
+home-path:sha256:d205abb920027dfbd9aa43aeed89be5bdbbdba1241f7e0481ae4396a06818313
+home-path:sha256:7350a35df4b913dfb5752f05586a0da90c1f692ea366af9e0d0f6007bd3ae9a7
+home-path:sha256:583aa7f5618ba6a945eae3221476c88710e52a59479e74d2791c505aa01ab40f
+home-path:sha256:646da7df5a393e190f26e4f190d31f0401f43401691cab8155af24227363d852
+home-path:sha256:ed41d35a47aa4b55c64cc0cc662e3b0f2ecd3dca6a5b9497b99aedf2f5e0268a
+home-path:sha256:aa4508e889f978a4935a3ce566fd0fd2b0c77c74d472ae7ce4a1594020f9de4f
+home-path:sha256:871fa25eb3a7708d51182a2a918aa1474d515c4d3b39ed5cd6a49de13bf19100
+home-path:sha256:f84682426059fa4dbd7678f8b06cb801c1fa9f82eab192b6d19955e21bdb5fde
+home-path:sha256:e24363391f636533d084d5bc449f579ac390c5ae0ad72837abc88fa9ea9073db
+home-path:sha256:e22c4249e15b1264b84a54ce167c887ad62be369d10f1a1500268bf2bc61f996
+home-path:sha256:8e4dc0bb3649f1e8edc2215a7955e95a7417f74c0e842a9e5bd305df6b6d03c1
+home-path:sha256:6526cad079bd751fb7e486c4b078e2babe2bebdb82c91a8b360917080f56554b
+home-path:sha256:1f0b8b377df83b764d5ace4b79c2f8be9cc05377edfd520265c3adcc9fec7373
+home-path:sha256:366dce7bc75910be632fb75bcdc4c25c513eea2cc40c972c86a1dbb8000c6f37
+home-path:sha256:8109b2e0e4b6f77819c7617fb9a8c00fc2346f614c4e7490e8aa286f36e4abc2
+home-path:sha256:db0870e57d53fb110cd67637293b365eac339c5e76dd1b5f7a8f94494739d6d6
+home-path:sha256:588895e01689fa7ae266b59c9c735884c088a788e3fbfcdf1691c36183959815
+home-path:sha256:0c65cc766eb153e41110c9091116cc7169eefa25af9c9d02fa77f6e2fcd53893
+home-path:sha256:41d4c95a19edd50a74160b2b27214966aad132170f67cd2287271f1c21486a99
+home-path:sha256:c2dcf459eb6bee0ee6902451f3fd5bc10fb5909de131c9f9e5167f2e89d87726
+home-path:sha256:1d3da87f35aa40fc90b5c7e3488e9f61abf1c365a45ef46aeba2e5e75cf9b07e
+home-path:sha256:48ff3d8a2a202bfeaea5d3e537c09efe2c9f867652202a0cf0f43ff7125b8e84
+home-path:sha256:134cc650a4cb47c27bff87270280a35baea6aa20520646700b311a8543505c88
+home-path:sha256:328894c34ab2df862e24c22fa12819578fe29906acbc572a0012afe6810d9ffd
+home-path:sha256:02202117eedb5e10813d0283aff62e90037b642ef508933a94b190639d915016
+home-path:sha256:8a36180f48d0122a5016b9ea335cf58e3d1c2b0f5f69c611474c03122de4e857
+home-path:sha256:9c0bb749ed661868c66420fcbc9b36ab1835f41417116dfb0dfcb1a39645c2ad
+home-path:sha256:3b72db27a672b813234e2a1a61f1e3d5e99cfa66ddc631694a07745cdad2ebc4
+home-path:sha256:19e08f63f46f425c0d5641380307dd0e96a131a5bd48478e9b8ca79ce6b66e2d
+home-path:sha256:d21245e67a9082a074c2aba3471c7543d1ef5c5cb720e0e7a2457f2c6ae0aaa2
+home-path:sha256:38ab5b1787de90ad79ecbc4d4db5793b462e10b3a616db81e2c08c2b7df55c1a
+home-path:sha256:2ccc36c39d4979662d28015f19584da332eeec7ce458fc17c96ea28a9a55bd3e
+home-path:sha256:7274a0ad375f6bd356f87eb67c8d387a738a2a3d2367b9284b3a1ebfea3057b2
+home-path:sha256:63003cba5c23faad562db7d00bb2dd2ad3f3c413771eab191175b1fcf8c51981
+home-path:sha256:cf61147d18e6f6c2ea73fe287fe49e58e4ca12738cd59f3d120ea7837faddb28
+home-path:sha256:e36fb65b72d839e716ce9314f538c0d8c095d87d88325e807ed0461947165960
+home-path:sha256:be120b877e103cefb2f545ed80529ad75eaa7a245ed73c521a83c7a1e9087246
+home-path:sha256:e0e8816022b85db824199b3c2fe711c4cc4df0500ccd18d51d4d39c9d87051f7
+home-path:sha256:afba92bea3ac4a1f30011b1ebeb50995f07e1276c68be68d60599fecf98e4fb9
+home-path:sha256:d95e7fb3c4cbdba54b10fabc127985b6da490a72cfa209d00c9c2164c0a83c3d
+home-path:sha256:ea3b3377e08d35e06413f638f8c8f3dd0806eef5234c016841c0f6bfec5655ec
+home-path:sha256:6da79e2a17259e82bf26b437fcd48373bb4768fc587a6e782d0a4ffde4eee695
+home-path:sha256:9bcff848396ac5e610efbdb7d02ed4d0938305e1d67608696a8e9034734dcc36
+home-path:sha256:cefd2964b60dc218d6ba4ef9183c0d4850c851894f9f46fcb821cf1dee470fb2
+home-path:sha256:fd211be3fe1e01041fd27953281c3c88bf173144f6a34bf7c5d2c7056382c2b3
+home-path:sha256:7a7af31e2e0e4318b828c31431f20503a85cbbbfc6ddc9160e03c74fa56fb030
+home-path:sha256:89ca3d5d02540fcb0787875c03c02593751deecdbd290fb856f0730baf5d3673
+home-path:sha256:9b48c5ed570caf91ff4324252aa66e86170e679a6715ad9e53aa8184e5f93592
+home-path:sha256:836195dcd453acaaf9eccb9a86cae0e67e0eea07d0f7a7ea47c5b16c523e4ef0
+home-path:sha256:a41028330dcb93fe3d8118cf2021b9b1cef1a987775ff3ceab64fd5e7775ca12
+home-path:sha256:70056bf3536ec9f95226d2f4fe526d6048dfc7ba8715d7cae50c154467fe2b91
+home-path:sha256:5f6b7f8a5ef01372ec2f0a4b7e6a35e1265e392ea5c36c39ae2278ae6356fb50
+home-path:sha256:781a485a1f17a57ab939f089dfd73b4473711171ea72004082514a57e3e3552a
+home-path:sha256:6b9c6a26d5e95aa342db49ae41384160396f9c3786d8ae5eb4f86161b83f7dd7
+home-path:sha256:6fbdafbb83c7ec900311de0064a27a5a4cc7b714eca49290e134bb24ca050016
+home-path:sha256:fd41c16ddd1c5d0e83f4d214703426275ac36c9eae1ff09cd5a38dd803fd2695
+home-path:sha256:181fec7c96f381a496d340ed4caffebb147947a5de3ecd1d459dca220411e29b
+home-path:sha256:241b023cbbd53dd27de365a480cb4a76401266968a5acdf65b4cf95f379f17d7
+home-path:sha256:7a6a1962ab02732a1e11df5087bfa757f4869d886f863ac521b74b77e7db4089
+home-path:sha256:e531664b4857a5295a97b43270f9dd6dcc88cbc1f28c1f806a77e56c06f89541
+home-path:sha256:af1973b1c4fb370a780ba9bb8ab70981e409c6fbe726dd521b501190646075a3
+home-path:sha256:a789e1f4564afad1a0136eca6c9a16442e21ac30c7fd88dac3174bfe149c04c4
+home-path:sha256:991a028a78b37bc87ae9bfc15e3600744887429677d0f8bb2ae948b7d47de4a8
 ```
 
 The unchanged `sync_checks_and_reconciles_in_both_directions` test also creates and removes its own disposable fixture during each package run. These known transient outside paths come from its actual two process IDs and source construction; they are not falsely counted as retained census entries:
 
 ```text
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/docs
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/go
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/site
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/docs/index.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/docs/orphan.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/go/owned-elsewhere.go
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1487950-0/site/sidebar.json
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/docs
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/go
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/site
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/docs/index.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/docs/orphan.md
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/go/owned-elsewhere.go
-~/.cache/ess-w14-support-adversary1-tmp/ess-xtask-sync-1500101-0/site/sidebar.json
+home-path:sha256:7c2573876080f64b08dff41dcfa8c819a856022523dc061e14a0eb2d464531d0
+home-path:sha256:b2b591823834df7207f58fdfb66ae226fdcdbe96e71270b225baa84dd7898562
+home-path:sha256:28fa86827d53ae70097867ca7edc5005174b47c2f3018affaef7310b67242b91
+home-path:sha256:08955bcb63d647e71a0b5440c09ffb359636c7b10ff9a524a00a0e257ebd2114
+home-path:sha256:1726f78fdf79f2ea54917df836948cb02def65539724b6ab16ed0c5e1d5d049d
+home-path:sha256:1fd8671a87f04a7a3d09adfcf64442be1e6f05aadd4b8b8a0788292a1a8293b3
+home-path:sha256:89f3792f2daa6600b6fabc750cc7301751cfbd3dd5c61958b880a73bcd96f47d
+home-path:sha256:1e4013a18a6303f709eb8e6a4c34ddc28bfe2484c3d51f1c16cc064e299d984b
+home-path:sha256:8abcb01a245c3aede4356f4e72d50b4c22bfd3532c7ece0e49dda1137a26cd89
+home-path:sha256:745e333d3d2b965f274b77a26e2635af6fe793e7cd8add7b91b96a2060d482c1
+home-path:sha256:b2f163f1e18ef62a1187ab245e8cea0c028c5ee80058c37c0877be21908ce7d9
+home-path:sha256:cf9d7d13e1e44f62f20b08b58d010a690545d8aa3c9d034dab1d97d6149f056a
+home-path:sha256:f61b69eed4cd5ad4522df6681475e9830ea6e266e51887189f499daf896b7ad4
+home-path:sha256:5a4cbb2adb6c615a51568caf3cd0766b381feb48b0a0b43903b697f12528dbde
+home-path:sha256:be2445c28a9f00211c68e34f9f6796374e392c41f5b6096e94b8a490a5e3232f
+home-path:sha256:dc8384318f5ae02220bb8f9d5543ae0be2070cfa052cacab2b608844d606d6bd
 ```
 
 The package's own temporary-fixture cleanup remains unchanged; I issued no cleanup/deletion operation. This is a final retained-state census, not a syscall history of compiler-internal transient names. No unassigned external write was performed intentionally or discovered. New behavioral fixtures deliberately have no cleanup and remain available to root.

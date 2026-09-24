@@ -92,10 +92,10 @@ No new writer reports or outputs were inspected. This pass does not qualify an a
 All 58 previous input files and the seven additional records/dependency files have matching before/after SHA256 values. The exact source/hash manifest is input-manifest.json in this directory and includes the sealed report's own SHA256. In particular, Cargo.lock remains 8ca4848311f5c82eef7e170f3b8562fe0132b874b9b6f630f2bd28e7d7fc5842 and ess-xtask/src/main.rs remains 24061b8a4ca4402228da0796fa75ee7488e1bd5127b372ab6315d7709438f6b5.
 
 Additional primary dependency identities:
-- ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/schemars-0.8.22/src/macros.rs: SHA256 1e05381f227b9c4b830e2191e20697ed7448599f45e5df41b65dd8967d8a70ab.
-- ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/schemars-0.8.22/src/gen.rs: SHA256 48d9c76f34cbe039a3ee878f239bc2e4318c9144b53fb1d36b28019e4bd5c008.
-- ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/schemars-0.8.22/src/schema.rs: SHA256 1e368bf8110defaee419cf6d81dc8a9380f095677251e778d03c56cc63f5b015.
-- ~/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/schemars-0.8.22.crate: SHA256 3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615, matching Cargo.lock; cited cached source bytes match the archive members.
+- home-path:sha256:45e74daab4f87ca31053b99cb17a40dcd5ae2b3adbeab4823a59afd5a6259f62 SHA256 1e05381f227b9c4b830e2191e20697ed7448599f45e5df41b65dd8967d8a70ab.
+- home-path:sha256:ed947753d1580d736c4d26d3d4e56777e3fc846fe66adb841c0c2fee3c055e33 SHA256 48d9c76f34cbe039a3ee878f239bc2e4318c9144b53fb1d36b28019e4bd5c008.
+- home-path:sha256:3d124c9c60050d720a3304a2c90ce133e00dba8dff9bfd8d1002a3774fe2fe6f SHA256 1e368bf8110defaee419cf6d81dc8a9380f095677251e778d03c56cc63f5b015.
+- home-path:sha256:30c3faab58f5382a13953a20c878827062f9c7d0ded750267216b3e807364cf8 SHA256 3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615, matching Cargo.lock; cited cached source bytes match the archive members.
 
 Only these new files were written, both beneath the exact assigned ESS coordinator scratch:
 - target/review-boundaries-11/next-scope/consumer-binding-review-2/correction-review-report.md

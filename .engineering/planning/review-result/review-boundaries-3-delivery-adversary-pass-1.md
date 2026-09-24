@@ -42,12 +42,12 @@ The existing valid executor control also ran in the package suite and checked ex
 
 Initial attempted isolated command, before cache restoration:
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_runtime_readers_match_compiler_slot_and_volume_refusals -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_runtime_readers_match_compiler_slot_and_volume_refusals -- --exact --nocapture`
 
 Exit: 101. Executed cases: 0. This is a compiler metadata startup failure, not a failing test or a finding.
 
 ```text
-error: process didn't exit successfully: `/usr/bin/sccache ~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc -vV` (exit status: 2)
+error: process didn't exit successfully: `/usr/bin/sccache home-path:sha256:da7abda9718cfd0d0c1e74f56f34135d83b4a908741f60a13ad1ed963424c535 -vV` (exit status: 2)
 --- stderr
 sccache: error: path must be shorter than SUN_LEN
 ```
@@ -56,12 +56,12 @@ The coordinator restored the exact assigned socket and reported a foreground ser
 
 Case 1: `adversary_runtime_readers_match_compiler_slot_and_volume_refusals`
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_runtime_readers_match_compiler_slot_and_volume_refusals -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_runtime_readers_match_compiler_slot_and_volume_refusals -- --exact --nocapture`
 
 Exit: 0. Executed: 1.
 
 ```text
-   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (home-path:sha256:28272b75b233a4be374026cb73082c6096fe3446e439ab81f28ce02fa7ff8315)
     Finished `test` profile [unoptimized] target(s) in 2.88s
      Running tests/deployment.rs (target/debug/deps/deployment-f7d4304711ce6995)
 
@@ -73,7 +73,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; fin
 
 Case 2: `adversary_rehashed_bundle_cannot_launder_a_build_cycle`
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_rehashed_bundle_cannot_launder_a_build_cycle -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_rehashed_bundle_cannot_launder_a_build_cycle -- --exact --nocapture`
 
 Exit: 0. Executed: 1.
 
@@ -89,7 +89,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; fin
 
 Case 3: `adversary_unselected_catalog_candidate_mutation_is_revalidated`
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_unselected_catalog_candidate_mutation_is_revalidated -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment --test deployment adversary_unselected_catalog_candidate_mutation_is_revalidated -- --exact --nocapture`
 
 Exit: 0. Executed: 1.
 
@@ -105,13 +105,13 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; fin
 
 Case 4: `adversary_duplicate_desired_keys_are_refused_before_any_executor`
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery adversary_duplicate_desired_keys_are_refused_before_any_executor -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery adversary_duplicate_desired_keys_are_refused_before_any_executor -- --exact --nocapture`
 
 Exit: 0. Executed: 1.
 
 ```text
-   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
-   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-deployment v0.18.0 (home-path:sha256:28272b75b233a4be374026cb73082c6096fe3446e439ab81f28ce02fa7ff8315)
+   Compiling ess-cli v0.18.0 (home-path:sha256:da01b23a185221e3a1c90aee74ae8f23a4fea957f953979e02d23870f6c94568)
     Finished `test` profile [unoptimized] target(s) in 3.73s
      Running tests/persisted_delivery.rs (target/debug/deps/persisted_delivery-15fb048ddae516a0)
 
@@ -123,7 +123,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; fini
 
 Case 5: `adversary_duplicate_current_keys_block_removal_and_diff`
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery adversary_duplicate_current_keys_block_removal_and_diff -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery adversary_duplicate_current_keys_block_removal_and_diff -- --exact --nocapture`
 
 Exit: 0. Executed: 1.
 
@@ -139,7 +139,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; fini
 
 Case 6: `adversary_noncanonical_topological_order_is_refused_before_execution`
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery adversary_noncanonical_topological_order_is_refused_before_execution -- --exact --nocapture`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli --test persisted_delivery adversary_noncanonical_topological_order_is_refused_before_execution -- --exact --nocapture`
 
 Exit: 0. Executed: 1.
 
@@ -170,12 +170,12 @@ All commands below ran after all six isolated cases. Measured lane counts:
 | ess-cli persisted_delivery | 3 | 6 | 0 |
 | Total | 67 | 73 | 0 |
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-deployment`
 
 Exit: 0.
 
 ```text
-   Compiling ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+   Compiling ess-deployment v0.18.0 (home-path:sha256:28272b75b233a4be374026cb73082c6096fe3446e439ab81f28ce02fa7ff8315)
     Finished `test` profile [unoptimized] target(s) in 1.05s
      Running unittests src/lib.rs (target/debug/deps/ess_deployment-e5782514a987b31e)
 
@@ -217,12 +217,12 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 ```
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo test --locked -p ess-cli`
 
 Exit: 0.
 
 ```text
-   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (home-path:sha256:da01b23a185221e3a1c90aee74ae8f23a4fea957f953979e02d23870f6c94568)
     Finished `test` profile [unoptimized] target(s) in 1.28s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -313,7 +313,7 @@ test entire_desired_plan_is_refused_before_oras_or_helm ... ok
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
 ```
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-deployment --check`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-deployment --check`
 
 Exit: 0.
 
@@ -321,7 +321,7 @@ Exit: 0.
 
 ```
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-cli --check`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo fmt -p ess-cli --check`
 
 Exit: 0.
 
@@ -329,22 +329,22 @@ Exit: 0.
 
 ```
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-deployment --all-targets -- -D warnings`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-deployment --all-targets -- -D warnings`
 
 Exit: 0.
 
 ```text
-    Checking ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
+    Checking ess-deployment v0.18.0 (home-path:sha256:28272b75b233a4be374026cb73082c6096fe3446e439ab81f28ce02fa7ff8315)
     Finished `dev` profile [unoptimized] target(s) in 1.34s
 ```
 
-Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
+Command: `env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 cargo clippy --locked -p ess-cli --all-targets -- -D warnings`
 
 Exit: 0.
 
 ```text
-    Checking ess-deployment v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/generate/ess-deployment)
-    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-persisted-delivery-validation/crates/edge/ess-cli)
+    Checking ess-deployment v0.18.0 (home-path:sha256:28272b75b233a4be374026cb73082c6096fe3446e439ab81f28ce02fa7ff8315)
+    Checking ess-cli v0.18.0 (home-path:sha256:da01b23a185221e3a1c90aee74ae8f23a4fea957f953979e02d23870f6c94568)
     Finished `dev` profile [unoptimized] target(s) in 2.01s
 ```
 
