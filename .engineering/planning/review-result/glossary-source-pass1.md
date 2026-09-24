@@ -193,10 +193,10 @@ input-hashes.json SHA256: `84959b113fbc1396d8bb10fbd4bc56cd454214ba93ad25f74a604
 | `website/docs/guides/verify-conformance.md` (subject) | selected source sections: 91–162 | `13bd30869cb53e12b193d032a5d53f33953663b47a52e11d18f9be766dfc7898` |
 | `website/docs/guides/write-a-specification.md` (subject) | full content read | `b8a72fa03865a251cd0d60709c1c3c5ef8a32abd42409f6daf4a89ce3c8a7ed7` |
 | `website/docs/reference/cli.md` (subject) | selected source sections: 50–132 | `9e24a993e5647c99ecbb78563c6b8a9074c8870e3f1101e6858ed4d8ff413e60` |
-| `~/.codex/plugins/cache/beyond10x/aep-drive/0.8.0/agents/adversary.md` (local input) | full content read | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` |
-| `~/.local/state/worktree/trees/b10x/ess/ess-glossary-boundaries/target/review-boundaries-13/adversary-pass-1/brief.md` (local input) | full content read | `6f225159617f657f2f2bc40151c937e1c05cd0e5fee6734f7441203fa57d1e63` |
-| `~/.local/state/worktree/trees/b10x/ess/ess-glossary-boundaries/target/review-boundaries-13/glossary/brief.md` (local input) | full content read | `a239146fcf3bd838f509e1f0b8bb2951ded239b2001a1c03689864ddc6bcc69d` |
-| `~/.local/state/worktree/trees/b10x/ess/ess-glossary-boundaries/target/review-boundaries-13/glossary/implementation/report.md` (local input) | full content read | `7a3d758cf5e47267ec0545e5ce3c5020c7f690e75945f1ea6df52ac958dd9dbb` |
+| `home-path:sha256:e82505babddc671cebf5b7f4c841d234b8ece153cba47dc082beaaf48b4a8210` (local input) | full content read | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` |
+| `home-path:sha256:e54d157e72c1e664627bbf2ea76ca90aa273704ba67df401b277752593bfc2f5` (local input) | full content read | `6f225159617f657f2f2bc40151c937e1c05cd0e5fee6734f7441203fa57d1e63` |
+| `home-path:sha256:e7fcaa6d812cbc106b7bf15ce2adb31b0d8627ab8f1ea8a595f51b4d02ccddd7` (local input) | full content read | `a239146fcf3bd838f509e1f0b8bb2951ded239b2001a1c03689864ddc6bcc69d` |
+| `home-path:sha256:52b91e955b9a9093c1211f70e6fbb46d79c41a14ce3e5c11f8043622aad2add8` (local input) | full content read | `7a3d758cf5e47267ec0545e5ce3c5020c7f690e75945f1ea6df52ac958dd9dbb` |
 | `website/docs/concepts/ess.md` (base) | whole-byte base snapshot and complete subject-diff comparison; not a separate full-page read | `18bdfdcb0e955e9f5f50f44551d15f6a7228852a8314f9719cb99bb674dc45ca` |
 | `website/docs/guides/write-a-specification.md` (base) | whole-byte base snapshot and complete subject-diff comparison; not a separate full-page read | `b35bf28f23d989d161c63e7c2493793d1523a35597bbe17fe96a1feeadbcba98` |
 | `website/docs/guides/record-realization.md` (base) | whole-byte base snapshot and complete subject-diff comparison; not a separate full-page read | `543630c139f5ea4908057991f7a14218cc71faa015c8eef64fde600e6daeacff` |

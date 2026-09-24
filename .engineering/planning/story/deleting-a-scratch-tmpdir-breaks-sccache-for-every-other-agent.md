@@ -62,4 +62,4 @@ The obvious candidates, none free:
 ## Scope
 
 - the wave coordinator's brief template — `inferred`; it is prose in this session, not a file
-- `~/.claude/CLAUDE.md` — `inferred`, if the stable-`TMPDIR` rule belongs beside the `/tmp` quota rule
+- `home-path:sha256:4727a71f2fe1dfaac07d79d5b2777a82a107e8522dd5cf9b60ea0a732f1ddf57` — `inferred`, if the stable-`TMPDIR` rule belongs beside the `/tmp` quota rule

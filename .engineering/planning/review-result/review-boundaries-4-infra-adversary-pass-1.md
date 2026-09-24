@@ -16,7 +16,7 @@ origin: introduced 0 / pre-existing 0 / undecided 0
 wrote-outside-worktree: none
 needs-coordinator: none
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 git --no-pager diff --stat
@@ -37,7 +37,7 @@ Base reviewed with three dots: 28e97095d9e06c8b4585876a681a5eda5278c1ab...b7c325
 
 The complete patch for this pass is target/review-boundaries-4/adversary-tests.patch. It only appends cases/fixture text to the two existing integration-test files. No preexisting assertion, source, inline production test, manifest, design or planning document was edited.
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 git --no-pager diff --numstat
@@ -50,7 +50,7 @@ Exit: 0. Raw combined output:
 200	0	crates/infra/infra-project/tests/round_trip.rs
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 git status --short
@@ -82,16 +82,16 @@ Runtime ownership cases use Observation -> compile -> public try_transform -> re
 
 Exact first isolated results:
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read checked_retargeting_remints_a_new_owner_without_invalidating_the_source_handles -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read checked_retargeting_remints_a_new_owner_without_invalidating_the_source_handles -- --exact
 ```
 
 Exit: 0. Raw combined output:
 
 ```text
-   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
+   Compiling infra-compiler v0.18.0 (home-path:sha256:fe1d358a2a5edbf7cf77cfcdec191aa20a71a85675daec3cad3a048a3a201d85)
     Finished `test` profile [unoptimized] target(s) in 0.55s
      Running tests/read.rs (target/debug/deps/read-a2a89aa47a12a0b4)
 
@@ -102,10 +102,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; fin
 
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read indirect_environment_and_volume_sites_cannot_lose_their_resolved_targets -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read indirect_environment_and_volume_sites_cannot_lose_their_resolved_targets -- --exact
 ```
 
 Exit: 0. Raw combined output:
@@ -121,10 +121,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; fin
 
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read captured_detached_edits_and_panics_cannot_mutate_existing_owners -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler --test read captured_detached_edits_and_panics_cannot_mutate_existing_owners -- --exact
 ```
 
 Exit: 0. Raw combined output:
@@ -140,18 +140,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; fin
 
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip admitted_patches_preserve_other_fields_for_statefulsets_and_daemonsets -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip admitted_patches_preserve_other_fields_for_statefulsets_and_daemonsets -- --exact
 ```
 
 Exit: 0. Raw combined output:
 
 ```text
-   Compiling infra-analyze v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-analyze)
-   Compiling infra-spec v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-spec)
-   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-analyze v0.18.0 (home-path:sha256:1262cde9fe9be97dc2290909e50226d6380f1b048b7936c92b13c4c88f675556)
+   Compiling infra-spec v0.18.0 (home-path:sha256:09042efaf376f26606fb4b2dabd7badea5004d83bad74fe5fe54f603c2ee62b6)
+   Compiling infra-project v0.18.0 (home-path:sha256:888bc5f617c55582cfe32a4b58b3f49d90581c0d772bbe0630da017a0cce166b)
     Finished `test` profile [unoptimized] target(s) in 2.11s
      Running tests/round_trip.rs (target/debug/deps/round_trip-2ed84414750d9f23)
 
@@ -162,10 +162,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip same_named_workloads_in_two_namespaces_reach_distinct_budget_fixed_points -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip same_named_workloads_in_two_namespaces_reach_distinct_budget_fixed_points -- --exact
 ```
 
 Exit: 0. Raw combined output:
@@ -204,17 +204,17 @@ After counts come from the following full five-package runner output:
 
 Unchanged counts in the three unedited packages are expected; both lanes receiving cases increased by their actual additions.
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli
 ```
 
 Exit: 0. Raw combined output:
 
 ```text
-   Compiling infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
-   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-compiler v0.18.0 (home-path:sha256:fe1d358a2a5edbf7cf77cfcdec191aa20a71a85675daec3cad3a048a3a201d85)
+   Compiling infra-project v0.18.0 (home-path:sha256:888bc5f617c55582cfe32a4b58b3f49d90581c0d772bbe0630da017a0cce166b)
     Finished `test` profile [unoptimized] target(s) in 0.45s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -664,10 +664,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 Initial package formatting check:
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package infra-compiler --package infra-analyze --package infra-spec --package infra-project --package ess-cli --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package infra-compiler --package infra-analyze --package infra-spec --package infra-project --package ess-cli --check
 ```
 
 Exit: 0. Raw combined output:
@@ -677,17 +677,17 @@ Exit: 0. Raw combined output:
 
 
 Initial strict Clippy found only a length lint in one newly authored test:
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli --all-targets -- -D warnings
 ```
 
 Exit: 101. Raw combined output:
 
 ```text
-    Checking infra-compiler v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-compiler)
-    Checking infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+    Checking infra-compiler v0.18.0 (home-path:sha256:fe1d358a2a5edbf7cf77cfcdec191aa20a71a85675daec3cad3a048a3a201d85)
+    Checking infra-project v0.18.0 (home-path:sha256:888bc5f617c55582cfe32a4b58b3f49d90581c0d772bbe0630da017a0cce166b)
 error: this function has too many lines (113/100)
    --> crates/infra/infra-project/tests/round_trip.rs:350:1
     |
@@ -703,16 +703,16 @@ error: could not compile `infra-project` (test "round_trip") due to 1 previous e
 
 
 This was a test-authoring lint, not an implementation finding or red runtime case. I extracted that test's identical expectation text into PARTIAL_CONTAINER_EXPECTATIONS without changing assertions, suppressed no lint, and reran the affected case alone:
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip admitted_patches_preserve_other_fields_for_statefulsets_and_daemonsets -- --exact
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project --test round_trip admitted_patches_preserve_other_fields_for_statefulsets_and_daemonsets -- --exact
 ```
 
 Exit: 0. Raw combined output:
 
 ```text
-   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-project v0.18.0 (home-path:sha256:888bc5f617c55582cfe32a4b58b3f49d90581c0d772bbe0630da017a0cce166b)
     Finished `test` profile [unoptimized] target(s) in 0.36s
      Running tests/round_trip.rs (target/debug/deps/round_trip-2ed84414750d9f23)
 
@@ -725,16 +725,16 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; fini
 
 
 Then reran the affected full infra-project package after this fixture-only refactor; it still executed 44 cases:
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo test --locked --offline -p infra-project
 ```
 
 Exit: 0. Raw combined output:
 
 ```text
-   Compiling infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+   Compiling infra-project v0.18.0 (home-path:sha256:888bc5f617c55582cfe32a4b58b3f49d90581c0d772bbe0630da017a0cce166b)
     Finished `test` profile [unoptimized] target(s) in 0.52s
      Running unittests src/lib.rs (target/debug/deps/infra_project-41d61ffb90a92fc1)
 
@@ -820,10 +820,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 Final package-scoped formatting and strict Clippy:
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package infra-compiler --package infra-analyze --package infra-spec --package infra-project --package ess-cli --check
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo fmt --package infra-compiler --package infra-analyze --package infra-spec --package infra-project --package ess-cli --check
 ```
 
 Exit: 0. Raw combined output:
@@ -831,21 +831,21 @@ Exit: 0. Raw combined output:
 ```text
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
-env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli --all-targets -- -D warnings
+env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_NET_OFFLINE=true cargo clippy --locked --offline -p infra-compiler -p infra-analyze -p infra-spec -p infra-project -p ess-cli --all-targets -- -D warnings
 ```
 
 Exit: 0. Raw combined output:
 
 ```text
-    Checking infra-project v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants/crates/infra/infra-project)
+    Checking infra-project v0.18.0 (home-path:sha256:888bc5f617c55582cfe32a4b58b3f49d90581c0d772bbe0630da017a0cce166b)
     Finished `dev` profile [unoptimized] target(s) in 0.19s
 ```
 
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 git --no-pager diff --check
@@ -888,7 +888,7 @@ Authored outside the assigned worktree: none. Tests are confined to the two path
 
 Before builds, df -B1 --output=avail . printed 130067779584 available bytes. Final pre-report observations:
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 df -B1 --output=avail .
@@ -901,7 +901,7 @@ Exit: 0. Raw combined output:
 128716374016
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 du -sk target
@@ -913,7 +913,7 @@ Exit: 0. Raw combined output:
 1097424	target
 ```
 
-Command (cwd `~/.local/state/worktree/trees/b10x/ess/review-infra-ir-invariants`):
+Command (cwd `home-path:sha256:5d997430a6d11afdac2c10e03ee15d9de0dfa7adc72c307f6197253205665333`):
 
 ```console
 du -sk target/review-boundaries-4

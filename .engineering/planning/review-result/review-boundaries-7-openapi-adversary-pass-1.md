@@ -41,7 +41,7 @@ Each no-index command exits 1 because an added file differs from /dev/null. No i
 
 2. Cases, written before focused execution
 
-This is the continuation of the interrupted first pass, not another attack. The two test files and focused-01 raw argv/stdout/stderr/status were recovered byte-for-byte and their SHA-256 checks still pass. The original focused-01 run compiled and executed one failing assertion; it was a semantic admission failure, not a setup failure. No test source was changed during resumption. The current installed 0.8.0 adversary charter was read in full; the original unit/pass brief, story, accepted binding, complete implementation diff, its callers, and tests were inspected. The current coordinator-supplied Atlas authority was read at ~/.local/state/worktree/trees/b10x/atlas/wt-b2081c2f6924.
+This is the continuation of the interrupted first pass, not another attack. The two test files and focused-01 raw argv/stdout/stderr/status were recovered byte-for-byte and their SHA-256 checks still pass. The original focused-01 run compiled and executed one failing assertion; it was a semantic admission failure, not a setup failure. No test source was changed during resumption. The current installed 0.8.0 adversary charter was read in full; the original unit/pass brief, story, accepted binding, complete implementation diff, its callers, and tests were inspected. The current coordinator-supplied Atlas authority was read at home-path:sha256:829282768e0ef58e62991e33e517689bddd0a89786f09c75f3f154d2bd213365
 
 All 13 executable additions received a case-alone focused run before the full suite. The library uses loops for sites and encodings; these assertions are not counted as separate test cases.
 
@@ -72,12 +72,12 @@ CARGO_INCREMENTAL=0
 CARGO_NET_OFFLINE=true
 CARGO_PROFILE_DEV_DEBUG=0
 CARGO_PROFILE_TEST_DEBUG=0
-GOCACHE=~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/go-cache
-GOMODCACHE=~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/go-mod-cache
-GOTMPDIR=~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1
+GOCACHE=home-path:sha256:1eae0edc084f9536cfcc738696f1de18209f93f38bf150c31aa66391861ea2f3
+GOMODCACHE=home-path:sha256:a9d7ef21e3b2e4d8582a0ac6e7c41deee06f99b11b8e14becfbc0e1205f06ff2
+GOTMPDIR=home-path:sha256:ad75cc3990c6a939f514dedc6ea440ccd65e8864ce81275ffcb286641b73ad4c
 RUSTC_WRAPPER=/usr/bin/sccache
-SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
-TMPDIR=~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1
+SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
+TMPDIR=home-path:sha256:ad75cc3990c6a939f514dedc6ea440ccd65e8864ce81275ffcb286641b73ad4c
 ```
 
 Verbatim focused argv and separate streams follow. Stream labels are presentation; captured contents are unchanged. Each status is the actual Cargo exit, not the enclosing recording shell's status.
@@ -85,7 +85,7 @@ Verbatim focused argv and separate streams follow. Stream labels are presentatio
 focused-01 argv:
 
 ```text
-env -u CARGO_TARGET_DIR TMPDIR='~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1' GOTMPDIR='~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1' GOCACHE='~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/go-cache' GOMODCACHE='~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/go-mod-cache' RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true cargo test --locked --offline --target-dir '~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target' -p ess-openapi --test adversary_pass1 closed_import_rejects_unknown_integer_variant_fields -- --exact --nocapture
+env -u CARGO_TARGET_DIR TMPDIR='home-path:sha256:ad75cc3990c6a939f514dedc6ea440ccd65e8864ce81275ffcb286641b73ad4c' GOTMPDIR='home-path:sha256:ad75cc3990c6a939f514dedc6ea440ccd65e8864ce81275ffcb286641b73ad4c' GOCACHE='home-path:sha256:1eae0edc084f9536cfcc738696f1de18209f93f38bf150c31aa66391861ea2f3' GOMODCACHE='home-path:sha256:a9d7ef21e3b2e4d8582a0ac6e7c41deee06f99b11b8e14becfbc0e1205f06ff2' RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true cargo test --locked --offline --target-dir 'home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93' -p ess-openapi --test adversary_pass1 closed_import_rejects_unknown_integer_variant_fields -- --exact --nocapture
 ```
 
 stdout:
@@ -143,7 +143,7 @@ stderr:
    Compiling memchr v2.8.3
    Compiling sha2 v0.11.0
    Compiling serde_yaml v0.9.34+deprecated
-   Compiling ess-openapi v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
+   Compiling ess-openapi v0.19.0 (home-path:sha256:dbb6c34f3687d30859f14fe2f2d2fc00448affef0c831b553b8db83f83adc580)
     Finished `test` profile [unoptimized] target(s) in 4.19s
      Running tests/adversary_pass1.rs (target/review-boundaries-7/adversary-pass-1/cargo-target/debug/deps/adversary_pass1-7267d3dd9e17cfe9)
 
@@ -158,7 +158,7 @@ exit status: 101
 focused-02 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 closed_import_rejects_unknown_number_variant_fields -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 closed_import_rejects_unknown_number_variant_fields -- --exact --nocapture 
 ```
 
 stdout:
@@ -204,7 +204,7 @@ exit status: 101
 focused-03 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 closed_import_rejects_unknown_boolean_variant_fields -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 closed_import_rejects_unknown_boolean_variant_fields -- --exact --nocapture 
 ```
 
 stdout:
@@ -250,7 +250,7 @@ exit status: 101
 focused-04 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 nonunit_schema_variants_reject_unknown_fields -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 nonunit_schema_variants_reject_unknown_fields -- --exact --nocapture 
 ```
 
 stdout:
@@ -276,7 +276,7 @@ exit status: 0
 focused-05 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 unconsumed_variant_keywords_remain_gaps_after_replay -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 unconsumed_variant_keywords_remain_gaps_after_replay -- --exact --nocapture 
 ```
 
 stdout:
@@ -302,7 +302,7 @@ exit status: 0
 focused-06 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 contradictory_string_enum_and_const_survive_both_boundaries -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 contradictory_string_enum_and_const_survive_both_boundaries -- --exact --nocapture 
 ```
 
 stdout:
@@ -328,7 +328,7 @@ exit status: 0
 focused-07 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 unsupported_items_cannot_disappear_at_nested_or_message_sites -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 unsupported_items_cannot_disappear_at_nested_or_message_sites -- --exact --nocapture 
 ```
 
 stdout:
@@ -354,7 +354,7 @@ exit status: 0
 focused-08 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 schema_resource_and_dialect_features_refuse_but_annotation_literals_do_not -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 schema_resource_and_dialect_features_refuse_but_annotation_literals_do_not -- --exact --nocapture 
 ```
 
 stdout:
@@ -380,7 +380,7 @@ exit status: 0
 focused-09 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 reference_escape_identity_is_not_decoded_twice -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 reference_escape_identity_is_not_decoded_twice -- --exact --nocapture 
 ```
 
 stdout:
@@ -406,7 +406,7 @@ exit status: 0
 focused-10 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 accounting_order_duplicates_codes_and_missing_arrays_cannot_be_normalized_away -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 accounting_order_duplicates_codes_and_missing_arrays_cannot_be_normalized_away -- --exact --nocapture 
 ```
 
 stdout:
@@ -432,7 +432,7 @@ exit status: 0
 focused-11 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi --test adversary_pass1 duplicate_escaped_map_keys_are_rejected_before_replay -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi --test adversary_pass1 duplicate_escaped_map_keys_are_rejected_before_replay -- --exact --nocapture 
 ```
 
 stdout:
@@ -458,7 +458,7 @@ exit status: 0
 focused-12 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-cli --test openapi_adversary_pass1 cli_rejects_unknown_unit_fields_before_any_projection_output -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-cli --test openapi_adversary_pass1 cli_rejects_unknown_unit_fields_before_any_projection_output -- --exact --nocapture 
 ```
 
 stdout:
@@ -535,7 +535,7 @@ stderr:
    Compiling lock_api v0.4.14
    Compiling anstyle-parse v1.0.0
    Compiling regex-automata v0.4.18
-   Compiling infra-domain v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/infra/infra-domain)
+   Compiling infra-domain v0.19.0 (home-path:sha256:91101c75aaa9de02a6568c451b76cc84f75f7b0da78a3d1c4bb98c6930617c8b)
    Compiling num v0.4.3
    Compiling unicode-general-category v1.1.0
    Compiling borrow-or-share v0.2.4
@@ -548,7 +548,7 @@ stderr:
    Compiling anstream v1.0.0
    Compiling fluent-uri v0.4.1
    Compiling fraction v0.17.0
-   Compiling ess-primitives v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.19.0 (home-path:sha256:acedd1c8e8170e6a1a8a1f82d04a07de69e787b96bff0bec658428e1de2e3d13)
    Compiling parking_lot v0.12.5
    Compiling strum_macros v0.28.0
    Compiling micromap v0.3.0
@@ -560,8 +560,8 @@ stderr:
    Compiling num-cmp v0.1.0
    Compiling strsim v0.11.1
    Compiling clap_builder v4.6.6
-   Compiling infra-compiler v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/infra/infra-compiler)
-   Compiling ess-domain v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/specify/ess-domain)
+   Compiling infra-compiler v0.19.0 (home-path:sha256:55a9b4174feed78430104625981b5c20fc52ced768109e009f303ccefc744833)
+   Compiling ess-domain v0.19.0 (home-path:sha256:4e425953a89fe505e53746d6405607453478ce8a947ce51844f3131797884c71)
    Compiling jsonschema-value v0.52.1
    Compiling strum v0.28.0
    Compiling referencing v0.52.1
@@ -576,21 +576,21 @@ stderr:
    Compiling jsonschema v0.52.1
    Compiling clap v4.6.6
    Compiling semver v1.0.28
-   Compiling ess-kubernetes v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/infra/ess-kubernetes)
-   Compiling infra-analyze v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/infra/infra-analyze)
-   Compiling ess-openapi v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
-   Compiling infra-spec v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/infra/infra-spec)
-   Compiling ess-compiler v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/specify/ess-compiler)
-   Compiling infra-project v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/infra/infra-project)
-   Compiling ess-gen v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-gen)
-   Compiling ess-realization v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/specify/ess-realization)
-   Compiling ess-composition v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/specify/ess-composition)
-   Compiling ess-deployment v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-deployment)
-   Compiling ess-conformance v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/verify/ess-conformance)
-   Compiling schema-contract v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/schema-contract)
-   Compiling ess-synth v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-synth)
-   Compiling ess-diff v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/verify/ess-diff)
-   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/edge/ess-cli)
+   Compiling ess-kubernetes v0.19.0 (home-path:sha256:df2af915c6b0e461bac7c2e9fa42f740387bcdd656dbda8c499aef300de76d3f)
+   Compiling infra-analyze v0.19.0 (home-path:sha256:1b86cb8f78303e01d8c7c46207bfe33f11c3af37536e385d0196a9c45c7c3210)
+   Compiling ess-openapi v0.19.0 (home-path:sha256:dbb6c34f3687d30859f14fe2f2d2fc00448affef0c831b553b8db83f83adc580)
+   Compiling infra-spec v0.19.0 (home-path:sha256:0423d8005506a41f92dbe0ab126457a2beb909ab6c108a3a64c20cc8bf996a37)
+   Compiling ess-compiler v0.19.0 (home-path:sha256:ebff671cec3dc06dc9d83f5a220307ba999f2aa7ed5a50f2754a73214b4ebecd)
+   Compiling infra-project v0.19.0 (home-path:sha256:cbe7a3fd897979254edc106b1455c5dcf89c1d8cd5fe801ca2ea35b1d4b0c114)
+   Compiling ess-gen v0.19.0 (home-path:sha256:8c1d70aca6e43b3168ef982605ddf94d51b8239e350d65bada74016004d1d824)
+   Compiling ess-realization v0.19.0 (home-path:sha256:e658deab780b29004354b897ab977526ac80b5d6aaaae0ff9b9a299d44c64acc)
+   Compiling ess-composition v0.19.0 (home-path:sha256:9aba59d2c62df95bba7abdae3eeee91ae822c12fd5989b97ec7c32c8a64466a7)
+   Compiling ess-deployment v0.19.0 (home-path:sha256:d8851ab14b1d269a5cf85481aab56176323f88926f046581167b7f7962a5a2f1)
+   Compiling ess-conformance v0.19.0 (home-path:sha256:c639e0e365272e192c6ec7493be977b8adf8fcda752a78550bb655ec91769061)
+   Compiling schema-contract v0.19.0 (home-path:sha256:c919a290dcc66f72c27ea34e545a24e27ba1f564f67eea47c071ea1c59507b36)
+   Compiling ess-synth v0.19.0 (home-path:sha256:064417b3ee3cea9939ef5fd434bd074e3f42a713dedd92c69b36c32d518ec5ce)
+   Compiling ess-diff v0.19.0 (home-path:sha256:6d2924d53f174d3381ed33135985450e92e2c8d2798cc0fe9e383d86db3479d5)
+   Compiling ess-cli v0.19.0 (home-path:sha256:ee052dc28606e1bd15fd4f6f35622e83e6053410dea45618778dc0aae08b0470)
     Finished `test` profile [unoptimized] target(s) in 17.78s
      Running tests/openapi_adversary_pass1.rs (target/review-boundaries-7/adversary-pass-1/cargo-target/debug/deps/openapi_adversary_pass1-5b967d6bb3cd60e9)
 
@@ -605,7 +605,7 @@ exit status: 101
 focused-13 argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-cli --test openapi_adversary_pass1 cli_rejects_duplicate_keys_and_tampered_accounting_before_output -- --exact --nocapture 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-cli --test openapi_adversary_pass1 cli_rejects_duplicate_keys_and_tampered_accounting_before_output -- --exact --nocapture 
 ```
 
 stdout:
@@ -635,7 +635,7 @@ The before count of 150 is the candidate count supplied by the original adversar
 Verbatim suite argv:
 
 ```text
-cargo test --locked --offline --target-dir ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1/cargo-target -p ess-openapi -p ess-cli --no-fail-fast 
+cargo test --locked --offline --target-dir home-path:sha256:655e17026c2682beca12e2b365db5a233f25f0bb343e0fe85e350bcb8be84f93 -p ess-openapi -p ess-cli --no-fail-fast 
 ```
 
 stdout:
@@ -981,8 +981,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 stderr:
 
 ```text
-   Compiling ess-openapi v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/generate/ess-openapi)
-   Compiling ess-cli v0.19.0 (~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/crates/edge/ess-cli)
+   Compiling ess-openapi v0.19.0 (home-path:sha256:dbb6c34f3687d30859f14fe2f2d2fc00448affef0c831b553b8db83f83adc580)
+   Compiling ess-cli v0.19.0 (home-path:sha256:ee052dc28606e1bd15fd4f6f35622e83e6053410dea45618778dc0aae08b0470)
     Finished `test` profile [unoptimized] target(s) in 2.31s
      Running unittests src/main.rs (target/review-boundaries-7/adversary-pass-1/cargo-target/debug/deps/ess-bdf16dcf99d99666)
      Running tests/authored_scenarios.rs (target/review-boundaries-7/adversary-pass-1/cargo-target/debug/deps/authored_scenarios-2a52915173d4466e)
@@ -1046,12 +1046,12 @@ The accepted binding requires unknown wire fields to refuse before returning the
 
 No deliberate file was written outside the assigned worktree. Shared dependency/compiler infrastructure can incur incidental cache bookkeeping/content effects at these full paths; parallel users prevent attributing individual cache entries to this pass:
 
-- ~/.cache/sccache — existing shared compiler cache, confirmed by the recovered sccache-before.txt; no explicit pruning or daemon lifecycle operation was performed.
-- ~/.cargo/.global-cache — Cargo's existing global cache bookkeeping. Registry/git dependencies were used in locked offline mode; no intentional dependency-cache population or edit was requested.
+- home-path:sha256:d522b5a7343a7f4c0d3562e82d37cb798ff13136e82897e5a694bb1178b23000 — existing shared compiler cache, confirmed by the recovered sccache-before.txt; no explicit pruning or daemon lifecycle operation was performed.
+- home-path:sha256:8aee2fa6471d9cc82d7abbceaa38d5c76572ff8fb9553e64549bdeafc1128317 — Cargo's existing global cache bookkeeping. Registry/git dependencies were used in locked offline mode; no intentional dependency-cache population or edit was requested.
 
-The existing ~/.cargo/.package-cache lock file and ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock were reused as endpoints; neither is a newly created scratch artifact. No outside Cargo target, /tmp scratch, credentials, network integration, or live system was selected. Existing suite tests create their usual repository-local target fixtures; Go TMPDIR/GOTMPDIR/GOCACHE/GOMODCACHE were all within the assigned scratch.
+The existing home-path:sha256:77535936a72db5ed4d12ff3cdf1701bd73b15124796680b692131aa42f95c2c8 lock file and home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45 were reused as endpoints; neither is a newly created scratch artifact. No outside Cargo target, /tmp scratch, credentials, network integration, or live system was selected. Existing suite tests create their usual repository-local target fixtures; Go TMPDIR/GOTMPDIR/GOCACHE/GOMODCACHE were all within the assigned scratch.
 
-All deliberate pass output is under ~/.local/state/worktree/trees/b10x/ess/review-openapi-semantic-accounting/target/review-boundaries-7/adversary-pass-1: preserved focused-01.*, focused-02.* through focused-13.*, suite-01.*, resumed-run.environment, recovered-inputs.sha256 and recovered-inputs-verified.txt, final-status.txt, final-tracked-diff.stat, final-untracked-test-diff.stat, final-disk.txt, process-snapshot.txt, this report, CLI probe fixture directories and their exact per-call records, go-cache, go-mod-cache, and the original own cargo-target build directory. Existing original brief, pre-execution hashes/status and sccache record remain intact.
+All deliberate pass output is under home-path:sha256:3604e8ddb86d16a4ae85794a6ab7de3e2c4d34e3c9e931d2584c9519264e7a07 preserved focused-01.*, focused-02.* through focused-13.*, suite-01.*, resumed-run.environment, recovered-inputs.sha256 and recovered-inputs-verified.txt, final-status.txt, final-tracked-diff.stat, final-untracked-test-diff.stat, final-disk.txt, process-snapshot.txt, this report, CLI probe fixture directories and their exact per-call records, go-cache, go-mod-cache, and the original own cargo-target build directory. Existing original brief, pre-execution hashes/status and sccache record remain intact.
 
 The focused recording process (tool session 24359) and full suite process (tool session 9058) both completed and were observed closed. Their recorded Cargo statuses, rather than the recording-shell exit, are used above. The existing shared sccache daemon is coordinator-owned and was left running. Final disk observation remained above the 8 GiB floor:
 

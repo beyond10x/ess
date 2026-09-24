@@ -12,7 +12,7 @@ unit: story:review-delivery-trust-contract — handed working tree at base d9c99
 verdict: CONFIRMED
 cases: executed 49→52, red 2
 origin: introduced 1 / pre-existing 0 / undecided 0
-wrote-outside-worktree: 3003 retained native paths under ~/.cache/ess-w16-delivery-adversary-1-tmp; exact paths in native-seal.tsv
+wrote-outside-worktree: 3003 retained native paths under home-path:sha256:b89b3a4ad0362a8b5ba0e95f613f9948ce3e5fdcfd58582fa319a9556c1e575f; exact paths in native-seal.tsv
 needs-coordinator: correct the missing initial component/build release-unit qualification; root owns routing and the remaining source pass
 git --no-pager diff --stat (inherited uncommitted implementation, as explicitly assigned)
 
@@ -42,9 +42,9 @@ Only crates/edge/ess-cli/tests/delivery_trust.rs changed relative to handed-sour
 lines, zero deleted or changed existing lines. All other thirteen assigned source pins remain
 exactly equal to the handed source. No implementation, action, documentation, existing assertion,
 dependency, planning or Git mutation was made. The external-tool fixture is unchanged.
-Complete own patch: [test-only.diff](~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1/test-only.diff), SHA256
+Complete own patch: [test-only.diff](home-path:sha256:329a4c94da5c79a26ebc1373e036ab9786ff2008957394d881b32b327d3582f8), SHA256
 90ffc6eb515f7143ed296d9ef9e0c087deb0730d036f0c94c23c50da1bb6d108.
-Complete final source mapping: [final-source-pins.json](~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1/final-source-pins.json).
+Complete final source mapping: [final-source-pins.json](home-path:sha256:14d0ec4b07b7bbf01ae950ceb28afca1f85a21d2d8b0eb48ccf923c90daf8e09).
 The two failing tests represent one defect, not two findings.
 
 2. Added cases, focused before the complete suite.
@@ -62,7 +62,7 @@ The first failure was at test assertion :1579; final formatting moves that asser
 Command and environment identity, verbatim:
 
 ```text
-cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd home-path:sha256:6c869a649d5bc8563c353d55234bf5b049091bf5fa2fedc0958f8914be091022
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary_component_release_unit_mismatch_stops_action_before_generic_check", "--", "--exact", "--nocapture"]
 launch-environment-sha256 cab4228c6e556579428ebd62f41442af05a1e09e338bf724e0996329ba1328cb
 ```
@@ -86,12 +86,12 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 28 filtered out;
 stderr, verbatim:
 
 ```text
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (home-path:sha256:9f1526fcfbadcd1cd7d7e885773c172603259666760707b69366c8523d102bee)
     Finished `test` profile [unoptimized] target(s) in 0.94s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 
 thread 'adversary_component_release_unit_mismatch_stops_action_before_generic_check' (1359618) panicked at crates/edge/ess-cli/tests/delivery_trust.rs:1579:5:
-incompatible component/build release units must refuse at initial qualification; generic_check_ran=true, external_calls=17, fixture=~/.cache/ess-w16-delivery-adversary-1-tmp/ess-delivery-trust-1359617-0, stderr=conformance: passed for the supplied exact declared selection
+incompatible component/build release units must refuse at initial qualification; generic_check_ran=true, external_calls=17, fixture=home-path:sha256:3e63d7d7ac74020f6a36e569c5ea8275eb172419f493ac9f86a92c64cd7747bc, stderr=conformance: passed for the supplied exact declared selection
 selected suite: sha256:53ff8e14d1af37b36948ee55e15daa39b1a411f5db9289ce285cae83d759b199
 selection: {"scope":{"kind":"system"},"origins":"authored","filter":{"kind":"all"}}
 model: oracle/v1; spec_digest: 4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee; contract_digest: 9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd
@@ -152,7 +152,7 @@ The first failure was at assertion :1606; final formatting moves that assertion 
 Command and environment identity, verbatim:
 
 ```text
-cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd home-path:sha256:6c869a649d5bc8563c353d55234bf5b049091bf5fa2fedc0958f8914be091022
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary_component_release_unit_mismatch_refuses_positive_cli_routes", "--", "--exact", "--nocapture"]
 launch-environment-sha256 cab4228c6e556579428ebd62f41442af05a1e09e338bf724e0996329ba1328cb
 ```
@@ -176,12 +176,12 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 30 filtered out;
 stderr, verbatim:
 
 ```text
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (home-path:sha256:9f1526fcfbadcd1cd7d7e885773c172603259666760707b69366c8523d102bee)
     Finished `test` profile [unoptimized] target(s) in 0.87s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 
 thread 'adversary_component_release_unit_mismatch_refuses_positive_cli_routes' (1439348) panicked at crates/edge/ess-cli/tests/delivery_trust.rs:1606:5:
-component/build release-unit mismatch must refuse positive qualification before ORAS; results=[("check-conformance", Some(0), true), ("publish-conformance", Some(0), false)], external_calls=1, fixture=~/.cache/ess-w16-delivery-adversary-1-tmp/ess-delivery-trust-1439347-0
+component/build release-unit mismatch must refuse positive qualification before ORAS; results=[("check-conformance", Some(0), true), ("publish-conformance", Some(0), false)], external_calls=1, fixture=home-path:sha256:cf5e9e60c9e982ec83dd33119a457ae82d6b668bfae553a44635907646fb8dfe
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 error: test failed, to rerun pass `-p ess-cli --test delivery_trust`
 ```
@@ -205,7 +205,7 @@ It is green; no fixture mode or product bypass is needed.
 Command and environment identity, verbatim:
 
 ```text
-cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd home-path:sha256:6c869a649d5bc8563c353d55234bf5b049091bf5fa2fedc0958f8914be091022
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust", "adversary_action_keeps_original_snapshots_when_generic_check_replaces_caller_files", "--", "--exact", "--nocapture"]
 launch-environment-sha256 cab4228c6e556579428ebd62f41442af05a1e09e338bf724e0996329ba1328cb
 ```
@@ -253,7 +253,7 @@ Delivery 28→31: 29 pass, 2 red; no ignored or filtered cases. All 28 inherited
 Command and environment identity, verbatim:
 
 ```text
-cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd home-path:sha256:6c869a649d5bc8563c353d55234bf5b049091bf5fa2fedc0958f8914be091022
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-cli", "--test", "delivery_trust"]
 launch-environment-sha256 cab4228c6e556579428ebd62f41442af05a1e09e338bf724e0996329ba1328cb
 ```
@@ -300,13 +300,13 @@ failures:
 ---- adversary_component_release_unit_mismatch_refuses_positive_cli_routes stdout ----
 
 thread 'adversary_component_release_unit_mismatch_refuses_positive_cli_routes' (1467586) panicked at crates/edge/ess-cli/tests/delivery_trust.rs:1612:5:
-component/build release-unit mismatch must refuse positive qualification before ORAS; results=[("check-conformance", Some(0), true), ("publish-conformance", Some(0), false)], external_calls=1, fixture=~/.cache/ess-w16-delivery-adversary-1-tmp/ess-delivery-trust-1467584-1
+component/build release-unit mismatch must refuse positive qualification before ORAS; results=[("check-conformance", Some(0), true), ("publish-conformance", Some(0), false)], external_calls=1, fixture=home-path:sha256:1908afe10e3d1aff6b38ba2dd81cb5813ed538413af81bd9ade222ebbcb76028
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- adversary_component_release_unit_mismatch_stops_action_before_generic_check stdout ----
 
 thread 'adversary_component_release_unit_mismatch_stops_action_before_generic_check' (1467587) panicked at crates/edge/ess-cli/tests/delivery_trust.rs:1585:5:
-incompatible component/build release units must refuse at initial qualification; generic_check_ran=true, external_calls=17, fixture=~/.cache/ess-w16-delivery-adversary-1-tmp/ess-delivery-trust-1467584-3, stderr=conformance: passed for the supplied exact declared selection
+incompatible component/build release units must refuse at initial qualification; generic_check_ran=true, external_calls=17, fixture=home-path:sha256:0fe50dde6716fc8c328ad63a9e5c637ce207979eafef8b4a615a9b7001aa4d89, stderr=conformance: passed for the supplied exact declared selection
 selected suite: sha256:53ff8e14d1af37b36948ee55e15daa39b1a411f5db9289ce285cae83d759b199
 selection: {"scope":{"kind":"system"},"origins":"authored","filter":{"kind":"all"}}
 model: oracle/v1; spec_digest: 4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee; contract_digest: 9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd
@@ -355,7 +355,7 @@ test result: FAILED. 29 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out;
 stderr, verbatim:
 
 ```text
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/edge/ess-cli)
+   Compiling ess-cli v0.20.0 (home-path:sha256:9f1526fcfbadcd1cd7d7e885773c172603259666760707b69366c8523d102bee)
     Finished `test` profile [unoptimized] target(s) in 0.88s
      Running tests/delivery_trust.rs (target/debug/deps/delivery_trust-8268e192ee8c98d2)
 error: test failed, to rerun pass `-p ess-cli --test delivery_trust`
@@ -378,7 +378,7 @@ finding crosses the component/build/runtime context relationship; no deployment 
 Command and environment identity, verbatim:
 
 ```text
-cwd ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract
+cwd home-path:sha256:6c869a649d5bc8563c353d55234bf5b049091bf5fa2fedc0958f8914be091022
 argv ["cargo", "test", "--locked", "--offline", "-p", "ess-deployment", "--test", "deployment"]
 launch-environment-sha256 cab4228c6e556579428ebd62f41442af05a1e09e338bf724e0996329ba1328cb
 ```
@@ -421,11 +421,11 @@ stderr, verbatim:
    Compiling memchr v2.8.3
    Compiling semver v1.0.28
    Compiling schemars v0.8.22
-   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/specify/ess-primitives)
-   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/specify/ess-domain)
-   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/specify/ess-compiler)
-   Compiling ess-realization v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/specify/ess-realization)
-   Compiling ess-deployment v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/crates/generate/ess-deployment)
+   Compiling ess-primitives v0.20.0 (home-path:sha256:7f09be052e8388914ce0318058e66fdaa8f77d1d7c7f83328a9791b4fc4c9eb3)
+   Compiling ess-domain v0.20.0 (home-path:sha256:a09e13c9f74f05c590c4ebff70d6bf8440bc5ffa5548ec3bae67b710952ddcb1)
+   Compiling ess-compiler v0.20.0 (home-path:sha256:3b8730ebe359fcc13e282b20b3dd3687cfde38fb1ff4e259359cd28f61b94dbd)
+   Compiling ess-realization v0.20.0 (home-path:sha256:607b30808cddd46521f542a92d6f35ce3e13cc4359ac7f113313f02963abd07e)
+   Compiling ess-deployment v0.20.0 (home-path:sha256:cfe9f3e0fbffcfab3a7a53c7eb8c79eea3d6d84374c13dd5c690843049f7dbc2)
     Finished `test` profile [unoptimized] target(s) in 9.52s
      Running tests/deployment.rs (target/debug/deps/deployment-552190fc5f4292de)
 ```
@@ -446,7 +446,7 @@ Affected-package strict Clippy passed:
 Final formatting passed:
 `cargo fmt -p ess-cli -p ess-deployment --check`.
 Their original streams, child PIDs/times/direct exits, source/tool snapshots and seals are retained
-under [runs/final-clippy](~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1/runs/final-clippy) and [runs/final-format](~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1/runs/final-format).
+under [runs/final-clippy](home-path:sha256:718d823c70f11069d2b3d1485e03fba51d4d015eefcee5cfc77dce3d2922e5f9) and [runs/final-format](home-path:sha256:f89dd5a09e764c4a34da976b558c41c979c298c47248bf0c5aed69314f91922d).
 No complete package, browser, cache or conformance lane was rerun; root owns the full gate, as assigned.
 
 4. Finding and reachability.
@@ -501,8 +501,8 @@ or runtime/chart execution, and supplies no approval.
 
 6. Retention, resources, outside paths and quiescence.
 
-All scratch written by this pass is beneath ~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1. The only
-outside-worktree write root is ~/.cache/ess-w16-delivery-adversary-1-tmp.
+All scratch written by this pass is beneath home-path:sha256:b722d67f50ba3460b761ec0e7f00889e77f03d69cbae9264e0c23bce90786dc5 The only
+outside-worktree write root is home-path:sha256:57fc66d34ca544cf581b3bfa8465d6a60be9c2017fe4fd4f02a0af886fd05916
 The final native manifest enumerates all 3003 retained native entries under that root, in full
 native-byte hexadecimal; literal symlink targets are also encoded without traversal. Actual
 publication-stage paths that the product subsequently retired appear in the corresponding
@@ -528,7 +528,7 @@ every started compiler/test/tool process was awaited before handoff.
 The std-only runner bootstrap completed at 2026-09-07T12:33:33.841056381Z with direct status 0,
 PID 1352495; its exact command, stdout/stderr and PID/start/end/status files are under bootstrap/.
 The root-supplied full pre-bootstrap manifest check completed earlier at 12:32:07.840971Z:
-[bootstrap-tool-readback.json](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-16/preparation/delivery-source-pass-1/bootstrap-tool-readback.json),
+[bootstrap-tool-readback.json](home-path:sha256:324c1304b1fd52599d5999db57621ab4abaa2f7712860a54f461fab80b2f719c),
 SHA256 07225ebb709ed1be86b6c9466d01ac441c1598ef130630ede97cb3d77b6b1494.
 The dispatch resource record and first native runner precheck bracket the small bootstrap;
 subsequent producers have their own exact before/after resource records.
@@ -559,7 +559,7 @@ After final sealing, the native /proc observer exited 0 with no other owned cwd/
 ```
 
 The worktree is quiescent. Source and tool identities plus all run seals, this complete report,
-the native manifest and the final observer record are bound by [handoff.sha256](~/.local/state/worktree/trees/b10x/ess/ess-delivery-trust-contract/target/review-boundaries-16/adversary-pass-1/handoff.sha256).
+the native manifest and the final observer record are bound by [handoff.sha256](home-path:sha256:7baf75bedbb38c74d1b9ae7da8c7913978413073fd31141cfa92d1bb7d74b041).
 Root owns correction routing, the remaining source review pass, full gates, AEP/Git/publication
 and all managed cleanup.
 

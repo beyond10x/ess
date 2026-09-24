@@ -80,4 +80,4 @@ outside.
 - A refusal per new way a scenario can be wrong, each with a stable `ESS-AUTHOR-nnn` code and a test.
 - The Rust runner and the emitted Go runner both execute the steps, and a target whose clock never
   moves fails exactly the scenario that claims a length of time.
-- The forty-five scenarios in `sbf/specs/authored/` still compile with zero refusals.
+- The forty-five scenarios in `an adopting project's specs/authored/` still compile with zero refusals.

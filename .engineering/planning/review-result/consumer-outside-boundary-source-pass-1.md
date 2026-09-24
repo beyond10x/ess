@@ -58,7 +58,7 @@ are appended below the previous last case under a dated banner.
 ### 01-count-case — exit 101, verbatim
 
 ```
-   Compiling ess-xtask v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-s3-boundary-mechanism-20260916/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.24.0 (home-path:sha256:05be5d66897ea0cbcf37fb6b118003d09b29da0fd7ac5df1365f72b60d00801a)
     Finished `test` profile [unoptimized] target(s) in 9.63s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-933e37d58b3a5a7c)
 
@@ -89,7 +89,7 @@ of the executed union the case handed in.
 ### 02-extra-pair-case — exit 0, verbatim
 
 ```
-   Compiling ess-xtask v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-s3-boundary-mechanism-20260916/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.24.0 (home-path:sha256:05be5d66897ea0cbcf37fb6b118003d09b29da0fd7ac5df1365f72b60d00801a)
     Finished `test` profile [unoptimized] target(s) in 9.67s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-933e37d58b3a5a7c)
 
@@ -205,8 +205,8 @@ and the four missing authority inputs. Those are root's and remain open.
 
 Two, both mine:
 
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s3-source-review-1/READY.md`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s3-source-review-1/report.md`
+- `home-path:sha256:42aa014d6f394b19b8db93c435237c2fa65f05b91f213192a73486dcad2dbd2c`
+- `home-path:sha256:f110531b33124fb7b0d2d4c52d372732f0bf1513ad09b4774c4949303ec1f76f`
 
 No `/tmp`, no build directory, no scratch fixture copy, no shared target directory. Every other file
 in this directory was written by root.

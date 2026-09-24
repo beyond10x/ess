@@ -23,7 +23,7 @@ composition-rust-byte-transport — Every Supported row still calls the payload-
 ## Reviewed unit and finite accounting
 
 This review covers the original complete S6 unit at retained working tree
-`~/.local/state/worktree/trees/b10x/ess/ess-evolution-s6-composition-20260916`, base
+`home-path:sha256:e0f4900fa8e88669162147cee17d3ab076a134f683c4aaba895154accad7faec`, base
 `f1af8280338b97d862a6c474ec50f78d5157d71c`, with production `lib.rs`
 `db71d32fd00681c3047b1efd41759898ee4e3923ba3373b0580430a81c309afb`, integration source
 `05f12e07a78467e39a065f735a5646312dae0560aa898c93d3cd61610edf98ae`, downstream harness
