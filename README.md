@@ -5,31 +5,14 @@ descriptions into deterministic IR, projecting concrete artifacts, and checking 
 infrastructure against what was declared.
 
 The canonical command is `ess`, and its first level is the four areas the crates are grouped into:
-`specify`, `generate`, `verify`, `infra` — plus `skill`, which reads no specification and prints the
-agent guidance the binary was built with.
+`specify`, `generate`, `verify`, `infra`.
 
 ## Point your agent here
 
-Tell a coding agent to read this section. It installs the `ess` binary (see [Install the
-command](#install-the-command)), then either reads the skills straight from the binary:
-
-```console
-ess skill                  # the front door and an index of every skill and agent
-ess skill specify          # one skill: specify, retrofit, coverage
-ess skill agents/author    # one agent charter: author, retrofitter, conformance
-```
-
-or installs the same skills as a plugin, pinned to the release that matches the binary:
-
-```text
-/plugin marketplace add https://github.com/beyond10x/ess.git#<version>
-/plugin install ess@ess
-```
-
-Codex reads the same repository through `.agents/plugins/marketplace.json`:
-`codex plugin marketplace add https://github.com/beyond10x/ess.git --ref <version>`, then
-`codex plugin add ess@ess`. The plugin, its skills and the binary carry one version; the sources
-live in [`plugins/ess/`](plugins/ess/).
+The agent plugin is `ess@b10x` in [`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins).
+Tell a coding agent: *"Set up Beyond10x for specifications: follow
+https://github.com/beyond10x/agentplugins/releases/latest/download/SETUP.md"*. It installs the plugin
+and this CLI (prebuilt or with `cargo`), then `/ess:init` takes the first step.
 
 ```console
 cargo run --bin ess -- specify validate --path examples/billing
@@ -58,7 +41,7 @@ cargo run --bin ess -- infra infra diagnose --path observation.json
 Every verb is also spelled flat at the top level, exactly as it was before the areas existed:
 `ess validate --path examples/billing`, `ess conform run …`, `ess schema validate …`. A flat
 spelling runs the same command and prints the same bytes on both streams with the same exit status,
-with no notice of any kind; it is left out of `--help` so the listing stays the four areas and `skill`. Nothing
+with no notice of any kind; it is left out of `--help` so the listing stays the four areas. Nothing
 is deprecated, and a pinned caller needs no change.
 
 ## Install the command
