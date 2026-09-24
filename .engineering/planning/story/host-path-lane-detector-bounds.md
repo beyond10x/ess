@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:host-path-lane-detector-bounds
 kind: story
 status: implemented

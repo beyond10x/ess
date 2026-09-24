@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:outcome-selected-by-the-subjects-state
 kind: story
 status: archived

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-binding-may-be-triggered-by-a-period
 kind: story
 status: archived

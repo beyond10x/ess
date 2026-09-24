@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:docs-literal-mapping-claims-unchecked
 kind: story
 status: implemented

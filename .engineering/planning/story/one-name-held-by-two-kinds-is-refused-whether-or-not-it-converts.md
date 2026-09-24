@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts
 kind: story
 status: draft

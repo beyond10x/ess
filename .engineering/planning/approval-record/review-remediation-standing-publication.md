@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: approval-record:review-remediation-standing-publication
 kind: approval-record
 status: approved

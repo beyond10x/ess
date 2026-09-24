@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:the-browser-fixture-abandons-a-profile-per-start
 kind: story
 status: draft

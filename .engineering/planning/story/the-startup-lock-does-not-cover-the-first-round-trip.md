@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:the-startup-lock-does-not-cover-the-first-round-trip
 kind: story
 status: draft

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:the-metadata-guard-rejects-every-build-but-one
 kind: story
 status: draft

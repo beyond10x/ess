@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-killed-childs-outcome-says-which-signal-ended-it
 kind: story
 status: draft
