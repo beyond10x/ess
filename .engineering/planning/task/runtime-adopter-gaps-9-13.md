@@ -2,7 +2,7 @@
 format: aep.planning-md/1
 id: task:runtime-adopter-gaps-9-13
 kind: task
-status: implemented
+status: active
 title: Deliver five additional measured runtime gaps before the backend retrofit
 tags:
 - priority-high
@@ -10,7 +10,7 @@ relations:
 - decomposes: initiative:ess-evolution
 - informed_by: task:ess-gaps-measured-in-a-consumer-specification
 - serves: vision:O2
-revision: 4
+revision: 3
 ---
 ## Outcome and standing authorization
 
