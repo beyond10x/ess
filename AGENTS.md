@@ -103,7 +103,13 @@ artifacts, and a change reaches that adopter undetected by conformance, `ess ver
 format refusal.
 
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
-tests, and the dependency boundary test. Land nothing until it exits zero.
+tests, and the dependency boundary test. Land nothing on `main` until the `Gate` job is green.
+
+For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
+— `cargo fmt --all --check`, `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
+`cargo test -p <crate> --locked`, and `task ci-lint` when a workflow, Taskfile or public API
+changed — then push and read the lanes. Run the whole `task check` locally only for a release tag
+(below) or to reproduce a lane that failed in CI.
 
 The adopter-facing Docusaurus source lives under `website/`; repository-root `docs/` remains the
 engineering record and is never published directly. A documentation, release, or validation
