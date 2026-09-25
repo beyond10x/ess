@@ -2,11 +2,12 @@
 format: aep.planning-md/2
 id: story:plugin-in-repository
 kind: story
-status: draft
+status: archived
 title: The ESS plugin and its marketplace live in this repository
 relations:
 - decomposes: epic:ess-agent-plugin
-revision: 1
+- serves: vision:O2
+revision: 5
 ---
 # The ESS plugin and its marketplace live in this repository
 
