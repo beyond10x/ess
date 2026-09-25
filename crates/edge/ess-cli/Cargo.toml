@@ -66,7 +66,7 @@ path = "tests/support/recovery_driver.rs"
 # the admitted Helm artifact. It outlives the first driver, which is what makes a restart case a
 # restart rather than a replay.
 name = "ess-recovery-fake"
-path = "tests/support/fake_recovery.rs"
+path = "tests/support/fake_helm.rs"
 
 [dev-dependencies]
 tempfile = "3.27"
