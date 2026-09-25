@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.32.1] — 2026-09-25
+
 ### Changed
 
 - `task check` runs `consumer-check` only when `CONSUMER_CHECKS=true`; it used to run it unless

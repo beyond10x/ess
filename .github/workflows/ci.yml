@@ -2,15 +2,25 @@
 # parked (ESS-EVOLUTION.md revision 3) and runs nowhere by default. The Taskfile remains the
 # complete gate; macOS exercises the platform-specific protocol.
 #
-# `task check` runs here as parallel lanes, one Taskfile task each, and the `Gate` job carries
-# their joint result under the required check's name. `crates/edge/ess-xtask/tests/ci_lanes.rs`
-# fails when a step of `task check` is in no lane.
+# `task check` runs here as a few jobs, each running Taskfile tasks as steps, and the `Gate` job
+# carries their joint result under the required check's name:
+#
+#   checks       ci-lint, ci-smoke, test-feature-off-doc, test-xtask, fuzz-check, one after another
+#   build-tests  test-archive: every test binary compiled once, into two nextest archives
+#   test (m/n)   test-shard and test-feature-off: partition m of each archive, compiling nothing
+#
+# `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when a step of `task check` runs in no job, when
+# the shards leave a partition unrun, or when `Gate` does not carry a job's result.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  # A pull request runs the feature-off cases on number semantics only (`FEATURE_OFF` below);
+  # `main` pushes, this nightly run and the release gate run every one of them.
+  schedule:
+    - cron: "17 3 * * *"
   workflow_call:
     inputs:
       checkout-ref:
@@ -20,7 +30,8 @@ on:
         default: ""
 
 concurrency:
-  group: ci-${{ inputs.checkout-ref || github.ref }}
+  # The event is in the key so that the nightly run and a `main` push never cancel each other.
+  group: ci-${{ github.event_name }}-${{ inputs.checkout-ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -28,50 +39,15 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # lld for the Linux host only, and only here: WASM keeps its own linker, and local builds and
+  # the shipped release binaries keep the system one. `test-xtask` sets the same flag itself.
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=lld
 
 jobs:
-  lane:
-    name: Lane (${{ matrix.lane }})
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      # Every lane reports, so one red run names every failing lane rather than the first.
-      fail-fast: false
-      matrix:
-        include:
-          - lane: lint
-            task: ci-lint
-            cache: lint
-          - lane: smoke
-            task: ci-smoke
-            cache: smoke
-          # The three shards build the same test binaries, so they share one cache.
-          - lane: test 1/3
-            task: test-shard SHARD=1/3
-            cache: test-workspace
-          - lane: test 2/3
-            task: test-shard SHARD=2/3
-            cache: test-workspace
-          - lane: test 3/3
-            task: test-shard SHARD=3/3
-            cache: test-workspace
-          # The feature-off doc-tests run once, on the first shard; nextest runs no doc-tests.
-          - lane: feature-off 1/3
-            task: test-feature-off test-feature-off-doc SHARD=1/3
-            cache: feature-off
-          - lane: feature-off 2/3
-            task: test-feature-off SHARD=2/3
-            cache: feature-off
-          - lane: feature-off 3/3
-            task: test-feature-off SHARD=3/3
-            cache: feature-off
-          - lane: xtask
-            task: test-xtask
-            cache: xtask
-          - lane: fuzz
-            task: fuzz-check
-            cache: fuzz
-            cache-workspaces: fuzz -> target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -92,29 +68,173 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
+      # The released binary, checked against the release's own `task_checksums.txt`; compiling it
+      # with `go install` cost every job about a minute.
+      - name: Install go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: checks
+          workspaces: |
+            . -> target
+            fuzz -> target
+
+      # Gate tasks build offline (`fuzz-check`, `support-check`, and cargo runs spawned by the
+      # xtask support tests), so both lockfiles are fetched before the first task.
+      - name: Fetch locked dependencies
+        id: dependencies
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path fuzz/Cargo.toml
+
+      # One setup, then each task in turn. Every task runs whatever the one before it did, so one
+      # red run names every failing task rather than the first.
+      - name: Lint (fmt, Clippy, rustdoc, release record, action)
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: task ci-lint
+
+      - name: Smoke (examples, projections, support matrix, workspace doc-tests)
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: task ci-smoke
+
+      # Nextest runs no doc-tests, so the feature-off doc-tests run here, once.
+      - name: Feature-off doc-tests
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: task test-feature-off-doc
+
+      - name: xtask
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: task test-xtask
+
+      - name: Fuzz replay
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: task fuzz-check
+
+  build-tests:
+    name: Build test archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # A pull request's feature-off archive holds the number-semantics cases only
+      # (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile); every other event archives all of them.
+      FEATURE_OFF: ${{ github.event_name == 'pull_request' && 'number-semantics' || 'full' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          # The shards run what this job compiles, and the tests that spawn `cargo` bake this
+          # toolchain's path in, so every test job installs the same one.
+          toolchain: 1.98.1
+          targets: wasm32-unknown-unknown
+
+      - name: Install go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
+
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.143
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: test-workspace
+
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      - name: Compile the workspace and feature-off test archives
+        run: task test-archive
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-archives
+          path: target/nextest-archives
+          if-no-files-found: error
+          # The archives are zstd already; the shards of this run are their only reader.
+          compression-level: 0
+          retention-days: 1
+
+  test:
+    name: Test ${{ matrix.shard }}
+    needs: build-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Every shard reports, so one red run names every failing test rather than the first shard's.
+      fail-fast: false
+      matrix:
+        shard: ["1/2", "2/2"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch the annotated release record
+        run: git fetch --tags --force --prune origin
+
+      # The shards compile no test binary, but their tests do build: generated projects through
+      # `cargo`, fixtures through `rustc`, the WASM realization and the TypeScript and Go runtimes.
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.1
+          targets: wasm32-unknown-unknown
+
+      # The Go the generated-module cases build with. The generated modules intentionally have no
+      # go.sum, so setup-go's automatic cache would only warn.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          # go-task 3.52.0 declares this exact minimum. GOTOOLCHAIN is deliberately local below,
-          # so the setup version and the pinned task runner must move together.
           go-version: "1.25.10"
-          # The generated modules intentionally have no go.sum. setup-go's automatic cache looks
-          # for one at the repository root and warns on every release run; Rust's cache below is
-          # the cache this mixed-language gate actually relies on.
           cache: false
 
       - name: Install go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
         run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.52.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           # The emitted conformance runtime is TypeScript, and its cases run under Node's own
-          # test runner. Without a Node here the whole lane skips — and it says so in the log
+          # test runner. Without a Node here the whole case skips — and it says so in the log
           # rather than failing, so a gate that never compiled a line of it still reports green.
           node-version: "22"
 
-      - name: Install the TypeScript toolchain the conformance lane needs
+      - name: Install the TypeScript toolchain the conformance cases need
         run: |
           # Every case in `crates/verify/ess-conformance/tests/typescript_runtime.rs` is gated on
           # a tool being present: `tsc` compiles the sources, `prettier` checks their formatting,
@@ -131,42 +251,54 @@ jobs:
         with:
           tool: cargo-nextest@0.9.143
 
+      # The registry only: `target/` is the extracted archive, never a cache.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          key: ${{ matrix.cache }}
-          workspaces: ${{ matrix.cache-workspaces || '. -> target' }}
+          key: test-run
+          cache-targets: "false"
 
-      # Gate tasks build offline (`fuzz-check`, `support-check`, and cargo runs spawned by the
-      # xtask support tests). The single-job gate got a full registry from `cargo clippy
-      # --workspace` running first; each lane starts empty, so both lockfiles are fetched here.
+      # The generated-project cases run `cargo … --offline`, so the registry is filled first.
       - name: Fetch locked dependencies
-        run: |
-          cargo fetch --locked
-          cargo fetch --locked --manifest-path fuzz/Cargo.toml
+        run: cargo fetch --locked
 
-      # Consumer coverage is not a lane: it is parked by ESS-EVOLUTION.md revision 3, and local
-      # `task check` runs it only with CONSUMER_CHECKS=true.
-      - name: Run the ${{ matrix.lane }} lane
-        run: task ${{ matrix.task }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: archives
+        with:
+          name: nextest-archives
+          path: target/nextest-archives
+
+      - name: Workspace tests ${{ matrix.shard }}
+        if: ${{ !cancelled() && steps.archives.outcome == 'success' }}
+        run: task test-shard SHARD=${{ matrix.shard }}
+
+      - name: Feature-off tests ${{ matrix.shard }}
+        if: ${{ !cancelled() && steps.archives.outcome == 'success' }}
+        run: task test-feature-off SHARD=${{ matrix.shard }}
 
   gate:
     name: Gate
-    needs: [lane]
-    # A skipped required check reads as passing, so this runs whatever the lanes did and fails
+    needs: [checks, build-tests, test]
+    # A skipped required check reads as passing, so this runs whatever the jobs did and fails
     # unless every one of them succeeded.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every lane to have passed
+      - name: Require every job to have passed
         env:
-          LANES: ${{ needs.lane.result }}
+          CHECKS: ${{ needs.checks.result }}
+          BUILD_TESTS: ${{ needs.build-tests.result }}
+          TEST: ${{ needs.test.result }}
         run: |
-          echo "lanes: $LANES"
-          if [ "$LANES" != "success" ]; then
-            echo "::error::the gate lanes finished with '$LANES', not 'success'" >&2
-            exit 1
-          fi
+          status=0
+          for job in "checks=$CHECKS" "build-tests=$BUILD_TESTS" "test=$TEST"; do
+            echo "$job"
+            if [ "${job#*=}" != "success" ]; then
+              echo "::error::the ${job%%=*} job finished with '${job#*=}', not 'success'" >&2
+              status=1
+            fi
+          done
+          exit "$status"
 
   output-ownership-macos:
     name: Output ownership (${{ matrix.runner }})
