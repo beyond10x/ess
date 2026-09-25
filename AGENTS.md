@@ -70,7 +70,7 @@ task check
 CI runs `task check` as a few jobs, each running Taskfile tasks as steps. `checks` runs `ci-lint`,
 `ci-smoke`, `test-feature-off-doc`, `test-xtask` and `fuzz-check` one after another after one
 setup. `build-tests` runs `test-archive`: it compiles every test binary once into two nextest
-archives, the workspace and the feature-off packages. `test (<m>/2)` downloads both and runs
+archives, the workspace and the feature-off packages. `test (<m>/4)` downloads both and runs
 `test-shard` and `test-feature-off` for partition `m`, compiling nothing. The shards extract into
 the checkout's own `target/`, because test binaries bake `CARGO_BIN_EXE_*` and
 `CARGO_TARGET_TMPDIR` in at build time. The `Gate` job carries their joint result, and

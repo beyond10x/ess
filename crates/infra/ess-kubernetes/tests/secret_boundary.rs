@@ -7,6 +7,9 @@ use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 
+#[path = "../../../edge/ess-cli/tests/support/compiled_fixture.rs"]
+mod compiled_fixture;
+
 const SENTINEL: &str = "SYNTHETIC-MALFORMED-SECRET-SENTINEL";
 const PREVIOUS: &[u8] = b"previous sanitized observation";
 
@@ -154,17 +157,12 @@ fn fixture_root() -> &'static Path {
         let bin = root.join("bin");
         std::fs::create_dir_all(&bin).expect("fixture directory");
         let helper = bin.join(format!("kubectl{}", std::env::consts::EXE_SUFFIX));
-        let compiled = Command::new("rustc")
-            .args(["--edition=2021", "-Dwarnings"])
-            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_command.rs"))
-            .arg("-o")
-            .arg(&helper)
-            .output()
-            .expect("compile Rust fixture");
-        assert!(
-            compiled.status.success(),
-            "fixture compilation: {compiled:?}"
+        let program = compiled_fixture::compiled(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_command.rs"),
+            &"rustc".into(),
+            &["--edition=2021", "-Dwarnings"],
         );
+        std::fs::copy(&program, &helper).expect("kubectl fixture");
         std::fs::copy(
             &helper,
             bin.join(format!("date{}", std::env::consts::EXE_SUFFIX)),
