@@ -1098,6 +1098,21 @@ pub trait FactSource {
         false
     }
 
+    /// Whether the text at `path`, where no declared scale orders it, is ordered by its UTF-8
+    /// bytes.
+    ///
+    /// `false` by default, which keeps the reading every AEP source relies on: text is ordered by
+    /// its protocol's scales, and a pair no scale contains is `Unknown`. An ESS source answers
+    /// `true`, because an ESS specification has no scale vocabulary and every ESS evaluator lane —
+    /// Rust, the generated Go runtime and the TypeScript one — orders text byte-wise (ess#94).
+    /// A comparison is ordered by bytes only when every fact it reads answers `true`, so a source
+    /// that knows the declared types keeps a `Duration` — ISO 8601 text, whose bytes put `PT10M`
+    /// below `PT5M` — out of it. A scale that contains both values still decides first, and a
+    /// declared `Timestamp` is ordered by its instant or not at all.
+    fn orders_text_by_bytes(&self, _path: &FactPath) -> bool {
+        false
+    }
+
     /// How many elements the collection at `path` has, or `None` when nothing has observed it.
     ///
     /// A quantifier needs to know how far to count, and a fact is a scalar bound to a dotted
@@ -1146,6 +1161,10 @@ pub struct FactStore {
     facts: BTreeMap<FactPath, FactValue>,
     #[serde(skip_serializing_if = "is_empty_scales")]
     scales: Scales,
+    /// What [`FactSource::orders_text_by_bytes`] answers. A property of the evaluator reading the
+    /// facts, not a fact, so it is never serialised.
+    #[serde(skip)]
+    text_by_bytes: bool,
 }
 
 /// Whether a scale set is empty, for output suppression.
@@ -1195,6 +1214,11 @@ impl FactStore {
         self.scales = scales;
     }
 
+    /// Orders texts no scale orders by their UTF-8 bytes; see [`FactSource::orders_text_by_bytes`].
+    pub fn order_text_by_bytes(&mut self) {
+        self.text_by_bytes = true;
+    }
+
     /// The number of bound facts.
     pub fn len(&self) -> usize {
         self.facts.len()
@@ -1224,6 +1248,10 @@ impl FactSource for FactStore {
     fn scales(&self) -> &Scales {
         &self.scales
     }
+
+    fn orders_text_by_bytes(&self, _path: &FactPath) -> bool {
+        self.text_by_bytes
+    }
 }
 
 impl FromIterator<(FactPath, FactValue)> for FactStore {
@@ -1231,6 +1259,7 @@ impl FromIterator<(FactPath, FactValue)> for FactStore {
         Self {
             facts: iter.into_iter().collect(),
             scales: Scales::default(),
+            text_by_bytes: false,
         }
     }
 }

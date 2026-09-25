@@ -171,6 +171,95 @@ fn the_go_runtime_answers_every_vector_the_corpus_states() {
     assert!(output.status.success(), "{record}");
 }
 
+/// The Go test that asks the runtime's predicate evaluator to order every `text_orderings` pair.
+///
+/// Through `parseLeaf` and `evaluate` rather than through `compare` alone, so the vector reaches
+/// the ordering the way a `when:` or a view filter does (ess#94).
+const GO_TEXT_ORDER_TEST: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+type textOrdering struct {
+	Name     string `json:"name"`
+	Left     string `json:"left"`
+	Right    string `json:"right"`
+	Ordering string `json:"ordering"`
+}
+
+func TestTextOrderingCorpus(t *testing.T) {
+	raw, err := os.ReadFile("vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus struct {
+		TextOrderings []textOrdering `json:"text_orderings"`
+	}
+	if err := json.Unmarshal(raw, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	if len(corpus.TextOrderings) < 8 {
+		t.Fatalf("the corpus selected %d text orderings", len(corpus.TextOrderings))
+	}
+	for _, vector := range corpus.TextOrderings {
+		less, greater := vector.Ordering == "less", vector.Ordering == "greater"
+		for op, holds := range map[string]bool{"<": less, "<=": !greater, ">": greater, ">=": !less} {
+			expression := "caller " + op + " \"" + vector.Right + "\""
+			leaf, err := parseLeaf(expression)
+			if err != nil {
+				t.Fatalf("%s: %s: %v", vector.Name, expression, err)
+			}
+			got := leaf.evaluate(factSource{"caller": vector.Left})
+			if got != truthOf(holds) {
+				t.Errorf("Go %s: %q %s: got %v, corpus says %v", vector.Name, vector.Left, expression, got, holds)
+			}
+		}
+	}
+}
+"#;
+
+#[test]
+fn the_go_runtime_orders_every_text_pair_the_corpus_states_by_its_bytes() {
+    let root = directory("go-text");
+    let package = root.join("essconform");
+    std::fs::create_dir_all(&package).unwrap();
+    for artifact in ess_conformance::go::emit(minimal_suite().suite()).expect("the suite emits") {
+        std::fs::write(root.join(&artifact.path), artifact.contents).unwrap();
+    }
+    std::fs::write(root.join("go.mod"), "module textcorpus\n\ngo 1.24\n").unwrap();
+    std::fs::write(package.join("vectors.json"), CORPUS).unwrap();
+    std::fs::write(package.join("text_order_test.go"), GO_TEXT_ORDER_TEST).unwrap();
+
+    let output = Command::new("go")
+        .args([
+            "test",
+            "-count=1",
+            "-v",
+            "./...",
+            "-run",
+            "^TestTextOrderingCorpus$",
+        ])
+        .current_dir(&root)
+        .env("GOWORK", "off")
+        .output()
+        .expect("the required Go toolchain executes");
+    let record = format!(
+        "exit: {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::write(root.join("go.log"), &record).unwrap();
+    assert!(output.status.success(), "{record}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("--- PASS: TestTextOrderingCorpus"),
+        "the Go case ran rather than selecting nothing: {record}"
+    );
+}
+
 /// The harness that asks the browser adapter's own export about every vector.
 const JS_HARNESS: &str = r"import {readFileSync} from 'node:fs'
 import {primitiveAdmits} from './admission.js'
