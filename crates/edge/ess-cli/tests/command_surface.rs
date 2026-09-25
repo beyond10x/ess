@@ -397,3 +397,61 @@ fn the_generate_area_help_offers_the_verbs_options_and_the_areas_subcommands() {
         "the usage line denies the options the command takes:\n{help}"
     );
 }
+
+/// Every help page reachable from `ess --help`, keyed by the command path that printed it.
+fn every_help(path: &mut Vec<String>, pages: &mut Vec<(String, String)>) {
+    let mut arguments: Vec<&str> = path.iter().map(String::as_str).collect();
+    arguments.push("--help");
+    let output = ess(&arguments);
+    assert!(
+        output.status.success(),
+        "`ess {}` failed",
+        arguments.join(" ")
+    );
+    let help = String::from_utf8(output.stdout).expect("the help is UTF-8");
+    let children = if help.contains("Commands:\n") {
+        offered(&help)
+    } else {
+        Vec::new()
+    };
+    pages.push((path.join(" "), help));
+    for child in children {
+        if child == "help" || path.last() == Some(&child) {
+            continue;
+        }
+        path.push(child);
+        every_help(path, pages);
+        path.pop();
+    }
+}
+
+/// `system.yaml` is a supported layout — it is how a first specification starts — so no help
+/// page may call it legacy. Agents reading "legacy `system.yaml`" stopped to ask whether the
+/// documented layout was deprecated (beyond10x/ess#72).
+#[test]
+fn no_help_calls_the_system_yaml_layout_legacy() {
+    for route in [
+        &["specify", "validate", "--help"][..],
+        &["verify", "conform", "synthesize", "--help"][..],
+    ] {
+        let output = ess(route);
+        assert!(output.status.success(), "`ess {}` failed", route.join(" "));
+        let help = String::from_utf8(output.stdout).expect("the help is UTF-8");
+        assert!(help.contains("system.yaml"), "{help}");
+        assert!(
+            !help.to_lowercase().contains("legacy"),
+            "`ess {}` calls something legacy:\n{help}",
+            route.join(" ")
+        );
+    }
+    let mut pages = Vec::new();
+    every_help(&mut Vec::new(), &mut pages);
+    for (route, help) in pages {
+        for line in help.lines() {
+            assert!(
+                !(line.contains("system.yaml") && line.to_lowercase().contains("legacy")),
+                "`ess {route} --help` calls the system.yaml layout legacy: {line}"
+            );
+        }
+    }
+}

@@ -716,6 +716,175 @@ pub fn parse_elapsed_seconds(value: &str) -> Result<u32, ParseError> {
     Ok(seconds)
 }
 
+/// An RFC 3339 instant, as a `Timestamp` field's wire value names one.
+///
+/// A `Timestamp` travels as text, so a guard that orders two of them must order the instants and
+/// not the spellings: `2020-01-01T12:00:00+01:00` is before `2020-01-01T11:30:00Z`. Parsing is the
+/// RFC 3339 `date-time` production and nothing wider: a `T` (or `t`) separator, seconds `00`–`59`
+/// (a leap second has no position on this line), up to nine fraction digits, and `Z` or a
+/// `±HH:MM` offset. No zone database, no clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Rfc3339Instant {
+    seconds: i64,
+    nanos: u32,
+}
+
+impl Rfc3339Instant {
+    /// Parses one RFC 3339 `date-time`, or `None` when the text is not one.
+    pub fn parse_rfc3339(text: &str) -> Option<Self> {
+        let bytes = text.as_bytes();
+        let digits = |range: std::ops::Range<usize>| -> Option<u32> {
+            let slice = bytes.get(range)?;
+            if slice.is_empty() || !slice.iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            slice.iter().try_fold(0u32, |total, digit| {
+                Some(total * 10 + u32::from(digit - b'0'))
+            })
+        };
+        let at =
+            |index: usize, expected: &[u8]| bytes.get(index).is_some_and(|b| expected.contains(b));
+        if !(at(4, b"-") && at(7, b"-") && at(10, b"Tt") && at(13, b":") && at(16, b":")) {
+            return None;
+        }
+        let date = CivilDate::new(
+            i32::try_from(digits(0..4)?).ok()?,
+            digits(5..7)?,
+            digits(8..10)?,
+        )
+        .ok()?;
+        let (hour, minute, second) = (digits(11..13)?, digits(14..16)?, digits(17..19)?);
+        if hour > 23 || minute > 59 || second > 59 {
+            return None;
+        }
+        let mut position = 19;
+        let mut nanos = 0u32;
+        if at(position, b".") {
+            let start = position + 1;
+            let mut end = start;
+            while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+                end += 1;
+            }
+            let width = end - start;
+            if width == 0 || width > 9 {
+                return None;
+            }
+            nanos = digits(start..end)? * 10u32.pow(u32::try_from(9 - width).ok()?);
+            position = end;
+        }
+        let offset_seconds = match bytes.get(position..)? {
+            b"Z" | b"z" => 0i64,
+            [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+                let (hours, minutes) = (
+                    digits(position + 1..position + 3)?,
+                    digits(position + 4..position + 6)?,
+                );
+                if hours > 23 || minutes > 59 {
+                    return None;
+                }
+                let magnitude = i64::from(hours * 3600 + minutes * 60);
+                if *sign == b'-' {
+                    -magnitude
+                } else {
+                    magnitude
+                }
+            }
+            _ => return None,
+        };
+        Some(Self {
+            seconds: date.days_from_epoch() * 86_400
+                + i64::from(hour * 3600 + minute * 60 + second)
+                - offset_seconds,
+            nanos,
+        })
+    }
+
+    /// The instant `seconds` later (earlier when negative), or `None` past `i64` seconds.
+    #[must_use]
+    pub fn plus_seconds(self, seconds: i64) -> Option<Self> {
+        Some(Self {
+            seconds: self.seconds.checked_add(seconds)?,
+            nanos: self.nanos,
+        })
+    }
+
+    /// The instant in UTC with a `Z`, with a fraction only when it has one.
+    #[must_use]
+    pub fn to_rfc3339(self) -> String {
+        let days = self.seconds.div_euclid(86_400);
+        let into_day = self.seconds.rem_euclid(86_400);
+        let fraction = if self.nanos == 0 {
+            String::new()
+        } else {
+            format!(".{:09}", self.nanos)
+                .trim_end_matches('0')
+                .to_owned()
+        };
+        format!(
+            "{}T{:02}:{:02}:{:02}{fraction}Z",
+            CivilDate::from_days_from_epoch(days),
+            into_day / 3600,
+            (into_day % 3600) / 60,
+            into_day % 60
+        )
+    }
+}
+
+#[cfg(test)]
+mod instant_tests {
+    use super::Rfc3339Instant;
+
+    fn at(text: &str) -> Rfc3339Instant {
+        Rfc3339Instant::parse_rfc3339(text)
+            .unwrap_or_else(|| panic!("{text} is an RFC 3339 instant"))
+    }
+
+    #[test]
+    fn instants_order_by_the_moment_and_not_by_the_spelling() {
+        assert!(at("2020-01-01T12:00:00+01:00") < at("2020-01-01T11:30:00Z"));
+        assert_eq!(at("2020-01-01T00:00:00Z"), at("2019-12-31T19:00:00-05:00"));
+        assert_eq!(at("2020-01-01t00:00:00.5z"), at("2020-01-01T00:00:00.500Z"));
+        assert!(at("2020-01-01T00:00:00Z") < at("2020-01-01T00:00:00.000000001Z"));
+    }
+
+    #[test]
+    fn text_that_is_not_a_date_time_is_no_instant() {
+        for text in [
+            "starts_at",
+            "tomorrow",
+            "2020-01-01",
+            "2020-01-01T00:00:00",
+            "2020-02-30T00:00:00Z",
+            "2020-01-01T24:00:00Z",
+            "2020-01-01T23:59:60Z",
+            "2020-01-01T00:00:00.Z",
+            "2020-01-01T00:00:00.1234567890Z",
+            "2020-01-01T00:00:00+0100",
+            "2020-01-01 00:00:00Z",
+            "2020-01-01T00:00:00Z ",
+        ] {
+            assert_eq!(Rfc3339Instant::parse_rfc3339(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn an_instant_round_trips_through_its_utc_spelling() {
+        for text in [
+            "2020-01-01T00:00:00Z",
+            "1969-12-31T23:59:59.25Z",
+            "2020-02-29T13:14:15Z",
+        ] {
+            assert_eq!(at(text).to_rfc3339(), text);
+        }
+        assert_eq!(
+            at("2020-01-01T00:00:00Z")
+                .plus_seconds(-1)
+                .map(Rfc3339Instant::to_rfc3339),
+            Some("2019-12-31T23:59:59Z".to_owned())
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

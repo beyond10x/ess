@@ -4,6 +4,7 @@
 //! normalized away, unsupported behavior is reported as a coverage gap, and external references
 //! are refused rather than fetched or guessed.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
@@ -253,7 +254,7 @@ impl Refusal {
     }
 }
 
-/// Imports one `OpenAPI` 3.1 document into typed service-interface IR.
+/// Imports one `OpenAPI` 3.0 or 3.1 document into typed service-interface IR.
 pub fn import(text: &str) -> Result<ImportReport, Vec<Refusal>> {
     let value: Value = match serde_yaml::from_value(accounting::strict_value(text)?) {
         Ok(value) => value,
@@ -451,6 +452,8 @@ struct Importer {
     normalizations: BTreeSet<AccountingEntry>,
     refusals: Vec<Refusal>,
     references: BTreeSet<UnresolvedReference>,
+    /// The source is `OpenAPI` 3.0: each schema is rewritten to its 3.1 form before it is read.
+    openapi30: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -485,6 +488,7 @@ impl Importer {
             normalizations: BTreeSet::new(),
             refusals: Vec::new(),
             references: BTreeSet::new(),
+            openapi30: false,
         }
     }
 
@@ -492,16 +496,26 @@ impl Importer {
         let Some(root) = value.as_object() else {
             return Err(vec![Refusal::new("/", "document root must be an object")]);
         };
+        if root.contains_key("swagger") {
+            self.refusals.push(Refusal::new(
+                "/swagger",
+                "Swagger 2.0 is not supported; convert the document to OpenAPI 3.0 or 3.1",
+            ));
+        }
         let version = self.required_string(root, "openapi", "/openapi");
         if let Some(version) = &version {
-            if !version.strip_prefix("3.1.").is_some_and(|patch| {
-                !patch.is_empty()
-                    && patch.bytes().all(|byte| byte.is_ascii_digit())
-                    && (patch == "0" || !patch.starts_with('0'))
-            }) {
+            let patch = |minor: &str| {
+                version.strip_prefix(minor).is_some_and(|patch| {
+                    !patch.is_empty()
+                        && patch.bytes().all(|byte| byte.is_ascii_digit())
+                        && (patch == "0" || !patch.starts_with('0'))
+                })
+            };
+            self.openapi30 = patch("3.0.");
+            if !self.openapi30 && !patch("3.1.") {
                 self.refusals.push(Refusal::new(
                     "/openapi",
-                    format!("only OpenAPI 3.1 is supported, found `{version}`"),
+                    format!("only OpenAPI 3.0 and 3.1 are supported, found `{version}`"),
                 ));
             }
         }
@@ -786,6 +800,8 @@ impl Importer {
             ));
             return None;
         };
+        let rewritten = self.null_admitting(object, pointer)?;
+        let object = rewritten.as_ref();
         if !self.schema_context(object, pointer) {
             return None;
         }
@@ -856,6 +872,41 @@ impl Importer {
         };
         self.note_keywords(object, consumed, pointer, KeywordContext::Schema);
         schema
+    }
+
+    /// The schema as the 3.1 reading sees it: a 3.0 schema rewritten, or a 3.1 `[T, "null"]`
+    /// union narrowed to `T`, with the admitted `null` accounted. `None` means a refusal was
+    /// recorded.
+    fn null_admitting<'a>(
+        &mut self,
+        object: &'a Map<String, Value>,
+        pointer: &str,
+    ) -> Option<Cow<'a, Map<String, Value>>> {
+        if self.openapi30 {
+            let before = self.refusals.len();
+            let converted = openapi30_schema(object, pointer, &mut self.refusals);
+            if self.refusals.len() != before {
+                return None;
+            }
+            if openapi30_admits_null(object) {
+                self.null_unpreserved(&format!("{pointer}/nullable"));
+            }
+            return Some(Cow::Owned(converted));
+        }
+        let Some(single) = null_union(object) else {
+            return Some(Cow::Borrowed(object));
+        };
+        if let Some(refusal) = null_only_enum(object, pointer) {
+            self.refusals.push(refusal);
+            return None;
+        }
+        if admits_null(object) {
+            self.null_unpreserved(&format!("{pointer}/type"));
+        }
+        let mut rewritten = object.clone();
+        rewritten.insert("type".to_owned(), Value::String(single));
+        strip_null_enum(&mut rewritten);
+        Some(Cow::Owned(rewritten))
     }
 
     fn string_schema(
@@ -1009,6 +1060,17 @@ impl Importer {
         })
     }
 
+    /// The `null` member of a 3.1 type union, or of a 3.0 `nullable`, which the IR cannot carry.
+    fn null_unpreserved(&mut self, pointer: &str) {
+        self.gaps.insert(AccountingEntry {
+            pointer: pointer.to_owned(),
+            code: AccountingCode::FeatureUnpreserved,
+            detail: "the type admits `null` (a 3.1 union with `null`, or 3.0 `nullable: true`); \
+                     this variant does not preserve the `null` member"
+                .to_owned(),
+        });
+    }
+
     fn note_keywords(
         &mut self,
         object: &Map<String, Value>,
@@ -1111,6 +1173,137 @@ impl Importer {
                 None
             }
         }
+    }
+}
+
+/// Rewrites one `OpenAPI` 3.0 Schema Object's own keywords into their `OpenAPI` 3.1 form.
+///
+/// Boolean `exclusiveMinimum`/`exclusiveMaximum` fold their `minimum`/`maximum` into the 3.1
+/// numeric keyword, and `false` drops out. `nullable` is removed: whether it admits `null` is
+/// [`openapi30_admits_null`]'s question, and the caller accounts that member. A construct with no
+/// faithful 3.1 form is refused at its own pointer. Subschemas are converted when they are read.
+fn openapi30_schema(
+    object: &Map<String, Value>,
+    pointer: &str,
+    refusals: &mut Vec<Refusal>,
+) -> Map<String, Value> {
+    let mut converted = object.clone();
+    match object.get("nullable") {
+        Some(Value::Bool(true)) if object.contains_key("$ref") => refusals.push(Refusal::new(
+            format!("{pointer}/nullable"),
+            "OpenAPI 3.0 ignores `$ref` siblings, so `nullable` beside `$ref` has no faithful \
+             3.1 form; declare the nullable shape without `$ref`",
+        )),
+        None | Some(Value::Bool(_)) => {}
+        Some(_) => refusals.push(Refusal::new(
+            format!("{pointer}/nullable"),
+            "OpenAPI 3.0 `nullable` must be a boolean",
+        )),
+    }
+    converted.remove("nullable");
+    // Checked before the `$ref` return: a numeric bound is 3.1 spelling in a 3.0 document
+    // wherever it sits, while a boolean one beside `$ref` stays an ordinary sibling gap.
+    for exclusive in ["exclusiveMinimum", "exclusiveMaximum"] {
+        if object
+            .get(exclusive)
+            .is_some_and(|value| !value.is_boolean())
+        {
+            refusals.push(Refusal::new(
+                format!("{pointer}/{exclusive}"),
+                format!(
+                    "OpenAPI 3.0 `{exclusive}` must be a boolean; the numeric form is OpenAPI 3.1"
+                ),
+            ));
+        }
+    }
+    if object.contains_key("$ref") {
+        return converted;
+    }
+    if object.contains_key("type") {
+        if let Some(refusal) = null_only_enum(object, pointer) {
+            refusals.push(refusal);
+        }
+        // 3.0 has no `null` type: a null member is reachable only through `nullable`, which the
+        // caller accounts.
+        strip_null_enum(&mut converted);
+    }
+    for (exclusive, bound) in [
+        ("exclusiveMinimum", "minimum"),
+        ("exclusiveMaximum", "maximum"),
+    ] {
+        match object.get(exclusive) {
+            Some(Value::Bool(false)) => {
+                converted.remove(exclusive);
+            }
+            Some(Value::Bool(true)) => match converted.remove(bound) {
+                Some(value) if value.is_number() => {
+                    converted.insert(exclusive.to_owned(), value);
+                }
+                _ => refusals.push(Refusal::new(
+                    format!("{pointer}/{exclusive}"),
+                    format!(
+                        "OpenAPI 3.0 `{exclusive}: true` without a numeric `{bound}` has no 3.1 form"
+                    ),
+                )),
+            },
+            // Absent, or a numeric bound already refused above, before the `$ref` return.
+            _ => {}
+        }
+    }
+    converted
+}
+
+/// A refusal for an `enum` whose only members are `null`: stripping them would leave an empty
+/// enum and report it as one, when the author wrote a null-only domain the interface cannot carry.
+fn null_only_enum(object: &Map<String, Value>, pointer: &str) -> Option<Refusal> {
+    let values = object.get("enum")?.as_array()?;
+    (!values.is_empty() && values.iter().all(Value::is_null)).then(|| {
+        Refusal::new(
+            format!("{pointer}/enum"),
+            "an enum whose only member is `null` admits no value the interface can carry; it has \
+             no null type",
+        )
+    })
+}
+
+/// Whether an `OpenAPI` 3.0 `nullable: true` actually admits `null` (OAS 3.0.3 Schema Object):
+/// only beside an explicit `type`, and only where an `enum` does not already exclude it.
+fn openapi30_admits_null(object: &Map<String, Value>) -> bool {
+    object.get("nullable") == Some(&Value::Bool(true))
+        && !object.contains_key("$ref")
+        && object.contains_key("type")
+        && enum_admits_null(object)
+}
+
+/// A 3.1 `type` naming exactly one type besides `"null"`: that type.
+fn null_union(object: &Map<String, Value>) -> Option<String> {
+    let [first, second] = object.get("type")?.as_array()?.as_slice() else {
+        return None;
+    };
+    match (first.as_str()?, second.as_str()?) {
+        ("null", single) | (single, "null") if single != "null" => Some(single.to_owned()),
+        _ => None,
+    }
+}
+
+/// Whether a type admitting `null` still admits it past the schema's `enum` and `const`.
+fn admits_null(object: &Map<String, Value>) -> bool {
+    enum_admits_null(object) && object.get("const").is_none_or(Value::is_null)
+}
+
+/// Whether the schema's `enum`, if any, still admits `null`. The whole test for 3.0, where
+/// `const` is not a Schema Object keyword and cannot exclude what `nullable` admits.
+fn enum_admits_null(object: &Map<String, Value>) -> bool {
+    object
+        .get("enum")
+        .and_then(Value::as_array)
+        .is_none_or(|values| values.contains(&Value::Null))
+}
+
+/// Removes a `null` member from an `enum`; the caller accounts the `null` it admitted.
+fn strip_null_enum(object: &mut Map<String, Value>) {
+    if let Some(Value::Array(values)) = object.get_mut("enum") {
+        values.retain(|value| !value.is_null());
     }
 }
 
@@ -1357,10 +1550,72 @@ components:
 
     #[test]
     fn review_type_array_is_not_an_absent_type() {
-        refused_at_every_site(
-            &serde_json::json!({"type": ["string", "null"], "enum": ["a"]}),
-            "/type",
-        );
+        for kind in [
+            serde_json::json!(["string", "integer"]),
+            serde_json::json!(["null"]),
+            serde_json::json!(["null", "null"]),
+            serde_json::json!(["string", "integer", "null"]),
+        ] {
+            refused_at_every_site(&serde_json::json!({"type": kind, "enum": ["a"]}), "/type");
+        }
+    }
+
+    /// 3.1 `type: [T, "null"]` and 3.0 `nullable: true` are one meaning, so they import to the
+    /// same interface with the same gap, each at its own keyword (beyond10x/ess#73).
+    #[test]
+    fn openapi31_null_union_agrees_with_openapi30_nullable() {
+        for (union, nullable) in [
+            (
+                serde_json::json!({"type": ["string", "null"], "format": "date"}),
+                serde_json::json!({"type": "string", "format": "date", "nullable": true}),
+            ),
+            (
+                serde_json::json!({"type": ["null", "integer"]}),
+                serde_json::json!({"type": "integer", "nullable": true}),
+            ),
+            (
+                serde_json::json!({"type": ["string", "null"], "enum": ["a", null]}),
+                serde_json::json!({"type": "string", "enum": ["a", null], "nullable": true}),
+            ),
+        ] {
+            for site in 0..4 {
+                let (source31, pointer) = at_site(union.clone(), site);
+                let (source30, _) = openapi30(nullable.clone(), site);
+                let imported31 = import(&source31).expect("3.1 null union imports");
+                let imported30 = import(&source30).expect("3.0 nullable imports");
+                assert_eq!(
+                    imported31.interface().types,
+                    imported30.interface().types,
+                    "{union}"
+                );
+                assert_eq!(
+                    imported31.interface().operations,
+                    imported30.interface().operations
+                );
+                let gap31 = &imported31.accounting().coverage_gaps;
+                let gap30 = &imported30.accounting().coverage_gaps;
+                assert_eq!(gap31.len(), 1, "{gap31:?}");
+                assert_eq!(gap30.len(), 1, "{gap30:?}");
+                assert_eq!(gap31[0].pointer, format!("{pointer}/type"));
+                assert_eq!(gap30[0].pointer, format!("{pointer}/nullable"));
+                assert_eq!(
+                    (gap31[0].code, &gap31[0].detail),
+                    (gap30[0].code, &gap30[0].detail)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn openapi31_null_union_excluded_by_enum_or_const_is_exact() {
+        for schema in [
+            serde_json::json!({"type": ["string", "null"], "enum": ["a"]}),
+            serde_json::json!({"type": ["string", "null"], "const": "a"}),
+        ] {
+            let (source, _) = at_site(schema.clone(), 0);
+            let imported = import(&source).expect("no null member is admitted");
+            assert!(gap_pointers(&imported).is_empty(), "{schema}: {imported:?}");
+        }
     }
 
     #[test]
@@ -1462,5 +1717,159 @@ components:
             .iter()
             .any(|entry| entry.pointer.ends_with("/default")));
         assert!(project_import(&imported).is_err());
+    }
+
+    fn openapi30(schema: Value, site: usize) -> (String, String) {
+        let (source, pointer) = at_site(schema, site);
+        let mut value: Value = serde_json::from_str(&source).unwrap();
+        value["openapi"] = Value::String("3.0.3".to_owned());
+        (value.to_string(), pointer)
+    }
+
+    fn gap_pointers(imported: &ImportReport) -> Vec<&str> {
+        imported
+            .accounting()
+            .coverage_gaps
+            .iter()
+            .map(|gap| gap.pointer.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn openapi30_nullable_imports_as_its_type_and_accounts_the_null_member() {
+        for site in 0..4 {
+            let (source, pointer) = openapi30(
+                serde_json::json!({"type": "string", "format": "date", "nullable": true}),
+                site,
+            );
+            let imported = import(&source).expect("OpenAPI 3.0 nullable imports");
+            assert_eq!(imported.interface().source_openapi, "3.0.3");
+            assert!(
+                gap_pointers(&imported).contains(&format!("{pointer}/nullable").as_str()),
+                "the null member is lost silently: {imported:?}"
+            );
+            let reread = read_import(&imported.to_canonical_json()).expect("replay admits 3.0");
+            assert_eq!(reread.interface(), imported.interface());
+        }
+    }
+
+    #[test]
+    fn openapi30_nullable_that_admits_no_null_is_exact() {
+        for schema in [
+            serde_json::json!({"type": "string", "nullable": false}),
+            serde_json::json!({"type": "string", "enum": ["a"], "nullable": true}),
+            serde_json::json!({"enum": ["a"], "nullable": true}),
+        ] {
+            let (source, _) = openapi30(schema.clone(), 0);
+            let imported = import(&source).expect("no null member is admitted");
+            assert!(gap_pointers(&imported).is_empty(), "{schema}: {imported:?}");
+        }
+        let (source, pointer) = openapi30(
+            serde_json::json!({"type": "string", "enum": ["a", null], "nullable": true}),
+            0,
+        );
+        let imported = import(&source).expect("a null enum member follows nullable");
+        assert_eq!(gap_pointers(&imported), [format!("{pointer}/nullable")]);
+        let InterfaceSchema::String { values, .. } = &imported.interface().types["A~/"] else {
+            panic!("string schema expected");
+        };
+        assert_eq!(values, &["a"]);
+    }
+
+    #[test]
+    fn openapi30_boolean_exclusive_bounds_take_the_numeric_31_form() {
+        let mut refusals = Vec::new();
+        let converted = openapi30_schema(
+            serde_json::json!({
+                "type": "number", "minimum": 0, "exclusiveMinimum": true,
+                "maximum": 10, "exclusiveMaximum": false
+            })
+            .as_object()
+            .unwrap(),
+            "/s",
+            &mut refusals,
+        );
+        assert!(refusals.is_empty(), "{refusals:?}");
+        assert_eq!(
+            Value::Object(converted),
+            serde_json::json!({"type": "number", "exclusiveMinimum": 0, "maximum": 10})
+        );
+        let (source, pointer) = openapi30(
+            serde_json::json!({"type": "integer", "minimum": 1, "exclusiveMinimum": true}),
+            1,
+        );
+        let imported = import(&source).expect("boolean exclusive bounds import");
+        assert_eq!(
+            gap_pointers(&imported),
+            [format!("{pointer}/exclusiveMinimum")]
+        );
+    }
+
+    #[test]
+    fn openapi30_constructs_without_a_31_form_refuse_at_their_pointer() {
+        for (schema, suffix) in [
+            (
+                serde_json::json!({"type": "number", "exclusiveMaximum": true}),
+                "/exclusiveMaximum",
+            ),
+            (
+                serde_json::json!({"type": "number", "exclusiveMinimum": 3}),
+                "/exclusiveMinimum",
+            ),
+            (
+                serde_json::json!({"type": "string", "nullable": "yes"}),
+                "/nullable",
+            ),
+            (
+                serde_json::json!({"$ref": "#/components/schemas/B", "nullable": true}),
+                "/nullable",
+            ),
+        ] {
+            for site in 0..4 {
+                let (source, pointer) = openapi30(schema.clone(), site);
+                let refusals = import(&source).expect_err("no faithful 3.1 form");
+                assert!(
+                    refusals
+                        .iter()
+                        .any(|refusal| refusal.pointer == format!("{pointer}{suffix}")),
+                    "{schema}: {refusals:?}"
+                );
+                assert!(
+                    refusals.iter().all(|refusal| refusal.pointer != "/openapi"),
+                    "a construct refusal became a document refusal: {refusals:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn openapi31_numeric_exclusive_bound_remains_an_ordinary_gap() {
+        let (source, pointer) = at_site(
+            serde_json::json!({"type": "number", "exclusiveMinimum": 3}),
+            0,
+        );
+        let imported = import(&source).expect("3.1 numeric bound is an ordinary gap");
+        assert_eq!(
+            gap_pointers(&imported),
+            [format!("{pointer}/exclusiveMinimum")]
+        );
+    }
+
+    #[test]
+    fn swagger_and_other_versions_still_refuse() {
+        let swagger = SOURCE.replace("openapi: 3.1.0", "swagger: '2.0'");
+        let refusals = import(&swagger).expect_err("Swagger 2.0 refuses");
+        assert!(
+            refusals.iter().any(|refusal| refusal.pointer == "/swagger"),
+            "{refusals:?}"
+        );
+        for version in ["2.0", "3.2.0", "3.0", "3.0.01", "4.0.0"] {
+            let refusals =
+                import(&SOURCE.replace("3.1.0", version)).expect_err("unsupported version refuses");
+            assert!(
+                refusals.iter().any(|refusal| refusal.pointer == "/openapi"),
+                "{version}: {refusals:?}"
+            );
+        }
     }
 }

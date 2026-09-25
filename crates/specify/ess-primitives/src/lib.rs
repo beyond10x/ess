@@ -27,5 +27,5 @@ pub use node::Node;
 pub use predicate::{
     CompareOp, LeafOutcome, Operand, Predicate, PredicateOutcome, Quantified, Truth,
 };
-pub use time::{CivilDate, Granularity, Horizon, ObservedAt, Timestamp};
+pub use time::{CivilDate, Granularity, Horizon, ObservedAt, Rfc3339Instant, Timestamp};
 pub use verification::VerificationStatus;
