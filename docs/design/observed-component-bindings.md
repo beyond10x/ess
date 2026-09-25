@@ -39,7 +39,7 @@ reader as offline verification. Require an explicit unused output outside Git ch
 clobber observations or accepted models. `--format json` writes a single deterministic report;
 `--markdown-out` optionally writes a generated reference table after report admission.
 
-The closed `ess-observed-bindings-report/1` report carries the exact binding digest, realization
+The closed `ess-observed-bindings-report/2` report carries the exact binding digest, realization
 digest, observation digest/provenance/coverage when available, per-binding semantic component and
 implementation identities, checks, and explicit exclusions. It is a result document, not an
 admissible authority for another check. The report states observed workload UID and image reference.
@@ -64,6 +64,80 @@ satisfied. Exit codes: 0 satisfied, 1 violated/invalid authored contract, 2 unkn
 Malformed input or failed collection produces a machine-readable unknown report and nonzero exit;
 no green empty result. Invalid references produce a refused contract before acquisition. JSON
 reports retain all applicable findings and never print raw credential-adapter stderr.
+
+A bound workload is bound as a whole. Within admitted coverage, a container or native sidecar (an
+`initContainers` entry with `restartPolicy: Always`) in the observed template that no binding for
+that workload names is a violation (`OBS-BIND-008`) that names it: it runs code the declared
+placement does not account for. A binding may name a native sidecar exactly as it names a
+container. Plain init containers run to completion before the pod starts and are not checked; the
+finding's detail says so rather than claiming every container was bound. The check reads only the
+bound workload's template, so workloads no binding selects remain uncovered rather than violated.
+
+The report moves to `ess-observed-bindings-report/2`: the same fields, a new check and therefore
+new semantics, so a reader of `/1` must not read `/2` as `/1`. The input stays
+`ess-observed-bindings/1` with the same fields, and its meaning widens: a document that binds some
+containers of a workload now claims that the workload runs nothing else. A document whose bound
+workload carries an unbound sidecar, which was satisfied under report `/1`, is violated under `/2`.
+Acknowledging a third-party sidecar without binding it would need an input format change and is not
+part of this version.
+
+Native sidecars reach the comparison through an optional `native_sidecars` field of the
+infrastructure model (name and image only). Unknown differs from false, so the field has three
+states: absent means the observation is not taken to have recorded init containers, an empty list
+means it recorded them and none is a native sidecar, and a list names each one.
+
+What ESS 0.31.0 wrote differs by path. Its namespace-topology collector dropped `initContainers`
+from every template. Its full scan copied each API object verbatim, so a template with init
+containers carries the key there; the API server omits an empty list, so no 0.31.0 document carries
+`initContainers: []`. From this release on the namespace-topology collector writes the key for
+every template, `[]` when there are none, as its statement that it looked.
+
+The compiler writes `native_sidecars` for a workload when, and only when, one of these holds:
+
+1. the template's `initContainers` holds at least one entry with `restartPolicy: Always` — the field
+   lists them;
+2. the template's `initContainers` is the explicit empty list `[]` — the field is `[]`;
+3. the observation's `scout_version` is a plain release at or after 0.32.0, the first that collects
+   init containers — the field is `[]` when neither of the above lists anything.
+
+In every other case the field is absent: no key, a list of plain init containers only, or a
+producer version that is older, a pre-release or a label such as `synthetic`. A document in any of
+those cases compiles to exactly the bytes and digest ESS 0.31.0 computed for it, since the field is
+the only addition and it is omitted. A 0.31.0 full scan with a native sidecar does gain the field,
+and its digest moves; ESS 0.31.0 silently dropped a running container there, which is the reason for
+the field. An IR document is read as written: absent stays absent, whatever its provenance says,
+because only the compiler that wrote it knew.
+
+Where the field is absent and every container is bound, `OBS-BIND-008` is `unknown` and its detail
+names the producer version and the first release that collects init containers. An unbound plain
+container still violates, since the evidence of it is in the containers list itself. A binding
+that names something not among the containers is `unknown` under `OBS-BIND-003` rather than
+violated, because it may be an unrecorded native sidecar.
+
+No format version moves. A reader older than the field refuses a document that carries it, because
+the model's mirrors deny unknown fields.
+
+## Live acceptance
+
+`cargo xtask infra-acceptance` (`task infra-acceptance`) runs the comparison against a disposable
+k3d cluster that the harness creates and deletes. It builds a generated service into one container
+image, sets the cluster up from its own manifests (never from an ESS projection), reads the
+namespace live, projects the placement intent twice over the same observation and requires identical
+bytes, runs wrong-tag, missing-workload and extra-container sensitivity cases with a restore after
+each, checks every observation and report for a Secret's value, and reads back the absence of the
+cluster, its images, containers, volumes and scratch files. It needs Docker and is not part of the
+offline gate.
+
+Two guards hold the no-projection property. A syntax-level test reads the harness source: every
+program it starts must be one that function may start, no argument names kubectl outside its one
+wrapper, a writing verb other than the one `apply`, `docker cp`, a k3d volume or the node's
+manifest directory, and the only non-template input to a rendered manifest is a random value
+only the harness can mint. At run time every command is refused before it starts if its program is
+not one the harness runs (`k3d`, `kubectl`, `docker`, `tar`, cargo and the built `ess`, named
+exactly), if an argument lies under a projection output, or if it names a cluster, context or
+node that is not this run's own.
+A run name that does not select an `ess-m8-*` cluster is refused, and so is creating a cluster
+whose name already exists.
 
 ## Verification
 

@@ -1,0 +1,10 @@
+        - name: sidecar
+          image: "{{IMAGE}}"
+          imagePullPolicy: Never
+          args: [serve, billing, /data/sidecar.sqlite, /data/sidecar-provider, "http://127.0.0.1:9", /data/sidecar.ready]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /data

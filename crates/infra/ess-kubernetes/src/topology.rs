@@ -175,7 +175,10 @@ fn pod_spec(spec: &mut RawPodSpec) {
             volume.empty_dir = Some(json!({}));
         }
     }
-    for container in &mut spec.containers {
+    // Written even when empty: the key is this collector's statement that it looked, so a reader
+    // can tell "no init containers" from a producer that never recorded them.
+    let init_containers = spec.init_containers.get_or_insert_with(Vec::new);
+    for container in spec.containers.iter_mut().chain(init_containers.iter_mut()) {
         container.env.retain(|env| env.value_from.is_some());
         for env in &mut container.env {
             env.value = None;

@@ -2,6 +2,7 @@
 
 mod consumer_coverage;
 mod docs;
+mod infra_acceptance;
 mod support;
 mod whats_changed;
 
@@ -102,6 +103,8 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Accept one generated service placement against a disposable k3d cluster; needs Docker.
+    InfraAcceptance(infra_acceptance::Args),
     /// Verify or render release records.
     Release {
         #[command(subcommand)]
@@ -158,6 +161,9 @@ fn run(cli: Cli) -> Result<String, String> {
         Command::Generate { check } => generate(&root, check).map_err(|error| format!("{error:#}")),
         Command::Schema { check } => schema(&root, check).map_err(|error| format!("{error:#}")),
         Command::Docs => docs::run(&root),
+        Command::InfraAcceptance(args) => {
+            infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))
+        }
         Command::WhatsChanged { check } => {
             whats_changed::run(&root, check).map_err(|error| format!("{error:#}"))
         }

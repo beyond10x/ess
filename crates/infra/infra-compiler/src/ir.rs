@@ -172,6 +172,11 @@ pub struct ResolvedWorkload {
     pub template_labels: BTreeMap<String, String>,
     /// The containers, in declared order.
     pub containers: Vec<ResolvedContainer>,
+    /// The template's native sidecars, in declared order, or `None` when the observation did not
+    /// record init containers — unknown, not none. Optional in `infra-ir`: omitted when `None`,
+    /// so every document from a producer that never recorded them keeps its bytes and digest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_sidecars: Option<Vec<infra_domain::workload::NativeSidecar>>,
     /// The volumes, in declared order.
     pub volumes: Vec<ResolvedVolume>,
 }

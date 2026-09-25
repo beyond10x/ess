@@ -15,7 +15,7 @@ use ess_realization::{
 use serde::{Deserialize, Serialize};
 
 const INPUT_FORMAT: &str = "ess-observed-bindings/1";
-const REPORT_FORMAT: &str = "ess-observed-bindings-report/1";
+const REPORT_FORMAT: &str = "ess-observed-bindings-report/2";
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct Args {
@@ -444,12 +444,11 @@ fn evaluate(
                 Status::Satisfied,
                 "workload exists within the admitted scope",
             );
-            if let Some(container) = target
-                .containers
-                .iter()
-                .find(|c| c.name == binding.container)
+            if let Some((_, image)) =
+                template_entries(target).find(|(name, _)| *name == binding.container)
             {
-                result.observed_image = Some(container.image.clone());
+                let container = Observed { image };
+                result.observed_image = Some(container.image.to_owned());
                 result.check(
                     "OBS-BIND-003",
                     Status::Satisfied,
@@ -468,12 +467,17 @@ fn evaluate(
                     _ => result.check("OBS-BIND-005", Status::Unknown, "source/package artifacts or tag-only image references cannot establish immutable image agreement or source-to-image provenance"),
                 }
             } else {
-                result.check(
-                    "OBS-BIND-003",
-                    Status::Violated,
-                    "named container is absent from the observed workload template",
-                );
+                let (status, detail) = absent_container(target);
+                result.check("OBS-BIND-003", status, detail);
             }
+            let (status, detail) = unbound_containers(
+                spec,
+                binding,
+                template_entries(target).map(|(name, _)| name),
+                target.native_sidecars.is_some(),
+                &ir.provenance.scout_version,
+            );
+            result.check("OBS-BIND-008", status, detail);
         } else {
             result.check(
                 "OBS-BIND-002",
@@ -483,6 +487,97 @@ fn evaluate(
         }
         report.status = report.status.combine(result.status);
         report.bindings.insert(binding.id.to_string(), result);
+    }
+}
+
+/// Every entry a binding may name — containers, then native sidecars — as `(name, image)`.
+fn template_entries(
+    target: &infra_compiler::ResolvedWorkload,
+) -> impl Iterator<Item = (&str, &str)> {
+    target
+        .containers
+        .iter()
+        .map(|c| (c.name.as_str(), c.image.as_str()))
+        .chain(
+            target
+                .native_sidecars
+                .iter()
+                .flatten()
+                .map(|s| (s.name.as_str(), s.image.as_str())),
+        )
+}
+
+/// A named container is absent from the template's containers. That is a violation only when the
+/// observation also recorded native sidecars; otherwise the name may be an unrecorded one.
+fn absent_container(target: &infra_compiler::ResolvedWorkload) -> (Status, &'static str) {
+    if target.native_sidecars.is_none() {
+        (
+            Status::Unknown,
+            "named container is not among the template's containers, and this observation did \
+             not record native sidecars, so it may be one",
+        )
+    } else {
+        (
+            Status::Violated,
+            "named container is absent from the observed workload template",
+        )
+    }
+}
+
+/// The observed image of whichever template entry a binding names.
+struct Observed<'a> {
+    image: &'a str,
+}
+
+/// A bound workload is bound as a whole: a template container or native sidecar (an init container
+/// with `restartPolicy: Always`) that no binding names is running code the declared placement does
+/// not account for. Plain init containers run to completion before the pod starts and are not
+/// checked, and the detail says so. Only this workload's template is read, so unbound workloads
+/// elsewhere stay uncovered, not violated.
+fn unbound_containers<'a>(
+    spec: &BindingDocument,
+    binding: &Binding,
+    observed: impl Iterator<Item = &'a str>,
+    sidecars_recorded: bool,
+    producer: &str,
+) -> (Status, String) {
+    let bound: BTreeSet<&str> = spec
+        .bindings
+        .iter()
+        .filter(|other| {
+            other.workload.kind.key() == binding.workload.kind.key()
+                && other.workload.name == binding.workload.name
+        })
+        .map(|other| other.container.as_str())
+        .collect();
+    let unbound: BTreeSet<&str> = observed.filter(|name| !bound.contains(name)).collect();
+    if unbound.is_empty() && !sidecars_recorded {
+        // Unknown differs from false: silence about init containers is not their absence.
+        let (major, minor, patch) = infra_compiler::FIRST_PRODUCER_RECORDING_INIT_CONTAINERS;
+        (
+            Status::Unknown,
+            format!(
+                "every container is named by a binding, but this observation does not record init \
+                 containers: its producer `{producer}` is not a release at or after \
+                 {major}.{minor}.{patch}, the first that collects them, so an unbound native \
+                 sidecar cannot be ruled out"
+            ),
+        )
+    } else if unbound.is_empty() {
+        (
+            Status::Satisfied,
+            "each container and native sidecar in the workload template is named by a binding; \
+             plain init containers are not checked"
+                .to_owned(),
+        )
+    } else {
+        (
+            Status::Violated,
+            format!(
+                "workload template has containers or native sidecars no binding names: {}",
+                unbound.into_iter().collect::<Vec<_>>().join(", ")
+            ),
+        )
     }
 }
 

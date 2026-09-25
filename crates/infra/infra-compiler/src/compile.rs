@@ -186,7 +186,7 @@ pub fn compile(observation: &Observation) -> InfraIr {
             workload.kind,
             &workload.identity.name,
         );
-        let resolved = resolve_workload(
+        let mut resolved = resolve_workload(
             observation.coverage.is_none(),
             workload,
             &key,
@@ -197,6 +197,13 @@ pub fn compile(observation: &Observation) -> InfraIr {
             &claims,
             &mut facts,
         );
+        // A producer from the release that collects init containers on omits the key only when
+        // there are none; an older one never recorded them, and its silence stays unknown.
+        if resolved.native_sidecars.is_none()
+            && producer_records_init_containers(&observation.scout_version)
+        {
+            resolved.native_sidecars = Some(Vec::new());
+        }
         workloads.insert(key, resolved);
     }
 
@@ -437,6 +444,23 @@ pub fn compile(observation: &Observation) -> InfraIr {
 
 /// Resolves one workload's references. Its own function for the reason `run_ess` is one in the
 /// CLI: the body is long because a workload has many reference sites, not because it is complex.
+/// The first ESS release whose collectors record `initContainers`.
+pub const FIRST_PRODUCER_RECORDING_INIT_CONTAINERS: (u64, u64, u64) = (0, 32, 0);
+
+/// Whether a producer version is a release at or after
+/// [`FIRST_PRODUCER_RECORDING_INIT_CONTAINERS`]. A version this cannot read as `major.minor.patch`
+/// — a pre-release, a build label, `synthetic` — is not: it says nothing about what was collected.
+pub fn producer_records_init_containers(version: &str) -> bool {
+    let mut parts = version.split('.');
+    let mut next = || parts.next().and_then(|p| p.parse::<u64>().ok());
+    match (next(), next(), next(), parts.next()) {
+        (Some(major), Some(minor), Some(patch), None) => {
+            (major, minor, patch) >= FIRST_PRODUCER_RECORDING_INIT_CONTAINERS
+        }
+        _ => false,
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn resolve_workload(
     configuration_keys_observed: bool,
@@ -709,6 +733,7 @@ fn resolve_workload(
         service_account,
         template_labels: workload.template.labels.clone(),
         containers,
+        native_sidecars: workload.template.native_sidecars.clone(),
         volumes,
     }
 }

@@ -80,8 +80,25 @@ pub struct PodTemplate {
     pub service_account: Option<String>,
     /// The containers, in declared order.
     pub containers: Vec<Container>,
+    /// The native sidecars — `initContainers` with `restartPolicy: Always` — in declared order.
+    /// Plain init containers run to completion before the pod starts and are not recorded.
+    /// `None` when the document did not record `initContainers` at all: unknown, not none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_sidecars: Option<Vec<NativeSidecar>>,
     /// The volumes, in declared order.
     pub volumes: Vec<Volume>,
+}
+
+/// A native sidecar: an init container the kubelet keeps running for the pod's whole life.
+///
+/// Only its identity is modelled — enough to say which image runs under which name — so a
+/// binding can name it. Its environment, mounts and probes are not read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NativeSidecar {
+    /// The init container's name.
+    pub name: String,
+    /// The image reference.
+    pub image: String,
 }
 
 /// One container of a template.
@@ -348,6 +365,7 @@ impl Workload {
                 ),
                 service_account: template.spec.service_account_name.clone(),
                 containers,
+                native_sidecars: native_sidecars(&template.spec, &template_location, errors),
                 volumes: template
                     .spec
                     .volumes
@@ -372,6 +390,7 @@ impl Workload {
                 labels: BTreeMap::new(),
                 service_account: None,
                 containers: Vec::new(),
+                native_sidecars: None,
                 volumes: Vec::new(),
             }
         };
@@ -390,6 +409,40 @@ impl Workload {
             template,
         })
     }
+}
+
+/// The init containers the kubelet keeps running — `restartPolicy: Always` — as native sidecars.
+fn native_sidecars(
+    spec: &crate::raw::RawPodSpec,
+    template_location: &str,
+    errors: &mut ValidationErrors,
+) -> Option<Vec<NativeSidecar>> {
+    let recorded = spec.init_containers.as_ref()?;
+    let sidecars = recorded
+        .iter()
+        .enumerate()
+        .filter(|(_, init)| init.restart_policy.as_deref() == Some("Always"))
+        .filter_map(|(index, init)| {
+            Container::from_raw(
+                init,
+                &format!("{template_location}.spec.initContainers[{index}]"),
+                errors,
+            )
+            .map(|sidecar| NativeSidecar {
+                name: sidecar.name,
+                image: sidecar.image,
+            })
+        })
+        .collect::<Vec<_>>();
+    // A list holding only plain init containers is what ESS 0.31.0's full scan copied verbatim,
+    // so it states nothing this build may record without moving that document's digest; the
+    // compiler records "none" for it only from a producer that collects init containers. The
+    // explicit empty list is written only by the namespace-topology collector from this release
+    // on (the API server omits empty lists), and it does record "looked, found none".
+    if sidecars.is_empty() && !recorded.is_empty() {
+        return None;
+    }
+    Some(sidecars)
 }
 
 impl Container {

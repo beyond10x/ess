@@ -182,6 +182,19 @@ tasks:
         grep -Eo 'sha256:[0-9a-f]{64}' | tail -1)" =
         "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
+  infra-acceptance:
+    desc: Accept one generated service placement against a disposable k3d cluster; needs Docker, k3d and kubectl, and is not part of check.
+    requires:
+      vars: [SERVICE_CRATE, SPEC, RUN, SCRATCH, EVIDENCE]
+    cmds:
+      - >-
+        cargo xtask infra-acceptance
+        --service-crate {{.SERVICE_CRATE}}
+        --spec {{.SPEC}}
+        --run {{.RUN}}
+        --scratch {{.SCRATCH}}
+        --evidence {{.EVIDENCE}}
+
   release-status:
     desc: Report whether every pushed version tag has a GitHub Release behind it.
     # Deliberately outside `check`: this one asks the remote and GitHub, and the gate is offline.
