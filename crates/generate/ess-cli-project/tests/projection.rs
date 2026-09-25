@@ -3,6 +3,13 @@ use ess_cli_contract::{compile, Binding};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
+/// The Cargo target every generated package of this crate's tests builds into. The generated
+/// package is new each time, so it always compiles; its registry dependencies compile once,
+/// rather than once for each test's own target. `workspace.rs` builds into the same one.
+fn nested_target() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("ess-cli-project-target")
+}
+
 #[test]
 fn service_commands_and_parameterized_views_dispatch_to_the_declared_owner() {
     use ess_cli_project::runtime::{
@@ -205,7 +212,7 @@ fn generated_package_compiles_offline_and_executes_process_fixtures() {
         .args(["test", "--offline", "--manifest-path"])
         .arg(directory.join("Cargo.toml"))
         .env("CARGO_BUILD_JOBS", "2")
-        .env("CARGO_TARGET_DIR", directory.join("target"))
+        .env("CARGO_TARGET_DIR", nested_target())
         .env("CARGO_INCREMENTAL", "0")
         .env("CARGO_PROFILE_DEV_DEBUG", "0")
         .env("CARGO_PROFILE_TEST_DEBUG", "0")
@@ -226,7 +233,7 @@ fn generated_package_compiles_offline_and_executes_process_fixtures() {
         log.contains("12 passed; 0 failed"),
         "fixture test count must select the authored cases"
     );
-    let binary = directory.join("target/debug/demo");
+    let binary = nested_target().join("debug/demo");
     let output = std::process::Command::new(&binary)
         .args(["show", "--output=json"])
         .output()

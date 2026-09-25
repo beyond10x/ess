@@ -6,7 +6,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
-struct Fixture(PathBuf);
+/// A fixture directory, and the acquisition deadline its processes are told to use.
+struct Fixture(PathBuf, Option<std::time::Duration>);
+/// The acquisition deadline the deadline cases inject. They wait the whole of it, and at the
+/// product's 60 seconds that was two minutes of every CI run. A debug build of the product reads
+/// `ESS_OCI_DEADLINE_MS`; `oci_cache`'s own case holds the 60-second default.
+const DEADLINE: std::time::Duration = std::time::Duration::from_secs(6);
 impl Fixture {
     fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -16,11 +21,21 @@ impl Fixture {
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::create_dir(&path).unwrap();
-        Self(path)
+        Self(path, None)
+    }
+    /// A fixture whose acquisitions run under `deadline` rather than the product's.
+    fn with_deadline(deadline: std::time::Duration) -> Self {
+        Self(Self::new().0, Some(deadline))
+    }
+    fn deadline(&self, command: &mut Command) {
+        if let Some(deadline) = self.1 {
+            command.env("ESS_OCI_DEADLINE_MS", deadline.as_millis().to_string());
+        }
     }
     fn command(&self) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_ess"));
         c.env("PATH", executors()).env("ESS_CACHE_FIXTURE", &self.0);
+        self.deadline(&mut c);
         c
     }
     fn helm(&self, digest: &Digest) -> Output {
@@ -61,12 +76,13 @@ impl Fixture {
             .unwrap(),
         )
         .unwrap();
-        Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+        let mut driver = Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"));
+        driver
             .env("PATH", executors())
             .env("ESS_CACHE_FIXTURE", &self.0)
-            .arg(&job)
-            .output()
-            .unwrap()
+            .arg(&job);
+        self.deadline(&mut driver);
+        driver.output().unwrap()
     }
 }
 fn executors() -> &'static Path {
@@ -74,19 +90,13 @@ fn executors() -> &'static Path {
     VALUE
         .get_or_init(|| {
             let f = Fixture::new();
-            let output = Command::new("rustc")
-                .arg("--edition=2021")
-                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_oci.rs"))
-                .arg("-o")
-                .arg(f.0.join("oras"))
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
+            let program = compiled_fixture::compiled(
+                &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_oci.rs"),
+                &"rustc".into(),
+                &["--edition=2021"],
             );
-            std::fs::copy(f.0.join("oras"), f.0.join("helm")).unwrap();
+            std::fs::copy(&program, f.0.join("oras")).unwrap();
+            std::fs::copy(&program, f.0.join("helm")).unwrap();
             f.0
         })
         .as_path()
@@ -128,6 +138,8 @@ fn legacy_self_consistent_helm_cache_cannot_claim_requested_origin() {
 
 #[path = "support/bundle_fixture.rs"]
 mod bundle_fixture;
+#[path = "support/compiled_fixture.rs"]
+mod compiled_fixture;
 const OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 const HELM: &str = "application/vnd.cncf.helm.config.v1+json";
 const CHART: &str = "application/vnd.cncf.helm.chart.content.v1.tar+gzip";
@@ -1047,7 +1059,11 @@ fn client_failures_missing_output_and_bounded_diagnostics_preserve_admission() {
 #[cfg(target_os = "linux")]
 #[test]
 fn actual_stalled_client_is_killed_and_reaped_at_the_shared_deadline() {
-    // Both acquisitions run concurrently, each retaining its own real 60-second deadline.
+    // Both acquisitions run concurrently, each retaining its own injected deadline. The Helm
+    // manifest answers after two thirds of it and the blob then stalls: one deadline shared by
+    // the whole acquisition ends it at `DEADLINE`, and a deadline restarted per client call
+    // would end it two thirds later, past the upper bound.
+    let manifest_delay = DEADLINE * 2 / 3;
     std::thread::scope(|s| {
         for bundle in [true, false] {
             s.spawn(move || {
@@ -1056,21 +1072,26 @@ fn actual_stalled_client_is_killed_and_reaped_at_the_shared_deadline() {
                 } else {
                     Graph::helm(false, false, false)
                 };
-                let f = Fixture::new();
+                let f = Fixture::with_deadline(DEADLINE);
                 let requested = g.digest();
                 g.install(&f, &requested);
-                std::fs::write(
-                    f.0.join(if bundle {
-                        "stall"
-                    } else {
-                        "stall-after-manifest"
-                    }),
-                    b"",
-                )
-                .unwrap();
+                if bundle {
+                    std::fs::write(f.0.join("stall"), b"").unwrap();
+                } else {
+                    std::fs::write(
+                        f.0.join("stall-after-manifest"),
+                        manifest_delay.as_millis().to_string(),
+                    )
+                    .unwrap();
+                }
                 let start = std::time::Instant::now();
                 g.assert_refusal(&f, &requested, "owned ORAS child killed and reaped", true);
-                assert!(start.elapsed().as_secs_f64() >= 59.5 && start.elapsed().as_secs() < 65);
+                let elapsed = start.elapsed();
+                assert!(
+                    elapsed + std::time::Duration::from_millis(500) >= DEADLINE
+                        && elapsed < DEADLINE + std::time::Duration::from_millis(2500),
+                    "{elapsed:?} is not the {DEADLINE:?} acquisition deadline"
+                );
                 let pid = std::fs::read_to_string(f.0.join("child-pid")).unwrap();
                 assert!(
                     !Path::new("/proc").join(pid.trim()).exists(),

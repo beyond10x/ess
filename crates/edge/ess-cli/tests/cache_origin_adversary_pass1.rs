@@ -9,6 +9,8 @@ use std::sync::{
 };
 #[path = "support/bundle_fixture.rs"]
 mod bundle_fixture;
+#[path = "support/compiled_fixture.rs"]
+mod compiled_fixture;
 const OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 const HELM: &str = "application/vnd.cncf.helm.config.v1+json";
 const CHART: &str = "application/vnd.cncf.helm.chart.content.v1.tar+gzip";
@@ -17,7 +19,12 @@ const BUNDLE: &str = "application/vnd.beyond10x.ess.release-bundle.v1";
 const BUNDLE_LAYER: &str = "application/vnd.beyond10x.ess.release-bundle.v1+json";
 const EMPTY: &str = "application/vnd.oci.empty.v1+json";
 const REPO: &str = "registry.invalid/independent";
-struct Fixture(PathBuf);
+/// A fixture directory, and the acquisition deadline its processes are told to use.
+struct Fixture(PathBuf, Option<std::time::Duration>);
+/// The acquisition deadline the deadline case injects rather than waiting the product's 60
+/// seconds. A debug build of the product reads `ESS_OCI_DEADLINE_MS`; `oci_cache`'s own case
+/// holds the 60-second default.
+const DEADLINE: std::time::Duration = std::time::Duration::from_secs(6);
 impl Fixture {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -27,11 +34,21 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir(&path).unwrap();
-        Self(path)
+        Self(path, None)
+    }
+    /// A fixture whose acquisitions run under `deadline` rather than the product's.
+    fn with_deadline(deadline: std::time::Duration) -> Self {
+        Self(Self::new().0, Some(deadline))
+    }
+    fn deadline(&self, command: &mut Command) {
+        if let Some(deadline) = self.1 {
+            command.env("ESS_OCI_DEADLINE_MS", deadline.as_millis().to_string());
+        }
     }
     fn command(&self) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_ess"));
         c.env("PATH", clients()).env("ESS_CACHE_ATTACK", &self.0);
+        self.deadline(&mut c);
         c
     }
     fn save(&self, label: &str, output: &Output) {
@@ -73,12 +90,13 @@ impl Fixture {
             .unwrap(),
         )
         .unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"))
+        let mut driver = Command::new(env!("CARGO_BIN_EXE_ess-recovery-driver"));
+        driver
             .env("PATH", clients())
             .env("ESS_CACHE_ATTACK", &self.0)
-            .arg(&job)
-            .output()
-            .unwrap();
+            .arg(&job);
+        self.deadline(&mut driver);
+        let output = driver.output().unwrap();
         self.save("driver", &output);
         output
     }
@@ -88,23 +106,19 @@ fn clients() -> &'static Path {
     CLIENTS
         .get_or_init(|| {
             let f = Fixture::new();
-            let out = Command::new("rustc")
-                .args(["--edition=2021", "-C", "debuginfo=0"])
-                .arg(
-                    Path::new(env!("CARGO_MANIFEST_DIR"))
-                        .join("tests/support/cache_origin_attack_client.rs"),
-                )
-                .arg("-o")
-                .arg(f.0.join("oras"))
-                .output()
-                .unwrap();
-            f.save("client-build", &out);
-            assert!(
-                out.status.success(),
-                "{}",
-                String::from_utf8_lossy(&out.stderr)
+            let program = compiled_fixture::compiled(
+                &Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/support/cache_origin_attack_client.rs"),
+                &"rustc".into(),
+                &["--edition=2021", "-C", "debuginfo=0"],
             );
-            std::fs::copy(f.0.join("oras"), f.0.join("helm")).unwrap();
+            std::fs::write(
+                f.0.join("client-build.program"),
+                format!("{}\n", program.display()),
+            )
+            .unwrap();
+            std::fs::copy(&program, f.0.join("oras")).unwrap();
+            std::fs::copy(&program, f.0.join("helm")).unwrap();
             f.0
         })
         .as_path()
@@ -556,15 +570,25 @@ fn a_late_complete_or_corrupt_winner_is_preserved_without_replacement() {
 #[test]
 fn a_stall_on_final_provenance_uses_the_original_deadline_and_is_reaped() {
     let g = Graph::new(false, false, Content::Original, true);
-    let f = Fixture::new();
+    let f = Fixture::with_deadline(DEADLINE);
     g.install(&f);
-    std::fs::write(f.0.join("deadline"), b"").unwrap();
+    // The manifest and the first two blobs answer after a third, a sixth and a twelfth of the
+    // deadline, and the final provenance blob stalls. The original deadline ends the acquisition
+    // at `DEADLINE`; a deadline restarted per client call would end it seven twelfths later,
+    // past the upper bound.
+    let delays = [DEADLINE / 3, DEADLINE / 6, DEADLINE / 12].map(|delay| delay.as_millis());
+    std::fs::write(
+        f.0.join("deadline"),
+        format!("{} {} {}", delays[0], delays[1], delays[2]),
+    )
+    .unwrap();
     let start = std::time::Instant::now();
     g.refuse(&f, "owned ORAS child killed and reaped", false);
     let elapsed = start.elapsed();
     assert!(
-        elapsed.as_secs_f64() >= 59.5 && elapsed.as_secs() < 66,
-        "{elapsed:?}"
+        elapsed + std::time::Duration::from_millis(500) >= DEADLINE
+            && elapsed < DEADLINE + std::time::Duration::from_millis(2500),
+        "{elapsed:?} is not the {DEADLINE:?} acquisition deadline"
     );
     let pid = std::fs::read_to_string(f.0.join("stalled-pid")).unwrap();
     let dead = !Path::new("/proc").join(pid.trim()).exists();

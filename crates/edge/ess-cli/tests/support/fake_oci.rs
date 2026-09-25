@@ -24,7 +24,10 @@ fn main() {
     assert_eq!(&args[2..4], ["fetch", "--output"]);
     assert!(args[1] == "manifest" || args[1] == "blob");
     if root.join("stall-after-manifest").exists() && args[1] == "manifest" {
-        std::thread::sleep(std::time::Duration::from_secs(15));
+        // The control file names the delay in milliseconds, scaled to the deadline under test.
+        let delay = std::fs::read_to_string(root.join("stall-after-manifest")).unwrap();
+        let delay = delay.trim().parse::<u64>().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(delay));
     }
     if root.join("stall").exists() || (root.join("stall-after-manifest").exists() && args[1] == "blob") {
         std::fs::write(root.join("child-pid"), std::process::id().to_string()).unwrap();

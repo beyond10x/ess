@@ -2,6 +2,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
+#[path = "support/compiled_fixture.rs"]
+mod compiled_fixture;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -95,19 +97,13 @@ fn executors() -> &'static Path {
     EXECUTORS
         .get_or_init(|| {
             let root = Fixture::new();
-            let output = Command::new("rustc")
-                .arg("--edition=2021")
-                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_delivery.rs"))
-                .arg("-o")
-                .arg(root.0.join("oras"))
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
+            let program = compiled_fixture::compiled(
+                &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_delivery.rs"),
+                &"rustc".into(),
+                &["--edition=2021"],
             );
-            std::fs::copy(root.0.join("oras"), root.0.join("helm")).unwrap();
+            std::fs::copy(&program, root.0.join("oras")).unwrap();
+            std::fs::copy(&program, root.0.join("helm")).unwrap();
             let path = root.0.clone();
             // Shared process fixtures remain under TMPDIR for the duration of this test binary.
             std::mem::forget(root);
@@ -355,4 +351,40 @@ fn adversary_noncanonical_topological_order_is_refused_before_execution() {
         output.stderr
     );
     fixture.assert_no_calls();
+}
+
+/// A fixture program is compiled once per source, not once per test process: a second request
+/// is served by the same file without compiling, and an edited source is a different program.
+#[cfg(unix)]
+#[test]
+fn a_fixture_program_is_compiled_once_per_source_rather_than_once_per_process() {
+    use std::os::unix::fs::MetadataExt;
+    let fixture = Fixture::new();
+    let source = fixture.0.join("probe.rs");
+    // The process id keeps this source unique to the run, so no earlier run's program answers.
+    let body = format!("fn main() {{ println!(\"{}\"); }}\n", std::process::id());
+    std::fs::write(&source, &body).unwrap();
+    let compiler = std::ffi::OsString::from("rustc");
+    let first = compiled_fixture::compiled(&source, &compiler, &["--edition=2021"]);
+    let inode = std::fs::metadata(&first).unwrap().ino();
+    let second = compiled_fixture::compiled(&source, &compiler, &["--edition=2021"]);
+    assert_eq!(first, second);
+    assert_eq!(
+        std::fs::metadata(&second).unwrap().ino(),
+        inode,
+        "the second request compiled the program again"
+    );
+    let ran = Command::new(&second).output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&ran.stdout).trim(),
+        std::process::id().to_string()
+    );
+    std::fs::write(&source, body.replace("println", "eprintln")).unwrap();
+    let edited = compiled_fixture::compiled(&source, &compiler, &["--edition=2021"]);
+    assert_ne!(edited, first, "an edited source reused the stale program");
+    let ran = Command::new(&edited).output().unwrap();
+    assert!(ran.stdout.is_empty());
+    for program in [first, edited] {
+        std::fs::remove_file(program).unwrap();
+    }
 }

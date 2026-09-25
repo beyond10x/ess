@@ -19,7 +19,12 @@ const SMALL_LIMIT: u64 = 1024 * 1024;
 const BUNDLE_LIMIT: u64 = 32 * 1024 * 1024;
 const CHART_LIMIT: u64 = 64 * 1024 * 1024;
 const DIAGNOSTIC_LIMIT: usize = 64 * 1024;
+/// How long one acquisition may take, from its first client launch to publication.
 const DEADLINE: Duration = Duration::from_secs(60);
+/// A debug build's shorter acquisition deadline, in milliseconds, for the cases that wait the
+/// whole of it: at 60 seconds each they were two minutes of every CI run. A release build never
+/// reads it, so the shipped deadline is always [`DEADLINE`].
+const DEADLINE_OVERRIDE: &str = "ESS_OCI_DEADLINE_MS";
 const MAGIC: &[u8; 8] = b"ESSOCI1\n";
 const OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 const BUNDLE: &str = "application/vnd.beyond10x.ess.release-bundle.v1";
@@ -544,6 +549,24 @@ fn acquire(
     Ok(proof)
 }
 
+/// The deadline one acquisition runs under: [`DEADLINE`], unless a debug build names another.
+fn deadline() -> Duration {
+    if cfg!(debug_assertions) {
+        deadline_from(std::env::var(DEADLINE_OVERRIDE).ok().as_deref())
+    } else {
+        DEADLINE
+    }
+}
+
+/// A positive whole number of milliseconds names the deadline; anything else leaves [`DEADLINE`].
+fn deadline_from(value: Option<&str>) -> Duration {
+    value
+        .filter(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|milliseconds| *milliseconds > 0)
+        .map_or(DEADLINE, Duration::from_millis)
+}
+
 /// The verified original payload bytes for one pinned OCI reference.
 ///
 /// This is the only cross-module entry point of the cache, and everything else in the module stays
@@ -570,7 +593,7 @@ pub fn payload(reference: &str, cache: &Path, profile: Profile) -> Result<Vec<u8
     let proof = if exists(&path)? {
         read_entry(&path, &requested, profile)?
     } else {
-        let deadline = Instant::now() + DEADLINE;
+        let deadline = Instant::now() + deadline();
         fs::create_dir_all(&parent).context("creating OCI proof namespace")?;
         let proof = acquire(repository, &requested, profile, &parent, deadline)?;
         publish(&proof, &path, &requested, profile, |_| {
@@ -739,5 +762,14 @@ mod tests {
             proof.payload()
         );
         assert_eq!(fs::read(&entry).unwrap(), b"changed");
+    }
+    #[test]
+    fn the_acquisition_deadline_is_sixty_seconds_unless_a_test_names_a_positive_one() {
+        assert_eq!(DEADLINE, Duration::from_secs(60));
+        assert_eq!(deadline_from(None), DEADLINE);
+        assert_eq!(deadline_from(Some("6000")), Duration::from_millis(6000));
+        for refused in ["", "0", "-1", "6s", "1.5", " 6000"] {
+            assert_eq!(deadline_from(Some(refused)), DEADLINE, "{refused:?}");
+        }
     }
 }

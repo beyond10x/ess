@@ -102,6 +102,7 @@ pub struct Browser {
     stream: TcpStream,
     next: u64,
     receipt: File,
+    evidence: PathBuf,
 }
 /// The startup deadline every fixture in this process is judged against.
 pub const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
@@ -370,6 +371,7 @@ impl Browser {
             next: 0,
             // startup-path: harness
             receipt: File::create(evidence.join("bidi.jsonl")).unwrap(),
+            evidence: evidence.to_path_buf(),
         };
         browser.call("session.new", &json!({"capabilities":{"alwaysMatch":{}}}));
         Ok(browser)
@@ -627,6 +629,12 @@ impl Browser {
         let mut payload = vec![0; usize::try_from(length).unwrap()];
         self.stream.read_exact(&mut payload).unwrap();
         (header[0] & 0x0f, payload)
+    }
+    /// The evidence directory this browser's start, stderr and `BiDi` receipt were written to.
+    /// Read by a suite that reuses one browser across fixtures; the others start one per fixture.
+    #[allow(dead_code)]
+    pub fn evidence(&self) -> &Path {
+        &self.evidence
     }
     pub fn open(&mut self, url: &str) -> String {
         let result = self.call("browsingContext.create", &json!({"type":"tab"}));

@@ -192,7 +192,7 @@ jobs:
       # Every shard reports, so one red run names every failing test rather than the first shard's.
       fail-fast: false
       matrix:
-        shard: ["1/2", "2/2"]
+        shard: ["1/4", "2/4", "3/4", "4/4"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
