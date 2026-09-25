@@ -4,6 +4,7 @@
 //! normalized away, unsupported behavior is reported as a coverage gap, and external references
 //! are refused rather than fetched or guessed.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
@@ -799,29 +800,8 @@ impl Importer {
             ));
             return None;
         };
-        let converted;
-        let object = if self.openapi30 {
-            let before = self.refusals.len();
-            converted = openapi30_schema(object, pointer, &mut self.refusals);
-            if self.refusals.len() != before {
-                return None;
-            }
-            if openapi30_admits_null(object) {
-                self.null_unpreserved(&format!("{pointer}/nullable"));
-            }
-            &converted
-        } else if let Some(single) = null_union(object) {
-            if admits_null(object) {
-                self.null_unpreserved(&format!("{pointer}/type"));
-            }
-            let mut rewritten = object.clone();
-            rewritten.insert("type".to_owned(), Value::String(single));
-            strip_null_enum(&mut rewritten);
-            converted = rewritten;
-            &converted
-        } else {
-            object
-        };
+        let rewritten = self.null_admitting(object, pointer)?;
+        let object = rewritten.as_ref();
         if !self.schema_context(object, pointer) {
             return None;
         }
@@ -892,6 +872,41 @@ impl Importer {
         };
         self.note_keywords(object, consumed, pointer, KeywordContext::Schema);
         schema
+    }
+
+    /// The schema as the 3.1 reading sees it: a 3.0 schema rewritten, or a 3.1 `[T, "null"]`
+    /// union narrowed to `T`, with the admitted `null` accounted. `None` means a refusal was
+    /// recorded.
+    fn null_admitting<'a>(
+        &mut self,
+        object: &'a Map<String, Value>,
+        pointer: &str,
+    ) -> Option<Cow<'a, Map<String, Value>>> {
+        if self.openapi30 {
+            let before = self.refusals.len();
+            let converted = openapi30_schema(object, pointer, &mut self.refusals);
+            if self.refusals.len() != before {
+                return None;
+            }
+            if openapi30_admits_null(object) {
+                self.null_unpreserved(&format!("{pointer}/nullable"));
+            }
+            return Some(Cow::Owned(converted));
+        }
+        let Some(single) = null_union(object) else {
+            return Some(Cow::Borrowed(object));
+        };
+        if let Some(refusal) = null_only_enum(object, pointer) {
+            self.refusals.push(refusal);
+            return None;
+        }
+        if admits_null(object) {
+            self.null_unpreserved(&format!("{pointer}/type"));
+        }
+        let mut rewritten = object.clone();
+        rewritten.insert("type".to_owned(), Value::String(single));
+        strip_null_enum(&mut rewritten);
+        Some(Cow::Owned(rewritten))
     }
 
     fn string_schema(
@@ -1186,10 +1201,28 @@ fn openapi30_schema(
         )),
     }
     converted.remove("nullable");
+    // Checked before the `$ref` return: a numeric bound is 3.1 spelling in a 3.0 document
+    // wherever it sits, while a boolean one beside `$ref` stays an ordinary sibling gap.
+    for exclusive in ["exclusiveMinimum", "exclusiveMaximum"] {
+        if object
+            .get(exclusive)
+            .is_some_and(|value| !value.is_boolean())
+        {
+            refusals.push(Refusal::new(
+                format!("{pointer}/{exclusive}"),
+                format!(
+                    "OpenAPI 3.0 `{exclusive}` must be a boolean; the numeric form is OpenAPI 3.1"
+                ),
+            ));
+        }
+    }
     if object.contains_key("$ref") {
         return converted;
     }
     if object.contains_key("type") {
+        if let Some(refusal) = null_only_enum(object, pointer) {
+            refusals.push(refusal);
+        }
         // 3.0 has no `null` type: a null member is reachable only through `nullable`, which the
         // caller accounts.
         strip_null_enum(&mut converted);
@@ -1199,7 +1232,6 @@ fn openapi30_schema(
         ("exclusiveMaximum", "maximum"),
     ] {
         match object.get(exclusive) {
-            None => {}
             Some(Value::Bool(false)) => {
                 converted.remove(exclusive);
             }
@@ -1214,15 +1246,24 @@ fn openapi30_schema(
                     ),
                 )),
             },
-            Some(_) => refusals.push(Refusal::new(
-                format!("{pointer}/{exclusive}"),
-                format!(
-                    "OpenAPI 3.0 `{exclusive}` must be a boolean; the numeric form is OpenAPI 3.1"
-                ),
-            )),
+            // Absent, or a numeric bound already refused above, before the `$ref` return.
+            _ => {}
         }
     }
     converted
+}
+
+/// A refusal for an `enum` whose only members are `null`: stripping them would leave an empty
+/// enum and report it as one, when the author wrote a null-only domain the interface cannot carry.
+fn null_only_enum(object: &Map<String, Value>, pointer: &str) -> Option<Refusal> {
+    let values = object.get("enum")?.as_array()?;
+    (!values.is_empty() && values.iter().all(Value::is_null)).then(|| {
+        Refusal::new(
+            format!("{pointer}/enum"),
+            "an enum whose only member is `null` admits no value the interface can carry; it has \
+             no null type",
+        )
+    })
 }
 
 /// Whether an `OpenAPI` 3.0 `nullable: true` actually admits `null` (OAS 3.0.3 Schema Object):
@@ -1231,7 +1272,7 @@ fn openapi30_admits_null(object: &Map<String, Value>) -> bool {
     object.get("nullable") == Some(&Value::Bool(true))
         && !object.contains_key("$ref")
         && object.contains_key("type")
-        && admits_null(object)
+        && enum_admits_null(object)
 }
 
 /// A 3.1 `type` naming exactly one type besides `"null"`: that type.
@@ -1247,11 +1288,16 @@ fn null_union(object: &Map<String, Value>) -> Option<String> {
 
 /// Whether a type admitting `null` still admits it past the schema's `enum` and `const`.
 fn admits_null(object: &Map<String, Value>) -> bool {
+    enum_admits_null(object) && object.get("const").is_none_or(Value::is_null)
+}
+
+/// Whether the schema's `enum`, if any, still admits `null`. The whole test for 3.0, where
+/// `const` is not a Schema Object keyword and cannot exclude what `nullable` admits.
+fn enum_admits_null(object: &Map<String, Value>) -> bool {
     object
         .get("enum")
         .and_then(Value::as_array)
         .is_none_or(|values| values.contains(&Value::Null))
-        && object.get("const").is_none_or(Value::is_null)
 }
 
 /// Removes a `null` member from an `enum`; the caller accounts the `null` it admitted.
