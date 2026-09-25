@@ -5,8 +5,6 @@
 [test-groups]
 # `support/browser.rs`'s `STARTUP` mutex admits one Firefox start per process; in parallel processes Firefox BiDi startup overran its 30 s deadline in CI.
 firefox = { max-threads = 1 }
-# `scratch()` prunes every `recovery-*` fixture not carrying its own pid, so with one process per test it deletes the fixtures of every test running beside it.
-recovery-fixtures = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "binary_id(ess-cli::coverage_browser) | binary_id(ess-cli::coverage_writer_adversary_pass1) | binary_id(ess-cli::coverage_writer_adversary_pass2) | binary_id(ess-cli::browser_startup_slow_serve_boundary) | binary_id(ess-cli::browser_startup_refusal_boundary) | binary_id(ess-cli::replay_fidelity_browser)"
@@ -14,10 +12,6 @@ test-group = "firefox"
 # Even one Firefox at a time overran its 30 s BiDi budget on a busy runner (ess#85, 2026-09-25), so
 # these binaries also take the whole shard.
 threads-required = "num-test-threads"
-
-[[profile.default.overrides]]
-filter = "binary_id(ess-cli::execution_recovery)"
-test-group = "recovery-fixtures"
 
 # A wall-clock ratio between two timings in one process: a neighbouring test skews one timing and
 # not the other (ess#85, 2026-09-25), so it runs with the whole shard to itself.

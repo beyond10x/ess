@@ -685,25 +685,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn scratch(name: &str) -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    static PRUNED: std::sync::Once = std::sync::Once::new();
     let parent = Path::new(env!("CARGO_TARGET_TMPDIR"));
     // Each arrangement installs a real copy of the admitted artifact, which is what makes the
     // executable-admission checks real and also what makes these directories large. Nothing else
     // reclaims them, so a few runs fill the disk and the next one fails for a reason that has
-    // nothing to do with the contract. Prune the previous processes' arrangements once, on the way
-    // in — never this process's, and never anything outside this prefix.
-    PRUNED.call_once(|| {
-        let mine = format!("-{}-", std::process::id());
-        let Ok(entries) = std::fs::read_dir(parent) else {
-            return;
-        };
-        for entry in entries.filter_map(Result::ok) {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with("recovery-") && !name.contains(&mine) {
-                let _ = std::fs::remove_dir_all(entry.path());
-            }
-        }
-    });
+    // nothing to do with the contract. Prune stale arrangements on the way in — only those older
+    // than any case runs, and never anything outside this prefix. Under nextest every case is its
+    // own process, and the arrangement of a case running beside this one is fresh and in use.
+    prune_fixtures(parent, std::time::SystemTime::now());
+    // The process id and a per-process counter make the root unique among live processes.
     let root = parent.join(format!(
         "recovery-{name}-{}-{}",
         std::process::id(),
@@ -712,6 +702,68 @@ fn scratch(name: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&root);
     scaffold(&root).expect("the fixture arrangement is laid out");
     root
+}
+
+/// Removes every `recovery-*` arrangement under `parent` last modified more than
+/// [`STALE_FIXTURE`] before `now`, whichever process made it.
+fn prune_fixtures(parent: &Path, now: std::time::SystemTime) {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if !entry.file_name().to_string_lossy().starts_with("recovery-") {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| {
+                now.duration_since(modified)
+                    .is_ok_and(|age| age > STALE_FIXTURE)
+            });
+        if stale {
+            // A neighbour pruning the same stale arrangement at the same moment is harmless.
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// How old a fixture arrangement is before no case can still be using it.
+///
+/// Far longer than any one case runs, and far shorter than the time a few runs take to fill a
+/// disk with installed artifacts.
+const STALE_FIXTURE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Pruning removes only arrangements older than any case runs, whichever process made them.
+///
+/// Nextest runs every case in its own process. A prune that kept only this process's
+/// arrangements deleted the arrangement of every case running beside it, so the binary had to run
+/// one case at a time. A neighbour's arrangement is still being written; a stale one is not.
+#[test]
+fn pruning_keeps_a_neighbouring_process_s_fixture_and_removes_a_stale_one() {
+    let parent = scratch("prune").join("fixtures");
+    // No process has this id: Linux caps pids at 2^22.
+    let neighbour = parent.join("recovery-neighbour-4194305-0");
+    let unrelated = parent.join("unrelated-4194305-0");
+    for directory in [&neighbour, &unrelated] {
+        std::fs::create_dir_all(directory.join("etc")).expect("a fixture directory is made");
+    }
+
+    prune_fixtures(&parent, std::time::SystemTime::now());
+    assert!(
+        neighbour.is_dir(),
+        "a fresh arrangement of another process may be in use and was pruned"
+    );
+
+    prune_fixtures(&parent, std::time::SystemTime::now() + 2 * STALE_FIXTURE);
+    assert!(
+        !neighbour.exists(),
+        "an arrangement older than any case runs was kept"
+    );
+    assert!(
+        unrelated.is_dir(),
+        "a directory outside the fixture prefix was pruned"
+    );
 }
 
 fn store_header(root: &Path) -> String {
@@ -2264,6 +2316,27 @@ fn fake_artifact(root: &Path) -> (PathBuf, HelmBinary) {
     (path, binary)
 }
 
+/// The stand-in for the admitted artifact links none of the product.
+///
+/// Every engine-level case reads and hashes the installed stand-in on admission and spawns it
+/// seven times for the probes, so its size is paid by every case. Linked against `ess_cli` it was
+/// the whole workspace, unoptimised, and the recovery binary the longest item on the CI critical
+/// path. The engine still hashes and probes it exactly as in production; the stand-in only speaks
+/// the bounded protocol it answers.
+#[test]
+fn the_admitted_artifact_stand_in_links_none_of_the_product() {
+    let bytes =
+        std::fs::read(env!("CARGO_BIN_EXE_ess-recovery-fake")).expect("the stand-in is readable");
+    let crate_name = b"ess_cli";
+    assert!(
+        !bytes
+            .windows(crate_name.len())
+            .any(|window| window == crate_name),
+        "the stand-in links `ess_cli` ({} bytes)",
+        bytes.len()
+    );
+}
+
 fn tools_prefix(root: &Path) -> String {
     format!("{}/", root.join("opt/ess/recovery-tools/helm").display())
 }
@@ -3800,59 +3873,89 @@ fn r23_a_definite_uninstall_spawn_refusal_at_every_reverse_index_stops_and_retai
 /// Four faults, at an apply index and at a removal index, with the target changed and not changed.
 /// The classification is the same in all of them, because in all of them the child may have run —
 /// and the target's state afterwards is a separate fact, established by observing it, never by the
-/// process result.
+/// process result. One case per fault and index, so each is its own process under nextest.
+fn a_started_uncertainty_is_indeterminate(fault: HelmFault, index: usize) {
+    let scenario = build_scenario(&format!("r14-{fault:?}-{index}"));
+    let platform = scenario.platform().failing_at(index, fault);
+    let report = scenario.run(&platform);
+
+    let refusal = report.refusal.as_ref().expect("uncertainty stops");
+    assert_eq!(
+        refusal.code,
+        RefusalCode::EffectIndeterminate,
+        "{fault:?} at {index}"
+    );
+    assert_eq!(
+        platform.calls().len(),
+        index + 1,
+        "{fault:?} at {index}: no later apply or removal follows an unresolved one"
+    );
+    let history = only_history(&scenario);
+    assert_eq!(
+        dispositions(&history).last(),
+        Some(&ProcessDisposition::Indeterminate),
+        "{fault:?} at {index}"
+    );
+    assert!(
+        retained_claim(&scenario).is_some(),
+        "{fault:?} at {index}: the claim is retained"
+    );
+    assert!(
+        !history
+            .entries
+            .iter()
+            .any(|entry| matches!(entry.fact, JournalFact::Completed(_))),
+        "{fault:?} at {index}: no completion is claimed"
+    );
+
+    // No compensating call, and nothing that looks like a rollback.
+    assert!(
+        platform
+            .calls()
+            .iter()
+            .all(|call| !call.contains("rollback")),
+        "ESS issues no compensating calls"
+    );
+}
+
 #[test]
-fn r14_and_r24_every_started_uncertainty_is_indeterminate_with_or_without_an_effect() {
-    for fault in [
-        HelmFault::StartedNoEffect,
-        HelmFault::EffectThenFailure,
-        HelmFault::LostAcknowledgement,
-        HelmFault::Timeout,
-    ] {
-        for index in [0usize, 3] {
-            let scenario = build_scenario(&format!("r14-{fault:?}-{index}"));
-            let platform = scenario.platform().failing_at(index, fault);
-            let report = scenario.run(&platform);
+fn r14_a_start_without_effect_at_an_apply_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::StartedNoEffect, 0);
+}
 
-            let refusal = report.refusal.as_ref().expect("uncertainty stops");
-            assert_eq!(
-                refusal.code,
-                RefusalCode::EffectIndeterminate,
-                "{fault:?} at {index}"
-            );
-            assert_eq!(
-                platform.calls().len(),
-                index + 1,
-                "{fault:?} at {index}: no later apply or removal follows an unresolved one"
-            );
-            let history = only_history(&scenario);
-            assert_eq!(
-                dispositions(&history).last(),
-                Some(&ProcessDisposition::Indeterminate),
-                "{fault:?} at {index}"
-            );
-            assert!(
-                retained_claim(&scenario).is_some(),
-                "{fault:?} at {index}: the claim is retained"
-            );
-            assert!(
-                !history
-                    .entries
-                    .iter()
-                    .any(|entry| matches!(entry.fact, JournalFact::Completed(_))),
-                "{fault:?} at {index}: no completion is claimed"
-            );
+#[test]
+fn r24_a_start_without_effect_at_a_removal_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::StartedNoEffect, 3);
+}
 
-            // No compensating call, and nothing that looks like a rollback.
-            assert!(
-                platform
-                    .calls()
-                    .iter()
-                    .all(|call| !call.contains("rollback")),
-                "ESS issues no compensating calls"
-            );
-        }
-    }
+#[test]
+fn r14_an_effect_then_failure_at_an_apply_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::EffectThenFailure, 0);
+}
+
+#[test]
+fn r24_an_effect_then_failure_at_a_removal_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::EffectThenFailure, 3);
+}
+
+#[test]
+fn r14_a_lost_acknowledgement_at_an_apply_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::LostAcknowledgement, 0);
+}
+
+#[test]
+fn r24_a_lost_acknowledgement_at_a_removal_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::LostAcknowledgement, 3);
+}
+
+#[test]
+fn r14_a_timeout_at_an_apply_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::Timeout, 0);
+}
+
+#[test]
+fn r24_a_timeout_at_a_removal_is_indeterminate() {
+    a_started_uncertainty_is_indeterminate(HelmFault::Timeout, 3);
 }
 
 /// Without the caller's quiescence, a retained claim blocks the next invocation entirely.

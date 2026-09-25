@@ -1716,30 +1716,28 @@ fn serialised_binaries(config: &str) -> BTreeSet<String> {
 /// Under nextest every test is its own process, so a binary whose tests coordinate through state
 /// shared by every test *in one process* loses that coordination, and runs one test at a time.
 ///
-/// Two such mechanisms exist, both found by the first nextest run (Actions run 36126201626):
-/// `support/browser.rs`'s `STARTUP` mutex, which admits one Firefox start at a time, and a
-/// `Once` that prunes every fixture directory not carrying this process's id — which, with one
-/// process per test, deletes the fixtures of every test running beside it. Both are found here by
-/// what the source says, so a new binary that includes the browser fixture or copies the prune is
-/// serialised or named.
+/// Two such mechanisms have existed, both found by the first nextest run (Actions run
+/// 36126201626): `support/browser.rs`'s `STARTUP` mutex, which admits one Firefox start at a time,
+/// and a `Once` that prunes every fixture directory not carrying this process's id — which, with
+/// one process per test, deletes the fixtures of every test running beside it. Both are found here
+/// by what the source says, so a new binary that includes the browser fixture or copies the prune
+/// is serialised or named.
+///
+/// The other direction holds too: a binary serialised for a reason no scan finds any more runs one
+/// test at a time for nothing. `execution_recovery` was the longest item on the CI critical path
+/// for exactly that, after its prune became safe for neighbouring processes.
 #[test]
-fn nextest_serialises_every_binary_that_coordinates_through_process_state() {
+fn nextest_serialises_exactly_the_binaries_that_coordinate_through_process_state() {
     let config = fs::read_to_string(workspace_root().join(".config/nextest.toml"))
         .expect("the nextest configuration is readable");
     let serialised = serialised_binaries(&config);
     // Split, so that this file does not contain what it scans for.
     let include = ["#[path = \"support/", "browser.rs\"]"].concat();
-    let once = ["std::sync::Once", "::new()"].concat();
-    let prune = ["remove_dir_all(", "entry.path())"].concat();
     let browser = binaries_where(|source| source.contains(&include));
-    let pruning = binaries_where(|source| source.contains(&once) && source.contains(&prune));
+    let pruning = binaries_where(prunes_from_a_once_per_process);
     assert!(
         browser.contains("ess-cli::coverage_browser"),
         "the browser scan found {browser:?}; it no longer sees the fixture it exists to find"
-    );
-    assert!(
-        pruning.contains("ess-cli::execution_recovery"),
-        "the prune scan found {pruning:?}; it no longer sees the binary it exists to find"
     );
     let missing: Vec<&String> = browser
         .iter()
@@ -1750,5 +1748,40 @@ fn nextest_serialises_every_binary_that_coordinates_through_process_state() {
         missing.is_empty(),
         "these binaries coordinate their tests through process-global state and nextest runs \
          them in parallel processes: {missing:?}"
+    );
+    let causeless: Vec<&String> = serialised
+        .iter()
+        .filter(|binary| !browser.contains(*binary) && !pruning.contains(*binary))
+        .collect();
+    assert!(
+        causeless.is_empty(),
+        "nextest runs these binaries one test at a time and no scan finds a reason to: \
+         {causeless:?}"
+    );
+}
+
+/// Whether one test source prunes fixture directories from a `Once`, once per process.
+fn prunes_from_a_once_per_process(source: &str) -> bool {
+    // Split, so that this file does not contain what it scans for.
+    let once = ["std::sync::Once", "::new()"].concat();
+    let prune = ["remove_dir_all(", "entry.path())"].concat();
+    source.contains(&once) && source.contains(&prune)
+}
+
+/// The prune scan still sees the shape it exists to find, now that no binary carries it.
+#[test]
+fn the_prune_scan_recognises_a_once_per_process_prune() {
+    let once = ["std::sync::Once", "::new()"].concat();
+    let prune = ["remove_dir_all(", "entry.path())"].concat();
+    let copied =
+        format!("static PRUNED: {once};\nPRUNED.call_once(|| {{ let _ = std::fs::{prune}; }});\n");
+    assert!(prunes_from_a_once_per_process(&copied));
+    assert!(
+        !prunes_from_a_once_per_process(&format!("let _ = std::fs::{prune};\n")),
+        "a prune that is not once per process is not the shape"
+    );
+    assert!(
+        !prunes_from_a_once_per_process(&format!("static STARTED: {once};\n")),
+        "a `Once` that prunes nothing is not the shape"
     );
 }
