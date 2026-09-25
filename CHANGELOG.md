@@ -2,7 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `task check` runs `consumer-check` only when `CONSUMER_CHECKS=true`; it used to run it unless
+  `SKIP_CONSUMER_CHECKS=true`. Feature-preservation accounting is parked: its consumers are this
+  repository's own profiles, and at 0.31.0 it needed about 7,680 per-cell judgement decisions. It
+  comes back when an external adopter pins a released `ess/N` and a change reaches them that
+  conformance, `ess verify diff` or a format refusal did not catch. `task consumer-check` itself
+  is unchanged.
+
 ### Fixed
+
+- The wall-clock ratio test in `literal_representation_adversary_pass3` and the Firefox browser
+  binaries run with their CI shard to themselves; a neighbouring test on the same runner made
+  them fail on changes that did not touch them.
 
 - The `README.md` that `ess verify conform synthesize --target go` writes wires the package into
   `package yourservice_test` importing `example.com/yourservice/essconform`, and says both stand
