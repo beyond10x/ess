@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: specification:consumer-accounting-binary-case-source-boundary
 kind: specification
 status: draft

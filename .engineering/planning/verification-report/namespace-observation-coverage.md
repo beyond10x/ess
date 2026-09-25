@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:namespace-observation-coverage
 kind: verification-report
 status: draft

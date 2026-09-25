@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: task:ess-gaps-measured-in-a-consumer-specification
 kind: task
 status: implemented

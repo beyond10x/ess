@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:coverage-go-execution-adaptation
 kind: verification-report
 status: draft

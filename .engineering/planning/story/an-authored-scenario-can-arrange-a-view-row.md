@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:an-authored-scenario-can-arrange-a-view-row
 kind: story
 status: archived

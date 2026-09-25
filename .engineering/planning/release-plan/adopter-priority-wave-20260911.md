@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: release-plan:adopter-priority-wave-20260911
 kind: release-plan
 status: active

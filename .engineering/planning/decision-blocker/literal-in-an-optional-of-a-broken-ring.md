@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: decision-blocker:literal-in-an-optional-of-a-broken-ring
 kind: decision-blocker
 status: open

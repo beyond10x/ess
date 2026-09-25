@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:output-ownership-tolerates-platform-xattrs
 kind: story
 status: implemented

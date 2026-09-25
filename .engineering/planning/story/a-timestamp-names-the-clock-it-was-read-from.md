@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-timestamp-names-the-clock-it-was-read-from
 kind: story
 status: archived

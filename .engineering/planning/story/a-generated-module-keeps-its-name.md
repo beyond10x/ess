@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-generated-module-keeps-its-name
 kind: story
 status: archived

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:release-gate-green-at-the-tag
 kind: story
 status: implemented

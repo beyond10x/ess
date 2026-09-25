@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:the-generated-go-runtime-is-gofmt-clean
 kind: story
 status: draft

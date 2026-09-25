@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: task:consumer-accounting-dependency-graph
 kind: task
 status: implemented

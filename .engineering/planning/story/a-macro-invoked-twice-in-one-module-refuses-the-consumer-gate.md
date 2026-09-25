@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-macro-invoked-twice-in-one-module-refuses-the-consumer-gate
 kind: story
 status: active

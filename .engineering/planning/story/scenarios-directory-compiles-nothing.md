@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:scenarios-directory-compiles-nothing
 kind: story
 status: implemented

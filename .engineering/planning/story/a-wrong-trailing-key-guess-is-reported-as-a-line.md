@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-wrong-trailing-key-guess-is-reported-as-a-line
 kind: story
 status: draft

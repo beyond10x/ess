@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:deleting-a-scratch-tmpdir-breaks-sccache-for-every-other-agent
 kind: story
 status: draft
