@@ -263,6 +263,14 @@ fn the_binary_generates_its_own_completions() {
     assert!(main.contains("self::tree::command()"), "{main}");
 }
 
+/// A generated file that names an `ess` command spells the grouped form (beyond10x/ess#77).
+#[test]
+fn the_generated_sources_spell_grouped_ess_commands() {
+    let main = source(&emitted(), "crates/desk-cli/src/main.rs");
+    assert!(main.contains("`ess specify validate`"), "{main}");
+    assert!(!main.contains("`ess validate`"), "{main}");
+}
+
 /// Same IR, same bytes. The property every target here holds.
 #[test]
 fn the_emission_is_deterministic() {

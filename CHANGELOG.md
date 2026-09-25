@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The `README.md` that `ess verify conform synthesize --target go` writes wires the package into
+  `package yourservice_test` importing `example.com/yourservice/essconform`, and says both stand
+  for the adopter's own module. It named `acd_test` and `example.com/acd`, a project unrelated to
+  the synthesized system.
+- Generated files spell the grouped commands the CLI help and the agent skills use: the Go and
+  TypeScript conformance packages (`README.md` and source headers) say `ess verify conform
+  synthesize` and `aep plan artifact evidence`, the TypeScript headers name `--target typescript`
+  rather than the nonexistent `--target ts`, a synthesized clap binary says `ess specify validate`,
+  and the Kubernetes projection's `SUMMARY.md` says `ess generate project kubernetes`. Three
+  refusal hints follow: `ess specify realization generate`, `ess generate release bundle` and
+  `ess generate output recover`. The flat spellings still run.
+- `ess verify conform synthesize --target ir`, `ess verify conform author` and
+  `ess verify conform select` create the missing parent directories of their `--out` file, as the
+  directory targets already did; `synthesize --out missing/suite.json` failed with
+  `No such file or directory`. An existing ancestor that is a symlink or not a directory is still
+  refused, and the destination file now passes the same checks as other named outputs.
+- `ess specify validate` reports a declaration refused by its own checks once. A reference to it
+  is no longer refused again as a reference to something undeclared: one bad payload source in a
+  command gave four refusals, three of them saying the command did not exist (an actor's `may`, a
+  component's `accepts`, and `missing_causation` for the transition only that command `moves:`).
+  This holds for refused entities, commands, events, errors and components, wherever an actor,
+  component, command outcome, binding or topology names them. A name nobody declared is still
+  refused, and diagnostic codes and wording are unchanged.
+
 ## [0.32.0] — 2026-09-25
 
 ### Added

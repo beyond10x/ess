@@ -257,13 +257,20 @@ impl Specification {
             conversions: collected.conversions,
         };
 
-        errors.extend(specification.validate());
+        errors.extend(specification.validate_after(&collected.refused));
         errors.extend(specification.validate_roster(&collected.roster));
         errors.into_result(specification)
     }
 
     /// Checks every reference in the specification.
     pub fn validate(&self) -> ValidationErrors {
+        self.validate_after(&Refused::default())
+    }
+
+    /// Checks every reference, treating the names `refused` holds as declared: their own
+    /// conversion already said what is wrong with them, and a reference to one is not a second
+    /// fault.
+    fn validate_after(&self, refused: &Refused) -> ValidationErrors {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
         errors.extend(crate::binding::periodic::validate_specification(self));
@@ -278,8 +285,10 @@ impl Specification {
             errors.extend(entity.validate(&registry));
         }
 
-        let event_names: BTreeSet<QualifiedName> = self.events.keys().cloned().collect();
-        let error_names: BTreeSet<QualifiedName> = self.errors.keys().cloned().collect();
+        let event_names: BTreeSet<QualifiedName> =
+            Refused::with(&self.events.keys().cloned().collect(), &refused.events);
+        let error_names: BTreeSet<QualifiedName> =
+            Refused::with(&self.errors.keys().cloned().collect(), &refused.errors);
         for command in self.commands.values() {
             if let Err(command_errors) = command.validate(&registry, &event_names, &error_names) {
                 errors.extend(command_errors);
@@ -303,10 +312,11 @@ impl Specification {
         // The link between a command's outcomes and the lifecycles they drive, checked once and in
         // both directions: neither an entity nor a command can see it alone, because it is a
         // relation between them.
-        errors.extend(crate::entity::validate_lifecycle_causes(
+        errors.extend(crate::entity::validate_lifecycle_causes_after(
             &self.entities,
             &self.commands,
             &self.events,
+            refused,
         ));
 
         // The other cross-entity rule, here for the same reason: a relation is declared on one
@@ -321,11 +331,60 @@ impl Specification {
             }
         }
 
-        let command_names: BTreeSet<QualifiedName> = self.commands.keys().cloned().collect();
+        let command_names: BTreeSet<QualifiedName> =
+            Refused::with(&self.commands.keys().cloned().collect(), &refused.commands);
         for actor in self.actors.values() {
             errors.extend(actor.validate(&command_names));
         }
 
+        errors.extend(self.validate_components(&command_names, &event_names));
+
+        // The payload construct's cross-declaration half, beside the binding's for the reason the
+        // two mirror each other: an outcome fills an event's fields from its command's input, and
+        // neither declaration can check the pair alone.
+        errors.extend(crate::command::validate_payloads(
+            &self.commands,
+            &self.events,
+            &registry,
+            &self.conversions,
+        ));
+
+        // The other half of the same construct: what an outcome sets on the entity it acts on.
+        errors.extend(crate::command::validate_sets(
+            &self.commands,
+            &self.entities,
+            &registry,
+            &self.conversions,
+        ));
+
+        errors.extend(crate::binding::validate_bindings_after(
+            &self.bindings,
+            &self.events,
+            &self.commands,
+            &registry,
+            &self.conversions,
+            refused,
+        ));
+
+        let component_names: BTreeSet<crate::component::ComponentName> = Refused::with(
+            &self.components.keys().cloned().collect(),
+            &refused.components,
+        );
+        errors.extend(crate::topology::validate_topology(
+            &self.topology,
+            &component_names,
+        ));
+
+        errors.extend(self.validate_ownership());
+        errors
+    }
+
+    /// The layers above the domains: components, against the names the domains declare.
+    fn validate_components(
+        &self,
+        command_names: &BTreeSet<QualifiedName>,
+        event_names: &BTreeSet<QualifiedName>,
+    ) -> ValidationErrors {
         // The three layers above the domains. Each needs the whole specification, because each is
         // about how the parts fit rather than about any one of them.
         let domain_names: BTreeSet<QualifiedName> = self
@@ -354,49 +413,13 @@ impl Specification {
                 )
             })
             .collect();
-        errors.extend(crate::component::validate_components(
+        crate::component::validate_components(
             &self.components,
             &domain_names,
-            &command_names,
-            &event_names,
+            command_names,
+            event_names,
             &views,
-        ));
-
-        // The payload construct's cross-declaration half, beside the binding's for the reason the
-        // two mirror each other: an outcome fills an event's fields from its command's input, and
-        // neither declaration can check the pair alone.
-        errors.extend(crate::command::validate_payloads(
-            &self.commands,
-            &self.events,
-            &registry,
-            &self.conversions,
-        ));
-
-        // The other half of the same construct: what an outcome sets on the entity it acts on.
-        errors.extend(crate::command::validate_sets(
-            &self.commands,
-            &self.entities,
-            &registry,
-            &self.conversions,
-        ));
-
-        errors.extend(crate::binding::validate_bindings(
-            &self.bindings,
-            &self.events,
-            &self.commands,
-            &registry,
-            &self.conversions,
-        ));
-
-        let component_names: BTreeSet<crate::component::ComponentName> =
-            self.components.keys().cloned().collect();
-        errors.extend(crate::topology::validate_topology(
-            &self.topology,
-            &component_names,
-        ));
-
-        errors.extend(self.validate_ownership());
-        errors
+        )
     }
 
     /// Checks that every member belongs to a declared domain, and to the right one.
@@ -679,6 +702,35 @@ struct Collected {
     /// *recorded* and this has to answer what was *declared*. See [`declare`] for the difference
     /// and for what the registries alone could not see.
     declared: BTreeSet<(&'static str, String)>,
+    /// The declarations whose own conversion failed, so the reference pass can tell a name that
+    /// was declared and refused from a name nobody declared. See [`Refused`].
+    refused: Refused,
+}
+
+/// Declarations refused by their own conversion: declared, and absent from every registry.
+///
+/// A reference to one of these is not refused again as a reference to nothing. The declaration's
+/// own refusal is the cause and is already reported; a second refusal saying the name does not
+/// exist is false — the author declared it — and reads as a separate fault. So the reference pass
+/// treats these names as declared (beyond10x/ess#79). A reference that names nothing at all is
+/// still refused, and once the declaration is fixed every reference to it is checked as usual.
+#[derive(Debug, Default)]
+pub(crate) struct Refused {
+    pub(crate) entities: BTreeSet<QualifiedName>,
+    pub(crate) commands: BTreeSet<QualifiedName>,
+    pub(crate) events: BTreeSet<QualifiedName>,
+    pub(crate) errors: BTreeSet<QualifiedName>,
+    pub(crate) components: BTreeSet<crate::component::ComponentName>,
+    /// The `moves:` a refused command's outcomes name, so a transition only that command takes is
+    /// not reported as one nothing takes.
+    pub(crate) moves: BTreeSet<QualifiedName>,
+}
+
+impl Refused {
+    /// `declared` with the refused names of the same kind added.
+    fn with<T: Ord + Clone>(declared: &BTreeSet<T>, refused: &BTreeSet<T>) -> BTreeSet<T> {
+        declared.union(refused).cloned().collect()
+    }
 }
 
 impl Collected {
@@ -725,8 +777,9 @@ impl Collected {
 
     /// Takes one file's members, and returns what that file contributes to the system.
     ///
-    /// A member whose own conversion failed is not recorded, so the later reference pass reports it
-    /// as undeclared — which is true, and shorter than reporting the same file twice.
+    /// A member whose own conversion failed is not recorded. Its name goes into [`Refused`]
+    /// instead, so the later reference pass neither resolves it nor reports a reference to it as
+    /// a reference to nothing.
     fn absorb(
         &mut self,
         source: &Source,
@@ -746,42 +799,45 @@ impl Collected {
 
         for raw in file.entities {
             let first = declare(&mut self.declared, "entity", &raw.name, source, errors);
+            let name = raw.name.clone();
             match EntitySpec::try_from(raw) {
                 Ok(entity) => {
                     members.entities.push(entity.name.clone());
                     record(first, &mut self.entities, entity.name.clone(), entity);
                 }
-                Err(member_errors) => errors.extend(member_errors),
-            }
-        }
-        for raw in file.commands {
-            let first = declare(&mut self.declared, "command", &raw.name, source, errors);
-            match CommandSpec::try_from(raw) {
-                Ok(command) => {
-                    members.commands.push(command.name.clone());
-                    record(first, &mut self.commands, command.name.clone(), command);
+                Err(member_errors) => {
+                    self.refused.entities.insert(name);
+                    errors.extend(member_errors);
                 }
-                Err(member_errors) => errors.extend(member_errors),
             }
         }
+        self.absorb_commands(source, file.commands, &mut members, errors);
         for raw in file.events {
             let first = declare(&mut self.declared, "event", &raw.name, source, errors);
+            let name = raw.name.clone();
             match EventSpec::try_from(raw) {
                 Ok(event) => {
                     members.events.push(event.name.clone());
                     record(first, &mut self.events, event.name.clone(), event);
                 }
-                Err(member_errors) => errors.extend(member_errors),
+                Err(member_errors) => {
+                    self.refused.events.insert(name);
+                    errors.extend(member_errors);
+                }
             }
         }
         for raw in file.errors {
             let first = declare(&mut self.declared, "error", &raw.name, source, errors);
+            let name = raw.name.clone();
             match ErrorSpec::try_from(raw) {
                 Ok(error) => {
                     members.errors.push(error.name.clone());
                     record(first, &mut self.errors, error.name.clone(), error);
                 }
-                Err(member_errors) => errors.extend(member_errors),
+                Err(member_errors) => {
+                    self.refused.errors.insert(name);
+                    errors.extend(member_errors);
+                }
             }
         }
         for raw in file.views {
@@ -834,6 +890,37 @@ impl Collected {
         part
     }
 
+    /// One file's commands. A refused one keeps its name and the transitions its outcomes
+    /// `moves:`, so [`Refused`] can tell what it would have referred to.
+    fn absorb_commands(
+        &mut self,
+        source: &Source,
+        commands: Vec<crate::command::RawCommandSpec>,
+        members: &mut DomainMembers,
+        errors: &mut ValidationErrors,
+    ) {
+        for raw in commands {
+            let first = declare(&mut self.declared, "command", &raw.name, source, errors);
+            let name = raw.name.clone();
+            let moves: Vec<QualifiedName> = raw
+                .outcomes
+                .iter()
+                .filter_map(|outcome| outcome.moves.clone())
+                .collect();
+            match CommandSpec::try_from(raw) {
+                Ok(command) => {
+                    members.commands.push(command.name.clone());
+                    record(first, &mut self.commands, command.name.clone(), command);
+                }
+                Err(member_errors) => {
+                    self.refused.commands.insert(name);
+                    self.refused.moves.extend(moves);
+                    errors.extend(member_errors);
+                }
+            }
+        }
+    }
+
     /// Takes the declarations that sit above the domains rather than inside one.
     ///
     /// A component owns domains and a binding joins two of them, so neither can belong to
@@ -858,6 +945,7 @@ impl Collected {
         // component owns domains, and a binding joins two of them, so neither can belong to either.
         for raw in components {
             let first = declare(&mut self.declared, "component", &raw.name, source, errors);
+            let name = raw.name.clone();
             match crate::component::ComponentSpec::try_from(raw) {
                 Ok(component) => {
                     record(
@@ -867,7 +955,14 @@ impl Collected {
                         component,
                     );
                 }
-                Err(member_errors) => errors.extend(member_errors),
+                Err(member_errors) => {
+                    // A name that is not a component name is refused on its own account and
+                    // cannot be referred to either, so there is nothing to hold.
+                    if let Ok(name) = crate::component::ComponentName::new(name) {
+                        self.refused.components.insert(name);
+                    }
+                    errors.extend(member_errors);
+                }
             }
         }
         for raw in bindings {

@@ -270,8 +270,8 @@ fn readme(suite: &ConformanceSuite) -> String {
         Some(component) => format!(
             "\nScoped to the component `{component}`: only the scenarios whose every command, event \
              and view it accepts, publishes or owns. The scenarios the specification obliges of \
-             another component are listed by `ess conform synthesize --component {component}` as \
-             `outside:`, and belong in that component's suite.\n"
+             another component are listed by `ess verify conform synthesize --component {component}` \
+             as `outside:`, and belong in that component's suite.\n"
         ),
     };
     let readme = format!(
@@ -337,15 +337,15 @@ way, so the reason can carry which command it was.
 
 ## What this does not check
 
-Whatever the synthesis refused. Read the refusal list `ess conform synthesize` prints: a suite that
-quietly holds fewer checks than the specification requires is the failure this whole thing exists
-to rule out, and unlike a refusal, nothing about it is visible in a passing run.
+Whatever the synthesis refused. Read the refusal list `ess verify conform synthesize` prints: a
+suite that quietly holds fewer checks than the specification requires is the failure this whole
+thing exists to rule out, and unlike a refusal, nothing about it is visible in a passing run.
 
 ## The report
 
 Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the
 last scenario has finished — the same closed document the Rust runner writes, so
-`aep artifact evidence --from <that file>` records the run against the specification artifact
+`aep plan artifact evidence --from <that file>` records the run against the specification artifact
 without anybody typing a count. `passed` means every scenario passed; a skipped scenario makes the
 run `inconclusive`, because a target that could not answer a question has not shown the answer.
 
@@ -419,6 +419,31 @@ mod tests {
                 "essconform/README.md",
             ]
         );
+    }
+
+    /// Every file the package carries spells the grouped commands the CLI help and the agent
+    /// skills spell, for the unscoped suite and for a component's (beyond10x/ess#77).
+    #[test]
+    fn every_emitted_file_spells_the_grouped_commands() {
+        let mut scoped = suite();
+        scoped.provenance.component = Some("billing-service".to_owned());
+        for suite in [suite(), scoped] {
+            for file in emit(&suite).unwrap() {
+                for flat in ["ess conform ", "aep artifact "] {
+                    assert!(
+                        !file.contents.contains(flat),
+                        "{} spells the flat `{flat}`",
+                        file.path
+                    );
+                }
+            }
+            let readme = readme(&suite);
+            assert!(
+                readme.contains("`ess verify conform synthesize"),
+                "{readme}"
+            );
+            assert!(readme.contains("`aep plan artifact evidence"), "{readme}");
+        }
     }
 
     /// Every emitted source is inside the directory `tsconfig.json` tells the compiler to read.

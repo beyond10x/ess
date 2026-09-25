@@ -335,7 +335,7 @@ fn ensure_idle<'a>(payload: &'a Payload, root: &Path) -> Result<&'a Ledger> {
     match &payload.checkpoint {
         Checkpoint::Idle { ledger } => Ok(ledger),
         _ => bail!(
-            "pending generated output at {}; run `ess output recover --ownership-root {}`",
+            "pending generated output at {}; run `ess generate output recover --ownership-root {}`",
             root.display(),
             root.display()
         ),
