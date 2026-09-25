@@ -67,6 +67,7 @@ fn native_process_driver() {
     let _serial = super::serial();
     if let Some(root) = std::env::var_os("ESS_OWNERSHIP_TEST_ROOT") {
         let root = PathBuf::from(root);
+        let _replay = ownership::probe::replay();
         let cut = std::env::var("ESS_OWNERSHIP_TEST_CUT")
             .unwrap()
             .parse::<usize>()
@@ -106,6 +107,61 @@ fn native_process_driver() {
     }
 }
 #[test]
+fn a_cut_replay_elides_only_fsync_and_keeps_every_boundary_in_place() {
+    let _serial = super::serial();
+    let run = |replay: bool| {
+        let (_f, root) = prepare();
+        let guard = replay.then(ownership::probe::replay);
+        let trace = std::cell::RefCell::new(Vec::new());
+        let mut record = |event: &str| {
+            trace.borrow_mut().push(event.to_owned());
+            Ok(())
+        };
+        let mut admission = |event: &str| {
+            trace.borrow_mut().push(format!("admission:{event}"));
+            Ok(())
+        };
+        let start = ownership::probe::fsyncs_performed();
+        ownership::probe::publish_traced(&root, NEW, &mut record, &mut admission).unwrap();
+        ownership::probe::recover(&root, &mut record).unwrap();
+        let performed = ownership::probe::fsyncs_performed() - start;
+        let trace = trace.into_inner();
+        let elided = guard.as_ref().map_or(0, ownership::probe::Replay::elided);
+        drop(guard);
+        assert!(!ownership::probe::replaying(), "replay outlived its guard");
+        (trace, visible(&root), elided, performed)
+    };
+    let (real, real_output, none, real_fsyncs) = run(false);
+    let (replayed, replayed_output, elided, replayed_fsyncs) = run(true);
+    assert_eq!(replayed, real, "a replay moved a cut boundary");
+    assert_eq!(replayed_output, real_output);
+    let syncs = real
+        .iter()
+        .filter(|e| {
+            e.trim_start_matches("admission:")
+                .starts_with("before:sync:")
+        })
+        .count();
+    assert!(syncs > 0);
+    assert_eq!(
+        (none, real_fsyncs),
+        (0, syncs),
+        "a control run skipped fsync"
+    );
+    assert_eq!(
+        (elided, replayed_fsyncs),
+        (syncs, 0),
+        "a replay kept or invented an fsync"
+    );
+    let (_f, root) = prepare();
+    let start = ownership::probe::fsyncs_performed();
+    publish(&root, NEW);
+    assert!(
+        ownership::probe::fsyncs_performed() > start,
+        "fsync stayed elided after its replay ended"
+    );
+}
+#[test]
 fn every_publication_syscall_boundary_refuses_then_recovers_the_actual_preimage_or_committed_set() {
     let _serial = super::serial();
     let (_control, root) = prepare();
@@ -122,6 +178,7 @@ fn every_publication_syscall_boundary_refuses_then_recovers_the_actual_preimage_
         .iter()
         .any(|e| e == "after:rename:output-installation"));
     for (cut, event) in trace.iter().enumerate() {
+        let _replay = ownership::probe::replay();
         let (_f, root) = prepare();
         let mut seen = 0;
         let result = ownership::probe::publish(&root, NEW, &mut |_| {
@@ -165,6 +222,7 @@ fn every_publication_process_cut_recovers_without_current_inputs() {
     .unwrap();
     let new = visible(&root);
     for cut in 0..count {
+        let _replay = ownership::probe::replay();
         let (_f, root) = prepare();
         let output = child(&root, "publish", cut);
         assert_eq!(output.status.code(), Some(93), "cut {cut}: {output:?}");
@@ -191,8 +249,16 @@ fn interrupt_prepared(root: &Path) {
     assert!(result.is_err());
     assert_eq!(phase(root), "Prepared");
 }
+// Each fault mode is its own test so a process-per-test runner replays both halves at once.
 #[test]
-fn every_recovery_process_cut_and_io_failure_keeps_restoration_repeatable() {
+fn every_recovery_process_cut_keeps_restoration_repeatable() {
+    every_recovery_cut_keeps_restoration_repeatable(true);
+}
+#[test]
+fn every_recovery_io_failure_keeps_restoration_repeatable() {
+    every_recovery_cut_keeps_restoration_repeatable(false);
+}
+fn every_recovery_cut_keeps_restoration_repeatable(process: bool) {
     let _serial = super::serial();
     let (_control, root) = prepare();
     let old = visible(&root);
@@ -208,7 +274,8 @@ fn every_recovery_process_cut_and_io_failure_keeps_restoration_repeatable() {
         .iter()
         .any(|e| e == "after:partial-write:restore-stage"));
     for (cut, event) in trace.iter().enumerate() {
-        for process in [false, true] {
+        {
+            let _replay = ownership::probe::replay();
             let (_f, root) = prepare();
             interrupt_prepared(&root);
             if process {
@@ -240,11 +307,11 @@ fn every_recovery_process_cut_and_io_failure_keeps_restoration_repeatable() {
             assert_eq!(snapshot(&root), settled);
         }
     }
-    println!(
-        "{} actual recovery process cuts and {} injected recovery boundaries",
-        trace.len(),
-        trace.len()
-    );
+    if process {
+        println!("{} actual recovery process cuts", trace.len());
+    } else {
+        println!("{} injected recovery boundaries", trace.len());
+    }
 }
 
 fn fresh(adoption: bool) -> (Fixture, PathBuf) {
@@ -262,104 +329,110 @@ fn fresh(adoption: bool) -> (Fixture, PathBuf) {
     }
     (f, root)
 }
+// Initialization and adoption are separate tests so a process-per-test runner overlaps them.
 #[test]
-fn initialization_and_metadata_only_adoption_survive_each_process_cut_and_io_failure() {
+fn initialization_survives_each_process_cut_and_io_failure() {
+    survives_each_process_cut_and_io_failure(false);
+}
+#[test]
+fn metadata_only_adoption_survives_each_process_cut_and_io_failure() {
+    survives_each_process_cut_and_io_failure(true);
+}
+fn survives_each_process_cut_and_io_failure(adoption: bool) {
     let _serial = super::serial();
-    for adoption in [false, true] {
-        let (_control, root) = fresh(adoption);
-        let old = visible(&root);
-        let mut trace = Vec::new();
-        let mut observer = |event: &str| {
-            trace.push(event.to_owned());
-            Ok(())
-        };
-        if adoption {
-            ownership::probe::adopt(
-                &root,
-                &root.parent().unwrap().join("reference"),
-                &mut observer,
-            )
-            .unwrap();
-        } else {
-            ownership::probe::publish(&root, NEW, &mut observer).unwrap();
-        }
-        let new = visible(&root);
-        if adoption {
-            assert_eq!(old, new);
-        }
-        assert!(trace
-            .iter()
-            .any(|e| e == "after:rename:initial-state-publication"));
-        for (cut, event) in trace.iter().enumerate() {
-            for process in [false, true] {
-                let (_f, root) = fresh(adoption);
-                if process {
-                    let output = child(&root, if adoption { "adopt" } else { "publish" }, cut);
-                    assert_eq!(
-                        output.status.code(),
-                        Some(93),
-                        "initial cut {cut} {event}: {output:?}"
-                    );
-                } else {
-                    let mut seen = 0;
-                    let mut observer = |_: &str| {
-                        let current = seen;
-                        seen += 1;
-                        if current == cut {
-                            Err(std::io::Error::from_raw_os_error(5).into())
-                        } else {
-                            Ok(())
-                        }
-                    };
-                    let result = if adoption {
-                        ownership::probe::adopt(
-                            &root,
-                            &root.parent().unwrap().join("reference"),
-                            &mut observer,
-                        )
-                    } else {
-                        ownership::probe::publish(&root, NEW, &mut observer)
-                    };
-                    assert!(result.is_err());
-                }
-                let committed = root.join(".ess-output/state.json").exists()
-                    && (phase(&root) == "Committed"
-                        || phase(&root) == "Idle" && visible(&root) == new);
-                let orphans = fs::read_dir(&root)
-                    .unwrap()
-                    .map(|e| e.unwrap().path())
-                    .filter(|p| {
-                        p.file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .starts_with(".ess-output-init-")
-                    })
-                    .map(|p| {
-                        let bytes = snapshot(&p);
-                        (p, bytes)
-                    })
-                    .collect::<Vec<_>>();
-                ownership::recover(&root).unwrap_or_else(|e| {
-                    panic!("initialization/adoption={adoption} cut {cut} {event}: {e:#}")
-                });
+    let (_control, root) = fresh(adoption);
+    let old = visible(&root);
+    let mut trace = Vec::new();
+    let mut observer = |event: &str| {
+        trace.push(event.to_owned());
+        Ok(())
+    };
+    if adoption {
+        ownership::probe::adopt(
+            &root,
+            &root.parent().unwrap().join("reference"),
+            &mut observer,
+        )
+        .unwrap();
+    } else {
+        ownership::probe::publish(&root, NEW, &mut observer).unwrap();
+    }
+    let new = visible(&root);
+    if adoption {
+        assert_eq!(old, new);
+    }
+    assert!(trace
+        .iter()
+        .any(|e| e == "after:rename:initial-state-publication"));
+    for (cut, event) in trace.iter().enumerate() {
+        for process in [false, true] {
+            let _replay = ownership::probe::replay();
+            let (_f, root) = fresh(adoption);
+            if process {
+                let output = child(&root, if adoption { "adopt" } else { "publish" }, cut);
                 assert_eq!(
-                    visible(&root),
-                    if committed { new.clone() } else { old.clone() }
+                    output.status.code(),
+                    Some(93),
+                    "initial cut {cut} {event}: {output:?}"
                 );
-                for (path, bytes) in orphans {
-                    assert_eq!(
-                        snapshot(&path),
-                        bytes,
-                        "unpublished initialization orphan changed"
-                    );
-                }
+            } else {
+                let mut seen = 0;
+                let mut observer = |_: &str| {
+                    let current = seen;
+                    seen += 1;
+                    if current == cut {
+                        Err(std::io::Error::from_raw_os_error(5).into())
+                    } else {
+                        Ok(())
+                    }
+                };
+                let result = if adoption {
+                    ownership::probe::adopt(
+                        &root,
+                        &root.parent().unwrap().join("reference"),
+                        &mut observer,
+                    )
+                } else {
+                    ownership::probe::publish(&root, NEW, &mut observer)
+                };
+                assert!(result.is_err());
+            }
+            let committed = root.join(".ess-output/state.json").exists()
+                && (phase(&root) == "Committed" || phase(&root) == "Idle" && visible(&root) == new);
+            let orphans = fs::read_dir(&root)
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .filter(|p| {
+                    p.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(".ess-output-init-")
+                })
+                .map(|p| {
+                    let bytes = snapshot(&p);
+                    (p, bytes)
+                })
+                .collect::<Vec<_>>();
+            ownership::recover(&root).unwrap_or_else(|e| {
+                panic!("initialization/adoption={adoption} cut {cut} {event}: {e:#}")
+            });
+            assert_eq!(
+                visible(&root),
+                if committed { new.clone() } else { old.clone() }
+            );
+            for (path, bytes) in orphans {
+                assert_eq!(
+                    snapshot(&path),
+                    bytes,
+                    "unpublished initialization orphan changed"
+                );
             }
         }
-        println!(
-            "adoption={adoption}: {} native process cuts and IO boundaries",
-            trace.len()
-        );
     }
+    println!(
+        "adoption={adoption}: {} native process cuts and IO boundaries",
+        trace.len()
+    );
 }
 
 #[test]
@@ -826,6 +899,7 @@ fn missing_anchor_creation_cuts_preserve_authored_parents_and_never_publish_part
     assert!(!cuts.is_empty());
     for (cut, event) in &cuts {
         for process in [false, true] {
+            let _replay = ownership::probe::replay();
             let f = Fixture::new();
             let root = f.0.join("missing/deeper");
             let authored = fs::read(f.0.join("page.md")).unwrap();
