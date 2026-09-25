@@ -910,7 +910,7 @@
       "case_ast_sha256": "efafb6273898842b76923edc11c2c923a2fb8966f47daa694fbdedd8ad621586",
       "reviewed_assertion": "The complete system namespace changes model→other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:a_view_and_entity_can_move_between_two_admitted_domains_without_changing_the_cli": {
       "identity": {
@@ -929,7 +929,7 @@
       "case_ast_sha256": "5410d61cb0b6a42c1d75a4b1b5c43cf7a855e467e148d995664303fc211a6a55",
       "reviewed_assertion": "A coordinated namespace rename changes actual raw/assembled/resolved entity names. A Child is additionally moved between two domains present in both source sets, with equal identity/fields/lifecycle, changed domain/state-type handles and the compiler's total type lookup. CLI terminals remain equal. model.data and model.extra are both admitted in both source sets. Moving only the view declaration/name to the extra domain changes ResolvedView.domain while its source entity, fields and parameters remain equal; domain membership is asserted and complete CLI plan/artifacts/direct invocation remain equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:conversion_membership_direction_and_reason_survive_model_assembly_without_cli_execution": {
       "identity": {
@@ -948,7 +948,7 @@
       "case_ast_sha256": "f1035e8add93079ed52d9238572fb7cf81ae1f2ac2ca9e074b92da4cd0fae466",
       "reviewed_assertion": "A concrete Tag→Alias conversion and a separately admitted reverse Alias→Tag conversion change the raw conversion list, assembled registry and resolved from/to/because values while complete CLI outputs remain equal. No application conversion is executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:domain_member_and_compiler_handle_names_follow_real_compilation_after_rename": {
       "identity": {
@@ -967,7 +967,7 @@
       "case_ast_sha256": "a5bb765689d96b1ada16cfa6234925ca2e1418b24c499e9a291ff1d1498b9cbf",
       "reviewed_assertion": "A coordinated namespace rename changes actual raw/assembled/resolved entity names. A Child is additionally moved between two domains present in both source sets, with equal identity/fields/lifecycle, changed domain/state-type handles and the compiler's total type lookup. CLI terminals remain equal. Public compilation mints changed type/entity/command/event/error/view/actor/domain/component names. The test reads the actual handle name and resolves every handle through that same IR's total accessor, including the workload component handle; no handle is constructed or used across unrelated IRs. Model changes coexist with equal CLI terminals. Root documents and the seven domain collection entries undergo real admitted namespace/member changes observed in raw members, assembled domain membership, resolved maps and handle names. Auxiliary omitted versus explicit empty collections normalize equally, and wrong collection objects are separately refused before assembly. Full CLI results remain equal. The header roster and actual declaring source change together in a coordinated namespace move, with raw domain names, assembled DomainSpec membership and resolved handles asserted. An auxiliary null domain source normalizes to no domain, while a roster entry with no declaration is a named assembly refusal. Bad empty-segment system/domain names are specifically refused by the actual QualifiedName reader. Valid changed qualified namespace segments are observed in raw declarations, assembled names and resolved handles and preserve CLI terminal behavior. The coordinated namespace move changes actual QualifiedName values and their accessible segment vectors while every raw/assembled/resolved membership check and CLI terminal executes. No topology, null topology and explicitly empty workloads normalize to the same empty compiled workload map; the original fixture has one asserted workload. A separate admitted component rename changes its actual raw and compiled workload key. Complete CLI terminals remain equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:domain_naming_and_header_naming_are_separate_owned_inputs": {
       "identity": {
@@ -986,7 +986,7 @@
       "case_ast_sha256": "53d4abde2402198beb945301579bf06b70d0f0b02e12bad90da0172e36d9bd25",
       "reviewed_assertion": "Domain wire/display changes reach ResolvedDomain.naming. A separate header naming override changes RawSpecFile.naming but leaves SystemSpec.naming and EssIr.naming at their actual default, proving the two declaration scopes remain distinct; full CLI terminal outputs stay equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:empty_optional_topology_and_domain_source_shapes_normalize_without_invented_members": {
       "identity": {
@@ -1005,7 +1005,7 @@
       "case_ast_sha256": "14c15571b299271447c7fe2cd7a1cb15f3736c7b6056eff62cdc952dc0b241b1",
       "reviewed_assertion": "The header roster and actual declaring source change together in a coordinated namespace move, with raw domain names, assembled DomainSpec membership and resolved handles asserted. An auxiliary null domain source normalizes to no domain, while a roster entry with no declaration is a named assembly refusal. The complete system namespace changes model→other in admitted authored files, raw system identity, SystemSpec and EssIr. The old binding has a named unresolved input refusal; explicitly rebinding the type reference changes exact plan/reference bytes while typed dispatch stays equal. Auxiliary null system fields normalize to no extra header. No topology, null topology and explicitly empty workloads normalize to the same empty compiled workload map; the original fixture has one asserted workload. A separate admitted component rename changes its actual raw and compiled workload key. Complete CLI terminals remain equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:entity_identity_fields_naming_and_invariants_change_the_model_only": {
       "identity": {
@@ -1024,7 +1024,7 @@
       "case_ast_sha256": "041060e37242c552189d239e6e5847d14f15ecc24b999e8fbd0a429981d31422",
       "reviewed_assertion": "Other's field list is omitted versus explicitly empty (equal parsed/compiled behavior), then its identity name/type and an unrelated field type change in admitted sources and in the resolved entity. Complete terminal results remain equal. A source entity naming override reaches the exact resolved Naming value without affecting the CLI; absent versus explicit empty entity naming normalizes equally. amount >= 0→amount >= 1 is read as a real entity invariant; both authored statement and parsed predicate are asserted different after assembly, the resolved invariant changes, and all CLI terminals remain equal. No predicate evaluation or business enforcement is claimed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:entity_optional_fields_relations_and_naming_have_explicit_default_controls": {
       "identity": {
@@ -1043,7 +1043,7 @@
       "case_ast_sha256": "f5954c0245e122809db24813c182405b87b14a512a2e5681f54db0cb6c87eaa1",
       "reviewed_assertion": "Other's field list is omitted versus explicitly empty (equal parsed/compiled behavior), then its identity name/type and an unrelated field type change in admitted sources and in the resolved entity. Complete terminal results remain equal. A source entity naming override reaches the exact resolved Naming value without affecting the CLI; absent versus explicit empty entity naming normalizes equally. Relation name, kind, target, cardinality and via each change in separately admitted sources and in the exact resolved relation member; the targets/carriers exist. Optional relations omitted versus empty normalize equally. No runtime ownership operation is executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:entity_reader_requires_identity_lifecycle_and_name_and_rejects_extra_members": {
       "identity": {
@@ -1062,7 +1062,7 @@
       "case_ast_sha256": "5d91bed0cd17d42b7704faa12cfa0bb1a16e45e19cfc3966379ac9dc93af3e59",
       "reviewed_assertion": "Each of name, identity and lifecycle is individually removed from a present entity; the actual reader names the missing field and the trace stops before assembly. Extra entity keys and a scalar object replacement are separately refused. Restored fixture reaches all terminal stages.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:external_reference_spelling_preserves_provider_key_and_order_with_real_reader_refusals": {
       "identity": {
@@ -1081,7 +1081,7 @@
       "case_ast_sha256": "97814e0d8d4fd31aa886e318fc9d201ff305290869eb57bb53e6a00d5059d8a7",
       "reviewed_assertion": "Separate provider/key changes and two distinct reference orders are parsed through the actual string reader and checked against exact ordered raw/resolved reference values. IR changes but all CLI terminals stay equal; the model does not resolve a provider or contact any external record. A concrete {provider,reference} object in an authored refs list is rejected by the real reader expecting a string; the equivalent fixture's provider:key string reaches every terminal. This records the observed schema-object-versus-string-reader mismatch; it does not claim individual object-property/required-member semantics were reached. The specifically authored ExternalRef object containing provider and reference is refused as a whole by RawSpecFile::parse, which expects the provider:key string representation. The exact stage trace stops at reader, and the admitted string control reaches binding, complete artifact emission and recorded runtime. These eight explicitly enumerated schema descendants are unsupported with that enclosing object representation; no claim is made that individual property types or required-member constraints are interpreted or enforced. This finite disposition matches the separately reviewed Ranking object boundary and does not authorize descendant expansion.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:lifecycle_and_transition_readers_are_closed_and_require_the_declared_members": {
       "identity": {
@@ -1100,7 +1100,7 @@
       "case_ast_sha256": "a0a816608132655aa8de4356a2de90ca4f0c43147a6f5c1a0ee2ba0d08057b5b",
       "reviewed_assertion": "Missing initial/states and each transition name/from/to are separately refused by the actual reader; unknown lifecycle/transition members are rejected before assembly. Malformed state and transition spellings have named syntax refusals and a terminal-success control.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:lifecycle_set_duplicates_normalize_at_the_reader_without_claiming_schema_rejection": {
       "identity": {
@@ -1119,7 +1119,7 @@
       "case_ast_sha256": "9767d53ce22d402cd9dba7cc16151a55fe512730ac846b5c407489bd06ac994b",
       "reviewed_assertion": "The authored state, terminal and transition-from arrays each gain an exact duplicate. The real reader's BTreeSets normalize it; all raw sets, resolved IR and CLI terminals stay equal. This deliberately does not claim the schema uniqueItems rule is enforced by the reader.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:lifecycle_state_and_transition_renaming_changes_declared_and_resolved_values": {
       "identity": {
@@ -1138,7 +1138,7 @@
       "case_ast_sha256": "b38a4feba4ce1e4acfa1a47a972c9b8bf9bc068d8cae0b504f47193c526fbc69",
       "reviewed_assertion": "Draft→Open, Done→Closed and finish→complete change the actual admitted lifecycle, including initial/states/terminal/from/to or transition name as appropriate. Raw fields and resolved lifecycle differ; complete CLI terminals remain equal. Named command-to-transition causation is retained.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:lifecycle_terminal_and_transition_defaults_remain_semantic_refusals_when_needed": {
       "identity": {
@@ -1157,7 +1157,7 @@
       "case_ast_sha256": "1823fc11a04e0a16dd0b62efeeefee9e681ccbc7270e3f50f0adeba575b760e0",
       "reviewed_assertion": "Omitted and explicitly empty terminal/transitions have equal assembly refusals in a lifecycle that needs them. The exact dead_end_state diagnostic identifies Done or Draft respectively, later stages are unentered, and the restored lifecycle reaches every terminal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:malformed_format_spelling_and_unsupported_major_are_different_admission_stages": {
       "identity": {
@@ -1173,10 +1173,10 @@
         "nested_runtime": "None claimed; direct Rust assertions only"
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_model_ingress.rs",
-      "case_ast_sha256": "20fec1d29b6741c66ffb646e85762f6faa1bd7d43ece53c2ebd896e54c374861",
+      "case_ast_sha256": "737bd300bbd86d99f83aa98854daa5cb570d74e3d539369912cad52eaa6a8ba5",
       "reviewed_assertion": "Authored ess/1→ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader. ess/0, ess/01 and other/1 are explicitly rejected by the actual format reader before assembly; restored ess/1 reaches every terminal. This is distinct from the named assembly refusal for syntactically valid future ess/3.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:relation_kind_cardinality_target_carrier_and_name_have_concrete_controls": {
       "identity": {
@@ -1195,7 +1195,7 @@
       "case_ast_sha256": "ed06db06b55a26515cc9b9a7c12c2cc99dc40c246c46214103dfc734163073b5",
       "reviewed_assertion": "Admitted owns→references and many→one change the exact raw relation alternatives and resolved relation fields while complete CLI plan, artifact map and direct process observations remain equal. Relation name, kind, target, cardinality and via each change in separately admitted sources and in the exact resolved relation member; the targets/carriers exist. Optional relations omitted versus empty normalize equally. No runtime ownership operation is executed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:relation_reader_refuses_missing_fields_unknown_members_and_unknown_alternatives": {
       "identity": {
@@ -1214,7 +1214,7 @@
       "case_ast_sha256": "307cdef8ed67c9d142a10535a61b3396efe8bb419fcf05b2e83ea5313680432d",
       "reviewed_assertion": "All five required relation members are removed individually; extra members and invalid enum alternatives are named reader refusals. Invalid dotted relation name/via spellings exercise their particular field-name syntax. Each refusal stops before assembly and has a terminal-success control.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:renamed_source_graph_has_every_concrete_relation_and_changed_semantic_reference_kind": {
       "identity": {
@@ -1252,7 +1252,7 @@
       "case_ast_sha256": "566dd14c8034b9dda414e041793588fefb1c533b8b0b8afe75cd3f69fcbfc0a5",
       "reviewed_assertion": "The header roster and actual declaring source change together in a coordinated namespace move, with raw domain names, assembled DomainSpec membership and resolved handles asserted. An auxiliary null domain source normalizes to no domain, while a roster entry with no declaration is a named assembly refusal. Bad empty-segment system/domain names are specifically refused by the actual QualifiedName reader. Valid changed qualified namespace segments are observed in raw declarations, assembled names and resolved handles and preserve CLI terminal behavior.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:root_collection_empty_defaults_normalize_to_the_same_model_and_terminals": {
       "identity": {
@@ -1271,7 +1271,7 @@
       "case_ast_sha256": "db82cf2dec4cb11f6d77ae99c63cdf83e0260f7672b588d15a70cb1fdf9757df",
       "reviewed_assertion": "Root documents and the seven domain collection entries undergo real admitted namespace/member changes observed in raw members, assembled domain membership, resolved maps and handle names. Auxiliary omitted versus explicit empty collections normalize equally, and wrong collection objects are separately refused before assembly. Full CLI results remain equal. Each listed field is omitted versus explicitly [] in an otherwise empty source. Both real parse/assembly/compiler pipelines retain identical whole IR and terminal results; this is a concrete per-field source normalization control.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:root_format_and_version_omission_and_null_use_declared_defaults": {
       "identity": {
@@ -1290,7 +1290,7 @@
       "case_ast_sha256": "e36ce4947ba0b8e8a619073d290cdd0e883089d90a7b20ecf7e8d3167f18742f",
       "reviewed_assertion": "Authored ess/1→ess/2 changes the raw FormatVersion and SystemSpec.format but leaves this common primitive subset's IR and CLI terminals equal. Omitted/null format defaults to ess/1. ess/3 parses as a format value then yields named unsupported_format_version at assembly; malformed format spelling stops at the reader. Numeric and written version spellings at 1, 2 and u32::MAX normalize to the same raw Version and IR value; different admitted versions really change IR while leaving CLI terminals equal. Omitted/null versions normalize to v1.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:root_reader_refuses_unknown_fields_and_wrong_collection_shapes_before_assembly": {
       "identity": {
@@ -1309,7 +1309,7 @@
       "case_ast_sha256": "51cf090670c361fa4cbb5f6263f9291fdcb333c730746c4c778d6ce68bd82255",
       "reviewed_assertion": "A scalar source, an explicit unknown root key, and wrong object shapes for each collection produce the actual RawSpecFile reader's named refusals before assembly; the unmodified source fixture reaches all terminals. Root documents and the seven domain collection entries undergo real admitted namespace/member changes observed in raw members, assembled domain membership, resolved maps and handle names. Auxiliary omitted versus explicit empty collections normalize equally, and wrong collection objects are separately refused before assembly. Full CLI results remain equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:root_summary_null_and_omission_normalize_while_authored_summary_changes_ir": {
       "identity": {
@@ -1328,7 +1328,7 @@
       "case_ast_sha256": "37f23dc0918b4a8107f77625efa965d1e007fa154fb31c448eba3a26fb355a72",
       "reviewed_assertion": "An authored summary becomes absent or null: raw Options and compiled IR show the exact presence/absence distinction, absent/null normalize equally, and all CLI terminals stay equal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_model_ingress:version_numeric_and_written_forms_normalize_and_out_of_range_values_stop_at_reader": {
       "identity": {
@@ -1347,7 +1347,7 @@
       "case_ast_sha256": "a3c341b5b45e2e3a32a3313b902e42dfaef4eb15c2da889ff7259feef310f36d",
       "reviewed_assertion": "Numeric and written version spellings at 1, 2 and u32::MAX normalize to the same raw Version and IR value; different admitted versions really change IR while leaving CLI terminals equal. Omitted/null versions normalize to v1. The real reader refuses numeric zero, negative, overflow, fractional and written leading-zero versions. Exact minimum/maximum admitted numeric values and canonical written controls also reach the terminal; failures stop before assembly.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "19da9ec07b1d7ab52abbec3027aca2302f66d737943f4c626da67e61f2181487"
+      "source_file_sha256": "f97121e8d10ad91cc5550292a636f5459ac8b840b1235f89a1a46d878ffbcc59"
     },
     "ess-cli-project:test:consumer_cli_services:command_acceptance_and_view_domain_transfer_have_named_admission_refusals": {
       "identity": {
@@ -1898,7 +1898,7 @@
       "case_ast_sha256": "d0c8030aecd91a997f89804da7321317877fc223f321bfabc2e71ccb1e2f8a6c",
       "reviewed_assertion": "A declared conversion Value→String reverses to String→Value with a different exact reason. Raw entries, registry length/member/permits and resolved endpoints/reason are asserted; full selected CLI plan/artifacts and exact runtime outputs remain equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:conversion_wire_members_refuse_missing_unknown_and_wrong_shapes": {
       "identity": {
@@ -1917,7 +1917,7 @@
       "case_ast_sha256": "95c8be30dc1b138175a7c205ccfac4ed63b40b822b91ae3257ad3ef9da2d650c",
       "reviewed_assertion": "Actual conversion unknown key, separately missing from/to/because, and array-shaped from/to/because values assert exact reader diagnostics. The valid conversion source reaches all terminal stages. The named rejection stage is traced. The case asserts no later stage, artifact emission or runtime observation; its matched admitted source reaches compilation, the entire artifact map and exact direct handler/process observations. This is authored pipeline admission, not a claim that a generated installed command reads ESS source.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:declared_result_and_error_fields_check_actual_handler_values": {
       "identity": {
@@ -1936,7 +1936,7 @@
       "case_ast_sha256": "56c1a1f032a6d2cf1d2c0dcb3f66a471f98b12092860e7af0c0e2cff18fad70f",
       "reviewed_assertion": "A real declared result field changes String to Integer, and a separate declared error field changes String to Boolean. Binding/full artifacts change; exact successful/declared-error values are observed and wrong handler values yield cli_result/cli_error exit1 after exactly one call. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:declared_type_identity_and_reference_chains_resolve_without_local_shape_change": {
       "identity": {
@@ -1955,7 +1955,7 @@
       "case_ast_sha256": "be89a6131a6ae49ffd4574635bebbb9937d32adbcbe4163092ae47711ff801ec",
       "reviewed_assertion": "Renaming the actual Value declaration and every reference to TextValue changes raw/assembled/resolved identity and registry membership. A second control inserts a real Inner reference chain and asserts raw count, assembled/IR registry count and resolved targets. Identical resolved local value shapes yield equal full plan, artifacts and exact handler/process output. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:every_named_type_branch_checks_its_owned_object_tag_name_and_naming_representation": {
       "identity": {
@@ -1974,7 +1974,7 @@
       "case_ast_sha256": "cade4c58a6f1f92657ae680a477f0a55d6f67296fed7cc3a611d8edba0e3f20f",
       "reviewed_assertion": "Each concrete named-type branch has its own admitted source control reaching binding, complete artifact map and observed runtime. Wrong tags, nonstring names, malformed naming and nonobject declarations produce named reader refusals and no later-stage entry. The exact branch/object/representation IDs are enumerated, not inferred from package membership.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:exact_and_binary_numeric_predicate_facts_remain_distinct_without_cli_effect": {
       "identity": {
@@ -1993,7 +1993,7 @@
       "case_ast_sha256": "9adfecfdd7e91742ac521c94eb638607f48fa64cf1ffeeffc79dcb448d4e1741",
       "reviewed_assertion": "Actual numeric guard literals 2^53 and 2^53+1 have different exact i64 facts and preserved JSON integer serialization despite identical binary bits. Further real guards contain exact1.5 and Binary64 magnitude1e40; public exact_text/get/is_integral/serialization and Debug representation assert units, scale, carrier and actual variant. Changed model/IR yields equal complete local CLI observations. Private Repr is observed through its Debug output plus exact public facts; no sealed state is constructed or mutated. These are predicate numeric carriers; the local handler receives the separate Integer17 and does not evaluate predicates or claim Decimal/Binary64 CLI decoding.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:invariant_wire_forms_change_real_unused_newtype_and_struct_predicates": {
       "identity": {
@@ -2012,7 +2012,7 @@
       "case_ast_sha256": "926fb873610ba429416945547c4f91deec8c293e63f7bfe8b51c2abce945d62a",
       "reviewed_assertion": "Both real unused newtype and struct owners gain string, bool, nested-list and structured-map invariants. RawInvariant converts to its typed predicate and equals assembled/resolved predicates; explicit true/false matches Always/Never. Real model/IR change leaves the selected local CLI plan, complete artifacts and direct observations equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:named_type_and_field_naming_strings_and_null_forms_are_observed": {
       "identity": {
@@ -2031,7 +2031,7 @@
       "case_ast_sha256": "2c62707dabdda2e4ee923aed54f6093abb52d9c6cd821285e1d98e098c42f458",
       "reviewed_assertion": "Declared type wire/display/summary and field display/summary strings are asserted at their actual raw owners and corresponding resolved model; local CLI terminal outputs stay equal. A separate source with all three named-type and flattened-field metadata values null normalizes to absent raw naming and equal complete assembled/IR/binding/artifact/runtime results. Field wire String is separately observed by the semantic-field rename case. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:named_type_branches_refuse_unknown_and_missing_owned_members_at_reader": {
       "identity": {
@@ -2050,7 +2050,7 @@
       "case_ast_sha256": "a448eed916a7abde23a1f8a931d0500ec6d59af91e3cecfbb6e93ccb24358abd",
       "reviewed_assertion": "Each of the four real named-type branches independently refuses an unknown owned key, missing name and missing kind. Branch-specific missing of, fields, enum variants, union tag and union variants each assert the exact missing field at the reader; every variant has an admitted complete terminal control. The named rejection stage is traced. The case asserts no later stage, artifact emission or runtime observation; its matched admitted source reaches compilation, the entire artifact map and exact direct handler/process observations. This is authored pipeline admission, not a claim that a generated installed command reads ESS source.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:predicate_boolean_composition_and_wire_forms_change_without_cli_effect": {
       "identity": {
@@ -2069,7 +2069,7 @@
       "case_ast_sha256": "efa8e2fd3305b59222d25aec2bab3d22f37ba2cd79efdc49a2df4e53e34eddec",
       "reviewed_assertion": "Valid string, implicit-All list and structured Any/Not guards are checked against exact typed raw/assembled/resolved child/path expectations and canonical Node output. Each real guard delta yields equal full CLI outputs; this observes the accepted Node child forms, not arbitrary JSON-schema evaluation. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:predicate_boolean_text_and_membership_literals_change_without_cli_effect": {
       "identity": {
@@ -2088,7 +2088,7 @@
       "case_ast_sha256": "1312d7adf592dceb72272b458b9fc2aff44508d30b4a0af7421b9aeb3c189b21",
       "reviewed_assertion": "Actual command guards change to typed bool/text comparisons and explicit AnyOf/NoneOf memberships with exact path/value vectors. Typed raw/assembled/resolved expectations and different IR are asserted before equal full local CLI observations. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:predicate_comparisons_change_operators_operands_and_fact_paths_without_cli_effect": {
       "identity": {
@@ -2107,7 +2107,7 @@
       "case_ast_sha256": "7f8b2fc28de0b50162a70eb2756e0a0ac58dc2287b15deea436972d420639fc2",
       "reviewed_assertion": "Five controls change the actual comparison operator from Gt to Eq/Ne/Lt/Le/Ge with typed expected Predicate values; another changes a numeric literal to the real nested entry.amount fact. Raw, assembled and resolved predicates match typed expectations, path segments are exact, and complete local CLI terminal observations stay equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:quantified_predicates_change_kind_collection_binder_and_body_without_cli_effect": {
       "identity": {
@@ -2126,7 +2126,7 @@
       "case_ast_sha256": "81b26fda162a7765b6ad83ea843d75dedb9478cce52685092a6ca24c56448f8c",
       "reviewed_assertion": "A real Forall groups/group/Exists body becomes Exists entry.children/batch/Forall body. The test asserts exact resolved collection segments, binders and body variants, raw-to-resolved equality, changed IR and complete equal local CLI observations. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:raw_boolean_predicate_alternatives_reach_compiled_views_and_preserve_local_cli": {
       "identity": {
@@ -2145,7 +2145,7 @@
       "case_ast_sha256": "d29bbc2fa329cdecc80a0139dd61d3bf19eac5908241c20559abc221e48635d9",
       "reviewed_assertion": "Literal YAML true and false are admitted as view filter Predicate::Always and Predicate::Never, asserted in raw, assembled and compiled models. Changed/controlled full models preserve the selected local binding, all emitted files and exact recorded runtime result. No boolean predicate evaluation is claimed.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:selected_enum_wire_variants_change_admission_and_runtime_values": {
       "identity": {
@@ -2161,10 +2161,10 @@
         "nested_runtime": "None claimed; direct Rust assertions only"
       },
       "source": "crates/generate/ess-cli-project/tests/consumer_cli_types.rs",
-      "case_ast_sha256": "74de5a6744376da0265ae0388efba594338b7167932edfb82673803e28ec9432",
+      "case_ast_sha256": "348c0f428f315ad261e389bfec5d151be586fbd636226e023b42c4ff056c20ad",
       "reviewed_assertion": "The selected Value is an actual enum whose sole member changes Safe to Fast. Raw variants, changed binding/artifact maps, exact admitted typed inputs and the opposite variant's exit2/no-handler refusal are asserted. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:selected_newtype_and_struct_shapes_change_native_payloads": {
       "identity": {
@@ -2183,7 +2183,7 @@
       "case_ast_sha256": "12bf91a65218f673037e5ef9cd663db281f7b2603221cb4f27c0a67c2c69f07e",
       "reviewed_assertion": "The selected named value changes from String-backed newtype to Boolean-backed newtype, then to a declared struct containing Integer inner. Actual raw/assembled/resolved body owners, changed canonical plan and complete artifact maps are inspected; direct handler input is respectively text, native bool and an exact nested object. Wrong bool input exits2 without a call. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:selected_union_invariants_recursion_and_map_keys_refuse_at_binding_only": {
       "identity": {
@@ -2202,7 +2202,7 @@
       "case_ast_sha256": "010b22b1bc1a3370e8c489466ab0af6edc8b809a6af91b7ffb6328d342fcd103",
       "reviewed_assertion": "Valid source with selected newtype or struct invariants passes reader, assembly and ESS compiler then refuses binding with the exact owner-named unsupported invariant message. The same finite case also checks named union, recursive reference and non-String map-key binding refusals without claiming additional already attributed members. The named rejection stage is traced. The case asserts no later stage, artifact emission or runtime observation; its matched admitted source reaches compilation, the entire artifact map and exact direct handler/process observations. This is authored pipeline admission, not a claim that a generated installed command reads ESS source.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:semantic_field_rename_refuses_stale_binding_then_preserves_explicit_wire_payload": {
       "identity": {
@@ -2221,7 +2221,7 @@
       "case_ast_sha256": "3b1f666a4ac74f5e77f30846c3bd1b24e85fc84adc226f1423804b850e3b2f73",
       "reviewed_assertion": "Renaming value to quantity is asserted at raw/assembled/resolved field owners while wire:value remains explicit. The unchanged binding reaches binding compilation and refuses exactly unresolved argument field `value`. Updating the argument's semantic reference then yields the original full plan/artifacts and exact wire:value payload, demonstrating the coordinated valid control. The named rejection stage is traced. The case asserts no later stage, artifact emission or runtime observation; its matched admitted source reaches compilation, the entire artifact map and exact direct handler/process observations. This is authored pipeline admission, not a claim that a generated installed command reads ESS source. The coordinated valid rename control preserves explicit wire:value as a String and observes it in both emitted plan/artifacts and actual payload, after separately asserting the stale semantic argument refusal. This qualifies the concrete admitted string alternative for field wire naming.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:type_and_field_wire_shapes_refuse_at_the_reader_with_full_controls": {
       "identity": {
@@ -2240,7 +2240,7 @@
       "case_ast_sha256": "ec874a5731f6ce7a108ad3eeb34732e189e03a53ab06f4c07ee27ee95542fa9c",
       "reviewed_assertion": "Actual field unknown-key, missing name/type, invalid identifier start and hyphen spelling, non-string field name/type and metadata values, non-string newtype reference, and malformed Naming object controls assert their particular reader messages and no later stages. Null metadata admitted controls are separately observed. The named rejection stage is traced. The case asserts no later stage, artifact emission or runtime observation; its matched admitted source reaches compilation, the entire artifact map and exact direct handler/process observations. This is authored pipeline admission, not a claim that a generated installed command reads ESS source.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:type_body_collections_and_type_reference_shapes_have_matched_reader_refusals": {
       "identity": {
@@ -2259,7 +2259,7 @@
       "case_ast_sha256": "989631d8f77515876241a886d731e2ad6b190510f7988a942051986f98675e1e",
       "reviewed_assertion": "Concrete newtype/struct invariants, struct fields, enum/union variants, union tag and underlying type references receive incompatible wire values; conversion and field whole-object values are also rejected at the reader. Exact named refusals stop all later stages; matched valid controls reach every terminal.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:unresolved_and_duplicate_type_declarations_refuse_during_assembly": {
       "identity": {
@@ -2278,7 +2278,7 @@
       "case_ast_sha256": "cf35ce3509525df104655e2cf98431e4651ad0c7a9e54e64ea6b56f576ab388d",
       "reviewed_assertion": "A field referring to actual missing sample.Absent and an actual duplicate sample.Value declaration independently reach assembly and return the structured UndeclaredReference/DuplicateDeclaration code. Matched valid source reaches all terminal stages; rejected traces stop at assembly with no artifacts or runtime call. This is validated type-registry source admission. No source-only refusal is represented as a generated installed runtime reading a model.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:unsupported_primitive_contracts_refuse_by_exact_type_at_binding": {
       "identity": {
@@ -2297,7 +2297,7 @@
       "case_ast_sha256": "558eccc74b20575af6aea38c05a17a8606d94f983c0b898dd953d7a1c4a972c7",
       "reviewed_assertion": "Six actual selected primitive alternatives Decimal, Binary64, Timestamp, Duration, Uuid and Bytes are parsed/assembled/resolved, with raw type text asserted; each reaches binding compilation and produces unsupported CLI primitive `<exact type>`. String control reaches all terminal observations. The named rejection stage is traced. The case asserts no later stage, artifact emission or runtime observation; its matched admitted source reaches compilation, the entire artifact map and exact direct handler/process observations. This is authored pipeline admission, not a claim that a generated installed command reads ESS source.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli_types:unused_union_tag_and_variants_change_real_types_without_cli_effect": {
       "identity": {
@@ -2316,7 +2316,7 @@
       "case_ast_sha256": "42c01eaf529f9e288a3dbf91cea94734891ff76ede953c67ef7ba8bbd29a83bb",
       "reviewed_assertion": "The real unused Choice union changes discriminator kind to category and gains Integer count beside String text. Raw/assembled/resolved tags, cardinalities and retained text member are asserted; selected local binding, full artifacts and exact runtime observations stay equal. No business command, view, invariant or predicate is evaluated by the local CLI handler.",
       "attribution_limit": "Only the explicitly enumerated model IDs and actual source-admission/terminal assertions are claimed. Refusals name the entered reader, assembly, compiler or binding boundary and preserve unentered downstream stages with an admitted full terminal control. No generated subprocess, installed-binary model reader, provider, business handler execution or JSON Schema enforcement is qualified.",
-      "source_file_sha256": "414cb54b20c48d8855e9612c5ad03246ea7b4351eca6fc3e5f68fae570405911"
+      "source_file_sha256": "ab33bda5578ce8c66c0f082c45e2fb9dfad1a818f8dd8b565779feefb30badbd"
     },
     "ess-cli-project:test:consumer_cli:constrained_newtype_and_struct_are_named_admission_refusals": {
       "identity": {
@@ -2715,7 +2715,7 @@
       "case_ast_sha256": "6380754258c9a391eda4ea2f423aa3266a46a389b5c0292669037d8388ec0839",
       "reviewed_assertion": "For grouped and direct CLI views, assert exposes-view and parameter-type graph edges, view slice membership and type-to-component closure.",
       "attribution_limit": "No parameter ordering, query evaluation or emitted target behavior is established.",
-      "source_file_sha256": "3bdff71e6956ee33bb5da45f18721d499ea08d8416979bc6dc0943b0a15faf31"
+      "source_file_sha256": "dea6c5bfa82b94832bf0fbbb408b1245c3da638e1c034eef7830a1ba3a8361eb"
     },
     "ess-diff:test:review_adversary_f01_pass2:ranking_precedence_survives_the_checked_delta_roundtrip": {
       "identity": {
