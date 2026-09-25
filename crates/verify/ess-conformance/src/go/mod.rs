@@ -127,15 +127,16 @@ and re-running the command after a change to the specification is the only way t
 ## Wiring it up
 
 Implement `Target` — nine methods, each answering a question some construct in the specification
-asks — and hand it over from one test:
+asks — and hand it over from one test. `example.com/yourservice` stands for your own module path,
+whatever `go.mod` names it, and `yourservice_test` for the package the test sits in:
 
 ```go
-package acd_test
+package yourservice_test
 
 import (
     "testing"
 
-    "example.com/acd/{PACKAGE}"
+    "example.com/yourservice/{PACKAGE}"
 )
 
 func TestConformance(t *testing.T) {{
@@ -246,6 +247,30 @@ mod tests {
                 "essconform/README.md",
             ]
         );
+    }
+
+    /// The wiring example names no project of its own: the generator cannot know the adopter's
+    /// module path, so it writes a placeholder that reads as one (beyond10x/ess#76).
+    #[test]
+    fn the_readme_wires_the_package_into_a_placeholder_module() {
+        let readme = emit(&suite())
+            .unwrap()
+            .into_iter()
+            .find(|file| file.path == "essconform/README.md")
+            .expect("a README");
+        assert!(
+            readme.contents.contains("package yourservice_test"),
+            "{}",
+            readme.contents
+        );
+        assert!(
+            readme
+                .contents
+                .contains("\"example.com/yourservice/essconform\""),
+            "{}",
+            readme.contents
+        );
+        assert!(!readme.contents.contains("acd"), "{}", readme.contents);
     }
 
     /// Every emitted Go file declares the package the README tells an adopter to import.

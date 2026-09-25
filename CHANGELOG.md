@@ -45,6 +45,10 @@
   against the text `"starts_at"`) is refused and the message names the working spelling
   (`window.ends_at > window.starts_at`); ordering a `Timestamp` against text that is not an
   instant is refused. A bare word that is a variant of the compared enum is unchanged.
+- The `README.md` that `ess verify conform synthesize --target go` writes wires the package into
+  `package yourservice_test` importing `example.com/yourservice/essconform`, and says both stand
+  for the adopter's own module. It named `acd_test` and `example.com/acd`, a project unrelated to
+  the synthesized system.
 
 ## [0.31.0] — 2026-09-25
 
