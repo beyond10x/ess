@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:reusable-service-contract
 kind: story
-status: active
+status: implemented
 title: Extract reusable selected service contracts without losing outcome semantics
 relations:
 - decomposes: initiative:ess-evolution
@@ -20,7 +20,7 @@ scope:
   path: docs/design/ess-evolution/service-contract.md
 - confidence: cited
   path: docs/design/models/service-contract
-revision: 9
+revision: 10
 ---
 ## Outcome
 

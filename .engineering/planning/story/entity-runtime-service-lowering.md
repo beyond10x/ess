@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:entity-runtime-service-lowering
 kind: story
-status: active
+status: implemented
 title: Lower complete selected ESS services into validated ER definitions and binding plans
 relations:
 - decomposes: initiative:ess-evolution
@@ -23,7 +23,7 @@ scope:
   path: docs/design/ess-evolution/entity-runtime-lowering.md
 - confidence: cited
   path: docs/design/models/entity-runtime-lowering/
-revision: 16
+revision: 17
 ---
 # Complete the pure ESS to Entity Runtime service projector
 
