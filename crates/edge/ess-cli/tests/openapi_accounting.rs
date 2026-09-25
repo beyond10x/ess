@@ -210,3 +210,43 @@ fn a_refused_import_keeps_existing_output_and_creates_no_new_file() {
         }
     }
 }
+
+/// An `OpenAPI` 3.0.3 document with `nullable` imports instead of being refused at `/openapi`
+/// (beyond10x/ess#73); the null member it cannot carry is a durable gap, not a silent drop.
+#[test]
+fn an_openapi_30_document_with_nullable_imports_through_the_cli() {
+    let dir = fixture("openapi30");
+    let input = dir.join("openapi.yaml");
+    let source = SOURCE
+        .replace("openapi: 3.1.0", "openapi: 3.0.3")
+        .replace("format: uuid", "format: uuid\n          nullable: true");
+    assert_ne!(source, SOURCE);
+    std::fs::write(&input, &source).unwrap();
+    let out = dir.join("import.json");
+    let output = ess(
+        &["infra", "import", "openapi", "--path"],
+        &input,
+        Some(&out),
+        "yaml",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let terminal: serde_json::Value = serde_yaml::from_slice(&output.stdout).unwrap();
+    assert!(!terminal.is_null(), "empty terminal report");
+    let checked = ess_openapi::read_import(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(checked.interface().source_openapi, "3.0.3");
+    assert!(checked.interface().types.contains_key("Invoice"));
+    assert_eq!(
+        checked
+            .accounting()
+            .coverage_gaps
+            .iter()
+            .map(|gap| gap.pointer.as_str())
+            .collect::<Vec<_>>(),
+        ["/components/schemas/Invoice/properties/id/nullable"]
+    );
+}
