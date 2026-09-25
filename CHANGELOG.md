@@ -14,15 +14,6 @@
   so the 3.0 and 3.1 spellings of one meaning agree; it was refused as a type array. Other 3.1
   imports are byte-identical.
 
-### Removed
-
-- **Breaking:** `ess skill` and the agent plugin in `plugins/ess/`, with both marketplace files
-  (`ess@ess`), the `build.rs` that embedded the skills and `cargo xtask plugin check`. The plugin
-  lives in `beyond10x/agentplugins` with every other Beyond10x plugin (`ess@b10x`, skills
-  `ess:init`, `ess:specifying`, `ess:retrofitting`, `ess:testing-conformance`, `ess:upgrade`);
-  its `b10x` CLI installs this binary prebuilt or with `cargo` and migrates an `ess@ess` install.
-  `ess --help` lists the four areas and nothing else.
-
 ### Fixed
 
 - `--path` and `--spec` help no longer calls the `system.yaml` directory layout "legacy". It is a
@@ -36,6 +27,35 @@
   against the text `"starts_at"`) is refused and the message names the working spelling
   (`window.ends_at > window.starts_at`); ordering a `Timestamp` against text that is not an
   instant is refused. A bare word that is a variant of the compared enum is unchanged.
+
+## [0.31.0] — 2026-09-25
+
+### Added
+
+- `ess-entity-runtime` projects an admitted service contract into validated Entity Runtime
+  definitions and typed host binding obligations. It preserves conditional outcome selection,
+  exact values and event order, and makes omitted operation-field actions explicit without
+  executing a service or choosing the host's policy.
+  Subject-field, state-change and external conditions lower to ER predicates; an operation
+  that clears a field and a preserve that returns no response are refused by name
+  (`ClearedValueUnsupported`, `SilentPreserveUnsupported`).
+  A lowering targets Entity Runtime `0.23.0`: `ENTITY_RUNTIME_REVISION` is the locked
+  `entity-core` commit, and a test refuses a lock file that names another.
+- `ess-service-contract` extracts a borrowed service contract for an exact component and
+  synthesis plan, preserving selected compiler values, contextual capabilities, obligations,
+  refusals and their original order.
+- A release note for 0.28–0.30 (`website/blog/2026-09-25-1200-what-a-retry-returns.md`): subject
+  history in `ess/6`, retried results in `ess/7`, and the plugin's one release here. Without it the
+  newest note trails 0.31.0 by four minors and `cargo xtask docs` refuses the tree.
+
+### Removed
+
+- **Breaking:** `ess skill` and the agent plugin in `plugins/ess/`, with both marketplace files
+  (`ess@ess`), the `build.rs` that embedded the skills and `cargo xtask plugin check`. The plugin
+  lives in `beyond10x/agentplugins` with every other Beyond10x plugin (`ess@b10x`, skills
+  `ess:init`, `ess:specifying`, `ess:retrofitting`, `ess:testing-conformance`, `ess:upgrade`);
+  its `b10x` CLI installs this binary prebuilt or with `cargo` and migrates an `ess@ess` install.
+  `ess --help` lists the four areas and nothing else.
 
 ## [0.30.0] — 2026-09-23
 

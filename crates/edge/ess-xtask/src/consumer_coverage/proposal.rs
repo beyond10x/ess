@@ -22,6 +22,8 @@ struct Profile {
 enum ProfileClass {
     #[serde(rename = "model-consumer")]
     ModelConsumer,
+    #[serde(rename = "scenario-acquisition")]
+    ScenarioAcquisition,
     #[serde(rename = "foreign-context")]
     ForeignContext,
 }
@@ -132,6 +134,8 @@ pub(super) fn build(
         output: profile_output,
     } = bind_profiles(&profiles, &entries, &classifications, build_profile)?;
     let case_output = review_cases(&reviewed, &cases, source, build_profile)?;
+    let acquisition_output =
+        super::scenario_acquisition::candidates(&profile_output, &entries, &cases, source)?;
     let metadata = super::metadata::candidates(models, &json!(profile_ids))?;
     let ProposalCells {
         rows,
@@ -150,6 +154,10 @@ pub(super) fn build(
     Ok(BTreeMap::from([
         ("consumer-profiles.json".into(), json!(profile_output)),
         ("reviewed-case-candidates.json".into(), json!(case_output)),
+        (
+            "scenario-acquisition-candidates.json".into(),
+            acquisition_output,
+        ),
         (
             "mandatory-requirements.json".into(),
             json!(reviewed.requirements),

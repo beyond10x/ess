@@ -11,6 +11,12 @@ pub(super) fn extract(root: &Value) -> Result<Value> {
     refs(&canonical, "", &canonical, &mut references)?;
     Ok(json!({"obligations":obligations,"references":references}))
 }
+
+pub(super) fn historical_witness() -> Result<Value> {
+    extract(&serde_json::from_str(include_str!(
+        "fixtures/stage1-7a6d7685-ess.schema.json"
+    ))?)
+}
 fn escape(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")
 }

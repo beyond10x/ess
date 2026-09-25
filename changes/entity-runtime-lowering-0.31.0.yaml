@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/entity-runtime-lowering-0.31.0
+repository: ess
+publishedAt: 2026-09-25T12:00:00Z
+title: A service contract lowers to Entity Runtime definitions
+summary: >-
+  ess-service-contract extracts an admitted component's service contract, and ess-entity-runtime lowers it into validated Entity Runtime 0.23.0 definitions and typed host binding obligations, refusing what it cannot express by name. Breaking: `ess skill` and the in-repository plugin are removed; the plugin ships from beyond10x/agentplugins.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.31.0
+  version: 0.31.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]

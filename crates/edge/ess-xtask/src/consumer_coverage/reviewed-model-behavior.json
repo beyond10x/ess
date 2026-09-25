@@ -1,0 +1,771 @@
+{
+  "format": "ess-consumer-model-behavior/1",
+  "cases": {
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "d8e252de65e5e9439b95ace320ba4831d57aed6a6f012a6c517cb855a085aa2d",
+      "reviewed_assertion": "The direct-file loader preserves ordered setting name, type, required, secret and value fields, preserves omission, and refuses duplicate names, entity-valued settings and required/constant conflict.",
+      "attribution_limit": "Qualifies only component-setting admission, validation and resolved IR values observed through load::specification; it does not qualify configuration loading or secret handling at runtime.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_error_naming": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_error_naming",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "2ff030218531c85851b5486930a53c2fbf31cd0f19d728009838202535f92e8d",
+      "reviewed_assertion": "The direct-file loader preserves stable error identity/summary and exact wire/display names, preserves naming omission, accepts duplicate wire names under distinct stable identities, and refuses naming bytes under ess/3.",
+      "attribution_limit": "Qualifies only error naming admission and resolved values observed through load::specification, including the supported duplicate-wire behavior; it does not claim transport generation or uniqueness enforcement.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_error_naming",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "f695afae6dd8c9e52ac712064a07e813fa798503827527db640cbedcf886e312",
+      "reviewed_assertion": "The direct-file loader preserves exact periodic interval/host authority, host_context and host_read mappings and at_most_once delivery; the derived graph has HostedBy and no ReactsTo edge; missing host traversal, dual event/periodic cause and exactly_once controls refuse.",
+      "attribution_limit": "Qualifies periodic cause, host mappings, delivery and the exact derived graph relation observed through load::specification; it does not qualify scheduling or delivery runtime execution.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "e8c48230ee1a2b53e30f3eab25af15169fd57fd5c3533d2486b9ae54d4bda5b7",
+      "reviewed_assertion": "The direct-file loader returns one-file compiled IR with exact String and Integer reading encodings/origins, refuses reading on struct, enum and union owners, and refuses a contradictory offset policy.",
+      "attribution_limit": "Qualifies only reading admission, resolution and the named owner/offset refusals observed through load::specification; it does not qualify generators, runtime parsing or unrelated type behavior.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_response_payload_ownership": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "7add48670d833060f3eedcda0c4aad221c71a41314cfe30bff1e3cb4ccab453d",
+      "reviewed_assertion": "The direct-file loader preserves response identity/type plus response_field and generated payload sources, refuses a missing response reference, and refuses those payload sources when moved into valid subject sets.",
+      "attribution_limit": "Qualifies only command response and outcome payload ownership observed through load::specification; it does not qualify event emission or generated runtime payload values.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "a352f879626505bedb8f5ea01e9398d585da371e42da1acf6f01fd3544d3db0d",
+      "reviewed_assertion": "The direct-file loader preserves exact selection input, five-selector plan, selector index/projection, event accessor segments data/status, root data and nominal Body handle; unknown, backward-exclusion and missing-traversal controls refuse.",
+      "attribution_limit": "Qualifies selection and event-accessor admission/resolution observed through load::specification; it does not qualify binding invocation or projection runtime execution.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_subject_state_selection": {
+      "identity": {
+        "package": "ess-cli",
+        "target_kind": "bin",
+        "target_name": "ess",
+        "full_name": "load::accounting_tests::specification_direct_file_preserves_subject_state_selection",
+        "features": [],
+        "target_profile": "x86_64-unknown-linux-gnu/default",
+        "tool_requirements": [
+          "frozen Rust 1.98.1; locked offline owner-target build"
+        ],
+        "nested_runtime": "None claimed; direct Rust assertions only"
+      },
+      "target_source": "crates/edge/ess-cli/src/main.rs",
+      "target_source_file_sha256": "fde9db4da380934e287f6a6b1474caa0007d8b54f6f89a41dd334f955849d2d3",
+      "source": "crates/edge/ess-cli/src/load_accounting_tests.rs",
+      "source_file_sha256": "07f599a18eb253d5db60f9e0df07885020742d09667ee2067daa6a863a4c5f6f",
+      "case_ast_sha256": "2f750b9ea2b0aee571e1584bb8cfb838f148bfa62e93d609b5a15cdb408fc5bd",
+      "reviewed_assertion": "The direct-file loader returns resolved subject_state conditions with exact states, predicate and construct_input_in_state strategy, and refuses missing state and incompatible external condition controls.",
+      "attribution_limit": "Qualifies only subject-state selection and the named condition refusals observed through load::specification; it does not qualify conformance execution or command runtime behavior.",
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_subject_state_selection",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    }
+  },
+  "claims": [
+    {
+      "identity": {
+        "model": "rust:ess_compiler::graph::DependencyRelation",
+        "shape": "7334e358ce9f6af7ba8380c4f1f23b54c0169f5b3ed7fd4d1daf4eafa25c0fd0",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedBinding",
+        "shape": "8df87659c00092c2109bcdece4d3b9323b8d8ccd929d63bc9ff0dca83626cbeb",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedCommand",
+        "shape": "eabcf807974b3ce300333db65a8031dcce1324ded8f6229103e3bd89c9e67439",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_response_payload_ownership"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes response and generated payload ownership in returned IR plus missing-response and valid-subject-set ownership refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedComponent",
+        "shape": "133c2ddbb513e611fca411c7c26a745b2d10c6837b61a12171b7ccf6b06d49db",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes ordered component settings in returned IR, omission, and named invalid-setting refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedCondition",
+        "shape": "ca98b66ad492b1709758bdd206e8ace2b971db12fa4f6b50f6d83c7a7ee89b58",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_subject_state_selection"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes resolved subject-state condition/state/predicate/test-strategy values and named invalid-condition refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_subject_state_selection",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedError",
+        "shape": "2ccea3aeeccea03effe3233f9dd040f7a5bb8edf27e51d28605663472b235ad0",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_error_naming"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes stable error identity and optional wire/display naming, supported duplicate wire names, and old-format refusal from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_error_naming",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedMappingValue",
+        "shape": "1d72d442f2f7c963a649c614e9237ce4b80896da886a0fc21f362d90c11ca3e3",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedPayloadValue",
+        "shape": "c9c9be29659bd0a165e8e020582d156884fb4ae454a92f2defe25b9907ca4a6b",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_response_payload_ownership"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes response and generated payload ownership in returned IR plus missing-response and valid-subject-set ownership refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_compiler::ir::ResolvedType",
+        "shape": "4197048421e84b7a69b4167113530f56055ad1e59fc555e9ff7e56779fc824a5",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes admitted reading contracts in returned IR and named owner/offset refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::binding::BindingSpec",
+        "shape": "855890cf05923e64c512c6bc443963ca4da728ce6e3e0a1ce943cb53f9bc5991",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::binding::Delivery",
+        "shape": "1c7417e6e316e3c950fd8b5415dcb62cb61bcd92a32e191c08eb7312b4f29ab4",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::binding::MappingSource",
+        "shape": "675c582e1accd1af9534790bdd2e42ff7ec3b1d84460245024a60684f7d5d68a",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::binding::RawBindingSpec",
+        "shape": "e473acc97d89ba75c3cbb8d824d15ae7b87f02ae79c2dd099b6cab0aa0c763b1",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::binding::RawTrigger",
+        "shape": "572827a44e92972766c340b7a4c890e56d9da711b2accbbd30e7977f8ee76cb6",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::binding::RawTrigger/field/event",
+        "shape": "ecd867b6d1f34d022c97f2e5b47413dc8908884696e3c1add418b051389610d4",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery",
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The paired binary-unit cases causally observe periodic/event cause, mapping/selection/accessor values, at-most-once delivery and HostedBy graph semantics plus named invalid controls through the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_periodic_host_mapping_and_delivery, crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_selection_and_event_accessors",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::CommandSpec",
+        "shape": "cbcbb0335c32920f2e38bcc659de30150e1da5c9b093b7f6d4f7d94ae3c62664",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_response_payload_ownership"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes response and generated payload ownership in returned IR plus missing-response and valid-subject-set ownership refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::ErrorSpec",
+        "shape": "58893951505f377b08baf9b328093c61a51c1f6bdd32da603cabc10619095119",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_error_naming"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes stable error identity and optional wire/display naming, supported duplicate wire names, and old-format refusal from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_error_naming",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::OutcomeCondition",
+        "shape": "d5c6139680dfa3178c523993a5ef9aeb45ab74e8cec87d440f65638067ffad60",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_subject_state_selection"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes resolved subject-state condition/state/predicate/test-strategy values and named invalid-condition refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_subject_state_selection",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::PayloadSource",
+        "shape": "7b710ccb420ecb1d5d14953e5afd72c5518a17a2be0160f273e1be209859e170",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_response_payload_ownership"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes response and generated payload ownership in returned IR plus missing-response and valid-subject-set ownership refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::RawCommandSpec",
+        "shape": "e1b51efacd2c5978939a5e4fd410f7ba6f18a1ab41a590bf487e458b47a1c5fa",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_response_payload_ownership"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes response and generated payload ownership in returned IR plus missing-response and valid-subject-set ownership refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_response_payload_ownership",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::RawErrorSpec",
+        "shape": "44dc17e32abc917b3e913d3fad0951c2677255dfef88461ae24f31a3a976b075",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_error_naming"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes stable error identity and optional wire/display naming, supported duplicate wire names, and old-format refusal from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_error_naming",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::TestStrategy",
+        "shape": "f835ce544ad2752a25c1719d2c8a5fd0cf3a337eaadf3464d1430db07ae2b970",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_subject_state_selection"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes resolved subject-state condition/state/predicate/test-strategy values and named invalid-condition refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_subject_state_selection",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::component::ComponentSpec",
+        "shape": "f33986b5c36a5a2aada90dd5b22790a26641fb01b1a1d4aa30b5d2a39ae4baa4",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes ordered component settings in returned IR, omission, and named invalid-setting refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::component::RawComponentSpec",
+        "shape": "ed79cca536b3ace758eda901f2e02c41ee43d8b55a39a445d04c43b5b8bf5c13",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes ordered component settings in returned IR, omission, and named invalid-setting refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_component_settings_and_named_refusals",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::types::NamedType",
+        "shape": "985b9d433f8767659f19816f7200a88a6881546721e2278a7104033fa3a742f8",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes admitted reading contracts in returned IR and named owner/offset refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::types::RawNamedType",
+        "shape": "a5ebd3fde5af85ea9124049cb3d2ab14c846dbc8567204d7aa06755f5e8f8663",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes admitted reading contracts in returned IR and named owner/offset refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_reading_contracts_and_refuses_invalid_owners",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    },
+    {
+      "identity": {
+        "model": "rust:ess_domain::command::RawOutcome/field/when_subject_state",
+        "shape": "1da89817ffdf2cc928c458344ae87d7b2c732cfc8edc5a8ab41c9ac661468548",
+        "consumer": "acquisition-specification-direct-file",
+        "profile": "6fdd13b6aedd6471021a4ed1855f9cace03cd174dd34fda45c09e66ce0dbe3d9"
+      },
+      "cases": [
+        "ess-cli:bin:ess:load::accounting_tests::specification_direct_file_preserves_subject_state_selection"
+      ],
+      "entrypoint": "ess_cli::bin(ess)::load::fn::specification",
+      "entrypoint_sha256": "3d44ee225e438dce61f5c1e6162030b50af41cb77b61ec4ac8ac5a1b8ae2332c",
+      "entrypoint_source": "crates/edge/ess-cli/src/load.rs",
+      "entrypoint_ast_sha256": "2b73ee4053b69090a81b6f8c5928c0b72ab363d97e27aecf8a20311be0c4aa07",
+      "entrypoint_source_file_sha256": "c9c385f016d846ec64ecc0cc722181dd8d46db3ee452a0d1e5d128a833680cb6",
+      "behavior": {
+        "kind": "Supported",
+        "reason": "The binary-unit case causally observes resolved subject-state condition/state/predicate/test-strategy values and named invalid-condition refusals from the actual direct-file loader."
+      },
+      "source_evidence": "crates/edge/ess-cli/src/load_accounting_tests.rs::load::accounting_tests::specification_direct_file_preserves_subject_state_selection",
+      "review_reference": "docs/design/consumer-model-behavior-native-cases.md"
+    }
+  ]
+}

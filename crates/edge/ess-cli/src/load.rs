@@ -7,6 +7,10 @@ use anyhow::{bail, Context, Result};
 use ess_compiler::source::SourceMap;
 use ess_compiler::{Diagnostics, EssIr};
 
+#[cfg(test)]
+#[path = "load_accounting_tests.rs"]
+mod accounting_tests;
+
 /// A loaded specification or every accumulated diagnostic.
 pub(crate) enum LoadedSpec {
     /// The specification compiled to a resolved IR.
@@ -86,8 +90,8 @@ pub(crate) enum LoadedInfra {
 /// Reads either `infra-observation/1` or persisted `infra-ir/1`.
 pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let value: serde_json::Value =
-        serde_json::from_str(&text).with_context(|| format!("{} is not JSON", path.display()))?;
+    let value: serde_json::Value = ess_primitives::json::from_str(&text)
+        .with_context(|| format!("{} is not JSON", path.display()))?;
     match value.get("format").and_then(serde_json::Value::as_str) {
         Some(infra_domain::OBSERVATION_FORMAT | "infra-observation/2") => {
             let raw: infra_domain::RawBundle = serde_json::from_value(value)

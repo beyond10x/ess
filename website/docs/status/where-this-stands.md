@@ -50,7 +50,7 @@ this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.30.0` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.31.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|

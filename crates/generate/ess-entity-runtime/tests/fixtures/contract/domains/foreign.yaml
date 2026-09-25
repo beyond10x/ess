@@ -1,0 +1,63 @@
+domain: contract.foreign
+
+types:
+  - name: contract.foreign.OwnerId
+    kind: newtype
+    of: Uuid
+
+  - name: contract.foreign.ForeignPayload
+    kind: struct
+    fields:
+      - name: value
+        type: String
+
+entities:
+  - name: contract.foreign.Owner
+    identity:
+      name: owner_id
+      type: contract.foreign.OwnerId
+    relations:
+      - name: children
+        kind: owns
+        target: contract.local.Child
+        cardinality: many
+        via: owner_id
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+      transitions: []
+
+events:
+  - name: contract.foreign.Trigger
+    fields:
+      - name: owner_id
+        type: contract.foreign.OwnerId
+      - name: note
+        type: contract.local.Shared
+
+  - name: contract.foreign.DeliveryFailed
+    fields:
+      - name: reason
+        type: String
+
+  - name: contract.foreign.Handled
+
+commands:
+  - name: contract.foreign.HandlePublic
+    input:
+      - name: payload
+        type: contract.foreign.ForeignPayload
+    outcomes:
+      - name: completed
+        emits:
+          - contract.foreign.Handled
+
+  - name: contract.foreign.HandlePrivate
+    input:
+      - name: note
+        type: contract.local.Shared
+    outcomes:
+      - name: completed
+        emits:
+          - contract.foreign.Handled

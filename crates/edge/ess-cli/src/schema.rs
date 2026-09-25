@@ -235,7 +235,10 @@ fn read_json(paths: &[PathBuf]) -> Result<Vec<Value>> {
         .iter()
         .map(|path| {
             let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-            serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", path.display()))
+            // Not `serde_json::from_slice`: under `arbitrary_precision`, which `entity-core`
+            // unifies into a build, that keeps a number's spelling and admits `1e400`.
+            ess_primitives::json::from_slice(&bytes)
+                .with_context(|| format!("parsing {}", path.display()))
         })
         .collect()
 }
@@ -250,4 +253,29 @@ fn documents<'a>(paths: &'a [PathBuf], values: &'a [Value]) -> Vec<JsonDocument<
 
 fn write_projection(path: &Path, contents: &str) -> Result<()> {
     crate::output_ownership::named(path, "typescript-file", contents)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_json;
+
+    /// An instance's numbers are read as the build without `serde_json`'s `arbitrary_precision`
+    /// reads them, so a document validates the same way whichever `serde_json` ESS was built with.
+    #[test]
+    fn an_instance_reads_its_numbers_the_same_in_every_serde_json_build() {
+        let directory = tempfile::tempdir().expect("a scratch directory");
+        let path = directory.path().join("instance.json");
+        std::fs::write(
+            &path,
+            r#"{"a":1.50,"b":1E2,"c":-0,"d":18446744073709551616}"#,
+        )
+        .expect("the instance writes");
+        let values = read_json(std::slice::from_ref(&path)).expect("the instance reads");
+        assert_eq!(
+            values[0].to_string(),
+            r#"{"a":1.5,"b":100.0,"c":-0.0,"d":1.8446744073709552e+19}"#
+        );
+        std::fs::write(&path, "[1e400]").expect("the instance writes");
+        assert!(read_json(&[path]).is_err(), "a number past binary64");
+    }
 }

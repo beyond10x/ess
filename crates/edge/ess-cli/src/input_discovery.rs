@@ -397,3 +397,7 @@ fn legacy_coverage(path: &Path) -> Result<Vec<Input>> {
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "input_discovery_accounting_tests.rs"]
+mod accounting_tests;

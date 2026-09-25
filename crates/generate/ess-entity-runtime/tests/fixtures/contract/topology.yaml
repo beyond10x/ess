@@ -1,0 +1,14 @@
+topology:
+  workloads:
+    local-service:
+      replicas:
+        min: 2
+      stateless: true
+      requires:
+        - publish: local-events
+
+    foreign-service:
+      replicas:
+        min: 1
+      stateless: true
+      requires: []

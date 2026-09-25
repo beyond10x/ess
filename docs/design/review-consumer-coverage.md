@@ -125,6 +125,12 @@ typed payload validation. Every such limit must be reflected in its cells, not o
 
 ## Closed cell accounting and adoption
 
+The exact v2 amendment in [consumer-accounting-applicability.md](consumer-accounting-applicability.md)
+supersedes this section only for its eight guarded acquisition profiles and five literal aggregate
+identities. It retains mandatory acquisition behavior outside the model matrix, adds explicit
+aggregate provenance, and admits no changed-profile unknown bridge. The original v1 reader and
+historical statements below retain their original meaning.
+
 Implement closed Rust values for matrix cells, case identities, execution requirements and
 results. Each cell has exactly one discovered model ID and shape fingerprint, one consumer ID
 and profile fingerprint, and one disposition:

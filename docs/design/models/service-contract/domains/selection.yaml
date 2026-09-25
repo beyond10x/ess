@@ -1,0 +1,38 @@
+domain: service_contract.selection
+
+# Typed selection/index vocabulary for the borrowed Rust ServiceIr. Complete definitions are
+# existing compiler Resolved* types; this is not a new persisted IR or a duplicate schema for them.
+types:
+  - name: service_contract.selection.ComponentName
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: service_contract.selection.QualifiedName
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: service_contract.selection.ServiceSelection
+    kind: struct
+    fields:
+      - name: component
+        type: service_contract.selection.ComponentName
+
+  - name: service_contract.selection.ServiceIr
+    kind: struct
+    fields:
+      - name: component
+        type: service_contract.selection.ComponentName
+      - name: owned_domains
+        type: List<service_contract.selection.QualifiedName>
+      - name: operations
+        type: List<service_contract.selection.QualifiedName>
+      - name: published_events
+        type: List<service_contract.selection.QualifiedName>
+      - name: views
+        type: List<service_contract.selection.QualifiedName>
+      - name: owned_entities
+        type: List<service_contract.selection.QualifiedName>

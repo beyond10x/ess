@@ -1,0 +1,33 @@
+conversions:
+  - from: String
+    to: List<selection.core.Leg>
+    because: the host decodes the ordered legs
+
+components:
+  - component: selection-service
+    owns:
+      domains:
+        - selection.core
+    accepts:
+      commands:
+        - selection.core.Receive
+
+bindings:
+  - id: choose
+    when:
+      event: selection.core.Arrived
+    invoke:
+      command: selection.core.Receive
+    selection_inputs:
+      - name: legs
+        from: event.data
+        as: List<selection.core.Leg>
+    selections:
+      - name: first
+        first:
+          in: legs
+          where: 'item.id != ""'
+    mapping:
+      selected: {selection: first, path: [id]}
+    delivery: at_most_once
+    on_failure: drop

@@ -7,7 +7,11 @@
     "reviewed-candidates.json",
     "initial-baseline.json",
     "reviewed-schema-metadata.json",
-    "macro-guards.json"
+    "macro-guards.json",
+    "reviewed-reconciliation.json",
+    "reviewed-scenario-acquisition.json",
+    "reviewed-aggregate-closures.json",
+    "reviewed-model-behavior.json"
   ],
   "mapping": [
     {
@@ -5584,7 +5588,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5604,7 +5608,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5624,7 +5628,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5644,7 +5648,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5664,7 +5668,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5684,7 +5688,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5704,7 +5708,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",
@@ -5724,7 +5728,7 @@
         "default-rust",
         "task check"
       ],
-      "current_source_classification": "model-consumer",
+      "current_source_classification": "scenario-acquisition",
       "qualification": "existing-accounting-authority; not-promoted-by-this-mapping",
       "reviewed_requirements": [],
       "unknown_authority": "initial-baseline.json",

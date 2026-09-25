@@ -1,0 +1,149 @@
+domain: contract.local
+
+types:
+  - name: contract.local.ChildId
+    kind: newtype
+    of: Uuid
+
+  - name: contract.local.Shared
+    kind: newtype
+    of: String
+
+  - name: contract.local.Receipt
+    kind: newtype
+    of: String
+
+  - name: contract.local.Envelope
+    kind: struct
+    fields:
+      - name: value
+        type: contract.local.Shared
+      - name: nodes
+        type: List<contract.local.Node>
+
+  - name: contract.local.Node
+    kind: struct
+    fields:
+      - name: children
+        type: Optional<Map<Integer, List<Optional<contract.local.Node>>>>
+
+entities:
+  - name: contract.local.Child
+    identity:
+      name: child_id
+      type: contract.local.ChildId
+    fields:
+      - name: owner_id
+        type: contract.foreign.OwnerId
+      - name: note
+        type: contract.local.Shared
+      - name: memo
+        type: Optional<String>
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+      transitions: []
+
+actors:
+  - name: contract.local.Operator
+    may:
+      - contract.local.Run
+      - contract.local.Admin
+
+errors:
+  - name: contract.local.Rejected
+    summary: The upstream system rejected the request.
+    fields:
+      - name: detail
+        type: contract.local.Shared
+
+events:
+  - name: contract.local.PublicOnly
+    fields:
+      - name: shared
+        type: contract.local.Shared
+
+  - name: contract.local.PrivateEmission
+    fields:
+      - name: child_id
+        type: contract.local.ChildId
+      - name: receipt
+        type: contract.local.Receipt
+      - name: note
+        type: contract.local.Shared
+      - name: marker
+        type: String
+      - name: optional_receipt
+        type: Optional<String>
+
+  - name: contract.local.First
+
+  - name: contract.local.Second
+    fields:
+      - name: note
+        type: contract.local.Shared
+      - name: optional_a
+        type: Optional<String>
+      - name: optional_b
+        type: Optional<String>
+
+  - name: contract.local.AdminDone
+
+commands:
+  - name: contract.local.Run
+    input:
+      - name: owner_id
+        type: contract.foreign.OwnerId
+      - name: note
+        type: contract.local.Shared
+    response:
+      - name: receipt
+        type: contract.local.Receipt
+      - name: optional_receipt
+        type: Optional<String>
+    outcomes:
+      - name: completed
+        creates: contract.local.Child
+        instance: child_id
+        emits:
+          - contract.local.PrivateEmission
+          - contract.local.First
+          - contract.local.Second
+        payload:
+          contract.local.PrivateEmission:
+            child_id: {generated: true}
+            receipt: {response: receipt}
+            note: input.note
+            marker: exact-marker-007
+            optional_receipt: {response: optional_receipt}
+          contract.local.Second:
+            note: input.note
+            optional_a: {generated: true}
+            optional_b: {generated: true}
+        sets:
+          owner_id: input.owner_id
+          note: input.note
+        summary: The child is stored and all ordered facts are emitted.
+      - name: rejected
+        external: an upstream authority rejects the request
+        error: contract.local.Rejected
+        summary: Nothing is stored or emitted.
+
+  - name: contract.local.Admin
+    outcomes:
+      - name: completed
+        emits:
+          - contract.local.AdminDone
+
+views:
+  - name: contract.local.ChildById
+    source: contract.local.Child
+    consistency: read_your_writes
+    fields:
+      - name: child_id
+        type: contract.local.ChildId
+      - name: owner_id
+        type: contract.foreign.OwnerId
+      - name: note
+        type: contract.local.Shared

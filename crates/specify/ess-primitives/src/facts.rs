@@ -97,14 +97,23 @@ impl<'de> serde::Deserialize<'de> for Number {
 /// Reads whichever token a self-describing format hands over.
 struct NumberVisitor;
 
-impl serde::de::Visitor<'_> for NumberVisitor {
+impl<'de> serde::de::Visitor<'de> for NumberVisitor {
     type Value = Number;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("a finite number")
     }
 
+    // `serde_json` with `arbitrary_precision` on — `entity-core` unifies it into a build — calls
+    // `visit_i64(0)` for the token `-0`, `visit_u128`/`visit_i128` for an integer past 64 bits read
+    // from a `Value`, and `visit_map` for anything else that is not a 64-bit integer. Without the
+    // feature it calls none of those, and reads each such token as a binary64; so does this, from
+    // `serde_json` only (`crate::json`). Other formats keep their integers.
+
     fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Number, E> {
+        if value == 0 && crate::json::from_arbitrary_precision::<E>() {
+            return spelled("-0");
+        }
         Ok(Number::from(value))
     }
 
@@ -113,10 +122,16 @@ impl serde::de::Visitor<'_> for NumberVisitor {
     }
 
     fn visit_i128<E: serde::de::Error>(self, value: i128) -> Result<Number, E> {
+        if crate::json::from_arbitrary_precision::<E>() {
+            return spelled(&value.to_string());
+        }
         Ok(Number::from_integer(value))
     }
 
     fn visit_u128<E: serde::de::Error>(self, value: u128) -> Result<Number, E> {
+        if crate::json::from_arbitrary_precision::<E>() {
+            return spelled(&value.to_string());
+        }
         i128::try_from(value)
             .map(Number::from_integer)
             .map_err(|_| E::custom("number does not fit the domain number"))
@@ -124,6 +139,34 @@ impl serde::de::Visitor<'_> for NumberVisitor {
 
     fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Number, E> {
         Number::new(value).map_err(E::custom)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut access: A) -> Result<Number, A::Error> {
+        match access.next_key::<String>()? {
+            Some(key)
+                if key == crate::json::ARBITRARY_PRECISION_NUMBER
+                    && crate::json::from_arbitrary_precision::<A::Error>() =>
+            {
+                let spelling: String = access.next_value()?;
+                spelled(&spelling)
+            }
+            _ => Err(serde::de::Error::invalid_type(
+                serde::de::Unexpected::Map,
+                &self,
+            )),
+        }
+    }
+}
+
+/// The `Number` the `serde_json` build without `arbitrary_precision` reads for a token.
+fn spelled<E: serde::de::Error>(spelling: &str) -> Result<Number, E> {
+    let number = crate::json::number(spelling).map_err(|_| E::custom("number out of range"))?;
+    if let Some(value) = number.as_u64() {
+        Ok(Number::from_integer(i128::from(value)))
+    } else if let Some(value) = number.as_i64() {
+        Ok(Number::from(value))
+    } else {
+        Number::new(number.as_f64().expect("a canonical number is finite")).map_err(E::custom)
     }
 }
 
@@ -151,6 +194,15 @@ impl serde::Serialize for Number {
                 binary,
             } if Some((units, scale)) != canonical_decimal(binary) => match i64::try_from(units) {
                 Ok(units) => serializer.serialize_i64(units),
+                // `serde_json::to_value` refuses an integer past 64 bits without
+                // `arbitrary_precision` and holds it with the feature; refuse it in both.
+                Err(_)
+                    if u64::try_from(units).is_err()
+                        && std::any::type_name::<S>()
+                            == std::any::type_name::<serde_json::value::Serializer>() =>
+                {
+                    Err(serde::ser::Error::custom("number out of range"))
+                }
                 Err(_) => serializer.serialize_i128(units),
             },
             _ => serializer.serialize_f64(self.get()),
@@ -1300,5 +1352,74 @@ mod tests {
     fn rejects_nan_numbers() {
         assert!(Number::new(f64::NAN).is_err());
         assert!(Number::new(1.5).is_ok());
+    }
+
+    /// A JSON number reads as the same `Number` whichever `serde_json` build parsed it.
+    ///
+    /// `entity-core` switches on `serde_json`'s `arbitrary_precision`, and Cargo unifies it into any
+    /// build that holds both. With it on, a fraction, an exponent, or an integer past 64 bits reaches
+    /// this reader as a one-entry map through `serde_json::from_str`, and as `visit_u128` or
+    /// `visit_i128` through `serde_json::from_value`. The answer is the one the build without the
+    /// feature gives: the binary64 `serde_json` parses, written as it writes.
+    #[test]
+    fn a_json_number_reads_the_same_with_or_without_arbitrary_precision() {
+        let write = |number: Number| serde_json::to_string(&number).expect("a number serialises");
+        for (token, written) in [
+            ("18446744073709551616", "1.8446744073709552e+19"),
+            ("18446744073709551617", "1.8446744073709552e+19"),
+            ("-9223372036854775809", "-9.223372036854776e+18"),
+            ("1.50", "1.5"),
+            ("1E2", "100.0"),
+            ("0.0", "0.0"),
+            ("9223372036854775807", "9223372036854775807"),
+        ] {
+            let text: Number = serde_json::from_str(token)
+                .unwrap_or_else(|error| panic!("{token} reads from text: {error}"));
+            let value: serde_json::Value = serde_json::from_str(token).expect("a JSON value");
+            let tree: Number = serde_json::from_value(value)
+                .unwrap_or_else(|error| panic!("{token} reads from a value: {error}"));
+            assert_eq!(write(text), written, "{token} read from text");
+            assert_eq!(
+                write(tree),
+                written,
+                "{token} read from a serde_json::Value"
+            );
+            assert_eq!(text.is_integral(), tree.is_integral(), "{token}");
+        }
+    }
+
+    /// An exact integer past 64 bits becomes a `serde_json::Value` in neither build.
+    ///
+    /// Without `arbitrary_precision`, `serde_json::to_value` refuses an `i128` past 64 bits; with
+    /// it, the value would hold the digits. The text writer carries it in both.
+    #[test]
+    fn a_wide_integer_is_refused_by_to_value_in_every_serde_json_build() {
+        let wide = Number::from_integer(i128::from(u64::MAX) + 2);
+        assert!(serde_json::to_value(wide).is_err());
+        assert_eq!(
+            serde_json::to_string(&wide).expect("the text writer carries it"),
+            "18446744073709551617"
+        );
+        let unsigned = Number::from_integer(i128::from(u64::MAX));
+        assert_eq!(
+            serde_json::to_value(unsigned).expect("a u64 is a value"),
+            serde_json::json!(u64::MAX)
+        );
+    }
+
+    /// A number past binary64 is refused by every `serde_json` door, as it is without the feature.
+    #[test]
+    fn a_json_number_past_binary64_is_refused_with_or_without_arbitrary_precision() {
+        for token in ["1e400", "-1e400", "18446744073709551616e400"] {
+            assert!(serde_json::from_str::<Number>(token).is_err(), "{token}");
+            // Without the feature serde_json refuses the value itself; with it, the value holds the
+            // spelling and the refusal has to be this type's.
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(token) {
+                assert!(
+                    serde_json::from_value::<Number>(value).is_err(),
+                    "{token} through a serde_json::Value"
+                );
+            }
+        }
     }
 }

@@ -31,7 +31,11 @@ fn validate(mapping: &Value, profiles: &Value, reviewed: &Value) -> Result<()> {
                 "reviewed-candidates.json",
                 "initial-baseline.json",
                 "reviewed-schema-metadata.json",
-                "macro-guards.json"
+                "macro-guards.json",
+                "reviewed-reconciliation.json",
+                "reviewed-scenario-acquisition.json",
+                "reviewed-aggregate-closures.json",
+                "reviewed-model-behavior.json"
             ]),
         ),
     ] {
