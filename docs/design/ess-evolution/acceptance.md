@@ -19,6 +19,13 @@ slice. Required commands are ESS task check with consumer coverage and task site
 ER/AEP/Service SDK task check; Eventlog bash scripts/gate.sh; and Connectors
 cargo run --locked -p connectors-build -- gate --msrv. Exercise affected Rust minimum boundaries.
 
+> **Parked, 2026-09-25.** Plan revision 3 parks consumer coverage. The ESS commands are now
+> `task check` and `task site-build`; `task check` runs `consumer-check` only with
+> `CONSUMER_CHECKS=true`, and consumer coverage is not a required gate. The ESS preservation row
+> above reads the same way: preservation is shown by the conformance suites, the retained legacy
+> readers, `ess verify diff`, `ess verify impact` and `ess/N` format discipline. The earlier wording
+> is kept as history. See [feature preservation](feature-preservation.md) for the re-enable trigger.
+
 PostgreSQL requirements run against disposable databases. Record every selected lane's own output,
 exit status and actual execution. A selected-zero, ignored or skipped required case is missing
 evidence even when a wrapper exits zero. Preserve Eventlog's required production proof and separate

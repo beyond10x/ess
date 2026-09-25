@@ -71,9 +71,17 @@ CI runs `task check` as parallel lanes, one Taskfile task each: `ci-lint`, `ci-s
 `test-shard SHARD=<m>/3` nextest partitions, three `test-feature-off SHARD=<m>/3` partitions (the
 first also runs `test-feature-off-doc`), `test-xtask` and `fuzz-check`.
 The `Gate` job carries their joint result, and `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when
-a step of `check` is in no lane. Consumer coverage is in none of them, by explicit operator
-request. Local `task check` and `task consumer-check` retain that coverage, and local `task test`
-still runs `cargo test`.
+a step of `check` is in no lane. Local `task test` still runs `cargo test`.
+
+**Consumer coverage is opt-in.** Revision 3 of the ESS evolution plan (`ESS-EVOLUTION.md`, plan
+ess-evolution-20260915, 2026-09-25) parked feature-preservation accounting: `task check` runs
+`consumer-check` only with `CONSUMER_CHECKS=true`, no CI lane runs it, and it is not part of the
+release bar. `task consumer-check` still runs it on its own. The code,
+`initial-baseline.json`, the classifications and the rebound reviewed cases stay in the tree. The
+retired `SKIP_CONSUMER_CHECKS` switch means nothing; `ci_lanes.rs` refuses it in every gate file.
+Re-enable the lane when a named external adopter pins a released `ess/N` and its generated
+artifacts, and a change reaches that adopter undetected by conformance, `ess verify diff` or a
+format refusal.
 
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
 tests, and the dependency boundary test. Land nothing until it exits zero.
@@ -92,6 +100,7 @@ Rust/WASM, browser-lab and site-build checks without Pages authority; the unifie
 the collected source and the Atlas-generated façade owns the project redirect.
 
 Before pushing a release tag, run `task check` and `task site-lab` on the commit being tagged.
+Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, WASM/browser-lab correctness checks and native
 packaging concurrently at that exact commit, then publishes only after all succeed. It skips the
 gate only when the newest `Gate` check-run GitHub Actions recorded on that exact commit is a

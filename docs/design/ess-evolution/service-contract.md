@@ -138,6 +138,8 @@ and the actual pure dependency closure on Rust 1.85, then yields source hashes a
 assignment. Root owns submission, the existing two-pass source-review process, the full ESS
 `task check` with consumer coverage, `task site-build` for this design change and local integration.
 Complete accounting remains required; this crate does not modify or extend the frozen baseline.
+(Parked, 2026-09-25: plan revision 3 removes consumer coverage from the required gate; see
+[acceptance](acceptance.md). This paragraph is kept as the record of the original assignment.)
 
 No ER or SDK source, Eventlog code, migration commands, runtime formats, generic registry, JSON
 property bag or infrastructure application is part of this assignment. Those remain explicit later
