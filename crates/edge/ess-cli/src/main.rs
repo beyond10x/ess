@@ -320,7 +320,7 @@ enum ImportCommand {
 
 #[derive(Debug, clap::Args)]
 struct SpecPath {
-    /// One ESS file, or a directory with `ess-inputs.yaml` or legacy `system.yaml`.
+    /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
     #[arg(long, default_value = ".")]
     path: PathBuf,
     /// Output rendering.
@@ -330,7 +330,7 @@ struct SpecPath {
 
 #[derive(Debug, clap::Args)]
 struct SpecLocation {
-    /// One ESS file, or a directory with `ess-inputs.yaml` or legacy `system.yaml`.
+    /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
     #[arg(long, default_value = ".")]
     path: PathBuf,
 }
@@ -592,7 +592,7 @@ struct RealizationInput {
     /// An `ess-realization/1` or `/2` JSON or YAML document.
     #[arg(long)]
     path: PathBuf,
-    /// One ESS file, or a directory with `ess-inputs.yaml` or legacy `system.yaml`.
+    /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
     #[arg(long = "spec")]
     specification: PathBuf,
     /// Output and diagnostic rendering.

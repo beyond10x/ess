@@ -84,7 +84,7 @@ and semantic digests keep their existing, separate meanings.
 An invalid reserved filename refuses without legacy fallback. Rename an older ESS fragment named
 `ess-inputs.yaml` or adopt this configuration. Older readers do not understand this format and
 refuse it; some old conformance semantic-refusal paths can retain incomplete diagnostic outputs.
-Supported legacy direct-file, recursive-model and shallow-scenario layouts remain available when
+The direct-file, recursive-model (`system.yaml`) and shallow-scenario layouts remain supported when
 configuration is absent. Manifest selection does not infer generation, authorship or ownership.
 
 The named ESS model describes the closed fields, singleton format enum, lists and string values.

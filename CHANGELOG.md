@@ -11,6 +11,12 @@
   its `b10x` CLI installs this binary prebuilt or with `cargo` and migrates an `ess@ess` install.
   `ess --help` lists the four areas and nothing else.
 
+### Fixed
+
+- `--path` and `--spec` help no longer calls the `system.yaml` directory layout "legacy". It is a
+  supported layout and the one a first specification starts from; the reference page on directory
+  input says so too.
+
 ## [0.30.0] — 2026-09-23
 
 ### Added
