@@ -28,6 +28,14 @@
 - `--path` and `--spec` help no longer calls the `system.yaml` directory layout "legacy". It is a
   supported layout and the one a first specification starts from; the reference page on directory
   input says so too.
+- `ess verify conform synthesize` orders two `Timestamp` values by the RFC 3339 instant they name
+  (`+01:00` and `Z` spellings included), in a guard over two fields or against an instant
+  literal. It refused every such guard with "no declared scale contains both values".
+- `ess specify validate` refuses what synthesize cannot decide, with the same reading in both:
+  a bare word on the right-hand side that names a declared field (`ends_at > starts_at` compares
+  against the text `"starts_at"`) is refused and the message names the working spelling
+  (`window.ends_at > window.starts_at`); ordering a `Timestamp` against text that is not an
+  instant is refused. A bare word that is a variant of the compared enum is unchanged.
 
 ## [0.30.0] — 2026-09-23
 

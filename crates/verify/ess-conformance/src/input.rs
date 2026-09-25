@@ -628,6 +628,24 @@ impl FactSource for InputFacts<'_> {
     fn scales(&self) -> &Scales {
         &self.scales
     }
+
+    /// A path whose declared terminal type is `Timestamp`, through any newtype or `Optional`.
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        ess_compiler::expression::resolve_path(
+            self.ir,
+            &self.command.input,
+            path,
+            "conformance input",
+        )
+        .is_ok_and(|resolved| {
+            matches!(
+                resolved.terminal,
+                ResolvedTypeRef::Primitive {
+                    name: Primitive::Timestamp
+                }
+            )
+        })
+    }
 }
 
 /// Where a fact path lands in a set of declared fields.

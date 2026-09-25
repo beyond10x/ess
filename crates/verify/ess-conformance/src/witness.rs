@@ -66,6 +66,7 @@ use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate};
+use ess_primitives::time::Rfc3339Instant;
 
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
 ///
@@ -155,6 +156,8 @@ enum Leaf {
     },
     /// Anything a fact reads as text.
     Text,
+    /// A `Timestamp`, ordered by the RFC 3339 instant it names.
+    Timestamp,
     /// A `Boolean`.
     Bool,
     /// An enum, whose alternatives are its own declared variants.
@@ -230,7 +233,12 @@ pub fn candidates(
             // `InputFacts::decide` is what names which of them it is.
             continue;
         };
-        let alternatives = alternatives(leaf, at_base, &literals_at(guards, &path));
+        let alternatives = alternatives(
+            leaf,
+            at_base,
+            &literals_at(guards, &path),
+            ordered_at(guards, &path),
+        );
         if !alternatives.is_empty() {
             ladders.push((path, alternatives));
         }
@@ -302,6 +310,29 @@ fn literals_at(guards: &[&Predicate], path: &FactPath) -> Vec<FactValue> {
     found
 }
 
+/// Whether any guard orders `path` with `<`, `<=`, `>` or `>=`, against a literal or another fact.
+fn ordered_at(guards: &[&Predicate], path: &FactPath) -> bool {
+    fn walk(predicate: &Predicate, path: &FactPath) -> bool {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                children.iter().any(|child| walk(child, path))
+            }
+            Predicate::Not(inner) => walk(inner, path),
+            Predicate::Compare { left, op, right } => {
+                op.needs_ordering()
+                    && [left, right]
+                        .into_iter()
+                        .any(|operand| matches!(operand, Operand::Fact(read) if read == path))
+            }
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                walk(&quantified.body, path)
+            }
+            _ => false,
+        }
+    }
+    guards.iter().any(|guard| walk(guard, path))
+}
+
 /// The walk behind [`literals_at`].
 fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<FactValue>) {
     match predicate {
@@ -346,7 +377,7 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
 /// `base` is what this leaf already holds at its [`Distinction`], and it is excluded rather than
 /// assumed to be the plain one: the first candidate is the base witness, so offering the same value
 /// again spends a try on a decision already taken.
-fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue]) -> Vec<Node> {
+fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool) -> Vec<Node> {
     let mut values = Vec::new();
     let mut push = |value: Node| {
         if &value != base && !values.contains(&value) {
@@ -379,6 +410,31 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue]) -> Vec<Node> {
                 }
             }
         }
+        Leaf::Timestamp => {
+            let texts: Vec<&str> = literals.iter().filter_map(FactValue::as_text).collect();
+            for text in &texts {
+                push(Node::Text((*text).to_owned()));
+            }
+            if ordered {
+                // An ordering decides at a boundary, so each instant the guard writes is tried a
+                // second either side; two facts ordered against each other write none, and a day
+                // either side of the base is what moves one past the other.
+                let steps = texts.iter().map(|text| (*text, 1)).chain(match base {
+                    Node::Text(text) => Some((text.as_str(), SECONDS_PER_DAY)),
+                    _ => None,
+                });
+                for (text, seconds) in steps {
+                    let Some(instant) = Rfc3339Instant::parse_rfc3339(text) else {
+                        continue;
+                    };
+                    for step in [seconds, -seconds] {
+                        if let Some(moved) = instant.plus_seconds(step) {
+                            push(Node::Text(moved.to_rfc3339()));
+                        }
+                    }
+                }
+            }
+        }
         Leaf::Enum { variants } => {
             for variant in variants {
                 push(Node::Text(variant.clone()));
@@ -406,6 +462,9 @@ const BASE_TIMESTAMP_MONTH: &str = "2020-01";
 /// that is not a date is a witness a target refuses for a reason that has nothing to do with what
 /// the scenario tests.
 const DISTINGUISHABLE_DAYS: usize = 28;
+
+/// One day, the step a `Timestamp` witness moves by when two facts are ordered against each other.
+const SECONDS_PER_DAY: i64 = 86_400;
 
 /// The number of seconds the first `Duration` witness carries.
 const BASE_DURATION_SECONDS: usize = 1;
@@ -561,11 +620,10 @@ impl Leaf {
             Primitive::Boolean => Self::Bool,
             Primitive::Integer => Self::Number { integral: true },
             Primitive::Decimal => Self::Number { integral: false },
-            Primitive::String
-            | Primitive::Timestamp
-            | Primitive::Duration
-            | Primitive::Uuid
-            | Primitive::Bytes => Self::Text,
+            Primitive::Timestamp => Self::Timestamp,
+            Primitive::String | Primitive::Duration | Primitive::Uuid | Primitive::Bytes => {
+                Self::Text
+            }
         }
     }
 }
@@ -710,6 +768,7 @@ mod tests {
             &Leaf::Number { integral: false },
             &Node::Number(number(BASE_NUMBER)),
             &[FactValue::number(0.0).expect("finite")],
+            false,
         );
 
         assert_eq!(
@@ -730,8 +789,8 @@ mod tests {
         let literal = FactValue::number(0.5).expect("finite");
         let literals = std::slice::from_ref(&literal);
         let base = Node::Number(number(BASE_NUMBER));
-        let integral = alternatives(&Leaf::Number { integral: true }, &base, literals);
-        let decimal = alternatives(&Leaf::Number { integral: false }, &base, literals);
+        let integral = alternatives(&Leaf::Number { integral: true }, &base, literals, false);
+        let decimal = alternatives(&Leaf::Number { integral: false }, &base, literals, false);
 
         assert_eq!(
             integral,
@@ -745,6 +804,38 @@ mod tests {
     }
 
     #[test]
+    fn an_ordered_timestamp_is_tried_either_side_of_each_instant() {
+        let base = Node::Text("2020-01-01T00:00:00Z".to_owned());
+        let literal = FactValue::text("2020-06-01T12:00:00+01:00");
+        let text = |value: &str| Node::Text(value.to_owned());
+        assert_eq!(
+            alternatives(
+                &Leaf::Timestamp,
+                &base,
+                std::slice::from_ref(&literal),
+                true
+            ),
+            vec![
+                text("2020-06-01T12:00:00+01:00"),
+                text("2020-06-01T11:00:01Z"),
+                text("2020-06-01T10:59:59Z"),
+                text("2020-01-02T00:00:00Z"),
+                text("2019-12-31T00:00:00Z"),
+            ]
+        );
+        assert_eq!(
+            alternatives(
+                &Leaf::Timestamp,
+                &base,
+                std::slice::from_ref(&literal),
+                false
+            ),
+            vec![text("2020-06-01T12:00:00+01:00")],
+            "a Timestamp only compared for equality keeps the literal-only ladder"
+        );
+    }
+
+    #[test]
     fn an_enum_offers_every_variant_it_declares_and_the_first_one_only_once() {
         let alternatives = alternatives(
             &Leaf::Enum {
@@ -752,6 +843,7 @@ mod tests {
             },
             &Node::Text("Email".to_owned()),
             &[],
+            false,
         );
 
         assert_eq!(

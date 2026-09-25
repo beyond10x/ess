@@ -21,6 +21,14 @@ impl<'a> Environment<'a> {
 }
 
 impl TypeEnvironment for Environment<'_> {
+    fn is_instant(&self, reference: &ResolvedTypeRef) -> bool {
+        matches!(
+            reference,
+            ResolvedTypeRef::Primitive {
+                name: ess_domain::Primitive::Timestamp
+            }
+        )
+    }
     fn is_clock_reading(&self, reference: &ResolvedTypeRef) -> bool {
         matches!(reference, ResolvedTypeRef::Declared { name } if self.ir.types().get(name.name()).is_some_and(|declared| declared.reading.is_some()))
     }

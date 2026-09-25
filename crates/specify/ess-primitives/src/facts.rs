@@ -1037,6 +1037,15 @@ pub trait FactSource {
         Scales::empty()
     }
 
+    /// Whether the text at `path` is a declared `Timestamp`, ordered by the RFC 3339 instant it
+    /// names rather than by a scale.
+    ///
+    /// Only a source that knows the declared types can answer `true`; the default knows none, so
+    /// every existing source keeps ordering text by its scales alone.
+    fn orders_as_instant(&self, _path: &FactPath) -> bool {
+        false
+    }
+
     /// How many elements the collection at `path` has, or `None` when nothing has observed it.
     ///
     /// A quantifier needs to know how far to count, and a fact is a scalar bound to a dotted
