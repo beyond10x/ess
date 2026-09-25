@@ -14,7 +14,8 @@
 mod host_paths_lane;
 
 use host_paths_lane::{
-    assert_current, ci_runner_labels, home_paths, HOME_MARKERS, LANE, RUNNER_HOME_ROOTS,
+    assert_current, ci_runner_labels, home_paths, runners_per_line, HOME_MARKERS, LANE,
+    RUNNER_HOME_ROOTS,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -243,15 +244,29 @@ fn every_runs_on_line_in_the_repository_workflow_contributes_a_label() {
         .lines()
         .filter(|line| line.trim_start().starts_with("runs-on:"))
         .count();
-    let labels = ci_runner_labels(&root);
     assert!(
         written > 0,
         "`.github/workflows/ci.yml` names no runner, so this case measures nothing"
     );
-    assert!(
-        labels.len() >= written,
+    // Per line, not a total against a total: two jobs on one runner are two lines and one label,
+    // so a distinct-label count cannot say which line the parse could not read.
+    let per_line = runners_per_line(&workflow);
+    assert_eq!(
+        per_line.len(),
+        written,
         "`.github/workflows/ci.yml` has {written} `runs-on:` lines and the parse in `{LANE}` \
-         produced {} labels, so at least one job's platform is invisible to it: {labels:?}",
-        labels.len()
+         read {} of them",
+        per_line.len()
+    );
+    let blind: Vec<usize> = per_line
+        .iter()
+        .filter(|(_, labels)| labels.is_empty())
+        .map(|(line, _)| *line)
+        .collect();
+    assert!(
+        blind.is_empty(),
+        "these `runs-on:` lines of `.github/workflows/ci.yml` contribute no label to the parse in \
+         `{LANE}`, so their jobs' platforms are invisible to it: {blind:?}; it read {:?}",
+        ci_runner_labels(&root)
     );
 }
