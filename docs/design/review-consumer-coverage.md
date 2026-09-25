@@ -1,5 +1,14 @@
 # Consumer coverage for model extensions
 
+> **Parked, 2026-09-25.** Revision 3 of the ESS evolution plan (ess-evolution-20260915) parks
+> feature-preservation accounting. `task check` runs `consumer-check` only when
+> `CONSUMER_CHECKS=true`, no CI lane runs it, and it is not a release or acceptance gate.
+> `task consumer-check` is unchanged, and the code, `initial-baseline.json` (157,677 pairs, digest
+> unchanged), the 490 classifications and the 47 rebound reviewed cases stay in the tree. Re-enable
+> trigger: a named external adopter pins a released `ess/N` and generated artifacts, and a change
+> reaches that adopter undetected by conformance, `ess verify diff` or a format refusal. Until then
+> the frozen baseline is history, not a promise. The policy below is kept as the record.
+
 Status: accepted implementation policy for story:review-consumer-coverage, 2026-09-07.
 The coordinator has accepted the finite Stage 1 eligibility checkpoint and selected Stage 2
 enforcement under the recorded standing implementation approval. Completion remains pending.

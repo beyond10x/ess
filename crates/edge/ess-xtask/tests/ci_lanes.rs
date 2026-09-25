@@ -191,6 +191,84 @@ fn every_step_of_task_check_runs_in_some_pull_request_lane() {
     );
 }
 
+/// Consumer coverage is parked by `ESS-EVOLUTION.md` revision 3: `task check` runs
+/// `consumer-check` only when `CONSUMER_CHECKS=true`, the task itself stays defined, no lane
+/// reaches it, and the retired `SKIP_CONSUMER_CHECKS` switch — which would now mean nothing — is
+/// spelled in no file a gate reads.
+#[test]
+fn consumer_check_runs_in_task_check_only_when_opted_in() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let taskfile = yaml("Taskfile.yml");
+    assert!(
+        !taskfile["tasks"]["consumer-check"].is_null(),
+        "`task consumer-check` is no longer defined; parking keeps it runnable"
+    );
+    assert!(
+        !direct_subtasks(&taskfile, "check")
+            .iter()
+            .any(|step| step == "consumer-check"),
+        "`task check` calls `consumer-check` unconditionally"
+    );
+    let guarded: Vec<String> = shell_commands(&taskfile, "check")
+        .into_iter()
+        .filter(|command| command.contains("consumer-check"))
+        .collect();
+    let [guard] = guarded.as_slice() else {
+        panic!(
+            "`task check` has {} consumer-check commands, not one: {guarded:?}",
+            guarded.len()
+        )
+    };
+    let lines: Vec<&str> = guard.lines().map(str::trim).collect();
+    let condition = lines
+        .iter()
+        .position(|line| {
+            line.starts_with("if [ \"{{.CONSUMER_CHECKS | default \"false\"}}\" = \"true\" ]")
+                && line.ends_with("then")
+        })
+        .unwrap_or_else(|| {
+            panic!("consumer-check is not guarded by CONSUMER_CHECKS=true: {guard}")
+        });
+    assert_eq!(
+        lines.get(condition + 1).copied(),
+        Some("task consumer-check"),
+        "the opted-in branch does not run `task consumer-check`: {guard}"
+    );
+
+    let mut covered = BTreeSet::new();
+    for (task, _) in lane_invocations(&ci) {
+        reached(&taskfile, &task, &mut covered);
+    }
+    assert!(
+        !covered.contains("consumer-check"),
+        "a CI lane runs the parked consumer-check"
+    );
+
+    let root = workspace_root();
+    let mut files = vec![root.join("Taskfile.yml")];
+    for entry in fs::read_dir(root.join(".github/workflows")).expect("workflows") {
+        files.push(entry.unwrap().path());
+    }
+    for action in fs::read_dir(root.join(".github/actions"))
+        .expect("actions")
+        .flatten()
+    {
+        files.push(action.path().join("action.yml"));
+    }
+    // Split, so that this file does not contain what it scans for.
+    let retired = ["SKIP_", "CONSUMER_CHECKS"].concat();
+    let spelled: Vec<String> = files
+        .iter()
+        .filter(|file| file.is_file())
+        .filter(|file| fs::read_to_string(file).unwrap().contains(&retired))
+        .map(|file| file.display().to_string())
+        .collect();
+    assert!(
+        spelled.is_empty(),
+        "these gate files still spell the retired `{retired}`: {spelled:?}"
+    );
+}
+
 #[test]
 fn the_workspace_shards_are_one_complete_partition() {
     let ci = yaml(".github/workflows/ci.yml");
