@@ -663,6 +663,10 @@ fn the_tree_holds_a_summary_an_obligations_list_and_nothing_it_did_not_generate(
         summary.contains("Nothing here has been applied"),
         "the tree says out loud that it is a proposal"
     );
+    assert!(
+        summary.contains("`ess generate project kubernetes`") && !summary.contains("`ess project "),
+        "the summary spells the grouped command (beyond10x/ess#77)"
+    );
 }
 
 #[test]

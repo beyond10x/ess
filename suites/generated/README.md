@@ -11,14 +11,14 @@ language can read it, and a fault matrix can name a scenario by an id that does 
 a sibling is added.
 
 ```console
-ess conform run --suite suites/generated/billing/suite.json --target billing
+ess verify conform run --suite suites/generated/billing/suite.json --target billing
 ```
 
 The billing suite is regenerated with the authored scenarios named, because a specification
 directory holds `ess/1` documents and nothing else:
 
 ```console
-ess conform synthesize --path examples/billing \
+ess verify conform synthesize --path examples/billing \
   --scenarios examples/billing-scenarios \
   --target ir --out suites/generated/billing/suite.json
 ```

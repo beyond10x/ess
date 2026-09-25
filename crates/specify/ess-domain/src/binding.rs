@@ -1151,6 +1151,27 @@ pub fn validate_bindings(
     types: &TypeRegistry,
     conversions: &ConversionRegistry,
 ) -> ValidationErrors {
+    validate_bindings_after(
+        bindings,
+        events,
+        commands,
+        types,
+        conversions,
+        &crate::spec::Refused::default(),
+    )
+}
+
+/// [`validate_bindings`], after some declarations were refused by their own conversion: a binding
+/// naming a refused event or command is not refused again for naming an undeclared one
+/// (beyond10x/ess#79).
+pub(crate) fn validate_bindings_after(
+    bindings: &BTreeMap<BindingName, BindingSpec>,
+    events: &BTreeMap<QualifiedName, EventSpec>,
+    commands: &BTreeMap<QualifiedName, CommandSpec>,
+    types: &TypeRegistry,
+    conversions: &ConversionRegistry,
+    refused: &crate::spec::Refused,
+) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut account = crate::accessor::Account::default();
     // Once for the document. It is a fixpoint over the whole registry, and asking it per literal
@@ -1232,6 +1253,7 @@ pub fn validate_bindings(
                 types,
                 conversions,
                 inhabitation: &inhabitation,
+                refused,
             }
             .check(),
         );
@@ -1252,6 +1274,9 @@ struct Ends<'a> {
     /// Which declarations the type pass refuses, so that a rule staying silent can check that
     /// somebody else really speaks — about the type in hand, and not merely about a name under it.
     inhabitation: &'a Inhabitation,
+    /// Declarations refused by their own conversion, which a reference here is not refused for
+    /// naming again.
+    refused: &'a crate::spec::Refused,
 }
 
 impl Ends<'_> {
@@ -1277,7 +1302,13 @@ impl Ends<'_> {
     fn check(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
 
-        if self.binding.cause.event().is_some() && self.event().is_none() {
+        if self
+            .binding
+            .cause
+            .event()
+            .is_some_and(|name| !self.refused.events.contains(name))
+            && self.event().is_none()
+        {
             errors.push(
                 ValidationError::new(
                     ValidationCode::UndeclaredReference,
@@ -1287,7 +1318,7 @@ impl Ends<'_> {
                 .with_hint(available("event", self.events.keys())),
             );
         }
-        if self.command().is_none() {
+        if self.command().is_none() && !self.refused.commands.contains(&self.binding.command) {
             errors.push(
                 ValidationError::new(
                     ValidationCode::UndeclaredReference,
@@ -1298,7 +1329,7 @@ impl Ends<'_> {
             );
         }
         if let Some(escalation) = &self.binding.escalation {
-            if !self.events.contains_key(escalation) {
+            if !self.events.contains_key(escalation) && !self.refused.events.contains(escalation) {
                 errors.push(
                     ValidationError::new(
                         ValidationCode::UndeclaredReference,

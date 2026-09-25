@@ -1,0 +1,19 @@
+components:
+  - component: lending-service
+    summary: Holds every branch and the copies it lends.
+    owns:
+      domains:
+        - library.lending
+    accepts:
+      commands:
+        - library.lending.OpenBranch
+        - library.lending.AddCopy
+        - library.lending.LendCopy
+        - library.lending.ReturnCopy
+    publishes:
+      events:
+        - library.lending.BranchOpened
+        - library.lending.CopyAdded
+        - library.lending.CopyLent
+        - library.lending.CopyReturned
+    reached_by: network

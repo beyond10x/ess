@@ -7,11 +7,7 @@ use ess_conformance::{
     coverage_build::{self, CoverageSource},
     AdmittedSuite, ScenarioId,
 };
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::ExitCode,
-};
+use std::{fs, path::Path, process::ExitCode};
 
 pub(super) fn sources(path: Option<&Path>) -> Result<Vec<CoverageSource>> {
     crate::input_discovery::authored(path, true)?
@@ -62,8 +58,7 @@ pub(super) fn generate(
     match target {
         SuiteTarget::Ir => {
             if let Some(out) = out {
-                let destination = super::preflight_named_output(out)?;
-                fs::write(destination, json)?;
+                super::write_named_output(out, json)?;
             }
         }
         SuiteTarget::Go => {
@@ -127,8 +122,7 @@ pub(super) fn select(
     let ids: Vec<ScenarioId> = serde_json::from_str(&fs::read_to_string(ids)?)?;
     let child = input.select(&ids)?;
     let text = child.document().to_canonical_json()?;
-    let destination: PathBuf = super::preflight_named_output(out)?;
-    fs::write(destination, text)?;
+    super::write_named_output(out, &text)?;
     Ok(ExitCode::SUCCESS)
 }
 pub(super) fn web(

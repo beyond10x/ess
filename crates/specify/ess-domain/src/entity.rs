@@ -931,6 +931,20 @@ pub fn validate_lifecycle_causes(
     commands: &BTreeMap<QualifiedName, crate::command::CommandSpec>,
     events: &BTreeMap<QualifiedName, crate::command::EventSpec>,
 ) -> ValidationErrors {
+    validate_lifecycle_causes_after(entities, commands, events, &crate::spec::Refused::default())
+}
+
+/// [`validate_lifecycle_causes`], after some declarations were refused by their own conversion.
+///
+/// An outcome acting on a refused entity is not refused again for naming an undeclared one, and a
+/// transition a refused command's outcome `moves:` is not reported as one nothing takes: both are
+/// the earlier refusal's consequence, not a second fault (beyond10x/ess#79).
+pub(crate) fn validate_lifecycle_causes_after(
+    entities: &BTreeMap<QualifiedName, EntitySpec>,
+    commands: &BTreeMap<QualifiedName, crate::command::CommandSpec>,
+    events: &BTreeMap<QualifiedName, crate::command::EventSpec>,
+    refused: &crate::spec::Refused,
+) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
     let mut performed: BTreeSet<(&QualifiedName, &str)> = BTreeSet::new();
 
@@ -947,6 +961,9 @@ pub fn validate_lifecycle_causes(
                 .named(outcome.name.as_str())
                 .key(subject.effect.verb());
             let Some(entity) = entities.get(&subject.entity) else {
+                if refused.entities.contains(&subject.entity) {
+                    continue;
+                }
                 errors.push(
                     ValidationError::at(
                         at,
@@ -1005,6 +1022,10 @@ pub fn validate_lifecycle_causes(
     for entity in entities.values() {
         for (index, transition) in entity.states.transitions.iter().enumerate() {
             if performed.contains(&(&entity.name, transition.name.as_str())) {
+                continue;
+            }
+            let moved = format!("{}.{}", entity.name, transition.name);
+            if refused.moves.iter().any(|name| name.to_string() == moved) {
                 continue;
             }
             errors.push(
