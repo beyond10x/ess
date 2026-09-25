@@ -67,8 +67,13 @@ cluster.
 task check
 ```
 
-CI invokes `task check SKIP_CONSUMER_CHECKS=true`: consumer coverage is disabled there by
-explicit operator request. Local `task check` and `task consumer-check` retain that coverage.
+CI runs `task check` as parallel lanes, one Taskfile task each: `ci-lint`, `ci-smoke`, three
+`test-shard SHARD=<m>/3` nextest partitions, three `test-feature-off SHARD=<m>/3` partitions (the
+first also runs `test-feature-off-doc`), `test-xtask` and `fuzz-check`.
+The `Gate` job carries their joint result, and `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when
+a step of `check` is in no lane. Consumer coverage is in none of them, by explicit operator
+request. Local `task check` and `task consumer-check` retain that coverage, and local `task test`
+still runs `cargo test`.
 
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
 tests, and the dependency boundary test. Land nothing until it exits zero.
@@ -88,7 +93,9 @@ the collected source and the Atlas-generated façade owns the project redirect.
 
 Before pushing a release tag, run `task check` and `task site-lab` on the commit being tagged.
 The release workflow runs the reusable gate, WASM/browser-lab correctness checks and native
-packaging concurrently at that exact commit, then publishes only after all succeed. Site rendering
+packaging concurrently at that exact commit, then publishes only after all succeed. It skips the
+gate only when the newest `Gate` check-run GitHub Actions recorded on that exact commit is a
+completed success — normally the `main` push run, so tag after it has finished. Site rendering
 remains a documentation-validation gate; ordinary source releases do not wait for it. New GitHub
 Releases stay draft until all archives and checksums are uploaded.
 

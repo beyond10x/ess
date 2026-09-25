@@ -1,5 +1,6 @@
 # Cuts a GitHub Release for every version tag. The reusable gate, WASM correctness checks and
-# native packages run concurrently at one resolved commit; publication requires all three.
+# native packages run concurrently at one resolved commit; publication requires all three. The
+# gate is skipped only when that exact commit already carries a successful `Gate` check-run.
 # Atlas observes published releases and documentation bundles asynchronously.
 #
 # Tags are the bare version (`0.1.0`, atlas § Naming).
@@ -37,9 +38,14 @@ jobs:
     name: Resolve the release tag
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # Read-only: the prior-gate step asks for the commit's `Gate` check-runs.
+      checks: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
+      gate-passed: ${{ steps.prior-gate.outputs.passed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -68,8 +74,34 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
+      # The same gate already ran on this exact commit when it was pushed to `main` or proposed,
+      # so a green `Gate` there is reused instead of paid for twice. Only the newest `Gate` that
+      # GitHub Actions itself recorded counts, and only as a completed success; none, a failure, one
+      # still running, or an API error all run the gate below as before.
+      - name: Look for a green Gate on the tagged commit
+        id: prior-gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          latest=$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs?check_name=Gate&filter=all&per_page=100" \
+            --jq '[.check_runs[] | select(.name == "Gate" and .app.slug == "github-actions")]
+                  | sort_by(.started_at) | last
+                  | if . == null then "none" else "\(.status)/\(.conclusion) \(.html_url)" end') \
+            || latest="unavailable"
+          echo "newest Gate check-run on $COMMIT: $latest"
+          if [ "${latest%% *}" = "completed/success" ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   gate:
     needs: resolve
+    if: ${{ needs.resolve.outputs.gate-passed != 'true' }}
     uses: ./.github/workflows/ci.yml
     with:
       checkout-ref: ${{ needs.resolve.outputs.commit }}
@@ -190,7 +222,7 @@ jobs:
   release:
     name: Publish the release
     needs: [resolve, gate, wasm, package]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.gate.result == 'success' && needs.wasm.result == 'success' && needs.package.result == 'success' }}
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && needs.package.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
