@@ -359,3 +359,163 @@ fn a_release_reuses_a_green_gate_on_the_exact_tagged_commit_and_otherwise_runs_i
         "publication accepts a skipped gate without a green prior Gate: {publish}"
     );
 }
+
+/// The Cargo workspaces a lane's tasks build: the root, and every `--manifest-path` directory.
+fn lane_workspaces(ci: &Value, taskfile: &Value) -> BTreeSet<String> {
+    let mut reached_tasks = BTreeSet::new();
+    for (task, _) in lane_invocations(ci) {
+        reached(taskfile, &task, &mut reached_tasks);
+    }
+    let mut workspaces = BTreeSet::from([".".to_owned()]);
+    for task in &reached_tasks {
+        for command in shell_commands(taskfile, task) {
+            let mut words = command.split_whitespace();
+            while let Some(word) = words.next() {
+                if word == "--manifest-path" {
+                    let manifest = words.next().expect("--manifest-path names a manifest");
+                    let directory = Path::new(manifest).parent().unwrap().to_str().unwrap();
+                    workspaces
+                        .insert(if directory.is_empty() { "." } else { directory }.to_owned());
+                }
+            }
+        }
+    }
+    workspaces
+}
+
+/// Every lockfile a lane builds from is fetched before the lane's task runs.
+///
+/// The gate's tasks pass `--offline` (`fuzz-check`), set `CARGO_NET_OFFLINE` (`support-check`) or
+/// spawn `cargo run --offline` from inside a test (`support::tests::adversary_*` in ess-xtask).
+/// The single-job gate never noticed, because `cargo clippy --workspace` ran first and populated
+/// the registry. A lane starts from an empty one, so the fetch has to be explicit, and it has to
+/// cover every workspace a lane builds, not only the ones whose commands say `--offline` — the
+/// xtask case is invisible from the Taskfile.
+#[test]
+fn every_lockfile_a_lane_builds_is_fetched_before_the_lane_runs() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let taskfile = yaml("Taskfile.yml");
+    let steps = ci["jobs"]["lane"]["steps"]
+        .as_sequence()
+        .expect("lane steps");
+    let run_at = steps
+        .iter()
+        .position(|step| text(&step["run"]).starts_with("task "))
+        .expect("the lane runs its task");
+    let fetched: String = steps[..run_at]
+        .iter()
+        .map(|step| text(&step["run"]))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let root = workspace_root();
+    for workspace in lane_workspaces(&ci, &taskfile) {
+        if !root.join(&workspace).join("Cargo.lock").is_file() {
+            continue;
+        }
+        let spelled = if workspace == "." {
+            fetched
+                .lines()
+                .any(|line| line.trim() == "cargo fetch --locked")
+        } else {
+            fetched.lines().any(|line| {
+                line.trim()
+                    == format!("cargo fetch --locked --manifest-path {workspace}/Cargo.toml")
+            })
+        };
+        assert!(
+            spelled,
+            "a lane builds `{workspace}` and no step before the lane's task fetches its lockfile"
+        );
+    }
+}
+
+/// Integration-test binaries of `crates/<area>/<crate>/tests/` whose source matches `matches`.
+fn binaries_where(matches: impl Fn(&str) -> bool) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    let crates = workspace_root().join("crates");
+    for area in fs::read_dir(&crates).unwrap().flatten() {
+        for krate in fs::read_dir(area.path()).into_iter().flatten().flatten() {
+            let tests = krate.path().join("tests");
+            let package = krate.file_name().to_string_lossy().into_owned();
+            for file in fs::read_dir(&tests).into_iter().flatten().flatten() {
+                let path = file.path();
+                if path.extension().is_some_and(|extension| extension == "rs")
+                    && matches(&fs::read_to_string(&path).unwrap())
+                {
+                    let binary = path.file_stem().unwrap().to_string_lossy().into_owned();
+                    found.insert(format!("{package}::{binary}"));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The binary ids nextest runs one test at a time: every `binary_id(...)` in a filter whose
+/// override assigns a test group declared with `max-threads = 1`.
+fn serialised_binaries(config: &str) -> BTreeSet<String> {
+    let serial_groups: BTreeSet<&str> = config
+        .lines()
+        .filter(|line| line.replace(' ', "").contains("={max-threads=1}"))
+        .map(|line| line.split('=').next().unwrap().trim())
+        .collect();
+    let mut serialised = BTreeSet::new();
+    for block in config.split("[[profile.default.overrides]]").skip(1) {
+        let field = |name: &str| {
+            block
+                .lines()
+                .find_map(|line| line.trim().strip_prefix(name))
+                .and_then(|rest| rest.trim().strip_prefix('='))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+                .unwrap_or_default()
+        };
+        if !serial_groups.contains(field("test-group").as_str()) {
+            continue;
+        }
+        let filter = field("filter");
+        for piece in filter.split("binary_id(").skip(1) {
+            serialised.insert(piece.split(')').next().unwrap().to_owned());
+        }
+    }
+    serialised
+}
+
+/// Under nextest every test is its own process, so a binary whose tests coordinate through state
+/// shared by every test *in one process* loses that coordination, and runs one test at a time.
+///
+/// Two such mechanisms exist, both found by the first nextest run (Actions run 36126201626):
+/// `support/browser.rs`'s `STARTUP` mutex, which admits one Firefox start at a time, and a
+/// `Once` that prunes every fixture directory not carrying this process's id — which, with one
+/// process per test, deletes the fixtures of every test running beside it. Both are found here by
+/// what the source says, so a new binary that includes the browser fixture or copies the prune is
+/// serialised or named.
+#[test]
+fn nextest_serialises_every_binary_that_coordinates_through_process_state() {
+    let config = fs::read_to_string(workspace_root().join(".config/nextest.toml"))
+        .expect("the nextest configuration is readable");
+    let serialised = serialised_binaries(&config);
+    // Split, so that this file does not contain what it scans for.
+    let include = ["#[path = \"support/", "browser.rs\"]"].concat();
+    let once = ["std::sync::Once", "::new()"].concat();
+    let prune = ["remove_dir_all(", "entry.path())"].concat();
+    let browser = binaries_where(|source| source.contains(&include));
+    let pruning = binaries_where(|source| source.contains(&once) && source.contains(&prune));
+    assert!(
+        browser.contains("ess-cli::coverage_browser"),
+        "the browser scan found {browser:?}; it no longer sees the fixture it exists to find"
+    );
+    assert!(
+        pruning.contains("ess-cli::execution_recovery"),
+        "the prune scan found {pruning:?}; it no longer sees the binary it exists to find"
+    );
+    let missing: Vec<&String> = browser
+        .iter()
+        .chain(&pruning)
+        .filter(|binary| !serialised.contains(*binary))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "these binaries coordinate their tests through process-global state and nextest runs \
+         them in parallel processes: {missing:?}"
+    );
+}

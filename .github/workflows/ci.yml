@@ -127,6 +127,14 @@ jobs:
           key: ${{ matrix.cache }}
           workspaces: ${{ matrix.cache-workspaces || '. -> target' }}
 
+      # Gate tasks build offline (`fuzz-check`, `support-check`, and cargo runs spawned by the
+      # xtask support tests). The single-job gate got a full registry from `cargo clippy
+      # --workspace` running first; each lane starts empty, so both lockfiles are fetched here.
+      - name: Fetch locked dependencies
+        run: |
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path fuzz/Cargo.toml
+
       # Consumer coverage is not a lane: it stays disabled in CI by explicit operator request, and
       # local `task check` still runs it.
       - name: Run the ${{ matrix.lane }} lane
