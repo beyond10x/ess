@@ -19,6 +19,17 @@ qualification. Missing, duplicate, unknown or changed rows refuse the check earl
 consistency constraint against the current reviewed authorities, not proof of a runtime migration
 or an independent historical inventory: coordinated authority changes still require review.
 
+> **Parked, 2026-09-25.** Plan revision 3 drops feature-preservation accounting from the
+> preservation interface. `task consumer-check` still performs the checks above when it is run,
+> but `task check` runs it only with `CONSUMER_CHECKS=true`, and neither CI nor the release bar
+> runs it. Preservation is shown by the conformance suites, the retained legacy readers,
+> `ess verify diff`, `ess verify impact` and `ess/N` format discipline. The mapping, the code and
+> `initial-baseline.json` (157,677 pairs, digest unchanged) stay in the tree. Re-enable trigger: a
+> named external adopter pins a released `ess/N` and generated artifacts, and a change reaches that
+> adopter undetected by conformance, `ess verify diff` or a format refusal. Until then the frozen
+> baseline is history, not a promise; where the text below says "exact consumer coverage", read it
+> as that record.
+
 | Existing capability / semantic source | Existing implementation and format authority | Retained evidence | Destination / compatibility acceptance |
 | --- | --- | --- | --- |
 | Domain types, entities, commands, outcomes, predicates, views and references | ess-domain, ess-compiler, ess-primitives; RawSpecFile, EssIr and published schemas | Specify package tests, compiler fixtures, consumer profiles authored-*, compiler-*, semantic-references and dependency-graph | Same packages and canonical bytes; add ServiceIr separately; task check and exact consumer cases |
