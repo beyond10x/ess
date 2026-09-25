@@ -1,6 +1,8 @@
 # Cuts a GitHub Release for every version tag. The reusable gate, WASM correctness checks and
 # native packages run concurrently at one resolved commit; publication requires all three. The
-# gate is skipped only when that exact commit already carries a successful `Gate` check-run.
+# gate is skipped only when a successful `Gate` check-run already covers those exact bytes: on the
+# commit itself, or on the head of the pull request it merged when that head has its tree (the
+# `prior-gate` step states the whole condition).
 # Atlas observes published releases and documentation bundles asynchronously.
 #
 # Tags are the bare version (`0.1.0`, atlas § Naming).
@@ -40,8 +42,10 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      # Read-only: the prior-gate step asks for the commit's `Gate` check-runs.
+      # Read-only: the prior-gate step asks for `Gate` check-runs and for the pull request a
+      # merge commit closed.
       checks: read
+      pull-requests: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
@@ -74,11 +78,21 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
-      # The same gate already ran on this exact commit when it was pushed to `main` or proposed,
-      # so a green `Gate` there is reused instead of paid for twice. Only the newest `Gate` that
-      # GitHub Actions itself recorded counts, and only as a completed success; none, a failure, one
-      # still running, or an API error all run the gate below as before.
-      - name: Look for a green Gate on the tagged commit
+      # The gate has usually run on these exact bytes already, so a green `Gate` is reused instead
+      # of paid for twice. It counts when either holds:
+      #
+      # 1. the tagged commit carries one — normally the `main` push run;
+      # 2. the tagged commit is the merge commit of exactly one merged pull request, the commit's
+      #    tree is that pull request's head's tree, `main` before the merge (the commit's first
+      #    parent) is in the head's history, and the head carries one.
+      #
+      # The tree equality is what makes 2 honest: the tested bytes are the tagged bytes. The
+      # ancestry is what makes the head's `Gate` a test of them — a `pull_request` run tests the
+      # head merged into the base of its day, which is the head's own tree only when that base was
+      # already in the head. Only the newest `Gate` GitHub Actions itself recorded counts, and only
+      # as a completed success. Anything else — none, a failure, one still running, an API or
+      # fetch error — runs the gate below as before. `ci_lanes.rs` runs this script against both.
+      - name: Look for a green Gate on the tagged bytes
         id: prior-gate
         shell: bash
         env:
@@ -87,17 +101,54 @@ jobs:
           COMMIT: ${{ steps.release.outputs.commit }}
         run: |
           set -euo pipefail
-          latest=$(gh api "repos/$REPOSITORY/commits/$COMMIT/check-runs?check_name=Gate&filter=all&per_page=100" \
-            --jq '[.check_runs[] | select(.name == "Gate" and .app.slug == "github-actions")]
-                  | sort_by(.started_at) | last
-                  | if . == null then "none" else "\(.status)/\(.conclusion) \(.html_url)" end') \
-            || latest="unavailable"
+          newest_gate() {
+            gh api "repos/$REPOSITORY/commits/$1/check-runs?check_name=Gate&filter=all&per_page=100" --jq '
+              [.check_runs[] | select(.name == "Gate" and .app.slug == "github-actions")]
+              | sort_by(.started_at) | last
+              | if . == null then "none" else "\(.status)/\(.conclusion) \(.html_url)" end'
+          }
+          decide() {
+            echo "$2"
+            echo "passed=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          latest=$(newest_gate "$COMMIT") || latest="unavailable"
           echo "newest Gate check-run on $COMMIT: $latest"
           if [ "${latest%% *}" = "completed/success" ]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
+            decide true "reusing the Gate on the tagged commit"
           fi
+
+          pull=$(gh api "repos/$REPOSITORY/commits/$COMMIT/pulls" --jq '
+              [.[] | select(.merged_at != null and .merge_commit_sha == env.COMMIT)]
+              | if length == 1 then "pr \(.[0].number) \(.[0].head.sha)" else "count \(length)" end') \
+            || decide false "running the gate: the pull requests of $COMMIT are unavailable"
+          case "$pull" in
+            "pr "*) ;;
+            *) decide false "running the gate: $COMMIT is the merge commit of no single merged pull request ($pull)" ;;
+          esac
+          read -r _ number head <<< "$pull"
+          if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]]; then
+            decide false "running the gate: #$number names no head commit ($head)"
+          fi
+          git fetch --no-tags --quiet origin "$head" \
+            || decide false "running the gate: head $head of #$number cannot be fetched"
+          merge_tree=$(git rev-parse --verify --quiet "$COMMIT^{tree}") \
+            || decide false "running the gate: $COMMIT has no tree"
+          head_tree=$(git rev-parse --verify --quiet "$head^{tree}") \
+            || decide false "running the gate: head $head of #$number has no tree"
+          if [ "$merge_tree" != "$head_tree" ]; then
+            decide false "running the gate: $COMMIT's tree $merge_tree is not head $head's tree $head_tree"
+          fi
+          if ! git merge-base --is-ancestor "$COMMIT^1" "$head"; then
+            decide false "running the gate: main before $COMMIT is not in head $head's history, so no run of #$number tested this tree"
+          fi
+          head_gate=$(newest_gate "$head") || head_gate="unavailable"
+          echo "newest Gate check-run on head $head of #$number: $head_gate"
+          if [ "${head_gate%% *}" = "completed/success" ]; then
+            decide true "reusing the Gate on head $head of #$number, whose tree is the tagged tree"
+          fi
+          decide false "running the gate: head $head of #$number has no green Gate"
 
   gate:
     needs: resolve
@@ -124,15 +175,18 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: "1.25.10"
-          cache: false
-
+      # The released binary, checked against the release's own `task_checksums.txt`.
       - name: Install the pinned task runner
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
         run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.52.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
@@ -153,10 +207,12 @@ jobs:
             runner: ubuntu-22.04
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-22.04-arm
-          # The explicit Intel label avoids silently changing architecture when `macos-latest`
-          # moves. `macos-15` is the standard Apple Silicon runner.
+          # Both macOS archives are built on `macos-15`, the standard Apple Silicon runner; the
+          # Intel one is cross-compiled there and smoke-run under Rosetta. The Intel runner took
+          # 16.9 of the 0.32.0 release's 19.2 minutes. The explicit label avoids silently changing
+          # architecture when `macos-latest` moves.
           - target: x86_64-apple-darwin
-            runner: macos-15-intel
+            runner: macos-15
           - target: aarch64-apple-darwin
             runner: macos-15
     steps:
@@ -175,7 +231,16 @@ jobs:
         with:
           key: release-${{ matrix.target }}
 
-      - name: Build and smoke-test the native binary
+      # The cross-compiled Intel binary is smoke-run below, which on Apple Silicon needs Rosetta.
+      - name: Provide Rosetta for the Intel smoke run
+        if: ${{ matrix.target == 'x86_64-apple-darwin' }}
+        run: |
+          if ! /usr/bin/arch -x86_64 /usr/bin/true 2> /dev/null; then
+            sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          fi
+          /usr/bin/arch -x86_64 /usr/bin/true
+
+      - name: Build and smoke-test the binary
         shell: bash
         env:
           TAG: ${{ needs.resolve.outputs.tag }}
@@ -193,6 +258,16 @@ jobs:
           fi
           cargo build --locked --release --bin ess --target "$TARGET"
           bin="target/$TARGET/release/ess"
+          # A macOS runner can execute both architectures, so name the one that was built.
+          case "$TARGET" in
+            x86_64-apple-darwin) expected=x86_64 ;;
+            aarch64-apple-darwin) expected=arm64 ;;
+            *) expected="" ;;
+          esac
+          if [ -n "$expected" ] && [ "$(lipo -archs "$bin")" != "$expected" ]; then
+            echo "::error::$bin is $(lipo -archs "$bin"), not $expected" >&2
+            exit 1
+          fi
           "$bin" --help > /dev/null
           printed=$("$bin" --version | awk '{print $NF}')
           if [ "$printed" != "$TAG" ]; then

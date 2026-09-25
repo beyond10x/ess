@@ -67,11 +67,30 @@ cluster.
 task check
 ```
 
-CI runs `task check` as parallel lanes, one Taskfile task each: `ci-lint`, `ci-smoke`, three
-`test-shard SHARD=<m>/3` nextest partitions, three `test-feature-off SHARD=<m>/3` partitions (the
-first also runs `test-feature-off-doc`), `test-xtask` and `fuzz-check`.
-The `Gate` job carries their joint result, and `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when
-a step of `check` is in no lane. Local `task test` still runs `cargo test`.
+CI runs `task check` as a few jobs, each running Taskfile tasks as steps. `checks` runs `ci-lint`,
+`ci-smoke`, `test-feature-off-doc`, `test-xtask` and `fuzz-check` one after another after one
+setup. `build-tests` runs `test-archive`: it compiles every test binary once into two nextest
+archives, the workspace and the feature-off packages. `test (<m>/2)` downloads both and runs
+`test-shard` and `test-feature-off` for partition `m`, compiling nothing. The shards extract into
+the checkout's own `target/`, because test binaries bake `CARGO_BIN_EXE_*` and
+`CARGO_TARGET_TMPDIR` in at build time. The `Gate` job carries their joint result, and
+`crates/edge/ess-xtask/tests/ci_lanes.rs` fails when a step of `check` is in no job, when the
+shards leave a partition unrun, or when `Gate` misses a job. Local `task test` still runs
+`cargo test` over everything.
+
+**A pull request runs the feature-off build on number semantics only.** With `FEATURE_OFF` set to
+`number-semantics` (pull requests only), the feature-off archive keeps every feature-off package
+except ess-cli, plus ess-cli's unit tests and its `binary64*`, `normalization*`, `schema*` and
+`execution_recovery` binaries (`FEATURE_OFF_NUMBER_SEMANTICS` in `Taskfile.yml`). The rest of
+ess-cli's feature-off run — every other ess-cli integration binary compiled without
+`arbitrary_precision` — has moved to the `main` push, the nightly `schedule` run and the release
+gate, which archive all of it. `ci_lanes.rs` fails if an ess-cli test binary whose source names
+`arbitrary_precision` falls outside the filter.
+
+Test builds carry line tables only (`[profile.dev] debug`), and `sha2`, `flate2` and `tar` are
+optimised in them. CI's Linux jobs link with lld through
+`CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` in `ci.yml`, not `.cargo/config.toml`, so local
+builds and shipped release binaries keep the system linker.
 
 **Consumer coverage is opt-in.** Revision 3 of the ESS evolution plan (`ESS-EVOLUTION.md`, plan
 ess-evolution-20260915, 2026-09-25) parked feature-preservation accounting: `task check` runs
@@ -103,10 +122,33 @@ Before pushing a release tag, run `task check` and `task site-lab` on the commit
 Consumer coverage is not part of that bar while it is parked (revision 3, above).
 The release workflow runs the reusable gate, WASM/browser-lab correctness checks and native
 packaging concurrently at that exact commit, then publishes only after all succeed. It skips the
-gate only when the newest `Gate` check-run GitHub Actions recorded on that exact commit is a
-completed success — normally the `main` push run, so tag after it has finished. Site rendering
-remains a documentation-validation gate; ordinary source releases do not wait for it. New GitHub
-Releases stay draft until all archives and checksums are uploaded.
+gate only when a green `Gate` already covers the tagged bytes. "Green" means the newest `Gate`
+check-run GitHub Actions recorded on a commit is a completed success. The gate is skipped when
+**either** of these holds:
+
+1. the tagged commit itself has a green `Gate`, normally from the `main` push run; or
+2. all of the following hold:
+   - `GET /repos/{owner}/{repo}/commits/{sha}/pulls` returns exactly one merged pull request
+     whose `merge_commit_sha` is the tagged commit;
+   - `git rev-parse <sha>^{tree}` equals `<head>^{tree}` for that pull request's head, which the
+     release fetches;
+   - the tagged commit's first parent (`main` before the merge) is an ancestor of that head;
+   - that head has a green `Gate`.
+
+Anything else runs the gate, including an API or fetch failure. The tree equality makes the tested
+bytes the tagged bytes. The ancestry makes the head's `Gate` a test of those bytes: a
+`pull_request` run tests the head merged into the base of its day, and that is the head's own tree
+only when the base was already in the head. So tag the merge commit of an up-to-date pull request
+as soon as it lands; there is no need to wait for `main`'s run. That pull-request `Gate` ran the
+narrowed feature-off build (above), and `main`'s run of the full one is still in flight when
+such a release publishes. `release.yml`'s `prior-gate` step is the implementation, and
+`ci_lanes.rs` runs it against real Git histories.
+
+The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
+there under Rosetta; `lipo -archs` names the architecture that was built. Archive names and
+`SHA256SUMS` are unchanged. Site rendering remains a documentation-validation gate; ordinary
+source releases do not wait for it. New GitHub Releases stay draft until all archives and
+checksums are uploaded.
 
 Release completion means the exact tag, required release checks, published GitHub Release and
 required assets are verified. A pushed tag awaiting those checks is queued. Atlas observes release
