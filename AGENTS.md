@@ -68,7 +68,8 @@ task check
 ```
 
 CI runs `task check` as parallel lanes, one Taskfile task each: `ci-lint`, `ci-smoke`, three
-`test-shard SHARD=<m>/3` nextest partitions, `test-feature-off`, `test-xtask` and `fuzz-check`.
+`test-shard SHARD=<m>/3` nextest partitions, three `test-feature-off SHARD=<m>/3` partitions (the
+first also runs `test-feature-off-doc`), `test-xtask` and `fuzz-check`.
 The `Gate` job carries their joint result, and `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when
 a step of `check` is in no lane. Consumer coverage is in none of them, by explicit operator
 request. Local `task check` and `task consumer-check` retain that coverage, and local `task test`

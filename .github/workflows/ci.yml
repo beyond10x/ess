@@ -54,8 +54,15 @@ jobs:
           - lane: test 3/3
             task: test-shard SHARD=3/3
             cache: test-workspace
-          - lane: feature-off
-            task: test-feature-off
+          # The feature-off doc-tests run once, on the first shard; nextest runs no doc-tests.
+          - lane: feature-off 1/3
+            task: test-feature-off test-feature-off-doc SHARD=1/3
+            cache: feature-off
+          - lane: feature-off 2/3
+            task: test-feature-off SHARD=2/3
+            cache: feature-off
+          - lane: feature-off 3/3
+            task: test-feature-off SHARD=3/3
             cache: feature-off
           - lane: xtask
             task: test-xtask

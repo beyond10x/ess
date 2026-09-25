@@ -69,9 +69,15 @@ tasks:
       - cargo test --workspace --exclude ess-xtask --locked --doc
 
   test-feature-off:
-    desc: Run the packages that do not unify serde_json's `arbitrary_precision` in, under nextest.
+    desc: Run one nextest partition of the packages without `arbitrary_precision`, e.g. `SHARD=1/3`.
+    requires:
+      vars: [SHARD]
     cmds:
-      - cargo nextest run --locked --no-fail-fast {{.FEATURE_OFF_PACKAGES}}
+      - cargo nextest run --locked --no-fail-fast --partition count:{{.SHARD}} {{.FEATURE_OFF_PACKAGES}}
+
+  test-feature-off-doc:
+    desc: Run the doc-tests of the packages without `arbitrary_precision`, which nextest does not.
+    cmds:
       - cargo test --locked --doc {{.FEATURE_OFF_PACKAGES}}
 
   test-xtask:

@@ -51,19 +51,56 @@ fn gated_jobs(ci: &Value) -> BTreeSet<String> {
         .collect()
 }
 
-/// The Taskfile task a lane's `task` field invokes, and the variable assignments after it.
+/// Every Taskfile task a lane's `task` field invokes, each with the variable assignments of that
+/// invocation. `task a b VAR=x` runs `a` then `b`, both with `VAR`, so one lane can name several.
 fn lane_invocations(ci: &Value) -> Vec<(String, Vec<String>)> {
     let include = ci["jobs"]["lane"]["strategy"]["matrix"]["include"]
         .as_sequence()
         .expect("the lane job is a matrix of explicit lanes");
     include
         .iter()
-        .map(|lane| {
-            let mut words = text(&lane["task"]).split_whitespace().map(str::to_owned);
-            let task = words.next().expect("every lane names a task");
-            (task, words.collect())
+        .flat_map(|lane| {
+            let (vars, tasks): (Vec<String>, Vec<String>) = text(&lane["task"])
+                .split_whitespace()
+                .map(str::to_owned)
+                .partition(|word| word.contains('='));
+            assert!(!tasks.is_empty(), "a lane names no task: {lane:?}");
+            tasks
+                .into_iter()
+                .map(move |task| (task, vars.clone()))
+                .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// The `SHARD=<m>/<n>` values the lanes pass to `task`, one per lane that runs it.
+fn shards_of(ci: &Value, task: &str) -> Vec<String> {
+    lane_invocations(ci)
+        .into_iter()
+        .filter(|(name, _)| name == task)
+        .map(|(_, vars)| {
+            let [assignment] = vars.as_slice() else {
+                panic!("a `{task}` lane passes exactly `SHARD=<m>/<n>`, not {vars:?}")
+            };
+            assignment
+                .strip_prefix("SHARD=")
+                .unwrap_or_else(|| panic!("`{assignment}` is not a SHARD assignment"))
+                .to_owned()
+        })
+        .collect()
+}
+
+/// `task`'s lanes are one complete partition: `1/n` through `n/n`, each exactly once.
+fn assert_complete_partition(ci: &Value, task: &str) {
+    let shards = shards_of(ci, task);
+    let total = shards.len();
+    assert!(total > 1, "`{task}` runs in {total} shard(s)");
+    let expected: BTreeSet<String> = (1..=total).map(|m| format!("{m}/{total}")).collect();
+    assert_eq!(
+        shards.iter().cloned().collect::<BTreeSet<_>>(),
+        expected,
+        "the `{task}` shards of ci.yml leave a partition unrun or run one twice"
+    );
 }
 
 /// Every task reached from `name` through `task:` entries in its `cmds`, including `name`.
@@ -133,7 +170,13 @@ fn every_step_of_task_check_runs_in_some_pull_request_lane() {
         "these steps of `task check` run in no lane of ci.yml, so a pull request never runs them: \
          {missing:?}"
     );
-    for replacement in ["test-shard", "test-feature-off", "test-xtask", "test-doc"] {
+    for replacement in [
+        "test-shard",
+        "test-feature-off",
+        "test-feature-off-doc",
+        "test-xtask",
+        "test-doc",
+    ] {
         assert!(
             covered.contains(replacement),
             "no lane of ci.yml runs `{replacement}`, one of the parts `task test` is split into"
@@ -152,27 +195,8 @@ fn every_step_of_task_check_runs_in_some_pull_request_lane() {
 fn the_workspace_shards_are_one_complete_partition() {
     let ci = yaml(".github/workflows/ci.yml");
     let taskfile = yaml("Taskfile.yml");
-    let shards: Vec<String> = lane_invocations(&ci)
-        .into_iter()
-        .filter(|(task, _)| task == "test-shard")
-        .map(|(_, vars)| {
-            let [assignment] = vars.as_slice() else {
-                panic!("a `test-shard` lane passes exactly `SHARD=<m>/<n>`, not {vars:?}")
-            };
-            assignment
-                .strip_prefix("SHARD=")
-                .unwrap_or_else(|| panic!("`{assignment}` is not a SHARD assignment"))
-                .to_owned()
-        })
-        .collect();
-    let total = shards.len();
-    assert!(total > 1, "the workspace tests run in {total} shard(s)");
-    let expected: BTreeSet<String> = (1..=total).map(|m| format!("{m}/{total}")).collect();
-    assert_eq!(
-        shards.iter().cloned().collect::<BTreeSet<_>>(),
-        expected,
-        "the shards of ci.yml leave a partition unrun or run one twice"
-    );
+    assert_complete_partition(&ci, "test-shard");
+    assert_complete_partition(&ci, "test-feature-off");
 
     // The shard selects what `task test` selects, and hands the partition to nextest.
     let workspace = &shell_commands(&taskfile, "test")[0];
@@ -193,14 +217,26 @@ fn the_workspace_shards_are_one_complete_partition() {
         "{doc}"
     );
     assert!(doc.contains("--doc"), "{doc}");
-    // The feature-off lane selects the packages `task test` selects, by the same variable.
+    // The feature-off shards select the packages `task test` selects, by the same variable, and
+    // hand the partition to nextest.
     let local = shell_commands(&taskfile, "test").join("\n");
     let lane = shell_commands(&taskfile, "test-feature-off").join("\n");
     assert!(local.contains("{{.FEATURE_OFF_PACKAGES}}"), "{local}");
     assert!(lane.contains("cargo nextest run") && lane.contains("{{.FEATURE_OFF_PACKAGES}}"));
+    assert!(lane.contains("--partition count:{{.SHARD}}"), "{lane}");
+    // Their doc-tests, which nextest does not run, run once: in exactly one lane, by themselves.
+    let doc = shell_commands(&taskfile, "test-feature-off-doc").join("\n");
     assert!(
-        lane.contains("--doc"),
-        "the feature-off lane skips its doc-tests: {lane}"
+        doc.contains("cargo test --locked --doc {{.FEATURE_OFF_PACKAGES}}"),
+        "{doc}"
+    );
+    let doc_lanes = lane_invocations(&ci)
+        .into_iter()
+        .filter(|(task, _)| task == "test-feature-off-doc")
+        .count();
+    assert_eq!(
+        doc_lanes, 1,
+        "the feature-off doc-tests run in {doc_lanes} lanes, not exactly one"
     );
 }
 
