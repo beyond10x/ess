@@ -821,6 +821,29 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     }
                     self.text_literal(predicate, left, *op, right, &left_type);
                     self.text_literal(predicate, right, *op, left, &right_type);
+                    if let (Operand::Fact(left_path), Operand::Fact(right_path)) = (left, right) {
+                        if compatible
+                            && op.needs_ordering()
+                            && left_type.instant != right_type.instant
+                        {
+                            let (instant, text) = if left_type.instant {
+                                (left_path, right_path)
+                            } else {
+                                (right_path, left_path)
+                            };
+                            self.checked.errors.push(error(
+                                self.owner,
+                                ValidationCode::TypeMismatch,
+                                Some(text),
+                                None,
+                                format!(
+                                    "`{predicate}`: cannot order the Timestamp `{instant}` against \
+                                     `{text}`, which is not a Timestamp; a Timestamp is ordered only \
+                                     against another Timestamp or an RFC 3339 instant literal"
+                                ),
+                            ));
+                        }
+                    }
                 }
             }
             Predicate::Truthy(path) | Predicate::Defined(path) => {

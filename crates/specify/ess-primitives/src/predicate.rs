@@ -552,25 +552,34 @@ impl Predicate {
             return (Truth::Unknown, None);
         };
 
+        // A declared Timestamp compares by the instant it names under every operator, so `==`
+        // agrees with `<=` and `>=` on two spellings of one instant.
+        if let (FactValue::Text(left_text), FactValue::Text(right_text)) =
+            (&left_value, &right_value)
+        {
+            let declared = [left, right].into_iter().any(|operand| {
+                operand
+                    .fact_path()
+                    .is_some_and(|path| facts.orders_as_instant(path))
+            });
+            let instant = crate::time::Rfc3339Instant::parse_rfc3339;
+            if let (true, Some(left_instant), Some(right_instant)) =
+                (declared, instant(left_text), instant(right_text))
+            {
+                return (
+                    Truth::from_bool(op.accepts(left_instant.cmp(&right_instant))),
+                    None,
+                );
+            }
+        }
+
         match (&left_value, &right_value) {
             (FactValue::Number(left_number), FactValue::Number(right_number)) => (
                 Truth::from_bool(op.accepts(left_number.cmp(right_number))),
                 None,
             ),
             (FactValue::Text(left_text), FactValue::Text(right_text)) if op.needs_ordering() => {
-                let instants = [left, right].into_iter().any(|operand| {
-                    operand
-                        .fact_path()
-                        .is_some_and(|path| facts.orders_as_instant(path))
-                });
-                let instant = |text: &str| crate::time::Rfc3339Instant::parse_rfc3339(text);
-                let ordered = match (instants, instant(left_text), instant(right_text)) {
-                    (true, Some(left_instant), Some(right_instant)) => {
-                        Some(left_instant.cmp(&right_instant))
-                    }
-                    _ => facts.scales().compare(left_text, right_text),
-                };
-                match ordered {
+                match facts.scales().compare(left_text, right_text) {
                     Some(ordering) => (Truth::from_bool(op.accepts(ordering)), None),
                     None => (
                         Truth::Unknown,
