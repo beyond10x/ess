@@ -61,6 +61,13 @@
   directory targets already did; `synthesize --out missing/suite.json` failed with
   `No such file or directory`. An existing ancestor that is a symlink or not a directory is still
   refused, and the destination file now passes the same checks as other named outputs.
+- `ess specify validate` reports a declaration refused by its own checks once. A reference to it
+  is no longer refused again as a reference to something undeclared: one bad payload source in a
+  command gave four refusals, three of them saying the command did not exist (an actor's `may`, a
+  component's `accepts`, and `missing_causation` for the transition only that command `moves:`).
+  This holds for refused entities, commands, events, errors and components, wherever an actor,
+  component, command outcome, binding or topology names them. A name nobody declared is still
+  refused, and diagnostic codes and wording are unchanged.
 
 ## [0.31.0] — 2026-09-25
 
