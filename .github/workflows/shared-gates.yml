@@ -3,6 +3,8 @@ name: Shared source gates
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
     tags: ['*']
@@ -13,6 +15,6 @@ permissions:
 
 jobs:
   common:
-    uses: beyond10x/gates/.github/workflows/common.yml@fcf578f1b6bca26ffc153f019092df29acb97b0c
+    uses: beyond10x/gates/.github/workflows/common.yml@95d64e3cd7125d0c6e58317167df96968ad6a98c
     secrets:
       B10X_GATES_POLICY: ${{ secrets.B10X_GATES_POLICY }}

@@ -726,6 +726,11 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         "ci.yml no longer runs on pull requests"
     );
     assert_eq!(
+        on["merge_group"]["types"],
+        serde_yaml::from_str::<Value>("[checks_requested]").unwrap(),
+        "ci.yml does not run in the merge queue, so the queue can never see a Gate"
+    );
+    assert_eq!(
         on["push"]["branches"],
         serde_yaml::from_str::<Value>("[main]").unwrap(),
         "ci.yml no longer runs on every push to main"
@@ -748,8 +753,8 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         .job;
     assert_eq!(
         text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]),
-        "${{ github.event_name == 'pull_request' && 'number-semantics' || 'full' }}",
-        "only a pull request may narrow the feature-off archive"
+        "${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'number-semantics' || 'full' }}",
+        "only a pull request or its merge-queue run may narrow the feature-off archive"
     );
 
     let archive = shell_commands(&taskfile, "test-archive").join("\n");
