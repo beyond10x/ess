@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:guarded-external-outcomes
 kind: story
 status: implemented

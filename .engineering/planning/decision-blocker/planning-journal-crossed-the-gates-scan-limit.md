@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: decision-blocker:planning-journal-crossed-the-gates-scan-limit
 kind: decision-blocker
 status: cleared

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:helm-secret-slot-defaults
 kind: story
 status: implemented

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-masked-first-declaration-hides-a-duplicate-name
 kind: story
 status: implemented

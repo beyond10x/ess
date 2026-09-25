@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:verify-compiled-view-delivery
 kind: story
 status: implemented

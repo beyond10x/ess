@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:fixtures-carry-workstation-paths
 kind: story
 status: implemented

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:fuzz-seed-baseline-refusal-stdout
 kind: verification-report
 status: draft

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:normalization-recovery-20260906
 kind: verification-report
 status: draft

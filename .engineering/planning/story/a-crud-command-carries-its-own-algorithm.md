@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-crud-command-carries-its-own-algorithm
 kind: story
 status: archived

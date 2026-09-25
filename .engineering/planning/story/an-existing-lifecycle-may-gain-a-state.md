@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:an-existing-lifecycle-may-gain-a-state
 kind: story
 status: archived

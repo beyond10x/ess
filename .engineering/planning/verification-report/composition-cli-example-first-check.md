@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:composition-cli-example-first-check
 kind: verification-report
 status: draft

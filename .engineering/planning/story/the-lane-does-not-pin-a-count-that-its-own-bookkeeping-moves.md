@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:the-lane-does-not-pin-a-count-that-its-own-bookkeeping-moves
 kind: story
 status: draft

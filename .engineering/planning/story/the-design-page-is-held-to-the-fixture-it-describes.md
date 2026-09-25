@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:the-design-page-is-held-to-the-fixture-it-describes
 kind: story
 status: draft

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: design:typed-response-outcome-payloads
 kind: design
 status: draft

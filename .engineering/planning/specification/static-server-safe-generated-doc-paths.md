@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: specification:static-server-safe-generated-doc-paths
 kind: specification
 status: implemented

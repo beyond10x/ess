@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-field-may-be-derived-rather-than-stored
 kind: story
 status: archived
