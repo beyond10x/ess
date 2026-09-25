@@ -25,6 +25,16 @@
     {"name": "an integral decimal is the integer", "left": "an-integral-decimal", "right": "an-integral-decimal", "ordering": "equal"},
     {"name": "a decimal has one zero, whatever sign it was written with", "left": "negative-zero", "right": "zero", "ordering": "equal"}
   ],
+  "text_orderings": [
+    {"name": "an uppercase letter is below every lowercase one, which a locale order reverses", "left": "B", "right": "a", "ordering": "less"},
+    {"name": "and the same pair read the other way", "left": "a", "right": "B", "ordering": "greater"},
+    {"name": "a digit is below a letter", "left": "9", "right": "A", "ordering": "less"},
+    {"name": "a text is above every prefix of itself", "left": "abc", "right": "ab", "ordering": "greater"},
+    {"name": "the empty text is below every other", "left": "", "right": "a", "ordering": "less"},
+    {"name": "an accented letter is above z, by its first UTF-8 byte", "left": "é", "right": "z", "ordering": "greater"},
+    {"name": "the last BMP code point is below the first supplementary one, which UTF-16 units reverse", "left": "￿", "right": "𐀀", "ordering": "less"},
+    {"name": "one text is equal to itself", "left": "caller", "right": "caller", "ordering": "equal"}
+  ],
   "admission": [
     {"name": "string-text", "kind": "string", "value": "x", "admitted": true},
     {"name": "string-boolean", "kind": "string", "value": true, "admitted": false},

@@ -301,20 +301,168 @@ fn expression_search_limits_do_not_define_type_correctness() {
         .is_satisfied()));
 }
 
+/// A list's cardinality and ordinals are projected since ess#94; a map's are still not.
 #[test]
-fn legal_collection_cardinality_is_not_currently_projected() {
+fn legal_list_cardinality_is_projected_and_map_cardinality_is_not() {
     let ir = compiled();
-    for expression in [
-        "lines.count > 0",
-        "lines.0.quantity > 0",
-        "labels.count > 0",
-    ] {
-        assert!(
-            facts(&ir, 1.0)
-                .decide(&guard(expression))
-                .unevaluable()
-                .is_some(),
+    for expression in ["lines.count > 0", "lines.0.quantity > 0"] {
+        assert_eq!(
+            facts(&ir, 1.0).decide(&guard(expression)),
+            Decision::Satisfied,
             "{expression}"
+        );
+    }
+    assert!(
+        facts(&ir, 1.0)
+            .decide(&guard("labels.count > 0"))
+            .unevaluable()
+            .is_some(),
+        "labels.count > 0"
+    );
+}
+
+/// An input list publishes its size and its elements the way an observed collection does (ess#94).
+#[test]
+fn an_input_list_publishes_its_count_and_one_fact_per_element_leaf() {
+    let ir = compiled();
+    let facts = facts(&ir, 1.0);
+
+    assert_eq!(facts.cardinality(&path("lines")), Some(1));
+    assert_eq!(facts.fact(&path("lines.count")), Some(FactValue::count(1)));
+    assert_eq!(
+        facts.fact(&path("lines.0.quantity")),
+        Some(FactValue::Number(Number::from(2_i64)))
+    );
+    assert_eq!(
+        facts.fact(&path("lines.0.description")),
+        Some(FactValue::text("a line"))
+    );
+    for (expression, expected) in [
+        ("lines.count > 0", true),
+        ("lines.count > 1", false),
+        ("lines.0.quantity > 1", true),
+    ] {
+        assert_eq!(
+            facts.decide(&guard(expression)).is_satisfied(),
+            expected,
+            "{expression}"
+        );
+    }
+    let every = Predicate::from_node(
+        &serde_yaml::from_str("forall: {in: lines, as: line, that: line.quantity > 1}")
+            .expect("yaml"),
+    )
+    .expect("a quantifier");
+    assert_eq!(facts.decide(&every), Decision::Satisfied);
+    assert_eq!(
+        facts.fact(&path("labels.count")),
+        None,
+        "a map is still not projected; the decision covers input lists"
+    );
+}
+
+/// Text is ordered by its bytes on command input, so `B` is below `a` (ess#94).
+#[test]
+fn a_text_ordering_on_command_input_is_decided_by_bytes() {
+    let ir = compiled();
+    let facts = facts(&ir, 1.0);
+    // `currency` is `USD`.
+    for (expression, expected) in [
+        ("currency > EUR", true),
+        ("currency < EUR", false),
+        ("currency < usd", true),
+        ("currency >= USD", true),
+    ] {
+        let decision = facts.decide(&guard(expression));
+        assert!(decision.unevaluable().is_none(), "{expression}: {decision}");
+        assert_eq!(decision.is_satisfied(), expected, "{expression}");
+    }
+}
+
+/// An element's alternatives change nothing while its list is empty; the repeats they produce are
+/// skipped rather than spent against the bound (correction round 1, finding 6).
+#[test]
+fn no_candidate_is_offered_twice() {
+    use ess_conformance::witness::{candidates, Distinction};
+    let ir = compiled();
+    let command = place_order(&ir);
+    let quantified = Predicate::from_node(
+        &serde_yaml::from_str(
+            "exists: {in: lines, as: l, that: {all: [l.quantity > 2, l.description == gift]}}",
+        )
+        .expect("yaml"),
+    )
+    .expect("a quantifier");
+    let options = candidates(&ir, command, &[&quantified], Distinction::PLAIN).unwrap();
+    for (index, option) in options.iter().enumerate() {
+        assert!(
+            !options[..index].contains(option),
+            "candidate {index} repeats an earlier one: {option:?}"
+        );
+    }
+    assert!(
+        options.iter().any(|input| flatten(&ir, command, input)
+            .expect("fits")
+            .decide(&quantified)
+            .is_satisfied()),
+        "and one of the distinct candidates meets the guard"
+    );
+}
+
+/// A list read by position holds the element in the base witness, so the read lands (finding 3).
+#[test]
+fn a_list_read_by_position_is_decided_by_every_candidate() {
+    use ess_conformance::witness::{candidates, Distinction};
+    let ir = compiled();
+    let command = place_order(&ir);
+    let positional = guard("lines.1.quantity > 2");
+    let options = candidates(&ir, command, &[&positional], Distinction::PLAIN).unwrap();
+    let decided: Vec<bool> = options
+        .iter()
+        .map(|input| {
+            let decision = flatten(&ir, command, input)
+                .expect("fits")
+                .decide(&positional);
+            assert!(decision.unevaluable().is_none(), "{input:?}: {decision}");
+            decision.is_satisfied()
+        })
+        .collect();
+    assert!(
+        decided.contains(&true) && decided.contains(&false),
+        "{decided:?}"
+    );
+}
+
+/// The absent side of a presence guard is one more candidate, with the optional left out (ess#93).
+#[test]
+fn a_presence_guard_is_tried_with_the_optional_omitted() {
+    use ess_conformance::witness::{candidates, Distinction};
+    let ir = compiled();
+    let command = place_order(&ir);
+    for expression in ["defined(note)", "not defined(note)"] {
+        let presence = guard(expression);
+        let options = candidates(&ir, command, &[&presence], Distinction::PLAIN).unwrap();
+        assert!(
+            options[0].contains_key("note"),
+            "the base witness still fills every optional"
+        );
+        let omitted: Vec<_> = options
+            .iter()
+            .filter(|input| !input.contains_key("note"))
+            .collect();
+        assert_eq!(omitted.len(), 1, "one candidate omits `note`: {options:?}");
+        let decided: Vec<bool> = options
+            .iter()
+            .map(|input| {
+                flatten(&ir, command, input)
+                    .expect("an omitted optional is a value of the input")
+                    .decide(&presence)
+                    .is_satisfied()
+            })
+            .collect();
+        assert!(
+            decided.contains(&true) && decided.contains(&false),
+            "`{expression}` is met and refuted among {decided:?}"
         );
     }
 }
@@ -552,22 +700,31 @@ fn equality_over_two_texts_is_decided_even_though_ordering_them_is_not() {
 // The five sources of `Unknown` that no candidate value can fix
 // ---------------------------------------------------------------------------------------------
 
+/// An ESS specification declares no scale, and since ess#94 that no longer leaves two texts
+/// unordered: they are ordered by their bytes, as the Go and TypeScript lanes order them. A scale
+/// supplied from outside still decides first — here one that reverses the byte order.
 #[test]
-fn ordering_two_texts_is_unevaluable_because_an_ess_specification_declares_no_scale() {
+fn ordering_two_texts_is_decided_by_bytes_unless_a_scale_contains_both_values() {
     let ir = compiled();
-    let decision = facts(&ir, 1.0).decide(&guard("currency > EUR"));
-
     assert_eq!(
-        sole_reason(&decision),
-        Reason::TextNotOrdered {
-            left: "USD".to_owned(),
-            right: "EUR".to_owned(),
-        },
-        "`USD > EUR` is not false; it is a comparison nothing in the model gives a meaning"
+        facts(&ir, 1.0).decide(&guard("currency > EUR")),
+        Decision::Satisfied,
+        "`USD > EUR` byte-wise"
+    );
+
+    let mut scales = Scales::default();
+    scales.insert(
+        "currency".to_owned(),
+        vec!["USD".to_owned(), "EUR".to_owned()],
     );
     assert!(
-        decision.refutation().is_none(),
-        "reading this as a refutation is the collapse invariant 5 forbids, seen from a generator"
+        matches!(
+            facts(&ir, 1.0)
+                .with_scales(scales)
+                .decide(&guard("currency > EUR")),
+            Decision::Refuted(_)
+        ),
+        "a declared scale placing USD below EUR decides before the bytes do"
     );
 }
 
@@ -730,7 +887,7 @@ fn only_an_absent_value_says_another_candidate_would_help() {
     let facts = facts(&ir, 1.0);
 
     for undecidable in [
-        "currency > EUR",
+        "labels.count > 0",
         "currency > 0",
         "amount.vat > 0",
         "lines > 0",
@@ -905,10 +1062,14 @@ fn resolved_adapter_keeps_semantics_separate_from_collection_projection() {
             .reads
             .iter()
             .all(|read| read.resolution.scalar.is_some()));
-        assert!(facts(&ir, 1.0)
-            .decide(&guard(expression))
-            .unevaluable()
-            .is_some());
+        // Projection is the separate question: an input list publishes its count and elements
+        // (ess#94), and a map still publishes nothing.
+        let decision = facts(&ir, 1.0).decide(&guard(expression));
+        if expression.starts_with("labels") {
+            assert!(decision.unevaluable().is_some(), "{expression}: {decision}");
+        } else {
+            assert_eq!(decision, Decision::Satisfied, "{expression}");
+        }
     }
 }
 

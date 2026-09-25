@@ -92,6 +92,13 @@ pub trait TypeEnvironment {
     fn is_instant(&self, _reference: &Self::Type) -> bool {
         false
     }
+    /// Whether this terminal type is the `Duration` primitive, which has no ordering.
+    ///
+    /// A `Duration` is carried as ISO 8601 text, and text is ordered by its bytes, which puts
+    /// `PT10M` below `PT5M`. So an ordering over one is refused rather than answered wrongly.
+    fn is_duration(&self, _reference: &Self::Type) -> bool {
+        false
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -216,6 +223,9 @@ impl<'a> DomainEnvironment<'a> {
 impl TypeEnvironment for DomainEnvironment<'_> {
     fn is_instant(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Primitive(Primitive::Timestamp))
+    }
+    fn is_duration(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Primitive(Primitive::Duration))
     }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
@@ -553,6 +563,8 @@ struct ValueType {
     variants: Option<Vec<String>>,
     /// Whether the terminal type is `Timestamp`, ordered by the RFC 3339 instant it names.
     instant: bool,
+    /// Whether the terminal type is `Duration`, which has no ordering.
+    duration: bool,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -592,6 +604,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         match operand {
             Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
                 instant: self.environment.is_instant(&resolved.terminal),
+                duration: self.environment.is_duration(&resolved.terminal),
                 declaring_variants: resolved
                     .variants
                     .is_some()
@@ -608,6 +621,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     scalar: Some(scalar),
                     variants: None,
                     instant: false,
+                    duration: false,
                 })
             }
         }
@@ -754,6 +768,28 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// Refuses an ordering over a `Duration`, which has none: its ISO 8601 text would put `PT10M`
+    /// below `PT5M` under the byte order text is compared by. One refusal per comparison.
+    fn duration_ordering(&mut self, predicate: &Predicate, operands: [(&Operand, &ValueType); 2]) {
+        let Some((operand, _)) = operands.into_iter().find(|(_, typed)| typed.duration) else {
+            return;
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            match operand {
+                Operand::Fact(path) => Some(path),
+                Operand::Literal(_) => None,
+            },
+            None,
+            format!(
+                "`{predicate}`: a Duration has no ordering, because its ISO 8601 text would put \
+                 `PT10M` below `PT5M`; compare it with `==` or `!=`, or declare the length as a \
+                 number, such as whole seconds in an Integer, to order it"
+            ),
+        ));
+    }
+
     fn quantified(&mut self, predicate: &Predicate, quantified: &Quantified) {
         let target = self.read(&quantified.over, true);
         let mut reference = None;
@@ -793,6 +829,53 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         self.bindings.pop();
     }
 
+    /// One comparison: its operands agree in kind, and every ordering, enum and text-literal rule
+    /// that applies to them holds.
+    fn compare(&mut self, predicate: &Predicate, left: &Operand, op: CompareOp, right: &Operand) {
+        let left_type = self.operand(left);
+        let right_type = self.operand(right);
+        if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
+            let compatible = left_type.scalar.is_some()
+                && left_type.scalar == right_type.scalar
+                && (matches!(op, CompareOp::Eq | CompareOp::Ne)
+                    || left_type.scalar != Some(ScalarKind::Bool));
+            if !compatible {
+                self.mismatch(predicate, &op.to_string(), &left_type, Some(&right_type));
+            }
+            if op.needs_ordering() {
+                self.duration_ordering(predicate, [(left, &left_type), (right, &right_type)]);
+            }
+            if let Operand::Literal(value) = right {
+                self.enum_literal(predicate, &left_type, value);
+            }
+            if let Operand::Literal(value) = left {
+                self.enum_literal(predicate, &right_type, value);
+            }
+            self.text_literal(predicate, left, op, right, &left_type);
+            self.text_literal(predicate, right, op, left, &right_type);
+            if let (Operand::Fact(left_path), Operand::Fact(right_path)) = (left, right) {
+                if compatible && op.needs_ordering() && left_type.instant != right_type.instant {
+                    let (instant, text) = if left_type.instant {
+                        (left_path, right_path)
+                    } else {
+                        (right_path, left_path)
+                    };
+                    self.checked.errors.push(error(
+                        self.owner,
+                        ValidationCode::TypeMismatch,
+                        Some(text),
+                        None,
+                        format!(
+                            "`{predicate}`: cannot order the Timestamp `{instant}` against \
+                             `{text}`, which is not a Timestamp; a Timestamp is ordered only \
+                             against another Timestamp or an RFC 3339 instant literal"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
     fn predicate(&mut self, predicate: &Predicate) {
         match predicate {
             Predicate::Always | Predicate::Never => {}
@@ -802,50 +885,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 }
             }
             Predicate::Not(inner) => self.predicate(inner),
-            Predicate::Compare { left, op, right } => {
-                let left_type = self.operand(left);
-                let right_type = self.operand(right);
-                if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
-                    let compatible = left_type.scalar.is_some()
-                        && left_type.scalar == right_type.scalar
-                        && (matches!(op, CompareOp::Eq | CompareOp::Ne)
-                            || left_type.scalar != Some(ScalarKind::Bool));
-                    if !compatible {
-                        self.mismatch(predicate, &op.to_string(), &left_type, Some(&right_type));
-                    }
-                    if let Operand::Literal(value) = right {
-                        self.enum_literal(predicate, &left_type, value);
-                    }
-                    if let Operand::Literal(value) = left {
-                        self.enum_literal(predicate, &right_type, value);
-                    }
-                    self.text_literal(predicate, left, *op, right, &left_type);
-                    self.text_literal(predicate, right, *op, left, &right_type);
-                    if let (Operand::Fact(left_path), Operand::Fact(right_path)) = (left, right) {
-                        if compatible
-                            && op.needs_ordering()
-                            && left_type.instant != right_type.instant
-                        {
-                            let (instant, text) = if left_type.instant {
-                                (left_path, right_path)
-                            } else {
-                                (right_path, left_path)
-                            };
-                            self.checked.errors.push(error(
-                                self.owner,
-                                ValidationCode::TypeMismatch,
-                                Some(text),
-                                None,
-                                format!(
-                                    "`{predicate}`: cannot order the Timestamp `{instant}` against \
-                                     `{text}`, which is not a Timestamp; a Timestamp is ordered only \
-                                     against another Timestamp or an RFC 3339 instant literal"
-                                ),
-                            ));
-                        }
-                    }
-                }
-            }
+            Predicate::Compare { left, op, right } => self.compare(predicate, left, *op, right),
             Predicate::Truthy(path) | Predicate::Defined(path) => {
                 if let Some(value) = self.operand(&Operand::Fact(path.clone())) {
                     if value.scalar.is_none() {
@@ -884,6 +924,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             scalar: Some(kind),
                             variants: None,
                             instant: false,
+                            duration: false,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }

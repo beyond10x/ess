@@ -16,7 +16,15 @@
 //!
 //! 1. **One base witness per command**, built from the declared input types alone. Every field is
 //!    filled, optionals included, so a guard reading one is decided rather than
-//!    [`Unknown`](crate::Reason::ValueAbsent).
+//!    [`Unknown`](crate::Reason::ValueAbsent). **The one exception is presence** (ess#93): for each
+//!    `Optional` member a guard tests with `defined(x)` — `exists(x)`, `x: {exists: …}` and
+//!    `not defined(x)` are the same test — one further candidate leaves that member out, so both
+//!    sides of the test have a witness. Where `x` is not itself optional, the member left out is
+//!    the deepest optional one `x` is read through. **Omitted means absent on the wire**: the key
+//!    is missing from its mapping, never present as `null`; the flattener binds nothing for either,
+//!    and absence is the one a runner can send without choosing an encoding for `null`. Omissions
+//!    vary slowest, after every candidate that fills them, and each is reserved inside rule 4's
+//!    bound so a guard with many varied leaves cannot crowd it out.
 //! 2. **A text witness is its own fact path.** `contact` carries `"contact"` and
 //!    `alternate_contact` carries `"alternate_contact"`, so two same-typed fields are never
 //!    interchangeable — which is the only way a swapped binding mapping is a detectable fault rather
@@ -24,8 +32,20 @@
 //! 3. **Alternatives come from the guard, not from imagination.** The values a candidate varies are
 //!    the fact paths the guard actually reads, and the values it tries are the literals the guard
 //!    itself writes, one either side. `amount.amount > 0` is met by `1` and refuted by `0`, and
-//!    neither number was invented.
-//! 4. **Bounded.** At most [`MAX_CANDIDATES`] inputs per outcome. Exhausting them is a refusal that
+//!    neither number was invented. **Text orders by its UTF-8 bytes** (ess#94), the same in the
+//!    Rust, Go and TypeScript evaluators, so `caller < "m"` is a boundary like any number's: an
+//!    ordered text is tried at the literal, at the literal with one byte appended, and at the
+//!    empty text. **A list a guard reads is tried with one element** (ess#94): the base keeps it
+//!    `[]`, one candidate carries a single element built at `<list>.0` like any other value, and a
+//!    quantifier's body is rebound onto that element — `exists t in tags: t == vip` reads
+//!    `tags.0 == vip` — so its literal is what the element is tried at. `[vip]` satisfies that
+//!    guard; `[]` and `[tags.0]`, the element's own path as every text witness is, refute it; and
+//!    `tags.count > 0` is decided by `[]` and `[tags.0]`, because the flattener publishes an input
+//!    list's `count` the way an observed collection publishes one. A list a guard reads **by
+//!    position** — `tags.0 == vip` — holds that many elements already in the base, because a read
+//!    that misses is `Unknown` and ends the search; the element is then varied like any leaf.
+//! 4. **Bounded.** At most [`MAX_CANDIDATES`] distinct inputs per outcome; a repeat — an element
+//!    varied while its list is empty — is skipped, not counted. Exhausting them is a refusal that
 //!    says how many were tried, never a longer search.
 //! 5. **A second instance is a second witness.** Rule 2 keeps two *fields* apart; [`Distinction`]
 //!    keeps two *instances* apart, by moving every leaf the walk records as far as its declared
@@ -36,7 +56,8 @@
 //!
 //! A type that refers to itself, and a field whose name cannot be spelled as a fact path. Both are
 //! [`WitnessGap`], and both are reported rather than worked around. Everything else in the model has
-//! a value: a list is `[]`, a map is `{}`, a union is its first variant in the encoding
+//! a value: a list is `[]` (one element where a guard reads into it, rule 3), a map is `{}`, a
+//! union is its first variant in the encoding
 //! `ess-gen` publishes, and an enum is its first declared variant.
 //!
 //! **A witness is only as good as the type it is built from.** `currency: String` with no invariant
@@ -188,7 +209,23 @@ pub fn candidates(
     guards: &[&Predicate],
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
-    let mut builder = Builder::new(ir, distinction);
+    // A quantifier's body reads its element through a binder. Rebound onto the element a one-
+    // element list carries — `t == vip` over `tags` becomes `tags.0 == vip` — it is an ordinary
+    // guard over an ordinary leaf, and rule 3 finds its literal like any other.
+    let mut expanded: Vec<Predicate> = guards.iter().map(|guard| (*guard).clone()).collect();
+    for guard in guards {
+        element_bodies(guard, &mut expanded);
+    }
+    let expanded: Vec<&Predicate> = expanded.iter().collect();
+
+    let mut builder = Builder::new(
+        ir,
+        distinction,
+        list_reads(&expanded),
+        // The guards as written, not the rebound quantifier bodies: `tags.0` in a body is the
+        // element a candidate may add, not a position the author read.
+        positional_reads(guards),
+    );
     let base = builder.input(command, &BTreeMap::new())?;
 
     // A newly admitted no-default partition uses exactly the domain that validation proved.
@@ -216,7 +253,7 @@ pub fn candidates(
                     let overrides = case
                         .values
                         .into_iter()
-                        .map(|(path, value)| (path, Node::Text(value)))
+                        .map(|(path, value)| (path, Choice::Value(Node::Text(value))))
                         .collect();
                     builder.input(command, &overrides)
                 })
@@ -225,30 +262,74 @@ pub fn candidates(
         }
     }
 
-    let mut ladders: Vec<(FactPath, Vec<Node>)> = Vec::new();
-    for path in read_paths(guards) {
+    let mut ladders: BTreeMap<FactPath, Vec<Choice>> = BTreeMap::new();
+    for path in read_paths(&expanded) {
         let Some((leaf, at_base)) = builder.leaves.get(&path) else {
-            // A path the guard reads and the input does not bind: a list, a map, the inside of a
-            // union, or a segment no type declares. No value this module chooses changes that, and
-            // `InputFacts::decide` is what names which of them it is.
+            // A path the guard reads and the input does not bind as a scalar: a list's count, a
+            // map, the inside of a union, or a segment no type declares. The list is varied below;
+            // no value this module chooses changes the rest, and `InputFacts::decide` is what
+            // names which of them it is.
             continue;
         };
         let alternatives = alternatives(
             leaf,
             at_base,
-            &literals_at(guards, &path),
-            ordered_at(guards, &path),
+            &literals_at(&expanded, &path),
+            ordered_at(&expanded, &path),
         );
         if !alternatives.is_empty() {
-            ladders.push((path, alternatives));
+            ladders.insert(path, alternatives.into_iter().map(Choice::Value).collect());
         }
     }
+    for path in &builder.lists {
+        ladders.insert(path.clone(), vec![Choice::OneElement]);
+    }
+    let mut ladders: Vec<(FactPath, Vec<Choice>)> = ladders.into_iter().collect();
+
+    // Omissions vary slowest, so every candidate that fills the optionals is tried before any
+    // that leaves one out: an omitted value makes a comparison that reads it `Unknown`, and an
+    // `Unknown` ends the search for its outcome.
+    let omitted = omissions(&expanded, &builder.optionals);
+    ladders.extend(
+        omitted
+            .iter()
+            .map(|path| (path.clone(), vec![Choice::Omit])),
+    );
+    // Rule 4 bounds the list of *distinct* candidates. An element's alternatives change nothing
+    // while its list is empty, so the enumeration produces the same input more than once, and a
+    // repeat is skipped rather than counted. Where the bound cuts the enumeration short, each
+    // omission's own candidate — every other value at its base — is reserved inside it, so a guard
+    // with many varied leaves cannot crowd the absent side of `defined(x)` out of it.
+    let inputs = enumerate(&mut builder, command, base, &ladders, &omitted)?;
+    Ok(admitted_inputs(ir, command, inputs))
+}
+
+/// The base, then the distinct candidates the ladders describe, then each omission alone — at most
+/// [`MAX_CANDIDATES`] in all.
+fn enumerate(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    base: BTreeMap<String, Node>,
+    ladders: &[(FactPath, Vec<Choice>)],
+    omitted: &[FactPath],
+) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    let total = product(ladders);
+    let reserved = if total <= MAX_CANDIDATES {
+        0
+    } else {
+        omitted.len()
+    };
+    let enumerated = MAX_CANDIDATES.saturating_sub(reserved).max(1);
 
     let mut inputs = vec![base];
-    for index in 1..combinations(&ladders) {
+    let mut index = 1;
+    while index < total
+        && inputs.len() < enumerated
+        && index < MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE)
+    {
         let mut overrides = BTreeMap::new();
         let mut remaining = index;
-        for (path, alternatives) in &ladders {
+        for (path, alternatives) in ladders {
             let radix = alternatives.len() + 1;
             let chosen = remaining % radix;
             remaining /= radix;
@@ -256,24 +337,61 @@ pub fn candidates(
                 overrides.insert(path.clone(), alternatives[chosen - 1].clone());
             }
         }
-        inputs.push(builder.input(command, &overrides)?);
+        let input = builder.input(command, &overrides)?;
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+        index += 1;
     }
-    Ok(admitted_inputs(ir, command, inputs))
+    for path in omitted {
+        if inputs.len() >= MAX_CANDIDATES {
+            break;
+        }
+        let input = builder.input(command, &BTreeMap::from([(path.clone(), Choice::Omit)]))?;
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
+    Ok(inputs)
+}
+
+/// How many positions of the enumeration are walked, per candidate the bound allows, before
+/// synthesis stops looking for distinct ones. Repeats are skipped, so without this a ladder whose
+/// alternatives are all repeats would be walked to its full product.
+const MAX_ENUMERATED_PER_CANDIDATE: usize = 16;
+
+/// What a candidate puts at one fact path in place of the base witness.
+#[derive(Debug, Clone, PartialEq)]
+enum Choice {
+    /// This value.
+    Value(Node),
+    /// Nothing: the `Optional` member at this path is left out of the input — absent from its
+    /// mapping, never present as `null`.
+    Omit,
+    /// A list of one element, built at `<path>.0` from the declared element type like any other
+    /// value, and varied there by the same ladders.
+    OneElement,
 }
 
 /// Filter only after building all bounded alternatives: an invalid base does not rule out later
 /// values. The caller counts exactly these admitted candidates when deciding outcome guards.
+///
+/// An `Optional` field a candidate leaves out is admitted as the absence it is.
 fn admitted_inputs(
     ir: &EssIr,
     command: &ResolvedCommand,
     mut inputs: Vec<BTreeMap<String, Node>>,
 ) -> Vec<BTreeMap<String, Node>> {
     inputs.retain(|input| {
-        command.input.iter().all(|field| {
-            input.get(&field.name).is_some_and(|value| {
-                crate::input::validate_typed_value(ir, &field.type_ref, value).is_ok()
+        command
+            .input
+            .iter()
+            .all(|field| match input.get(&field.name) {
+                Some(value) => {
+                    crate::input::validate_typed_value(ir, &field.type_ref, value).is_ok()
+                }
+                None => field.type_ref.is_optional(),
             })
-        })
     });
     inputs
 }
@@ -282,14 +400,18 @@ fn admitted_inputs(
 ///
 /// Each ladder has one more position than it has alternatives, because position zero is "leave the
 /// base value alone". The product is saturating: a command with many varied fields is bounded, not
-/// overflowed.
-fn combinations(ladders: &[(FactPath, Vec<Node>)]) -> usize {
-    ladders
-        .iter()
-        .fold(1usize, |total, (_, alternatives)| {
-            total.saturating_mul(alternatives.len() + 1)
-        })
-        .min(MAX_CANDIDATES)
+/// overflowed. Only a count now: the candidates enumerated skip repeats, so the list is at most
+/// this long.
+#[cfg(test)]
+fn combinations<T>(ladders: &[(FactPath, Vec<T>)]) -> usize {
+    product(ladders).min(MAX_CANDIDATES)
+}
+
+/// How many candidates the ladders describe, uncapped and saturating.
+fn product<T>(ladders: &[(FactPath, Vec<T>)]) -> usize {
+    ladders.iter().fold(1usize, |total, (_, alternatives)| {
+        total.saturating_mul(alternatives.len() + 1)
+    })
 }
 
 /// Every fact path the guards read, in path order.
@@ -299,6 +421,177 @@ fn read_paths(guards: &[&Predicate]) -> BTreeSet<FactPath> {
         .flat_map(|guard| guard.fact_paths())
         .cloned()
         .collect()
+}
+
+/// Every path a list could sit at for the guards to read into it: each proper prefix of a path
+/// they read, and each collection a quantifier walks.
+///
+/// Over-approximate on purpose. Only a prefix that lands on a declared `List` is expanded, so a
+/// prefix that names a struct costs nothing — and a list no guard reads is never expanded at all,
+/// which keeps a type that refers to itself through a list as finite as it was.
+fn list_reads(guards: &[&Predicate]) -> BTreeSet<FactPath> {
+    let mut found = BTreeSet::new();
+    for path in read_paths(guards) {
+        let segments = path.segments();
+        for end in 1..segments.len() {
+            found.insert(FactPath::from_segments(&segments[..end]));
+        }
+    }
+    for guard in guards {
+        for over in guard.quantified_collections() {
+            found.insert(over.clone());
+        }
+    }
+    found
+}
+
+/// How many elements a list must hold for the guards' reads of it by position to land: one more
+/// than the greatest ordinal read under it. `tags.0 == vip` needs one; `lines.2.quantity` three.
+///
+/// Keyed by every prefix followed by a numeric segment; only a prefix that is a declared `List`
+/// is ever looked up.
+fn positional_reads(guards: &[&Predicate]) -> BTreeMap<FactPath, usize> {
+    let mut found: BTreeMap<FactPath, usize> = BTreeMap::new();
+    for path in read_paths(guards) {
+        let segments = path.segments();
+        for end in 1..segments.len() {
+            if let Ok(ordinal) = segments[end].parse::<usize>() {
+                let needed = found
+                    .entry(FactPath::from_segments(&segments[..end]))
+                    .or_default();
+                *needed = (*needed).max(ordinal.saturating_add(1));
+            }
+        }
+    }
+    found
+}
+
+/// The `Optional` members the guards test for presence, one per `defined(x)`.
+///
+/// `x` itself where it is an optional member, and otherwise the deepest optional member it reaches
+/// through: leaving out `address` is the only way `defined(address.line2)` can be false when
+/// `line2` is required.
+fn omissions(guards: &[&Predicate], optionals: &BTreeSet<FactPath>) -> Vec<FactPath> {
+    fn walk(predicate: &Predicate, found: &mut Vec<FactPath>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Defined(path) => found.push(path.clone()),
+            _ => {}
+        }
+    }
+    let mut read = Vec::new();
+    for guard in guards {
+        walk(guard, &mut read);
+    }
+    let mut omitted = BTreeSet::new();
+    for path in read {
+        let segments = path.segments();
+        if let Some(member) = (1..=segments.len())
+            .rev()
+            .map(|end| FactPath::from_segments(&segments[..end]))
+            .find(|prefix| optionals.contains(prefix))
+        {
+            omitted.insert(member);
+        }
+    }
+    omitted.into_iter().collect()
+}
+
+/// Every quantifier body under `predicate`, rebound onto the first element of what it walks.
+///
+/// Nested quantifiers are rebound in turn, so `exists o in orders: exists l in o.lines: …` reaches
+/// `orders.0.lines.0`. A binder a nested quantifier shadows is left to that quantifier.
+fn element_bodies(predicate: &Predicate, found: &mut Vec<Predicate>) {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                element_bodies(child, found);
+            }
+        }
+        Predicate::Not(inner) => element_bodies(inner, found),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let body = rebind(
+                &quantified.body,
+                &quantified.bind,
+                &quantified.over.child("0"),
+            );
+            element_bodies(&body, found);
+            found.push(body);
+        }
+        _ => {}
+    }
+}
+
+/// `predicate` with every read rooted at `bind` moved under `prefix`.
+fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
+    let path = |path: &FactPath| {
+        if path.namespace() == bind {
+            let mut moved = prefix.clone();
+            for segment in &path.segments()[1..] {
+                moved = moved.child(segment);
+            }
+            moved
+        } else {
+            path.clone()
+        }
+    };
+    let operand = |operand: &Operand| match operand {
+        Operand::Fact(read) => Operand::Fact(path(read)),
+        Operand::Literal(value) => Operand::Literal(value.clone()),
+    };
+    match predicate {
+        Predicate::Always => Predicate::Always,
+        Predicate::Never => Predicate::Never,
+        Predicate::All(children) => Predicate::All(
+            children
+                .iter()
+                .map(|child| rebind(child, bind, prefix))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .iter()
+                .map(|child| rebind(child, bind, prefix))
+                .collect(),
+        ),
+        Predicate::Not(inner) => Predicate::Not(Box::new(rebind(inner, bind, prefix))),
+        Predicate::Compare { left, op, right } => Predicate::Compare {
+            left: operand(left),
+            op: *op,
+            right: operand(right),
+        },
+        Predicate::Truthy(read) => Predicate::Truthy(path(read)),
+        Predicate::Defined(read) => Predicate::Defined(path(read)),
+        Predicate::AnyOf { path: read, values } => Predicate::AnyOf {
+            path: path(read),
+            values: values.clone(),
+        },
+        Predicate::NoneOf { path: read, values } => Predicate::NoneOf {
+            path: path(read),
+            values: values.clone(),
+        },
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let inner = ess_primitives::predicate::Quantified {
+                over: path(&quantified.over),
+                bind: quantified.bind.clone(),
+                body: if quantified.bind == bind {
+                    quantified.body.clone()
+                } else {
+                    rebind(&quantified.body, bind, prefix)
+                },
+            };
+            if matches!(predicate, Predicate::Forall(_)) {
+                Predicate::Forall(Box::new(inner))
+            } else {
+                Predicate::Exists(Box::new(inner))
+            }
+        }
+    }
 }
 
 /// Every literal the guards compare `path` against, in the order they write them.
@@ -404,9 +697,20 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool)
         }
         Leaf::Bool => push(Node::Bool(!matches!(base, Node::Bool(true)))),
         Leaf::Text => {
-            for literal in literals {
-                if let Some(text) = literal.as_text() {
-                    push(Node::Text(text.to_owned()));
+            let texts: Vec<&str> = literals.iter().filter_map(FactValue::as_text).collect();
+            for text in &texts {
+                push(Node::Text((*text).to_owned()));
+            }
+            if ordered {
+                // Text orders by its bytes (ess#94), so a literal decides at a boundary like a
+                // number does: the literal itself, the literal with one byte appended — the
+                // nearest text above it that is still recognisably the guard's own — and the empty
+                // text, which is below every other.
+                for text in &texts {
+                    push(Node::Text(format!("{text}{TEXT_STEP}")));
+                }
+                if !texts.is_empty() {
+                    push(Node::Text(String::new()));
                 }
             }
         }
@@ -444,6 +748,13 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool)
     values
 }
 
+/// The most elements a base witness holds for a list read by position. A guard reading
+/// `tags.100000` is not met by building a hundred thousand elements; it is refused as undecidable.
+const MAX_POSITIONAL_ELEMENTS: usize = MAX_CANDIDATES;
+
+/// What an ordered text literal is extended by to make a text above it.
+const TEXT_STEP: char = 'a';
+
 /// The number every numeric witness starts at.
 const BASE_NUMBER: f64 = 1.0;
 
@@ -477,19 +788,44 @@ struct Builder<'ir> {
     ir: &'ir EssIr,
     /// Which instance the input is for.
     distinction: Distinction,
+    /// Every path at which a declared list is built with its element as well, so the element's
+    /// leaves are recorded and a [`Choice::OneElement`] has something to put there.
+    ///
+    /// Only the lists a guard reads. Expanding every list would walk into every element type, and
+    /// a type that refers to itself through a list — finite today because its list is empty —
+    /// would stop being witnessable.
+    expand: BTreeSet<FactPath>,
+    /// The lists a guard reads by position, with how many elements the base must hold for every
+    /// such read to land (ess#94). The base carries them, rather than a candidate: a read that
+    /// misses is `Unknown`, and an `Unknown` ends the search before a candidate is reached.
+    positional: BTreeMap<FactPath, usize>,
     /// Every scalar the input holds, by the fact path that reads it, with the base value it took.
     ///
     /// The value is kept beside the leaf because the ladder is built relative to it, and at a
     /// further [`Distinction`] the base is not the one this module's constants name.
     leaves: BTreeMap<FactPath, (Leaf, Node)>,
+    /// Every expanded path that holds a declared list.
+    lists: BTreeSet<FactPath>,
+    /// Every path that holds an `Optional` member of an input or of a struct, which a
+    /// [`Choice::Omit`] can leave out.
+    optionals: BTreeSet<FactPath>,
 }
 
 impl<'ir> Builder<'ir> {
-    fn new(ir: &'ir EssIr, distinction: Distinction) -> Self {
+    fn new(
+        ir: &'ir EssIr,
+        distinction: Distinction,
+        expand: BTreeSet<FactPath>,
+        positional: BTreeMap<FactPath, usize>,
+    ) -> Self {
         Self {
             ir,
             distinction,
+            expand,
+            positional,
             leaves: BTreeMap::new(),
+            lists: BTreeSet::new(),
+            optionals: BTreeSet::new(),
         }
     }
 
@@ -497,7 +833,7 @@ impl<'ir> Builder<'ir> {
     fn input(
         &mut self,
         command: &ResolvedCommand,
-        overrides: &BTreeMap<FactPath, Node>,
+        overrides: &BTreeMap<FactPath, Choice>,
     ) -> Result<BTreeMap<String, Node>, WitnessGap> {
         let mut input = BTreeMap::new();
         for field in &command.input {
@@ -506,10 +842,68 @@ impl<'ir> Builder<'ir> {
                 type_ref: field.type_ref.to_string(),
                 reason: "is named in a way no fact path can spell, so no guard could read it",
             })?;
-            let value = self.value(&field.type_ref, &path, overrides, 0, true)?;
-            input.insert(field.name.clone(), value);
+            if let Some(value) = self.member(&field.type_ref, &path, overrides, 0, true)? {
+                input.insert(field.name.clone(), value);
+            }
         }
         Ok(input)
+    }
+
+    /// One member of an input or a struct: its value, or `None` where a candidate leaves an
+    /// `Optional` member out.
+    fn member(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Result<Option<Node>, WitnessGap> {
+        if type_ref.is_optional() {
+            if record {
+                self.optionals.insert(path.clone());
+            }
+            if overrides.get(path) == Some(&Choice::Omit) {
+                return Ok(None);
+            }
+        }
+        self.value(type_ref, path, overrides, depth, record)
+            .map(Some)
+    }
+
+    /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3).
+    fn list(
+        &mut self,
+        of: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Result<Node, WitnessGap> {
+        if !record || !self.expand.contains(path) {
+            return Ok(Node::Seq(Vec::new()));
+        }
+        if let Some(&held) = self
+            .positional
+            .get(path)
+            .filter(|&&held| held <= MAX_POSITIONAL_ELEMENTS)
+        {
+            let mut elements = Vec::with_capacity(held);
+            for ordinal in 0..held {
+                let at = path.child(&ordinal.to_string());
+                elements.push(self.value(of, &at, overrides, depth + 1, record)?);
+            }
+            return Ok(Node::Seq(elements));
+        }
+        self.lists.insert(path.clone());
+        // Built even where the base keeps the list empty, so its leaves are recorded
+        // before any ladder is drawn.
+        let element = self.value(of, &path.child("0"), overrides, depth + 1, record)?;
+        Ok(if overrides.get(path) == Some(&Choice::OneElement) {
+            Node::Seq(vec![element])
+        } else {
+            Node::Seq(Vec::new())
+        })
     }
 
     /// One value of `type_ref`, at `path`.
@@ -520,7 +914,7 @@ impl<'ir> Builder<'ir> {
         &mut self,
         type_ref: &ResolvedTypeRef,
         path: &FactPath,
-        overrides: &BTreeMap<FactPath, Node>,
+        overrides: &BTreeMap<FactPath, Choice>,
         depth: usize,
         record: bool,
     ) -> Result<Node, WitnessGap> {
@@ -531,12 +925,16 @@ impl<'ir> Builder<'ir> {
                 reason: "refers to itself, so it has no finite value to send",
             });
         }
+        let chosen = |base: Node| match overrides.get(path) {
+            Some(Choice::Value(value)) => value.clone(),
+            _ => base,
+        };
         match type_ref {
             // Transparent, exactly as the flattener reads them: neither an optional nor a newtype
-            // has a segment of its own, so the path does not grow and an optional is filled rather
-            // than left out — an absent value is a guard nothing can decide.
+            // has a segment of its own, so the path does not grow. The base fills an optional;
+            // leaving one out is a candidate's choice, made by `member`.
             ResolvedTypeRef::Optional { of } => self.value(of, path, overrides, depth + 1, record),
-            ResolvedTypeRef::List { .. } => Ok(Node::Seq(Vec::new())),
+            ResolvedTypeRef::List { of } => self.list(of, path, overrides, depth, record),
             ResolvedTypeRef::Map { .. } => Ok(Node::Map(BTreeMap::new())),
             ResolvedTypeRef::Primitive { name } => {
                 if *name == Primitive::Binary64 {
@@ -547,7 +945,7 @@ impl<'ir> Builder<'ir> {
                     self.leaves
                         .insert(path.clone(), (Leaf::of_primitive(*name), base.clone()));
                 }
-                Ok(overrides.get(path).cloned().unwrap_or(base))
+                Ok(chosen(base))
             }
             ResolvedTypeRef::Declared { name } => {
                 // Read through the IR reference rather than through `self`, so what comes back
@@ -560,14 +958,14 @@ impl<'ir> Builder<'ir> {
                     ResolvedBody::Enum { variants } => {
                         // The variants cycle, so a closed set of two names distinguishes two
                         // instances and no more — which is the type's answer, not a shortfall here.
-                        let chosen = if variants.is_empty() {
+                        let variant = if variants.is_empty() {
                             String::new()
                         } else {
                             variants[self.distinction.get() % variants.len()]
                                 .name()
                                 .to_owned()
                         };
-                        let base = Node::Text(chosen);
+                        let base = Node::Text(variant);
                         if record {
                             self.leaves.insert(
                                 path.clone(),
@@ -582,7 +980,7 @@ impl<'ir> Builder<'ir> {
                                 ),
                             );
                         }
-                        Ok(overrides.get(path).cloned().unwrap_or(base))
+                        Ok(chosen(base))
                     }
                     ResolvedBody::Union { tag, variants } => {
                         let Some((label, variant)) = variants.iter().next() else {
@@ -598,9 +996,11 @@ impl<'ir> Builder<'ir> {
                         let mut value = BTreeMap::new();
                         for field in fields {
                             let child = path.child(&field.name);
-                            let inner =
-                                self.value(&field.type_ref, &child, overrides, depth + 1, record)?;
-                            value.insert(field.name.clone(), inner);
+                            if let Some(inner) =
+                                self.member(&field.type_ref, &child, overrides, depth + 1, record)?
+                            {
+                                value.insert(field.name.clone(), inner);
+                            }
                         }
                         Ok(Node::Map(value))
                     }
@@ -869,6 +1269,10 @@ mod tests {
             MAX_CANDIDATES,
             "4^40 must saturate rather than overflow or be enumerated"
         );
-        assert_eq!(combinations(&[]), 1, "one base witness and nothing else");
+        assert_eq!(
+            combinations::<Node>(&[]),
+            1,
+            "one base witness and nothing else"
+        );
     }
 }

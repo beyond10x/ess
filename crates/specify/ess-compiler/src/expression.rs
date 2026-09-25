@@ -29,6 +29,14 @@ impl TypeEnvironment for Environment<'_> {
             }
         )
     }
+    fn is_duration(&self, reference: &ResolvedTypeRef) -> bool {
+        matches!(
+            reference,
+            ResolvedTypeRef::Primitive {
+                name: ess_domain::Primitive::Duration
+            }
+        )
+    }
     fn is_clock_reading(&self, reference: &ResolvedTypeRef) -> bool {
         matches!(reference, ResolvedTypeRef::Declared { name } if self.ir.types().get(name.name()).is_some_and(|declared| declared.reading.is_some()))
     }

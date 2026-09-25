@@ -3086,7 +3086,7 @@ fn view_expectations(
     // other view of the same entity — so what each view holds cannot be settled one view at a time.
     let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
     for view in views {
-        match shows(view, state, settled, &bound(view, settled)) {
+        match shows(ir, view, state, settled, &bound(view, settled)) {
             Ok(admits) => decided.push((view, admits)),
             Err(unbound) => refusals.push(Refusal::about(
                 id,
@@ -3114,7 +3114,7 @@ fn view_expectations(
         // read only if the *caller's* parameter admits it. A row in another queue is a row this
         // query never asked for.
         let params = bound(view, settled);
-        while rows_shown(view, *admits_subject, &companions, &params) < RANKING_ROWS {
+        while rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
             let distinction = Distinction::further(companions.len() + 1);
             match arrange_beside(ir, &subject.entity, view, actors, distinction, &params) {
                 Ok(companion) => companions.push(companion),
@@ -3124,7 +3124,7 @@ fn view_expectations(
                         RefusalCause::OrderUnwitnessed {
                             view: name.clone(),
                             entity: EntityRef::from(&subject.entity),
-                            arranged: rows_shown(view, *admits_subject, &companions, &params),
+                            arranged: rows_shown(ir, view, *admits_subject, &companions, &params),
                             reason,
                         },
                     ));
@@ -3167,7 +3167,7 @@ fn view_expectations(
         //
         // Only from two, because one is what `Contains` above already says: a floor of one beside
         // it is a second spelling of one claim, and two spellings are two things that can disagree.
-        let rows = rows_shown(view, *admits_subject, &companions, &params);
+        let rows = rows_shown(ir, view, *admits_subject, &companions, &params);
         if rows >= RANKING_ROWS {
             require(
                 view,
@@ -3438,6 +3438,7 @@ fn require(
 /// reading [`shows`] makes everywhere else — an undecided filter is not a row, and counting one
 /// would be the invention §11 rules out.
 fn rows_shown(
+    ir: &EssIr,
     view: &ResolvedView,
     admits_subject: bool,
     companions: &[Arrangement],
@@ -3447,7 +3448,7 @@ fn rows_shown(
         + companions
             .iter()
             .filter(|companion| {
-                shows(view, &companion.state, &companion.settled, params) == Ok(true)
+                shows(ir, view, &companion.state, &companion.settled, params) == Ok(true)
             })
             .count()
 }
@@ -3470,7 +3471,7 @@ fn arrange_beside(
     let admitted: Vec<StateName> = lifecycle
         .states
         .iter()
-        .filter(|state| shows(view, state, &BTreeMap::new(), params) == Ok(true))
+        .filter(|state| shows(ir, view, state, &BTreeMap::new(), params) == Ok(true))
         .cloned()
         .collect();
     if admitted.is_empty() {
@@ -3575,6 +3576,7 @@ fn fact_value(node: &Node) -> Option<FactValue> {
 /// `Unknown` here means the filter reads something no scenario can know, and asserting either way
 /// would be the invention §11 rules out.
 fn shows(
+    ir: &EssIr,
     view: &ResolvedView,
     state: &StateName,
     settled: &BTreeMap<String, Determined>,
@@ -3583,7 +3585,7 @@ fn shows(
     let Some(filter) = &view.filter else {
         return Ok(true);
     };
-    let mut facts = FactStore::new();
+    let mut facts = crate::input::TypedFacts::new(ir, &view.fields, FactStore::new());
     let path = FactPath::new(EntitySpec::STATE)
         .unwrap_or_else(|error| panic!("`{}` is a fact path: {error}", EntitySpec::STATE));
     facts.set(path, FactValue::text(state.as_str()));
@@ -4483,7 +4485,7 @@ fn holds_at(
                 continue;
             };
             let params = bound(view, &run.settled);
-            if !matches!(shows(view, &state, &run.settled, &params), Ok(true)) {
+            if !matches!(shows(ir, view, &state, &run.settled, &params), Ok(true)) {
                 continue;
             }
 
@@ -4565,7 +4567,10 @@ fn witnesses_for<'a>(
         .iter()
         .filter(|view| {
             predicate_projectable(ir, &view.fields, &invariant.predicate)
-                && matches!(shows(view, state, settled, &bound(view, settled)), Ok(true))
+                && matches!(
+                    shows(ir, view, state, settled, &bound(view, settled)),
+                    Ok(true)
+                )
         })
         .copied()
         .collect()
