@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:review-boundaries-5-format-adversary-pass-2
 kind: review-result
 status: active
@@ -27,7 +27,7 @@ Nothing found in this second and final bounded documentation pass.
 
 Base `4b66aac7b608b1deee9de88942390d4a6c5ec745`; exact subject above remained unchanged. Read the complete four-file change, unit acceptance and AGENTS, original brief, prior review, correction report and frozen-Rust addendum. The four files are `docs/design/review-format-catalog.md`, `website/docs/reference/formats.md`, `website/docs/guides/track-change.md` and `website/sidebars.ts`.
 
-The requested Codex-cache 0.7.0 charter path was absent. The same installed 0.7.0 charter was found and read at `~/.claude/plugins/cache/beyond10x/aep-drive/0.7.0/agents/adversary.md`; the coordinator was informed. This is the file-backed documentation-only adaptation: there are no added test cases, suite counts or executable producer/readers to report. Existing read-only local helper programs were inspected before execution. No Cargo, AEP, network, Git mutation or source correction ran.
+The requested Codex-cache 0.7.0 charter path was absent. The same installed 0.7.0 charter was found and read at `home-path:sha256:6e6dab6e0ce68c342bf7ed2fe935555f5a43272004b495ee941cc0708c3ff55d`; the coordinator was informed. This is the file-backed documentation-only adaptation: there are no added test cases, suite counts or executable producer/readers to report. Existing read-only local helper programs were inspected before execution. No Cargo, AEP, network, Git mutation or source correction ran.
 
 New Rust source claims were read only from Git object `f9a7cf7fcca79448a34b2754adb12f1a411573bd`, not the independently reviewed Rust unit's evolving working files. The catalog does not assert universal compilation of every model. Separate model counterexamples reported by that unit's reviewer are not counted as catalog contradictions where the catalog explicitly bounds the claim.
 
@@ -59,15 +59,15 @@ The exact command arrays, raw combined outputs and exit codes are retained in th
 
 | Lane | Exact command argv | Exit |
 |---|---|---|
-| `diff` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "--no-pager", "diff", "4b66aac7b608b1deee9de88942390d4a6c5ec745..f2c81b8ed07a6b522bb97b1e6709a9f2d0a3be57"]}` | 0 |
-| `frozen-failure` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/failure.rs"]}` | 0 |
-| `frozen-facade` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/lib.rs"]}` | 0 |
-| `frozen-rust` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/rust/mod.rs"]}` | 0 |
-| `frozen-web` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/web/mod.rs"]}` | 0 |
-| `frozen-cli` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/edge/ess-cli/src/main.rs"]}` | 0 |
-| `frozen-design` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:docs/design/review-rust-target-feasibility.md"]}` | 0 |
-| `links` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["node", "target/review-boundaries-5/frozen-rust-documentation-check.mjs"]}` | 0 |
-| `fixtures` | `{"cwd": "~/.local/state/worktree/trees/b10x/ess/review-format-catalog", "argv": ["node", "target/review-boundaries-5/fixture-hashes-2.mjs"]}` | 0 |
+| `diff` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "--no-pager", "diff", "4b66aac7b608b1deee9de88942390d4a6c5ec745..f2c81b8ed07a6b522bb97b1e6709a9f2d0a3be57"]}` | 0 |
+| `frozen-failure` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/failure.rs"]}` | 0 |
+| `frozen-facade` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/lib.rs"]}` | 0 |
+| `frozen-rust` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/rust/mod.rs"]}` | 0 |
+| `frozen-web` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/generate/ess-synth/src/web/mod.rs"]}` | 0 |
+| `frozen-cli` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:crates/edge/ess-cli/src/main.rs"]}` | 0 |
+| `frozen-design` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["git", "show", "f9a7cf7fcca79448a34b2754adb12f1a411573bd:docs/design/review-rust-target-feasibility.md"]}` | 0 |
+| `links` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["node", "target/review-boundaries-5/frozen-rust-documentation-check.mjs"]}` | 0 |
+| `fixtures` | `{"cwd": "home-path:sha256:43bc16286cd0f13bc4ad94bd677673dd92f493838a06ab9533b10d414496dfa3", "argv": ["node", "target/review-boundaries-5/fixture-hashes-2.mjs"]}` | 0 |
 | `final-head` | `["git", "rev-parse", "HEAD"]` | 0 |
 | `final-status` | `["git", "status", "--short"]` | 0 |
 | `final-working-diff` | `["git", "--no-pager", "diff", "--stat"]` | 0 |

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:early-stop-assertion
 kind: story
 status: implemented
@@ -82,4 +82,4 @@ the run fail. There is no path on which a scan nobody stopped passes.
   position asserted of an unordered view.
 - The Rust runner and the emitted Go runner both execute the steps; a target that reports no scan is
   `unsupported` and the run fails; a target that produces the whole source is `failed`.
-- The sixty-seven scenarios in `sbf/specs/authored/` still compile with zero refusals.
+- The sixty-seven scenarios in `an adopting project's specs/authored/` still compile with zero refusals.

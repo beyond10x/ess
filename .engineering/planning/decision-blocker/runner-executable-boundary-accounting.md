@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: decision-blocker:runner-executable-boundary-accounting
 kind: decision-blocker
 status: cleared
@@ -26,4 +26,4 @@ Timo explicitly answered on2026-09-18: the proposed71 tuples are approved as Out
 
 Versioned structural authority, changed-shape reconciliation, old-reader/stale/extra-tuple controls and required downstream behavior obligations still apply. No baseline expansion, Supported/Refused substitution or qualification of the other594 runner claims is authorized. No accounting source or authority is changed by recording approval.
 
-New priority is explicit: after current M7/S9 stopping conditions, work proceeds through M1 administration review, M2 ER integration, M3 public writer control and M4a Eventlog rehearsal/cutover. Do not start this policy implementation or any new accounting lane before that critical path. Persisted operator record: ~/beyond10x/.ess-evolution/operator-decisions-20260918-critical-path.md.
+New priority is explicit: after current M7/S9 stopping conditions, work proceeds through M1 administration review, M2 ER integration, M3 public writer control and M4a Eventlog rehearsal/cutover. Do not start this policy implementation or any new accounting lane before that critical path. Persisted operator record: home-path:sha256:68cfd3d9859e1e56d7bfd953e7a44e85d8963f0c210fc837c9ca931c2c285d96

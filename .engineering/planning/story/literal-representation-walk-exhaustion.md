@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:literal-representation-walk-exhaustion
 kind: story
 status: implemented

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:authored-scenarios
 kind: story
 status: implemented
@@ -29,7 +29,7 @@ suite.
 
 ## Why the generator cannot cover it
 
-Synthesis says so itself. On the ACD model in `sbf/acd`, `ess synthesize` reports 73 capabilities —
+Synthesis says so itself. On the ACD model in `an adopting project`, `ess synthesize` reports 73 capabilities —
 54 generated, 16 obligations, **3 refused** — and one refusal reads:
 
 > the contract is declared; the algorithm is not
@@ -40,7 +40,7 @@ specification language should have an answer for and currently does not.
 
 ## The adopter this comes from
 
-`sbf/acd` and `acd/acd-rs` hold three behavioural oracles between them, none of them generated, all
+`an adopting project` and `acd/acd-rs` hold three behavioural oracles between them, none of them generated, all
 of them synced by hand:
 
 | oracle | Go | Rust | kept equal by |

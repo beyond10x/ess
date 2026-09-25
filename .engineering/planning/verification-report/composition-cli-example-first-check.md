@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:composition-cli-example-first-check
 kind: verification-report
 status: draft
@@ -45,7 +45,7 @@ website/docs/reference/cli.md's new Composition clients example writes target/co
 ```
 
 ```text
-error: inspecting output parent ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-9/composition-cli-example/output: No such file or directory (os error 2)
+error: inspecting output parent home-path:sha256:d87a0bf7a349366212e0b4a3210525142abb9e508b5bff4db02fcd7c2dd97101 No such file or directory (os error 2)
 ```
 
 ## Disposition

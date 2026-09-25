@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:cross-runtime-verdict-equivalence
 kind: story
 status: draft

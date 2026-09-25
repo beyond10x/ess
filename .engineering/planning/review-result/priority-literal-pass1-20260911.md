@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:priority-literal-pass1-20260911
 kind: review-result
 status: active

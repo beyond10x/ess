@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:adversary-wave23-unit2-pass-1
 kind: review-result
 status: active
@@ -40,7 +40,7 @@ Every predecessor the brief named — start of file, newline, CR, tab, space, `(
 `,`, `'`, `"`, backtick, `)`, `]`, `{`, `}`, `*`, `|`, `>`, `#`, `$`, `%`, `&`, `!`, `?`, `;`, NBSP,
 U+2026, an emoji, a combining mark, U+FFFD, a euro sign — all still collected. The `file://` and
 serialized-escape reasoning is correct and load-bearing: **4,528 real occurrences** in the planning
-journal depend on the `escaped` branch and all survive it. `~` is refused as a predecessor and `~/…`
+journal depend on the `escaped` branch and all survive it. `~` is refused as a predecessor and `home-path:sha256:b8b761895b57202fd4fda27490ddf4361180a61f87bbd87145a47c74df44f694`
 stays uncollected. Account names starting with a digit, `_`, `-`, `.`, `+`, `@`, Cyrillic, CJK,
 Devanagari, a Roman numeral, a circled letter, a superscript, a fullwidth letter: all collected
 whole. `ci_runner_labels` over the real `ci.yml` resolves `matrix.runner` correctly; a `runs-on:`

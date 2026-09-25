@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:execution-recovery-authority-pass2
 kind: review-result
 status: active
@@ -58,7 +58,7 @@ All hashes below cover complete bytes. `G` inputs were read from the frozen Git 
 | Input | Bytes | SHA256 | Read extent |
 |---|---:|---|---|
 | L `target/review-boundaries-14/preparation/execution-recovery-candidate-attack2-brief.md` | 4,664 | `91c8592cfe16b63f63aa9e740e47c5c13f864d6b81d94524973130ff0b6e82a0` | Full |
-| L `~/.codex/plugins/cache/beyond10x/aep-drive/0.8.0/agents/adversary.md` | 19,212 | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` | Full |
+| L `home-path:sha256:e82505babddc671cebf5b7f4c841d234b8ece153cba47dc082beaaf48b4a8210` | 19,212 | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` | Full |
 | L `C/report.md` | 43,739 | `1b0d0cbc32eef5957cb2ccb6d3435a46b3e388e03cd8d528727b28f8e8e93a0e` | Full, including superseded declarations |
 | L `C/addendum-v2.md` | 21,155 | `fac0c4de5bcd6483d935a09324193abdf33116eadb4f373943a62f5b4ae5a87f` | Full |
 | L `C/addendum-v3.md` | 9,150 | `845cac69786aecc40de6b4a8dc324c32bc147610087090760bd4f880ecfe9248` | Full |

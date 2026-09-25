@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-synthesized-suite-has-a-compact-form
 kind: story
 status: archived

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:service-contract-design-pass-1
 kind: review-result
 status: active
@@ -84,7 +84,7 @@ Read the fixed design, its minimal service-contract model, dependency policy, re
 facts, and the compiler/synthesis definitions and consumers needed to trace selection, relations,
 handles, capabilities, conversions, bindings, ordering, and canonical provenance. No tests, builds,
 services, SQL operations, database operations, or network operations were run. The sole outside write
-was `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-design-review-1.md`.
+was `home-path:sha256:6f73a084d6d3cb93fa387d2d7262f9a5469bc547c725a8c4c94ac6b700e9f13d`.
 
 ```findings
 - file: docs/design/ess-evolution/service-contract.md

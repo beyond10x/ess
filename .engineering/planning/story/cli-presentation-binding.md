@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:cli-presentation-binding
 kind: story
 status: implemented
@@ -110,7 +110,7 @@ Full gate 01 passed formatting and strict workspace Clippy, then exposed a stale
 must live outside Git. The command-tree test now accounts for 59 leaves, with the
 two new area-only CLI routes retaining no ambiguous flat alias. All 13 CLI binary
 unit tests pass. The observation production guard and test remain unchanged;
-TMPDIR is the task-owned ~/.local/tmp/connectors-cli-wave-20260909.
+TMPDIR is the task-owned home-path:sha256:edc52217c40159fce5e4c53100615914377c80c310c686ec88fc1c58b0ebae5a
 
 Full gate 02 passed those checks and all 39 native ownership/recovery tests, then
 stopped at three WASM linking cases because the coordinator's global native linker

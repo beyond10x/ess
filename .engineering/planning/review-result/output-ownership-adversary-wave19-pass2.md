@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:output-ownership-adversary-wave19-pass2
 kind: review-result
 status: active
@@ -26,23 +26,23 @@ Only `crates/edge/ess-cli/tests/output_ownership_adversary.rs` changed: 249 appe
 
 2. Added cases and their first actual executions
 
-The before count is the four completed cases in the corrected implementor's full CLI package, not a pre-attack suite run. That package report is ~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-wave19/target/review-output-ownership-wave19/native-correction-final-report.md, SHA256 7d5505f6343a35fc8b41e9bb8920a9efc815ad7f70843345fed9c5359130e026. Its complete retained package reports 391 passed across 45 targets; the new local target below supplies the 4→7 count. No historical package or transaction/admission cut matrix was rerun for this attack.
+The before count is the four completed cases in the corrected implementor's full CLI package, not a pre-attack suite run. That package report is home-path:sha256:352eab4f3b69b2f92c42cba03d2d0ac68566afaeb111964ef07babc59cf2e2b5, SHA256 7d5505f6343a35fc8b41e9bb8920a9efc815ad7f70843345fed9c5359130e026. Its complete retained package reports 391 passed across 45 targets; the new local target below supplies the 4→7 count. No historical package or transaction/admission cut matrix was rerun for this attack.
 
 The current AGENTS.md, full exact adversary charter and pass2 brief, active acceptance and complete selected ownership design were read. The review reused unchanged pass1 source/caller/test readings, then read the complete ownership correction, new native admission implementation, publication/adoption callers, added correction/admission tests and affected protocol/route assertions. The final implementor report's semantic sections and original runner summaries, native refusals and native branch outcomes supplied the prior-state context; its full raw historical streams remain at the exact pinned path. The full unit base is b7a0303bd4ca771a409449a0a2b7c59efaf5cffc; f004678 includes the separate already-main synthesis allocation change, which was not attacked as an output-ownership defect. The unchanged pass1 report is retained at target/review-output-ownership-adversary-wave19/report.md, SHA256 28ff2871068e9ddbcfda8bfca33a40d6968749959a6ad7b4e3814e0ffdd6ed8a. Its current AEP review-result body equals that original report byte-for-byte; only the coordinator wrote the AEP record.
 
-All commands ran in ~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19. All Cargo invocations used the same explicit environment below, their own default target, offline locked dependencies and one producer. There were two Rust jobs and two test threads. The existing Cargo configuration supplies one native lld flag; no duplicate flag was added.
+All commands ran in home-path:sha256:a9a0a230f026af01fdf47aad2666686d29c939a485f8f9067473b9151b678cf3 All Cargo invocations used the same explicit environment below, their own default target, offline locked dependencies and one producer. There were two Rust jobs and two test threads. The existing Cargo configuration supplies one native lld flag; no duplicate flag was added.
 
 ```text
-export PATH=~/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain/bin:$PATH
-export RUSTC=~/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain/bin/rustc
-export RUSTDOC=~/.cache/ess-review/2026-09-06-resume/wave19-retained-inputs/rust-toolchain/bin/rustdoc
+export PATH=home-path:sha256:418c6e8fbca36832a63cbfaa349fd6fa16762e298e4b00cbbbe25d0be2ce31c1
+export RUSTC=home-path:sha256:351401f084c5d8f5de81694851446b1fde345792813bda607822bf519db86fbd
+export RUSTDOC=home-path:sha256:ffe79f0612d54b2a8c6e052c51a28b2f674729d947e592c7832139597c6590d0
 export RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 for e19_flag in ${!CARGO_TARGET_@}; do
   case "$e19_flag" in *_RUSTFLAGS) unset "$e19_flag";; esac
 done
 export CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
-export TMPDIR=~/.cache/e19-adversary-tmp
+export TMPDIR=home-path:sha256:2da94aea5297cd04f430e98c24a8087790a4b3ebef6cba9f751df7531036a000
 ```
 
 - `interrupted_nested_admission_stays_opaque_through_cli_retirement`, test line 245: creates a real nested admission orphan by injecting an error immediately after its native mkdir. It checks every prior path/byte/mode, then drives actual compose regeneration, selected stale retirement and two explicit recoveries. Opaque nested state-like bytes survive, retired files disappear, and a later directory-to-file transition refuses without changing the settled snapshot. First and final outcomes green. The injected error is a callback error, not a measured process death; the old process-cut matrix remains separate. The added opaque bytes are deliberate fixture content, not claimed to have been written by the publisher.
@@ -62,21 +62,21 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-147772-0
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
+retained pass2 fixture: home-path:sha256:6f29e073ad924ff609909189d0394cf2b7858ad290e50d21259af9f6d0344db8
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled; 3 Rust client artifact(s) written to anchor/client
 
 stderr:
 
 nested admission interruption: Err(interrupt after creating the nested admission namespace)
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled; 3 Rust client artifact(s) written to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/final.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/final.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/final.json
 
@@ -92,7 +92,7 @@ stdout:
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 1
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 1
 stdout:
 
 stderr:
@@ -107,8 +107,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; fini
 stderr, verbatim:
 
 ```text
-   Compiling ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-synth)
-   Compiling ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/edge/ess-cli)
+   Compiling ess-synth v0.20.0 (home-path:sha256:01094cf26bc1cb96b26550aae32b4f45de113fff2c823bec9b8189d9e8d5d85e)
+   Compiling ess-cli v0.20.0 (home-path:sha256:08c13a55a65df8e41c60fefd209a5bd424473fd419a0dffb531e715a1a406ddc)
     Finished `test` profile [unoptimized] target(s) in 12.23s
      Running tests/output_ownership_adversary.rs (target/debug/deps/output_ownership_adversary-f917312615a5063e)
 ```
@@ -126,15 +126,15 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-151532-0
+retained pass2 fixture: home-path:sha256:1069f0906db664621037d194b602791324d727920c3e64211808afffbfda9a2d
 native transition pair "É.json"/"é.json": aliases=false
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/É.json; client plan written to anchor/é.json; 3 Rust client artifact(s) written to anchor/client
 
@@ -150,15 +150,15 @@ stdout:
 
 stderr:
 
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-151532-1
+retained pass2 fixture: home-path:sha256:4d2137e9281b578d09cd38d258c906e879a4d0c8dee1493b6f278ba01a903528
 native transition pair "é.json"/"e\u{301}.json": aliases=false
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/é.json", "--client-plan-out", "anchor/e\u{301}.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/é.json", "--client-plan-out", "anchor/e\u{301}.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/é.json; client plan written to anchor/é.json; 3 Rust client artifact(s) written to anchor/client
 
@@ -200,7 +200,7 @@ stdout, verbatim:
 ```text
 
 running 1 test
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-155291-0
+retained pass2 fixture: home-path:sha256:7b7654eae4629e7122e70e1a67128759dd0b4be54b03666b2cb88e0b69bb1013
 CLI ["schema", "typescript", "--schemas", "record.schema.json", "urn:record", "--root", "Record", "--out", "reference/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé.ts"]: status=exit status: 0
 stdout:
 wrote reference/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé.ts from record.schema.json
@@ -263,15 +263,15 @@ stdout, verbatim:
 ```text
 
 running 7 tests
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-0
-retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-160486-0
+retained pass2 fixture: home-path:sha256:2025ec0335f7f3f73472a893f4a6dcde6587d40b0fe12f2eec30cf087e4bd760
+retained fixture: home-path:sha256:68dbd0bfb603c7b58af185b483d85f4ba40ad598e8d7215bda1402de31e4fe48
 CLI ["schema", "typescript", "--schemas", "record.schema.json", "urn:record", "--root", "Record", "--out", "reference/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé.ts"]: status=exit status: 0
 stdout:
 wrote reference/éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé.ts from record.schema.json
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
@@ -293,7 +293,7 @@ stdout:
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled; 3 Rust client artifact(s) written to anchor/client
 
@@ -305,35 +305,35 @@ stdout:
 stderr:
 
 test composition_replaces_its_owned_companion_with_a_client_directory ... ok
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-1
+retained pass2 fixture: home-path:sha256:d3da6fa592ad3253afd376f7b59b1b7d2216e5b5e6448668031f57fea6fb658d
 CLI ["output", "recover", "--ownership-root", "anchor"]: status=exit status: 0
 stdout:
 
 stderr:
 
 test exact_native_file_adoption_in_an_enrolled_readonly_root_needs_no_probe_write ... ok
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-2
+retained pass2 fixture: home-path:sha256:f12c7cd4fe4c983ba31a0a92654e17f82a7984a9a15fa69a8dbf8d35e69c7b93
 native transition pair "É.json"/"é.json": aliases=false
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled; 3 Rust client artifact(s) written to anchor/client
 
 stderr:
 
 nested admission interruption: Err(interrupt after creating the nested admission namespace)
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled; 3 Rust client artifact(s) written to anchor/client
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/É.json; client plan written to anchor/é.json; 3 Rust client artifact(s) written to anchor/client
 
@@ -344,7 +344,7 @@ stdout:
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/final.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/final.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/final.json
 
@@ -355,7 +355,7 @@ stdout:
 
 stderr:
 
-retained pass2 fixture: ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-3
+retained pass2 fixture: home-path:sha256:ec6c1c1e602a4c6dbd515ae3f2f6e20c425fd6220b5aaf42eeeb36dee5c987f5
 native transition pair "é.json"/"e\u{301}.json": aliases=false
 CLI ["output", "recover", "--ownership-root", "anchor"]: status=exit status: 0
 stdout:
@@ -367,22 +367,22 @@ stdout:
 
 stderr:
 
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 1
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 1
 stdout:
 
 stderr:
 error: authored descendant blocks owned directory/file transition: client
 
 test interrupted_nested_admission_stays_opaque_through_cli_retirement ... ok
-retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-160486-1
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
+retained fixture: home-path:sha256:d8d168a0150804c63e89f27f105c745f68069030778250323f377252d432d1fc
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/client"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/client
 
 stderr:
 
 first installation interruption: Err(injected process-equivalent interruption after first install)
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/é.json", "--client-plan-out", "anchor/e\u{301}.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--client-rust-out", "anchor/client", "--out", "anchor/é.json", "--client-plan-out", "anchor/e\u{301}.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/é.json; client plan written to anchor/é.json; 3 Rust client artifact(s) written to anchor/client
 
@@ -399,7 +399,7 @@ stdout:
 stderr:
 
 test native_alias_refusal_preserves_the_owned_file_before_a_shape_transition ... ok
-retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-160486-2
+retained fixture: home-path:sha256:67c6995d12535de86d7326fa16842bf4674c15ae5b730a26ec6d7544541d0397
 CLI ["schema", "typescript", "--schemas", "record.schema.json", "urn:record", "--root", "Record", "--out", "out/record.ts/"]: status=exit status: 1
 stdout:
 
@@ -407,10 +407,10 @@ stderr:
 error: output must name a file, not a directory: out/record.ts/
 
 test standalone_generation_refuses_directory_spelling_before_enrollment ... ok
-retained fixture: ~/.cache/e19-adversary-tmp/e19-adversary-160486-3
+retained fixture: home-path:sha256:d1aecc576e81c53273ecd24a5b9167ba3ec196db2cbbd23a0a8d81b02060cbe8
 native É.json/é.json alias lookup: false
 test rollback_preserves_an_unselected_owner_and_actual_readonly_file_modes ... ok
-CLI ["compose", "--path", "~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml", "--service", "todo=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--service", "usage=~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/specify/ess-composition/tests/fixtures/two-components", "--ownership-root", "anchor", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
+CLI ["compose", "--path", "home-path:sha256:e9e4883795b8a84c719b9576de5be5a49d1584b66b051ec9e38f1a241ecebea0", "--service", "todo=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--service", "usage=home-path:sha256:947a342c29e3a64764aceeaaededb486f83d42cd41103aa0a29ebd4d83a6e9ba", "--ownership-root", "anchor", "--out", "anchor/É.json", "--client-plan-out", "anchor/é.json"]: status=exit status: 0
 stdout:
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to anchor/É.json; client plan written to anchor/é.json
 
@@ -445,8 +445,8 @@ stdout, verbatim:
 stderr, verbatim:
 
 ```text
-    Checking ess-synth v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/generate/ess-synth)
-    Checking ess-cli v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/crates/edge/ess-cli)
+    Checking ess-synth v0.20.0 (home-path:sha256:01094cf26bc1cb96b26550aae32b4f45de113fff2c823bec9b8189d9e8d5d85e)
+    Checking ess-cli v0.20.0 (home-path:sha256:08c13a55a65df8e41c60fefd209a5bd424473fd419a0dffb531e715a1a406ddc)
     Finished `dev` profile [unoptimized] target(s) in 2.86s
 ```
 
@@ -491,7 +491,7 @@ The local platform result does not establish the new aliases=true branch on macO
 
 Exact assigned brief SHA256 9ebc3077053681f22309f4d87278cdcf21c826fee29b7275571ee1a5263c0528; exact installed adversary0.8.1 charter SHA256 75bb7514688c3ba89f5788b6150e1ce35fedb42c85a85d717c4dc979c2e27910. The Worktree skill was applied in the already assigned managed checkout. Own lease is `ess-output-ownership-adversary-wave19-pass2`. Acquisition and heartbeats succeeded; only that lease is released at handoff, with actual output/status retained beside this report. Root owns integration, publication and eventual retirement.
 
-Retained scratch is ~/.local/state/worktree/trees/b10x/ess/ess-output-ownership-adversary-wave19/target/review-output-ownership-adversary-wave19-pass2. Focused archives avoid duplicating the historical full target, which pass1 already sealed:
+Retained scratch is home-path:sha256:cdc4a9034a4803f55f8203fdff4b07eb4d3a00ab62ea863aec8d4612664ba501 Focused archives avoid duplicating the historical full target, which pass1 already sealed:
 
 | Retained object | Scope | SHA256 |
 |---|---|---|
@@ -509,26 +509,26 @@ The compiler slot was returned immediately after the actual target/Clippy/fmt re
 
 6. Every outside write surface
 
-The assigned TMPDIR ~/.cache/e19-adversary-tmp also serves any ordinary native compiler temporary files. The 12 newly retained fixture roots are:
+The assigned TMPDIR home-path:sha256:2da94aea5297cd04f430e98c24a8087790a4b3ebef6cba9f751df7531036a000 also serves any ordinary native compiler temporary files. The 12 newly retained fixture roots are:
 
-- ~/.cache/e19-adversary-tmp/e19-adversary-160486-0
-- ~/.cache/e19-adversary-tmp/e19-adversary-160486-1
-- ~/.cache/e19-adversary-tmp/e19-adversary-160486-2
-- ~/.cache/e19-adversary-tmp/e19-adversary-160486-3
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-147772-0
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-151532-0
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-151532-1
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-155291-0
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-0
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-1
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-2
-- ~/.cache/e19-adversary-tmp/e19-adversary-pass2-160486-3
+- home-path:sha256:68dbd0bfb603c7b58af185b483d85f4ba40ad598e8d7215bda1402de31e4fe48
+- home-path:sha256:d8d168a0150804c63e89f27f105c745f68069030778250323f377252d432d1fc
+- home-path:sha256:67c6995d12535de86d7326fa16842bf4674c15ae5b730a26ec6d7544541d0397
+- home-path:sha256:d1aecc576e81c53273ecd24a5b9167ba3ec196db2cbbd23a0a8d81b02060cbe8
+- home-path:sha256:6f29e073ad924ff609909189d0394cf2b7858ad290e50d21259af9f6d0344db8
+- home-path:sha256:1069f0906db664621037d194b602791324d727920c3e64211808afffbfda9a2d
+- home-path:sha256:4d2137e9281b578d09cd38d258c906e879a4d0c8dee1493b6f278ba01a903528
+- home-path:sha256:7b7654eae4629e7122e70e1a67128759dd0b4be54b03666b2cb88e0b69bb1013
+- home-path:sha256:2025ec0335f7f3f73472a893f4a6dcde6587d40b0fe12f2eec30cf087e4bd760
+- home-path:sha256:d3da6fa592ad3253afd376f7b59b1b7d2216e5b5e6448668031f57fea6fb658d
+- home-path:sha256:f12c7cd4fe4c983ba31a0a92654e17f82a7984a9a15fa69a8dbf8d35e69c7b93
+- home-path:sha256:ec6c1c1e602a4c6dbd515ae3f2f6e20c425fd6220b5aaf42eeeb36dee5c987f5
 
 These are distinct from the eight retained pass1 fixtures, which were not changed. The fixture archive includes all new descendants, including native Unicode names, opaque admission bytes, modes and settled state.
 
-Ordinary shared Cargo bookkeeping uses ~/.cargo/.global-cache, ~/.cargo/.package-cache and ~/.cargo/.package-cache-mutate. The existing lock files were used and retained. These are shared tool paths, not disposable outputs owned by this attack. No dependency was installed or removed.
+Ordinary shared Cargo bookkeeping uses home-path:sha256:8aee2fa6471d9cc82d7abbceaa38d5c76572ff8fb9553e64549bdeafc1128317, home-path:sha256:77535936a72db5ed4d12ff3cdf1701bd73b15124796680b692131aa42f95c2c8 and home-path:sha256:1730a016183cbbcb50d64e2f4333b96fb9d188953444a5495057078ce50af7c6 The existing lock files were used and retained. These are shared tool paths, not disposable outputs owned by this attack. No dependency was installed or removed.
 
-The own session hook updates ~/.local/state/worktree/registry.sqlite3 and may use manager-owned ~/.local/state/worktree/registry.sqlite3-wal and ~/.local/state/worktree/registry.sqlite3-shm. The two sidecars were absent at the final inspected bookkeeping census. Only the named own lease was acquired, renewed and released. No other session, worktree lifecycle, Git index/ref or shared planning record was changed.
+The own session hook updates home-path:sha256:4e6427430bd5ae6f4b6ed99313c321c933a044122ab45412f907cd91f6a1aab0 and may use manager-owned home-path:sha256:4b647ead2d580e7b17e0346cfad7a5c8b9e5a2e7199f350d52dce27f20aec599 and home-path:sha256:8f879cd5a21515117601fb4cdf8e2a4f0eb1611c166ee8ab83551053a343a683 The two sidecars were absent at the final inspected bookkeeping census. Only the named own lease was acquired, renewed and released. No other session, worktree lifecycle, Git index/ref or shared planning record was changed.
 
 All source patches, logs, input pins and archives are in the assigned scratch. No /tmp, tmpfs, Atlas/Website, network integration, unassigned scratch, implementation or cleanup write was made.
 

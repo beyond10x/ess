@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:enum-variant-in-an-entity-invariant
 kind: story
 status: implemented

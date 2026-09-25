@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:review-boundaries-2-diagnostic-adversary-pass-1
 kind: review-result
 status: active
@@ -43,7 +43,7 @@ Command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/scc
 Exit status: 0.
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (home-path:sha256:f6806a0107530fa7bc7b5e105676ddafce8cc2538daf814ca6a916400d8f91bd)
     Finished `test` profile [unoptimized] target(s) in 0.19s
      Running tests/secret_boundary.rs (target/debug/deps/secret_boundary-9f7580c6900df241)
 
@@ -95,7 +95,7 @@ Command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=/usr/bin/scc
 Exit status: 0.
 
 ```text
-   Compiling ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+   Compiling ess-kubernetes v0.18.0 (home-path:sha256:f6806a0107530fa7bc7b5e105676ddafce8cc2538daf814ca6a916400d8f91bd)
     Finished `test` profile [unoptimized] target(s) in 0.21s
      Running unittests src/lib.rs (target/debug/deps/ess_kubernetes-5f388cf73a35bac9)
 
@@ -148,7 +148,7 @@ Strict lint command: env TMPDIR="$PWD/target/review-boundaries-2" RUSTC_WRAPPER=
 Exit status: 0.
 
 ```text
-    Checking ess-kubernetes v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/crates/infra/ess-kubernetes)
+    Checking ess-kubernetes v0.18.0 (home-path:sha256:f6806a0107530fa7bc7b5e105676ddafce8cc2538daf814ca6a916400d8f91bd)
     Finished `dev` profile [unoptimized] target(s) in 0.15s
 ```
 
@@ -172,7 +172,7 @@ Nothing found.
 
 Outside the assigned worktree: none. Deliberate source writes are exactly the two test paths in the leading diff.
 
-Assigned scratch: ~/.local/state/worktree/trees/b10x/ess/review-kubectl-diagnostic-sanitization/target/review-boundaries-2/. Retained files are adversary-case-1.log, adversary-case-2.log, adversary-case-3.log, adversary-suite.log, adversary-fmt.log, adversary-clippy.log, adversary-tests.patch and adversary-pass-1.md. The existing test fixture_root helper also retains its generated Rust fake binaries, synthetic invocation logs and observation fixtures beneath this worktree's Cargo target temporary directory, as it did for the implementation's tests. No external target directory was selected.
+Assigned scratch: home-path:sha256:a37e5aa63835af999eb3a8f3699078970fbeb6364acd57c090dd6a4b81a74f3e Retained files are adversary-case-1.log, adversary-case-2.log, adversary-case-3.log, adversary-suite.log, adversary-fmt.log, adversary-clippy.log, adversary-tests.patch and adversary-pass-1.md. The existing test fixture_root helper also retains its generated Rust fake binaries, synthetic invocation logs and observation fixtures beneath this worktree's Cargo target temporary directory, as it did for the implementation's tests. No external target directory was selected.
 
 ```findings
 []

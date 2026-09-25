@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:review-boundaries-5-rust-adversary-pass-1
 kind: review-result
 status: active
@@ -68,7 +68,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -84,34 +84,34 @@ exit "$adversary_status"
 Raw output:
 
 ````text
-   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (home-path:sha256:239d32e5be75a88d4919c325db18fc02b20e55f8abe491e15cc1da04b028a690)
     Finished `test` profile [unoptimized] target(s) in 1.72s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:07867ad9a726096942cfb141e3b35390afae92e8695832dbcbdca463427e8a06" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:07867ad9a726096942cfb141e3b35390afae92e8695832dbcbdca463427e8a06" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo/crates/demo-types)
-    Checking json v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo/crates/json)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (home-path:sha256:de80222d61d4cd43ffbe8e0c90a6309e738e0cf84eb477791017c33b3b8b6d66)
+    Checking json v1.0.0 (home-path:sha256:ae3df8c21a2ffd93505592fc4b7434dc2e480f23a7f63271ed4d9eb8016d1d07)
+    Checking demo-system v1.0.0 (home-path:sha256:3a547f4800ec00d1e6e94d2f2c18cd9b61888e63e2fe65aff06918a1cd0132b2)
     Finished `dev` profile [unoptimized] target(s) in 0.32s
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:c6e5fbc0e06e9fcc663b997e9127d27196711a74136f869c5f247ef053283709" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
      Locking 3 packages to latest compatible versions
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "home-path:sha256:c6e5fbc0e06e9fcc663b997e9127d27196711a74136f869c5f247ef053283709" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo/crates/demo-types)
-    Checking json v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo/crates/json)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/rust/demo/crates/demo-system)
-    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (home-path:sha256:de80222d61d4cd43ffbe8e0c90a6309e738e0cf84eb477791017c33b3b8b6d66)
+    Checking json v1.0.0 (home-path:sha256:ae3df8c21a2ffd93505592fc4b7434dc2e480f23a7f63271ed4d9eb8016d1d07)
+    Checking demo-system v1.0.0 (home-path:sha256:3a547f4800ec00d1e6e94d2f2c18cd9b61888e63e2fe65aff06918a1cd0132b2)
+    Checking demo-web v1.0.0 (home-path:sha256:fecc151429d93d1c14a2241c308eb0e55aacf2e34c78d064296935646624fd9e)
 error[E0433]: cannot find `Json` in `json`
    --> crates/demo-web/src/lib.rs:271:45
     |
@@ -126,7 +126,7 @@ error: could not compile `demo-web` (lib test) due to 1 previous error
 exit status: 101
 
 thread 'web_component_dependency_cannot_be_hidden_by_the_json_module' (2805221) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2805220-0/generated/web/demo
+admitted generated workspace failed its actual compiler: home-path:sha256:c6e5fbc0e06e9fcc663b997e9127d27196711a74136f869c5f247ef053283709
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test web_component_dependency_cannot_be_hidden_by_the_json_module ... FAILED
 
@@ -149,7 +149,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -168,29 +168,29 @@ Raw output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:2c7ab96350bbd089e0e05f7ebcd5f303074a1f37ed272be984c4352e0648738b" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:2c7ab96350bbd089e0e05f7ebcd5f303074a1f37ed272be984c4352e0648738b" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo/crates/demo-types)
-    Checking core v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo/crates/core)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (home-path:sha256:41f7164eb97cc4aad6b8f3e3d2b9f0059022c437d1aac984a7056f942c12fd16)
+    Checking core v1.0.0 (home-path:sha256:14024ae747ca9e8262f20b78bfdad6e745edb0aa2c475682c7297bfe7ca8e145)
+    Checking demo-system v1.0.0 (home-path:sha256:b4f8c171a520d3407060e390054eaa6cf861ef98537be4ad3ab9a3db0e12500a)
     Finished `dev` profile [unoptimized] target(s) in 0.32s
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:e4e34b6d78dad32a5cde41e088934fac56814054e0b036994d25733a6de77730" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
      Locking 3 packages to latest compatible versions
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "home-path:sha256:e4e34b6d78dad32a5cde41e088934fac56814054e0b036994d25733a6de77730" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo/crates/demo-types)
-    Checking core v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo/crates/core)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/rust/demo/crates/demo-system)
-    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2807191-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (home-path:sha256:41f7164eb97cc4aad6b8f3e3d2b9f0059022c437d1aac984a7056f942c12fd16)
+    Checking core v1.0.0 (home-path:sha256:14024ae747ca9e8262f20b78bfdad6e745edb0aa2c475682c7297bfe7ca8e145)
+    Checking demo-system v1.0.0 (home-path:sha256:b4f8c171a520d3407060e390054eaa6cf861ef98537be4ad3ab9a3db0e12500a)
+    Checking demo-web v1.0.0 (home-path:sha256:73821689ec5c230c8b79abe58e685c5ce39882c66661ab93d6306ade004a19e1)
     Finished `dev` profile [unoptimized] target(s) in 0.42s
 
 exit status: 0
@@ -209,7 +209,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -228,16 +228,16 @@ Raw output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:c2d7c652061505c80e946bda884e70c831aba38ec444cf23a8c76412933a3322" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:c2d7c652061505c80e946bda884e70c831aba38ec444cf23a8c76412933a3322" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0/crates/demo-types)
-    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0/crates/worker)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0/crates/demo-system)
-    Checking demo-server v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0/crates/demo-server)
+    Checking demo-types v1.0.0 (home-path:sha256:17afeefa0222f19379a1f2d434d88702234947d8724e97e8375384c80396c626)
+    Checking worker v1.0.0 (home-path:sha256:b559d461517e889d6aa3b23377a4cdb93f4259370ded7df86d70b34e6e46181f)
+    Checking demo-system v1.0.0 (home-path:sha256:d705e3e750ea4b1f75fe51614ef36868db6fa8d70827c47100de083764e28e46)
+    Checking demo-server v1.0.0 (home-path:sha256:d8a84a0d9e5a9b9fc912b25a6b97c9f347fe375c7f81724f480c83f892310ab7)
 error[E0308]: mismatched types
    --> crates/demo-server/src/wire.rs:41:26
     |
@@ -383,7 +383,7 @@ error: could not compile `demo-server` (lib) due to 11 previous errors
 exit status: 101
 
 thread 'outcome_event_binding_cannot_capture_the_codec_output_buffer' (2807489) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-2807488-0
+admitted generated workspace failed its actual compiler: home-path:sha256:c2d7c652061505c80e946bda884e70c831aba38ec444cf23a8c76412933a3322
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test outcome_event_binding_cannot_capture_the_codec_output_buffer ... FAILED
 
@@ -406,7 +406,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -425,15 +425,15 @@ Raw output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-pure-rust-2807717-0" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:57a9a1c85313058d14385757c860e682055e7e7b12ea68a6fe568ec663fec873" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-pure-rust-2807717-0" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:57a9a1c85313058d14385757c860e682055e7e7b12ea68a6fe568ec663fec873" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-pure-rust-2807717-0/crates/demo-types)
-    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-pure-rust-2807717-0/crates/worker)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-pure-rust-2807717-0/crates/demo-system)
+    Checking demo-types v1.0.0 (home-path:sha256:d5404d6d802d12c56359bb517b2fb2ed8c8b93c35c0e1464bc9018fe3979cff4)
+    Checking worker v1.0.0 (home-path:sha256:8d1417f69270904853f594f9abb1c5ea5bde2079c7b5e498eda2aafa0a4ae9e2)
+    Checking demo-system v1.0.0 (home-path:sha256:fd1879fe265f22c154043b37f86a8d5e0ca9f816d34ddd67460b1f6a77399588)
     Finished `dev` profile [unoptimized] target(s) in 0.32s
 
 exit status: 0
@@ -452,7 +452,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -486,7 +486,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -501,12 +501,12 @@ exit "$adversary_status"
 Raw output:
 
 ````text
-   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (home-path:sha256:6afa28e3488be9bc646fbcb90728cab52f279a78dcb9175d9b317a419b53a9d1)
     Finished `test` profile [unoptimized] target(s) in 0.18s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-8390c22bcf99a72e)
 
 running 1 test
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2819407-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2819407-0/absent"
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "rust" "--format" "json" "--path" "home-path:sha256:05072ae3d2c083e71d58ac326c80a6cf5e78c3d4475f84ede68a6772378789e1" "--out" "home-path:sha256:987dd3913b9ca07a69cc5598fb823fc03589d47debf0ba0868fddf10411bbc5a"
 {
   "Cargo.toml": {
     "path": "Cargo.toml",
@@ -652,7 +652,7 @@ running 1 test
 
 
 exit status: 0
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2819407-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2819407-0/existing"
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "rust" "--format" "json" "--path" "home-path:sha256:05072ae3d2c083e71d58ac326c80a6cf5e78c3d4475f84ede68a6772378789e1" "--out" "home-path:sha256:5242fbeab76b45bacacc9d7f21a902a46088bb333802e04de5634477be19c152"
 {
   "Cargo.toml": {
     "path": "Cargo.toml",
@@ -829,7 +829,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -848,7 +848,7 @@ Raw output:
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-8390c22bcf99a72e)
 
 running 1 test
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2819502-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2819502-0/absent"
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "web" "--format" "json" "--path" "home-path:sha256:3e7de01e41a1a42c8f101ca0cdcf61d3e4b2560216c98f4afffc3ce06629a699" "--out" "home-path:sha256:c5f337b7160b952b8480788714990ec149142621bdc874c78a19460f72fc54f9"
 {
   "Cargo.toml": {
     "path": "Cargo.toml",
@@ -952,7 +952,7 @@ running 1 test
 
 
 exit status: 0
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2819502-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2819502-0/existing"
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "web" "--format" "json" "--path" "home-path:sha256:3e7de01e41a1a42c8f101ca0cdcf61d3e4b2560216c98f4afffc3ce06629a699" "--out" "home-path:sha256:5f1bd0cd149e9a962c210f30c79d9c49fce6ac162eb8f1a9b88c82c8a3d22363"
 {
   "Cargo.toml": {
     "path": "Cargo.toml",
@@ -1087,7 +1087,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -1102,34 +1102,34 @@ exit "$adversary_status"
 Raw output:
 
 ````text
-   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
+   Compiling ess-synth v0.18.0 (home-path:sha256:239d32e5be75a88d4919c325db18fc02b20e55f8abe491e15cc1da04b028a690)
     Finished `test` profile [unoptimized] target(s) in 0.29s
      Running tests/feasibility_adversary.rs (target/debug/deps/feasibility_adversary-7a8cc9f9c85b11d8)
 
 running 1 test
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:b13d02a6961dbbc00b669580ca294a4d8cd133b9d1f264589e7bb83c72be8291" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:b13d02a6961dbbc00b669580ca294a4d8cd133b9d1f264589e7bb83c72be8291" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo/crates/demo-types)
-    Checking core v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo/crates/core)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (home-path:sha256:01a4be90d71dcb39c80e5f14c31dd630d886e1080d1ceaf6868744a462d09e29)
+    Checking core v1.0.0 (home-path:sha256:0dd8b152175d4af750006273caa875bd7a63fa00ff5d0e87b24134655977d0c2)
+    Checking demo-system v1.0.0 (home-path:sha256:4a2bf611ff8682ed932b464aa099549b09938d0874cedf6dbc22dd98123716c1)
     Finished `dev` profile [unoptimized] target(s) in 0.33s
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:ec43934a1472508e8ee06321f6594f9c3bf1ec609f91121b750215429e69dd48" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
      Locking 3 packages to latest compatible versions
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "home-path:sha256:ec43934a1472508e8ee06321f6594f9c3bf1ec609f91121b750215429e69dd48" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo/crates/demo-types)
-    Checking core v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo/crates/core)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/rust/demo/crates/demo-system)
-    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/core-2827369-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (home-path:sha256:01a4be90d71dcb39c80e5f14c31dd630d886e1080d1ceaf6868744a462d09e29)
+    Checking core v1.0.0 (home-path:sha256:0dd8b152175d4af750006273caa875bd7a63fa00ff5d0e87b24134655977d0c2)
+    Checking demo-system v1.0.0 (home-path:sha256:4a2bf611ff8682ed932b464aa099549b09938d0874cedf6dbc22dd98123716c1)
+    Checking demo-web v1.0.0 (home-path:sha256:aefae5d24792310d24dfa8c2954593e1e78941b3058d7ae587a261eddf9cc3d8)
     Finished `dev` profile [unoptimized] target(s) in 0.39s
 
 exit status: 0
@@ -1159,7 +1159,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -1176,8 +1176,8 @@ exit "$adversary_status"
 Raw output:
 
 ````text
-   Compiling ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
-   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
+   Compiling ess-synth v0.18.0 (home-path:sha256:239d32e5be75a88d4919c325db18fc02b20e55f8abe491e15cc1da04b028a690)
+   Compiling ess-cli v0.18.0 (home-path:sha256:6afa28e3488be9bc646fbcb90728cab52f279a78dcb9175d9b317a419b53a9d1)
     Finished `test` profile [unoptimized] target(s) in 0.31s
      Running unittests src/main.rs (target/debug/deps/ess-2a340c79ed142cb3)
 
@@ -1226,10 +1226,10 @@ test http_codec_local_collision_is_refused_before_cli_output ... FAILED
 failures:
 
 ---- web_dependency_module_collision_is_refused_before_cli_output stdout ----
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2830269-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2830269-0/absent"
-exit status: 0; stdout 87441 bytes, stderr 0 bytes; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2830269-0/absent.stdout and .stderr
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "web" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2830269-0/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2830269-0/existing"
-exit status: 0; stdout 87441 bytes, stderr 0 bytes; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/web-2830269-0/existing.stdout and .stderr
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "web" "--format" "json" "--path" "home-path:sha256:930256313fd690d9f4aca3cc77b18da64291bb0aa8a2bbb482afd17c8bf55b6c" "--out" "home-path:sha256:18ae1bb60991bcf3e5fa9aadc2cc7c91479b4842fd124b2a2c353067adfa1537"
+exit status: 0; stdout 87441 bytes, stderr 0 bytes; complete streams: home-path:sha256:4964abf5dacaf4e2fd733e49d9725d3348c81d3ac7bb7b11f2b057c77ddc077a and .stderr
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "web" "--format" "json" "--path" "home-path:sha256:930256313fd690d9f4aca3cc77b18da64291bb0aa8a2bbb482afd17c8bf55b6c" "--out" "home-path:sha256:be860fd7ca14dc7d4ff35119bea9a08b6dc3fe8ec2adbded6230c13a89442df9"
+exit status: 0; stdout 87441 bytes, stderr 0 bytes; complete streams: home-path:sha256:7b3a09e793b3da9d7f03fa4bd527ba9df4737b6da71e4b04b776524885c6a42e and .stderr
 
 thread 'web_dependency_module_collision_is_refused_before_cli_output' (2830271) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:96:5:
 compiler-invalid target reached successful CLI output:
@@ -1242,10 +1242,10 @@ existing: output root now has 11 entries
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- http_codec_local_collision_is_refused_before_cli_output stdout ----
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2830269-1/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2830269-1/absent"
-exit status: 0; stdout 69083 bytes, stderr 0 bytes; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2830269-1/absent.stdout and .stderr
-"~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/debug/ess" "synthesize" "--target" "rust" "--format" "json" "--path" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2830269-1/spec" "--out" "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2830269-1/existing"
-exit status: 0; stdout 69083 bytes, stderr 0 bytes; complete streams: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli/../../../target/review-boundaries-5/adversary-cli/rust-2830269-1/existing.stdout and .stderr
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "rust" "--format" "json" "--path" "home-path:sha256:14810a0f64c83ce4b9ff4c52d109b845335486215af58bd1a2224877ea4b34e8" "--out" "home-path:sha256:53565846654a170a67ca1540e6e59ada3718a5138a26422da49b2f4f8deb87dd"
+exit status: 0; stdout 69083 bytes, stderr 0 bytes; complete streams: home-path:sha256:475f33f381fd7274bbb5c3cedd30930c9f0f851713c1fed0baca000debe7a73d and .stderr
+"home-path:sha256:f076f7658e851d3ac19f4cd7ebffde059746dbaee3fbcd3d7640170efb13896b" "synthesize" "--target" "rust" "--format" "json" "--path" "home-path:sha256:14810a0f64c83ce4b9ff4c52d109b845335486215af58bd1a2224877ea4b34e8" "--out" "home-path:sha256:8238546d3bf484cf9733597816d980202a2a96a6675d1e8f629d752c5a8c8451"
+exit status: 0; stdout 69083 bytes, stderr 0 bytes; complete streams: home-path:sha256:3179ca5c7fc1240ee0ddacda656dc9dc644c2d8ec56d1cba0bf2f12c4a84b8c7 and .stderr
 
 thread 'http_codec_local_collision_is_refused_before_cli_output' (2830270) panicked at crates/edge/ess-cli/tests/feasibility_adversary.rs:96:5:
 compiler-invalid target reached successful CLI output:
@@ -1400,18 +1400,18 @@ test web_component_dependency_cannot_capture_core_used_by_json_errors ... ok
 failures:
 
 ---- outcome_event_binding_cannot_capture_the_codec_output_buffer stdout ----
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:191aa47e510cc12bb8ff88a1f984b6bc26f4e2168a88dd559565cb80a0dbe23a" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:191aa47e510cc12bb8ff88a1f984b6bc26f4e2168a88dd559565cb80a0dbe23a" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3/crates/demo-types)
-    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3/crates/worker)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3/crates/demo-system)
-    Checking demo-server v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3/crates/demo-server)
+    Checking demo-types v1.0.0 (home-path:sha256:0a33ba52c0bd05ae03b7374a258d84e69aecf9e25f1541af9bf1049aac315560)
+    Checking worker v1.0.0 (home-path:sha256:90cc503a74994613cc55d67b51d7a24385384af4e2925143108b0c756018716a)
+    Checking demo-system v1.0.0 (home-path:sha256:13f4afb4554576bf9c6a35d8a48bc4a032898d2d1183c517c6e763a37050c853)
+    Checking demo-server v1.0.0 (home-path:sha256:6923090ab4852fbe5e443b765d98708d6be4864c0eb297a149b831cf934d2d72)
 error[E0308]: mismatched types
    --> crates/demo-server/src/wire.rs:41:26
     |
@@ -1557,39 +1557,39 @@ error: could not compile `demo-server` (lib) due to 11 previous errors
 exit status: 101
 
 thread 'outcome_event_binding_cannot_capture_the_codec_output_buffer' (2833784) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/outcome-out-2833779-3
+admitted generated workspace failed its actual compiler: home-path:sha256:191aa47e510cc12bb8ff88a1f984b6bc26f4e2168a88dd559565cb80a0dbe23a
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- web_component_dependency_cannot_be_hidden_by_the_json_module stdout ----
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:5321bb4c4d13466f61e4984d214751ed16f344792ecbcacdc29f0543f1981528" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
+cd "home-path:sha256:5321bb4c4d13466f61e4984d214751ed16f344792ecbcacdc29f0543f1981528" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target"
 
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
     Blocking waiting for file lock on package cache
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo/crates/demo-types)
-    Checking json v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo/crates/json)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (home-path:sha256:af5d20172e5f8eddc7ab0a709979c950870d9181b633d270ab42c6b87418e8d5)
+    Checking json v1.0.0 (home-path:sha256:2e51de6f90c31e9ec370c57b7de68187e136f636d5ef6185e6bc87e8a3e432d1)
+    Checking demo-system v1.0.0 (home-path:sha256:517111ee376fadf7d51ea7d6f7307389dfe36acf6d847dfa208f1f64f474532f)
     Finished `dev` profile [unoptimized] target(s) in 0.40s
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "generate-lockfile" "--offline"
+cd "home-path:sha256:1a6af0d3b3631d7f068d3cf300ffe4bfe94490f699ff4298655a7457b9e21cbf" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "generate-lockfile" "--offline"
 
      Locking 3 packages to latest compatible versions
 
 exit status: 0
-cd "~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/web/demo" && env -u CARGO_TARGET_DIR "~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
+cd "home-path:sha256:1a6af0d3b3631d7f068d3cf300ffe4bfe94490f699ff4298655a7457b9e21cbf" && env -u CARGO_TARGET_DIR "home-path:sha256:9969f335714a4ceb8224e8c0782c0d0095b017d010b1fb66a2ddb8adb8f7f4b1" "check" "--locked" "--offline" "--workspace" "--all-targets" "--target-dir" "target" "--target" "wasm32-unknown-unknown"
 
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo/crates/demo-types)
-    Checking json v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo/crates/json)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/rust/demo/crates/demo-system)
-    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (home-path:sha256:af5d20172e5f8eddc7ab0a709979c950870d9181b633d270ab42c6b87418e8d5)
+    Checking json v1.0.0 (home-path:sha256:2e51de6f90c31e9ec370c57b7de68187e136f636d5ef6185e6bc87e8a3e432d1)
+    Checking demo-system v1.0.0 (home-path:sha256:517111ee376fadf7d51ea7d6f7307389dfe36acf6d847dfa208f1f64f474532f)
+    Checking demo-web v1.0.0 (home-path:sha256:03c45430162836ee84bf92760dfaa4a9268a3189fc4b51373da223ce326d757d)
 error[E0433]: cannot find `Json` in `json`
    --> crates/demo-web/src/lib.rs:271:45
     |
@@ -1604,7 +1604,7 @@ error: could not compile `demo-web` (lib test) due to 1 previous error
 exit status: 101
 
 thread 'web_component_dependency_cannot_be_hidden_by_the_json_module' (2833785) panicked at crates/generate/ess-synth/tests/feasibility_adversary.rs:115:5:
-admitted generated workspace failed its actual compiler: ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/../../../target/review-boundaries-5/adversary-compiler/json-2833779-0/generated/web/demo
+admitted generated workspace failed its actual compiler: home-path:sha256:1a6af0d3b3631d7f068d3cf300ffe4bfe94490f699ff4298655a7457b9e21cbf
 
 
 failures:
@@ -1740,7 +1740,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -1756,7 +1756,7 @@ exit "$adversary_status"
 Raw output:
 
 ````text
-Diff in ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/tests/feasibility_adversary.rs:10:
+Diff in home-path:sha256:85c5e15b6302e416a79ba1dd7c4851074856b5038f0aedb179bb7a413e973dc6
  use ess_compiler::source::SourceMap;
  use ess_domain::spec::{RawSpecFile, Specification};
  use ess_domain::system::Source;
@@ -1765,7 +1765,7 @@ Diff in ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/cr
  
  static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
  
-Diff in ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/tests/feasibility_adversary.rs:139:
+Diff in home-path:sha256:de6be14e5fd86b5a839a980dd13b7f7fb49609b9f16980b0ce3b89e7e89bd48f
      assert_eq!(failure.target(), target.name());
      assert_eq!(failure.plan(), &SynthesisPlan::of(ir));
      assert!(!failure.causes().is_empty());
@@ -1782,7 +1782,7 @@ Diff in ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/cr
      let repeated = synthesize_for(ir, target)
          .err()
          .expect("deterministic refusal");
-Diff in ~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth/tests/feasibility_adversary.rs:207:
+Diff in home-path:sha256:794126767a774b60ff32cbf169ba581cc1df00a792ef244a235add7a192403da
          .err()
          .expect("two independent fatal source classes");
      checked_failure(&ir, Target::Rust, &error);
@@ -1820,7 +1820,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -1836,8 +1836,8 @@ exit "$adversary_status"
 Raw output:
 
 ````text
-    Checking ess-synth v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/generate/ess-synth)
-    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/crates/edge/ess-cli)
+    Checking ess-synth v0.18.0 (home-path:sha256:239d32e5be75a88d4919c325db18fc02b20e55f8abe491e15cc1da04b028a690)
+    Checking ess-cli v0.18.0 (home-path:sha256:6afa28e3488be9bc646fbcb90728cab52f279a78dcb9175d9b317a419b53a9d1)
     Finished `dev` profile [unoptimized] target(s) in 0.14s
 ````
 
@@ -1850,7 +1850,7 @@ Command/environment:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
@@ -1926,7 +1926,7 @@ The coordinator provided a separate clean exact-base source fixture and built it
 
 ```text
 base: 4b66aac7b608b1deee9de88942390d4a6c5ec745
-binary: ~/.local/state/worktree/trees/b10x/ess/ess-rust-producer-compatibility/target/debug/ess
+binary: home-path:sha256:d50acab45b9043ff979218cf6aa83f23ccaf38d6630c90d6bea20ae5a876a7f9
 SHA256: 69f63f3addf84e59982701d8cfc6254b00ce34db378604b076863f3a5d330bf3
 ```
 
@@ -1945,13 +1945,13 @@ Base command/compiler output follows verbatim. Complete base CLI artifact stdout
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_CACHE_RUSTC_INFO=0
 export CARGO_NET_OFFLINE=true
-'~/.local/state/worktree/trees/b10x/ess/ess-rust-producer-compatibility/target/debug/ess' synthesize --target rust --format json --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-cli/rust-2819407-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust' > target/review-boundaries-5/base-outcome-rust.stdout 2> target/review-boundaries-5/base-outcome-rust.stderr
+'home-path:sha256:d50acab45b9043ff979218cf6aa83f23ccaf38d6630c90d6bea20ae5a876a7f9' synthesize --target rust --format json --path 'home-path:sha256:63f999e89347f17a2efdf1e4afceb51ba736a054219875f933fd6c107c410a82' --out 'home-path:sha256:1f750d48b5aad19f04b440bc8949cb9f44972dbb54c301b549c162781fd44f03' > target/review-boundaries-5/base-outcome-rust.stdout 2> target/review-boundaries-5/base-outcome-rust.stderr
 adversary_status=$?
 printf '%s\n' "$adversary_status" > target/review-boundaries-5/base-outcome-rust.exit
 exit "$adversary_status"
@@ -2117,17 +2117,17 @@ Compiler commands:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_CACHE_RUSTC_INFO=0
 export CARGO_NET_OFFLINE=true
-cargo generate-lockfile --offline --manifest-path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/Cargo.toml' > target/review-boundaries-5/base-outcome-rust-lock.log 2>&1
+cargo generate-lockfile --offline --manifest-path 'home-path:sha256:d31c027c51665b2149beb006ae335efc65df61f7825db526b66d6a2b0e862aba' > target/review-boundaries-5/base-outcome-rust-lock.log 2>&1
 adversary_lock_status=$?
 printf '%s\n' "$adversary_lock_status" > target/review-boundaries-5/base-outcome-rust-lock.exit
 if [ "$adversary_lock_status" -ne 0 ]; then exit "$adversary_lock_status"; fi
-cargo check --locked --offline --workspace --all-targets --manifest-path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/Cargo.toml' --target-dir '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/target' > target/review-boundaries-5/base-outcome-rust-compile.log 2>&1
+cargo check --locked --offline --workspace --all-targets --manifest-path 'home-path:sha256:d31c027c51665b2149beb006ae335efc65df61f7825db526b66d6a2b0e862aba' --target-dir 'home-path:sha256:f0f0107e4e43bd92e6941cef2536737eb802099861e321599e358900c6cb92a2' > target/review-boundaries-5/base-outcome-rust-compile.log 2>&1
 adversary_status=$?
 printf '%s\n' "$adversary_status" > target/review-boundaries-5/base-outcome-rust-compile.exit
 exit "$adversary_status"
@@ -2144,10 +2144,10 @@ Lock exit: 0.
 Compiler output:
 
 ````text
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/crates/demo-types)
-    Checking worker v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/crates/worker)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/crates/demo-system)
-    Checking demo-server v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/outcome-rust/crates/demo-server)
+    Checking demo-types v1.0.0 (home-path:sha256:2b766a74c80ea5b8a63bd04cda592a47aa69994b60def15a4bd4f0f65ccf9024)
+    Checking worker v1.0.0 (home-path:sha256:aecc08a0d0d6c0b9bbab98596a0aaffae53af9924f7957f8a7020f9d74c577f8)
+    Checking demo-system v1.0.0 (home-path:sha256:f2dc29594d0585b72bcd533e2dda494bae85c0b11bd2ffd6e2101b9dc4b52736)
+    Checking demo-server v1.0.0 (home-path:sha256:c940fc260e954a683be45e02fd5e8cd2c0ae1b888c1e1ede6730a56389a84192)
 error[E0308]: mismatched types
    --> crates/demo-server/src/wire.rs:41:26
     |
@@ -2298,13 +2298,13 @@ Compiler exit: 101.
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_CACHE_RUSTC_INFO=0
 export CARGO_NET_OFFLINE=true
-'~/.local/state/worktree/trees/b10x/ess/ess-rust-producer-compatibility/target/debug/ess' synthesize --target rust --format json --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-cli/web-2819502-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo' > target/review-boundaries-5/base-json-rust.stdout 2> target/review-boundaries-5/base-json-rust.stderr
+'home-path:sha256:d50acab45b9043ff979218cf6aa83f23ccaf38d6630c90d6bea20ae5a876a7f9' synthesize --target rust --format json --path 'home-path:sha256:b019530e3820e34d8418f5d015a31ba9d78d371124333931a4a8764ab785a50b' --out 'home-path:sha256:e6a67a7acb8f57c7edc8465044c9bc416cbbfdc51a726540c9d606d706f8b8f6' > target/review-boundaries-5/base-json-rust.stdout 2> target/review-boundaries-5/base-json-rust.stderr
 adversary_status=$?
 printf '%s\n' "$adversary_status" > target/review-boundaries-5/base-json-rust.exit
 exit "$adversary_status"
@@ -2414,17 +2414,17 @@ Compiler commands:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_CACHE_RUSTC_INFO=0
 export CARGO_NET_OFFLINE=true
-cargo generate-lockfile --offline --manifest-path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/Cargo.toml' > target/review-boundaries-5/base-json-rust-lock.log 2>&1
+cargo generate-lockfile --offline --manifest-path 'home-path:sha256:7be94afe820031e582fbffc8bf9c7159d5dc6a8c06406ba93f3239f666d4fcd0' > target/review-boundaries-5/base-json-rust-lock.log 2>&1
 adversary_lock_status=$?
 printf '%s\n' "$adversary_lock_status" > target/review-boundaries-5/base-json-rust-lock.exit
 if [ "$adversary_lock_status" -ne 0 ]; then exit "$adversary_lock_status"; fi
-cargo check --locked --offline --workspace --all-targets --manifest-path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/Cargo.toml' --target-dir '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/target' > target/review-boundaries-5/base-json-rust-compile.log 2>&1
+cargo check --locked --offline --workspace --all-targets --manifest-path 'home-path:sha256:7be94afe820031e582fbffc8bf9c7159d5dc6a8c06406ba93f3239f666d4fcd0' --target-dir 'home-path:sha256:02145fef24be8c828e324df6938c04703ef661b78eaa587e8e7d44688051946c' > target/review-boundaries-5/base-json-rust-compile.log 2>&1
 adversary_status=$?
 printf '%s\n' "$adversary_status" > target/review-boundaries-5/base-json-rust-compile.exit
 exit "$adversary_status"
@@ -2441,9 +2441,9 @@ Lock exit: 0.
 Compiler output:
 
 ````text
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/crates/demo-types)
-    Checking json v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/crates/json)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/crates/demo-system)
+    Checking demo-types v1.0.0 (home-path:sha256:ad320a19ad5b77d7bbd7573182e3be6fddbfe84d3453bd5d6a0f7df5d654acdc)
+    Checking json v1.0.0 (home-path:sha256:d7f457d44f36f0e4451c4f45b4ca9a6b37307695f403dbace6e1a48c2cda1360)
+    Checking demo-system v1.0.0 (home-path:sha256:8a5a87be8bdb5ab753f86c70ae6d61eddd3b77db4f98ddff0c27945bebf273b9)
     Finished `dev` profile [unoptimized] target(s) in 0.34s
 ````
 
@@ -2454,13 +2454,13 @@ Compiler exit: 0.
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_CACHE_RUSTC_INFO=0
 export CARGO_NET_OFFLINE=true
-'~/.local/state/worktree/trees/b10x/ess/ess-rust-producer-compatibility/target/debug/ess' synthesize --target web --format json --path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-cli/web-2819502-0/spec' --out '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/web/demo' > target/review-boundaries-5/base-json-web.stdout 2> target/review-boundaries-5/base-json-web.stderr
+'home-path:sha256:d50acab45b9043ff979218cf6aa83f23ccaf38d6630c90d6bea20ae5a876a7f9' synthesize --target web --format json --path 'home-path:sha256:b019530e3820e34d8418f5d015a31ba9d78d371124333931a4a8764ab785a50b' --out 'home-path:sha256:674bdbb7ee52e6e1f30544f3c5c9b4ef0600995bf64d2c1c52498a56fb077ca7' > target/review-boundaries-5/base-json-web.stdout 2> target/review-boundaries-5/base-json-web.stderr
 adversary_status=$?
 printf '%s\n' "$adversary_status" > target/review-boundaries-5/base-json-web.exit
 exit "$adversary_status"
@@ -2584,17 +2584,17 @@ Compiler commands:
 ````sh
 export TMPDIR="$PWD/target"
 export RUSTC_WRAPPER=/usr/bin/sccache
-export SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w4-cache.sock
+export SCCACHE_SERVER_UDS=home-path:sha256:a1df7e48de99917d83200cb60964e15c1af6c71d8557e99154a84970f6e94c45
 export CARGO_INCREMENTAL=0
 export CARGO_PROFILE_DEV_DEBUG=0
 export CARGO_PROFILE_TEST_DEBUG=0
 export CARGO_CACHE_RUSTC_INFO=0
 export CARGO_NET_OFFLINE=true
-cargo generate-lockfile --offline --manifest-path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/web/demo/Cargo.toml' > target/review-boundaries-5/base-json-web-lock.log 2>&1
+cargo generate-lockfile --offline --manifest-path 'home-path:sha256:8f8a330fd26e983d5c356f7f81f154f7d560c9fbeeb26ed095f448404919d862' > target/review-boundaries-5/base-json-web-lock.log 2>&1
 adversary_lock_status=$?
 printf '%s\n' "$adversary_lock_status" > target/review-boundaries-5/base-json-web-lock.exit
 if [ "$adversary_lock_status" -ne 0 ]; then exit "$adversary_lock_status"; fi
-cargo check --locked --offline --workspace --all-targets --manifest-path '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/web/demo/Cargo.toml' --target-dir '~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/web/demo/target' --target wasm32-unknown-unknown > target/review-boundaries-5/base-json-web-compile.log 2>&1
+cargo check --locked --offline --workspace --all-targets --manifest-path 'home-path:sha256:8f8a330fd26e983d5c356f7f81f154f7d560c9fbeeb26ed095f448404919d862' --target-dir 'home-path:sha256:4e4db0684896f2abbc1dd905082ae2c252cfb0bbebc3f26b94b2b41e866c118b' --target wasm32-unknown-unknown > target/review-boundaries-5/base-json-web-compile.log 2>&1
 adversary_status=$?
 printf '%s\n' "$adversary_status" > target/review-boundaries-5/base-json-web-compile.exit
 exit "$adversary_status"
@@ -2611,10 +2611,10 @@ Lock exit: 0.
 Compiler output:
 
 ````text
-    Checking demo-types v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/crates/demo-types)
-    Checking json v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/crates/json)
-    Checking demo-system v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/rust/demo/crates/demo-system)
-    Checking demo-web v1.0.0 (~/.local/state/worktree/trees/b10x/ess/review-rust-target-feasibility/target/review-boundaries-5/adversary-base/json/generated/web/demo/crates/demo-web)
+    Checking demo-types v1.0.0 (home-path:sha256:ad320a19ad5b77d7bbd7573182e3be6fddbfe84d3453bd5d6a0f7df5d654acdc)
+    Checking json v1.0.0 (home-path:sha256:d7f457d44f36f0e4451c4f45b4ca9a6b37307695f403dbace6e1a48c2cda1360)
+    Checking demo-system v1.0.0 (home-path:sha256:8a5a87be8bdb5ab753f86c70ae6d61eddd3b77db4f98ddff0c27945bebf273b9)
+    Checking demo-web v1.0.0 (home-path:sha256:4e369eb034603a11e0f5d0353fbb525930a76ef6d9974a0f76f238ce4af1f337)
 error[E0433]: cannot find `Json` in `json`
    --> crates/demo-web/src/lib.rs:271:45
     |

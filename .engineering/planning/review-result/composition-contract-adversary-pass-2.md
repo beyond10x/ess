@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:composition-contract-adversary-pass-2
 kind: review-result
 status: active
@@ -26,13 +26,13 @@ Read the full pass-2 brief, installed aep-drive 0.8.0 adversary charter, reposit
 
 probes.md was written and hashed in probes-before.sha256 before either CLI execution. It declares fresh-output success and an existing incompatible-destination refusal, plus exact-byte comparisons and input preservation. There are no new permanent tests. These are two actual CLI invocations and filesystem/byte checks, not Rust runtime test cases; the header therefore records 0→0.
 
-Used the already-gated binary read-only at ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/debug/ess, SHA256 58736100f486d77e86925ff837a4930b9ce35d09d4ab79e7bc069a5d1696787c, owning source d565eb0206e0139da9e3ab6ad89aacac3c373927. Before executing it, this comparison exited 0 with empty output in decisive-source-comparison.log/.exit:
+Used the already-gated binary read-only at home-path:sha256:77a7082be2bc1151d8188bf158a21eaa007832edbc0e45a57ceb02715b48c1a8, SHA256 58736100f486d77e86925ff837a4930b9ce35d09d4ab79e7bc069a5d1696787c, owning source d565eb0206e0139da9e3ab6ad89aacac3c373927. Before executing it, this comparison exited 0 with empty output in decisive-source-comparison.log/.exit:
 
 ```text
 git --no-optional-locks diff --exit-code d565eb0206e0139da9e3ab6ad89aacac3c373927 HEAD -- Cargo.lock crates/edge/ess-cli/src crates/specify/ess-composition/src crates/specify/ess-compiler crates/specify/ess-domain crates/specify/ess-primitives
 ```
 
-Working directory was ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract. TMPDIR was ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-2/tmp. No CLI/package build or Cargo invocation was necessary. The binary and decisive source/input hashes remained unchanged after execution.
+Working directory was home-path:sha256:1ff45b7754e046c6b8070279115c91466a536ea5318f8262ceb4db69717883c0 TMPDIR was home-path:sha256:df164b5bf665f57fc83431d7515e224147bbe1a46409791eb03922bb0bbc3c9e No CLI/package build or Cargo invocation was necessary. The binary and decisive source/input hashes remained unchanged after execution.
 
 First probe: test ! -e target/review-boundaries-9/adversary-pass-2/fresh-output exited 0. Then the documented mkdir and compose argument shape executed with only the exact binary location and output base substituted. mkdir exited 0; compose exited 0. Full expanded commands and raw output from fresh-command.log follow; individual statuses are fresh-absent.exit, fresh-mkdir.exit and fresh-compose.exit:
 
@@ -41,7 +41,7 @@ First probe: test ! -e target/review-boundaries-9/adversary-pass-2/fresh-output 
 + mkdir -p target/review-boundaries-9/adversary-pass-2/fresh-output
 + mkdir_exit=0
 + set +x
-+ ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/debug/ess specify compose --path crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml --service todo=crates/specify/ess-composition/tests/fixtures/two-components --service usage=crates/specify/ess-composition/tests/fixtures/two-components --out target/review-boundaries-9/adversary-pass-2/fresh-output/composition.json --client-plan-out target/review-boundaries-9/adversary-pass-2/fresh-output/client-plan.json --client-rust-out target/review-boundaries-9/adversary-pass-2/fresh-output/rust-client
++ home-path:sha256:77a7082be2bc1151d8188bf158a21eaa007832edbc0e45a57ceb02715b48c1a8 specify compose --path crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml --service todo=crates/specify/ess-composition/tests/fixtures/two-components --service usage=crates/specify/ess-composition/tests/fixtures/two-components --out target/review-boundaries-9/adversary-pass-2/fresh-output/composition.json --client-plan-out target/review-boundaries-9/adversary-pass-2/fresh-output/client-plan.json --client-rust-out target/review-boundaries-9/adversary-pass-2/fresh-output/rust-client
 devcenter — 2 exact component surface(s), 2 semantic reference(s), compiled to target/review-boundaries-9/adversary-pass-2/fresh-output/composition.json; client plan written to target/review-boundaries-9/adversary-pass-2/fresh-output/client-plan.json; 3 Rust client artifact(s) written to target/review-boundaries-9/adversary-pass-2/fresh-output/rust-client
 + compose_exit=0
 + set +x
@@ -60,8 +60,8 @@ Second probe: test ! -e conflict-output succeeded in assigned scratch. Created t
 
 ```text
 + fixture=crates/specify/ess-composition/tests/fixtures
-+ ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/debug/ess specify compose --path crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml --service todo=crates/specify/ess-composition/tests/fixtures/two-components --service usage=crates/specify/ess-composition/tests/fixtures/two-components --out target/review-boundaries-9/adversary-pass-2/conflict-output/composition.json --client-plan-out target/review-boundaries-9/adversary-pass-2/conflict-output/client-plan.json --client-rust-out target/review-boundaries-9/adversary-pass-2/conflict-output/rust-client
-error: output path has an incompatible file type or symlink: ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-2/conflict-output/composition.json
++ home-path:sha256:77a7082be2bc1151d8188bf158a21eaa007832edbc0e45a57ceb02715b48c1a8 specify compose --path crates/specify/ess-composition/tests/fixtures/compositions/workbench.yaml --service todo=crates/specify/ess-composition/tests/fixtures/two-components --service usage=crates/specify/ess-composition/tests/fixtures/two-components --out target/review-boundaries-9/adversary-pass-2/conflict-output/composition.json --client-plan-out target/review-boundaries-9/adversary-pass-2/conflict-output/client-plan.json --client-rust-out target/review-boundaries-9/adversary-pass-2/conflict-output/rust-client
+error: output path has an incompatible file type or symlink: home-path:sha256:327e95ba09bca7c6eedf0cb7dc1e2f84079ecd57b1778d29461d4ae1dad1e7fe
 + compose_exit=1
 + set +x
 ```
@@ -117,7 +117,7 @@ ea9b489fd2675780903118625c6a7ad1c1d71d92f9120863e8c0ba92922c0a2b  target/review-
 52041795e7601764300c900244edca77b08a73062a1c8b20f97a640916f9e312  target/review-boundaries-9/adversary-pass-2/fresh-output/rust-client/src/lib.rs
 ```
 
-evidence.sha256 hashes the declared probes, all raw command/check logs and exits, final Git observations, and the source, binary, output and marker manifests. The source fixture manifest used is target/review-boundaries-9/correction-pass-1/original-inputs.sha256. All other named evidence files are under ~/.local/state/worktree/trees/b10x/ess/ess-composition-contract/target/review-boundaries-9/adversary-pass-2.
+evidence.sha256 hashes the declared probes, all raw command/check logs and exits, final Git observations, and the source, binary, output and marker manifests. The source fixture manifest used is target/review-boundaries-9/correction-pass-1/original-inputs.sha256. All other named evidence files are under home-path:sha256:20075cfe4a98dccc15fbc902da22dd27932a41142093d2d5c2bcee3ca568079e
 
 Outside-worktree writes: none. All generated outputs, marker, TMPDIR and reports are inside assigned scratch. The coordinator binary and correction/first-pass records were only read. No production/doc/test/store/Git changes, cleanup, AEP helper action, browser or network operation occurred. No third attack is planned or requested.
 

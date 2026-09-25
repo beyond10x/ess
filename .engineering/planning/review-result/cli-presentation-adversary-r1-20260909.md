@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:cli-presentation-adversary-r1-20260909
 kind: review-result
 status: active
@@ -52,7 +52,7 @@ cargo test --offline -p ess-cli-project --test adversarial admitted_binary_names
 Exit: 101.
 
 ```text
-   Compiling ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+   Compiling ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `test` profile [unoptimized] target(s) in 0.52s
      Running tests/adversarial.rs (target/debug/deps/adversarial-8d43142f2d7f14c2)
 
@@ -60,7 +60,7 @@ running 1 test
 
 thread 'admitted_binary_names_emit_cargo_accepted_targets' (396887) panicked at crates/generate/ess-cli-project/tests/adversarial.rs:70:9:
 compiler admitted binary build, but its emitted Cargo package is invalid:
-error: failed to parse manifest at `~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/.tmp3HeTa7/Cargo.toml`
+error: failed to parse manifest at `home-path:sha256:ef7a2d9532ee8ab456613dc13fb5d9613ec02d359ae8968b0da42e355c2aed3b`
 
 Caused by:
   the binary target name `build` is forbidden, it conflicts with cargo's build directory names
@@ -176,7 +176,7 @@ test invalid_ordinary_values_are_refused_before_protected_acquisition ... ok
 
 thread 'admitted_binary_names_emit_cargo_accepted_targets' (399731) panicked at crates/generate/ess-cli-project/tests/adversarial.rs:70:9:
 compiler admitted binary build, but its emitted Cargo package is invalid:
-error: failed to parse manifest at `~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/.tmpvYfjq1/Cargo.toml`
+error: failed to parse manifest at `home-path:sha256:732faa41af5a611774765762244e889c668d6056c34261adf21def158e01d3a9`
 
 Caused by:
   the binary target name `build` is forbidden, it conflicts with cargo's build directory names
@@ -205,7 +205,7 @@ Command: cargo test --offline -p ess-cli-contract --test binding -- --nocapture
 Exit: 0.
 
 ```text
-   Compiling ess-cli-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/specify/ess-cli-contract)
+   Compiling ess-cli-contract v0.20.0 (home-path:sha256:9b52232fd5677b90aaaa6cf8f419b719becdd5c2e0092ada538210ef114d1e96)
     Finished `test` profile [unoptimized] target(s) in 0.77s
      Running tests/binding.rs (target/debug/deps/binding-fa9bcb50f98c6097)
 
@@ -230,7 +230,7 @@ Command: cargo test --offline -p ess-cli-project --test projection -- --nocaptur
 Exit: 0.
 
 ```text
-   Compiling ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+   Compiling ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `test` profile [unoptimized] target(s) in 0.31s
      Running tests/projection.rs (target/debug/deps/projection-1fc3a4893afef73f)
 
@@ -300,11 +300,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
    Compiling linux-raw-sys v0.12.1
    Compiling rpassword v7.5.4
    Compiling clap_complete v4.6.9
-   Compiling demo-cli-contract v0.0.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-AbwOLI)
+   Compiling demo-cli-contract v0.0.0 (home-path:sha256:5cc9751fdfddbd60bbaa4875142af4138e46e6f9c083a894fbefeec823a639d0)
     Finished `test` profile [unoptimized] target(s) in 6.14s
-     Running unittests src/lib.rs (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-AbwOLI/target/debug/deps/cli_contract-e34ff935d4081ec7)
-     Running unittests src/main.rs (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-AbwOLI/target/debug/deps/demo-a25d39a27ed562d2)
-     Running tests/process.rs (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-AbwOLI/target/debug/deps/process-31189b33f2bbb430)
+     Running unittests src/lib.rs (home-path:sha256:f0a7d0fe42edd83f193f5b17998e94f6b83f86cab91b23a15c8901a3c06cc2f6)
+     Running unittests src/main.rs (home-path:sha256:e2444dbd7f377f3ac58ee77cc62110bb05d485e60f03b20f9bdbd61b6c17195c)
+     Running tests/process.rs (home-path:sha256:e5cabeee47c549920cb1c05190f9254bc4d143975eaf22f36385b25d28e6ac4c)
    Doc-tests cli_contract
 
 test generated_package_compiles_offline_and_executes_process_fixtures ... ok
@@ -317,7 +317,7 @@ Command: cargo clippy --offline -p ess-cli-project --test adversarial -- -D warn
 Exit: 0.
 
 ```text
-    Checking ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+    Checking ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `dev` profile [unoptimized] target(s) in 0.19s
 ```
 

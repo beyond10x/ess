@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:go-normalization-pattern-semantics
 kind: story
 status: active

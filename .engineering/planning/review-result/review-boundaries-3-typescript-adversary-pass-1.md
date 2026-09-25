@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:review-boundaries-3-typescript-adversary-pass-1
 kind: review-result
 status: active
@@ -46,8 +46,8 @@ New cases and isolated execution:
 1. `crates/generate/schema-contract/tests/typescript_bindings.rs:7` — Five escaped, punctuation and non-ASCII definition keys collide with the exact normalized root; refusal pointer escapes JSON Pointer segments, repeat calls return equal errors and the input schema bytes remain untouched. Green on its first isolated run and in its final suite.
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --test typescript_bindings escaped_and_non_ascii_definition_keys_refuse_root_collisions_deterministically -- --exact > target/review-boundaries-3/adversary-case-1.log 2>&1
-   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --test typescript_bindings escaped_and_non_ascii_definition_keys_refuse_root_collisions_deterministically -- --exact > target/review-boundaries-3/adversary-case-1.log 2>&1
+   Compiling schema-contract v0.18.0 (home-path:sha256:c16f48193b7829fb58a956d922c2e5fb69c5e8a81ba81d34480de29ae0680dc6)
     Finished `test` profile [unoptimized] target(s) in 0.23s
      Running tests/typescript_bindings.rs (target/debug/deps/typescript_bindings-4484db42097fd431)
 
@@ -62,7 +62,7 @@ exit: 0
 2. `crates/generate/schema-contract/tests/typescript_bindings.rs:37` — Array helpers rendered inside nullable alternatives and nested arrays of unused emitted definitions refuse both an Array root and a normalized _array_ definition; each refusal is deterministic. Green on its first isolated run and in its final suite.
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --test typescript_bindings array_helpers_in_alternatives_and_unused_definitions_cannot_be_shadowed -- --exact > target/review-boundaries-3/adversary-case-2.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --test typescript_bindings array_helpers_in_alternatives_and_unused_definitions_cannot_be_shadowed -- --exact > target/review-boundaries-3/adversary-case-2.log 2>&1
     Finished `test` profile [unoptimized] target(s) in 0.07s
      Running tests/typescript_bindings.rs (target/debug/deps/typescript_bindings-4484db42097fd431)
 
@@ -77,7 +77,7 @@ exit: 0
 3. `crates/generate/schema-contract/tests/typescript_bindings.rs:60` — The Array definition remains usable when an items keyword on a string emits no helper; contextual root namespace and keyword/punctuation object properties retain their spelling, stable bytes and unchanged schema. Green on its first isolated run and in its final suite.
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --test typescript_bindings property_names_and_unemitted_items_do_not_reserve_bindings -- --exact > target/review-boundaries-3/adversary-case-3.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --test typescript_bindings property_names_and_unemitted_items_do_not_reserve_bindings -- --exact > target/review-boundaries-3/adversary-case-3.log 2>&1
     Finished `test` profile [unoptimized] target(s) in 0.07s
      Running tests/typescript_bindings.rs (target/debug/deps/typescript_bindings-4484db42097fd431)
 
@@ -92,8 +92,8 @@ exit: 0
 4. `crates/generate/schema-contract/tests/typescript_typecheck.rs:250` — Seven distinct global-looking roots compile with nested nullable arrays, escaped definition references and emitted Array helpers. Green on its first isolated run and in its final suite.
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck nested_nullable_arrays_and_global_looking_aliases_typecheck -- --exact > target/review-boundaries-3/adversary-case-4.log 2>&1
-   Compiling schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck nested_nullable_arrays_and_global_looking_aliases_typecheck -- --exact > target/review-boundaries-3/adversary-case-4.log 2>&1
+   Compiling schema-contract v0.18.0 (home-path:sha256:c16f48193b7829fb58a956d922c2e5fb69c5e8a81ba81d34480de29ae0680dc6)
     Finished `test` profile [unoptimized] target(s) in 0.25s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -108,7 +108,7 @@ exit: 0
 5. `crates/generate/schema-contract/tests/typescript_typecheck.rs:289` — Six contextual roots compile with Array, await, constructor, __proto__, readonly and foo/bar properties; required and quoted property spellings survive. Green on its first isolated run and in its final suite.
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck contextual_roots_and_keyword_properties_keep_compilable_spelling -- --exact > target/review-boundaries-3/adversary-case-5.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck contextual_roots_and_keyword_properties_keep_compilable_spelling -- --exact > target/review-boundaries-3/adversary-case-5.log 2>&1
     Finished `test` profile [unoptimized] target(s) in 0.07s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -123,7 +123,7 @@ exit: 0
 6. `crates/generate/schema-contract/tests/typescript_typecheck.rs:330` — Three normalized definitions preserve order, escaped references, wire property names and stable repeat bytes; the accepted $Root projection compiles. Green on its first isolated run and in its final suite.
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck multiple_normalized_definitions_keep_references_and_binding_order -- --exact > target/review-boundaries-3/adversary-case-6.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck multiple_normalized_definitions_keep_references_and_binding_order -- --exact > target/review-boundaries-3/adversary-case-6.log 2>&1
     Finished `test` profile [unoptimized] target(s) in 0.07s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -147,7 +147,7 @@ Package suites and gates, executed after all six isolated cases:
 default package:
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract > target/review-boundaries-3/adversary-default-suite.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract > target/review-boundaries-3/adversary-default-suite.log 2>&1
     Finished `test` profile [unoptimized] target(s) in 0.07s
      Running unittests src/lib.rs (target/debug/deps/schema_contract-e827a73da4bfb459)
 
@@ -192,7 +192,7 @@ exit: 0
 explicit TypeScript compiler lane:
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck > target/review-boundaries-3/adversary-compiler-suite.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo test --locked -p schema-contract --features typescript-typecheck --test typescript_typecheck > target/review-boundaries-3/adversary-compiler-suite.log 2>&1
     Finished `test` profile [unoptimized] target(s) in 0.07s
      Running tests/typescript_typecheck.rs (target/debug/deps/typescript_typecheck-1436018e6e437030)
 
@@ -212,15 +212,15 @@ exit: 0
 package formatting:
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo fmt -p schema-contract --check > target/review-boundaries-3/adversary-fmt.log 2>&1
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo fmt -p schema-contract --check > target/review-boundaries-3/adversary-fmt.log 2>&1
 exit: 0
 ```
 
 strict package Clippy with compiler feature:
 
 ```text
-$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo clippy --locked -p schema-contract --all-targets --features typescript-typecheck -- -D warnings > target/review-boundaries-3/adversary-clippy.log 2>&1
-    Checking schema-contract v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-typescript-root-collision/crates/generate/schema-contract)
+$ env TMPDIR="$PWD/target" RUSTC_WRAPPER=/usr/bin/sccache SCCACHE_SERVER_UDS=home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_CACHE_RUSTC_INFO=0 ESS_TYPESCRIPT_COMPILER=/usr/lib/node_modules/typescript/lib/tsc.js cargo clippy --locked -p schema-contract --all-targets --features typescript-typecheck -- -D warnings > target/review-boundaries-3/adversary-clippy.log 2>&1
+    Checking schema-contract v0.18.0 (home-path:sha256:c16f48193b7829fb58a956d922c2e5fb69c5e8a81ba81d34480de29ae0680dc6)
     Finished `dev` profile [unoptimized] target(s) in 0.15s
 exit: 0
 ```
@@ -266,7 +266,7 @@ exit: 0
 
 Available disk before building was 140,413,333,504 bytes; at return it is 140,306,722,816 bytes, above the required 8,589,934,592-byte reserve. The unit target occupies 297,064 KiB. Every command kept the unit-local target and prescribed compact settings; CARGO_TARGET_DIR was never set.
 
-Outside authored paths: none. Logs, report and patch remain under the assigned worktree's target/review-boundaries-3; compiler-created fixtures/configurations and build outputs remain under its assigned target. The prescribed coordinator-owned sccache socket at ~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/w3-cache.sock was used for shared compiler-cache access as required by resource-supplement.md; no outside authored scratch, build directory, cache purge or lifecycle mutation was performed. The installed compiler path was read only. No network, credentials, external services or permission changes were used. Duration and token usage were not measured.
+Outside authored paths: none. Logs, report and patch remain under the assigned worktree's target/review-boundaries-3; compiler-created fixtures/configurations and build outputs remain under its assigned target. The prescribed coordinator-owned sccache socket at home-path:sha256:b3fc5cb1697e2a4156674fd3b30346cf8f1c6a61a005a4d6066b1c04a9298c10 was used for shared compiler-cache access as required by resource-supplement.md; no outside authored scratch, build directory, cache purge or lifecycle mutation was performed. The installed compiler path was read only. No network, credentials, external services or permission changes were used. Duration and token usage were not measured.
 
 ```findings
 []

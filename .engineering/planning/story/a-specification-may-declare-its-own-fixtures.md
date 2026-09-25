@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-specification-may-declare-its-own-fixtures
 kind: story
 status: archived

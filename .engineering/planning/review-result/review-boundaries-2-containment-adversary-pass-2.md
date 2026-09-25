@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:review-boundaries-2-containment-adversary-pass-2
 kind: review-result
 status: active
@@ -12,7 +12,7 @@ unit: story:review-output-containment at dc122aea038cc18757c3a160b1b36b6798ef6df
 verdict: nothing found
 cases: executed 230→235, red 1 fixture setup corrected, 0 remaining
 origin: introduced 0 / pre-existing 0 / undecided 0
-wrote-outside-worktree: ~/.cache/ess-w2-ctmp (temporary fixtures; removed)
+wrote-outside-worktree: home-path:sha256:32194ce7005651b62cfd6e1329252e0216c158442688fe35e30a31ec94317791 (temporary fixtures; removed)
 needs-coordinator: record dispatch/resource adaptations, integrate and run the full gate
 ```text
 $ git --no-pager diff --stat
@@ -28,7 +28,7 @@ The coordinator resumed this same second pass locally, reading the complete unit
 
 The initial attempts could not run rustc because sccache's startup socket exceeded SUN_LEN. Cargo cached that failed rustc -vV result in target/.rustc_info.json, then replayed it despite changed startup conditions; a socket-only strace observed no bind/connect during the replay. The failed metadata is preserved as failed-rustc-info.json and only that disposable compiler-info file was removed. A forced uncached query allowed the first actual test execution. All startup logs and the chronological diagnosis are retained in coordinator-pass-2-resumption.md; startup failures are not test findings.
 
-A separate task-owned sccache server uses target/sccache.sock and the existing shared disk cache. It does not share this unit's target directory with another tree. The first actual case temporarily used the explicitly assigned shorter ~/.cache/ess-w2-ctmp root and CARGO_CACHE_RUSTC_INFO=0. After deleting only the failed metadata, the other cases and full suites used the original assigned scratch TMPDIR. No network-backed test, real user file, credentials, race or permission change was used.
+A separate task-owned sccache server uses target/sccache.sock and the existing shared disk cache. It does not share this unit's target directory with another tree. The first actual case temporarily used the explicitly assigned shorter home-path:sha256:32194ce7005651b62cfd6e1329252e0216c158442688fe35e30a31ec94317791 root and CARGO_CACHE_RUSTC_INFO=0. After deleting only the failed metadata, the other cases and full suites used the original assigned scratch TMPDIR. No network-backed test, real user file, credentials, race or permission change was used.
 
 2. New cases and first actual isolated executions
 
@@ -37,11 +37,11 @@ The before count230 is from the completed correction: CLI41 and ess-gen189. No p
 1. crates/edge/ess-cli/tests/output_containment.rs:578 — Disjoint companion files nested within generated directories retain exact reference bytes and repeat identically.
 
 ```sh
-env CARGO_CACHE_RUSTC_INFO=0 SCCACHE_SERVER_UDS="$PWD/target/sccache.sock" TMPDIR=~/.cache/ess-w2-ctmp RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo test --locked -p ess-cli --test output_containment composition_preserves_disjoint_files_inside_generated_directories -- --exact
+env CARGO_CACHE_RUSTC_INFO=0 SCCACHE_SERVER_UDS="$PWD/target/sccache.sock" TMPDIR=home-path:sha256:32194ce7005651b62cfd6e1329252e0216c158442688fe35e30a31ec94317791 RUSTC_WRAPPER=/usr/bin/sccache CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo test --locked -p ess-cli --test output_containment composition_preserves_disjoint_files_inside_generated_directories -- --exact
 ```
 
 ```text
-   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (home-path:sha256:fe687a1db53327344d5fbbbb9cab74a5b634c95c737d6b36f1bde6d44f7310fc)
     Finished `test` profile [unoptimized] target(s) in 0.40s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -146,7 +146,7 @@ exit: 101
 The missing-platform fixture was corrected before the suite. No production code or assertion was changed. Corrected isolated command is the same, with this output:
 
 ```text
-   Compiling ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+   Compiling ess-cli v0.18.0 (home-path:sha256:fe687a1db53327344d5fbbbb9cab74a5b634c95c737d6b36f1bde6d44f7310fc)
     Finished `test` profile [unoptimized] target(s) in 0.25s
      Running tests/output_containment.rs (target/debug/deps/output_containment-6c42862c3bb02e7c)
 
@@ -529,7 +529,7 @@ env SCCACHE_SERVER_UDS="$PWD/target/sccache.sock" TMPDIR="$PWD/target/review-bou
 ```
 
 ```text
-    Checking ess-cli v0.18.0 (~/.local/state/worktree/trees/b10x/ess/review-output-containment/crates/edge/ess-cli)
+    Checking ess-cli v0.18.0 (home-path:sha256:fe687a1db53327344d5fbbbb9cab74a5b634c95c737d6b36f1bde6d44f7310fc)
     Finished `dev` profile [unoptimized] target(s) in 0.27s
 
 exit: 0
@@ -553,7 +553,7 @@ The new cases invoke the real local ESS binary with compose, generate, synthesiz
 
 Production writes: none. Repository additions are confined to the assigned integration-test file. Logs, patch, report, failed Cargo metadata copy and socket-only trace are under target/review-boundaries-2. A temporary target/t directory was tried during diagnosis, remained empty and was removed with rmdir.
 
-Outside-worktree authored root: ~/.cache/ess-w2-ctmp. It held only the first actual test's generated synthetic fixture descendants; their individual names were not inventoried. The fixture Drop removed them, then rmdir of the empty root succeeded. This outside-worktree scratch adaptation and its cleanup are explicit, not an assertion that nothing was written there. Existing shared sccache cache activity remains ordinary configured cache activity, not separately inventoried output.
+Outside-worktree authored root: home-path:sha256:530f24fa25a1a18616fb02da958149dff689601fda7961cd9e9d98f6556fec77 It held only the first actual test's generated synthetic fixture descendants; their individual names were not inventoried. The fixture Drop removed them, then rmdir of the empty root succeeded. This outside-worktree scratch adaptation and its cleanup are explicit, not an assertion that nothing was written there. Existing shared sccache cache activity remains ordinary configured cache activity, not separately inventoried output.
 
 The task-specific server at <unit>/target/sccache.sock was stopped with its exact SCCACHE_SERVER_UDS: stop-server exited0 and a subsequent connection no longer succeeded. The stop output is preserved in coordinator-pass-2-cache-stop.log. The coordinator owns retaining wanted evidence, publishing the green integrated wave, and exact-id managed worktree cleanup. The unrelated default cache server and other sessions' worktrees were not stopped or modified.
 

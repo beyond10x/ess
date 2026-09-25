@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:authored-discovery-binding-pass1
 kind: review-result
 status: active
@@ -17,7 +17,7 @@ needs-coordinator: none
 
 `git --no-pager diff --stat` was not run: this assignment prohibited Git operations. No files were written anywhere.
 
-The exact candidate is [binding-candidate-v2.md](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-13/preparation/authored-discovery-candidate/binding-candidate-v2.md), SHA256 `56422a3eeaad06cb92a5de587a24bfdef03e2b26be0cfc7543a276ac4535715b`, 26,155 bytes. Its recorded preparation subject is `dbe78c5b15df478ec2cd4883c67d0012cdf90e17`; the coordinator supplied `ecb7efc22ad9b19b85ef4debd8143491d6a66ef3` as the current published source. The hashes below identify the source bytes actually inspected; no independent Git verification is claimed.
+The exact candidate is [binding-candidate-v2.md](home-path:sha256:a31db19c7f878395d07d70e1bbd09d02727f44ccc980780928a3c4571ae2feed), SHA256 `56422a3eeaad06cb92a5de587a24bfdef03e2b26be0cfc7543a276ac4535715b`, 26,155 bytes. Its recorded preparation subject is `dbe78c5b15df478ec2cd4883c67d0012cdf90e17`; the coordinator supplied `ecb7efc22ad9b19b85ef4debd8143491d6a66ef3` as the current published source. The hashes below identify the source bytes actually inspected; no independent Git verification is claimed.
 
 The complete existing story and prerequisite were read. The candidate preserves the story’s acceptance: a documented mixed layout must select the intended authored inputs deterministically without ingesting generated YAML. It also preserves the implementation boundary, migration requirement, explicit-empty refusal and validation obligations. No story was rewritten, narrowed or supplemented.
 
@@ -27,31 +27,31 @@ This is one bounded candidate critique. It neither selects the manifest approach
 
 No concrete unsupported invariant, incompatible guarantee or acceptance gap was found in this pass.
 
-- The proposed shared owner covers the three actual acquisition implementations: [model loading](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/load.rs:25), [legacy authored loading](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:2833), and [coverage authored loading](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/coverage.rs:16). Explicit-file extension independence, shallow legacy authored selection, omitted scenarios and the different legacy symlink policies remain distinct.
-- The candidate’s manifest selection does not depend on successful document parsing. This preserves headerless fragments and visible selected-document refusals. [RawSpecFile](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/spec.rs:45) has optional header fields; its [parser](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/spec.rs:151) rejects unknown fields and duplicate YAML mapping keys. [Header absorption](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/spec.rs:625) and [header resolution](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/system.rs:715) remain the semantic owners.
-- Checked source identity is appropriately separated from a physical path and diagnostic origin. The proposed lexical grammar matches [SourceIdentity::new](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/verify/ess-conformance/src/coverage.rs:73). [CoverageSource](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/verify/ess-conformance/src/coverage_build.rs:84) retains the supplied identity and original text. Canonical-path rejection and deliberate preservation of distinct hardlink/copy identities are compatible choices.
-- The candidate preserves source-acquisition bypass for committed execution. [Run dispatch](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:2495) selects `--suite-input` or `--suite` before fresh model/scenario acquisition; [argument declarations](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:492) distinguish their conflicts.
-- Acquisition failures are correctly distinguished from document-level semantic refusals. The candidate does not promise that every old semantic failure preserves outputs: [legacy author](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:2767), [legacy web](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:2719), and [coverage generation](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/coverage.rs:94) can retain incomplete evidence after acquisition succeeds.
-- Output protection is preserved as an independent boundary. [Model types](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/model_types.rs:48) and [normalization](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/normalize.rs:178) protect their input directories. A manifest does not grant permission to place those outputs inside the model input root.
+- The proposed shared owner covers the three actual acquisition implementations: [model loading](home-path:sha256:8fab3e6bcee74f524259b8091aa48d1d03aa16e8df324f5527712897d65ba71c), [legacy authored loading](home-path:sha256:99e415250d213a5c7f52a8373f227445c82845f1f0d861378a0aaaf6f774d4c7), and [coverage authored loading](home-path:sha256:00efe5385fb3cc5c0a423403886bc84dd04933a9825c5d2047f355be3253527d). Explicit-file extension independence, shallow legacy authored selection, omitted scenarios and the different legacy symlink policies remain distinct.
+- The candidate’s manifest selection does not depend on successful document parsing. This preserves headerless fragments and visible selected-document refusals. [RawSpecFile](home-path:sha256:ed0c5224bcdc80a8e2a7bd4ce7f2aa9a6a6958cc030dd9f03f2be33450c4826a) has optional header fields; its [parser](home-path:sha256:196faa99d455e6893f521b573e94803a0e2f3d50b6ae2619ff90abd5f58e2506) rejects unknown fields and duplicate YAML mapping keys. [Header absorption](home-path:sha256:db1253c8487ad54eabac268499c008f19e4143304d1472ebc56e5d4a8a55011e) and [header resolution](home-path:sha256:0d7c5ffbf8878392639028f1788d14d4bffe2f1599e61b2b560dd92ef1402ff2) remain the semantic owners.
+- Checked source identity is appropriately separated from a physical path and diagnostic origin. The proposed lexical grammar matches [SourceIdentity::new](home-path:sha256:306280ff392377e8ff7d520fb3742a4da70daf6cc7d6bc64208dfc4bb964e5cb). [CoverageSource](home-path:sha256:d917226a1c0afd6169b87f516c3a98966afd697a44c710e60b0007263a2bba17) retains the supplied identity and original text. Canonical-path rejection and deliberate preservation of distinct hardlink/copy identities are compatible choices.
+- The candidate preserves source-acquisition bypass for committed execution. [Run dispatch](home-path:sha256:51519187aefa74eac362d280eb395eef086a87249f6aa68f2ac0f27a3a9a9d77) selects `--suite-input` or `--suite` before fresh model/scenario acquisition; [argument declarations](home-path:sha256:040d98f3d5b29ba348dd5cd862ea1ee17df194b01579683cdf4cc7a3d17be4b5) distinguish their conflicts.
+- Acquisition failures are correctly distinguished from document-level semantic refusals. The candidate does not promise that every old semantic failure preserves outputs: [legacy author](home-path:sha256:fd0ccbb65b278f024add3dcc0495d4d6ad16add74b2be26b14d59b97e44ba5db), [legacy web](home-path:sha256:9dceb5d8d4672f3ae68cc3e69300455460f5a1485a1ba55109d361a750b86b25), and [coverage generation](home-path:sha256:c87b8ec44753fd2213157add7975d7cc4a830d7b6745e5939667637fa094073a) can retain incomplete evidence after acquisition succeeds.
+- Output protection is preserved as an independent boundary. [Model types](home-path:sha256:1eb8496e39ebba291d256b9d82f8c083d1bd76f299b4ac58ff2bcff5380517e3) and [normalization](home-path:sha256:94b64721da7647a0952dd94cbeca5064656731fa9d76751d64c694cdbd701ec4) protect their input directories. A manifest does not grant permission to place those outputs inside the model input root.
 
-The caller inventory was checked against dispatch and source calls: validation, compilation, inspection, graph, composition service inputs, realization specification inputs, runtime system inputs, projections, structural synthesis, model types, normalization models, diff/impact revisions and fresh conformance. Flat and area spellings converge through [command dispatch](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:979). For projection, the model-consuming route is specifically [OpenAPI `--path`](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/edge/ess-cli/src/main.rs:3105); unrelated persisted-IR projection inputs remain separate.
+The caller inventory was checked against dispatch and source calls: validation, compilation, inspection, graph, composition service inputs, realization specification inputs, runtime system inputs, projections, structural synthesis, model types, normalization models, diff/impact revisions and fresh conformance. Flat and area spellings converge through [command dispatch](home-path:sha256:4d55a2a44e2d10879deaeba45185eede0587c7bb4dba5ee2ee97db3f414b5dff). For projection, the model-consuming route is specifically [OpenAPI `--path`](home-path:sha256:7118285e7237e5b0accc701f8c5d94efb0a5cf690a635dae9e1249d71d7d20dd); unrelated persisted-IR projection inputs remain separate.
 
 **Model and parser constraints**
 
-The proposed declaration contains three named value types and no entity, lifecycle or file-ownership relation. Its singleton enum spelling is supported by [RawTypeBody::Enum](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/types.rs:627), [shape validation](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/types.rs:447) and [enum resolution](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-compiler/src/resolve.rs:1022). The unrelated restrictive grammar belongs to [entity StateName](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/entity.rs:68).
+The proposed declaration contains three named value types and no entity, lifecycle or file-ownership relation. Its singleton enum spelling is supported by [RawTypeBody::Enum](home-path:sha256:858b5e2564df48717a3cde32ad00e49058f2c7c6f70e00fc0380abbd3eae3170), [shape validation](home-path:sha256:b297de28f0180e98ea63a1912b22f9403932d1829145e6befea3023efd93cf44) and [enum resolution](home-path:sha256:c76a9e3ddbd97ac397323421861b67a3bf408158cad12fa13a52a17233ebac9d). The unrelated restrictive grammar belongs to [entity StateName](home-path:sha256:02cea7e65bbc2a0634c8eae402e9ebb949750e669f6b1ca25ef2c564a893973a).
 
 The constraint accounting is appropriately limited:
 
 | Constraint | Source-backed disposition |
 |---|---|
-| Required three-field struct | Non-optional fields produce required properties; the existing [object projection](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/generate/ess-gen/src/types.rs:625) refuses additional properties. |
-| Exact format value | The [enum projection](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/generate/ess-gen/src/types.rs:662) is enforcing; the declaration does not install an acquisition reader. |
+| Required three-field struct | Non-optional fields produce required properties; the existing [object projection](home-path:sha256:8b91f25e5a6243d7c5b96f9307b363ca5aac408aabf4c29b9564fdb5104fee1a) refuses additional properties. |
+| Exact format value | The [enum projection](home-path:sha256:448fa8093f6689ca69abc447cfe2664a1f9705a582263a4865f7cdfb6a1f4865) is enforcing; the declaration does not install an acquisition reader. |
 | Nonempty path | The newtype invariant is expressible. Its schema projection carries an annotation, so reader enforcement remains explicitly required. |
 | Full path grammar and filesystem checks | These remain reader obligations; no string newtype is presented as proof of containment, file kind or symlink handling. |
 | Active-role nonempty selection | The role is supplied by the caller. Imposing unconditional list cardinality would contradict the allowed inactive empty list. |
 | Uniqueness and disjointness | No complete general constraint for these scalar lists was found in the inspected authored predicate syntax. Membership operators take literal values; they do not supply dynamic set membership. |
-| Scalar binder comparison | [Operand parsing](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-primitives/src/predicate.rs:259) treats undotted right-hand text as a literal. Structured comparison uses the same parser at line 991. |
-| `.value` workaround | [Typed resolution](~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/crates/specify/ess-domain/src/expression.rs:397) unwraps aliases transparently; a scalar binder does not gain a `.value` field. |
+| Scalar binder comparison | [Operand parsing](home-path:sha256:23118e460792a9051324d4524dd446cf4ced0d5a954fb90bd81cdffee7b110ef) treats undotted right-hand text as a literal. Structured comparison uses the same parser at line 991. |
+| `.value` workaround | [Typed resolution](home-path:sha256:86ebe14ba5e897b9e8adeb4751c86f3501827fccbc48fbff2ed538093435b240) unwraps aliases transparently; a scalar binder does not gain a `.value` field. |
 | Sorting and exact byte retention | `List` is an ordered sequence, not a canonical acquisition algorithm. Both remain concrete reader obligations. |
 
 **All A1–A24 cases inspected**
@@ -75,7 +75,7 @@ These are assessments of the candidate requirements and their source compatibili
 | A13 | Lexical duplicates/overlap are checked before active filesystem resolution; repeated active canonical targets refuse. |
 | A14 | Distinct requested hardlink/copy identities remain present for deterministic downstream duplicate refusal. |
 | A15 | The grammar matches SourceIdentity and preserves accepted spelling. |
-| A16 | Manifest/root/selected-path file-kind and symlink checks are explicit; unlisted entries remain uninspected. |
+| A16 | Manifesthome-path:sha256:7ff8fa94c5ddc503221c6e170a2e22264f035520ab00ade5531f0acd4e97496b file-kind and symlink checks are explicit; unlisted entries remain uninspected. |
 | A17 | Legacy link behavior remains separate; sorted traversal addresses first-visited canonical-directory aliases. |
 | A18 | Exact text retention preserves LF/CRLF source-digest distinctions. |
 | A19 | The no-output/no-runner requirement is scoped to discovery/acquisition failures. |
@@ -103,7 +103,7 @@ The receipts record execution at `2026-09-07T02:38:54Z`. I inspected those exist
 
 Path prefixes below expand literally:
 
-- `R/` = `~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/`
+- `R/` = `home-path:sha256:7b07a2e325a95fc56e436d010bf5ad169aa276862312c059ace379c92899cadb`
 - `C/` = `R/target/review-boundaries-13/preparation/authored-discovery-candidate/`
 - `F` = complete content read; `S` = selected sections/search hits; `H` = complete-byte hash only.
 
@@ -149,7 +149,7 @@ Whole-file hashes do not imply whole-file semantic review.
 | `C/model-validation-v1/compile.stdout` | F | 2192 | `92c21069e9da3bdb5a5b46337e3e0a051414f7bbbe7946e8a958e432fc2bfec7` |
 | `C/model-validation-v1/compile.stderr` | F | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `C/tools/ess` | H | 99458352 | `fb1121b632781343fd06955778d28ae095cff5f305e9f3c5005f2ca93c8a8d1f` |
-| `~/.codex/plugins/cache/beyond10x/aep-drive/0.8.0/agents/adversary.md` | F¹ | 19212 | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` |
+| `home-path:sha256:e82505babddc671cebf5b7f4c841d234b8ece153cba47dc082beaaf48b4a8210` | F¹ | 19212 | `680ac11700dc215bf39201d7019b36277f8b260b673f99c6f09e8a4eb051f795` |
 
 ¹ The complete charter read was retained from the preceding assignment; its hash was rechecked here.
 

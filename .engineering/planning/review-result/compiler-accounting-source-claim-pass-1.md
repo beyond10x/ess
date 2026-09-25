@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:compiler-accounting-source-claim-pass-1
 kind: review-result
 status: active
@@ -224,14 +224,14 @@ This is attribution cleanup, not a loss of the legitimate no-effect claim.
 ```
 
 ```findings
-- file: ~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s4/non-authority-compiler-resolution.json
+- file: home-path:sha256:5a7099abc5fddcc3e2acc68b8f363b902c7c3fc7aa5d6bc14f3ef52eedffd0a3
   line: 1
   category: aggregate-disposition-conflict
   severity: blocker
   verdict: needs-revision
   origin: introduced
   message: Three accepted aggregate identities are marked Supported in all three S4 profile ledgers, affecting nine mappings; classify them as AggregateClosureCandidate so each ledger has 679 Supported, 2 UnsupportedAtThisEntrypoint, and 5 AggregateClosureCandidate rows.
-- file: ~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s4/non-authority-compiler-resolution.json
+- file: home-path:sha256:5a7099abc5fddcc3e2acc68b8f363b902c7c3fc7aa5d6bc14f3ef52eedffd0a3
   line: 1
   category: incomplete-cross-family-parent-attribution
   severity: blocker
@@ -245,7 +245,7 @@ This is attribution cleanup, not a loss of the legitimate no-effect claim.
   verdict: needs-revision
   origin: introduced
   message: Resolution and private-parts cases use presence, primitive-type, outer-variant, opaque-equality, and map-key checks for the detailed periodic, selection, accessor, and subject-state mappings enumerated in the preceding YAML, so those exact member values are not established.
-- file: ~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s4/non-authority-semantic-references.json
+- file: home-path:sha256:a9a7095d619369496731f4ca026eb47054ebbefdfe4d88e5e5e91753fd38d357
   line: 1
   category: semantic-reference-attribution-limit
   severity: blocker

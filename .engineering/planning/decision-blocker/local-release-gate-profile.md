@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: decision-blocker:local-release-gate-profile
 kind: decision-blocker
 status: cleared

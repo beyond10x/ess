@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-view-answers-a-request-not-only-a-model
 kind: story
 status: archived

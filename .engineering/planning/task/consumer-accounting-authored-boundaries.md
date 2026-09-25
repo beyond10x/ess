@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: task:consumer-accounting-authored-boundaries
 kind: task
 status: active
@@ -118,7 +118,7 @@ task:consumer-accounting-authored-boundaries. Operator explicitly approved s3-re
 decision-blocker:authored-consumer-boundary-accounting is cleared3. This is the finite approved
 amendment, not general applicability discovery or permission to change the frozen baseline.
 
-Use retained managed tree ~/.local/state/worktree/trees/b10x/ess/ess-evolution-s3-authored-boundaries-20260915.
+Use retained managed tree home-path:sha256:0371c0cd9a23afea202e3d826c4adbd05b4d93fdb4bfb8e4483d8826079f013e
 HEAD f1af8280338b97d862a6c474ec50f78d5157d71c. Many retained source/test/authority changes preexist;
 none is yours to reset or alter. Acquire/heartbeat/release own lease
 ess-evolution-s3-boundary-amendment-opus-20260916. Canonical current ESS source is the sibling
@@ -134,7 +134,7 @@ profiles. Existing Supported/Refused/unknown and aggregate semantics must not be
 Deliver one complete implementation-ready binding proposal at
 docs/design/consumer-outside-boundary-accounting.md and its minimal typed coordinate model under
 ess/consumer-outside-boundary/. Only those new paths may be written in the tree. Evidence goes to
-~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s3-boundary-amendment/.
+home-path:sha256:b8f4a07d95804187e4a20830d1614a0ee8af5c13480ed553b77546d6ec8fb35a
 No Rust/source/authority/planning/manifest/lock edits, builds, cleanup, commits or network.
 
 Cover all six approved constraints, concretely: exact 168 tuples with finite authority identifiers;

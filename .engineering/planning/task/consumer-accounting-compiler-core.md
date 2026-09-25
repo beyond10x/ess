@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: task:consumer-accounting-compiler-core
 kind: task
 status: implemented
@@ -134,7 +134,7 @@ Existing passing counts and part-dropping controls do not prove the listed desce
 No new consumer profile, baseline expansion, runner, format or independent prerequisite.
 
 Use gpt-5.6-sol/high, no children. Work only in retained managed tree
-~/.local/state/worktree/trees/b10x/ess/ess-evolution-s4-compiler-accounting-20260916.
+home-path:sha256:af71d3c8bc117a1c62a3d10ae53af5ac4ad0031c333b9868828e38052e4268a6
 Read applicable AGENTS.md, worktree skill, installed implementor charter, original s4-brief.md,
 s4/READY.md and s4/implementation-result.md, and the COMPLETE first review. Acquire/heartbeat
 your own lease ess-evolution-s4-correction-sol-20260916. Root alone writes AEP and canonical tree.

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:service-contract-code-pass-2
 kind: review-result
 status: active
@@ -40,7 +40,7 @@ prior finding's unchanged observer and the correction's unused-conversion contro
 individually, before the full suite.
 
 Both commands ran from
-`~/.local/state/worktree/trees/b10x/ess/ess-evolution-service-contract-review-2-20260915`
+`home-path:sha256:c86366d769d2ac9d37c4a4811b00134d47dd0b82bc5cb29717657220f4fd269b`
 with Rust 1.98.1, `--locked --offline`, two jobs, debug and incremental output disabled, `lld`, all
 four Rust wrappers empty, `CARGO_TARGET_DIR` and `CARGO_ENCODED_RUSTFLAGS` unset, the tree-local
 `target/`, and `TMPDIR=/var/tmp/ess-evolution-service-contract-review-2-20260915`.
@@ -91,7 +91,7 @@ env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS RUSTC_WRAPPER= RUSTC_WORKSPAC
 Its complete Cargo runner output was:
 
 ```text
-   Compiling ess-service-contract v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-service-contract-review-2-20260915/crates/specify/ess-service-contract)
+   Compiling ess-service-contract v0.24.0 (home-path:sha256:3a39772933e9127d707a475f4785fef963ca45613c2d94e44bcc5bffd647d186)
     Finished `test` profile [unoptimized] target(s) in 0.33s
      Running unittests src/lib.rs (target/debug/deps/ess_service_contract-d5c29f269d257460)
 
@@ -167,14 +167,14 @@ None. This report covers exact submission `be604d874ee9e567ae104e565e7cbddf95388
 
 6. Outside-worktree writes
 
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/`
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/report.md`
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/test-only.diff` — empty, because the tracked test-only diff is empty.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/targeted-selection-conversion.log` — prior-finding targeted case, exit 0.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/targeted-selection-conversion-control.log` — unused-conversion control, exit 0.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/full-crate-suite.log` — full Rust 1.98.1 crate suite, exit 0.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/scoped-test-format.log` — scoped Rust integration test format check, exit 0.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-2/final-scope.log` — frozen identity, hashes, clean tracked status and final free-space receipt, exit 0.
+- `home-path:sha256:f67fe5a7f560ad403009f818d766f5f7a62d5947716353ff1bf2ca561e696ce2`
+- `home-path:sha256:93799a2f2604536b668a053001682a00681b0adce78cddb4cf430c205fc6034d`
+- `home-path:sha256:acdda0b8a344557c863a9fd775fee5699c06e61070e08f2da72877e9b2ac883a` — empty, because the tracked test-only diff is empty.
+- `home-path:sha256:2e00ce7f24774f17fd9440ebc09c3aeba5fa10f3f6f8dfb00296d0475653202f` — prior-finding targeted case, exit 0.
+- `home-path:sha256:c6916b40c43c470e6f82a7787c4e6ec4fc639a74fba529164e252ebf0f7aa890` — unused-conversion control, exit 0.
+- `home-path:sha256:b8e66a35ca7ebd9a778736c6f17f39c58638ea5b7996d402a85b0877e49e8f32` — full Rust 1.98.1 crate suite, exit 0.
+- `home-path:sha256:3af7010f162548ab36a1726a86b1dbb788ce85403cd0de36952b6dfb9d2b1983` — scoped Rust integration test format check, exit 0.
+- `home-path:sha256:f23de682627075e46922b01e889b95ef0406ab4ed0e7725641364e27d42de138` — frozen identity, hashes, clean tracked status and final free-space receipt, exit 0.
 - `/var/tmp/ess-evolution-service-contract-review-2-20260915/` — assigned scratch directory, empty.
 
 The tree-local ignored `target/` contains this review's reproducible build output. Available space

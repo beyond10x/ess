@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:entity-runtime-lowering-source-pass-1
 kind: review-result
 status: active
@@ -143,7 +143,7 @@ Clippy, rustdoc, and Rust 1.85 evidence is not relabeled as independent reviewer
 This pure review used no provider, store, executor, Eventlog, filesystem/network runtime path, or
 external system. It makes no SDK `/4`, persistence, administration, publication, or deployment
 claim. The isolated reproducible Cargo target remains at
-`~/.cache/codex/lowerer-source-review-1-target`; evidence and owned `TMPDIR` remain under
+`home-path:sha256:9ca5027fffe05fd3ed210e4c57e20ad60f93c1556e195ef119453f768085b96e`; evidence and owned `TMPDIR` remain under
 the assigned evidence directory. There are no live commands.
 
 ## Findings block

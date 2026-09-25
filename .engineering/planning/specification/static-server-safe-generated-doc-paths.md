@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: specification:static-server-safe-generated-doc-paths
 kind: specification
 status: implemented
@@ -17,7 +17,7 @@ revision: 4
 
 ## Context
 
-This record migrates `beyond10x/ess` GitHub issue 2, “ess generate --kind docs emits filenames a static server cannot serve.” The issue was opened by `timofriedlberlin` on 2026-09-02 at 14:12:51Z, remained open with no labels, assignees, milestone, or comments, and described dotted domain names becoming dotted path segments that static servers interpret as extension-bearing filenames.
+This record migrates `beyond10x/ess` GitHub issue 2, “ess generate --kind docs emits filenames a static server cannot serve.” The issue was opened by `the operator` on 2026-09-02 at 14:12:51Z, remained open with no labels, assignees, milestone, or comments, and described dotted domain names becoming dotted path segments that static servers interpret as extension-bearing filenames.
 
 No implementation was added during this migration. Current `main` already satisfies the issue through commit `6cd3706ee2530a1806e74f169851d23667b2bdb7`, released in ESS 0.4.0 and every later release through 0.9.2. The implementation explains and performs the transformation at `crates/ess-gen/src/docs.rs:2502-2511`; generated-document tests exercise hyphenated domain paths beginning at `crates/ess-gen/tests/docs.rs:308`.
 
@@ -77,7 +77,7 @@ Source: `https://github.com/beyond10x/ess/issues/2`
 > not a Docusaurus quirk — GitLab Pages, GitHub Pages and `http-server` all behave this way, because
 > the segment looks like a filename.
 >
-> **Observed** on `sbf/acd`, whose ESS model declares `acd.routing` and `acd.backend`. The published
+> **Observed** on `an adopting project`, whose ESS model declares `acd.routing` and `acd.backend`. The published
 > site 404s on both domain pages until the stems are renamed and every link to them rewritten. The
 > repository carries that rename as a post-processing pass in `scripts/build-docs.sh`, which is a
 > workaround every consumer of `--kind docs` with a dotted domain name will have to write.
@@ -93,7 +93,7 @@ Migrated from GitHub issue `beyond10x/ess#2`.
 
 - Created 2026-09-02T14:12:51Z · last updated 2026-09-02T14:12:51Z
 - Original state: `OPEN`
-- Original author: `timofriedlberlin`
+- Original author: `the operator`
 - Original issue body: 21 lines, 15 nonblank
 - Original labels, assignees, milestone, comments, and issue relations: none
 - AEP reference: `github:beyond10x/ess#2`

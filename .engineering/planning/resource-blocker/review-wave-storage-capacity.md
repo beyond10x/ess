@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: resource-blocker:review-wave-storage-capacity
 kind: resource-blocker
 status: cleared

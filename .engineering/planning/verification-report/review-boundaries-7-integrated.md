@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:review-boundaries-7-integrated
 kind: verification-report
 status: draft
@@ -155,7 +155,7 @@ Builds used the coordinator's own target, worktree-local temporary/Go caches, fo
 
 ## Retained evidence and ownership
 
-All exact commands, times, logs and exits are in `target/review-boundaries-7/final-gate`. The unit evidence archives are `~/.cache/ess-review/2026-09-06-resume/expression-wave7-evidence.tar.gz` (182 files; SHA-256 `8d0117c81655f6c0d976923e4e56e4bd2de8e3055b91c7e4d86e60eebef61bd3`) and `openapi-wave7-evidence.tar.gz` (3,131 files; SHA-256 `89635d7bf76da8e6bd751db40539d815aac52614b829c7580bdecec835052eda`). Adjacent JSON manifests bind every included file and enumerate excluded disposable compiler/dependency cache directories. No managed tree has yet been removed.
+All exact commands, times, logs and exits are in `target/review-boundaries-7/final-gate`. The unit evidence archives are `home-path:sha256:61af4d9631b748b730aaf734d3ede8d19c78aa3047e68f93e4f6b742d6fcfd98` (182 files; SHA-256 `8d0117c81655f6c0d976923e4e56e4bd2de8e3055b91c7e4d86e60eebef61bd3`) and `openapi-wave7-evidence.tar.gz` (3,131 files; SHA-256 `89635d7bf76da8e6bd751db40539d815aac52614b829c7580bdecec835052eda`). Adjacent JSON manifests bind every included file and enumerate excluded disposable compiler/dependency cache directories. No managed tree has yet been removed.
 
 The resumed harness does not expose per-agent token or tool-use counters; those costs are unavailable rather than estimated. Actual command durations remain in each report and gate record. Independent agents own only their assigned source/tests/scratch; the coordinator owns all planning, merge, publication and lifecycle operations.
 
@@ -176,7 +176,7 @@ After the complete gate, source `5d5e87fc70e021ce38477ab71c842a2063a845a3` corre
   "finished": "2026-09-06T08:01:52.785015+00:00",
   "seconds": 16.25657180591952,
   "exit": 0,
-  "log": "~/.local/state/worktree/trees/b10x/ess/wt-752828a285ba/target/review-boundaries-7/final-gate/site-build-reference-correction.log"
+  "log": "home-path:sha256:dee6b6c510224ee2e65a03b88704b16cacd30aab61d8968f7d441833dd815b02"
 }
 ```
 

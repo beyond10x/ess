@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:service-contract-code-pass-1
 kind: review-result
 status: active
@@ -73,7 +73,7 @@ Script done on 2026-09-15 21:11:43+02:00 [COMMAND_EXIT_CODE="101"]
 ```
 
 Raw receipt:
-`~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/targeted-selection-conversion-final.log`.
+`home-path:sha256:be082b26a9a0a3c65a9c1154d6bea61c99d5b693cc31ea5bf04215677c62a483`.
 
 3. Full crate suite and scoped formatting
 
@@ -138,7 +138,7 @@ Script done on 2026-09-15 21:12:36+02:00 [COMMAND_EXIT_CODE="101"]
 The authored suite supplied the before-count of 5. The final full run executed all 6 integration
 cases: the submitted 5 passed and the new case failed. Unit and doc lanes each executed 0. Raw
 receipt:
-`~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/full-crate-suite-final.log`.
+`home-path:sha256:759ba2c9c1b8816ab15404ff6d04927205dbab20546e1f356b0f365fcbc81fbf`.
 
 Scoped formatting was applied only to the new Rust integration test, then checked with:
 
@@ -147,7 +147,7 @@ env -u CARGO_TARGET_DIR -u CARGO_ENCODED_RUSTFLAGS RUSTC_WRAPPER= RUSTC_WORKSPAC
 ```
 
 It exited 0. Raw receipt:
-`~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/scoped-test-format-final.log`.
+`home-path:sha256:052b960d5dad54b435fd9b82bdafa769ee11813a9c3afcb2254019aa51c33b7f`.
 
 4. Finding
 
@@ -186,17 +186,17 @@ are implicated.
 
 6. Outside-worktree writes
 
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/`
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/report.md`
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/targeted-selection-conversion.log` — initial exact targeted red before fixture relocation; exit 101.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/full-crate-suite.log` — default fail-fast full selection stopped at the new red binary; exit 101.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/full-crate-suite-no-fail-fast.log` — exposed contamination from initially nesting the new fixture under the original recursive fixture root; exit 101, retained separately and not classified as a product finding.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/targeted-selection-conversion-isolated.log` — post-relocation redundant red; exit 101, superseded because one Cargo wrapper environment key was misspelled in that command.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/targeted-selection-conversion-final.log` — final exact targeted source red; exit 101.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/full-crate-suite-final.log` — final exact no-fail-fast full crate run; exit 101 with submitted 5 green and new 1 red.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/scoped-test-format.log` — initial test-only formatting check; exit 1 with one line-wrap diff.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/scoped-test-format-apply.log` — test-only formatting application; exit 0.
-- `~/beyond10x/.ess-evolution/waves/0009-service-convergence/service-contract-review-1/scoped-test-format-final.log` — final test-only formatting check; exit 0.
+- `home-path:sha256:6e5b2c8d16b7bffa86663d6d50aca8bb27ea95f41c3ab3a3dfef38fd6dbd5e15`
+- `home-path:sha256:e95a67b7529bd0dac87b09f2847bde1718dbbf67f517c974e8d9a167c8c2901e`
+- `home-path:sha256:841264f199d80a44ebb76ec291546ff0d4ca31811ae6668eac6d469bd63918ec` — initial exact targeted red before fixture relocation; exit 101.
+- `home-path:sha256:82bc79a08a9a7d811cf5a5c74606b52e76fb0744a683975ac1db0cfad54f0fe9` — default fail-fast full selection stopped at the new red binary; exit 101.
+- `home-path:sha256:587e8b4d48345877a546957054118e8768c2bfefe064d804cc3fa2547bb82d2b` — exposed contamination from initially nesting the new fixture under the original recursive fixture root; exit 101, retained separately and not classified as a product finding.
+- `home-path:sha256:2b39a61fee5f8689e6219a782d0096013bdc8204fe6d383121a209f726a50a38` — post-relocation redundant red; exit 101, superseded because one Cargo wrapper environment key was misspelled in that command.
+- `home-path:sha256:be082b26a9a0a3c65a9c1154d6bea61c99d5b693cc31ea5bf04215677c62a483` — final exact targeted source red; exit 101.
+- `home-path:sha256:759ba2c9c1b8816ab15404ff6d04927205dbab20546e1f356b0f365fcbc81fbf` — final exact no-fail-fast full crate run; exit 101 with submitted 5 green and new 1 red.
+- `home-path:sha256:bfce9b4647a2ddebc09b539ec771c5fbe05b8e17ab667a2530b3a427f55568d7` — initial test-only formatting check; exit 1 with one line-wrap diff.
+- `home-path:sha256:829eee4f906122f09b178c9575fbec64aa95669667c6180c83ed3d667a0f6bf9` — test-only formatting application; exit 0.
+- `home-path:sha256:052b960d5dad54b435fd9b82bdafa769ee11813a9c3afcb2254019aa51c33b7f` — final test-only formatting check; exit 0.
 - `/var/tmp/ess-evolution-service-contract-review-1-20260915/` — assigned scratch directory, empty.
 
 No service, network, SQL/database, planning, source repair, cleanup, commit, publication, or

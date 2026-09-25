@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: architecture-decision-record:ess-evolution-10-infra-intention-observation
 kind: architecture-decision-record
 status: proposed

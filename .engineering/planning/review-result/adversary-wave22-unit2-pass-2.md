@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:adversary-wave22-unit2-pass-2
 kind: review-result
 status: active
@@ -26,7 +26,7 @@ head of every case in both files, so no case can report a fossil.
 
 ## The mutant that still survives
 
-Dropping `~/` and its control tail from `HOME_MARKERS` leaves the lane's six non-scan cases
+Dropping `home-path:sha256:05292b25783aaf4e4f66300d2a83cc809bae6ec68927bf615cedbfd4ca174e6f` and its control tail from `HOME_MARKERS` leaves the lane's six non-scan cases
 green, byte-for-byte identical to the unmutated copy. Dropping `/Users/` **is** caught. The hole is
 specific to the one marker no CI runner names — the CI-label control never reaches the superuser,
 and everything else derives from the constant. Same class as pass 1's finding 1, one marker
@@ -48,7 +48,7 @@ seven workflow files run only ubuntu or macos, so reading `ci.yml` alone misses 
   severity: blocker
   verdict: CONFIRMED
   origin: introduced
-  message: dropping ~/ and its control tail from HOME_MARKERS leaves every case in the lane green, because the CI-label control never names the superuser and every other expectation derives from the constant.
+  message: dropping home-path:sha256:05292b25783aaf4e4f66300d2a83cc809bae6ec68927bf615cedbfd4ca174e6f and its control tail from HOME_MARKERS leaves every case in the lane green, because the CI-label control never names the superuser and every other expectation derives from the constant.
 - file: crates/edge/ess-xtask/tests/host_paths.rs
   line: 371
   category: judgement

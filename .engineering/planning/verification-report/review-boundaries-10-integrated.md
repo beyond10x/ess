@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: verification-report:review-boundaries-10-integrated
 kind: verification-report
 status: draft
@@ -208,7 +208,7 @@ The source gate establishes implementation completion. Exact source publication,
   {
     "step": "planning",
     "argv": [
-      "~/.local/state/worktree/trees/b10x/aep/ess-conformance-v2-reader/target/debug/aep",
+      "home-path:sha256:c0d24fd0d917a7ee4a2e79bcea34023107c371dd5721b2b0f4cc4adfefbc2d42",
       "plan",
       "artifact",
       "validate"

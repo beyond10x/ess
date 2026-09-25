@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:entity-runtime-lowering-design-pass-1
 kind: review-result
 status: active
@@ -141,7 +141,7 @@ refusal yielded no additional finite finding. No Cargo command, code/test edit, 
 publication, or external integration invocation was performed. The repository-required Connectors
 use was limited to a local readiness diagnostic. `git diff --stat` remained empty; the three
 assigned untracked proposal files remained at their fixed hashes. The sole outside-worktree write
-was `~/beyond10x/.ess-evolution/waves/0009-service-convergence/er-lowering-design-review-1.md`.
+was `home-path:sha256:d085a8178846bab8a0df823eb080094523f0e0c7973dc069cf2fc9af0b42387e`.
 
 ```findings
 - file: docs/design/ess-evolution/entity-runtime-lowering.md

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:consumer-coverage-source-pass1
 kind: review-result
 status: active
@@ -55,7 +55,7 @@ All four cases existed before the first Cargo command. The coordinator supplied 
     "1"
   ],
   "at": 1788830654.284823,
-  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18"
+  "cwd": "home-path:sha256:24dd364d8121637d8fb6b15fe8713cde2e6e432c75cdb9cdad61591257570311"
 }
 ```
 
@@ -130,7 +130,7 @@ stderr SHA256 d2b669a0883b14237dbb77521a4618c19ec3d873d65ae207af11af37d5973cee
    Compiling unsafe-libyaml v0.2.11
    Compiling ryu v1.0.23
    Compiling serde_yaml v0.9.34+deprecated
-   Compiling ess-primitives v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/crates/specify/ess-primitives)
+   Compiling ess-primitives v0.20.0 (home-path:sha256:afefa61cf92139df8ffb89b8b112b8e63139b882d54e71e88ff600ea2a916b20)
    Compiling anstyle-parse v1.0.0
    Compiling pulldown-cmark v0.13.4
    Compiling anstyle v1.0.14
@@ -138,7 +138,7 @@ stderr SHA256 d2b669a0883b14237dbb77521a4618c19ec3d873d65ae207af11af37d5973cee
    Compiling anstyle-query v1.1.5
    Compiling colorchoice v1.0.5
    Compiling anstream v1.0.0
-   Compiling ess-domain v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/crates/specify/ess-domain)
+   Compiling ess-domain v0.20.0 (home-path:sha256:92bda04323b8f0b85f9c369b67411840be7c93ef0fe07f438193f7449391cbf9)
    Compiling unicase v2.9.0
    Compiling clap_lex v1.1.0
    Compiling heck v0.5.0
@@ -147,11 +147,11 @@ stderr SHA256 d2b669a0883b14237dbb77521a4618c19ec3d873d65ae207af11af37d5973cee
    Compiling strsim v0.11.1
    Compiling anyhow v1.0.104
    Compiling clap_builder v4.6.6
-   Compiling ess-compiler v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/crates/specify/ess-compiler)
+   Compiling ess-compiler v0.20.0 (home-path:sha256:acb8181be8858651109fd8ec8d24b6b62f0d27f651b02541ad218e213858d33f)
    Compiling clap_derive v4.6.4
-   Compiling ess-xtask v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.20.0 (home-path:sha256:5bf79b0a6a4c8816141464fa1666441ceadfbbb3ca517b82b3f563be1500a746)
    Compiling clap v4.6.6
-   Compiling ess-gen v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/crates/generate/ess-gen)
+   Compiling ess-gen v0.20.0 (home-path:sha256:534d5f51f73ea79de3b081222bdb4b5d783b8db816b7be94b0e09aa28e8b424f)
     Finished `test` profile [unoptimized] target(s) in 20.05s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-7e95320043038dad)
 error: test failed, to rerun pass `-p ess-xtask --bin ess-xtask`
@@ -187,7 +187,7 @@ Completion and count record:
     "1"
   ],
   "at": 1788830694.9664333,
-  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18"
+  "cwd": "home-path:sha256:24dd364d8121637d8fb6b15fe8713cde2e6e432c75cdb9cdad61591257570311"
 }
 ```
 
@@ -260,7 +260,7 @@ Completion and count record:
     "1"
   ],
   "at": 1788830708.5335944,
-  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18"
+  "cwd": "home-path:sha256:24dd364d8121637d8fb6b15fe8713cde2e6e432c75cdb9cdad61591257570311"
 }
 ```
 
@@ -331,7 +331,7 @@ Completion and count record:
     "1"
   ],
   "at": 1788830709.2390547,
-  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18"
+  "cwd": "home-path:sha256:24dd364d8121637d8fb6b15fe8713cde2e6e432c75cdb9cdad61591257570311"
 }
 ```
 
@@ -410,7 +410,7 @@ Only ess-xtask was modified. Its full package was run with --no-fail-fast so the
     "--no-fail-fast"
   ],
   "at": 1788830722.1858704,
-  "cwd": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18"
+  "cwd": "home-path:sha256:24dd364d8121637d8fb6b15fe8713cde2e6e432c75cdb9cdad61591257570311"
 }
 ```
 
@@ -569,7 +569,7 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 stderr SHA256 2fbd29836ca6ce4692b28bf785f8934cc1b2537b793a0e06f7c0e0189e35dfb3
 
 ```text
-   Compiling ess-xtask v0.20.0 (~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.20.0 (home-path:sha256:5bf79b0a6a4c8816141464fa1666441ceadfbbb3ca517b82b3f563be1500a746)
     Finished `test` profile [unoptimized] target(s) in 5.41s
      Running unittests src/main.rs (target/debug/deps/ess_xtask-7e95320043038dad)
 error: test failed, to rerun pass `-p ess-xtask --bin ess-xtask`
@@ -620,10 +620,10 @@ The selected effective environment is retained verbatim:
 ```json
 {
   "set": {
-    "CARGO_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/cargo-home",
-    "CARGO": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-coverage/rust-toolchain/bin/cargo",
-    "RUSTC": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-coverage/rust-toolchain/bin/rustc",
-    "RUSTDOC": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-coverage/rust-toolchain/bin/rustdoc",
+    "CARGO_HOME": "home-path:sha256:7748ad860adb3924fb0d21e762dfb1cf97a532485fec3ca3e792d89c0ec59c1e",
+    "CARGO": "home-path:sha256:65c8ed6281e290d3fb8d9b71845c3a6fbd5f664f6d4f111bcc35ca6ef1941fe9",
+    "RUSTC": "home-path:sha256:52c4d0a89073dfcd77b0a1fb163045eec15ca8311ef91e4ac223247a77db7a55",
+    "RUSTDOC": "home-path:sha256:ed194283e8d1f2581b8e083afa400b7ce5bb98d0262f2bd41fdb6a7cfeda05f8",
     "RUSTFLAGS": "-C link-arg=-fuse-ld=lld",
     "CARGO_BUILD_JOBS": "2",
     "CARGO_NET_OFFLINE": "true",
@@ -636,26 +636,26 @@ The selected effective environment is retained verbatim:
     "RUSTC_WORKSPACE_WRAPPER": "",
     "CARGO_BUILD_RUSTC_WRAPPER": "",
     "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER": "",
-    "TMPDIR": "~/.cache/ess-w18-consumer-source-pass1-tmp",
-    "GOCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/go-cache",
-    "GOMODCACHE": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/go-mod-cache",
-    "XDG_CACHE_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/xdg-cache",
-    "XDG_CONFIG_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/xdg-config",
-    "XDG_DATA_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/xdg-data",
-    "XDG_RUNTIME_DIR": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/xdg-runtime",
-    "XDG_STATE_HOME": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-source-pass-1/xdg-state",
-    "PATH": "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target/review-boundaries-18/consumer-coverage/rust-toolchain/bin:~/.local/bin:~/.deno/bin:~/.codex/packages/standalone/releases/0.153.4-x86_64-unknown-linux-musl/codex-path:~/.codex/tmp/arg0/codex-arg0EIPBn9:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.local/bin:~/.deno/bin:~/.codex/tmp/arg0/codex-arg0dAS0R8:~/.linuxbrew/Caskroom/codex/0.153.4/codex-path:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.opencode/bin:~/.fly/bin:~/.cargo/bin:~:~/anaconda/bin:/usr/bin:~/.rbenv:/usr/local/go/bin:~/go/bin:~/go:~/.local/share/gem/ruby/3.0.0/bin:~/.deno/bin:~/.yarn/bin:~/.pulumi/bin:/opt/rocm/bin:~/.bun/bin:~/.linuxbrew/bin:~/.linuxbrew/sbin:~/.sdkman/candidates/scala/current/bin:~/.sdkman/candidates/maven/current/bin:~/.sdkman/candidates/java/current/bin:~/.sdkman/candidates/groovy/current/bin:~/.sdkman/candidates/grails/current/bin:~/.sdkman/candidates/gradle/current/bin:~/.local/bin:/usr/local/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/usr/lib/rustup/bin:/var/lib/snapd/snap/bin:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems:/opt/cuda/bin:/opt/cuda/integration/nsight-compute:/opt/cuda/integration/nsight-systems"
+    "TMPDIR": "home-path:sha256:33666c6f82c48764f5a8d21cb70dcc98dd16aa4d4673219d2bf95e937383a4ac",
+    "GOCACHE": "home-path:sha256:e07ab407a915b0d19d0f0922519dee552fd5655dea5d06a4799415a31cd3d106",
+    "GOMODCACHE": "home-path:sha256:6f2f66aff31716238d57d24cf666b56da107aa4442c3871c9ea7ee42cdc8e474",
+    "XDG_CACHE_HOME": "home-path:sha256:7cbc5e415dfd48f820dbe1feebf21c1dfff3cce602c4d1060eda24a8d2e159c6",
+    "XDG_CONFIG_HOME": "home-path:sha256:c17aba5c9436cd37b0e428724869beb158ff3d8f8ee4e6e0dafda37d4568c5b2",
+    "XDG_DATA_HOME": "home-path:sha256:9900a19d0582aab66cc2b97efc14d9763e44e223107658b388de298691a99d34",
+    "XDG_RUNTIME_DIR": "home-path:sha256:5b7984e72181c59ab6070afa23b851f28d4cb892f3df1618ae5b387ae2f29a80",
+    "XDG_STATE_HOME": "home-path:sha256:ee1847fca6ea7fcdb42e9df70bf719a3f635587fbc504bb5b1cdbcdf927d8e5d",
+    "PATH": "home-path:sha256:14eb9264ee776a63b87eaeabba194c2a1614a605d7560c0451a7f790735ca093"
   },
   "unset": [
     "CARGO_TARGET_DIR",
     "CARGO_ENCODED_RUSTFLAGS"
   ],
-  "temporary_root": "~/.cache/ess-w18-consumer-source-pass1-tmp",
+  "temporary_root": "home-path:sha256:33666c6f82c48764f5a8d21cb70dcc98dd16aa4d4673219d2bf95e937383a4ac",
   "retained_roots": [
-    "~/.local/state/worktree/trees/b10x/ess/ess-consumer-coverage-wave18/target",
-    "~/.cache/ess-w18-consumer-tmp",
-    "~/.cache/ess-w18-consumer-stage2-tmp",
-    "~/.cache/ess-w18-consumer-source-pass1-tmp"
+    "home-path:sha256:93f3b5af9c03ffa3b010be637f131d2560c1134a529a2d21fbb8ea2c1ace01e5",
+    "home-path:sha256:457395a1269399ab17d8fb0043c65d37e9c30460136bd00ba6441ca2d2dd604e",
+    "home-path:sha256:372ed0f6779dbbb1003793a6bdbc699dd1b659f2731955bf26be8ccc425787dc",
+    "home-path:sha256:33666c6f82c48764f5a8d21cb70dcc98dd16aa4d4673219d2bf95e937383a4ac"
   ],
   "allowance_bytes": 8501440512,
   "floor_bytes": 8589934592
@@ -664,8 +664,8 @@ The selected effective environment is retained verbatim:
 
 ## 6. Every external path written
 
-- ~/.cache/ess-w18-consumer-source-pass1-tmp — sole assigned external TMP root; every descendant is retained and named by the full native census.
-- ~/.local/state/worktree/registry.sqlite3 — only the assigned ess-consumer-coverage-source-pass1 lease lifecycle, using the normal manager environment.
+- home-path:sha256:33666c6f82c48764f5a8d21cb70dcc98dd16aa4d4673219d2bf95e937383a4ac — sole assigned external TMP root; every descendant is retained and named by the full native census.
+- home-path:sha256:4e6427430bd5ae6f4b6ed99313c321c933a044122ab45412f907cd91f6a1aab0 — only the assigned ess-consumer-coverage-source-pass1 lease lifecycle, using the normal manager environment.
 
 No other external write root was selected. The original Stage 1 and Stage 2 scratch/TMP and mutation tree were read-only. No cleanup, download, installation, integration, Atlas/Website operation, branch switch, commit or push was performed. Root owns final cleanup and any changed-scope decision.
 

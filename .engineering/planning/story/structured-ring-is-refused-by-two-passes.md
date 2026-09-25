@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:structured-ring-is-refused-by-two-passes
 kind: story
 status: implemented

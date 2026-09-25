@@ -53,38 +53,30 @@
 //!
 //! What it does not read at all, tree by tree:
 //!
-//! * `.engineering/` — unread, 3 files, 4 lines: the planning store. Those counts are
-//!   measured on every run by
+//! * `.engineering/` — unread, 0 files, 0 lines: the planning store. Those counts are measured
+//!   on every run by
 //!   [`every_unread_tree_that_carries_the_class_is_named_in_the_module_documentation`], which is
-//!   the only reason to believe them. They were 61 files and 32806 lines until 2026-09-22.
+//!   the only reason to believe them. They were 61 files and 32806 lines until 2026-09-22, then 3
+//!   files and 4 lines until 2026-09-24. The tree stays unread because it quotes this lane's own
+//!   markers, in the review results that measured the detector, in shapes the narrowing refuses.
 //!
-//!   **The question this bullet used to hold open is answered, and not the way it expected.** It
-//!   argued that the store could not be made clean by scrubbing, because
-//!   `.engineering/planning/journal.jsonl` is append-only and 87 of the carrying lines were in it:
-//!   rewriting one *"is exactly what append-only forbids"*, and `aep plan artifact validate` reads
-//!   such a rewrite as forgery. That was right about scrubbing a store, and it missed the other
-//!   move. When the store was migrated to Eventlog authority the import read a *source*, and the
-//!   source was rewritten before it was read — 101830 absolute paths across 81 files, to the
-//!   portable `~/…` spelling this lane admits. The event log was built from clean bytes and never
-//!   carried them, so the journal projected out of it carries none either.
+//! The first count fell when the store was migrated to Eventlog authority: the import read a
+//! *source*, and the source was rewritten before it was read — 101830 absolute paths across 81
+//! files, to the portable `~/…` spelling this lane admits. Scrubbing the store in place could not
+//! have done it, because the journal was append-only and a body corrected after the import appends
+//! a new blob and leaves the old one reachable. `story:scrub-the-planning-store-or-say-why-not` is
+//! closed by that migration, not by a scan widening.
 //!
-//!   Doing it the other way round is what does not work, and the reason is worth keeping: a body
-//!   corrected after the import appends a *new* blob and leaves the old one reachable, because a
-//!   blob is addressed by a digest over its own bytes. The string stays in the history that gets
-//!   published. `story:scrub-the-planning-store-or-say-why-not` is closed by the migration, not by
-//!   a scan widening.
+//! The second fell when the store moved to `aep.project/3`: `aep plan store export` rewrote every
+//! home path, the portable spelling included, to `workspace:<path>` or `home-path:sha256:<digest>`,
+//! and with them the bare markers and the one account name carrying a combining mark that
+//! `story:host-path-lane-detector-bounds` and the wave-22 adversary results quoted. A planning
+//! write that names a home directory is refused by `aep plan artifact validate`, and it would
+//! turn the counts above red here.
 //!
-//!   What the detector still finds is this lane's own subject matter: the bare markers, and one
-//!   account name carrying a combining mark, quoted in `story:host-path-lane-detector-bounds` and
-//!   in the wave-22 adversary results that measured the class — documents *about* the detector,
-//!   written to exercise the bound the second paragraph of this module already admits it has.
-//!   Refusing those would delete the remedy along with the defect, which is the same reason the
-//!   portable spelling is admitted above.
-//!
-//!   `layout.rs` also excludes this tree, and an earlier revision cited that as *the same reason*.
-//!   It is not authority to borrow: [`SCANNED_PREFIXES`] below says in its own words that the two
-//!   scans refuse different things — a stale repository-relative citation is not a defect and a
-//!   workstation path is — and that doc is right, so the appeal was the thing to fix.
+//! `layout.rs` also excludes this tree. That is not authority to borrow: [`SCANNED_PREFIXES`] below
+//! says in its own words that the two scans refuse different things — a stale repository-relative
+//! citation is not a defect and a workstation path is.
 //!
 //! That is the whole of that list.
 //!
@@ -1397,9 +1389,9 @@ fn tree_of(file: &str) -> String {
 ///
 /// This is the half of the acceptance statement a reader cannot check by reading. The four trees
 /// in [`SCANNED_PREFIXES`] are clean because this lane refuses to let them be otherwise, and the
-/// summary line at the top of this file is true of those four and says so; sixty tracked files
-/// under `.engineering/` carry the class, and the bullet that accounts for them is held here to
-/// the repository rather than to its author.
+/// summary line at the top of this file is true of those four and says so; a tree outside them
+/// that carries the class needs a bullet in the module documentation, held here to the repository
+/// rather than to its author.
 ///
 /// Measured rather than listed, so the case closes the class instead of the instance: every tree
 /// outside [`SCANNED_PREFIXES`] is read with the lane's own detector, and any tree found carrying
@@ -1459,9 +1451,11 @@ fn every_unread_tree_that_carries_the_class_is_named_in_the_module_documentation
 
     let source = fs::read_to_string(root.join(this_file())).expect("this file is readable");
     let claims = documented_unread_trees(&source);
+    // A bullet counting nothing states that its tree is unread and clean, which the count
+    // assertion below measures; it is not a claim that the tree carries the class.
     let documented: BTreeSet<String> = claims
         .iter()
-        .filter(|(_, unread, _, _)| *unread)
+        .filter(|(_, unread, files, lines)| *unread && (*files, *lines) != (0, 0))
         .map(|(tree, _, _, _)| tree.clone())
         .collect();
     let carrying: BTreeSet<String> = carried.keys().cloned().collect();

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:ess-nested-execution-source-pass-2
 kind: review-result
 status: active
@@ -35,7 +35,7 @@ changes only `entrypoint_source_file_sha256` and requires candidate construction
 The exact bounded command was:
 
 ```console
-env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 CARGO_NET_OFFLINE=true TMPDIR='~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-2/scratch/tmp' RUST_TEST_THREADS=1 RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER= CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C link-arg=-fuse-ld=lld' cargo +1.98.1 test --target-dir '~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/target' --locked --offline -p ess-xtask -j 1 'consumer_coverage::nested_execution_tests::nested_execution_rejects_a_stale_claim_entrypoint_binding' -- --exact
+env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 CARGO_NET_OFFLINE=true TMPDIR='home-path:sha256:c54df90ced2da6a21aa18dd4dd2a92e4eb1cc52b7c4578276a1d2dc4fca19c55' RUST_TEST_THREADS=1 RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER= CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C link-arg=-fuse-ld=lld' cargo +1.98.1 test --target-dir 'home-path:sha256:6ed1633f7c51d9df60d6e6555d12fa80168e9f40edd2cd8208683adb9aef8eae' --locked --offline -p ess-xtask -j 1 'consumer_coverage::nested_execution_tests::nested_execution_rejects_a_stale_claim_entrypoint_binding' -- --exact
 ```
 
 The first invocation reached compilation but the orchestration call yielded without retaining its
@@ -45,9 +45,9 @@ The identical second invocation produced the first retained case result below. T
 terminal transcript is a review limitation; the retained rerun is the reproducible red result.
 
 ```text
-   Compiling ess-xtask v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-nested-review-2-20260916/crates/edge/ess-xtask)
+   Compiling ess-xtask v0.24.0 (home-path:sha256:c30b9559b552847605564ddaf60347a0cdb64a6f86e9eb755d7c746ff348d4ae)
     Finished `test` profile [unoptimized] target(s) in 29.03s
-     Running unittests src/main.rs (~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/target/debug/deps/ess_xtask-933e37d58b3a5a7c)
+     Running unittests src/main.rs (home-path:sha256:d5bef2647eec51b9df98e3fc806630302824a49e6e5550d969b1b3611de87113)
 
 running 1 test
 test consumer_coverage::nested_execution_tests::nested_execution_rejects_a_stale_claim_entrypoint_binding ... FAILED
@@ -197,11 +197,11 @@ The initial compile invocation's terminal output was not retained, as disclosed 
 
 ## 6. Paths written outside the worktree
 
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-2/report.md`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-2/complete-source-verification.log`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-2/evidence-structure-audit.log`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-2/scratch/tmp/`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/target/` (pre-existing root-assigned compiler cache used and updated by the bounded case)
+- `home-path:sha256:62dbed7864b918cc83ae19309b701686da7340054e75c086b11ea4c1831330c0`
+- `home-path:sha256:5fe3a4fe283fa35aae67e6ac6fd769c8f06a106b358e6db1f7c95c4f5badd69a`
+- `home-path:sha256:6bdf1a6d601bb8d607f981db36085f23cceef39c302f429a21549844716b625e`
+- `home-path:sha256:9429c8c7b65968e74f2c862546b10bf1739c72923597e39f747159af0b5aa160`
+- `home-path:sha256:c418b633ba1cb0d2cf3baa7168330366eb7428d3798a8351ad275fdff04a6c4e` (pre-existing root-assigned compiler cache used and updated by the bounded case)
 
 ```findings
 - file: crates/edge/ess-xtask/src/consumer_coverage/nested_execution.rs

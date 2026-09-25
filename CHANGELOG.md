@@ -15,6 +15,15 @@
   synthesis plan, preserving selected compiler values, contextual capabilities, obligations,
   refusals and their original order.
 
+### Removed
+
+- **Breaking:** `ess skill` and the agent plugin in `plugins/ess/`, with both marketplace files
+  (`ess@ess`), the `build.rs` that embedded the skills and `cargo xtask plugin check`. The plugin
+  lives in `beyond10x/agentplugins` with every other Beyond10x plugin (`ess@b10x`, skills
+  `ess:init`, `ess:specifying`, `ess:retrofitting`, `ess:testing-conformance`, `ess:upgrade`);
+  its `b10x` CLI installs this binary prebuilt or with `cargo` and migrates an `ess@ess` install.
+  `ess --help` lists the four areas and nothing else.
+
 ## [0.30.0] — 2026-09-23
 
 ### Added

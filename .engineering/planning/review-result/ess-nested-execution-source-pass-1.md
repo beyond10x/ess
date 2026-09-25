@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:ess-nested-execution-source-pass-1
 kind: review-result
 status: active
@@ -36,19 +36,19 @@ returns success.
 The first and only execution of the case was:
 
 ```console
-env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 CARGO_NET_OFFLINE=true TMPDIR='~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-1/scratch/tmp' RUST_TEST_THREADS=1 RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER= CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C link-arg=-fuse-ld=lld' cargo +1.98.1 test --target-dir '~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/target' --locked --offline -p ess-xtask -j 1 'consumer_coverage::nested_execution_tests::nested_execution_rejects_a_coordinated_outer_native_substitution' -- --exact
+env -u CARGO_TARGET_DIR CARGO_BUILD_JOBS=1 CARGO_NET_OFFLINE=true TMPDIR='home-path:sha256:9ea3d4ccd0d3a3d6ab6c932dd36eea7ab5cfc74e6f57677b0e0dee9d1ba6f26b' RUST_TEST_THREADS=1 RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= CARGO_BUILD_RUSTC_WRAPPER= CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER= CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 RUSTFLAGS='-C link-arg=-fuse-ld=lld' cargo +1.98.1 test --target-dir 'home-path:sha256:6ed1633f7c51d9df60d6e6555d12fa80168e9f40edd2cd8208683adb9aef8eae' --locked --offline -p ess-xtask -j 1 'consumer_coverage::nested_execution_tests::nested_execution_rejects_a_coordinated_outer_native_substitution' -- --exact
 ```
 
 Verbatim result:
 
 ```text
-   Compiling ess-primitives v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-nested-review-1-20260916/crates/specify/ess-primitives)
-   Compiling ess-domain v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-nested-review-1-20260916/crates/specify/ess-domain)
-   Compiling ess-compiler v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-nested-review-1-20260916/crates/specify/ess-compiler)
-   Compiling ess-xtask v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-nested-review-1-20260916/crates/edge/ess-xtask)
-   Compiling ess-gen v0.24.0 (~/.local/state/worktree/trees/b10x/ess/ess-evolution-nested-review-1-20260916/crates/generate/ess-gen)
+   Compiling ess-primitives v0.24.0 (home-path:sha256:77b9f0dc3156165b821a5cd24c84ee02906e22d894430d6fadebc53ba0f88678)
+   Compiling ess-domain v0.24.0 (home-path:sha256:02e4a7f78f60f5711d3d2667b1fc6cffa9ab2e3a5cfa25fc771c8941260ca7ae)
+   Compiling ess-compiler v0.24.0 (home-path:sha256:39749bc2572ff37ee0c8e67190665ca791fb96e19a6d75eaf9354a215e2deeaf)
+   Compiling ess-xtask v0.24.0 (home-path:sha256:4dc72967771c89c456310cbcd0d4bd2270ef3a947ad102628dc675f5654daf0f)
+   Compiling ess-gen v0.24.0 (home-path:sha256:fd32aa614ea59e1518592388b9b71c79e732d3a5adbe295f86b7a2d841e2d55c)
     Finished `test` profile [unoptimized] target(s) in 36.63s
-     Running unittests src/main.rs (~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/target/debug/deps/ess_xtask-933e37d58b3a5a7c)
+     Running unittests src/main.rs (home-path:sha256:d5bef2647eec51b9df98e3fc806630302824a49e6e5550d969b1b3611de87113)
 
 running 1 test
 test consumer_coverage::nested_execution_tests::nested_execution_rejects_a_coordinated_outer_native_substitution ... FAILED
@@ -120,9 +120,9 @@ source-shape findings); this review neither retries nor waives them.
 
 6. Paths written outside the worktree
 
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-1/report.md`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/source-review-1/scratch/tmp/`
-- `~/beyond10x/.ess-evolution/waves/0010-opus-accounting/nested-execution/target/` (pre-existing, root-reassigned compiler cache used by the bounded test)
+- `home-path:sha256:92edd3036b65df08a68c6aeed41628c75c03185fec24f6b2a3e578a753fece93`
+- `home-path:sha256:c1c21a131bab82dbfbe569346890cf027ee50cfff0abd4051695362e03013863`
+- `home-path:sha256:c418b633ba1cb0d2cf3baa7168330366eb7428d3798a8351ad275fdff04a6c4e` (pre-existing, root-reassigned compiler cache used by the bounded test)
 
 ```findings
 - file: crates/edge/ess-xtask/src/consumer_coverage/nested_execution.rs

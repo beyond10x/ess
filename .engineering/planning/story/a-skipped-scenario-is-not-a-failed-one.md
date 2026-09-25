@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-skipped-scenario-is-not-a-failed-one
 kind: story
 status: implemented
@@ -51,7 +51,7 @@ for _, result := range results {
 Both non-passing statuses land in `failed`, and `ScenariosFailed: len(failed)` publishes the count
 under a name that says one of them.
 
-Measured on `sbf/acd`, 2026-09-03, ess 0.11.0:
+Measured on `an adopting project`, 2026-09-03, ess 0.11.0:
 
 ```json
 {"status": "inconclusive", "scenarios_total": 24, "scenarios_failed": 9}
@@ -80,7 +80,7 @@ even be the wanted rule, but it is being enforced by the wrong fact. `ess_confor
 already false for an `inconclusive` run and already carries that claim; `scenarios.failed` is
 supposed to carry a different one and does not.
 
-Recorded downstream in `sbf/acd` at
+Recorded downstream in `an adopting project` at
 `.engineering/planning/executable-system-specification/acd-v3.md`, where the consequence is that
 the artifact cannot honestly be moved to `conforming` and the reason is two-thirds wording.
 

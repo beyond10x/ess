@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:wire-behavior-period-design-pass-1
 kind: review-result
 status: active
@@ -16,7 +16,7 @@ What I read: 2 planning artifacts (the task and inherited parent story), 5 bindi
 
 Facts observed: `Period` currently derives an integer schema although Serde enters through `String`; the proposed bounded decimal arms partition `1..=4294967295`, and `minLength: 4`, `maxLength: 13`, the anchored pattern, and the separate forbidden-character `not` guard jointly exclude the named noncanonical and line-ending forms. The production loader parses, assembles, and compiles without evaluating JSON Schema, and its refusal fields distinguish the three stages. The wire extractor already admits `pattern`, `minLength`, `maxLength`, and `not`. The existing seven cases and all 27 adopted Rust claims bind the shared loader-case source file, so their source identities must be refreshed after the proposed edits. The four wire aggregate parents can retain ShapeDelta, unchanged profile/residual semantics, and frozen old witnesses while root and definitions receive newly generated current hashes.
 
-What I could not establish: revised Period/root/definitions hashes, the post-fix finite wire inventory, actual paired pointer/loader execution, or exact refusal observations; no implementation or executable evidence exists yet. It is also unexecuted inference that the two RawOutcome aggregate hashes remain unchanged after the isolated Period schema correction.
+What I could not establish: revised Periodhome-path:sha256:48ae8f511f28ade9233f77b1d815e2274a0bbe29270a76dd0d64c77759770d37 hashes, the post-fix finite wire inventory, actual paired pointer/loader execution, or exact refusal observations; no implementation or executable evidence exists yet. It is also unexecuted inference that the two RawOutcome aggregate hashes remain unchanged after the isolated Period schema correction.
 
 ```findings
 - file: local-evidence:ess-evolution/waves/0004-ess-accounting/wire-obligation-scope-result.md

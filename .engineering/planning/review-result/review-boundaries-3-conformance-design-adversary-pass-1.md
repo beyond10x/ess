@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:review-boundaries-3-conformance-design-adversary-pass-1
 kind: review-result
 status: active
@@ -128,7 +128,7 @@ AEP was inspected only through Git objects at 00c742e4179593738a2e8aa69e2ecc07d3
 The following read-only comparison emitted no diff and exited 0:
 
 ```console
-git -C ~/beyond10x/aep --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
+git -C home-path:sha256:c650d5a95d933b2a4f5fd79fbd351940e5a90d6b4912208a7cffb480c56a402a --no-pager diff cc321f31fa0120b32a5b9f5e7b8c8fdfa55f69f9 00c742e4179593738a2e8aa69e2ecc07d3c89402 -- crates/observe/aep-ess-evidence/src/lib.rs crates/edge/aep-cli/src/planning.rs
 ```
 
 ```text
@@ -343,7 +343,7 @@ Exit: `0`.
 
 ## 6. Outside writes
 
-None. Report path: ~/.local/state/worktree/trees/b10x/ess/review-conformance-format-design/target/review-boundaries-3/adversary-pass-1.md. No separate scratch fixture or log was created; command excerpts are retained in this report.
+None. Report path: home-path:sha256:488cc5fb3859e5efb19712d699cc40960b4f7621c9bf394a60385e971cedb7bb No separate scratch fixture or log was created; command excerpts are retained in this report.
 
 ## 7. Findings for the coordinator
 

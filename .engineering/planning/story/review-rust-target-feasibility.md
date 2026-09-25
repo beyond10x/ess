@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:review-rust-target-feasibility
 kind: story
 status: implemented
@@ -127,8 +127,8 @@ The published SDK reader `6e5141f` was built again against all seven ESS package
 
 Final SDK proof completed 2026-09-05T22:03:52.706889+00:00. Raw records:
 
-- ~/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/record.json: SHA256 `5499066b645737047b57cd82cea66344608f6a96ed1d412b8d03b6998f502473`.
-- ~/.local/state/worktree/trees/b10x/service-sdk/ess-rust-refusal-reader/target/review-boundaries-5/exact-producer-final-87338bd/final-matrix/record.json: SHA256 `8408362d20b3ffc3b08f9eb06f19c02d68ec90c2c1fdb7ef0c3447e29436e44c`.
+- home-path:sha256:b419a2808b4a6fe5f86748b5557c16ecdbe5b5220dc5e96ac940a787e4fd1f68 SHA256 `5499066b645737047b57cd82cea66344608f6a96ed1d412b8d03b6998f502473`.
+- home-path:sha256:e2d2d71c02fc82a1d1622c4f19bd11882ec6818bb9dc256d69aee22f0151082f SHA256 `8408362d20b3ffc3b08f9eb06f19c02d68ec90c2c1fdb7ef0c3447e29436e44c`.
 
 Public catalog delivery and task-owned resource cleanup remain pending in their companion records. No version bump or tag was created.
 

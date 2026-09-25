@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: specification:construct-provenance-references
 kind: specification
 status: implemented
@@ -17,7 +17,7 @@ revision: 5
 
 ## Context
 
-This record migrates `beyond10x/ess` GitHub issue 3, “A command, event or binding has nowhere to record why it exists.” The issue was opened by `timofriedlberlin` on 2026-09-02 at 14:13:07Z, remained open with no labels, assignees, milestone, or comments, and proposed both free-form `because` prose and structured external references on commands, events, errors, and bindings.
+This record migrates `beyond10x/ess` GitHub issue 3, “A command, event or binding has nowhere to record why it exists.” The issue was opened by `the operator` on 2026-09-02 at 14:13:07Z, remained open with no labels, assignees, milestone, or comments, and proposed both free-form `because` prose and structured external references on commands, events, errors, and bindings.
 
 No implementation was added during this migration. Commit `9f13631d66583b56b08ce9bdeff01042842e5ade`, released in ESS 0.4.0 and every later release through 0.9.2, resolved the underlying provenance problem with a deliberately narrower contract: structured `provider:key` references on commands, outcomes, bindings, and components. It explicitly rejected a general `because` field because prose beside the external record can go stale. `crates/ess-domain/src/refs.rs:1-31` owns that decision and spelling; the typed fields are visible at `crates/ess-domain/src/binding.rs:166-170`, `crates/ess-domain/src/command.rs:793-797`, `:922-926`, `:1739-1743`, and `:1810-1814`.
 
@@ -87,7 +87,7 @@ Source: `https://github.com/beyond10x/ess/issues/3`
 >
 > ### What this costs, concretely
 >
-> Modelling the ACD v3 → backend boundary in `sbf/acd` produced three bindings, each declaring
+> Modelling the ACD v3 → backend boundary in `an adopting project` produced three bindings, each declaring
 > `delivery: at_least_once` and an `on_failure` escalation. Those declarations exist *because* the v1
 > event path silently drops every event other than two, which was found by reading
 > `adapters/backendsvc/svc.go:165`. That sentence is the most valuable thing about the binding and
@@ -114,7 +114,7 @@ Migrated from GitHub issue `beyond10x/ess#3`.
 
 - Created 2026-09-02T14:13:07Z · last updated 2026-09-02T14:13:07Z
 - Original state: `OPEN`
-- Original author: `timofriedlberlin`
+- Original author: `the operator`
 - Original issue body: 31 lines, 22 nonblank
 - Original labels, assignees, milestone, comments, and issue relations: none
 - AEP reference: `github:beyond10x/ess#3`

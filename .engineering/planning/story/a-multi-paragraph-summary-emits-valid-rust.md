@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: story:a-multi-paragraph-summary-emits-valid-rust
 kind: story
 status: archived

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:consumer-outside-boundary-source-pass-2
 kind: review-result
 status: active
@@ -188,7 +188,7 @@ claim. Surviving issues go to root disposition.
 ## 8. Paths written outside the worktree
 
 Five, all under the assigned scratch directory
-`~/beyond10x/.ess-evolution/waves/0010-opus-accounting/s3-source-review-2/`:
+`home-path:sha256:9e2f12589b5ba5f4101cc79d70716a4ccabd2256b35ed9fdc6db4791f898ba74`:
 
 - `READY.md`
 - `report.md` (this file)

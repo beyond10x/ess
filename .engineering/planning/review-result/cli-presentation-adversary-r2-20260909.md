@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/1
+format: aep.planning-md/2
 id: review-result:cli-presentation-adversary-r2-20260909
 kind: review-result
 status: active
@@ -72,7 +72,7 @@ cargo test --target-dir target/cli-gate-integration --locked --offline -p ess-cl
 Exit status: 101. Actual output, retained verbatim in adversary-ess-r2-negative-zero.log:
 
 ```text
-   Compiling ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+   Compiling ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `test` profile [unoptimized] target(s) in 0.28s
      Running tests/adversarial_r2.rs (target/cli-gate-integration/debug/deps/adversarial_r2-ead8f216e60feb5d)
 
@@ -107,8 +107,8 @@ cargo test --target-dir target/cli-gate-integration --locked --offline --no-fail
 Exit status: 101. Actual output, retained verbatim in adversary-ess-r2-suite.log:
 
 ```text
-   Compiling ess-cli-contract v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/specify/ess-cli-contract)
-   Compiling ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+   Compiling ess-cli-contract v0.20.0 (home-path:sha256:9b52232fd5677b90aaaa6cf8f419b719becdd5c2e0092ada538210ef114d1e96)
+   Compiling ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `test` profile [unoptimized] target(s) in 0.51s
      Running tests/binding.rs (target/cli-gate-integration/debug/deps/binding-123096e1d911e467)
 
@@ -232,11 +232,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
    Compiling memchr v2.8.3
    Compiling rpassword v7.5.4
    Compiling clap_complete v4.6.9
-   Compiling demo-cli-contract v0.0.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-kERRkJ)
+   Compiling demo-cli-contract v0.0.0 (home-path:sha256:9c4ac69f376ddc41b5aefaa9b6d91cc7b078f1b2f98d38e7aad2980da0d96e91)
     Finished `test` profile [unoptimized] target(s) in 6.42s
-     Running unittests src/lib.rs (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-kERRkJ/target/debug/deps/cli_contract-0fbaf74542ccaea9)
-     Running unittests src/main.rs (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-kERRkJ/target/debug/deps/demo-19ab20e5520cf4fa)
-     Running tests/process.rs (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/.local/tmp/cli-wave/ess-cli-fixture-kERRkJ/target/debug/deps/process-ccf40e85d9866734)
+     Running unittests src/lib.rs (home-path:sha256:10f5202a9d9169251d15ea29636a55fbeaf72808fc1e20a4d9314a465c78a800)
+     Running unittests src/main.rs (home-path:sha256:3299c1c0ce0bd63a8784a0e5113250e9eddc2b5a7d88aeb92ad42de276897253)
+     Running tests/process.rs (home-path:sha256:f4c21ad56ac53fc4547f770b5124e24b707ed4f3ea7b4eeb03805bf7b2656131)
    Doc-tests cli_contract
 
 test generated_package_compiles_offline_and_executes_process_fixtures ... ok
@@ -252,7 +252,7 @@ Counting: binding 11 + previous adversarial 5 + new adversarial_r2 7 + projectio
 New-test strict Clippy initially found a 107-line function in the new test file. Actual output from adversary-ess-r2-clippy.log:
 
 ```text
-    Checking ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+    Checking ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
 error: this function has too many lines (107/100)
    --> crates/generate/ess-cli-project/tests/adversarial_r2.rs:298:1
     |
@@ -275,7 +275,7 @@ cargo clippy --target-dir target/cli-gate-integration --locked --offline -p ess-
 Exit status: 0. Final output:
 
 ```text
-    Checking ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+    Checking ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `dev` profile [unoptimized] target(s) in 0.17s
 ```
 
@@ -288,7 +288,7 @@ cargo test --target-dir target/cli-gate-integration --locked --offline -p ess-cl
 Exit status: 101, same one red and six green; actual final output:
 
 ```text
-   Compiling ess-cli-project v0.20.0 (~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909/crates/generate/ess-cli-project)
+   Compiling ess-cli-project v0.20.0 (home-path:sha256:f2e558c53a1d4f7d7648e09fb961dd77fade9073cbdc6f7acc5768388bf33dae)
     Finished `test` profile [unoptimized] target(s) in 0.28s
      Running tests/adversarial_r2.rs (target/cli-gate-integration/debug/deps/adversarial_r2-ead8f216e60feb5d)
 
@@ -344,7 +344,7 @@ No additional judgement findings.
 
 None. Task-authored files are the new test and .local/tmp/cli-wave/adversary-ess-r2.md, adversary-ess-r2-source-before.sha256, adversary-ess-r2-negative-zero.log, adversary-ess-r2-suite.log, adversary-ess-r2-clippy.log, adversary-ess-r2-clippy-final.log and adversary-ess-r2-final.log. Compiler output stayed in target/cli-gate-integration or the existing fixture's task TempDir; no build tree was deleted manually.
 
-Cargo was returned to root after final execution. The adversary releases only session ess-cli-final-adversary-20260909; root owns staging, correction routing, planning records and cleanup of cli-binding-ess-20260909 at ~/.local/state/worktree/trees/b10x/ess/cli-binding-ess-20260909. No third attack is requested or started.
+Cargo was returned to root after final execution. The adversary releases only session ess-cli-final-adversary-20260909; root owns staging, correction routing, planning records and cleanup of cli-binding-ess-20260909 at home-path:sha256:4ae88b70b2fe6dbd14ec8c9d6ef5397b9123c10fea07fecff4b6c748a16a8fa4 No third attack is requested or started.
 
 ```findings
 - file: crates/generate/ess-cli-project/src/runtime.rs
