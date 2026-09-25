@@ -15,7 +15,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'queue/**']
   pull_request:
   merge_group:
     types: [checks_requested]
@@ -133,7 +133,7 @@ jobs:
     env:
       # A pull request's feature-off archive holds the number-semantics cases only
       # (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile); every other event archives all of them.
-      FEATURE_OFF: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'number-semantics' || 'full' }}
+      FEATURE_OFF: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
