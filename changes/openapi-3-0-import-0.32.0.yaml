@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/openapi-3-0-import-0.32.0
+repository: ess
+publishedAt: 2026-09-25T18:00:00Z
+title: OpenAPI 3.0 imports, and a bound workload's unbound sidecars are violations
+summary: >-
+  `ess infra import openapi` reads OpenAPI 3.0 by rewriting each schema to its 3.1 form, refusing a construct with no faithful one. `ess verify bindings` reports OBS-BIND-008 for a container or native sidecar in a bound workload that no binding names. Synthesize orders `Timestamp` values by the instant they name.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.32.0
+  version: 0.32.0
+journeys: [specify, operate-services]
+affectedSurfaces: [ess/docs]
