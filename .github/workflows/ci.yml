@@ -1,5 +1,9 @@
 # CI provisions repository checks except consumer coverage, plus native macOS ownership witnesses.
 # The Taskfile remains the complete gate; macOS exercises the platform-specific protocol.
+#
+# `task check` runs here as parallel lanes, one Taskfile task each, and the `Gate` job carries
+# their joint result under the required check's name. `crates/edge/ess-xtask/tests/ci_lanes.rs`
+# fails when a step of `task check` is in no lane.
 name: CI
 
 on:
@@ -25,10 +29,41 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  gate:
-    name: Gate
+  lane:
+    name: Lane (${{ matrix.lane }})
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
+    strategy:
+      # Every lane reports, so one red run names every failing lane rather than the first.
+      fail-fast: false
+      matrix:
+        include:
+          - lane: lint
+            task: ci-lint
+            cache: lint
+          - lane: smoke
+            task: ci-smoke
+            cache: smoke
+          # The three shards build the same test binaries, so they share one cache.
+          - lane: test 1/3
+            task: test-shard SHARD=1/3
+            cache: test-workspace
+          - lane: test 2/3
+            task: test-shard SHARD=2/3
+            cache: test-workspace
+          - lane: test 3/3
+            task: test-shard SHARD=3/3
+            cache: test-workspace
+          - lane: feature-off
+            task: test-feature-off
+            cache: feature-off
+          - lane: xtask
+            task: test-xtask
+            cache: xtask
+          - lane: fuzz
+            task: fuzz-check
+            cache: fuzz
+            cache-workspaces: fuzz -> target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -83,10 +118,38 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/ess-types" @types/node@26.3.0
           echo "ESS_TYPES_NODE=$RUNNER_TEMP/ess-types/node_modules" >> "$GITHUB_ENV"
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.143
 
-      - name: Run the repository gate (consumer checks disabled)
-        run: task check SKIP_CONSUMER_CHECKS=true
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ matrix.cache }}
+          workspaces: ${{ matrix.cache-workspaces || '. -> target' }}
+
+      # Consumer coverage is not a lane: it stays disabled in CI by explicit operator request, and
+      # local `task check` still runs it.
+      - name: Run the ${{ matrix.lane }} lane
+        run: task ${{ matrix.task }}
+
+  gate:
+    name: Gate
+    needs: [lane]
+    # A skipped required check reads as passing, so this runs whatever the lanes did and fails
+    # unless every one of them succeeded.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every lane to have passed
+        env:
+          LANES: ${{ needs.lane.result }}
+        run: |
+          echo "lanes: $LANES"
+          if [ "$LANES" != "success" ]; then
+            echo "::error::the gate lanes finished with '$LANES', not 'success'" >&2
+            exit 1
+          fi
 
   output-ownership-macos:
     name: Output ownership (${{ matrix.runner }})
