@@ -2,12 +2,12 @@
 format: aep.planning-md/2
 id: initiative:ess-evolution
 kind: initiative
-status: active
+status: implemented
 title: Evolve ESS without losing capabilities
 relations:
 - informed_by: epic:review-boundary-remediation
 - informed_by: story:cli-presentation-binding
-revision: 17
+revision: 19
 ---
 ## Outcome
 
@@ -191,3 +191,11 @@ Both design reviews remain closed. The finite final correction answers the omitt
 Corrected design SHA25622d0eb4bb0c0847855b75e2458c3ce57d573c3d12e068ddcf360a31001a536ce; diagnostic model3f9bffda8526f31f890231a6467d967feae247a8b5024bee6031dbce5697fe6e; system a88342f8bcfb4a331949b0656ae4865f5c3524b9fd01c39c35f5f91406bd9564 unchanged. Installed ESS model validate/compile0;16,242bytes. Author assignment closed, no third design examination. Receipt: local-evidence:ess-evolution/waves/0009-service-convergence/er-lowering-design/final-correction-result.md.
 
 Approved M5/M6 requires exact real fixture behavior. Remaining implementation is service/3 operation fulfillment plus record/request4 evidence with unchanged old readers/bytes, then complete lowerer and SDK/4 integration. Prepared lowerer tree remains clean and source is not dispatched until its required target contract is concrete. Existing accepted ER and SQL/provider reviews are not reopened.
+
+
+## Closed (2026-09-25)
+
+Closed under ESS-EVOLUTION.md revision 3, which supersedes this body where they differ: the planning stores are `aep.project/3` tree stores (not `aep.project/2`), releases were in scope by operator instruction, and feature-preservation accounting is parked (`decision-blocker:consumer-accounting-parked`).
+
+- M5: ESS 0.31.0 (ess#71). M6: service-sdk 0.6.0. M7: connectors v0.12.0. M8: ess#83, in ESS 0.32.0. M9: parked; classification data ess#82, lane opt-in ess#87.
+- Final vector: Eventlog 0.4.0 `70096af8`, Entity Runtime 0.23.0 `77aac6ea`, AEP 0.59.2 `d3d80e9b`, ESS 0.32.0 `f4c1bb84`, service-sdk 0.6.0 `1810e14b`, connectors v0.12.0 `397e4b20`. The completion table with evidence is in the workspace handoff (`ESS-EVOLUTION-HANDOFF.md`, 2026-09-25).
