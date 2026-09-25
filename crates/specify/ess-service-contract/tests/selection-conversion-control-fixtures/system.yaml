@@ -1,0 +1,21 @@
+format: ess/4
+system: selection
+version: v1
+domains:
+  - selection.control
+conversions:
+  - from: String
+    to: List<selection.control.Leg>
+    because: the host decodes the selected legs
+  - from: String
+    to: List<selection.control.UnusedLeg>
+    because: the host decodes an unrelated list
+
+components:
+  - component: selection-control-service
+    owns:
+      domains:
+        - selection.control
+    accepts:
+      commands:
+        - selection.control.Receive

@@ -55,6 +55,29 @@ pub(super) fn extract(sources: &BTreeMap<String, String>) -> Result<Value> {
     }
     graph.extract(ROOTS)
 }
+
+pub(super) fn historical_raw_outcome_witness() -> Result<Value> {
+    let mut graph = Graph::default();
+    graph.items(
+        "ess_domain",
+        &file_items(
+            include_str!("fixtures/stage1-7a6d7685-raw-outcome.rs"),
+            "stage1-7a6d7685-raw-outcome.rs",
+        )?,
+        &BTreeMap::new(),
+        "",
+    )?;
+    graph.items(
+        "ess_primitives",
+        &file_items(
+            include_str!("fixtures/stage1-7a6d7685-ess-primitives.rs"),
+            "stage1-7a6d7685-ess-primitives.rs",
+        )?,
+        &BTreeMap::new(),
+        "",
+    )?;
+    graph.extract(&["ess_domain::command::RawOutcome"])
+}
 fn file_items(source: &str, owner: &str) -> Result<Vec<Item>> {
     let file = syn::parse_file(source)?;
     if !active(&file.attrs, owner)? {

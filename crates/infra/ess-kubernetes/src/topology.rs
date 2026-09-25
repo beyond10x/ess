@@ -120,7 +120,8 @@ pub fn collect_namespace(context: &str, namespace: &str) -> Result<Vec<u8>, Stri
 
 fn read(args: &[&str]) -> Result<Value, String> {
     let bytes = kubectl("get scoped resources", args)?;
-    serde_json::from_slice(&bytes).map_err(|_| "scoped resource response is not JSON".to_owned())
+    ess_primitives::json::from_slice(&bytes)
+        .map_err(|_| "scoped resource response is not JSON".to_owned())
 }
 
 fn list_items(mut value: Value) -> Result<Vec<Value>, String> {

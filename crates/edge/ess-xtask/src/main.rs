@@ -70,6 +70,12 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Execute reviewed native model-behavior cases without qualifying accounting cells.
+    ConsumerBehavior {
+        /// Fresh directory for candidate, plan, native receipts, and the zero-cell result.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Render or check the finite public source-capability block, offline.
     Support {
         /// Compare the complete maintained block without changing public source.
@@ -142,6 +148,9 @@ fn run(cli: Cli) -> Result<String, String> {
         }
         Command::ConsumerExtract { output } => {
             consumer_coverage::run(&root, &output).map_err(|error| format!("{error:#}"))
+        }
+        Command::ConsumerBehavior { output } => {
+            consumer_coverage::behavior(&root, &output).map_err(|error| format!("{error:#}"))
         }
         Command::Support { check } => {
             support::run(&root, check).map_err(|error| format!("{error:#}"))

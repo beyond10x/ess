@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-09-25
+
+### Added
+
+- `ess-entity-runtime` projects an admitted service contract into validated Entity Runtime
+  definitions and typed host binding obligations. It preserves conditional outcome selection,
+  exact values and event order, and makes omitted operation-field actions explicit without
+  executing a service or choosing the host's policy.
+  Subject-field, state-change and external conditions lower to ER predicates; an operation
+  that clears a field and a preserve that returns no response are refused by name
+  (`ClearedValueUnsupported`, `SilentPreserveUnsupported`).
+  A lowering targets Entity Runtime `0.23.0`: `ENTITY_RUNTIME_REVISION` is the locked
+  `entity-core` commit, and a test refuses a lock file that names another.
+- `ess-service-contract` extracts a borrowed service contract for an exact component and
+  synthesis plan, preserving selected compiler values, contextual capabilities, obligations,
+  refusals and their original order.
+- A release note for 0.28–0.30 (`website/blog/2026-09-25-1200-what-a-retry-returns.md`): subject
+  history in `ess/6`, retried results in `ess/7`, and the plugin's one release here. Without it the
+  newest note trails 0.31.0 by four minors and `cargo xtask docs` refuses the tree.
+
 ### Removed
 
 - **Breaking:** `ess skill` and the agent plugin in `plugins/ess/`, with both marketplace files

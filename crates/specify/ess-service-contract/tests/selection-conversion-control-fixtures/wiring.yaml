@@ -1,0 +1,17 @@
+bindings:
+  - id: choose-control
+    when:
+      event: selection.control.Arrived
+    invoke:
+      command: selection.control.Receive
+    selection_inputs:
+      - name: legs
+        from: event.data
+        as: List<selection.control.Leg>
+    selections:
+      - name: first
+        first:
+          in: legs
+          where: 'item.id != ""'
+    delivery: at_most_once
+    on_failure: drop

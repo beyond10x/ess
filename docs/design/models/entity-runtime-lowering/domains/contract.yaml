@@ -1,0 +1,183 @@
+domain: entity_runtime_lowering.contract
+
+# Non-normative diagnostic inventory only. The design page Rust interface is authoritative.
+# Inventory and Kind types omit payloads intentionally and cannot serialize or generate that API.
+# Existing ER definitions, ESS resolved types and synthesis dispositions keep their typed homes.
+types:
+  - name: entity_runtime_lowering.contract.QualifiedName
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: entity_runtime_lowering.contract.ComponentName
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: entity_runtime_lowering.contract.SourceDigest
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: entity_runtime_lowering.contract.SynthesisDigest
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: entity_runtime_lowering.contract.TargetRevision
+    kind: newtype
+    of: String
+    invariants:
+      - 'value != ""'
+
+  - name: entity_runtime_lowering.contract.DefinitionCoordinate
+    kind: struct
+    fields:
+      - name: entity
+        type: entity_runtime_lowering.contract.QualifiedName
+      - name: version
+        type: Integer
+    invariants:
+      - version > 0
+
+  - name: entity_runtime_lowering.contract.BindingSlot
+    kind: newtype
+    of: Integer
+    invariants:
+      - value >= 0
+
+  - name: entity_runtime_lowering.contract.BindingRequirementKind
+    kind: enum
+    variants:
+      - IdentitySupplied
+      - ResponseFieldSupplied
+      - GeneratedFieldSupplied
+      - UndeterminedFieldSupplied
+      - ConversionSupplied
+      - ExternalEvidenceSupplied
+      - OperationFieldPolicySupplied
+      - TimestampSpelling
+      - UuidSpelling
+      - BytesSpelling
+      - DecimalSpelling
+      - Binary64Spelling
+      - ScaleDeclaration
+      - RelationExistence
+      - RelationCardinality
+      - RelationOwnership
+      - ErrorPayload
+      - RevisionExpectation
+
+  - name: entity_runtime_lowering.contract.RuntimeEntrypointKind
+    kind: enum
+    variants: [Create, Operation]
+
+  - name: entity_runtime_lowering.contract.InstanceBindingKind
+    kind: enum
+    variants: [Created, Supplied]
+
+  - name: entity_runtime_lowering.contract.BoundTargetKind
+    kind: enum
+    variants: [ExternalEvidence, LogicalIdentity, EntityField, EventField, ResponseField]
+
+  - name: entity_runtime_lowering.contract.BoundSourceKind
+    kind: enum
+    variants: [Identity, ResponseField, Generated, Undetermined, Conversion, External]
+
+  - name: entity_runtime_lowering.contract.BoundPresenceKind
+    kind: enum
+    variants: [Required, Optional]
+
+  - name: entity_runtime_lowering.contract.OperationFieldRequirementKind
+    kind: enum
+    variants: [Required, Optional]
+
+  - name: entity_runtime_lowering.contract.OperationFieldActionKind
+    kind: enum
+    variants: [Set, Preserve, Remove]
+
+  - name: entity_runtime_lowering.contract.BindingRequirementInventory
+    kind: struct
+    fields:
+      - name: command
+        type: entity_runtime_lowering.contract.QualifiedName
+      - name: outcome
+        type: String
+      - name: kind
+        type: entity_runtime_lowering.contract.BindingRequirementKind
+      - name: target
+        type: String
+
+  - name: entity_runtime_lowering.contract.BoundValueInventory
+    kind: struct
+    fields:
+      - name: slot
+        type: entity_runtime_lowering.contract.BindingSlot
+      - name: target_kind
+        type: entity_runtime_lowering.contract.BoundTargetKind
+      - name: source_kind
+        type: entity_runtime_lowering.contract.BoundSourceKind
+      - name: presence
+        type: entity_runtime_lowering.contract.BoundPresenceKind
+      - name: semantic_path
+        type: String
+
+  - name: entity_runtime_lowering.contract.OperationFieldFulfillmentInventory
+    kind: struct
+    fields:
+      - name: outcome
+        type: String
+      - name: field
+        type: String
+      - name: requirement
+        type: entity_runtime_lowering.contract.OperationFieldRequirementKind
+      - name: admitted_actions
+        type: List<entity_runtime_lowering.contract.OperationFieldActionKind>
+
+  - name: entity_runtime_lowering.contract.CommandBindingInventory
+    kind: struct
+    fields:
+      - name: command
+        type: entity_runtime_lowering.contract.QualifiedName
+      - name: target
+        type: entity_runtime_lowering.contract.DefinitionCoordinate
+      - name: entrypoint
+        type: entity_runtime_lowering.contract.RuntimeEntrypointKind
+      - name: instance
+        type: entity_runtime_lowering.contract.InstanceBindingKind
+      - name: slots
+        type: List<entity_runtime_lowering.contract.BoundValueInventory>
+      - name: operation_fields
+        type: List<entity_runtime_lowering.contract.OperationFieldFulfillmentInventory>
+      - name: requirements
+        type: List<entity_runtime_lowering.contract.BindingRequirementInventory>
+
+  - name: entity_runtime_lowering.contract.LoweredServiceInventory
+    kind: struct
+    fields:
+      - name: component
+        type: entity_runtime_lowering.contract.ComponentName
+      - name: source_digest
+        type: entity_runtime_lowering.contract.SourceDigest
+      - name: synthesis_digest
+        type: entity_runtime_lowering.contract.SynthesisDigest
+      - name: target_revision
+        type: entity_runtime_lowering.contract.TargetRevision
+      - name: definitions
+        type: List<entity_runtime_lowering.contract.DefinitionCoordinate>
+      - name: commands
+        type: List<entity_runtime_lowering.contract.CommandBindingInventory>
+
+  - name: entity_runtime_lowering.contract.LoweringDiagnosticInventory
+    kind: struct
+    fields:
+      - name: code
+        type: String
+      - name: path
+        type: String
+      - name: message
+        type: String

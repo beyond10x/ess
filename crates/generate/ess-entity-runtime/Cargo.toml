@@ -1,0 +1,25 @@
+[package]
+name = "ess-entity-runtime"
+description = "Pure projection from admitted ESS service contracts to Entity Runtime definitions and host binding plans."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+entity-core.workspace = true
+ess-compiler.workspace = true
+ess-domain.workspace = true
+ess-primitives.workspace = true
+ess-service-contract.workspace = true
+ess-synth.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+serde_yaml.workspace = true
+
+[lints]
+workspace = true

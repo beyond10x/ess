@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.31.0](#a-service-contract-lowers-to-entity-runtime-definitions) | A service contract lowers to Entity Runtime definitions | capability | significant |
 | [0.30.0](#ess-ships-its-own-agent-plugin-and-the-binary-prints-its-skills) | ESS ships its own agent plugin, and the binary prints its skills | capability | significant |
 | [0.29.0](#verify-retries-against-their-original-command-results) | Verify retries against their original command results | capability | significant |
 | [0.28.0](#conformance-observes-history-and-independently-arranged-failures) | Conformance observes history and independently arranged failures | capability | significant |
@@ -24,6 +25,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.31.0 — 2026-09-25
+
+### A service contract lowers to Entity Runtime definitions
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.31.0)
+
+ess-service-contract extracts an admitted component's service contract, and ess-entity-runtime lowers it into validated Entity Runtime 0.23.0 definitions and typed host binding obligations, refusing what it cannot express by name. Breaking: `ess skill` and the in-repository plugin are removed; the plugin ships from beyond10x/agentplugins.
 
 ## 0.30.0 — 2026-09-23
 

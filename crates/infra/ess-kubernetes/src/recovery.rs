@@ -332,8 +332,8 @@ pub fn decode(raw: &[u8]) -> Result<Response, RecoveryError> {
     if !(200..300).contains(&status) {
         return Err(RecoveryError::Status(status));
     }
-    let decoded: serde_json::Value =
-        serde_json::from_slice(body).map_err(|error| RecoveryError::Decode(format!("{error}")))?;
+    let decoded: serde_json::Value = ess_primitives::json::from_slice(body)
+        .map_err(|error| RecoveryError::Decode(format!("{error}")))?;
     Ok(Response {
         status,
         body: sanitize(decoded),

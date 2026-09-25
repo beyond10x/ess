@@ -1,0 +1,68 @@
+conversions:
+  - from: contract.local.Shared
+    to: contract.foreign.ForeignPayload
+    because: The foreign handler wraps the selected service's text in its declared envelope.
+
+components:
+  - component: local-service
+    owns:
+      domains:
+        - contract.local
+    accepts:
+      commands:
+        - contract.local.Run
+    publishes:
+      events:
+        - contract.local.PublicOnly
+    reached_by: network
+    settings:
+      - name: envelope
+        type: contract.local.Envelope
+        required: true
+
+  - component: foreign-service
+    owns:
+      domains:
+        - contract.foreign
+    accepts:
+      commands:
+        - contract.foreign.HandlePublic
+        - contract.foreign.HandlePrivate
+    publishes:
+      events:
+        - contract.foreign.Trigger
+        - contract.foreign.DeliveryFailed
+
+bindings:
+  - id: react-public
+    when:
+      event: contract.local.PublicOnly
+    invoke:
+      command: contract.foreign.HandlePublic
+    mapping:
+      payload: event.shared
+    delivery: at_least_once
+    on_failure:
+      escalate:
+        emits: contract.foreign.DeliveryFailed
+
+  - id: react-private
+    when:
+      event: contract.local.PrivateEmission
+    invoke:
+      command: contract.foreign.HandlePrivate
+    mapping:
+      note: event.note
+    delivery: at_least_once
+    on_failure: drop
+
+  - id: invoke-selected
+    when:
+      event: contract.foreign.Trigger
+    invoke:
+      command: contract.local.Run
+    mapping:
+      owner_id: event.owner_id
+      note: event.note
+    delivery: at_most_once
+    on_failure: drop

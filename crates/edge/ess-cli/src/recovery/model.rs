@@ -1319,6 +1319,22 @@ pub fn canonical_digest<T: Serialize>(value: &T) -> Digest {
 /// A `serde_json::Value` that refuses a duplicate object key and a floating-point number.
 struct Strict(serde_json::Value);
 
+// The key under which `serde_json` hands a visitor every number that is not a 64-bit integer when
+// its `arbitrary_precision` feature is on. `entity-core` enables that feature, and Cargo unifies
+// features across a workspace build, so this reader sees such numbers as a one-entry map rather
+// than through `visit_f64`, and `-0` as `visit_i64(0)`, and has to refuse both itself.
+use ess_primitives::json::{from_arbitrary_precision, ARBITRARY_PRECISION_NUMBER};
+
+fn strict_number<E: de::Error>(spelling: &str) -> Result<serde_json::Value, E> {
+    // An integer exactly where the build without `arbitrary_precision` reads one.
+    match ess_primitives::json::number(spelling) {
+        Ok(number) if number.is_i64() || number.is_u64() => Ok(serde_json::Value::Number(number)),
+        _ => Err(de::Error::custom(
+            "a canonical recovery document has no floating-point field",
+        )),
+    }
+}
+
 impl<'de> Deserialize<'de> for Strict {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_any(StrictVisitor).map(Strict)
@@ -1343,6 +1359,10 @@ impl<'de> Visitor<'de> for StrictVisitor {
     }
 
     fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+        // The token `-0`, which the build without `arbitrary_precision` reads as a binary64.
+        if value == 0 && from_arbitrary_precision::<E>() {
+            return strict_number("-0");
+        }
         Ok(serde_json::Value::from(value))
     }
 
@@ -1371,6 +1391,13 @@ impl<'de> Visitor<'de> for StrictVisitor {
     fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
         let mut entries: BTreeMap<String, serde_json::Value> = BTreeMap::new();
         while let Some(key) = access.next_key::<String>()? {
+            if key == ARBITRARY_PRECISION_NUMBER
+                && entries.is_empty()
+                && from_arbitrary_precision::<A::Error>()
+            {
+                let spelling: String = access.next_value()?;
+                return strict_number(&spelling);
+            }
             let Strict(value) = access.next_value()?;
             if entries.insert(key.clone(), value).is_some() {
                 return Err(de::Error::custom(format!("duplicate object key {key:?}")));

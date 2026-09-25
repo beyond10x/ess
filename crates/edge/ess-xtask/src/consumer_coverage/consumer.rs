@@ -29,6 +29,10 @@ struct Scope<'a> {
 }
 #[cfg(test)]
 pub(super) fn fixture(source: &str) -> Result<Value> {
+    fixture_at("fixture.rs", source)
+}
+#[cfg(test)]
+pub(super) fn fixture_at(file: &str, source: &str) -> Result<Value> {
     let mut out = Inventory::default();
     out.file(
         Scope {
@@ -36,7 +40,7 @@ pub(super) fn fixture(source: &str) -> Result<Value> {
             module: "",
             test: false,
             profile: &[],
-            file: "fixture.rs",
+            file,
             sources: &BTreeMap::new(),
             directory: PathBuf::new(),
         },

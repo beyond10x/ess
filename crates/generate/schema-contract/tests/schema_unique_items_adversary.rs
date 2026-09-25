@@ -347,7 +347,34 @@ fn nan_and_infinity_are_not_reachable_json_values() {
     assert!(json!(f64::NAN).is_null());
     assert!(json!(f64::INFINITY).is_null());
     assert!(serde_json::from_str::<Value>("[NaN,NaN]").is_err());
-    assert!(serde_json::from_str::<Value>("[1e400]").is_err());
+    // A number past binary64 cannot reach the keyword either, because this crate's document reader
+    // refuses it. serde_json alone does not decide that: with its `arbitrary_precision` feature
+    // unified into the build (`entity-core` enables it), `serde_json::Value` holds `1e400`.
+    let document = |items: &str| {
+        format!(
+            r#"{{"$schema":"{SCHEMA_DIALECT}","type":"array","uniqueItems":true,"examples":[{items}]}}"#
+        )
+    };
+    bundle::import_document(
+        &document("[1e300, 1e300]"),
+        "Root",
+        &BTreeSet::new(),
+        Dialect::Draft202012,
+    )
+    .expect("a finite example imports");
+    for items in ["[1e400]", "[1e400, 1e400]", "[-1e400]"] {
+        let refused = bundle::import_document(
+            &document(items),
+            "Root",
+            &BTreeSet::new(),
+            Dialect::Draft202012,
+        )
+        .expect_err(items);
+        assert!(
+            format!("{refused:?}").contains("out of range"),
+            "{items}: {refused:?}"
+        );
+    }
 }
 
 // --- the artifact this crate actually ships -----------------------------------------------------

@@ -1208,7 +1208,7 @@ fn alias_of(authority: &Authority) -> &str {
 /// Secret *references* stay references. No credential and no Secret value is written here, and
 /// nothing in the document is a value the caller did not already put in its own intent.
 pub fn values_document(release: &ess_deployment::DeploymentRelease) -> Admitted<String> {
-    serde_yaml::to_string(&serde_json::json!({
+    ess_primitives::json::to_yaml_string(&serde_json::json!({
         "serviceAccount": {"name": &release.service_account},
         "images": release.images.iter().map(|(name, artifact)| {
             (name.as_str(), serde_json::json!({

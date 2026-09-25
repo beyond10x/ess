@@ -179,8 +179,8 @@ impl Bundle {
 
     /// Reloads by reimporting the retained source and checking the whole persisted result.
     pub fn read(text: &str) -> Result<Self, ImportError> {
-        let document: Value =
-            serde_json::from_str(text).map_err(|error| failure("/", error.to_string()))?;
+        let document: Value = ess_primitives::json::from_str(text)
+            .map_err(|error| failure("/", error.to_string()))?;
         if document.get("format").and_then(Value::as_str) == Some(FORMAT)
             && document.get("document_root").is_some()
         {
@@ -308,7 +308,7 @@ fn import_source(
     document_root: Option<&str>,
 ) -> Result<Bundle, ImportError> {
     let document: Value =
-        serde_json::from_str(source).map_err(|error| failure("/", error.to_string()))?;
+        ess_primitives::json::from_str(source).map_err(|error| failure("/", error.to_string()))?;
     let references = ReferenceSource {
         document: &document,
         root: document_root,

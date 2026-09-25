@@ -93,6 +93,25 @@ pub(super) fn execute_case(runner: &mut impl CaseRunner, name: &str) -> Result<(
 }
 
 pub(super) fn artifact(stdout: &str, package: &str, target: &str, source: &str) -> Result<Value> {
+    cargo_artifact(stdout, package, target, source, "test")
+}
+
+pub(super) fn binary_unit_artifact(
+    stdout: &str,
+    package: &str,
+    target: &str,
+    source: &str,
+) -> Result<Value> {
+    cargo_artifact(stdout, package, target, source, "bin")
+}
+
+fn cargo_artifact(
+    stdout: &str,
+    package: &str,
+    target: &str,
+    source: &str,
+    target_kind: &str,
+) -> Result<Value> {
     let mut selected = None;
     let mut finished = false;
     for line in stdout.lines() {
@@ -104,7 +123,7 @@ pub(super) fn artifact(stdout: &str, package: &str, target: &str, source: &str) 
             "compiler-artifact" => {
                 if message["package_id"] == package
                     && message["target"]["name"] == target
-                    && message["target"]["kind"] == serde_json::json!(["test"])
+                    && message["target"]["kind"] == serde_json::json!([target_kind])
                 {
                     if selected.is_some() {
                         bail!("duplicate selected Cargo artifact {package} {target}");

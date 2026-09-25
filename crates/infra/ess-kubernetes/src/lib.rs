@@ -77,7 +77,7 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
             "get resources in all namespaces",
             &["--context", &context, "get", kind, "-A", "-o", "json"],
         )?;
-        let mut value: serde_json::Value = serde_json::from_slice(&raw)
+        let mut value: serde_json::Value = ess_primitives::json::from_slice(&raw)
             .map_err(|_| format!("kubectl get {kind}: response is not JSON"))?;
         if *kind == "secrets" {
             sanitize_secret_list(&mut value)?;

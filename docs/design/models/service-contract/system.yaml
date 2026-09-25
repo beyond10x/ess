@@ -1,0 +1,5 @@
+format: ess/1
+system: service_contract
+version: v1
+domains:
+  - service_contract.selection

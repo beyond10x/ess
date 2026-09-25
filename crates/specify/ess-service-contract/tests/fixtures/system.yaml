@@ -1,0 +1,6 @@
+format: ess/4
+system: contract
+version: v1
+domains:
+  - contract.local
+  - contract.foreign

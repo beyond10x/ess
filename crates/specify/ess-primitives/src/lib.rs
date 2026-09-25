@@ -12,6 +12,7 @@ pub mod error;
 pub mod evidence;
 pub mod facts;
 pub mod ids;
+pub mod json;
 pub mod node;
 pub mod predicate;
 pub mod time;
