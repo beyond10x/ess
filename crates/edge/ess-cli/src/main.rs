@@ -1251,7 +1251,7 @@ fn realization(command: &RealizationCommand) -> Result<ExitCode> {
                     .with_context(|| format!("reading {} for drift check", path.display()))?;
                 if existing != markdown {
                     eprintln!(
-                        "{} is stale; regenerate it with `ess realization generate`",
+                        "{} is stale; regenerate it with `ess specify realization generate`",
                         path.display()
                     );
                     return Ok(ExitCode::from(1));
@@ -3512,7 +3512,7 @@ fn verified_bundle(path: &Path, require_canonical: bool) -> Result<ess_deploymen
         .with_context(|| format!("validating {}", path.display()))?;
     if require_canonical && text != verified.to_canonical_json() {
         bail!(
-            "{} is not canonical release-bundle JSON; regenerate it with `ess release bundle`",
+            "{} is not canonical release-bundle JSON; regenerate it with `ess generate release bundle`",
             path.display()
         );
     }

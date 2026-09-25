@@ -373,7 +373,7 @@ pub(crate) fn main_module(ir: &EssIr, surfaces: &[Surface<'_>], provenance: &Pro
          /// Routes one parsed invocation to the handler that owes it.\n\
          ///\n\
          /// Exhaustive over the tree by construction: every arm is a command the `cli:` block \
-         places,\n/// and a command it places nowhere is a specification `ess validate` refuses.\n\
+         places,\n/// and a command it places nowhere is a specification `ess specify validate` refuses.\n\
          fn dispatch<H: Handler>(handler: &H, matches: &::clap::ArgMatches) \
          -> ::std::process::ExitCode {\n    \
          match matches.subcommand() {\n",
