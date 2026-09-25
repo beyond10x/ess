@@ -88,6 +88,10 @@ pub trait TypeEnvironment {
     fn is_clock_reading(&self, _reference: &Self::Type) -> bool {
         false
     }
+    /// Whether this terminal type is the `Timestamp` primitive, ordered by the instant it names.
+    fn is_instant(&self, _reference: &Self::Type) -> bool {
+        false
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -210,6 +214,9 @@ impl<'a> DomainEnvironment<'a> {
 }
 
 impl TypeEnvironment for DomainEnvironment<'_> {
+    fn is_instant(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Primitive(Primitive::Timestamp))
+    }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
     }
@@ -544,6 +551,8 @@ struct ValueType {
     declaring_variants: Option<String>,
     scalar: Option<ScalarKind>,
     variants: Option<Vec<String>>,
+    /// Whether the terminal type is `Timestamp`, ordered by the RFC 3339 instant it names.
+    instant: bool,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -582,6 +591,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
     fn operand(&mut self, operand: &Operand) -> Option<ValueType> {
         match operand {
             Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
+                instant: self.environment.is_instant(&resolved.terminal),
                 declaring_variants: resolved
                     .variants
                     .is_some()
@@ -597,6 +607,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     declaring_variants: None,
                     scalar: Some(scalar),
                     variants: None,
+                    instant: false,
                 })
             }
         }
@@ -689,6 +700,60 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// A text literal compared with a fact, held to what the evaluator will actually do with it.
+    ///
+    /// A right-hand side without a dot is a literal, so `ends_at > starts_at` compares `ends_at`
+    /// with the text `"starts_at"`. Validation accepted that and synthesis could not decide it
+    /// (beyond10x/ess#74), so a bare word naming a declared field — and not a variant of the enum
+    /// it is compared with — is refused with the spelling that reads the field. An ordering against
+    /// a `Timestamp` needs an RFC 3339 instant, which is the only text synthesis can order.
+    fn text_literal(
+        &mut self,
+        expression: &Predicate,
+        fact: &Operand,
+        op: CompareOp,
+        literal: &Operand,
+        typed: &ValueType,
+    ) {
+        let (Operand::Fact(path), Operand::Literal(FactValue::Text(text))) = (fact, literal) else {
+            return;
+        };
+        let enum_variant = typed
+            .variants
+            .as_ref()
+            .is_some_and(|variants| variants.contains(text));
+        if !enum_variant && self.environment.root(text).is_some() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{expression}` reads `{text}` as the text literal \"{text}\", not the field \
+                     `{text}`: a right-hand side without a dot is a literal. To compare two fields, \
+                     declare them in one struct and compare its members, such as \
+                     `window.{path} {op} window.{text}`"
+                ),
+            ));
+            return;
+        }
+        if typed.instant
+            && op.needs_ordering()
+            && ess_primitives::time::Rfc3339Instant::parse_rfc3339(text).is_none()
+        {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{expression}` orders the Timestamp `{path}` against \"{text}\", which is \
+                     not an RFC 3339 instant; write one such as \"2020-01-01T00:00:00Z\""
+                ),
+            ));
+        }
+    }
+
     fn quantified(&mut self, predicate: &Predicate, quantified: &Quantified) {
         let target = self.read(&quantified.over, true);
         let mut reference = None;
@@ -754,6 +819,31 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     if let Operand::Literal(value) = left {
                         self.enum_literal(predicate, &right_type, value);
                     }
+                    self.text_literal(predicate, left, *op, right, &left_type);
+                    self.text_literal(predicate, right, *op, left, &right_type);
+                    if let (Operand::Fact(left_path), Operand::Fact(right_path)) = (left, right) {
+                        if compatible
+                            && op.needs_ordering()
+                            && left_type.instant != right_type.instant
+                        {
+                            let (instant, text) = if left_type.instant {
+                                (left_path, right_path)
+                            } else {
+                                (right_path, left_path)
+                            };
+                            self.checked.errors.push(error(
+                                self.owner,
+                                ValidationCode::TypeMismatch,
+                                Some(text),
+                                None,
+                                format!(
+                                    "`{predicate}`: cannot order the Timestamp `{instant}` against \
+                                     `{text}`, which is not a Timestamp; a Timestamp is ordered only \
+                                     against another Timestamp or an RFC 3339 instant literal"
+                                ),
+                            ));
+                        }
+                    }
                 }
             }
             Predicate::Truthy(path) | Predicate::Defined(path) => {
@@ -793,6 +883,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             declaring_variants: None,
                             scalar: Some(kind),
                             variants: None,
+                            instant: false,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }

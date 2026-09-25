@@ -1,0 +1,52 @@
+format: ess/1
+system: rooms
+version: v1
+domain: rooms.booking
+types:
+  - name: rooms.booking.Window
+    kind: struct
+    fields:
+      - {name: starts_at, type: Timestamp}
+      - {name: ends_at, type: Timestamp}
+entities:
+  - name: rooms.booking.Booking
+    identity: {name: booking_id, type: Uuid}
+    fields:
+      - {name: room, type: String}
+      - {name: window, type: rooms.booking.Window}
+    lifecycle:
+      initial: Booked
+      states: [Booked]
+      terminal: [Booked]
+errors:
+  - name: rooms.booking.EmptyRange
+    summary: The booking ends before it starts.
+commands:
+  - name: rooms.booking.BookRoom
+    input:
+      - {name: room, type: String}
+      - {name: window, type: rooms.booking.Window}
+    outcomes:
+      - name: booked
+        when: window.ends_at > window.starts_at
+        creates: rooms.booking.Booking
+        instance: booking_id
+        emits: [rooms.booking.RoomBooked]
+        payload:
+          rooms.booking.RoomBooked:
+            room: input.room
+      - name: refused
+        error: rooms.booking.EmptyRange
+events:
+  - name: rooms.booking.RoomBooked
+    fields:
+      - {name: booking_id, type: Uuid}
+      - {name: room, type: String}
+views:
+  - name: rooms.booking.Bookings
+    source: rooms.booking.Booking
+    consistency: read_your_writes
+    fields:
+      - {name: booking_id, type: Uuid}
+      - {name: room, type: String}
+      - {name: window, type: rooms.booking.Window}

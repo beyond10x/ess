@@ -101,10 +101,10 @@ the source-only adapter still supports the existing subset, not broad OpenAPI va
 | Input case | Bound behavior proposed |
 |---|---|
 | Valid OpenAPI 3.1 patch version; omitted dialect or explicitly supported OAS base dialect | Admit the existing service subset. Validate the version token, not merely a `3.1.` prefix. Preserve the authored version. |
-| 3.0, 3.2/unknown version, unsupported `jsonSchemaDialect` or schema `$schema` | Refuse before interpreting schemas under a guessed dialect. No 3.0 branch or alternate-dialect support is added. A matching dialect declaration is not itself a coverage gap. |
+| 3.2/unknown version, Swagger 2.0, unsupported `jsonSchemaDialect` or schema `$schema` | Refuse before interpreting schemas under a guessed dialect. No alternate-dialect support is added. A matching dialect declaration is not itself a coverage gap. OpenAPI 3.0 is admitted through the rewrite in the amendment below. |
 | Explicit string, nonempty all-string enum and/or string const | Preserve the existing representable constraints. Infer string only when type is genuinely absent and the admitted literal constraint proves a string-only domain. A type array must not be mistaken for absent type. |
 | Integer/number/boolean/object/array enum or const | Record a semantic gap at each unpreserved keyword; do not globally mark enum/const consumed. Mixed/untyped shapes without a faithful structural carrier may refuse. |
-| Empty enum, unsupported type array or unrepresentable literal combination | Refuse as an unsupported adapter shape; never turn an empty enum into an unconstrained string. Do not call every valid-but-unsupported schema malformed. |
+| Empty enum, a type array other than `[<type>, "null"]` (see the amendment below), or unrepresentable literal combination | Refuse as an unsupported adapter shape; never turn an empty enum into an unconstrained string. Do not call every valid-but-unsupported schema malformed. |
 | 3.1 array without items; boolean/untyped items that the existing IR cannot represent | Explicit refusal at the schema/items boundary before any caller can silently drop the component, property or message schema. |
 | Bare supported local component reference | Preserve it and record exact reference sites. Missing target remains durable unresolved accounting and blocks checked projection. |
 | 3.1 schema reference with siblings | Inspect every sibling before returning a Reference. Report each unpreserved constraint as a gap; record explicitly known omitted annotations as normalizations. Do not apply the nonschema Reference Object's sibling rule here. |
@@ -149,3 +149,25 @@ is claimed. Preserve both enum and const faithfully when combined, or explicitly
 unrepresentable combination; never drop one constraint because the other can be represented. No external persisted
 consumer or cross-repo byte verifier has been established; no new ADR, consumer migration wave or
 cross-repo verifier is a prerequisite inferred by this proposal.
+
+## Amendment 2026-09-25: the OpenAPI 3.0 subset (beyond10x/ess#73)
+
+A valid `3.0.N` document is no longer refused at `/openapi`. Each Schema Object is rewritten to its
+3.1 form before the unchanged 3.1 reading applies, so the envelope, `schema_dialect`, profile
+name and every 3.1 import's bytes stay as they were; `source_openapi` keeps the authored `3.0.N`
+and replay admission reimports the retained 3.0 source under the same rewrite. An older reader
+refuses such an envelope on replay, which is the safe direction.
+
+| 3.0 construct | Rewrite |
+|---|---|
+| `exclusiveMinimum: true` with numeric `minimum` (likewise maximum) | 3.1 numeric `exclusiveMinimum: <minimum>`; `minimum` is folded in. The bound remains an ordinary `constraint-unpreserved` gap, as in 3.1. |
+| `exclusiveMinimum: false` | Dropped; it has no meaning. |
+| `nullable: false` | Dropped. |
+| `nullable: true` beside an explicit `type`, with no `enum` or with `null` in its `enum` | 3.1 `type: [<type>, "null"]`. The interface IR has no `null`, so the adapter keeps `<type>` and records a `feature-unpreserved` gap at `…/nullable`; checked projection then refuses as for any gap. A `null` enum member is removed from the string values. |
+| `nullable: true` without `type`, or with an `enum` lacking `null` | No `null` is admitted (OAS 3.0.3 Schema Object), so it is dropped exactly. |
+| `nullable: true` beside `$ref`; non-boolean `nullable`; `exclusiveMinimum: true` without a numeric `minimum`; numeric `exclusiveMinimum` | Refused at that keyword's pointer. 3.0 ignores `$ref` siblings, so reading `nullable` there would be a guess. |
+
+The 3.1 spelling of the same meaning agrees with it: `type: [<type>, "null"]` (either order)
+imports as `<type>` with the identical `feature-unpreserved` gap at `…/type`, and an `enum` or
+`const` that excludes `null` makes it exact. Any other `type` array still refuses as an
+unsupported adapter shape. Swagger 2.0 (`swagger:`) and every other version still refuse.

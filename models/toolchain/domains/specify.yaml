@@ -14,7 +14,7 @@ naming:
 types:
   # The path argument every model-reading verb shares — `SpecPath`/`SpecLocation`,
   # `crates/edge/ess-cli/src/main.rs:318`. One file, or a directory read through its immediate
-  # `ess-inputs.yaml` or a legacy `system.yaml`.
+  # `ess-inputs.yaml` or a `system.yaml`.
   - name: toolchain.specify.SourceRoot
     kind: newtype
     of: String

@@ -454,6 +454,10 @@ impl FactSource for Element<'_> {
         self.inner.scales()
     }
 
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        self.inner.orders_as_instant(&self.rebind(path))
+    }
+
     fn cardinality(&self, path: &FactPath) -> Option<usize> {
         self.inner.cardinality(&self.rebind(path))
     }
@@ -547,6 +551,27 @@ impl Predicate {
         else {
             return (Truth::Unknown, None);
         };
+
+        // A declared Timestamp compares by the instant it names under every operator, so `==`
+        // agrees with `<=` and `>=` on two spellings of one instant.
+        if let (FactValue::Text(left_text), FactValue::Text(right_text)) =
+            (&left_value, &right_value)
+        {
+            let declared = [left, right].into_iter().any(|operand| {
+                operand
+                    .fact_path()
+                    .is_some_and(|path| facts.orders_as_instant(path))
+            });
+            let instant = crate::time::Rfc3339Instant::parse_rfc3339;
+            if let (true, Some(left_instant), Some(right_instant)) =
+                (declared, instant(left_text), instant(right_text))
+            {
+                return (
+                    Truth::from_bool(op.accepts(left_instant.cmp(&right_instant))),
+                    None,
+                );
+            }
+        }
 
         match (&left_value, &right_value) {
             (FactValue::Number(left_number), FactValue::Number(right_number)) => (
@@ -1827,6 +1852,55 @@ mod tests {
         );
         facts.set_scales(scales);
         assert_eq!(predicate.evaluate(&facts), Truth::True);
+    }
+
+    /// A source that declares `window.*` Timestamps.
+    struct Instants(FactStore);
+
+    impl FactSource for Instants {
+        fn fact(&self, path: &FactPath) -> Option<FactValue> {
+            self.0.fact(path)
+        }
+
+        fn orders_as_instant(&self, path: &FactPath) -> bool {
+            path.namespace() == "window"
+        }
+    }
+
+    #[test]
+    fn a_declared_timestamp_orders_by_its_instant() {
+        let facts = Instants(store(&[
+            (
+                "window.starts_at",
+                FactValue::text("2020-01-01T12:00:00+01:00"),
+            ),
+            ("window.ends_at", FactValue::text("2020-01-01T11:30:00Z")),
+            ("note", FactValue::text("2020-01-01T11:30:00Z")),
+        ]));
+        for (expression, truth) in [
+            ("window.ends_at > window.starts_at", Truth::True),
+            ("window.starts_at >= window.ends_at", Truth::False),
+            (
+                "window.ends_at < \"2020-01-01T12:00:00+00:30\"",
+                Truth::False,
+            ),
+            ("window.ends_at > tomorrow", Truth::Unknown),
+            // An undeclared text is still ordered by scales only, however it is spelled.
+            ("note > \"2020-01-01T00:00:00Z\"", Truth::Unknown),
+        ] {
+            assert_eq!(parse(expression).evaluate(&facts), truth, "{expression}");
+        }
+        assert_eq!(
+            parse("window.ends_at > window.starts_at").evaluate(&store(&[
+                (
+                    "window.starts_at",
+                    FactValue::text("2020-01-01T12:00:00+01:00")
+                ),
+                ("window.ends_at", FactValue::text("2020-01-01T11:30:00Z")),
+            ])),
+            Truth::Unknown,
+            "a source that declares no Timestamp keeps today's answer"
+        );
     }
 
     #[test]

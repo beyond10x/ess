@@ -317,7 +317,7 @@ Run `ess verify conform <command> --help` for target-specific arguments.
 
 | Command | Direction |
 |---|---|
-| `ess infra import openapi --path FILE [--out FILE] …` | OpenAPI 3.1 subset → `ess-openapi-import/1` with retained source, SHA-256 and durable accounting. `--format` selects terminal presentation; `--out` always writes the canonical import envelope. |
+| `ess infra import openapi --path FILE [--out FILE] …` | OpenAPI 3.0 or 3.1 subset → `ess-openapi-import/1` with retained source, SHA-256 and durable accounting. `--format` selects terminal presentation; `--out` always writes the canonical import envelope. |
 | `ess infra import kubernetes …` | sanitized bundle or explicitly selected live cluster → infrastructure IR. |
 | `ess generate project openapi (--ir FILE \| --path SPEC) …` | Checked import envelope or native ESS specification → OpenAPI. `--ir` refuses semantic gaps, unresolved references or legacy interface-only input before output; reimport original OpenAPI to replace legacy files. |
 | `ess generate project kubernetes …` | infrastructure intent and observation → manifests and obligations. |

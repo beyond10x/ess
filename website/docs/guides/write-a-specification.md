@@ -180,6 +180,24 @@ combinations participate. Every referenced input must fit that finite domain;
 Optional paths, open types, unsupported expressions and unknown results retain the
 requirement for a default. Existing defaults and external outcomes keep their behavior.
 
+### Order two instants
+
+A right-hand side without a dot is a literal, so `when: ends_at > starts_at` compares `ends_at`
+with the text `"starts_at"`. Validation refuses it and names the spelling that reads a field:
+declare the two `Timestamp` fields in one struct and compare its members.
+
+```yaml
+input:
+  - {name: window, type: rooms.booking.Window}   # struct {starts_at, ends_at: Timestamp}
+outcomes:
+  - name: booked
+    when: window.ends_at > window.starts_at
+```
+
+A `Timestamp` is ordered by the RFC 3339 instant it names, so `+01:00` and `Z` spellings compare
+correctly. Against a literal, write an instant: `when: ends_at > "2020-01-01T00:00:00Z"`. Ordering
+a `Timestamp` against text that is not an instant is refused. `Duration` has no ordering yet.
+
 ### Select an outcome from the held subject state
 
 `ess/3`, introduced in 0.23.0, allows `when_subject_state` beside an ordinary input predicate:
