@@ -52,8 +52,7 @@ replace `cargo run --quiet --locked --bin ess --` with the verified `ess` binary
 below.
 
 The first level of `ess` is the four areas the tool is built out of — `specify`, `generate`,
-`verify`, `infra`, followed by `ess skill`, which prints the agent guidance built into the binary —
-and every verb is also spelled flat at the top level as a hidden alias, so
+`verify`, `infra` — and every verb is also spelled flat at the top level as a hidden alias, so
 `ess validate --path .` still runs `ess specify validate --path .` and prints the same bytes. See
 [Flat spellings](./reference/cli.md#flat-spellings).
 

@@ -12,7 +12,6 @@ mod release_evidence;
 mod schema;
 mod schema_bundle;
 mod site;
-mod skill;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,10 +36,9 @@ struct Cli {
 /// One per `crates/<area>/` directory: the command surface says what the crate tree says.
 const AREAS: &[&str] = &["specify", "generate", "verify", "infra"];
 
-/// First-level verbs that belong to no area because they read no specification.
-///
-/// `skill` prints the agent guidance embedded from `plugins/ess/`; it is listed after the areas.
-const TOOLS: &[&str] = &["skill"];
+/// First-level verbs that belong to no area because they read no specification. None today: the
+/// agent guidance `ess skill` used to print lives in the `ess` plugin of `beyond10x/agentplugins`.
+const TOOLS: &[&str] = &[];
 
 #[derive(Debug, Subcommand)]
 enum Command {
@@ -74,8 +72,6 @@ enum Command {
         #[command(subcommand)]
         command: InfraAreaCommand,
     },
-    /// Print the agent skills and agents this binary was built with.
-    Skill(skill::Input),
     /// The flat spellings of the `specify` verbs. Hidden by [`command`], never deprecated.
     #[command(flatten)]
     FlatSpecify(SpecifyCommand),
@@ -1083,7 +1079,6 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Verify { command } | Command::FlatVerify(command) => verify_area(command),
         Command::Infra { command } => infra_area(command),
         Command::FlatImport(command) => import_area(command),
-        Command::Skill(input) => skill::run(&input),
     }
 }
 
