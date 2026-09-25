@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.32.1] — 2026-09-25
+
 ### Fixed
 
 - The `README.md` that `ess verify conform synthesize --target go` writes wires the package into
