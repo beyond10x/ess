@@ -2495,6 +2495,19 @@ fn preflight_generated_files(root: &Path, paths: &[&str]) -> Result<PathBuf> {
 /// A caller-selected file is resolved against its selected parent, without imposing the
 /// generated-name alphabet on it. Parent directories must already exist, as for the original
 /// single-file writer. Existing links and incompatible file types are refused before any output.
+/// Writes one file-shaped output, creating its missing parent directories first.
+///
+/// The file counterpart of what a directory target does for its root. Every existing ancestor is
+/// inspected before anything is created — a symlinked or non-directory ancestor is refused as it is
+/// for any output root — and the destination then passes [`preflight_named_output`].
+fn write_named_output(path: &Path, contents: &str) -> Result<()> {
+    let parent = resolve_output_directory(path.parent().unwrap_or(Path::new(".")))?;
+    fs::create_dir_all(&parent)
+        .with_context(|| format!("creating output directory {}", parent.display()))?;
+    let destination = preflight_named_output(path)?;
+    write_preflighted_files([(destination, contents)])
+}
+
 fn preflight_named_output(path: &Path) -> Result<PathBuf> {
     let name = output_ownership::filename(path)?;
     let parent = resolve_output_directory(path.parent().unwrap_or(Path::new(".")))?;
@@ -2922,7 +2935,7 @@ fn write_suite(
     out: &Path,
 ) -> Result<String> {
     if target == SuiteTarget::Ir {
-        fs::write(out, json).with_context(|| format!("writing {}", out.display()))?;
+        write_named_output(out, json)?;
         return Ok(format!("written to {}", out.display()));
     }
     let (files, family) = match target {
@@ -3141,7 +3154,7 @@ fn author_suite(
     let json = suite.to_canonical_json()?;
     let written = match out {
         Some(out) => {
-            fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+            write_named_output(out, &json)?;
             format!("written to {}", out.display())
         }
         None => "nothing written".to_owned(),

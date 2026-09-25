@@ -56,6 +56,11 @@
   and the Kubernetes projection's `SUMMARY.md` says `ess generate project kubernetes`. Three
   refusal hints follow: `ess specify realization generate`, `ess generate release bundle` and
   `ess generate output recover`. The flat spellings still run.
+- `ess verify conform synthesize --target ir`, `ess verify conform author` and
+  `ess verify conform select` create the missing parent directories of their `--out` file, as the
+  directory targets already did; `synthesize --out missing/suite.json` failed with
+  `No such file or directory`. An existing ancestor that is a symlink or not a directory is still
+  refused, and the destination file now passes the same checks as other named outputs.
 
 ## [0.31.0] — 2026-09-25
 
