@@ -1472,6 +1472,30 @@ pub(crate) mod probe {
     ) -> Result<()> {
         adopt_observed(anchor, reference, "synthesis", None, observer)
     }
+    pub(crate) fn publish_traced(
+        anchor: &Path,
+        files: &[(&str, &str)],
+        observer: &mut dyn FnMut(&str) -> Result<()>,
+        admission_observer: &mut dyn FnMut(&str) -> Result<()>,
+    ) -> Result<()> {
+        publish_observers(
+            anchor,
+            vec![Publication::tree("synthesis", files.iter().copied())?],
+            observer,
+            admission_observer,
+        )
+    }
+    pub(crate) use super::filesystem::replay::Replay;
+    /// Starts a per-cut replay on this thread; see [`super::filesystem::replay`].
+    pub(crate) fn replay() -> Replay {
+        Replay::begin()
+    }
+    pub(crate) fn replaying() -> bool {
+        super::filesystem::replay::active()
+    }
+    pub(crate) fn fsyncs_performed() -> usize {
+        super::filesystem::replay::performed()
+    }
     pub(crate) fn check_mount(anchor: &Path, other: &Path) -> Result<()> {
         Mount::of(&File::open(anchor)?)?.check(&File::open(other)?)
     }

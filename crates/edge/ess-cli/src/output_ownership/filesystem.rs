@@ -483,9 +483,61 @@ fn foreign_xattrs(fd: &impl AsFd) -> Result<Vec<OsString>> {
         .map(|name| OsStr::from_bytes(name).to_os_string())
         .collect())
 }
+/// Per-cut replays in the native integration target. A replay ends in a process kill or an
+/// injected error, never in a power loss, so the page cache survives it and fsync cannot
+/// change what recovery observes. Each looping test's own control trace keeps the syscall.
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) mod replay {
+    use std::cell::Cell;
+    thread_local! {
+        static ELIDED: Cell<Option<usize>> = const { Cell::new(None) };
+        static PERFORMED: Cell<usize> = const { Cell::new(0) };
+    }
+    /// Actual fsync syscalls this thread has made, so a test can tell a control run from a replay.
+    pub(crate) fn performed() -> usize {
+        PERFORMED.get()
+    }
+    pub(super) fn record_performed() {
+        PERFORMED.set(PERFORMED.get() + 1);
+    }
+    /// Elides fsync on this thread until dropped; every observer boundary stays in place.
+    pub(crate) struct Replay(());
+    impl Replay {
+        pub(crate) fn begin() -> Self {
+            assert!(ELIDED.get().is_none(), "nested cut replay");
+            ELIDED.set(Some(0));
+            Self(())
+        }
+        // Taking the guard ties the count to a live replay; the count itself is thread-local.
+        #[allow(clippy::unused_self)]
+        pub(crate) fn elided(&self) -> usize {
+            ELIDED.get().unwrap_or(0)
+        }
+    }
+    impl Drop for Replay {
+        fn drop(&mut self) {
+            ELIDED.set(None);
+        }
+    }
+    pub(crate) fn active() -> bool {
+        ELIDED.get().is_some()
+    }
+    pub(super) fn elide() -> bool {
+        ELIDED.get().inspect(|n| ELIDED.set(Some(n + 1))).is_some()
+    }
+}
 pub(super) fn sync(fd: &impl AsFd, observer: &mut Observer<'_>, label: &str) -> Result<()> {
     observer(&format!("before:sync:{label}"))?;
-    fs::fsync(fd).with_context(|| format!("synchronizing output {label}"))?;
+    #[cfg(test)]
+    let replayed = replay::elide();
+    #[cfg(not(test))]
+    let replayed = false;
+    if !replayed {
+        fs::fsync(fd).with_context(|| format!("synchronizing output {label}"))?;
+        #[cfg(test)]
+        replay::record_performed();
+    }
     observer(&format!("after:sync:{label}"))?;
     Ok(())
 }

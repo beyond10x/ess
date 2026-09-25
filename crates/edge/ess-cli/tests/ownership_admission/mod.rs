@@ -538,6 +538,7 @@ fn every_native_admission_process_and_io_boundary_preserves_outputs_state_and_ex
         let mut retained_nested = false;
         for (cut, event) in trace.iter().enumerate() {
             for process in [false, true] {
+                let _replay = ownership::probe::replay();
                 let (f, root) = prepare(kind);
                 let before = snapshot(&f.0);
                 if process {
