@@ -732,8 +732,8 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
     );
     assert_eq!(
         on["push"]["branches"],
-        serde_yaml::from_str::<Value>("[main]").unwrap(),
-        "ci.yml no longer runs on every push to main"
+        serde_yaml::from_str::<Value>("[main, 'queue/**']").unwrap(),
+        "ci.yml no longer runs on every push to main and to the bot merge queue"
     );
     let crons: Vec<&str> = on["schedule"]
         .as_sequence()
@@ -753,7 +753,7 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         .job;
     assert_eq!(
         text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]),
-        "${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'number-semantics' || 'full' }}",
+        "${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}",
         "only a pull request or its merge-queue run may narrow the feature-off archive"
     );
 
