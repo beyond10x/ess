@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-09-25
+
 ### Added
 
 - `ess infra import openapi` imports OpenAPI 3.0 documents instead of refusing them at
