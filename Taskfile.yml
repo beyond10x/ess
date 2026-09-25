@@ -1,5 +1,10 @@
 version: '3'
 
+vars:
+  FEATURE_OFF_PACKAGES: >-
+    --package ess-primitives --package ess-conformance --package schema-contract
+    --package ess-cli --package ess-kubernetes
+
 tasks:
   fmt-check:
     cmds:
@@ -45,10 +50,39 @@ tasks:
       # The workspace run has serde_json's `arbitrary_precision` on: entity-core enables it, and
       # ess-entity-runtime unifies it in. This run selects packages that do not depend on
       # entity-core, so it has the feature off; ESS number semantics must hold in both.
-      - >-
-        cargo test --locked
-        --package ess-primitives --package ess-conformance --package schema-contract
-        --package ess-cli --package ess-kubernetes
+      - cargo test --locked {{.FEATURE_OFF_PACKAGES}}
+      - task: test-xtask
+
+  # The CI halves of `test`. `.github/workflows/ci.yml` runs them as parallel lanes, and
+  # `crates/edge/ess-xtask/tests/ci_lanes.rs` holds the lanes to `check`. Nextest runs every test
+  # in its own process and runs no doc-tests, so each nextest lane has its doc-test half beside it.
+  test-shard:
+    desc: Run one nextest partition of the workspace tests, e.g. `task test-shard SHARD=1/3`.
+    requires:
+      vars: [SHARD]
+    cmds:
+      - cargo nextest run --workspace --exclude ess-xtask --locked --no-fail-fast --partition count:{{.SHARD}}
+
+  test-doc:
+    desc: Run the workspace doc-tests, which nextest does not.
+    cmds:
+      - cargo test --workspace --exclude ess-xtask --locked --doc
+
+  test-feature-off:
+    desc: Run one nextest partition of the packages without `arbitrary_precision`, e.g. `SHARD=1/3`.
+    requires:
+      vars: [SHARD]
+    cmds:
+      - cargo nextest run --locked --no-fail-fast --partition count:{{.SHARD}} {{.FEATURE_OFF_PACKAGES}}
+
+  test-feature-off-doc:
+    desc: Run the doc-tests of the packages without `arbitrary_precision`, which nextest does not.
+    cmds:
+      - cargo test --locked --doc {{.FEATURE_OFF_PACKAGES}}
+
+  test-xtask:
+    desc: Run the ess-xtask tests under the consumer-check native profile.
+    cmds:
       # The metadata authority regression executes the compiled provider. Its test
       # build needs the consumer-check profile. Keep that native profile scoped to
       # xtask: workspace tests also build Wasm, whose linker rejects native flags.
@@ -255,6 +289,23 @@ tasks:
       - cargo clippy --manifest-path fuzz/Cargo.toml --locked --offline --all-targets -- -D warnings
       - cargo test --manifest-path fuzz/Cargo.toml --locked --offline
       - cargo run --manifest-path fuzz/Cargo.toml --locked --offline --bin replay -- --regressions
+
+  ci-lint:
+    desc: The static half of `check` that CI runs as one lane.
+    cmds:
+      - task: fmt-check
+      - task: clippy
+      - task: doc-check
+      - task: release-check
+      - task: action-check
+
+  ci-smoke:
+    desc: The command smoke tests, projections and support matrix CI runs as one lane.
+    cmds:
+      - task: example-check
+      - task: projection-check
+      - task: support-check
+      - task: test-doc
 
   check:
     cmds:
