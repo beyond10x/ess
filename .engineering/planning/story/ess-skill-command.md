@@ -2,12 +2,13 @@
 format: aep.planning-md/2
 id: story:ess-skill-command
 kind: story
-status: draft
+status: archived
 title: ess skill prints the skill set the binary was built with
 relations:
 - decomposes: epic:ess-agent-plugin
 - depends_on: story:plugin-in-repository
-revision: 1
+- serves: vision:O2
+revision: 5
 ---
 # `ess skill` prints the skill set the binary was built with
 
