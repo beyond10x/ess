@@ -200,6 +200,15 @@ pub struct RawPodSpec {
     /// The containers.
     #[serde(default)]
     pub containers: Vec<RawContainer>,
+    /// The init containers. Those with `restartPolicy: Always` are native sidecars, which run for
+    /// the pod's whole life. `None` when the document has no `initContainers` key, which is not
+    /// the same as an empty list: a producer that never collected them never wrote the key.
+    #[serde(
+        default,
+        rename = "initContainers",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub init_containers: Option<Vec<RawContainer>>,
     /// The volumes containers may mount.
     #[serde(default)]
     pub volumes: Vec<RawVolume>,
@@ -238,6 +247,13 @@ pub struct RawContainer {
     /// Requests and limits.
     #[serde(default)]
     pub resources: RawResources,
+    /// An init container's restart policy; `Always` makes it a native sidecar.
+    #[serde(
+        default,
+        rename = "restartPolicy",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub restart_policy: Option<String>,
 }
 
 /// One environment variable.

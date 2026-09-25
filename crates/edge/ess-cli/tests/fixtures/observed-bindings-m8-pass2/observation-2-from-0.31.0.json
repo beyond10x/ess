@@ -1,0 +1,167 @@
+{
+  "context": "synthetic-context",
+  "coverage": {
+    "namespace": "app",
+    "profile": "namespace_topology"
+  },
+  "format": "infra-observation/2",
+  "kinds": {
+    "configmaps": {
+      "items": []
+    },
+    "cronjobs": {
+      "items": []
+    },
+    "daemonsets": {
+      "items": []
+    },
+    "deployments": {
+      "items": [
+        {
+          "metadata": {
+            "labels": {
+              "app": "web"
+            },
+            "name": "web",
+            "namespace": "app",
+            "ownerReferences": [],
+            "uid": "web-uid"
+          },
+          "spec": {
+            "replicas": 1,
+            "selector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "serviceName": null,
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app": "web"
+                },
+                "name": null,
+                "namespace": null,
+                "ownerReferences": [],
+                "uid": null
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "env": [],
+                    "envFrom": [],
+                    "image": "registry.example/billing@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "livenessProbe": null,
+                    "name": "web",
+                    "readinessProbe": null,
+                    "resources": {
+                      "limits": {},
+                      "requests": {}
+                    },
+                    "startupProbe": null,
+                    "volumeMounts": []
+                  }
+                ],
+                "nodeName": null,
+                "serviceAccountName": null,
+                "volumes": []
+              }
+            }
+          }
+        }
+      ]
+    },
+    "horizontalpodautoscalers": {
+      "items": []
+    },
+    "ingresses": {
+      "items": []
+    },
+    "jobs": {
+      "items": []
+    },
+    "namespaces": {
+      "items": [
+        {
+          "metadata": {
+            "labels": {},
+            "name": "app",
+            "namespace": null,
+            "ownerReferences": [],
+            "uid": "ns-1"
+          }
+        }
+      ]
+    },
+    "nodes": {
+      "items": [
+        {
+          "metadata": {
+            "labels": {},
+            "name": "node-a",
+            "namespace": null,
+            "ownerReferences": [],
+            "uid": "node-1"
+          },
+          "status": {
+            "capacity": {},
+            "nodeInfo": {
+              "architecture": null,
+              "containerRuntimeVersion": null,
+              "kernelVersion": null,
+              "kubeletVersion": null,
+              "operatingSystem": null,
+              "osImage": null
+            }
+          }
+        }
+      ]
+    },
+    "persistentvolumeclaims": {
+      "items": []
+    },
+    "poddisruptionbudgets": {
+      "items": []
+    },
+    "pods": {
+      "items": [
+        {
+          "metadata": {
+            "labels": {},
+            "name": "web-1",
+            "namespace": "app",
+            "ownerReferences": [],
+            "uid": "web-1"
+          },
+          "spec": {
+            "containers": [],
+            "nodeName": "node-a",
+            "serviceAccountName": null,
+            "volumes": []
+          },
+          "status": {
+            "containerStatuses": [],
+            "phase": null
+          }
+        }
+      ]
+    },
+    "replicasets": {
+      "items": []
+    },
+    "secrets": {
+      "items": []
+    },
+    "serviceaccounts": {
+      "items": []
+    },
+    "services": {
+      "items": []
+    },
+    "statefulsets": {
+      "items": []
+    }
+  },
+  "scanned_at": "2026-09-05T00:00:00Z",
+  "scout_version": "0.31.0"
+}

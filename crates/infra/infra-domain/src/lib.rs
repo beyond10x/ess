@@ -80,6 +80,6 @@ pub use observation::{
 pub use policy::{HorizontalPodAutoscaler, PodDisruptionBudget, ScaleTarget};
 pub use raw::RawBundle;
 pub use workload::{
-    Container, EnvFrom, EnvFromSource, EnvSource, EnvVar, PodTemplate, Probe, ProbeHandler, Probes,
-    Resources, Volume, VolumeMount, VolumeSource, Workload, WorkloadKind,
+    Container, EnvFrom, EnvFromSource, EnvSource, EnvVar, NativeSidecar, PodTemplate, Probe,
+    ProbeHandler, Probes, Resources, Volume, VolumeMount, VolumeSource, Workload, WorkloadKind,
 };

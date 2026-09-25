@@ -157,11 +157,18 @@ Offline mode is byte-deterministic for the same inputs and uses the observation'
 Neither mode changes a cluster or promotes observations into an accepted baseline.
 
 The report checks scope, workload, container and exact workload-template image reference.
-Missing targets within admitted scope and changed images violate the declaration. Wrong context
-or missing/different namespace coverage leaves the result unknown. A digest-pinned container
-artifact and identical digest-pinned template reference can establish immutable reference
-agreement. Source artifacts and tag-only images leave that check unknown, even when the image
-reference matches. Resolving a registry tag alone does not prove which source built it.
+Missing targets within admitted scope and changed images violate the declaration. A bound
+workload is bound as a whole: a container, or a native sidecar (an `initContainers` entry with
+`restartPolicy: Always`), that no binding names violates `OBS-BIND-008`, and the finding names
+it. Bind every container and native sidecar the workload runs; a binding names a native sidecar
+the same way it names a container. Plain init containers finish before the pod starts and are
+not checked, and the report says so. An observation or IR written by ESS 0.31.0 or earlier never
+recorded init containers, so over it `OBS-BIND-008` is `unknown` rather than satisfied; take a new
+live read to settle it. Wrong context or missing/different namespace coverage leaves the result
+unknown. A digest-pinned container artifact and identical digest-pinned template reference can
+establish immutable reference agreement. Source artifacts and tag-only images leave that check
+unknown, even when the image reference matches. Resolving a registry tag alone does not prove
+which source built it.
 
 | Exit | Report status | Meaning |
 |---|---|---|

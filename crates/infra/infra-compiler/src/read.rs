@@ -509,7 +509,16 @@ struct WorkloadMirror {
     service_account: ReferenceMirror,
     template_labels: BTreeMap<String, String>,
     containers: Vec<ContainerMirror>,
+    #[serde(default)]
+    native_sidecars: Option<Vec<NativeSidecarMirror>>,
     volumes: Vec<VolumeMirror>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSidecarMirror {
+    name: String,
+    image: String,
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -1179,6 +1188,14 @@ impl ModelMirror {
                         service_account,
                         template_labels: mirror.template_labels,
                         containers,
+                        native_sidecars: mirror.native_sidecars.map(|all| {
+                            all.into_iter()
+                                .map(|s| infra_domain::workload::NativeSidecar {
+                                    name: s.name,
+                                    image: s.image,
+                                })
+                                .collect()
+                        }),
                         volumes,
                     },
                 )

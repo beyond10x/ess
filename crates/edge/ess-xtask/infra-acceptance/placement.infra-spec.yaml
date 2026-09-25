@@ -1,0 +1,30 @@
+format: infra-spec/1
+name: generated billing service placement
+
+expectations:
+  - id: billing-exists
+    statement: the generated billing service runs as one deployment in its namespace
+    expect:
+      workload_exists: {namespace: billing, workload_kind: deployment, name: billing}
+
+  - id: billing-one-container
+    scope:
+      workload_selector: {app: billing}
+    expect:
+      workload_predicate: workload.containers == 1
+
+  - id: billing-digest
+    scope: {namespace: billing}
+    expect: image_pinned_by_digest
+
+  - id: billing-config-refs
+    scope: {namespace: billing}
+    expect: config_references_resolve
+
+  - id: billing-resources
+    scope: {namespace: billing}
+    expect: resources_declared
+    remedy:
+      resources:
+        requests: {cpu: 25m, memory: 64Mi}
+        limits: {cpu: 500m, memory: 256Mi}

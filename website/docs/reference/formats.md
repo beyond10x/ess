@@ -352,8 +352,10 @@ The `ess verify bindings` command, introduced in 0.21.0, connects admitted reali
 native infrastructure observations. `ess-observed-bindings/1` is a closed authored JSON/YAML DTO;
 its binding digest hashes compact typed JSON after sorting bindings by id and sorting
 declared evidence. It retains all authored image expectations and the exact realization digest.
-`ess-observed-bindings-report/1` is serialize-only, deterministic pretty JSON plus LF with no
-whole-report digest or report-admission reader. It carries that binding digest, realization digest,
+`ess-observed-bindings-report/2` is serialize-only, deterministic pretty JSON plus LF with no
+whole-report digest or report-admission reader. It has the fields of `/1` and adds the
+`OBS-BIND-008` check (an unbound container or native sidecar in a bound workload violates), so the
+same input can be satisfied under `/1` and violated under `/2`; a `/1` reader must reject `/2`. It carries that binding digest, realization digest,
 observation model digest and provenance, per-binding results and explicit exclusions. These
 identities name different bytes. Missing evidence produces unknown, never an empty successful
 comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
@@ -369,7 +371,7 @@ for omitted content, comparison restrictions and projection refusal.
 | Document and discriminator | Independent identity | Reader and byte contract |
 |---|---|---|
 | `format: infra-observation/1` | Context, scan time, scanner release | Sanitized scanner output; permissive raw DTO → observation validation. Pretty JSON without an appended LF; scanner-reported hash covers those file bytes. It does not prove complete collection scope. [Writer][scanner], [reader][observation] |
-| `format: infra-ir/1` | Observation provenance and model digest | `read_document` checks exact format, closed mirrors, hash and resolved-reference membership. CLI pretty envelope; **infrastructure-model** digest. Checked model transformations add no wire version or completeness proof. [API][infra-ir], [reader][infra-reader] |
+| `format: infra-ir/1` | Observation provenance and model digest | `read_document` checks exact format, closed mirrors, hash and resolved-reference membership. CLI pretty envelope; **infrastructure-model** digest. Checked model transformations add no wire version or completeness proof. A workload's optional `native_sidecars` (name and image of each `initContainers` entry with `restartPolicy: Always`) is absent when the observation did not record init containers and `[]` when it recorded none; before 0.32.0 the field is written only for a native sidecar or an explicit `initContainers: []`, so every other document from those producers keeps its bytes and digest; older readers refuse a document that carries the field. [API][infra-ir], [reader][infra-reader] |
 | `format: infra-spec/1` | Human-readable intent name and typed-intent digest | JSON/YAML → raw shapes → validated `InfraSpec`. `digest()` hashes the compact sorted typed intent; no canonical authored-file digest. [Reader][infra-spec], [digest][infra-spec-digest] |
 | `format: infra-drift/1` | Before/after context and model digests | Serialize-only typed comparison; key-sorted pretty JSON. Context agreement does not prove equal collection scope. [Source][infra-drift] |
 | `format: infra-simulation/1` | Intent name and snapshot digest | Serialize-only simulation with unknown outcomes; key-sorted pretty JSON, no simulation hash. [Source][infra-simulation] |

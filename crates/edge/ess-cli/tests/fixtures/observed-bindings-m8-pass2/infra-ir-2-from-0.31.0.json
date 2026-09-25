@@ -1,0 +1,127 @@
+{
+  "format": "infra-ir/2",
+  "provenance": {
+    "context": "synthetic-context",
+    "scanned_at": "2026-09-05T00:00:00Z",
+    "scout_version": "0.31.0"
+  },
+  "digest": "b166089116ba807989ea34315d8a60d70660bc02a6f8562d40d34b4a6bf9d269",
+  "model": {
+    "coverage": {
+      "profile": "namespace_topology",
+      "namespace": "app"
+    },
+    "namespaces": {
+      "app": {
+        "identity": {
+          "namespace": null,
+          "name": "app",
+          "uid": "ns-1"
+        },
+        "labels": {}
+      }
+    },
+    "nodes": {
+      "node-a": {
+        "identity": {
+          "namespace": null,
+          "name": "node-a",
+          "uid": "node-1"
+        },
+        "labels": {},
+        "capacity": {},
+        "info": {
+          "architecture": null,
+          "container_runtime": null,
+          "kernel": null,
+          "kubelet": null,
+          "operating_system": null,
+          "os_image": null
+        }
+      }
+    },
+    "workloads": {
+      "app/deployment/web": {
+        "kind": "deployment",
+        "identity": {
+          "namespace": "app",
+          "name": "web",
+          "uid": "web-uid"
+        },
+        "labels": {
+          "app": "web"
+        },
+        "replicas": 1,
+        "selector": {
+          "app": "web"
+        },
+        "governing_service": null,
+        "service_account": {
+          "state": "unresolved",
+          "name": "default"
+        },
+        "template_labels": {
+          "app": "web"
+        },
+        "containers": [
+          {
+            "name": "web",
+            "image": "registry.example/billing@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "env": [],
+            "env_from": [],
+            "volume_mounts": [],
+            "probes": {
+              "liveness": null,
+              "readiness": null,
+              "startup": null
+            },
+            "resources": {
+              "requests": {},
+              "limits": {}
+            }
+          }
+        ],
+        "volumes": []
+      }
+    },
+    "services": {},
+    "ingresses": {},
+    "config_maps": {},
+    "secrets": {},
+    "service_accounts": {},
+    "claims": {},
+    "pods": {
+      "app/web-1": {
+        "identity": {
+          "namespace": "app",
+          "name": "web-1",
+          "uid": "web-1"
+        },
+        "labels": {},
+        "phase": "unknown",
+        "ready": false,
+        "node": {
+          "state": "resolved",
+          "key": "node-a"
+        },
+        "owner": null,
+        "containers": []
+      }
+    },
+    "replica_sets": {},
+    "jobs": {},
+    "cron_jobs": {},
+    "pod_disruption_budgets": {},
+    "horizontal_pod_autoscalers": {},
+    "unresolved": [
+      {
+        "from": "workloads/app/deployment/web",
+        "site": "serviceAccountName",
+        "target": {
+          "kind": "service_account",
+          "name": "default"
+        }
+      }
+    ]
+  }
+}

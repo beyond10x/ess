@@ -522,3 +522,96 @@ fn captured_detached_edits_and_panics_cannot_mutate_existing_owners() {
     assert_eq!(source.digest(), admitted.digest());
     handles.assert_usable(&source);
 }
+
+/// `native_sidecars` is an optional `infra-ir/1` field: absent from every document whose
+/// templates declare none, so every such document keeps its bytes and digest, and present only
+/// where an `initContainers` entry has `restartPolicy: Always`. A reader older than the field
+/// refuses a document that carries it (the mirrors deny unknown fields), which is the intended
+/// consequence: an old reader must not silently drop a running container.
+#[test]
+fn a_native_sidecar_is_persisted_and_read_back_and_its_absence_leaves_the_document_unchanged() {
+    let without = persisted();
+    assert!(
+        !without.to_string().contains("native_sidecars"),
+        "a template with no native sidecar must not grow the field"
+    );
+    let mut bundle = bundle();
+    bundle["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]["initContainers"] = serde_json::json!([
+        {"name": "migrate", "image": "migrate:1"},
+        {"name": "proxy", "image": "proxy:1", "restartPolicy": "Always"}
+    ]);
+    let raw: RawBundle = serde_json::from_value(bundle).expect("the bundle parses");
+    let observation = Observation::try_from(raw).expect("the fixture is valid");
+    let ir = infra_compiler::compile(&observation);
+    let document = serde_json::to_value(ir.document()).expect("the document serializes");
+    let workload = document["model"]["workloads"]
+        .as_object()
+        .and_then(|all| all.values().next())
+        .expect("one workload")
+        .clone();
+    assert_eq!(
+        workload["native_sidecars"],
+        serde_json::json!([{"name": "proxy", "image": "proxy:1"}])
+    );
+    let read = infra_compiler::read_document(&document).expect("the new field reads back");
+    assert_eq!(read, ir);
+    assert_ne!(read.digest(), compiled().digest());
+}
+
+/// Silence about init containers means "none" only from a producer that collects them.
+#[test]
+fn an_absent_init_container_key_is_none_only_from_a_producer_that_records_them() {
+    let sidecars_of = |version: &str| {
+        let mut bundle = bundle();
+        bundle["scout_version"] = serde_json::json!(version);
+        let raw: RawBundle = serde_json::from_value(bundle).expect("the bundle parses");
+        let ir = infra_compiler::compile(&Observation::try_from(raw).expect("valid"));
+        let document = serde_json::to_value(ir.document()).expect("serializes");
+        let read = infra_compiler::read_document(&document).expect("reads back");
+        assert_eq!(read, ir);
+        document["model"]["workloads"]
+            .as_object()
+            .and_then(|all| all.values().next())
+            .expect("one workload")["native_sidecars"]
+            .clone()
+    };
+    for older in ["0.1.0", "0.31.0", "0.32.0-rc.1", "synthetic", ""] {
+        assert!(
+            sidecars_of(older).is_null(),
+            "{older} is treated as recording init containers"
+        );
+    }
+    for newer in ["0.32.0", "0.32.1", "1.0.0"] {
+        assert_eq!(sidecars_of(newer), serde_json::json!([]), "{newer}");
+    }
+}
+
+/// The exact digest rule for producers before 0.32.0. An `initContainers` list that holds only
+/// plain init containers is what ESS 0.31.0's full scan copied verbatim, so it compiles to no
+/// `native_sidecars` field and keeps the 0.31.0 digest. The explicit empty list `[]` is written
+/// only by the namespace-topology collector from this release on — the API server omits empty
+/// lists, so no 0.31.0 scan carries one — and it records "looked, found none".
+#[test]
+fn before_0_32_0_only_an_explicit_empty_list_or_a_native_sidecar_writes_the_field() {
+    let sidecars_of = |version: &str, init: serde_json::Value| {
+        let mut bundle = bundle();
+        bundle["scout_version"] = serde_json::json!(version);
+        bundle["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]["initContainers"] =
+            init;
+        let raw: RawBundle = serde_json::from_value(bundle).expect("the bundle parses");
+        let ir = infra_compiler::compile(&Observation::try_from(raw).expect("valid"));
+        let document = serde_json::to_value(ir.document()).expect("serializes");
+        document["model"]["workloads"]
+            .as_object()
+            .and_then(|all| all.values().next())
+            .expect("one workload")["native_sidecars"]
+            .clone()
+    };
+    let plain = serde_json::json!([{"name": "migrate", "image": "migrate:1"}]);
+    assert!(sidecars_of("0.31.0", plain.clone()).is_null());
+    assert_eq!(sidecars_of("0.32.0", plain), serde_json::json!([]));
+    assert_eq!(
+        sidecars_of("0.31.0", serde_json::json!([])),
+        serde_json::json!([])
+    );
+}

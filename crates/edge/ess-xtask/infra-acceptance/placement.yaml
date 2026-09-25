@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: billing
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: billing-credentials
+  namespace: billing
+type: Opaque
+stringData:
+  token: "{{SECRET}}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+  namespace: billing
+  labels:
+    app: billing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing
+  template:
+    metadata:
+      labels:
+        app: billing
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: billing
+          image: "{{IMAGE}}"
+          imagePullPolicy: Never
+          args: [serve, billing, /data/billing.sqlite, /data/provider, "http://127.0.0.1:9", /data/billing.ready]
+          env:
+            - name: BILLING_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: billing-credentials
+                  key: token
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+{{EXTRA_CONTAINER}}      volumes:
+        - name: data
+          emptyDir: {}

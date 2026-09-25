@@ -13,6 +13,24 @@
 - OpenAPI 3.1 `type: [<type>, "null"]` imports as `<type>` with the same `null` gap at `…/type`,
   so the 3.0 and 3.1 spellings of one meaning agree; it was refused as a type array. Other 3.1
   imports are byte-identical.
+- `ess verify bindings` reports `OBS-BIND-008`: a container or native sidecar (`initContainers`
+  with `restartPolicy: Always`) in a bound workload's template that no binding names is a
+  violation naming it, and a binding may name a native sidecar. Plain init containers are not
+  checked, and the detail says so. The report is now `ess-observed-bindings-report/2`. The input
+  stays `ess-observed-bindings/1`, and its meaning widens: binding a workload claims it runs
+  nothing else, so a document whose bound workload carries an unbound sidecar, which was
+  satisfied, is now violated.
+- The namespace-topology collector keeps `initContainers`, sanitized like containers, and writes
+  the key even when a template has none. The infrastructure model records native sidecars in an
+  optional `native_sidecars` field: absent when the observation did not record init containers,
+  empty when it recorded none. Before 0.32.0 the field is written only for a native sidecar or an
+  explicit `initContainers: []`; a missing key or a list of plain init containers only, and any IR
+  without the field, leaves `OBS-BIND-008` `unknown` rather than satisfied, naming the producer
+  version. Every such document keeps the bytes and digest ESS 0.31.0 computed for it.
+- `task infra-acceptance` accepts one generated service placement against a disposable k3d
+  cluster it creates and deletes: live observation, a projection produced twice and compared,
+  three sensitivity cases, a Secret redaction check on every written byte, and verified teardown.
+  It needs Docker and stays out of `task check`.
 
 ### Fixed
 

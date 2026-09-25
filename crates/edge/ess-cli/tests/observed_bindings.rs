@@ -61,6 +61,10 @@ impl Fixture {
         .unwrap();
         observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]["containers"]
             [0]["image"] = json!(image);
+        // A producer that records init containers writes the key even when it found none; the
+        // fixture states that, so OBS-BIND-008 has evidence to be satisfied from.
+        observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+            ["initContainers"] = json!([]);
         Self {
             dir,
             bindings,
@@ -416,4 +420,178 @@ fn discovery_manifest_model_preserves_offline_binding_results_and_refuses_before
     );
     assert!(!text.contains("starting kubectl"));
     assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "owned");
+}
+
+#[test]
+fn an_unbound_container_in_a_bound_workload_is_a_named_violation_until_it_is_bound() {
+    let mut fixture = Fixture::new();
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "satisfied");
+    let mut sidecar = fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]
+        ["spec"]["containers"][0]
+        .clone();
+    sidecar["name"] = json!("sidecar");
+    fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+        ["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(sidecar);
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(report["status"], "violated");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+    let detail = report["bindings"]["api"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["code"] == "OBS-BIND-008")
+        .unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(detail.contains("sidecar"), "{detail}");
+    // The bound container's own checks are unchanged: the finding is the extra one, not a
+    // reinterpretation of the declared one.
+    assert_eq!(check(&report, "OBS-BIND-003"), "satisfied");
+    assert_eq!(check(&report, "OBS-BIND-004"), "satisfied");
+    let mut bound = fixture.bindings["bindings"][0].clone();
+    bound["id"] = json!("sidecar");
+    bound["container"] = json!("sidecar");
+    fixture.bindings["bindings"]
+        .as_array_mut()
+        .unwrap()
+        .push(bound);
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "satisfied");
+}
+
+/// A native sidecar (Kubernetes 1.29+) is an `initContainers` entry with `restartPolicy: Always`:
+/// it runs for the pod's whole life, exactly like the unbound sidecar OBS-BIND-008 exists to catch.
+/// The observation drops `initContainers`, so the check cannot see it — and it must then not claim
+/// that "every container in the workload template is named by a binding".
+#[test]
+fn an_unbound_native_sidecar_is_not_reported_as_every_container_bound() {
+    let mut fixture = Fixture::new();
+    let image = fixture.bindings["bindings"][0]["image"].clone();
+    fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+        ["initContainers"] = json!([{"name": "proxy", "image": image, "restartPolicy": "Always"}]);
+    let (output, report) = fixture.run();
+    let detail = report["bindings"]["api"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["code"] == "OBS-BIND-008")
+        .unwrap()["detail"]
+        .clone();
+    assert_ne!(
+        check(&report, "OBS-BIND-008"),
+        "satisfied",
+        "an unbound native sidecar `proxy` passed OBS-BIND-008 (exit {:?}): {detail}",
+        output.status.code()
+    );
+}
+
+#[test]
+fn a_native_sidecar_is_checked_like_a_container_and_a_plain_init_container_is_named_as_unchecked() {
+    let mut fixture = Fixture::new();
+    let image = fixture.bindings["bindings"][0]["image"].clone();
+    fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+        ["initContainers"] = json!([
+            {"name": "migrate", "image": image},
+            {"name": "proxy", "image": image, "restartPolicy": "Always"}
+    ]);
+    let detail = |report: &Value| {
+        report["bindings"]["api"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["code"] == "OBS-BIND-008")
+            .unwrap()["detail"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+    let text = detail(&report);
+    assert!(
+        text.contains("proxy") && !text.contains("migrate"),
+        "{text}"
+    );
+    let mut bound = fixture.bindings["bindings"][0].clone();
+    bound["id"] = json!("proxy");
+    bound["container"] = json!("proxy");
+    fixture.bindings["bindings"]
+        .as_array_mut()
+        .unwrap()
+        .push(bound);
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "satisfied");
+    // The satisfied detail says what it checked and what it did not.
+    let text = detail(&report);
+    assert!(!text.contains("every container"), "{text}");
+    assert!(
+        text.contains("native sidecar") && text.contains("init"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_report_names_its_second_format_version() {
+    let fixture = Fixture::new();
+    let (_, report) = fixture.run();
+    assert_eq!(report["format"], "ess-observed-bindings-report/2");
+}
+
+/// Unknown differs from false: a template that does not record `initContainers`, from a producer
+/// older than the first release that collects them, cannot show that no native sidecar runs.
+#[test]
+fn an_observation_that_never_recorded_init_containers_leaves_obs_bind_008_unknown() {
+    let mut fixture = Fixture::new();
+    let template =
+        &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+    template.as_object_mut().unwrap().remove("initContainers");
+    fixture.observation["scout_version"] = json!("0.31.0");
+    let detail = |report: &Value| {
+        report["bindings"]["api"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["code"] == "OBS-BIND-008")
+            .unwrap()["detail"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "unknown");
+    let text = detail(&report);
+    assert!(text.contains("0.31.0") && text.contains("0.32.0"), "{text}");
+    // A producer version that collects init containers makes an absent key mean none.
+    fixture.observation["scout_version"] = json!("0.32.0");
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "satisfied");
+    // A version this build cannot order is not evidence either.
+    fixture.observation["scout_version"] = json!("synthetic");
+    assert_eq!(check(&fixture.run().1, "OBS-BIND-008"), "unknown");
+    // An unbound plain container is a violation whatever the producer recorded about init
+    // containers: the evidence of it is in the containers list itself.
+    let mut extra = fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]
+        ["spec"]["containers"][0]
+        .clone();
+    extra["name"] = json!("sidecar");
+    fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+        ["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(extra);
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
 }

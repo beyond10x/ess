@@ -24,7 +24,9 @@ pub mod compile;
 pub mod ir;
 pub mod read;
 
-pub use compile::compile;
+pub use compile::{
+    compile, producer_records_init_containers, FIRST_PRODUCER_RECORDING_INIT_CONTAINERS,
+};
 pub use ir::{
     digest_of_canonical, ClaimHandle, ConfigMapHandle, InfraIr, InfraIrDocument, InfraModel,
     NodeHandle, Provenance, Reference, ResolvedContainer, ResolvedEnvFrom, ResolvedEnvFromSource,

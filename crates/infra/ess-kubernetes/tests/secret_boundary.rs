@@ -636,3 +636,75 @@ fn malformed_late_annotations_with_sentinel_keys_refuse_before_any_write() {
         );
     }
 }
+
+#[test]
+fn namespace_topology_keeps_native_sidecars_sanitized_like_containers() {
+    let (output, destination, _) = topology_case(
+        |root| {
+            let path = root.join("deployments.json");
+            let mut value: Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            value["items"][0]["spec"]["template"]["spec"]["initContainers"] = json!([
+                {"name": "migrate", "image": "migrate:1", "command": [TOPOLOGY_PRIVATE]},
+                {"name": "proxy", "image": "proxy:1", "restartPolicy": "Always",
+                 "args": [TOPOLOGY_PRIVATE],
+                 "env": [{"name": "PRIVATE", "value": TOPOLOGY_PRIVATE}],
+                 "livenessProbe": {"exec": {"command": [TOPOLOGY_PRIVATE]}}}
+            ]);
+            std::fs::write(&path, value.to_string()).unwrap();
+        },
+        None,
+    );
+    assert!(output.status.success(), "{output:?}");
+    let bytes = std::fs::read(destination).unwrap();
+    assert!(!String::from_utf8_lossy(&bytes).contains(TOPOLOGY_PRIVATE));
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    let init =
+        &value["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]["initContainers"];
+    assert_eq!(init[1]["name"], "proxy");
+    assert_eq!(init[1]["restartPolicy"], "Always");
+    let raw: infra_domain::RawBundle = serde_json::from_value(value).unwrap();
+    let observation = infra_domain::Observation::try_from(raw).unwrap();
+    let sidecars = observation.workloads[0]
+        .template
+        .native_sidecars
+        .as_ref()
+        .expect("the collector records init containers");
+    assert_eq!(sidecars.len(), 1);
+    assert_eq!(
+        (sidecars[0].name.as_str(), sidecars[0].image.as_str()),
+        ("proxy", "proxy:1")
+    );
+}
+
+/// The collector writes `initContainers` even when a template has none: that key is how a reader
+/// of an observation from a producer older than the release that sets the version gate can tell
+/// "looked, found none" from "never looked".
+#[test]
+fn namespace_topology_records_that_it_looked_for_init_containers() {
+    let (output, destination, _) = topology_case(
+        |root| {
+            let path = root.join("deployments.json");
+            let mut value: Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            value["items"][0]["spec"]["template"]["spec"]
+                .as_object_mut()
+                .unwrap()
+                .remove("initContainers");
+            std::fs::write(&path, value.to_string()).unwrap();
+        },
+        None,
+    );
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&std::fs::read(destination).unwrap()).unwrap();
+    assert_eq!(
+        value["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]["initContainers"],
+        json!([])
+    );
+    let raw: infra_domain::RawBundle = serde_json::from_value(value).unwrap();
+    let observation = infra_domain::Observation::try_from(raw).unwrap();
+    assert_eq!(
+        observation.workloads[0].template.native_sidecars,
+        Some(Vec::new())
+    );
+}
