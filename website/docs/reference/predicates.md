@@ -220,12 +220,23 @@ the structured form below.
 when: channel in [Web, Store]
 ```
 
+An unquoted `&&` or `||` after a comparison is refused rather than read as part of one text
+literal. Quote the whole literal if the text really contains it.
+
+```yaml ess-check="when" ess-expect="refused" ess-says="are not part of the compact form"
+when: sku == A1 && gift
+```
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when: sku == "A1 && gift"
+```
+
 ### Absence is not `null`
 
 An unquoted `null` on the right of `==` or `!=` is refused, with a hint that names `defined(x)` or
 `not defined(x)`. Test presence with `defined`. A quoted `"null"` is still the four-character text.
 
-```yaml ess-check="when" ess-expect="refused" ess-says="defined(coupon)" ess-pending="beyond10x/ess#93"
+```yaml ess-check="when" ess-expect="refused:ESS-SPEC-017" ess-says="defined(coupon)"
 when: coupon == null
 ```
 
@@ -452,7 +463,7 @@ invariants:
 One element of a list is reachable by its position, counted from `0`: `tags.0` is the first
 element. A map has no ordinals.
 
-```yaml ess-check="when" ess-expect="valid"
+```yaml ess-check="when" ess-expect="synthesizes"
 when: tags.0 == vip
 ```
 
@@ -485,7 +496,7 @@ when: tags.length > 0
 `Duration` has no ordering. An enum's variants carry no order ESS promises, so test an enum with
 membership (`channel: [Web, Store]`), not with `>`.
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#94"
+```yaml ess-check="when" ess-expect="synthesizes"
 when: sku < "m"
 ```
 
@@ -520,6 +531,7 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | a bare path over text (`when: sku`) | no. The falsy side needs an empty text, which is not a literal of the guard. `ESS-SYNTH-003` |
 | `defined(x)`, `not defined(x)`, `x: {exists: …}` over an `Optional` | yes. One candidate omits the field. |
 | `.count`, `exists`, `forall` over an input list | yes. The list is built from the guard's own literal: a one-element list satisfies the guard, and `[]` or a list of other text refutes it. |
+| a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |
 | `starts_with`, `ends_with`, `contains` | with [#95](https://github.com/beyond10x/ess/issues/95) |
 
@@ -527,24 +539,24 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 when: sku
 ```
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#93"
+```yaml ess-check="when" ess-expect="synthesizes"
 when: defined(coupon)
 ```
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#93"
+```yaml ess-check="when" ess-expect="synthesizes"
 when: not defined(coupon)
 ```
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#93"
+```yaml ess-check="when" ess-expect="synthesizes"
 when:
   coupon: {exists: false}
 ```
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#94"
+```yaml ess-check="when" ess-expect="synthesizes"
 when: tags.count >= 1
 ```
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#94"
+```yaml ess-check="when" ess-expect="synthesizes"
 when:
   exists:
     in: tags
@@ -552,7 +564,7 @@ when:
     that: t == vip
 ```
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#94"
+```yaml ess-check="when" ess-expect="synthesizes"
 when:
   forall:
     in: tags
