@@ -11,6 +11,8 @@
   Subject-field, state-change and external conditions lower to ER predicates; an operation
   that clears a field and a preserve that returns no response are refused by name
   (`ClearedValueUnsupported`, `SilentPreserveUnsupported`).
+  A lowering targets Entity Runtime `0.22.0`: `ENTITY_RUNTIME_REVISION` is the locked
+  `entity-core` commit, and a test refuses a lock file that names another.
 - `ess-service-contract` extracts a borrowed service contract for an exact component and
   synthesis plan, preserving selected compiler values, contextual capabilities, obligations,
   refusals and their original order.

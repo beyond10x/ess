@@ -1480,3 +1480,36 @@ fn external_when_requires_both_input_eligibility_and_supplied_evidence() {
     };
     assert_eq!(prepared.outcome(), "settled");
 }
+
+/// The revision a lowering advertises is the Entity Runtime commit this workspace compiles against.
+/// A repin that moves `Cargo.lock` and leaves the constant behind would stamp every lowering with a
+/// revision whose kernel never produced it.
+#[test]
+fn the_advertised_revision_is_the_locked_entity_core_commit() {
+    let lock_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Cargo.lock");
+    let lock = std::fs::read_to_string(&lock_path).expect("workspace lock file reads");
+    let mut sources = lock
+        .split("[[package]]")
+        .filter(|entry| {
+            entry
+                .lines()
+                .any(|line| line.trim() == "name = \"entity-core\"")
+        })
+        .filter_map(|entry| {
+            entry
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("source = \""))
+                .map(|source| source.trim_end_matches('"').to_owned())
+        });
+    let source = sources
+        .next()
+        .expect("entity-core is locked from a git source");
+    assert_eq!(sources.next(), None, "exactly one entity-core is locked");
+    let (_, locked) = source
+        .rsplit_once('#')
+        .expect("git lock source carries its commit");
+    assert_eq!(
+        ENTITY_RUNTIME_REVISION, locked,
+        "ENTITY_RUNTIME_REVISION names a commit other than the locked entity-core source {source}"
+    );
+}

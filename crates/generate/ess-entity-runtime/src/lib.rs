@@ -36,7 +36,7 @@ use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 
 /// The exact Entity Runtime source revision this projector targets.
-pub const ENTITY_RUNTIME_REVISION: &str = "13f88d982f8ac90651e4023bdf6286332d042b33";
+pub const ENTITY_RUNTIME_REVISION: &str = "9ee145e888368c668cdaaaa9fa22b8334149616f";
 
 /// Caller-owned coordinates which ESS does not encode itself.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
