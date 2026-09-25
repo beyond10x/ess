@@ -752,6 +752,7 @@ test('an unknown kind evaluates to unknown rather than throwing', () => {
 const corpus = ((): {
   numbers: { name: string; from: Record<string, unknown>; display: string }[];
   orderings: { name: string; left: string; right: string; ordering: string }[];
+  text_orderings: { name: string; left: string; right: string; ordering: string }[];
 } => {
   const relative = 'crates/specify/ess-primitives/tests/vectors/primitive-semantics.json';
   let directory = import.meta.dirname;
@@ -795,5 +796,29 @@ test('every ordering the corpus states is the ordering the evaluator answers', (
     const less = ordering.ordering === 'less' && !collapsed.has(ordering.name);
     assert.equal(parseLeaf(`amount < ${right}`).evaluate(left), truthOf(less), ordering.name);
     assert.equal(parseLeaf(`amount == ${right}`).evaluate(left), truthOf(!less), ordering.name);
+  }
+});
+
+// Text is ordered by its UTF-8 bytes in every lane (ess#94): `B` is below `a`, which a locale
+// order reverses, and U+FFFF is below U+10000, which UTF-16 code units reverse.
+test('every text ordering the corpus states is the byte ordering the evaluator answers', () => {
+  assert.ok(corpus.text_orderings.length >= 8, 'the corpus states fewer text orderings');
+  for (const ordering of corpus.text_orderings) {
+    const left = source({ caller: ordering.left });
+    const less = ordering.ordering === 'less';
+    const greater = ordering.ordering === 'greater';
+    for (const [op, holds] of [
+      ['<', less],
+      ['<=', !greater],
+      ['>', greater],
+      ['>=', !less],
+    ] as const) {
+      const expression = `caller ${op} ${JSON.stringify(ordering.right)}`;
+      assert.equal(
+        parseLeaf(expression).evaluate(left),
+        truthOf(holds),
+        `${ordering.name}: ${JSON.stringify(ordering.left)} ${expression}`,
+      );
+    }
   }
 });

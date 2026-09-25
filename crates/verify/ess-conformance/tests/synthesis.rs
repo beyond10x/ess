@@ -715,9 +715,10 @@ fn the_input_a_scenario_sends_is_re_decided_against_the_guard_it_claims_to_reach
 
 #[test]
 fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
-    // A malformed declared path now fails assembly. A separate legal Text ordering keeps
-    // the synthesis Unknown-versus-exhausted-search control: no scale can decide it.
-    let malformed = UNDECIDED.replace("amount.currency > EUR", "amount.vat > 0");
+    // A malformed declared path now fails assembly. A separate legal read of a map's count keeps
+    // the synthesis Unknown-versus-exhausted-search control: no input projection publishes it.
+    // (It was a text ordering until ess#94 ordered text by its bytes, which decides one.)
+    let malformed = UNDECIDED.replace("labels.count > 0", "amount.vat > 0");
     let errors = Specification::assemble([(
         Source::new("malformed.yaml"),
         RawSpecFile::parse(&malformed).unwrap(),
@@ -755,8 +756,8 @@ fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
         .expect("the guarded branch refuses");
     let rendered = refusal.to_string();
     assert!(
-        rendered.contains("amount.currency > EUR"),
-        "a refusal names the valid predicate whose text ordering lacks a scale: {rendered}"
+        rendered.contains("labels.count > 0"),
+        "a refusal names the valid predicate whose map count nothing publishes: {rendered}"
     );
     assert!(
         matches!(refusal.cause, RefusalCause::GuardUnevaluable(_)),
@@ -2776,7 +2777,9 @@ fn an_actor_is_named_only_where_the_specification_grants_the_command() {
 
 // ---- fixtures for corners neither example carries ------------------------------------------------
 
-/// A legal text ordering with no scale, so synthesis must refuse as unevaluable.
+/// A legal read of a map's count, which no input projection publishes, so synthesis must refuse as
+/// unevaluable. It was a text ordering with no scale until text came to be ordered by its bytes
+/// (ess#94).
 const UNDECIDED: &str = r"
 format: ess/1
 system: undecided
@@ -2807,9 +2810,11 @@ commands:
     input:
       - name: amount
         type: undecided.orders.Money
+      - name: labels
+        type: Map<String, String>
     outcomes:
       - name: taxed
-        when: amount.currency > EUR
+        when: labels.count > 0
         emits:
           - undecided.orders.Taxed
       - name: untaxed
@@ -4244,4 +4249,288 @@ fn a_component_nothing_declares_is_refused_by_name() {
         refused.to_string(),
         "no component `ledger-service` is declared; it declares `email-service`, `invoice-service`"
     );
+}
+
+// ---- ess#93 and ess#94: every guard validate admits gets both of its branches -------------------
+
+/// One command per guard shape the two issues name, each beside a default branch.
+///
+/// `note` is the `Optional` a presence guard reads (ess#93); `tags` is the list a count, an
+/// existential and a universal read, and `caller` the text an ordering reads (ess#94). Every one of
+/// these validated before, and synthesis refused one of its two branches.
+const GUARDS: &str = r#"
+format: ess/1
+system: guards
+version: v1
+domain: guards.calls
+
+errors:
+  - name: guards.calls.Refused
+    summary: The call was refused.
+
+events:
+  - name: guards.calls.Routed
+    fields:
+      - name: route
+        type: String
+
+commands:
+  - name: guards.calls.Noted
+    input:
+      - {name: caller, type: String}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: taken
+        when: defined(note)
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.Unnoted
+    input:
+      - {name: caller, type: String}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: taken
+        when:
+          note: {exists: false}
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.Tagged
+    input:
+      - {name: tags, type: List<String>}
+    outcomes:
+      - name: taken
+        when: tags.count > 0
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.Vip
+    input:
+      - {name: tags, type: List<String>}
+    outcomes:
+      - name: taken
+        when:
+          exists: {in: tags, as: t, that: t == vip}
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.First
+    input:
+      - {name: tags, type: List<String>}
+    outcomes:
+      - name: taken
+        when: tags.0 == vip
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.Clean
+    input:
+      - {name: tags, type: List<String>}
+    outcomes:
+      - name: taken
+        when:
+          forall: {in: tags, as: t, that: t != spam}
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.Early
+    input:
+      - {name: caller, type: String}
+      - {name: wait, type: Duration}
+    outcomes:
+      - name: taken
+        when: caller < "m"
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+
+  - name: guards.calls.Late
+    input:
+      - {name: caller, type: String}
+    outcomes:
+      - name: taken
+        when: caller > "m"
+        emits: [guards.calls.Routed]
+      - name: refused
+        error: guards.calls.Refused
+"#;
+
+/// Both branches of every guard in [`GUARDS`] are scenarios, and each input re-decides its guard.
+#[test]
+fn every_presence_list_and_text_ordering_guard_gets_a_satisfying_and_a_refuting_scenario() {
+    let ir = fixture(GUARDS);
+    let synthesis = synthesize(&ir);
+    let refusals: Vec<String> = synthesis
+        .refusals
+        .iter()
+        .map(|refusal| format!("{}: {refusal}", refusal.code()))
+        .collect();
+
+    for command_name in [
+        "guards.calls.Noted",
+        "guards.calls.Unnoted",
+        "guards.calls.Tagged",
+        "guards.calls.Vip",
+        "guards.calls.First",
+        "guards.calls.Clean",
+        "guards.calls.Early",
+        "guards.calls.Late",
+    ] {
+        let command = ir
+            .commands()
+            .get(&QualifiedName::new(command_name).expect("valid"))
+            .expect("the fixture declares it");
+        let guard = when(
+            command
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.name.as_str() == "taken")
+                .expect("`taken` is declared"),
+        )
+        .expect("`taken` is guarded");
+        for (outcome, satisfied) in [("taken", true), ("refused", false)] {
+            let id = format!("{command_name}/outcome/{outcome}");
+            assert!(
+                ids(&synthesis).contains(&id),
+                "`{id}` is a scenario; the synthesis refused {refusals:#?}"
+            );
+            let input = literals(&synthesis, &id);
+            let decision = flatten(&ir, command, &input)
+                .expect("a synthesised input fits its own type")
+                .decide(guard);
+            assert_eq!(
+                decision.is_satisfied(),
+                satisfied,
+                "`{id}` sends {input:?}, which decides `{guard}` as {decision}"
+            );
+            assert!(
+                decision.unevaluable().is_none(),
+                "`{id}` decides `{guard}`: {decision}"
+            );
+        }
+    }
+    assert!(
+        !refusals
+            .iter()
+            .any(|refusal| refusal.starts_with("ESS-SYNTH-002")
+                || refusal.starts_with("ESS-SYNTH-003")),
+        "no guard branch is refused: {refusals:#?}"
+    );
+}
+
+/// The absent side of a presence guard is sent with the field left out, not as `null`.
+#[test]
+fn the_absent_side_of_a_presence_guard_omits_the_optional_field_from_the_input() {
+    let synthesis = synthesize(&fixture(GUARDS));
+    for (id, present) in [
+        ("guards.calls.Noted/outcome/taken", true),
+        ("guards.calls.Noted/outcome/refused", false),
+        ("guards.calls.Unnoted/outcome/taken", false),
+        ("guards.calls.Unnoted/outcome/refused", true),
+    ] {
+        let input = sent(&synthesis, id);
+        assert_eq!(
+            input.contains_key("note"),
+            present,
+            "`{id}` sends {input:?}"
+        );
+        assert!(
+            input.contains_key("caller"),
+            "only the optional the guard reads is omitted: {input:?}"
+        );
+    }
+}
+
+/// A list guard is met by a one-element list built from the guard's own literal.
+#[test]
+fn a_list_guard_is_satisfied_by_one_element_the_guard_itself_writes() {
+    let synthesis = synthesize(&fixture(GUARDS));
+    let tags = |id: &str| {
+        literals(&synthesis, id)
+            .remove("tags")
+            .expect("tags is sent")
+    };
+    let text = |value: &str| Node::Text(value.to_owned());
+    assert_eq!(
+        tags("guards.calls.Vip/outcome/taken"),
+        Node::Seq(vec![text("vip")])
+    );
+    assert_eq!(tags("guards.calls.Vip/outcome/refused"), Node::Seq(vec![]));
+    assert_eq!(tags("guards.calls.Clean/outcome/taken"), Node::Seq(vec![]));
+    assert_eq!(
+        tags("guards.calls.Clean/outcome/refused"),
+        Node::Seq(vec![text("spam")])
+    );
+    assert_eq!(
+        tags("guards.calls.Tagged/outcome/refused"),
+        Node::Seq(vec![])
+    );
+    assert_eq!(
+        tags("guards.calls.Tagged/outcome/taken"),
+        Node::Seq(vec![text("tags.0")]),
+        "an element with no literal to copy is the path's own text, as every text witness is"
+    );
+}
+
+/// `== null` is refused at validate with the presence test named; a quoted `"null"` is text.
+#[test]
+fn an_unquoted_null_guard_is_refused_at_validate_and_a_quoted_one_is_the_text() {
+    for (guard, hint) in [
+        ("note == null", "`not defined(note)`"),
+        ("note != null", "`defined(note)`"),
+    ] {
+        let source = GUARDS.replace("when: defined(note)", &format!("when: {guard}"));
+        let error = RawSpecFile::parse(&source).expect_err(guard);
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("null") && rendered.contains(hint),
+            "`{guard}` is refused with a hint naming {hint}: {rendered}"
+        );
+    }
+
+    let quoted = GUARDS.replace("when: defined(note)", r#"when: note == "null""#);
+    let ir = fixture(&quoted);
+    let synthesis = synthesize(&ir);
+    let input = literals(&synthesis, "guards.calls.Noted/outcome/taken");
+    assert_eq!(
+        input.get("note"),
+        Some(&Node::Text("null".to_owned())),
+        "a quoted `\"null\"` is the four-character text and nothing else: {input:?}"
+    );
+}
+
+/// Validate refuses ordering a `Duration`; a predicate built without validate that orders one
+/// anyway is still not ordered by the bytes of its ISO 8601 text, which would put `PT10M` below
+/// `PT5M`.
+#[test]
+fn a_duration_on_command_input_is_never_ordered_by_its_bytes() {
+    let ir = fixture(GUARDS);
+    let command = ir
+        .commands()
+        .get(&QualifiedName::new("guards.calls.Early").expect("valid"))
+        .expect("the fixture declares it");
+    let input = BTreeMap::from([
+        ("caller".to_owned(), Node::Text("a".to_owned())),
+        ("wait".to_owned(), Node::Text("PT10M".to_owned())),
+    ]);
+    let facts = flatten(&ir, command, &input).expect("the input fits");
+    for expression in [r#"wait > "PT5M""#, r#"wait < "PT5M""#] {
+        let decision = facts.decide(
+            &ess_primitives::predicate::Predicate::parse_expression(expression).expect("parses"),
+        );
+        assert!(
+            decision.unevaluable().is_some(),
+            "`{expression}` over a Duration is not a byte ordering: {decision}"
+        );
+    }
+    assert!(facts
+        .decide(&ess_primitives::predicate::Predicate::parse_expression("caller < b").unwrap())
+        .is_satisfied());
 }

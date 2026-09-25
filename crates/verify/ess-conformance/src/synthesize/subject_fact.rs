@@ -398,7 +398,7 @@ fn preserve(
         view.source == subject.entity
             && view.params.is_empty()
             && setup.after.as_ref().is_some_and(|state| {
-                shows(view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
+                shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
             })
             && view.assertion_style == AssertionStyle::Expect
             && view

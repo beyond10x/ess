@@ -229,6 +229,8 @@ pub mod codes {
         pub const PARTIAL_ACCESSOR: u16 = 15;
         /// A plan exceeds its declared construction or output resource budget.
         pub const ACCESSOR_RESOURCE: u16 = 16;
+        /// A predicate compares a fact with an unquoted `null`, which no fact value can be.
+        pub const NULL_COMPARISON: u16 = 17;
 
         /// Every class, in code order.
         pub const ALL: &[u16] = &[
@@ -248,6 +250,7 @@ pub mod codes {
             ACCESSOR_TRAVERSAL,
             PARTIAL_ACCESSOR,
             ACCESSOR_RESOURCE,
+            NULL_COMPARISON,
         ];
     }
 
@@ -282,6 +285,14 @@ pub mod codes {
         /// A backstop. Reaching it means a `Specification` was built field by field and is
         /// inconsistent in a way `Specification::validate` does not check.
         UNVALIDATED_SPECIFICATION = family::SPEC, class::UNDECLARED;
+
+        /// A predicate compares a fact with an unquoted `null` — `note == null`, `note: null` —
+        /// which read as the four-character text before ess#93. Refused while the document is
+        /// read, so it has no construct and is `SPEC`; the message is
+        /// `ess_primitives::error::ParseError::NullComparison`, which names `defined(x)` and
+        /// `not defined(x)` and carries this code as
+        /// `ParseError::NULL_COMPARISON_CODE`.
+        NULL_COMPARISON = family::SPEC, class::NULL_COMPARISON;
 
         /// A type, or a declared conversion, names a type nothing declares.
         UNDECLARED_TYPE = family::TYPE, class::UNDECLARED;
@@ -3659,9 +3670,19 @@ mod tests {
             codes::MAPPING_TYPE_MISMATCH,
             codes::MAPPING_READS_UNDECLARED_FIELD,
             codes::UNMAPPED_COMMAND_INPUT,
+            codes::NULL_COMPARISON,
         ] {
             assert!(codes::ALL.contains(&code), "{code} is not in ALL");
         }
+    }
+
+    #[test]
+    fn the_null_comparison_code_is_the_one_the_parse_refusal_prints() {
+        assert_eq!(
+            codes::NULL_COMPARISON.to_string(),
+            ess_primitives::error::ParseError::NULL_COMPARISON_CODE,
+            "the parser carries this code in its message; the two spellings are one code"
+        );
     }
 
     #[test]
