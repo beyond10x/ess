@@ -1652,6 +1652,7 @@ invariants:
                     reading: None,
                     name: name(newtype),
                     body: TypeBody::Newtype {
+                        alphabet: None,
                         of: TypeRef::Primitive(Primitive::Uuid),
                         invariants: Vec::new(),
                     },
@@ -2170,6 +2171,7 @@ lifecycle:
                 reading: None,
                 name: name("billing.CustomerId"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Primitive(Primitive::Uuid),
                     invariants: Vec::new(),
                 },
@@ -2281,6 +2283,7 @@ lifecycle:
         subject: Option<crate::command::Subject>,
     ) -> crate::command::CommandSpec {
         crate::command::CommandSpec {
+            examples: BTreeMap::new(),
             name: name(command),
             // Every subject below names its instance by `invoice_id`, so the input has to carry one
             // typed as the entity's identity: without it these fixtures would fail the *instance*

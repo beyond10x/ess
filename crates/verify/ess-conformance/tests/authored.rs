@@ -195,6 +195,37 @@ fn entity_setup_checks_collection_members_and_value_object_invariants() {
     .is_complete());
 }
 
+/// A declared alphabet holds an authored setup value as an invariant does
+/// (`docs/design/string-alphabet-and-length.md`, section 1): `keyz` is not a value of a type whose
+/// characters are `abc `.
+#[test]
+fn entity_setup_holds_a_text_to_its_declared_alphabet() {
+    let model = CALL_HISTORY_SETUP_MODEL
+        .replace("format: ess/1\n", "format: ess/11\n")
+        .replace(
+            "entities:",
+            "types:\n  - name: calls.history.Note\n    kind: newtype\n    of: String\n    alphabet: \"abc \"\nentities:",
+        )
+        .replace(
+            "note, type: 'Optional<String>'",
+            "note, type: 'Optional<calls.history.Note>'",
+        );
+    let ir = fixture(&model);
+    let source = CALL_HISTORY_SETUP.replace("note: null", "note: 'a cab'");
+    let admitted = authoring(&ir, &source);
+    assert!(admitted.is_complete(), "{:?}", admitted.refusals);
+    let refused = authoring(&ir, &source.replace("note: 'a cab'", "note: 'keyz'"));
+    assert!(
+        !refused.is_complete(),
+        "an authored value outside the alphabet was admitted"
+    );
+    assert!(
+        format!("{:?}", refused.refusals).contains("not in the alphabet of calls.history.Note"),
+        "{:?}",
+        refused.refusals
+    );
+}
+
 #[test]
 fn entity_setup_checks_union_tags_payloads_and_nested_struct_invariants() {
     for tag in ["kind", "value"] {

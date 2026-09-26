@@ -64,6 +64,20 @@
     {"name": "a null is unobserved under every operator", "value": null, "op": "contains", "literal": "x", "truth": "unknown"},
     {"name": "an unobserved path is unknown", "op": "ends_with", "literal": "0", "truth": "unknown"}
   ],
+  "text_lengths": [
+    {"name": "the empty text has no characters", "facts": {"keys": ""}, "path": "keys.count", "expected": 0},
+    {"name": "ASCII counts one per byte", "facts": {"keys": "abc"}, "path": "keys.count", "expected": 3},
+    {"name": "a composed e-acute is one character in two bytes", "facts": {"keys": "é"}, "path": "keys.count", "expected": 1},
+    {"name": "e and a combining acute are two characters, not one grapheme", "facts": {"keys": "é"}, "path": "keys.count", "expected": 2},
+    {"name": "a supplementary character is one, in four bytes and two UTF-16 units", "facts": {"keys": "😀"}, "path": "keys.count", "expected": 1},
+    {"name": "a keypad sequence counts its keys", "facts": {"keys": "12#*AD"}, "path": "keys.count", "expected": 6},
+    {"name": "a bound count wins over the text it sits under", "facts": {"keys": "12#", "keys.count": 7}, "path": "keys.count", "expected": 7},
+    {"name": "a number has no length", "facts": {"n": 5}, "path": "n.count", "expected": "unknown"},
+    {"name": "a boolean has no length", "facts": {"flag": true}, "path": "flag.count", "expected": "unknown"},
+    {"name": "a null is unobserved, and so is its length", "facts": {"keys": null}, "path": "keys.count", "expected": "unknown"},
+    {"name": "an unbound text has no length", "facts": {}, "path": "keys.count", "expected": "unknown"},
+    {"name": "a text nested under a struct counts too", "facts": {"party.name": "Ann"}, "path": "party.name.count", "expected": 3}
+  ],
   "admission": [
     {"name": "string-text", "kind": "string", "value": "x", "admitted": true},
     {"name": "string-boolean", "kind": "string", "value": true, "admitted": false},

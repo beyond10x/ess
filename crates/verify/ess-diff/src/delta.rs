@@ -10,7 +10,7 @@ use ess_primitives::evidence::SpecDigest;
 use crate::change::{ChangeId, SemanticChange, SemanticRelation};
 
 /// Delta format major versions this build implements.
-pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
+pub const SUPPORTED_DELTA_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8];
 
 /// The version of a delta's document shape and admitted change vocabulary.
 ///

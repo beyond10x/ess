@@ -1188,3 +1188,34 @@ fn no_source_file_in_this_crate_reads_a_clock_or_an_unordered_map() {
         );
     }
 }
+
+/// A declared alphabet is documented on the generated Rust and Go wrapper, as an invariant is, and
+/// enforced by neither: checking is behaviour (`docs/design/string-alphabet-and-length.md`, section 1).
+#[test]
+fn a_declared_alphabet_is_one_doc_line_on_the_rust_and_go_wrapper() {
+    let ir = fixture(&[(
+        "keypad.yaml",
+        include_str!("../../../verify/ess-conformance/tests/fixtures/keypad.yaml"),
+    )]);
+    for (target, line) in [
+        (
+            Target::Rust,
+            "/// Every character is one of `0123456789*#ABCD`",
+        ),
+        (
+            Target::Go,
+            "// Every character is one of `0123456789*#ABCD`",
+        ),
+    ] {
+        let Ok(synthesis) = synthesize_for(&ir, target) else {
+            panic!("{target:?}: the keypad has a realizable target")
+        };
+        let code: String = synthesis
+            .artifacts
+            .values()
+            .map(|artifact| artifact.contents.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(code.matches(line).count(), 1, "{target:?}");
+    }
+}

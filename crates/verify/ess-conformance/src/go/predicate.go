@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // truth is a three-valued result.
@@ -601,16 +602,16 @@ func (p predicate) evaluate(source factSource) truth {
 	case "compare":
 		return p.compare(source)
 	case "truthy":
-		value, ok := source[p.path]
+		value, ok := readLeaf(source, p.path)
 		if !ok {
 			return truthUnknown
 		}
 		return truthOf(isTruthy(value))
 	case "defined":
-		_, ok := source[p.path]
+		_, ok := readLeaf(source, p.path)
 		return truthOf(ok)
 	case "any_of", "none_of":
-		value, ok := source[p.path]
+		value, ok := readLeaf(source, p.path)
 		if !ok {
 			return truthUnknown
 		}
@@ -662,7 +663,7 @@ func (p predicate) compare(source factSource) truth {
 // `strings` answers over the UTF-8 bytes `encoding/json` decoded. Unbound, or bound to the null
 // the flattener binds, is Unknown; a value that is not text is False.
 func (p predicate) textMatch(source factSource) truth {
-	value, ok := source[p.path]
+	value, ok := readLeaf(source, p.path)
 	if !ok || value == nil {
 		return truthUnknown
 	}
@@ -741,8 +742,35 @@ func (o operand) resolve(source factSource) (Node, bool) {
 	if !o.isFact {
 		return o.literal, true
 	}
-	value, ok := source[o.path]
-	return value, ok
+	return readLeaf(source, o.path)
+}
+
+// readLeaf is one leaf read, the rule every evaluator lane shares (beyond10x/ess#104): a bound fact
+// wins; otherwise, when the last segment is `count` and the parent is bound to text, the value is
+// the text's rune count, which is its number of Unicode scalar values for the valid UTF-8
+// `encoding/json` decodes. A quantifier's cardinality is read raw, so a quantifier over a text is
+// Unknown.
+func readLeaf(source factSource, path string) (Node, bool) {
+	if value, ok := source[path]; ok {
+		return value, true
+	}
+	parent, last, found := cutLast(path)
+	if !found || last != "count" {
+		return nil, false
+	}
+	if text, isText := source[parent].(string); isText {
+		return float64(utf8.RuneCountInString(text)), true
+	}
+	return nil, false
+}
+
+// cutLast splits a dotted path at its last dot.
+func cutLast(path string) (string, string, bool) {
+	at := strings.LastIndex(path, ".")
+	if at <= 0 {
+		return "", "", false
+	}
+	return path[:at], path[at+1:], true
 }
 
 func truthOf(value bool) truth {

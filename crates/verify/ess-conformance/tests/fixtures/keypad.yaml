@@ -1,0 +1,35 @@
+format: ess/11
+system: keypad
+version: v1
+domain: keypad.dial
+types:
+  - name: keypad.dial.SessionId
+    kind: newtype
+    of: Uuid
+  - name: keypad.dial.KeySequence
+    kind: newtype
+    of: String
+    alphabet: "0123456789*#ABCD"
+errors:
+  - name: keypad.dial.UnsupportedKey
+    fields: []
+events:
+  - name: keypad.dial.KeysSent
+    fields:
+      - {name: session_id, type: keypad.dial.SessionId}
+      - {name: keys, type: keypad.dial.KeySequence}
+commands:
+  - name: keypad.dial.SendKeys
+    input:
+      - {name: session_id, type: keypad.dial.SessionId}
+      - {name: keys, type: keypad.dial.KeySequence}
+    outcomes:
+      - name: too-long
+        when: keys.count > 64
+        error: keypad.dial.UnsupportedKey
+      - name: sent
+        emits: [keypad.dial.KeysSent]
+        payload:
+          keypad.dial.KeysSent:
+            session_id: input.session_id
+            keys: input.keys

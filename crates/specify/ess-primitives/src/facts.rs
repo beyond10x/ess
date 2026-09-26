@@ -1084,6 +1084,32 @@ pub trait FactSource {
     /// The value bound to `path`, or `None` when nothing has observed it.
     fn fact(&self, path: &FactPath) -> Option<FactValue>;
 
+    /// The value a predicate leaf reads at `path`: the bound fact, or else a text's length.
+    ///
+    /// The rule every evaluator lane shares (`docs/design/string-alphabet-and-length.md`, section
+    /// 3): **a bound fact wins; otherwise, when the last segment is `count` and the parent path is
+    /// bound to text, the value is the text's number of Unicode scalar values.** Scalar values and
+    /// not bytes, UTF-16 units or graphemes, because that is the number Rust's `chars`, Go's
+    /// `utf8.RuneCountInString` and TypeScript's `[...text]` agree on for any text a JSON reader
+    /// hands them.
+    ///
+    /// Leaf reads only. [`Self::cardinality`] keeps reading the bound `count`, so a quantifier over
+    /// a text is `Unknown` rather than a walk over its characters.
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        if let Some(bound) = self.fact(path) {
+            return Some(bound);
+        }
+        let segments = path.segments();
+        let (last, parent) = segments.split_last()?;
+        if last != "count" || parent.is_empty() {
+            return None;
+        }
+        match self.fact(&FactPath::from_segments(parent))? {
+            FactValue::Text(text) => Some(FactValue::count(text.chars().count())),
+            _ => None,
+        }
+    }
+
     /// The ordered scales available for non-numeric comparison.
     fn scales(&self) -> &Scales {
         Scales::empty()

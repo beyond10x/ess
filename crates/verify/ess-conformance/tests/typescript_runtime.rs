@@ -194,6 +194,12 @@ fn every_case_the_typescript_runtime_carries_is_executed_and_passes() {
             .arg("--test")
             .arg(&compiled)
             .current_dir(root())
+            // The text-length case reads its rows from here and fails when it is unset, rather
+            // than skipping (`docs/design/string-alphabet-and-length.md`, section 3).
+            .env(
+                "ESS_PRIMITIVE_VECTORS",
+                root().join("crates/specify/ess-primitives/tests/vectors/primitive-semantics.json"),
+            )
             .output()
             .expect("node --test runs");
         let printed = format!(

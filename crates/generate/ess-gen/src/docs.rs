@@ -1307,7 +1307,11 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
     let name = Inline::code(declared.name.to_string());
     let mut out = Blocks::new();
     match &declared.body {
-        ResolvedBody::Newtype { of, invariants } => {
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => {
             let mut text = vec![
                 name,
                 Inline::text(" wraps "),
@@ -1317,6 +1321,11 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
                      is the crossings the model then refuses.",
                 ),
             ];
+            if let Some(alphabet) = alphabet {
+                text.push(Inline::text(" Its characters are drawn from "));
+                text.push(Inline::code(alphabet.clone()));
+                text.push(Inline::text("."));
+            }
             let clause = invariants_clause(invariants);
             if !clause.is_empty() {
                 text.push(Inline::text(" "));

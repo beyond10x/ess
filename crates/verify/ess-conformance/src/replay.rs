@@ -174,9 +174,7 @@ pub(crate) fn declarations_for(
             return Err("replay declaration limit".into());
         }
         let ty = ir.types().get(&name).ok_or("missing response type")?;
-        if ty.reading.is_some()
-            || matches!(&ty.body, ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } if !invariants.is_empty())
-        {
+        if ty.reading.is_some() || ty.body.is_constrained() {
             return Err("replay response invariant/reading observer is unsupported".into());
         }
         let body = match &ty.body {

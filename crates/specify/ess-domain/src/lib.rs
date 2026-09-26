@@ -66,7 +66,7 @@ pub mod expression;
 pub mod locate;
 pub mod name;
 pub mod outcome_group;
-mod primitive_admission;
+pub mod primitive_admission;
 pub mod refs;
 pub mod selection;
 pub mod spec;

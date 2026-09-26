@@ -479,11 +479,28 @@ fn body_changes(before: &ResolvedBody, after: &ResolvedBody, mut push: impl FnMu
     }
 
     match (before, after) {
-        (ResolvedBody::Newtype { of: was, .. }, ResolvedBody::Newtype { of: is, .. }) => {
+        (
+            ResolvedBody::Newtype {
+                of: was,
+                alphabet: was_alphabet,
+                ..
+            },
+            ResolvedBody::Newtype {
+                of: is,
+                alphabet: is_alphabet,
+                ..
+            },
+        ) => {
             if was != is {
                 push(TypeChange::RepresentationChanged {
                     before: was.to_string(),
                     after: is.to_string(),
+                });
+            }
+            if was_alphabet != is_alphabet {
+                push(TypeChange::AlphabetChanged {
+                    before: was_alphabet.clone(),
+                    after: is_alphabet.clone(),
                 });
             }
         }
@@ -1308,6 +1325,26 @@ fn compare_commands(
             after: owns,
         });
     }
+    // An example on an input both revisions declare; an added or removed input already says so.
+    let example = |value: Option<&ess_primitives::node::Node>| {
+        value.map(|node| serde_json::to_string(node).expect("a node serializes"))
+    };
+    for field in &is.input {
+        if !was.input.iter().any(|kept| kept.name == field.name) {
+            continue;
+        }
+        let (before, after) = (
+            example(was.examples.get(&field.name)),
+            example(is.examples.get(&field.name)),
+        );
+        if before != after {
+            push(CommandChange::InputExampleChanged {
+                field: field.name.clone(),
+                before,
+                after,
+            });
+        }
+    }
 
     field_deltas(&was.input, &is.input, |delta| match delta {
         FieldDelta::Added(field, type_ref) => push(CommandChange::InputAdded { field, type_ref }),
@@ -2071,7 +2108,10 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
         "types" => {
             if let Some(body) = declaration.get_mut("body") {
                 residual_fields(body, "fields");
-                remove_keys(body, &["kind", "of", "invariants", "variants", "tag"]);
+                remove_keys(
+                    body,
+                    &["kind", "of", "alphabet", "invariants", "variants", "tag"],
+                );
             }
         }
         "entities" => residual_entity(declaration),
@@ -2138,6 +2178,8 @@ fn residual_entity(declaration: &mut serde_json::Value) {
 
 fn residual_command(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "input");
+    // Compared as `InputExampleChanged`, input by input.
+    remove_keys(declaration, &["examples"]);
     if let Some(outcomes) = declaration
         .get_mut("outcomes")
         .and_then(serde_json::Value::as_array_mut)

@@ -128,3 +128,41 @@ fn selection_support_and_prepared_names_cannot_collide_with_binding_functions() 
         .join("\n");
     assert!(code.contains("func SelectionFailure_("));
 }
+
+/// A native selector cannot enforce a declared constraint, and an alphabet is one exactly as an
+/// invariant is (`docs/design/string-alphabet-and-length.md`, section 6): the same refusal for both.
+#[test]
+fn a_selected_item_with_an_alphabet_only_text_is_refused_as_an_invariant_one_is() {
+    for constraint in [
+        "    invariants: ['value != \"\"']\n",
+        "    alphabet: \"abc\"\n",
+    ] {
+        let text = MODEL
+            .replacen("format: ess/3\n", "format: ess/11\n", 1)
+            .replacen(
+                "types:\n",
+                &format!(
+                    "types:\n  - name: selection.core.From\n    kind: newtype\n    of: String\n{constraint}"
+                ),
+                1,
+            )
+            .replacen(
+                "      - name: from\n        type: String",
+                "      - name: from\n        type: selection.core.From",
+                1,
+            );
+        for target in [Target::Rust, Target::Go] {
+            let Err(failure) = synthesize_for(&compile(&text), target) else {
+                panic!("{constraint}: a native selector was emitted over a constrained item")
+            };
+            assert!(
+                failure
+                    .causes()
+                    .iter()
+                    .any(|cause| cause.code() == ess_synth::TargetFailureCode::SelectionConstraint),
+                "{constraint}: {}",
+                failure.to_canonical_json()
+            );
+        }
+    }
+}
