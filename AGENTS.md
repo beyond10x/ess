@@ -103,7 +103,13 @@ artifacts, and a change reaches that adopter undetected by conformance, `ess ver
 format refusal.
 
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
-tests, and the dependency boundary test. Land nothing until it exits zero.
+tests, and the dependency boundary test. Land nothing on `main` until the `Gate` job is green.
+
+For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
+— `cargo fmt --all --check`, `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,
+`cargo test -p <crate> --locked`, and `task ci-lint` when a workflow, Taskfile or public API
+changed — then push and read the lanes. Run the whole `task check` locally only for a release tag
+(below) or to reproduce a lane that failed in CI.
 
 The adopter-facing Docusaurus source lives under `website/`; repository-root `docs/` remains the
 engineering record and is never published directly. A documentation, release, or validation
@@ -143,6 +149,20 @@ as soon as it lands; there is no need to wait for `main`'s run. That pull-reques
 narrowed feature-off build (above), and `main`'s run of the full one is still in flight when
 such a release publishes. `release.yml`'s `prior-gate` step is the implementation, and
 `ci_lanes.rs` runs it against real Git histories.
+
+The four archives are usually built before the tag exists. `.github/workflows/package.yml` runs
+on every `queue/**` push and packages the commit when its workspace version has a dated changelog
+section and no tag yet. The release's `prebuilt` step publishes that run's archives only when
+all of these hold: it is a successful `package.yml` push run of a `queue/` branch, at the tagged
+commit, and it still holds all four `release-<target>` artifacts unexpired. Anything else, including
+an API failure, calls `package.yml` from the release and builds them there. Either way the publish
+job checks the four names and `SHA256SUMS` and runs the Linux x86_64 binary's `--version` against
+the tag. `ci_lanes.rs` runs the `prebuilt` step against canned API answers.
+
+Compile caches are saved only by `main` and pull-request runs (`save-if` on every
+`Swatinem/rust-cache` step, held by `ci_lanes.rs`). A queue branch or a tag saves under a scope
+that no later run can restore. A manual dispatch saves none: a release backfill dispatched from
+`main` builds an old tag's source under `main`'s scope.
 
 The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
 there under Rosetta; `lipo -archs` names the architecture that was built. Archive names and
