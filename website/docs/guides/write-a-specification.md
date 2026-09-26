@@ -316,7 +316,7 @@ witnesses additionally validate their concrete inputs and invariants.
 ### Guard an outcome by the subject's stored fields
 
 "Express parcels over 20 kg are refused at dispatch" depends on two fields stored when the parcel
-was created, not on anything the dispatch request carries. `ess/9` (not yet released) states it with
+was created, not on anything the dispatch request carries. `ess/9` (since 0.34.0) states it with
 `when_subject: {predicate: …}`, a predicate over the declared fields of the entity the command
 addresses:
 
@@ -381,7 +381,7 @@ one. A generator reads `external` and injects a fault instead of trying to const
 ### One outcome for many commands
 
 When a remote service carries out every command on the caller's behalf, every command can end the
-same way: the service rejects the session credential. `ess/12` (not yet released) declares that
+same way: the service rejects the session credential. `ess/12` (since 0.34.0) declares that
 outcome once, in a top-level `outcome_groups:` list that any file may carry:
 
 ```yaml

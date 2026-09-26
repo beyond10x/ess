@@ -4,6 +4,18 @@
 
 ### Added
 
+- Typed pre-execution fixture values: a command's `fixture_inputs:` (source format `ess/13`) and
+  authored `fixtures:` with `{$fixture: name}` references (`ess-scenario/3`) compile to suites
+  `ess-conformance/18`/`19`. Rust, Go and TypeScript resolve and type-check the values from an
+  independent provider before `BeginScenario`, copy them per scenario, and compare the first direct
+  event occurrence with them. Invalid values stop before target activity; a missing provider is an
+  explicit skip; browser replay refuses fixtures. Fixture-free models and suites keep their bytes.
+  (#58)
+
+## [0.34.0] — 2026-09-26
+
+### Added
+
 - String predicate operators `starts_with`, `ends_with` and `contains` (map form, `String` and its
   newtypes, byte-wise and case-sensitive) in every predicate position, source format `ess/8`.
   Synthesis witnesses both branches; suites carrying one take `ess-conformance/14`/`15`; Rust and Go
@@ -44,13 +56,9 @@
   built-in targets, writing `ess-mutation-report/1` (`ESS-MUTATE-001`/`003`). The TypeScript and Go
   conformance packages carry a seeded random-walk explorer over the IR model, bound to `spec_digest`
   through `ir.json`, with shrinking and a hard failure on unreached outcomes. (#114)
-- Typed pre-execution fixture values: a command's `fixture_inputs:` (source format `ess/13`) and
-  authored `fixtures:` with `{$fixture: name}` references (`ess-scenario/3`) compile to suites
-  `ess-conformance/18`/`19`. Rust, Go and TypeScript resolve and type-check the values from an
-  independent provider before `BeginScenario`, copy them per scenario, and compare the first direct
-  event occurrence with them. Invalid values stop before target activity; a missing provider is an
-  explicit skip; browser replay refuses fixtures. Fixture-free models and suites keep their bytes.
-  (#58)
+- A release note for 0.31–0.33 (`website/blog/2026-09-26-1200-a-secret-is-only-present.md`): the
+  Entity Runtime lowering, `OBS-BIND-008` and acknowledged containers, and Secret presence. Without
+  it the newest note trails 0.34.0 by four minors and `cargo xtask docs` refuses the tree.
 
 ### Changed
 
@@ -64,7 +72,6 @@
 - `ess generate --kind openapi|asyncapi` names every domain no component owns; `--strict` refuses. (#102)
 - Go and TypeScript runners that write `ess-conformance-report/1` with a skipped scenario point once
   at report/2, which carries passed, failed and skipped counts; the guide says where they live. (#110)
-
 - An unquoted `x == null` / `!= null` (and `~`, `Null`, `NULL`) is refused with `ESS-SPEC-017`,
   naming `defined(x)`; a quoted `"null"` is text. Ordering a `Duration` and an unquoted compact
   operand containing `&&` or `||` are refused. Artifacts written by 0.32.x that carry such literals
@@ -77,6 +84,8 @@
 
 - The Go conformance runtime compares numbers by value whatever Go type carries them (`int`…`uint64`,
   `float32`, `float64`, `json.Number`), with Rust's exact semantics. (#101)
+- The `ess-mutation-report/1` row of the formats reference sat above the page's front matter; it
+  is in the change and conformance records table.
 
 ## [0.33.0] — 2026-09-26
 
