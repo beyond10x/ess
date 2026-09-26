@@ -692,6 +692,8 @@ dependencies = [
 name = "gatepass-realization"
 version = "0.33.0"
 dependencies = [
+ "ess-conformance",
+ "ess-primitives",
  "gatepass-server",
  "gatepass-system",
  "gatepass-types",
