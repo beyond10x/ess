@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-09-26
+
 ### Added
 
 - `ess verify bindings` reads `ess-observed-bindings/2`, whose optional `foreign_containers`
@@ -54,6 +56,10 @@
   topology profile. Detecting a rotation needs a record derived from the value, and an unsalted
   digest of a low-entropy secret is a guess oracle. Configmap content changes are detected as
   before.
+- A lowering targets Entity Runtime `0.24.1`: `entity-core` moves from `0.23.0` and
+  `ENTITY_RUNTIME_REVISION` names `4746bd7c`, the locked commit. The new `starts_with` and
+  `ends_with` conditions are not emitted, so lowered definitions are unchanged apart from the
+  target revision they name.
 
 ## [0.32.1] — 2026-09-25
 
