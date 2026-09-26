@@ -66,10 +66,25 @@ generated/asyncapi/     unlisted generated YAML
 output/                 unlisted compiler and runner output
 ```
 
-`ess specify validate --path .` reads only the `specification` entries. Nested or renamed
+`ess specify validate --path .` assembles the `specification` entries. Nested or renamed
 headers work, and headerless fragments retain their existing meaning. The selected files must
 still assemble into one valid specification. Unlisted generated files, including malformed YAML
 or copies of model fragments, are never scanned. List order does not affect selection.
+
+When the `scenarios` list is nonempty, `validate` also compiles each listed scenario against the
+model with the checks `ess verify conform synthesize --scenarios .` applies before it runs. A
+scenario that step would refuse fails `validate` too, with the same `ESS-AUTHOR-*` refusal on
+stderr and exit code `1`. The summary counts what it checked:
+
+```shell-session
+$ ess specify validate --path .
+billing v3 — 5 file(s), 2 scenario(s), valid
+```
+
+With an empty `scenarios` list, or without a manifest, `validate` reads no scenarios and the
+summary does not mention them. `--format json` adds `scenarios`, the number listed, and
+`scenario_refusals`, one entry per refusal with its `code`, `origin`, `scenario` and `message`.
+Each key is present only when it has something to report.
 
 Both lists are required and checked for valid, distinct relative paths, even when one role is
 inactive. Only files in the active role must exist. An empty active list refuses. Paths are literal,
@@ -83,6 +98,24 @@ for that layout. An explicit file is always one source, independent of its exten
 searches its parent for configuration. A malformed or unsupported `ess-inputs.yaml` refuses without
 falling back: rename a legacy source with that reserved filename or adopt this configuration.
 See the [complete input format](../reference/formats.md#directory-input-configuration).
+
+### Name the `ess` release the specification is maintained with
+
+`format: ess-inputs/2` adds one optional field, `requires`, naming the `ess` release the
+specification is validated and generated with — an exact release, or a minor line:
+
+```yaml
+format: ess-inputs/2
+requires: ess 0.32     # or `ess 0.32.1` for exactly that release
+specification: [model/system.yaml, model/domains/invoice.yaml]
+scenarios: []
+```
+
+An older `ess` refuses with exit `1`, naming the required release and how to get it: `b10x upgrade`,
+or `/ess:upgrade` in an agent session. A newer `ess` prints one warning per command and continues;
+`--strict-requires` refuses instead, which is the spelling for CI. Without `requires` nothing
+changes. Generated output records the release that produced it, and a regeneration by a different
+release that changes the output prints a `note:` naming both.
 
 ## Validate early, read the refusals
 
@@ -165,6 +198,33 @@ outcomes:
 A command with a precondition has at least two results. A specification recording only the happy one
 generates a suite that never checks the branch where the money does not move.
 
+### An invariant reads only what every creation sets
+
+An entity invariant that reads a required field needs every `creates:` branch of that entity to set
+the field. Without a value, `reminder_count >= 0` would hold only if the implementation happened to
+pick a value that satisfies it. `validate` refuses the gap with `ESS-COMMAND-018` at the creating
+outcome. The fix is to set the field there:
+
+```yaml
+- name: accepted
+  creates: billing.invoice.Invoice
+  instance: invoice_id
+  sets:
+    account_id: input.account_id
+    total: input.amount
+    reminder_count: "0"
+```
+
+Or declare the field `Optional<…>` if an instance may lack it. The identity, the lifecycle `state`
+and `Optional` fields are never asked for. A field an invariant reads anywhere counts, including
+inside `any:`.
+
+A literal in `sets:` or `payload:` may also be written as the YAML value it means:
+`reminder_count: 0` over an `Integer` and `paused: false` over a `Boolean` compile to exactly what
+`"0"` and `"false"` do. An unquoted number or boolean over a text field or an enum is refused with
+the repair, `quote it: label: '0'`. Over any other type it gets the same refusal as its quoted form.
+A decimal such as `1.5` is never a literal, quoted or not; read it from an input.
+
 ### Cover every declared enum value
 
 Since 0.23.0 a command may omit its default when its input guards
@@ -198,6 +258,36 @@ A `Timestamp` is ordered by the RFC 3339 instant it names, so `+01:00` and `Z` s
 correctly. Against a literal, write an instant: `when: ends_at > "2020-01-01T00:00:00Z"`. Ordering
 a `Timestamp` against text that is not an instant is refused. `Duration` has no ordering yet.
 
+### Say which characters a text may hold, and how long it may be
+
+A `String` the implementation restricts to a character set says so with `alphabet:` on its newtype,
+and a length limit is `.count`, the number of Unicode scalar values. Both need `format: ess/11`.
+
+```yaml
+types:
+  - name: keypad.dial.KeySequence
+    kind: newtype
+    of: String
+    alphabet: "0123456789*#ABCD"
+commands:
+  - name: keypad.dial.SendKeys
+    input:
+      - {name: keys, type: keypad.dial.KeySequence, example: "12#"}
+    outcomes:
+      - name: too-long
+        when: keys.count > 64
+        error: keypad.dial.UnsupportedKey
+      - name: sent
+        emits: [keypad.dial.KeysSent]
+```
+
+Every character of a value is one of the alphabet's, compared exactly, with no normalization or case
+folding. Synthesis builds the input's witness from those characters, and a guard such as
+`keys.count > 64` from texts of 65 and 64 characters. An `example:` on a command input is the value
+the first witness starts from. It is not a constraint, it has to be a value of the input's type, and
+only a scalar input takes one. Generated code documents an alphabet and does not enforce it, and
+Entity Runtime refuses both an alphabet and a text length by name.
+
 ### Select an outcome from the held subject state
 
 `ess/3`, introduced in 0.23.0, allows `when_subject_state` beside an ordinary input predicate:
@@ -223,6 +313,57 @@ state/input assignments for gaps and overlaps using the shared finite coverage
 proof; unsupported or open input domains require a genuine default. Runtime
 witnesses additionally validate their concrete inputs and invariants.
 
+### Guard an outcome by the subject's stored fields
+
+"Express parcels over 20 kg are refused at dispatch" depends on two fields stored when the parcel
+was created, not on anything the dispatch request carries. `ess/9` (not yet released) states it with
+`when_subject: {predicate: …}`, a predicate over the declared fields of the entity the command
+addresses:
+
+```yaml
+commands:
+  - name: shipping.parcel.Create
+    input:
+      - {name: service, type: shipping.parcel.Service}   # enum: Standard | Express
+      - {name: weight_kg, type: Integer}
+    outcomes:
+      - name: created
+        creates: shipping.parcel.Parcel
+        instance: parcel_id
+        sets: {service: input.service, weight_kg: input.weight_kg}
+        emits: [shipping.parcel.Created]
+        payload:
+          shipping.parcel.Created:
+            parcel_id: {generated: true}
+
+  - name: shipping.parcel.Dispatch
+    input: [{name: parcel_id, type: Uuid}]
+    outcomes:
+      - name: refused-overweight
+        when_subject:
+          predicate:
+            all:
+              - service == Express
+              - weight_kg > 20
+        error: shipping.parcel.ExpressOverweight
+      - name: dispatched
+        moves: shipping.parcel.Parcel.dispatch
+        instance: parcel_id
+        emits: [shipping.parcel.Dispatched]
+```
+
+The predicate reads the entity's declared fields and nothing else: not the input, which stays in
+`when:` beside it, and not `state`, which stays with `when_subject_state:`. The refusal names no
+subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
+absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
+
+Validation partitions closed enum fields jointly with the input, so two branches that split an enum
+need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
+`dispatched`. Declare an immediate, unfiltered view that projects the identity, `state` and every
+guarded field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg
+for the refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that
+view, and dispatches it. The older `when_subject: {field, equals}` form keeps `ess/6`.
+
 ### An outcome the input cannot decide says that too
 
 Whether a mail provider accepts an address is not a function of the request. From
@@ -236,6 +377,41 @@ Whether a mail provider accepts an address is not a function of the request. Fro
 
 Writing `when: false` would claim the branch is unreachable — a different statement, and a false
 one. A generator reads `external` and injects a fault instead of trying to construct an input.
+
+### One outcome for many commands
+
+When a remote service carries out every command on the caller's behalf, every command can end the
+same way: the service rejects the session credential. `ess/12` (not yet released) declares that
+outcome once, in a top-level `outcome_groups:` list that any file may carry:
+
+```yaml
+format: ess/12
+outcome_groups:
+  - name: remote-backed
+    actor: calls.Agent              # or  commands: [calls.Hold, calls.Resume]
+    except: [calls.Park]            # only beside actor: or domain:
+    outcomes:
+      - name: credential-rejected
+        external: the service rejects the session credential
+        error: session.Unauthenticated
+        summary: The remote service refused the session.
+        refs: [issue:beyond10x/ess#105]
+```
+
+A group names its members in exactly one way: an explicit `commands:` list, `actor:` for every
+command that actor `may:` invoke, or `domain:` for every command that domain's files declare. Each
+member gains the group's outcomes after its own, in ascending group-name order when several groups
+select it. That happens before validation, so validation, conformance and every generator see
+ordinary outcomes, and a group compiles to exactly what copying the outcome into each command by
+hand would. A group of 28 commands therefore still adds 28 scenarios. A group's outcome is always an
+external refusal: `external:` and `error:`, with an optional `summary:` and `refs:`, and nothing that
+depends on the command it lands in.
+
+`except:` is only for `actor:` and `domain:`; with an explicit list, leave the command out of
+`commands:` instead. A member that already declares an outcome of the same name is refused at the
+group, never silently overridden: rename one of the two, drop the command's own, or list the command
+under `except:`. Two groups that would give one command outcomes of the same name are refused too,
+and neither group expands into that command.
 
 ### Illegal lifecycle moves are illegal by absence
 
@@ -262,6 +438,23 @@ One key and one error name — everything else is derived:
 `wrong_state:` names no state: `issue` already declares it runs from `Draft`, so the refused states
 are derived. The `error:` is required — without it a generated scenario could only assert that
 *nothing happened*, which also passes against an implementation refusing for the wrong reason.
+
+The same branch answers an **unknown instance**. When the input selects a `moves:` or `updates:`
+branch and its `instance:` names no record, the command answers its `wrong_state` outcome. Input
+guards are decided first, so `PayInvoice` with a non-positive amount still answers `rejected`
+whatever invoice it names. The suite checks this once per command that declares `wrong_state`, with
+an identity no other scenario sends, under the branch's own id (`…IssueInvoice/outcome/wrong-state`).
+It requires the branch, its error by name and no error field, and that no declared event is
+published. A command that acts on an input-named instance and declares no `wrong_state` has no
+declared answer. `ess verify conform synthesize` prints a `note:` for it, not a refusal.
+
+An error field that describes the current state, such as `InvoiceStateConflict.state`, has no value
+for an instance that does not exist. Where the `wrong_state` error declares fields, the generated
+Rust and Go behaviour seams add a second variant for this answer that carries none of them:
+`IssueInvoiceOutcome::WrongStateUnknownInstance` in Rust, `IssueInvoiceOutcomeWrongStateUnknownInstance`
+in Go. The served surface answers it with the branch's `409`, the outcome and the error, and no
+`payload`. The `WrongState` variant still requires every field, so a realization cannot leave out
+the state of an instance it holds.
 
 ### An event's values need a declared source
 
@@ -330,6 +523,45 @@ A view declares exactly one of `shape` or inline `fields`. The named type must b
 still checks each of its fields against the source entity. Compiled IR carries both the shape handle
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
+
+### Aggregate views
+
+A read API that reports counts, sums and extremes over one entity's rows is a view with `group_by:`
+and a field-level `aggregate:`. It needs `format: ess/10`.
+
+```yaml
+views:
+  - name: metrics.session.TalkTimeByAgent
+    source: metrics.session.Session
+    consistency: eventual
+    filter: state == Completed
+    group_by: [agent_id]
+    fields:
+      - {name: agent_id, type: String}
+      - {name: sessions, type: Integer, aggregate: {count: {}}}
+      - {name: talk_seconds, type: Integer, aggregate: {sum: talk_seconds}}
+      - {name: longest_wait, type: Optional<Integer>, aggregate: {max: wait_seconds}}
+      - {name: distinct_callers, type: Integer, aggregate: {count_distinct: caller}}
+      - {name: mean_talk, type: Optional<Decimal>, aggregate: {avg: talk_seconds}}
+```
+
+The filter runs on each source row first, the admitted rows are grouped by the `group_by` fields,
+and each aggregate is computed per group. A group with no admitted row is absent. A view without
+`group_by` returns exactly one row: `count` is `0` and `min`, `max` and `avg` are absent when no row
+passes the filter. Every field without `aggregate:` must be listed in `group_by`.
+
+Each field declares its result type exactly, and validation names the one it expects: `Integer`
+for `count`, `count_distinct` and `sum` of an `Integer`; `Decimal` for `sum` of a `Decimal`;
+`Optional<T>` for `min` and `max`, keeping a newtype; `Optional<Decimal>` for `avg`, which is
+rounded to 6 fractional digits, ties to even. An aggregate reads one top-level field of the source
+that every row holds, so an `Optional` argument or group key is refused, and so is grouping by a
+`Timestamp` or ranking an aggregate view with `order_by:`.
+
+Conformance creates the rows itself, through the declared creating outcome, and asserts every
+group's exact numbers. Because a target may be shared, the rows are kept apart from every other
+scenario's by a group key or a parameter compared with one (`queue_id == param.queue_id`) that is a
+`String` or `Uuid` the creating command sets from its input. A view with neither gets no scenario
+and the refusal `ESS-SYNTH-016`.
 
 ### A binding says what happens when it fails
 

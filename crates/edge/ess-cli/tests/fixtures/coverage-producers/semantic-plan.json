@@ -40,6 +40,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -58,10 +59,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
           "notify-on-invoice-created/binding/mapping",
@@ -80,7 +83,7 @@
           }
         },
         "counts": {
-          "generated": 29,
+          "generated": 32,
           "authored": 1,
           "outside": 0,
           "refused": 0
@@ -90,6 +93,7 @@
         "billing.email.SendEmail/outcome/failed",
         "billing.email.SendEmail/outcome/sent",
         "billing.invoice.CancelInvoice/outcome/cancelled",
+        "billing.invoice.CancelInvoice/outcome/wrong-state",
         "billing.invoice.CreateInvoice/outcome/accepted",
         "billing.invoice.CreateInvoice/outcome/rejected",
         "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -108,10 +112,12 @@
         "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
         "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
         "billing.invoice.IssueInvoice/outcome/issued",
+        "billing.invoice.IssueInvoice/outcome/wrong-state",
         "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
         "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
         "billing.invoice.PayInvoice/outcome/rejected",
         "billing.invoice.PayInvoice/outcome/settled",
+        "billing.invoice.PayInvoice/outcome/wrong-state",
         "billing.invoice/authored/outstanding-invoices-rank-latest-first",
         "notify-on-invoice-created/binding/delivery",
         "notify-on-invoice-created/binding/flow",
@@ -124,8 +130,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M13",
@@ -155,6 +161,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -173,10 +180,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
           "notify-on-invoice-created/binding/mapping",
@@ -187,7 +196,7 @@
         "refused": [],
         "authored_sources": {},
         "counts": {
-          "generated": 29,
+          "generated": 32,
           "authored": 0,
           "outside": 0,
           "refused": 0
@@ -197,6 +206,7 @@
         "billing.email.SendEmail/outcome/failed",
         "billing.email.SendEmail/outcome/sent",
         "billing.invoice.CancelInvoice/outcome/cancelled",
+        "billing.invoice.CancelInvoice/outcome/wrong-state",
         "billing.invoice.CreateInvoice/outcome/accepted",
         "billing.invoice.CreateInvoice/outcome/rejected",
         "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -215,10 +225,12 @@
         "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
         "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
         "billing.invoice.IssueInvoice/outcome/issued",
+        "billing.invoice.IssueInvoice/outcome/wrong-state",
         "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
         "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
         "billing.invoice.PayInvoice/outcome/rejected",
         "billing.invoice.PayInvoice/outcome/settled",
+        "billing.invoice.PayInvoice/outcome/wrong-state",
         "notify-on-invoice-created/binding/delivery",
         "notify-on-invoice-created/binding/flow",
         "notify-on-invoice-created/binding/mapping",
@@ -230,8 +242,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M22"
@@ -285,8 +297,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M22"
@@ -314,6 +326,7 @@
         "knowledge": "complete_inventory",
         "generated": [
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -332,10 +345,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
-          "billing.invoice.PayInvoice/outcome/settled"
+          "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state"
         ],
         "authored": [
           "billing.invoice/authored/outstanding-invoices-rank-latest-first"
@@ -425,7 +440,7 @@
           }
         },
         "counts": {
-          "generated": 23,
+          "generated": 26,
           "authored": 1,
           "outside": 6,
           "refused": 0
@@ -433,6 +448,7 @@
       },
       "selected_ids": [
         "billing.invoice.CancelInvoice/outcome/cancelled",
+        "billing.invoice.CancelInvoice/outcome/wrong-state",
         "billing.invoice.CreateInvoice/outcome/accepted",
         "billing.invoice.CreateInvoice/outcome/rejected",
         "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -451,10 +467,12 @@
         "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
         "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
         "billing.invoice.IssueInvoice/outcome/issued",
+        "billing.invoice.IssueInvoice/outcome/wrong-state",
         "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
         "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
         "billing.invoice.PayInvoice/outcome/rejected",
         "billing.invoice.PayInvoice/outcome/settled",
+        "billing.invoice.PayInvoice/outcome/wrong-state",
         "billing.invoice/authored/outstanding-invoices-rank-latest-first"
       ],
       "scenario_definition_oracle": "legacy-observations/billing-combined-suite4.json",
@@ -463,8 +481,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M21"
@@ -522,6 +540,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.CancelInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.CreateInvoice/outcome/rejected",
             "origin": "generated",
             "reason": "selection_filter",
@@ -624,6 +648,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.IssueInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "origin": "generated",
             "reason": "selection_filter",
@@ -643,6 +673,12 @@
           },
           {
             "scenario": "billing.invoice.PayInvoice/outcome/settled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.PayInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -683,7 +719,7 @@
         "counts": {
           "generated": 1,
           "authored": 1,
-          "outside": 28,
+          "outside": 31,
           "refused": 0
         }
       },
@@ -697,8 +733,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M23"
@@ -755,6 +791,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.CancelInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.CreateInvoice/outcome/accepted",
             "origin": "generated",
             "reason": "selection_filter",
@@ -863,6 +905,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.IssueInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "origin": "generated",
             "reason": "selection_filter",
@@ -882,6 +930,12 @@
           },
           {
             "scenario": "billing.invoice.PayInvoice/outcome/settled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.PayInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -922,7 +976,7 @@
         "counts": {
           "generated": 0,
           "authored": 1,
-          "outside": 29,
+          "outside": 32,
           "refused": 0
         }
       },
@@ -935,8 +989,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M23",
@@ -991,6 +1045,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.CancelInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.CreateInvoice/outcome/accepted",
             "origin": "generated",
             "reason": "selection_filter",
@@ -1099,6 +1159,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.IssueInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "origin": "generated",
             "reason": "selection_filter",
@@ -1118,6 +1184,12 @@
           },
           {
             "scenario": "billing.invoice.PayInvoice/outcome/settled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.PayInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -1164,7 +1236,7 @@
         "counts": {
           "generated": 0,
           "authored": 0,
-          "outside": 30,
+          "outside": 33,
           "refused": 0
         }
       },
@@ -1175,8 +1247,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M19"
@@ -1232,8 +1304,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M26"
@@ -1293,8 +1365,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M24",
@@ -1326,6 +1398,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -1344,10 +1417,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
           "notify-on-invoice-created/binding/mapping",
@@ -1535,7 +1610,7 @@
           }
         },
         "counts": {
-          "generated": 29,
+          "generated": 32,
           "authored": 1,
           "outside": 0,
           "refused": 8
@@ -1545,6 +1620,7 @@
         "billing.email.SendEmail/outcome/failed",
         "billing.email.SendEmail/outcome/sent",
         "billing.invoice.CancelInvoice/outcome/cancelled",
+        "billing.invoice.CancelInvoice/outcome/wrong-state",
         "billing.invoice.CreateInvoice/outcome/accepted",
         "billing.invoice.CreateInvoice/outcome/rejected",
         "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -1563,10 +1639,12 @@
         "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
         "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
         "billing.invoice.IssueInvoice/outcome/issued",
+        "billing.invoice.IssueInvoice/outcome/wrong-state",
         "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
         "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
         "billing.invoice.PayInvoice/outcome/rejected",
         "billing.invoice.PayInvoice/outcome/settled",
+        "billing.invoice.PayInvoice/outcome/wrong-state",
         "billing.invoice/authored/outstanding-invoices-rank-latest-first",
         "notify-on-invoice-created/binding/delivery",
         "notify-on-invoice-created/binding/flow",
@@ -1579,8 +1657,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M25",
@@ -1632,6 +1710,12 @@
           },
           {
             "scenario": "billing.invoice.CancelInvoice/outcome/cancelled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.CancelInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -1739,6 +1823,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.IssueInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "origin": "generated",
             "reason": "selection_filter",
@@ -1758,6 +1848,12 @@
           },
           {
             "scenario": "billing.invoice.PayInvoice/outcome/settled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.PayInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -1973,7 +2069,7 @@
         "counts": {
           "generated": 1,
           "authored": 0,
-          "outside": 29,
+          "outside": 32,
           "refused": 8
         }
       },
@@ -1986,8 +2082,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M59",
@@ -2041,6 +2137,12 @@
           },
           {
             "scenario": "billing.invoice.CancelInvoice/outcome/cancelled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.CancelInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -2154,6 +2256,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.IssueInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "origin": "generated",
             "reason": "selection_filter",
@@ -2173,6 +2281,12 @@
           },
           {
             "scenario": "billing.invoice.PayInvoice/outcome/settled",
+            "origin": "generated",
+            "reason": "selection_filter",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.PayInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "selection_filter",
             "needs": []
@@ -2382,7 +2496,7 @@
         "counts": {
           "generated": 0,
           "authored": 1,
-          "outside": 29,
+          "outside": 32,
           "refused": 8
         }
       },
@@ -2395,8 +2509,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M47",
@@ -2480,8 +2594,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M42"
@@ -2581,8 +2695,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M43",
@@ -2638,8 +2752,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M13"
@@ -2719,8 +2833,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M44"
@@ -2764,6 +2878,12 @@
           },
           {
             "scenario": "billing.invoice.CancelInvoice/outcome/cancelled",
+            "origin": "generated",
+            "reason": "origin_selection",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.CancelInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "origin_selection",
             "needs": []
@@ -2877,6 +2997,12 @@
             "needs": []
           },
           {
+            "scenario": "billing.invoice.IssueInvoice/outcome/wrong-state",
+            "origin": "generated",
+            "reason": "origin_selection",
+            "needs": []
+          },
+          {
             "scenario": "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
             "origin": "generated",
             "reason": "origin_selection",
@@ -2896,6 +3022,12 @@
           },
           {
             "scenario": "billing.invoice.PayInvoice/outcome/settled",
+            "origin": "generated",
+            "reason": "origin_selection",
+            "needs": []
+          },
+          {
+            "scenario": "billing.invoice.PayInvoice/outcome/wrong-state",
             "origin": "generated",
             "reason": "origin_selection",
             "needs": []
@@ -3105,7 +3237,7 @@
         "counts": {
           "generated": 0,
           "authored": 1,
-          "outside": 29,
+          "outside": 32,
           "refused": 8
         }
       },
@@ -3118,8 +3250,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M49",
@@ -3150,8 +3282,8 @@
       },
       "evaluated_at": 18446744073709551615,
       "expected_counts": {
-        "total": 30,
-        "passed": 30,
+        "total": 33,
+        "passed": 33,
         "failed": 0,
         "error": 0,
         "unsupported": 0,
@@ -3162,6 +3294,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -3180,10 +3313,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "billing.invoice/authored/outstanding-invoices-rank-latest-first",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
@@ -3207,12 +3342,12 @@
       },
       "callbacks": {
         "identity": 1,
-        "begin": 30,
-        "end": 30,
-        "scenario_invocations": 30,
-        "terminal_scenarios": 30,
+        "begin": 33,
+        "end": 33,
+        "scenario_invocations": 33,
+        "terminal_scenarios": 33,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 89
+        "execute_command": 95
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3220,7 +3355,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3235,8 +3370,8 @@
       "completed_at": 0,
       "evaluated_at": 0,
       "expected_counts": {
-        "total": 30,
-        "passed": 30,
+        "total": 33,
+        "passed": 33,
         "failed": 0,
         "error": 0,
         "unsupported": 0,
@@ -3247,6 +3382,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -3265,10 +3401,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "billing.invoice/authored/outstanding-invoices-rank-latest-first",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
@@ -3292,13 +3430,13 @@
       },
       "callbacks": {
         "identity": 1,
-        "begin": 30,
-        "end": 30,
-        "scenario_invocations": 30,
-        "terminal_scenarios": 30,
-        "target_factory": 31,
+        "begin": 33,
+        "end": 33,
+        "scenario_invocations": 33,
+        "terminal_scenarios": 33,
+        "target_factory": 34,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 89
+        "execute_command": 95
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3306,7 +3444,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S02-generated-rust-passed",
@@ -3326,8 +3464,8 @@
       },
       "evaluated_at": 18446744073709551615,
       "expected_counts": {
-        "total": 29,
-        "passed": 29,
+        "total": 32,
+        "passed": 32,
         "failed": 0,
         "error": 0,
         "unsupported": 0,
@@ -3338,6 +3476,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -3356,10 +3495,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
           "notify-on-invoice-created/binding/mapping",
@@ -3382,12 +3523,12 @@
       },
       "callbacks": {
         "identity": 1,
-        "begin": 29,
-        "end": 29,
-        "scenario_invocations": 29,
-        "terminal_scenarios": 29,
+        "begin": 32,
+        "end": 32,
+        "scenario_invocations": 32,
+        "terminal_scenarios": 32,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 85
+        "execute_command": 91
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3395,7 +3536,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3457,7 +3598,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3478,8 +3619,8 @@
       },
       "evaluated_at": 18446744073709551615,
       "expected_counts": {
-        "total": 24,
-        "passed": 24,
+        "total": 27,
+        "passed": 27,
         "failed": 0,
         "error": 0,
         "unsupported": 0,
@@ -3488,6 +3629,7 @@
       "expected_outcomes": {
         "passed": [
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -3506,10 +3648,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "billing.invoice/authored/outstanding-invoices-rank-latest-first"
         ],
         "failed": [],
@@ -3529,12 +3673,12 @@
       },
       "callbacks": {
         "identity": 1,
-        "begin": 24,
-        "end": 24,
-        "scenario_invocations": 24,
-        "terminal_scenarios": 24,
+        "begin": 27,
+        "end": 27,
+        "scenario_invocations": 27,
+        "terminal_scenarios": 27,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 83
+        "execute_command": 89
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3542,7 +3686,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3557,8 +3701,8 @@
       "completed_at": 0,
       "evaluated_at": 0,
       "expected_counts": {
-        "total": 24,
-        "passed": 24,
+        "total": 27,
+        "passed": 27,
         "failed": 0,
         "error": 0,
         "unsupported": 0,
@@ -3567,6 +3711,7 @@
       "expected_outcomes": {
         "passed": [
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -3585,10 +3730,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "billing.invoice/authored/outstanding-invoices-rank-latest-first"
         ],
         "failed": [],
@@ -3608,13 +3755,13 @@
       },
       "callbacks": {
         "identity": 1,
-        "begin": 24,
-        "end": 24,
-        "scenario_invocations": 24,
-        "terminal_scenarios": 24,
-        "target_factory": 25,
+        "begin": 27,
+        "end": 27,
+        "scenario_invocations": 27,
+        "terminal_scenarios": 27,
+        "target_factory": 28,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 83
+        "execute_command": 89
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3622,7 +3769,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S05-child-rust-passed",
@@ -3684,7 +3831,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3746,7 +3893,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3803,7 +3950,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S07-empty-rust-passed",
@@ -3864,7 +4011,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3921,7 +4068,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S08-unknown-rust-passed",
@@ -3984,7 +4131,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4043,7 +4190,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S09-unknown-child-rust-passed",
@@ -4106,7 +4253,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4127,8 +4274,8 @@
       },
       "evaluated_at": 18446744073709551615,
       "expected_counts": {
-        "total": 30,
-        "passed": 30,
+        "total": 33,
+        "passed": 33,
         "failed": 0,
         "error": 0,
         "unsupported": 0,
@@ -4139,6 +4286,7 @@
           "billing.email.SendEmail/outcome/failed",
           "billing.email.SendEmail/outcome/sent",
           "billing.invoice.CancelInvoice/outcome/cancelled",
+          "billing.invoice.CancelInvoice/outcome/wrong-state",
           "billing.invoice.CreateInvoice/outcome/accepted",
           "billing.invoice.CreateInvoice/outcome/rejected",
           "billing.invoice.Invoice/invariant/after/billing.invoice.CancelInvoice/cancelled",
@@ -4157,10 +4305,12 @@
           "billing.invoice.Invoice/transition/issue/by/billing.invoice.IssueInvoice/issued",
           "billing.invoice.Invoice/transition/settle/by/billing.invoice.PayInvoice/settled",
           "billing.invoice.IssueInvoice/outcome/issued",
+          "billing.invoice.IssueInvoice/outcome/wrong-state",
           "billing.invoice.Money/invariant/at/billing.invoice.InvoiceById/total",
           "billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total",
           "billing.invoice.PayInvoice/outcome/rejected",
           "billing.invoice.PayInvoice/outcome/settled",
+          "billing.invoice.PayInvoice/outcome/wrong-state",
           "billing.invoice/authored/outstanding-invoices-rank-latest-first",
           "notify-on-invoice-created/binding/delivery",
           "notify-on-invoice-created/binding/flow",
@@ -4186,12 +4336,12 @@
       },
       "callbacks": {
         "identity": 1,
-        "begin": 30,
-        "end": 30,
-        "scenario_invocations": 30,
-        "terminal_scenarios": 30,
+        "begin": 33,
+        "end": 33,
+        "scenario_invocations": 33,
+        "terminal_scenarios": 33,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 89
+        "execute_command": 95
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -4199,7 +4349,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4263,7 +4413,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4322,7 +4472,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3"
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446"
     },
     {
       "id": "S12-gap-filtered-away-rust-passed",
@@ -4385,7 +4535,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4449,7 +4599,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4508,7 +4658,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S14-refused-then-accepted-rust-passed",
@@ -4571,7 +4721,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4630,7 +4780,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-passed",
@@ -4684,7 +4834,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-passed",
@@ -4739,7 +4889,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S16-final-merge-rust-passed",
@@ -4802,7 +4952,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4864,7 +5014,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4921,7 +5071,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-error",
@@ -4977,7 +5127,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-unsupported",
@@ -5033,7 +5183,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-failed",
@@ -5090,7 +5240,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-skipped",
@@ -5147,7 +5297,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-skip-then-teardown-error",
@@ -5204,7 +5354,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-skipped-strict",
@@ -5261,7 +5411,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-9007199254740993",
@@ -5315,7 +5465,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-9223372036854775807",
@@ -5369,7 +5519,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-9223372036854775808",
@@ -5423,7 +5573,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-18446744073709551615",
@@ -5477,7 +5627,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-clock-9007199254740993",
@@ -5532,7 +5682,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-clock-9223372036854775807",
@@ -5587,7 +5737,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     }
   ],
   "requested_refusal_controls": [

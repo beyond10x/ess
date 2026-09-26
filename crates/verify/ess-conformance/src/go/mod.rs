@@ -88,6 +88,92 @@ pub fn emit_input(
     ])
 }
 
+/// [`emit`], plus the model-based explorer: `explore.go`, the compact model it interprets as
+/// `ir.json`, and the README section that names it.
+///
+/// `ir` must be the model `suite` was synthesized from. The explorer refuses a package whose
+/// `ir.json` does not hash to the suite's `spec_digest`, so a mismatch here is an unusable
+/// package rather than a wrong one.
+pub fn emit_with_model(
+    suite: &ConformanceSuite,
+    ir: &ess_compiler::EssIr,
+) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
+    Ok(with_model(emit(suite)?, ir))
+}
+
+/// [`emit_input`], plus the model-based explorer, as [`emit_with_model`] adds it.
+pub fn emit_input_with_model(
+    input: &crate::coverage::AdmittedInput,
+    ir: &ess_compiler::EssIr,
+) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
+    Ok(with_model(emit_input(input)?, ir))
+}
+
+/// Adds the explorer to an emitted package: `explore.go` after `suite.go`, `ir.json` after
+/// `suite.json`, and one more section in `README.md`. `explore.go` embeds `suite.json` itself, so
+/// it reads the suite's digest from the same file in both package shapes.
+fn with_model(files: Vec<GoArtifact>, ir: &ess_compiler::EssIr) -> Vec<GoArtifact> {
+    let file = |name: &str, contents: String| GoArtifact {
+        path: format!("{PACKAGE}/{name}"),
+        contents,
+    };
+    let mut out = Vec::with_capacity(files.len() + 2);
+    for mut artifact in files {
+        let name = artifact
+            .path
+            .strip_prefix(&format!("{PACKAGE}/"))
+            .unwrap_or_default()
+            .to_owned();
+        match name.as_str() {
+            "suite.go" => {
+                out.push(artifact);
+                out.push(file("explore.go", EXPLORE_GO.to_owned()));
+            }
+            "suite.json" => {
+                out.push(artifact);
+                out.push(file("ir.json", format!("{}\n", ir.to_compact_json())));
+            }
+            "README.md" => {
+                artifact.contents.push_str(EXPLORE_README);
+                out.push(artifact);
+            }
+            _ => out.push(artifact),
+        }
+    }
+    out
+}
+
+/// The explorer, as written.
+const EXPLORE_GO: &str = include_str!("explore.go");
+
+/// The README section a package that carries the explorer gains.
+const EXPLORE_README: &str = r"
+## Random command sequences
+
+`Explore` runs seeded random sequences of commands against fresh targets built by the same
+factory `Run` takes, and checks every step against a reference model interpreted from `ir.json`:
+the outcome, the error, the direct events and their determined payload fields, every view without
+parameters (polling an `eventual` one), identity uniqueness and every invariant. A disagreement is
+shrunk to a shorter trace that still fails the same way.
+
+```go
+func TestExplore(t *testing.T) {
+    result, err := essconform.Explore(func() essconform.Target { return newTarget() },
+        essconform.ExploreOptions{Seeds: 200, Steps: 60})
+    if err != nil {
+        t.Fatal(err)
+    }
+    essconform.AssertExplored(t, result, essconform.AssertOptions{})
+}
+```
+
+`Seeds` sequences are seeded `1…Seeds`; `Seed` runs exactly one of them, which is how a reported
+failure is replayed. `AssertExplored` fails on a disagreement, on a declared outcome no sequence
+reached, and on the outcomes of a command the explorer left out (`Excluded` says why) unless
+`AssertOptions{AllowExcluded: true}` accepts them. A view field is compared with the entity field
+of the same name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
+";
+
 /// The one file that exists only to embed the other one.
 const SUITE_GO: &str = r#"// The suite this package runs.
 //

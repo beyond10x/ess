@@ -136,6 +136,7 @@ fn merge_inventory(
             suite: ConformanceSuite::new(crate::SuiteProvenance::of(ir)),
             refusals: Vec::new(),
             outside: Vec::new(),
+            notes: Vec::new(),
         }
     };
     finish_inventory(ir, batches, scope, origins, synthesis)
@@ -394,11 +395,14 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
     match cause {
         RefusalCause::ViewUndecidable { .. }
         | RefusalCause::OrderUnwitnessed { .. }
+        | RefusalCause::AggregateUnscoped { .. }
+        | RefusalCause::AggregateUnwitnessed { .. }
         | RefusalCause::InvariantUnobservable { .. }
         | RefusalCause::RefusalUndeclared { .. } => Effect::CheckNotEmitted,
         RefusalCause::NoWitness(_)
         | RefusalCause::GuardUnevaluable(_)
         | RefusalCause::GuardUnsatisfiable { .. }
+        | RefusalCause::CountUnwitnessed { .. }
         | RefusalCause::InstanceRequired { .. }
         | RefusalCause::NotSynthesisedYet { .. }
         | RefusalCause::DuplicateScenario
@@ -474,19 +478,31 @@ fn coverage_version(
     suite: &crate::ConformanceSuite,
     inventory: &Inventory,
 ) -> crate::scenario::SuiteFormat {
-    crate::scenario::SuiteFormat::parse(if crate::replay::used_by(suite) {
-        "ess-conformance/13"
-    } else if suite.requires_preservation_format() {
-        "ess-conformance/11"
-    } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
-        "ess-conformance/9"
-    } else if suite.requires_extended_format()
-        || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
-    {
-        "ess-conformance/7"
-    } else {
-        coverage::COVERAGE_SUITE_FORMAT
-    })
+    crate::scenario::SuiteFormat::parse(
+        if crate::aggregate::used_by(suite)
+            || inventory
+                .refused
+                .iter()
+                .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
+        {
+            "ess-conformance/17"
+        } else if crate::text_match_format::used_by(suite) {
+            "ess-conformance/15"
+        } else if crate::replay::used_by(suite) {
+            "ess-conformance/13"
+        } else if suite.requires_preservation_format() {
+            "ess-conformance/11"
+        } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite)
+        {
+            "ess-conformance/9"
+        } else if suite.requires_extended_format()
+            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+        {
+            "ess-conformance/7"
+        } else {
+            coverage::COVERAGE_SUITE_FORMAT
+        },
+    )
     .expect("constant suite version")
 }
 
@@ -554,7 +570,7 @@ mod tests {
         let input =
             finish_inventory(&ir, &[], Scope::System, Origins::Generated, synthesis).unwrap();
         let inventory = input.selected().coverage().unwrap();
-        assert_eq!(inventory.counts.generated, 29);
+        assert_eq!(inventory.counts.generated, 32);
         assert_eq!(inventory.counts.refused, 1);
         let refusal = &inventory.refused[0];
         assert_eq!(refusal.scenario.as_ref(), Some(&id));

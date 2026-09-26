@@ -8,9 +8,15 @@ use ess_gen::provenance::ProvenanceMint;
 #[test]
 fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
     // Captured by the coordinator from clean pre-F01 09474bdf84e29e5facb1e7b72628685dad9d11d1.
-    // SHA256 508b6a3d75d6dabd6fa686b67dcb6c7c881374375aaed9dd8921445a5edc894e, 154846 bytes.
+    // SHA256 508b6a3d75d6dabd6fa686b67dcb6c7c881374375aaed9dd8921445a5edc894e, 154846 bytes; re-frozen
+    // for ess#112 (billing sets its required fields at creation): SHA256
+    // b5e0a5825359d3f0c0469a7df33db0ae07527df535c06b8374a03b91ee6f24e2, 155651 bytes; re-frozen
+    // for ess#111 (`cancel` is also run from its second source, `Issued`, on a fourth invoice):
+    // SHA256 35355f258eda03947fc25f5aec10bf739579af22e000cc38ef036201201f0abe, 158491 bytes; re-frozen
+    // for ess#113 (each lifecycle command is sent for an invoice no record carries): SHA256
+    // e7edbca4b365a52c736ab9712067f18203e6314279361fd3d3dbe3917a55b172, 166349 bytes.
     let frozen = include_str!("fixtures/review-billing-suite-v4.json");
-    assert_eq!(frozen.len(), 154_846);
+    assert_eq!(frozen.len(), 166_349);
     let ir = support::compiled("examples/billing");
     let mut synthesis = ess_conformance::synthesize(&ir);
     let authoring = ess_conformance::authored::compile(&ir, &[
@@ -28,7 +34,7 @@ fn complete_generated_and_authored_suite_four_bytes_remain_frozen() {
     let candidate = synthesis.suite.to_canonical_json().unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&candidate).unwrap();
     assert_eq!(parsed["provenance"]["suite_version"], "ess-conformance/4");
-    assert_eq!(parsed["scenarios"].as_object().unwrap().len(), 30);
+    assert_eq!(parsed["scenarios"].as_object().unwrap().len(), 33);
     assert_eq!(candidate, frozen);
     assert_eq!(
         ess_conformance::scenario::ConformanceSuite::from_json(frozen)

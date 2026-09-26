@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
-// contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
+// model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+// contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
 // do not edit: regenerate with `ess synthesize --target web`
 
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
@@ -517,6 +517,18 @@ pub fn encode_outcome_billing_invoice_cancel_invoice(value: &billing_types::invo
             encode_error_billing_invoice_invoice_state_conflict(error, out);
             out.push('}');
         }
+        billing_types::invoice::CancelInvoiceOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "billing.invoice.InvoiceStateConflict");
+            out.push('}');
+        }
     }
     out.push('}');
 }
@@ -649,6 +661,18 @@ pub fn encode_outcome_billing_invoice_issue_invoice(value: &billing_types::invoi
             encode_error_billing_invoice_invoice_state_conflict(error, out);
             out.push('}');
         }
+        billing_types::invoice::IssueInvoiceOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "billing.invoice.InvoiceStateConflict");
+            out.push('}');
+        }
     }
     out.push('}');
 }
@@ -727,6 +751,18 @@ pub fn encode_outcome_billing_invoice_pay_invoice(value: &billing_types::invoice
             json::push_text(out, "billing.invoice.InvoiceStateConflict");
             json::member(out, "payload");
             encode_error_billing_invoice_invoice_state_conflict(error, out);
+            out.push('}');
+        }
+        billing_types::invoice::PayInvoiceOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "billing.invoice.InvoiceStateConflict");
             out.push('}');
         }
     }

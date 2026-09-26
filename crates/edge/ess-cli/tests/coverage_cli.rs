@@ -248,7 +248,7 @@ fn explicit_suite5_cli_produces_exact_inventory_and_requires_report2_before_exec
     let suite = generated(&dir);
     let original = fs::read_to_string(&suite).unwrap();
     let admitted = AdmittedSuite::from_json(&original).unwrap();
-    assert_eq!(admitted.coverage().unwrap().generated.len(), 29);
+    assert_eq!(admitted.coverage().unwrap().generated.len(), 32);
     let destination = dir.join("report.json");
     fs::write(&destination, "unchanged\n").unwrap();
     for extra in [
@@ -294,7 +294,7 @@ fn explicit_suite5_cli_produces_exact_inventory_and_requires_report2_before_exec
     assert!(output.status.success(), "{output:?}");
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(run["summary"]["conformance_status"], "passed");
-    assert_eq!(run["summary"]["counts"]["total"], 29);
+    assert_eq!(run["summary"]["counts"]["total"], 32);
     ess_conformance::CountReport::from_json(&fs::read_to_string(destination).unwrap(), &admitted)
         .unwrap();
 }
@@ -322,7 +322,7 @@ fn select_cli_preserves_all_parent_bytes_and_explicit_empty_selection() {
         admitted.parents()[0].original_json(),
         fs::read_to_string(&suite).unwrap()
     );
-    assert_eq!(admitted.selected().coverage().unwrap().counts.outside, 29);
+    assert_eq!(admitted.selected().coverage().unwrap().counts.outside, 32);
     let run = command(&[
         "conform",
         "run",
@@ -418,8 +418,8 @@ fn generated_go_executes_the_admitted_coverage_inventory_and_preserves_pairing_d
                 input.selected(),
             )
             .unwrap();
-            assert_eq!(report.counts().total, 29);
-            assert_eq!(report.counts().passed, 29);
+            assert_eq!(report.counts().total, 32);
+            assert_eq!(report.counts().passed, 32);
             assert_eq!(
                 report.conformance_status(),
                 ess_conformance::CountStatus::Passed

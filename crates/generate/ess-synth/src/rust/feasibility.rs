@@ -478,6 +478,16 @@ fn records_and_commands(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) 
                 );
             }
         }
+        // The unknown-instance spelling shares the variant scope, so an outcome that would spell
+        // the same identifier is a collision rather than a shadow.
+        if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(ir, command) {
+            inventory.symbol(
+                &format!("outcomes:{source}"),
+                &items::unknown_instance_variant(declared),
+                &format!("{source}.{} for an unknown instance", declared.name),
+                "outcome variant",
+            );
+        }
     }
 }
 

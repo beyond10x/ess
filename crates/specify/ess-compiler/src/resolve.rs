@@ -60,13 +60,13 @@ use ess_primitives::error::{
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
     ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
-    EventHandle, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
-    ResolvedCommandGroup, ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting,
-    ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
-    ResolvedError, ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping,
-    ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef,
-    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation, ResolvedBinding,
+    ResolvedBody, ResolvedCommand, ResolvedCommandGroup, ResolvedCommandLineSurface,
+    ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
+    ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
+    ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType,
+    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -138,6 +138,7 @@ fn view_handles(names: &std::collections::BTreeSet<QualifiedName>) -> BTreeSet<V
 /// | a projected field the source entity does not have, or whose type disagrees with it | `ess-domain`, `ViewSpec::validate` | `ESS-VIEW-001`, `ESS-VIEW-002` |
 /// | a lifecycle's states: unknown, unreachable, dead-ended, duplicated | `ess-domain`, `StateMachine::validate_at` | `ESS-ENTITY-011`, `ESS-ENTITY-006` |
 /// | an invariant reading a field the entity does not have | `ess-domain`, `EntitySpec::validate` | `ESS-ENTITY-003` |
+/// | an invariant reading a required field a `creates:` branch leaves unset | `ess-domain`, `validate_created_invariant_fields` | [`CREATION_LEAVES_INVARIANT_FIELD_UNSET`](codes::CREATION_LEAVES_INVARIANT_FIELD_UNSET), `ESS-COMMAND-018` |
 ///
 /// An actor grant is not a §20 bullet of its own. It is refused as a reference with nothing behind
 /// it — the same reading `ess-domain`'s `ActorSpec::validate` takes, which is why both produce
@@ -229,6 +230,10 @@ pub mod codes {
         pub const PARTIAL_ACCESSOR: u16 = 15;
         /// A plan exceeds its declared construction or output resource budget.
         pub const ACCESSOR_RESOURCE: u16 = 16;
+        /// A predicate compares a fact with an unquoted `null`, which no fact value can be.
+        pub const NULL_COMPARISON: u16 = 17;
+        /// An invariant reads a required field that a creating branch leaves with no value.
+        pub const UNSET_AT_CREATION: u16 = 18;
 
         /// Every class, in code order.
         pub const ALL: &[u16] = &[
@@ -248,6 +253,8 @@ pub mod codes {
             ACCESSOR_TRAVERSAL,
             PARTIAL_ACCESSOR,
             ACCESSOR_RESOURCE,
+            NULL_COMPARISON,
+            UNSET_AT_CREATION,
         ];
     }
 
@@ -282,6 +289,14 @@ pub mod codes {
         /// A backstop. Reaching it means a `Specification` was built field by field and is
         /// inconsistent in a way `Specification::validate` does not check.
         UNVALIDATED_SPECIFICATION = family::SPEC, class::UNDECLARED;
+
+        /// A predicate compares a fact with an unquoted `null` — `note == null`, `note: null` —
+        /// which read as the four-character text before ess#93. Refused while the document is
+        /// read, so it has no construct and is `SPEC`; the message is
+        /// `ess_primitives::error::ParseError::NullComparison`, which names `defined(x)` and
+        /// `not defined(x)` and carries this code as
+        /// `ParseError::NULL_COMPARISON_CODE`.
+        NULL_COMPARISON = family::SPEC, class::NULL_COMPARISON;
 
         /// A type, or a declared conversion, names a type nothing declares.
         UNDECLARED_TYPE = family::TYPE, class::UNDECLARED;
@@ -378,6 +393,15 @@ pub mod codes {
         /// and not a rule: both are a key the document did not write that what it did write makes
         /// required, and both are repaired by writing it.
         UNMAPPED_COMMAND_INPUT = family::BINDING, class::MISSING;
+
+        /// A `creates:` branch leaves a required entity field unset, and an invariant of that
+        /// entity reads it (ess#112).
+        ///
+        /// Bridged from `ess-domain`'s `invariant_reads_unset_field`, which owns the rule
+        /// (`validate_created_invariant_fields`). Filed under `COMMAND` because the site is the
+        /// creating outcome: the usual repair is a `sets:` entry there, the other is declaring the
+        /// field `Optional<…>`, and the hint names both.
+        CREATION_LEAVES_INVARIANT_FIELD_UNSET = family::COMMAND, class::UNSET_AT_CREATION;
     }
 
     /// `true` when two families are the same string.
@@ -773,7 +797,8 @@ fn family_of(location: &str) -> &'static str {
     {
         "type" | "conversion" => codes::family::TYPE,
         "entitie" | "entity" => codes::family::ENTITY,
-        "command" => codes::family::COMMAND,
+        // An outcome group declares command outcomes, so its refusals file beside theirs.
+        "command" | "outcome_group" => codes::family::COMMAND,
         "event" => codes::family::EVENT,
         "error" => codes::family::ERROR,
         "view" => codes::family::VIEW,
@@ -832,6 +857,7 @@ fn class_of(code: ValidationCode) -> u16 {
         | Refused::DeadEndState
         | Refused::UnreachableState
         | Refused::UnknownPhase => codes::class::LIFECYCLE,
+        Refused::InvariantReadsUnsetField => codes::class::UNSET_AT_CREATION,
         _ => codes::class::OTHER,
     }
 }
@@ -893,6 +919,8 @@ const STRUCTURAL: &[&str] = &[
     "components",
     "bindings",
     "topology",
+    // An outcome group's exceptions: `outcome_groups.<group>.except` names the group.
+    "except",
 ];
 
 /// Needles for a document path, most specific first.
@@ -1233,13 +1261,18 @@ impl<'a> Resolver<'a> {
         needles: &[String],
     ) -> Option<ResolvedBody> {
         match &declared.body {
-            TypeBody::Newtype { of, invariants } => {
+            TypeBody::Newtype {
+                of,
+                alphabet,
+                invariants,
+            } => {
                 let mut of_needles = vec![format!("of: {of}")];
                 of_needles.extend_from_slice(needles);
                 let subject = declared.name.to_string();
                 let of = self.type_ref(code, of, &subject, path, &of_needles)?;
                 Some(ResolvedBody::Newtype {
                     of,
+                    alphabet: alphabet.clone(),
                     invariants: invariants.clone(),
                 })
             }
@@ -1608,6 +1641,7 @@ impl<'a> Resolver<'a> {
                         name: command.name,
                         domain,
                         input,
+                        examples: command.examples,
                         response,
                         outcomes,
                         naming: command.naming,
@@ -2460,6 +2494,10 @@ impl<'a> Resolver<'a> {
             else {
                 continue;
             };
+            let aggregation = view
+                .aggregation
+                .as_ref()
+                .map(|aggregation| self.aggregation(aggregation, entities.get(source.name())));
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -2470,6 +2508,7 @@ impl<'a> Resolver<'a> {
                     fields,
                     params,
                     filter: view.filter,
+                    aggregation,
                     order_by: view.order_by,
                     consistency: view.consistency,
                     assertion_style: view.consistency.assertion_style(),
@@ -2478,6 +2517,43 @@ impl<'a> Resolver<'a> {
             );
         }
         resolved
+    }
+
+    /// An aggregate view's computations, each input read off the source's observable fields as
+    /// the projected fields are checked against them.
+    ///
+    /// `ess-domain` refuses an input that is not one, so a miss means an unchecked in-memory
+    /// specification, and compilation stays closed over it.
+    fn aggregation(
+        &mut self,
+        aggregation: &ess_domain::view::Aggregation,
+        entity: Option<&ResolvedEntity>,
+    ) -> ResolvedAggregation {
+        let mut functions = BTreeMap::new();
+        for (field, aggregate) in &aggregation.functions {
+            let input = match &aggregate.input {
+                None => None,
+                Some(input) => {
+                    let Some(resolved) = entity.and_then(|entity| entity.observable_field(input))
+                    else {
+                        self.off_contract = true;
+                        continue;
+                    };
+                    Some(resolved)
+                }
+            };
+            functions.insert(
+                field.clone(),
+                ResolvedAggregate {
+                    function: aggregate.function,
+                    input,
+                },
+            );
+        }
+        ResolvedAggregation {
+            group_by: aggregation.group_by.clone(),
+            functions,
+        }
     }
 
     /// Every actor, with every grant resolved to the command it names.
@@ -3548,6 +3624,12 @@ fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> Resolve
             equals: equals.clone(),
             predicate: predicate.clone(),
         },
+        OutcomeCondition::SubjectPredicate { predicate, input } => {
+            ResolvedCondition::SubjectPredicate {
+                predicate: predicate.clone(),
+                input: input.clone(),
+            }
+        }
         OutcomeCondition::Otherwise => ResolvedCondition::Otherwise,
         OutcomeCondition::ExternalWhen { cause, predicate } => ResolvedCondition::ExternalWhen {
             cause: cause.clone(),
@@ -3572,9 +3654,14 @@ fn payload_constant_source(
     source: &PayloadSource,
 ) -> Option<ResolvedPayloadField> {
     let value = match source {
-        PayloadSource::Literal { value } => ResolvedPayloadValue::Literal {
-            value: value.clone(),
-        },
+        // An unquoted scalar compiles to its quoted form's bytes: which of the two an author wrote
+        // is a reading of the document, not a fact of the model
+        // (`docs/design/typed-literals-and-unknown-instances.md`).
+        PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. } => {
+            ResolvedPayloadValue::Literal {
+                value: value.clone(),
+            }
+        }
         PayloadSource::Generated => ResolvedPayloadValue::Generated,
         PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
         PayloadSource::InputField { .. } | PayloadSource::ResponseField { .. } => return None,
@@ -3629,6 +3716,15 @@ mod tests {
         );
         assert_eq!(codes::VIEW_UNDECLARED_REFERENCE.to_string(), "ESS-VIEW-001");
         assert_eq!(
+            codes::CREATION_LEAVES_INVARIANT_FIELD_UNSET.to_string(),
+            "ESS-COMMAND-018"
+        );
+        assert_eq!(
+            class_of(ValidationCode::InvariantReadsUnsetField),
+            codes::class::UNSET_AT_CREATION,
+            "the bridge files the domain refusal under the named code's class"
+        );
+        assert_eq!(
             codes::ACTOR_UNDECLARED_REFERENCE.to_string(),
             "ESS-ACTOR-001"
         );
@@ -3659,9 +3755,20 @@ mod tests {
             codes::MAPPING_TYPE_MISMATCH,
             codes::MAPPING_READS_UNDECLARED_FIELD,
             codes::UNMAPPED_COMMAND_INPUT,
+            codes::NULL_COMPARISON,
+            codes::CREATION_LEAVES_INVARIANT_FIELD_UNSET,
         ] {
             assert!(codes::ALL.contains(&code), "{code} is not in ALL");
         }
+    }
+
+    #[test]
+    fn the_null_comparison_code_is_the_one_the_parse_refusal_prints() {
+        assert_eq!(
+            codes::NULL_COMPARISON.to_string(),
+            ess_primitives::error::ParseError::NULL_COMPARISON_CODE,
+            "the parser carries this code in its message; the two spellings are one code"
+        );
     }
 
     #[test]
@@ -3724,6 +3831,10 @@ mod tests {
             ("entity shop.Order", codes::family::ENTITY),
             ("view.shop.Orders.filter", codes::family::VIEW),
             ("system.domains", codes::family::SPEC),
+            (
+                "outcome_groups.remote-backed.except",
+                codes::family::COMMAND,
+            ),
         ] {
             assert_eq!(family_of(location), expected, "{location}");
         }

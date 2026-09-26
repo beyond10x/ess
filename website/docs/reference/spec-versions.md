@@ -6,8 +6,8 @@ description: What each ESS format version number means, which release introduced
 
 # Format version history
 
-An ESS document declares its own format in its bytes — `ess/7`, `ess-diff/6`,
-`ess-conformance/13`. That number is the format's major version and nothing else. It is not the
+An ESS document declares its own format in its bytes — `ess/12`, `ess-diff/7`,
+`ess-conformance/17`. That number is the format's major version and nothing else. It is not the
 release that produced the document, and not the specification version the document describes;
 [Formats and digests](./formats.md) separates those three. This page says what each number changed,
 which release introduced it, and what happens when an older reader meets a newer document.
@@ -22,7 +22,7 @@ Every family is read by a build that states which versions it implements and ref
 refusal is the point: a reader that accepts a shape it does not understand returns a wrong answer
 about somebody's system, and blames the document for the age of the tool.
 
-A version number is per family. `ess/7` and `ess-conformance/13` count
+A version number is per family. `ess/12` and `ess-conformance/17` count
 separately and always have.
 
 ## `ess/` — the authored specification
@@ -55,6 +55,51 @@ constructs. A replay response containing Decimal or Binary64, including through
 nested declarations, is outside the exact-result observation profile and refuses
 synthesis. This does not change existing response-to-event comparisons.
 
+`ess/8`, unreleased, admits the string operators `starts_with`, `ends_with` and `contains` in
+every predicate position: command guards, invariants, view filters and binding selections. They
+are map form only and apply to `String` and newtypes of it. Earlier source formats refuse them with
+`unsupported_format_version` at the position that uses one. A model that uses none keeps its bytes
+and its compiled digest. See [string operators](./predicates.md#string-operators).
+
+`ess/9`, not yet released, admits `when_subject: {predicate: …}`: a predicate over the declared
+stored fields of the subject a command addresses, read immediately before selection and
+conjunctive with an ordinary `when:`. It reads the entity's fields and nothing else — not the
+input, not `state`. A refusal may carry it without naming a subject of its own; it reads the one its
+sibling branches name. Closed stored-field domains enter the branch partition beside the input, and
+an open one, such as `weight_kg > 20`, needs a genuine default. Conformance arranges a row to the
+guard through the arranging commands' `sets:` mappings and observes it before the command runs. An
+older build refuses the header; this build refuses the predicate form under an earlier header with
+`unsupported_format_version`. `{field, equals}` keeps `ess/6` and its bytes.
+
+`ess/10`, not yet released, admits aggregate views: a view field may declare `aggregate:` — one of
+`count`, `count_distinct`, `sum`, `min`, `max` and `avg` — and a view may declare `group_by:` over
+its other fields. The filter runs per source row, the admitted rows are grouped, and a group with no
+admitted row is absent; a view without `group_by` returns exactly one row. Each aggregate field
+declares its result type exactly: `Integer` for the counts and for `sum` of an `Integer`, `Optional<T>`
+for `min` and `max`, and `Optional<Decimal>` for `avg`, rounded to 6 places half-even. An older build
+refuses the header, and this build refuses the construct under an earlier header with
+`unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
+[aggregate views](../guides/write-a-specification.md#aggregate-views).
+
+`ess/11`, not yet released, admits three things. A newtype of `String` may declare `alphabet:`, the
+characters every value is drawn from. A command input may declare `example:`, the value synthesis
+builds it from. And `.count` on a `String` is its length in Unicode scalar values, in every
+predicate position. An older build refuses the header, and this build refuses each construct under
+an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its
+compiled digest.
+
+`ess/12`, not yet released, admits `outcome_groups:`, a top-level list that declares one external
+refusal once for many commands. A group selects its members by an explicit `commands:` list, by
+`actor:` (every command that actor `may:` invoke) or by `domain:` (every command that domain's
+files declare), with `except:` beside a selector. Each member gains the group's outcomes after its
+own, in ascending group-name order, before anything is validated, so a group and the same outcomes
+copied by hand compile to the same IR and synthesize the same suite. An outcome of a group is
+`external:` plus `error:` and nothing else. A member that already declares an outcome of the same
+name, and two groups giving one command outcomes of the same name, are refused rather than
+overridden. An older build refuses the header, and this build refuses a group under an earlier
+header with `unsupported_format_version`. A model without groups keeps its bytes and its compiled
+digest. See [one outcome for many commands](../guides/write-a-specification.md#one-outcome-for-many-commands).
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -71,6 +116,8 @@ back as a bare name, so a specification written before `ess/5` keeps its exact b
 | `ess-diff/4` | [0.23.0][r23] | Error and response deltas. | Refuses the delta. |
 | `ess-diff/5` | [0.27.0][r27] | `VariantWireNameChanged`, `VariantDisplayNameChanged` and `VariantSummaryChanged` on `TypeChange`. | Refuses a delta carrying any of the three. |
 | `ess-diff/6` | [0.29.0][r29] | Typed deltas retain the before/after originating replay relation and complete refusal-observation requirement. | Refuses the new vocabulary; existing changes retain their earlier format. |
+| `ess-diff/7` | unreleased | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
+| `ess-diff/8` | unreleased | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -117,6 +164,23 @@ admitted in this response profile. This immediate witness cannot distinguish a
 current-head result while it still equals the original; adopters must separately
 test later-head and restart retries through their real handlers.
 
+`ess-conformance/14` and `/15`, unreleased, carry a string operator where a suite carries a
+predicate: a `satisfies` expectation or an observed selection plan. Version 14 is ordinary and 15
+carries declared coverage; each implies every major below it. Rust and Go admit and evaluate them,
+and refuse an operand that is not a JSON string. Older envelopes refuse the operators, and the
+TypeScript and browser readers refuse these envelopes by their version. A string guard over
+command input is decided at synthesis and never reaches the suite, so such a suite keeps its
+earlier format.
+
+`ess-conformance/16` and `/17`, unreleased, carry the `<view>/aggregate` scenario: rows created
+through the declared creating outcome with values only that scenario uses, and one read asserting
+every group's exact aggregates and the absence of every group whose rows the filter refuses.
+Version 16 is ordinary and 17 carries declared coverage; each implies every major below it.
+Coverage 17 also carries the refusals `ESS-SYNTH-016` (no group key or parameter scopes the
+view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust and Go admit and run them;
+older envelopes refuse an aggregate scenario or refusal, and the TypeScript and browser readers
+refuse these envelopes by their version.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
@@ -161,8 +225,11 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
 | `ess-scenario/` | [0.23.0][r23] | `/2` authored setup establishes typed, isolated backend entity rows. |
-| `infra-observation/` | [0.1.0][r1] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. |
-| `ess-observed-bindings-report/` | next release | `/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. |
+| `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
+| `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
+| `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
+| `ess-observed-bindings-report/` | [0.32.0][r32], [0.33.0][r33] | `/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. `/3` adds each binding's `acknowledged` list, so a satisfied `OBS-BIND-008` no longer means every entry is bound; a `/2` reader must reject `/3`. |
+| `ess-observed-bindings/` | [0.33.0][r33] | `/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
 
 ## Still at version 1
 
@@ -172,8 +239,8 @@ Never revised, and a document that claims a higher number is refused:
 `ess-release/1`, `ess-release-bundle/1`, `ess-release-catalog/1`, `ess-runtime/1`,
 `ess-runtime-ir/1`, `ess-stack/1`, `ess-stack-lock/1`, `ess-environment/1`, `ess-deployment/1`,
 `ess-service-interface/1`, `ess-openapi-import/1`, `ess-browser-catalog/1`,
-`ess-conformance-input/1`, `ess-conformance-replay/1`, `infra-ir/1`, `infra-spec/1`,
-`infra-graph/1`, `infra-drift/1`, `infra-simulation/1`, `infra-projection/1`.
+`ess-conformance-input/1`, `ess-conformance-replay/1`, `infra-spec/1`,
+`infra-graph/1`, `infra-simulation/1`, `infra-projection/1`.
 
 ## Release numbers this page cites
 
@@ -208,3 +275,7 @@ for a release and promises none.
 [r28]: https://github.com/beyond10x/ess/releases/tag/0.28.0
 
 [r29]: https://github.com/beyond10x/ess/releases/tag/0.29.0
+
+[r32]: https://github.com/beyond10x/ess/releases/tag/0.32.0
+
+[r33]: https://github.com/beyond10x/ess/releases/tag/0.33.0

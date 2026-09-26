@@ -159,7 +159,7 @@ fn the_committed_billing_suite_runs_against_interpreted_as_unsatisfied_obligatio
     let scenarios = report["scenarios"].as_array().expect("scenarios");
     assert_eq!(
         scenarios.len(),
-        30,
+        33,
         "every scenario of the committed billing suite was run"
     );
     let statuses: BTreeSet<&str> = scenarios

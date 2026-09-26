@@ -666,3 +666,32 @@ fn the_committed_tree_holds_no_compiled_module() {
         );
     }
 }
+
+/// A declared alphabet is catalogued beside the invariants a page shows; an example is a witness
+/// input and not contract, so it is not (`docs/design/string-alphabet-and-length.md`, section 6).
+#[test]
+fn the_catalogue_carries_a_declared_alphabet_and_no_example() {
+    let model = include_str!("../../../verify/ess-conformance/tests/fixtures/keypad.yaml")
+        .replacen(
+            "      - {name: keys, type: keypad.dial.KeySequence}\n    outcomes:",
+            "      - {name: keys, type: keypad.dial.KeySequence, example: \"12#\"}\n    outcomes:",
+            1,
+        );
+    let synthesis = synthesize_for(&fixture(&[("keypad.yaml", &model)]), Target::Web)
+        .expect("the keypad has a realizable browser target");
+    let catalog = catalog(&synthesis);
+    assert_eq!(
+        catalog["types"]["keypad.dial.KeySequence"]["alphabet"],
+        serde_json::json!("0123456789*#ABCD")
+    );
+    assert!(
+        catalog["types"]["keypad.dial.SessionId"]
+            .get("alphabet")
+            .is_none(),
+        "no alphabet, no key"
+    );
+    assert!(
+        !catalog.to_string().contains("12#"),
+        "an example is not catalogued"
+    );
+}

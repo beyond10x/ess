@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
-// contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
+// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
+// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
 // do not edit: regenerate with `ess synthesize`
 
 //! Visits — `gatepass.visit`.
@@ -320,6 +320,11 @@ pub enum AdmitVisitorOutcome {
         /// Why it was refused: `gatepass.visit.VisitStateConflict`.
         error: VisitStateConflict,
     },
+    /// `wrong-state` — for an instance no record carries.
+    ///
+    /// The same declared branch and error as [`Self::WrongState`], without the error's fields: an instance
+    /// that does not exist has nothing for them to describe (`docs/design/unknown-instance-seams.md`).
+    WrongStateUnknownInstance,
 }
 
 /// Register a visit — the input of `gatepass.visit.RegisterVisit`.
@@ -400,6 +405,11 @@ pub enum SignOutVisitorOutcome {
         /// Why it was refused: `gatepass.visit.VisitStateConflict`.
         error: VisitStateConflict,
     },
+    /// `wrong-state` — for an instance no record carries.
+    ///
+    /// The same declared branch and error as [`Self::WrongState`], without the error's fields: an instance
+    /// that does not exist has nothing for them to describe (`docs/design/unknown-instance-seams.md`).
+    WrongStateUnknownInstance,
 }
 
 /// VisitRegistered — the event `gatepass.visit.VisitRegistered`.
@@ -495,7 +505,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: the contract is declared; the algorithm is not.
     ///
-    /// Contract: given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`.
+    /// Contract: given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait AdmitVisitorBehavior {
         /// Decides and enacts exactly one declared outcome of `gatepass.visit.AdmitVisitor`.
         ///
@@ -521,7 +531,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: the contract is declared; the algorithm is not.
     ///
-    /// Contract: given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`.
+    /// Contract: given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait SignOutVisitorBehavior {
         /// Decides and enacts exactly one declared outcome of `gatepass.visit.SignOutVisitor`.
         ///

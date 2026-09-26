@@ -21,6 +21,19 @@ $ ess verify conform synthesize \
 The suite is deterministic. Its provenance names the model and contract digests from which it was
 derived.
 
+A generated scenario pins what the specification declares, not only that a command answered:
+
+| declaration | what the suite requires |
+| --- | --- |
+| a transition `B → C`, where a view projects `state` | the row is read back in `C` |
+| `from: [A, B]` on a transition | the move runs from `A` and from `B`, each on its own instance |
+| an update's `sets:` | each field is sent a value the row does not already hold: not what the setup wrote, and not an enum's first variant where nothing wrote it |
+| `when: n >= 1` over an input | the branch is taken at `n: 1`, and its default refuses at `n: 0` with every other conjunct satisfied |
+
+Boundaries are probed for comparisons of a number or a timestamp with a literal. Text and equality
+comparisons are not. The extra checks reuse the existing steps and scenario ids, so the suite format
+does not change.
+
 Add `--compact` to fresh `synthesize` output to write deterministic JSON without
 indentation, followed by one newline. The decoded suite is unchanged; its exact
 byte digest changes, so retain that original compact file when producing reports
@@ -197,7 +210,117 @@ $ ess verify conform run \
     --format json
 ```
 
+## Audit the suite with specification mutants
+
+A green run shows only that the suite asks for nothing the target cannot answer. `mutate` asks the
+other question: does the suite notice a wrong specification?
+
+```shell-session
+$ ess verify conform mutate \
+    --path examples/billing \
+    --target billing \
+    --report-out target/billing-mutation.json
+```
+
+It changes the **specification**, one edit per mutant, and runs each mutant's freshly synthesized
+suite against the unchanged reference target. A mutant is *killed* when its suite fails there. A
+*survivor* is a declared rule that no synthesized scenario pins down. The nine classes are
+`from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`,
+`guard-connective`, `error-swap`, `emit-drop` and `order-flip`; `--class` selects some of them and
+repeats. Every class *changes* the specification rather than weakening it: a mutant that only says
+less could never be killed by a correct target.
+
+A mutant the model refuses is *stillborn*, with the refusing check's own code. For example, a
+transition sent to another state is stillborn wherever its old arrival state has no other way in
+(`ESS-ENTITY-011`), and so is dropping the only event of an outcome that names no error
+(`ESS-COMMAND-007`). A stillborn mutant says something about the operator, not about the suite, and
+does not change the exit status.
+
+**A survivor is not answered by authoring a scenario.** An authored scenario's expectations are its
+author's, not the model's, so it runs identically in every mutant's suite and can never kill one;
+`mutate` runs none. Answer a survivor by declaring what makes the rule observable, such as a view
+projecting the field a `sets` entry writes, or by filing a synthesis gap.
+
+| Exit | When |
+|---|---|
+| 0 | The baseline passed, at least one mutant ran, and every mutant that ran was killed. |
+| 1 | The specification did not load, or at least one mutant survived. |
+| 3 | `ESS-MUTATE-001` (the unmutated suite did not pass), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant inconclusive, or every mutant stillborn. |
+
+The text output prints one summary line, then survivors, inconclusive, stillborn and killed
+mutants, one line each. `--report-out` writes an
+[`ess-mutation-report/1`](../reference/formats.md#change-and-conformance-records) document, and
+`--format json` prints the same bytes. Only the built-in targets are supported; replaying mutant
+suites in an adopter's own language is not implemented yet.
+
+## Explore random command sequences
+
+Generated and authored scenarios are short, fixed paths. The TypeScript and Go packages that
+`ess verify conform synthesize --target typescript|go` writes also carry an explorer: seeded random
+walks over the commands, driven through the same `Target` you implement for the suite, and checked
+after every step against a reference model interpreted from the specification. It finds faults
+that only show later in a sequence: a view that drops rows after the fifth, a refusal that still
+writes, an identity reused on the fourth create.
+
+```ts
+import { assertExplored, explore } from './index.js';
+
+const result = await explore(() => newTarget(), { seeds: 200, steps: 60 });
+assertExplored(result);                          // fails on a disagreement or an unreached outcome
+assertExplored(result, { allowExcluded: true }); // also accepts outcomes the explorer left out
+```
+
+```go
+result, err := essconform.Explore(func() essconform.Target { return newTarget() },
+    essconform.ExploreOptions{Seeds: 200, Steps: 60})
+if err != nil { t.Fatal(err) }
+essconform.AssertExplored(t, result, essconform.AssertOptions{})
+```
+
+`seeds` sequences run, seeded 1 to `seeds`, each on a fresh target; `steps` is the number of
+commands in each (defaults 200 and 60). A failure names its seed, and `seed` runs exactly that one
+sequence again. One seed draws the same sequence in both languages.
+
+After every step the explorer compares the outcome, the error, the direct events and every payload
+field the specification determines, then every view without parameters over an entity: its row
+count, identities, determined fields and `order_by`. A `read_your_writes` view is read once with the
+command's consistency token; an `eventual` view is polled until it agrees, up to the eight attempts
+an `eventually` step allows. Last, every invariant is evaluated over the model's records; a record
+that breaks one is reported as a specification defect, because the guards allowed a sequence the
+invariants forbid. A failure is shrunk by removing steps while the shorter trace still fails the
+same way, for at most 1,000 replays.
+
+`assertExplored` (`AssertExplored`) fails on a disagreement, on a declared outcome of an included
+command that no sequence reached, and on the outcomes of an excluded command. The explorer models a
+subset: `when`, `otherwise` and `wrong_state` conditions; `creates` with an observed identity and
+`moves`/`updates` of a supplied subject; integer, boolean, string and UUID inputs, their newtypes,
+enums and structs of them. Anything else is excluded with the reason in `excluded`, and accepting
+that is an explicit `allowExcluded`. Where two guards both hold — which the model admits over an
+infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a view
+filter or invariant over a field no command set is reported in `undetermined`. Neither fails.
+
+The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. The explorer refuses
+a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
+editing either file.
+
 ## Opt into explicit outcome counts
+
+### Where passed, failed and skipped live
+
+`ess-conformance-report/1` has no passed or skipped count, and it lists a skip as `skipped <id>`
+inside `failed_scenarios`. The three numbers are in `ess-conformance-report/2`, as `counts.passed`,
+`counts.failed` and `counts.skipped`, and the skipped ids are in `outcomes.skipped`, apart from
+`outcomes.failed`. A baseline that floors `passed + failed` and caps `skipped` reads them from
+there. Select it for each runner:
+
+| runner | selection |
+|---|---|
+| `ess verify conform run` | `--report-format 2 --report-out <file>` |
+| generated Go | `ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=<file> go test ./...` |
+| generated TypeScript | `ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=<file> npm test` |
+
+`/1` stays the default and keeps its meaning. [Why the counts are a separate
+version](https://github.com/beyond10x/ess/blob/main/docs/design/truthful-conformance-counts.md).
 
 ```shell-session
 $ ess verify conform run \

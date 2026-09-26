@@ -23,7 +23,11 @@ use crate::plan::condition_phrase;
 /// A named type: newtype, struct, enum or tagged union.
 pub(super) fn named_type(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     match &declared.body {
-        ResolvedBody::Newtype { of, invariants } => newtype(out, emit, declared, of, invariants),
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => newtype(out, emit, declared, of, alphabet.as_deref(), invariants),
         ResolvedBody::Struct { fields, invariants } => {
             structure(out, emit, declared, fields, invariants);
         }
@@ -38,6 +42,7 @@ fn newtype(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     of: &ResolvedTypeRef,
+    alphabet: Option<&str>,
     invariants: &[Invariant],
 ) {
     let _ = writeln!(
@@ -47,6 +52,7 @@ fn newtype(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
+    alphabet_doc(out, alphabet);
     invariant_doc(out, invariants);
     let _ = writeln!(
         out,
@@ -201,8 +207,26 @@ pub(super) fn command_contract(out: &mut String, emit: &Emit<'_>, command: &Reso
     for outcome in &command.outcomes {
         outcome_variant(out, emit, command, outcome);
     }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        let _ = writeln!(
+            out,
+            "    /// `{}` — for an instance no record carries.\n    ///\n    /// The same declared \
+             branch and error as [`Self::{}`], without the error's fields: an instance\n    /// \
+             that does not exist has nothing for them to describe \
+             (`docs/design/unknown-instance-seams.md`).\n    {},",
+            declared.name,
+            name::pascal(declared.name.as_str()),
+            unknown_instance_variant(declared)
+        );
+    }
     out.push_str("}\n");
     response_checks(out, emit, command);
+}
+
+/// The Rust variant answering a command's `wrong_state` branch for an instance no record carries:
+/// that branch's own variant name, followed by `UnknownInstance`.
+pub(crate) fn unknown_instance_variant(declared: &ResolvedOutcome) -> String {
+    format!("{}UnknownInstance", name::pascal(declared.name.as_str()))
 }
 
 /// One emitted event's field on an outcome's enum variant: the field identifier and the event it
@@ -343,6 +367,13 @@ pub(super) fn view(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
     if let Some(filter) = &view.filter {
         let _ = write!(out, ", containing instances where `{filter}`");
     }
+    if let Some(aggregation) = &view.aggregation {
+        let _ = write!(
+            out,
+            ".\n///\n/// {}",
+            aggregation.grouping_sentence().trim_end_matches('.')
+        );
+    }
     out.push_str(
         ".\n/// Serving it is an implementation obligation — see the plan — because how a \
          projection is kept\n/// current is a storage decision the specification does not take.\n",
@@ -396,6 +427,14 @@ fn field_line(out: &mut String, emit: &Emit<'_>, field: &ResolvedField) {
 pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
     if let Some(summary) = summary {
         let _ = writeln!(out, "///\n/// {}", summary.trim());
+    }
+}
+
+/// A declared alphabet, documented as an invariant is and for the same reason: checking is
+/// behaviour, and behaviour is an obligation in this scope.
+fn alphabet_doc(out: &mut String, alphabet: Option<&str>) {
+    if let Some(alphabet) = alphabet {
+        let _ = writeln!(out, "///\n/// Every character is one of `{alphabet}`.");
     }
 }
 
@@ -482,6 +521,13 @@ fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
             "            Self::{variant} {{ {}, .. }} => {},",
             names.join(", "),
             checks.join(" && ")
+        );
+    }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        let _ = writeln!(
+            out,
+            "            Self::{} => true,",
+            unknown_instance_variant(declared)
         );
     }
     out.push_str("        }\n    }\n}\n");

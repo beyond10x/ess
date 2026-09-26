@@ -95,9 +95,8 @@ impl SharedInvoices {
 
     /// Whether an invoice with this identity was ever created here.
     ///
-    /// For the adapter boundary: the generated behaviour seam cannot answer "no declared outcome"
-    /// for a subject it has never seen — `unknown_subject` in this module argues it — so a
-    /// conformance bridge asks this *before* routing a subject-bearing command in.
+    /// Existence and nothing else: a caller that wants to know whether the unknown-instance rule
+    /// is load-bearing for an identity asks this, and the realization answers the rule itself.
     pub fn knows(&self, id: &InvoiceId) -> bool {
         self.store.borrow().invoices.contains_key(&id.0 .0)
     }
@@ -165,23 +164,6 @@ impl InvoiceRealization {
     }
 }
 
-/// The one answer the generated seam cannot spell, refused loudly rather than guessed.
-///
-/// The conformance target interface answers a command against a subject it has never seen with
-/// *no declared outcome* — the refusal the specification does not model. The generated behaviour
-/// trait cannot: its `Ok` is the outcome enum, and the `wrong-state` variant demands the
-/// `InvoiceStateConflict` state the invoice is really in, which an invoice that does not exist
-/// does not have. Fabricating one would be manufactured evidence, so the honest total answer is
-/// the typed refusal — loud, and never a state nobody observed. The conformance bridge checks
-/// [`SharedInvoices::knows`] first and never routes an unknown subject here; that the seam needs
-/// this workaround at all is a recorded W6.3 finding about the generator.
-fn unknown_subject(source: &'static str) -> UnmetObligation {
-    UnmetObligation {
-        capability: "command behaviour",
-        source,
-    }
-}
-
 impl CreateInvoiceBehavior for InvoiceRealization {
     fn create_invoice(
         &mut self,
@@ -208,7 +190,9 @@ impl IssueInvoiceBehavior for InvoiceRealization {
         let key = input.invoice_id.0 .0.clone();
         let mut store = self.invoices.store.borrow_mut();
         let Some(snapshot) = store.invoices.get(&key).cloned() else {
-            return Err(unknown_subject("billing.invoice.IssueInvoice"));
+            // The unknown-instance rule: the declared `wrong-state` branch, with nothing about an
+            // invoice that does not exist (`docs/design/unknown-instance-seams.md`).
+            return Ok(IssueInvoiceOutcome::WrongStateUnknownInstance);
         };
         // `issue` runs from `Draft` and from nowhere else — the typed lifecycle carries that, so
         // the legal move is a method call and every other state is the declared `wrong-state`.
@@ -243,7 +227,7 @@ impl CancelInvoiceBehavior for InvoiceRealization {
         let key = input.invoice_id.0 .0.clone();
         let mut store = self.invoices.store.borrow_mut();
         let Some(snapshot) = store.invoices.get(&key).cloned() else {
-            return Err(unknown_subject("billing.invoice.CancelInvoice"));
+            return Ok(CancelInvoiceOutcome::WrongStateUnknownInstance);
         };
         // `cancel` runs from `Draft` and from `Issued`; `Paid` and `Cancelled` are terminal for it.
         let cancelled = match snapshot.refine() {
@@ -283,7 +267,7 @@ impl PayInvoiceBehavior for InvoiceRealization {
         let key = input.invoice_id.0 .0.clone();
         let mut store = self.invoices.store.borrow_mut();
         let Some(snapshot) = store.invoices.get(&key).cloned() else {
-            return Err(unknown_subject("billing.invoice.PayInvoice"));
+            return Ok(PayInvoiceOutcome::WrongStateUnknownInstance);
         };
         match snapshot.refine() {
             AnyInvoice::Issued(invoice) => {
@@ -462,21 +446,47 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_subject_is_refused_loudly_not_answered_with_a_fabricated_state() {
-        // The recorded seam gap: no declared outcome can carry "never seen", and inventing a
-        // state would be manufactured evidence. The typed refusal names the command it is about.
+    fn an_unknown_subject_takes_wrong_state_without_a_fabricated_state() {
+        // The unknown-instance rule, through the seam: every command acting on an invoice answers
+        // an identity nothing created with its `wrong-state` branch, in the variant that carries
+        // no `state` — inventing one would be manufactured evidence.
         let (invoices, mut realization) = realization();
         let stranger = InvoiceId(Uuid("00000000-0000-4000-8000-999999999999".to_owned()));
         assert!(
             !invoices.knows(&stranger),
             "the fixture must reach the state where the rule is load-bearing: an id nothing created"
         );
-        let refusal = realization
-            .issue_invoice(IssueInvoice {
-                invoice_id: stranger,
-            })
-            .expect_err("an unknown subject has no honest declared outcome");
-        assert_eq!(refusal.source, "billing.invoice.IssueInvoice");
-        assert_eq!(refusal.capability, "command behaviour");
+        assert_eq!(
+            realization.issue_invoice(IssueInvoice {
+                invoice_id: stranger.clone(),
+            }),
+            Ok(IssueInvoiceOutcome::WrongStateUnknownInstance)
+        );
+        assert_eq!(
+            realization.cancel_invoice(CancelInvoice {
+                invoice_id: stranger.clone(),
+            }),
+            Ok(CancelInvoiceOutcome::WrongStateUnknownInstance)
+        );
+        assert_eq!(
+            realization.pay_invoice(PayInvoice {
+                invoice_id: stranger.clone(),
+                amount: money("5.00"),
+            }),
+            Ok(PayInvoiceOutcome::WrongStateUnknownInstance)
+        );
+        // The guard is decided first: a payment no branch but `rejected` admits is refused on its
+        // amount whatever the invoice is.
+        assert!(matches!(
+            realization.pay_invoice(PayInvoice {
+                invoice_id: stranger.clone(),
+                amount: money("0.00"),
+            }),
+            Ok(PayInvoiceOutcome::Rejected { .. })
+        ));
+        assert!(
+            !invoices.knows(&stranger),
+            "answering the rule creates nothing"
+        );
     }
 }

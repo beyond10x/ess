@@ -67,10 +67,17 @@ fn main() {
         })
         .expect("unexpected operation, repository or digest");
     if root.join("deadline").exists() {
+        // The control file names the manifest, blob-0 and blob-1 delays in milliseconds, scaled
+        // to the deadline under test.
+        let delays: Vec<u64> = std::fs::read_to_string(root.join("deadline"))
+            .unwrap()
+            .split_whitespace()
+            .map(|ms| ms.parse().unwrap())
+            .collect();
         let delay = match row.as_str() {
-            "manifest" => 20,
-            "blob-0" => 10,
-            "blob-1" => 5,
+            "manifest" => delays[0],
+            "blob-0" => delays[1],
+            "blob-1" => delays[2],
             _ => 0,
         };
         if row == "blob-2" {
@@ -79,7 +86,7 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
-        std::thread::sleep(std::time::Duration::from_secs(delay));
+        std::thread::sleep(std::time::Duration::from_millis(delay));
     }
     if let Ok(control) = std::fs::read_to_string(root.join("fail")) {
         let (selected, mode) = control.trim().split_once('\t').unwrap();

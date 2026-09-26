@@ -64,6 +64,7 @@ fn admitted(outcome: &Outcome, entity: &EntitySpec) -> Option<BTreeSet<StateName
         OutcomeCondition::When(_)
         | OutcomeCondition::Otherwise
         | OutcomeCondition::SubjectField { .. }
+        | OutcomeCondition::SubjectPredicate { .. }
         | OutcomeCondition::External { .. }
         | OutcomeCondition::ExternalWhen { .. }
         | OutcomeCondition::WrongState => None,
@@ -185,6 +186,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 OutcomeCondition::When(_)
                 | OutcomeCondition::Otherwise
                 | OutcomeCondition::SubjectField { .. }
+                | OutcomeCondition::SubjectPredicate { .. }
                 | OutcomeCondition::External { .. }
                 | OutcomeCondition::ExternalWhen { .. }
                 | OutcomeCondition::WrongState => {}
@@ -241,6 +243,7 @@ fn validate_partition(
                     OutcomeCondition::When(_)
                         | OutcomeCondition::Otherwise
                         | OutcomeCondition::SubjectField { .. }
+                        | OutcomeCondition::SubjectPredicate { .. }
                 )
             }) {
                 for state in &entity.states.states {

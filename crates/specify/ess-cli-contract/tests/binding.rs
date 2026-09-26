@@ -231,6 +231,33 @@ fn integer_values_use_the_models_exact_signed_64_bit_range() {
     }
 }
 
+/// An alphabet constrains a type exactly as an invariant does, and the CLI cannot enforce either
+/// (`docs/design/string-alphabet-and-length.md`, section 6): the same refusal for both.
+#[test]
+fn refuses_an_alphabet_only_newtype_as_it_refuses_an_invariant_one() {
+    let binding = Binding::from_yaml(BINDING).unwrap();
+    for constraint in [
+        "    invariants: [value != \"\"]\n",
+        "    alphabet: \"abc\"\n",
+    ] {
+        let text = format!(
+            "{MODEL}\n  - name: demo.Secret\n    kind: newtype\n    of: String\n{constraint}"
+        )
+        .replace(
+            "name: secret, type: String",
+            "name: secret, type: demo.Secret",
+        )
+        .replacen("format: ess/1\n", "format: ess/11\n", 1);
+        let error = compile(&model(&text), &binding).expect_err(constraint);
+        assert!(
+            error
+                .to_string()
+                .contains("`demo.Secret` has unsupported invariants or union semantics"),
+            "{constraint}: {error}"
+        );
+    }
+}
+
 #[test]
 fn refuses_recursive_nested_unresolved_and_constrained_types() {
     let binding = Binding::from_yaml(BINDING).unwrap();

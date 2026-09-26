@@ -525,6 +525,10 @@ fn view_description(ir: &EssIr, view: &ResolvedView) -> String {
     } else {
         parts.push("Contains every instance.".to_owned());
     }
+    if let Some(aggregation) = &view.aggregation {
+        parts.push(aggregation.grouping_sentence());
+        parts.push(format!("{}.", aggregation.clauses().join("; ")));
+    }
     parts.push(match view.consistency {
         Consistency::ReadYourWrites => {
             "Read-your-writes: a caller that has just issued a command sees its effect here."
@@ -848,6 +852,11 @@ fn view_key(view: &ResolvedView) -> String {
 
 /// The response body for one outcome.
 fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Value {
+    // The unknown-instance rule answers this same branch for an instance no record carries, and
+    // that answer has no payload: nothing describes an instance that does not exist
+    // (`docs/design/unknown-instance-seams.md`).
+    let unknown = crate::unknown_instance::unknown_instance_answer(ir, command)
+        .is_some_and(|declared| declared.name == outcome.name);
     let mut required = vec![Value::String(OUTCOME.to_owned())];
     let mut properties = Map::new();
     properties.insert(
@@ -871,7 +880,9 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         properties.insert("error".to_owned(), identity);
 
         if !declared.fields.is_empty() {
-            required.push(Value::String("payload".to_owned()));
+            if !unknown {
+                required.push(Value::String("payload".to_owned()));
+            }
             properties.insert(
                 "payload".to_owned(),
                 json!({"$ref": reference(&error_key(declared))}),
@@ -889,7 +900,15 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
     let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
-        "description": outcome_description(ir, outcome),
+        "description": if unknown {
+            format!(
+                "{} For an instance no record carries, `payload` is absent, because an \
+                 instance that does not exist has nothing for the error to describe.",
+                outcome_description(ir, outcome)
+            )
+        } else {
+            outcome_description(ir, outcome)
+        },
         "required": required,
         "properties": properties,
     });
@@ -899,13 +918,9 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
     schema
 }
 
-/// What the model says about one outcome, as prose.
-fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(summary) = &outcome.summary {
-        parts.push(summary.clone());
-    }
-    parts.push(match &outcome.condition {
+/// What decides one outcome, as the sentence its `OpenAPI` description opens with.
+fn condition_description(condition: &ResolvedCondition) -> String {
+    match condition {
         ResolvedCondition::SubjectField {
             field,
             equals,
@@ -914,6 +929,13 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
         ResolvedCondition::When { predicate } => {
             format!("Taken when `{predicate}` holds of the input.")
         }
+        // Through `Display`, as `SubjectState` is: the stored fields are part of the contract.
+        ResolvedCondition::SubjectPredicate { predicate, input } => format!(
+            "Taken when the existing subject's stored fields satisfy `{predicate}`{}.",
+            input.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -950,7 +972,16 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
              from. Which states those are is the lifecycle's answer, not this command's."
                 .to_owned()
         }
-    });
+    }
+}
+
+/// What the model says about one outcome, as prose.
+fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(summary) = &outcome.summary {
+        parts.push(summary.clone());
+    }
+    parts.push(condition_description(&outcome.condition));
     // What the caller's request did to the system's state, in the response that reports it. A
     // caller reading `202` learns that a branch was taken; without this it does not learn that an
     // invoice now exists, and the specification does say so.

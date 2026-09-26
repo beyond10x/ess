@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-// contract digest 0c2f2067136aea0bc0a45ca5b01bf70f551fc6199956699c5d5b939c350688f8
+// model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+// contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
 // do not edit: regenerate with `ess synthesize`
 
 // Package email is email — `billing.email`.

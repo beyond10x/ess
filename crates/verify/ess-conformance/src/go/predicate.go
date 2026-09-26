@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // truth is a three-valued result.
@@ -154,6 +155,8 @@ func (p predicate) String() string {
 			word = " not in ["
 		}
 		return p.path + word + strings.Join(parts, ", ") + "]"
+	case "starts_with", "ends_with", "contains":
+		return fmt.Sprintf("%s %s %q", p.path, p.kind, p.right.literal)
 	case "forall", "exists":
 		return fmt.Sprintf("%s %s in %s: (%s)", p.kind, p.bind, p.over, p.body)
 	default:
@@ -291,37 +294,86 @@ func parseConstraint(path string, value any) (predicate, error) {
 			right: operand{literal: value},
 		}, nil
 	}
-	for _, key := range []string{"any_of", "none_of"} {
-		if listed, ok := mapping[key]; ok {
-			items, ok := listed.([]any)
-			if !ok {
-				return predicate{}, fmt.Errorf("`%s` takes a list", key)
-			}
-			return predicate{kind: key, path: path, values: items}, nil
-		}
+	// Every operator of one mapping is conjoined, as Rust's `from_constraint` does, in sorted key
+	// order so that one mapping parses the same way twice (Go randomises map iteration).
+	keys := make([]string, 0, len(mapping))
+	for key := range mapping {
+		keys = append(keys, key)
 	}
-	for spelling, op := range map[string]string{
-		"eq": "==", "equals": "==", "==": "==",
-		"ne": "!=", "not_equals": "!=", "!=": "!=",
-		"lt": "<", "<": "<",
-		"le": "<=", "lte": "<=", "<=": "<=",
-		"gt": ">", ">": ">",
-		"ge": ">=", "gte": ">=", ">=": ">=",
-	} {
-		if compared, ok := mapping[spelling]; ok {
-			right := operand{literal: compared}
-			if text, ok := compared.(string); ok {
-				right = parseOperand(text)
-			}
-			return predicate{
-				kind:  "compare",
-				left:  operand{path: path, isFact: true},
-				op:    op,
-				right: right,
-			}, nil
+	sort.Strings(keys)
+	children := make([]predicate, 0, len(keys))
+	for _, key := range keys {
+		child, err := parseOperator(path, key, mapping[key])
+		if err != nil {
+			return predicate{}, err
 		}
+		children = append(children, child)
 	}
-	return predicate{}, fmt.Errorf("`%s` carries no operator this runner knows", path)
+	switch len(children) {
+	case 0:
+		return predicate{kind: "always"}, nil
+	case 1:
+		return children[0], nil
+	default:
+		return predicate{kind: "all", children: children}, nil
+	}
+}
+
+var compareSpellings = map[string]string{
+	"eq": "==", "equals": "==", "==": "==",
+	"ne": "!=", "not_equals": "!=", "!=": "!=",
+	"lt": "<", "<": "<",
+	"le": "<=", "lte": "<=", "<=": "<=",
+	"gt": ">", ">": ">",
+	"ge": ">=", "gte": ">=", ">=": ">=",
+}
+
+// parseOperator reads one operator of a constraint mapping, as Rust's `from_operator` does.
+func parseOperator(path, key string, raw any) (predicate, error) {
+	if op, ok := compareSpellings[key]; ok {
+		right := operand{literal: raw}
+		if text, ok := raw.(string); ok {
+			right = parseOperand(text)
+		}
+		return predicate{kind: "compare", left: operand{path: path, isFact: true}, op: op, right: right}, nil
+	}
+	switch key {
+	case "any_of", "in", "one_of", "none_of", "not_in":
+		kind := "any_of"
+		if key == "none_of" || key == "not_in" {
+			kind = "none_of"
+		}
+		// Rust reads a scalar as a one-element list and null as the empty one.
+		var items []any
+		switch listed := raw.(type) {
+		case nil:
+		case []any:
+			items = listed
+		default:
+			items = []any{listed}
+		}
+		return predicate{kind: kind, path: path, values: items}, nil
+	case "starts_with", "ends_with", "contains":
+		// Verbatim, never through parseOperand: `"+44"` is text and `"a.b"` is no fact path.
+		text, ok := raw.(string)
+		if !ok {
+			return predicate{}, fmt.Errorf("`%s: {%s: …}` takes a string", path, key)
+		}
+		return predicate{kind: key, path: path, right: operand{literal: text}}, nil
+	case "exists", "defined":
+		expected, ok := raw.(bool)
+		if !ok {
+			return predicate{}, fmt.Errorf("`%s: {%s: …}` takes a boolean", path, key)
+		}
+		defined := predicate{kind: "defined", path: path}
+		if expected {
+			return defined, nil
+		}
+		return predicate{kind: "not", body: &defined}, nil
+	case "truthy":
+		return predicate{kind: "truthy", path: path}, nil
+	}
+	return predicate{}, fmt.Errorf("`%s` carries the operator %q, which this runner does not know", path, key)
 }
 
 // parseLeaf reads compact expressions. Unrepresentable literal data uses structured comparisons.
@@ -550,16 +602,16 @@ func (p predicate) evaluate(source factSource) truth {
 	case "compare":
 		return p.compare(source)
 	case "truthy":
-		value, ok := source[p.path]
+		value, ok := readLeaf(source, p.path)
 		if !ok {
 			return truthUnknown
 		}
 		return truthOf(isTruthy(value))
 	case "defined":
-		_, ok := source[p.path]
+		_, ok := readLeaf(source, p.path)
 		return truthOf(ok)
 	case "any_of", "none_of":
-		value, ok := source[p.path]
+		value, ok := readLeaf(source, p.path)
 		if !ok {
 			return truthUnknown
 		}
@@ -571,6 +623,8 @@ func (p predicate) evaluate(source factSource) truth {
 			}
 		}
 		return truthOf(found == (p.kind == "any_of"))
+	case "starts_with", "ends_with", "contains":
+		return p.textMatch(source)
 	case "forall", "exists":
 		return p.quantify(source)
 	default:
@@ -602,6 +656,29 @@ func (p predicate) compare(source factSource) truth {
 		return truthOf(order >= 0)
 	default:
 		return truthUnknown
+	}
+}
+
+// textMatch is a string operator (beyond10x/ess#95): byte-wise and case-sensitive, as
+// `strings` answers over the UTF-8 bytes `encoding/json` decoded. Unbound, or bound to the null
+// the flattener binds, is Unknown; a value that is not text is False.
+func (p predicate) textMatch(source factSource) truth {
+	value, ok := readLeaf(source, p.path)
+	if !ok || value == nil {
+		return truthUnknown
+	}
+	text, isText := value.(string)
+	literal, literalText := p.right.literal.(string)
+	if !isText || !literalText {
+		return truthFalse
+	}
+	switch p.kind {
+	case "starts_with":
+		return truthOf(strings.HasPrefix(text, literal))
+	case "ends_with":
+		return truthOf(strings.HasSuffix(text, literal))
+	default:
+		return truthOf(strings.Contains(text, literal))
 	}
 }
 
@@ -665,8 +742,35 @@ func (o operand) resolve(source factSource) (Node, bool) {
 	if !o.isFact {
 		return o.literal, true
 	}
-	value, ok := source[o.path]
-	return value, ok
+	return readLeaf(source, o.path)
+}
+
+// readLeaf is one leaf read, the rule every evaluator lane shares (beyond10x/ess#104): a bound fact
+// wins; otherwise, when the last segment is `count` and the parent is bound to text, the value is
+// the text's rune count, which is its number of Unicode scalar values for the valid UTF-8
+// `encoding/json` decodes. A quantifier's cardinality is read raw, so a quantifier over a text is
+// Unknown.
+func readLeaf(source factSource, path string) (Node, bool) {
+	if value, ok := source[path]; ok {
+		return value, true
+	}
+	parent, last, found := cutLast(path)
+	if !found || last != "count" {
+		return nil, false
+	}
+	if text, isText := source[parent].(string); isText {
+		return float64(utf8.RuneCountInString(text)), true
+	}
+	return nil, false
+}
+
+// cutLast splits a dotted path at its last dot.
+func cutLast(path string) (string, string, bool) {
+	at := strings.LastIndex(path, ".")
+	if at <= 0 {
+		return "", "", false
+	}
+	return path[:at], path[at+1:], true
 }
 
 func truthOf(value bool) truth {

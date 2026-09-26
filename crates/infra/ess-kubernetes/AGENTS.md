@@ -6,18 +6,20 @@ The Kubernetes credential-edge adapter inside ESS. The repository-wide contract 
 ## Serves
 
 - **O1 — governed reach.** Only this adapter may invoke `kubectl` with caller-selected authority.
-- **O2 — decisions as data, with evidence.** It produces sanitized `infra-observation/1` input for
+- **O2 — decisions as data, with evidence.** It produces sanitized `infra-observation/3` input for
   the deterministic infrastructure compiler.
 
 ## Invariants
 
-1. Secret `data` and `stringData` values are replaced with their digest and length before any
-   serialization or filesystem write.
+1. Secret `data` and `stringData` values are replaced with `{"present": true}` before any
+   serialization or filesystem write. No digest and no length, keyed or not: an unsalted digest
+   of a low-entropy value confirms a guess to anyone holding the file, and nothing downstream
+   compares values.
 2. The last-applied configuration annotation is removed from Secrets because it may duplicate
    values already redacted from the Secret body.
 3. The adapter preserves observation facts but performs no diagnosis, planning, or projection.
 4. The collected kind list is explicit and ordered. Extending it requires a leak-surface review
-   and a compatibility decision for `infra-observation/1`.
+   and a compatibility decision for `infra-observation/3`.
 5. Credentials, kubeconfig contents, tokens, certificates, and unsanitized observations never
    appear in output, diagnostics, fixtures, or repository files.
 6. Live scans use `kubectl` intentionally so exec plugins and API-version negotiation stay at the

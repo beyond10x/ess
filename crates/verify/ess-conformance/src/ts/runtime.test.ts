@@ -40,6 +40,7 @@ import {
   scenarioIdentity,
   strictJSON,
   unsupported,
+  writeReport,
 } from './runtime.js';
 import type {
   CommandRequest,
@@ -122,6 +123,73 @@ test('retained-result envelopes and mislabeled steps refuse before target callba
       /unsupported step/,
     );
   }
+  assert.equal(callbacks, 0);
+});
+
+// String operators (beyond10x/ess#95) are not a TypeScript lane: the suites that carry one are
+// refused by their version, and a forged older suite carrying one is refused by the operator.
+test('string-operator suites and forged older ones refuse before target callbacks', async () => {
+  let callbacks = 0;
+  const target = (): Target => {
+    callbacks += 1;
+    throw new Error('target must not be constructed');
+  };
+  const satisfies = {
+    step: 'expect_view',
+    view: 'billing.Invoices',
+    expectation: { expect: 'satisfies', predicate: { not: { customer: { starts_with: '+44' } } } },
+  };
+  for (const major of [14, 15]) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = `ess-conformance/${major}`;
+    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push(satisfies);
+    await assert.rejects(
+      runWith(new Recorder('strings'), target, JSON.stringify(raw)),
+      /unsupported suite version "ess-conformance\/1[45]"/,
+    );
+  }
+  for (const operator of ['starts_with', 'ends_with', 'contains']) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = 'ess-conformance/10';
+    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push({
+      ...satisfies,
+      expectation: { expect: 'satisfies', predicate: { customer: { [operator]: 'x' } } },
+    });
+    await assert.rejects(
+      runWith(new Recorder('strings'), target, JSON.stringify(raw)),
+      new RegExp(`unknown predicate constraint operator "${operator}"`),
+    );
+  }
+  assert.equal(callbacks, 0);
+});
+
+// Aggregate views (beyond10x/ess#96) are not a TypeScript lane either: their suites are refused by
+// their version, and a forged older suite carrying an aggregate scenario is refused by its id.
+test('aggregate suites and forged older ones refuse before target callbacks', async () => {
+  let callbacks = 0;
+  const target = (): Target => {
+    callbacks += 1;
+    throw new Error('target must not be constructed');
+  };
+  const scenario = JSON.parse(suiteText()).scenarios['billing.CreateInvoice/outcome/created'];
+  for (const major of [16, 17]) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = `ess-conformance/${major}`;
+    await assert.rejects(
+      runWith(new Recorder('aggregates'), target, JSON.stringify(raw)),
+      /unsupported suite version "ess-conformance\/1[67]"/,
+    );
+  }
+  const forged = JSON.parse(suiteText());
+  forged.scenarios['billing.Invoices/aggregate'] = scenario;
+  await assert.rejects(
+    runWith(new Recorder('aggregates'), target, JSON.stringify(forged)),
+    /aggregate views require suite\/16 or \/17/,
+  );
+  assert.throws(
+    () => scenarioIdentity('billing.Invoices/aggregate'),
+    /aggregate views require suite\/16 or \/17/,
+  );
   assert.equal(callbacks, 0);
 });
 
@@ -512,6 +580,78 @@ test('report/1 names every scenario that did not pass', async () => {
       'skipped billing.CreateInvoice/outcome/unanswered',
     ]);
     assert.equal(document.implementation, 'example 0.1.0');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** captureStderr runs body and returns what it wrote to process.stderr, which it does not pass on. */
+async function captureStderr(body: () => Promise<void>): Promise<string> {
+  const original = process.stderr.write.bind(process.stderr);
+  let written = '';
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    written += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    await body();
+  } finally {
+    process.stderr.write = original;
+  }
+  return written;
+}
+
+const skipNotice =
+  '1 scenario(s) skipped; set ESS_REPORT_FORMAT=2 (or --report-format 2) for passed, failed and ' +
+  'skipped counts\n';
+
+test('report/1 with a skip points once at report/2 for the counts (ess#110)', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'essconform-'));
+  const path = join(directory, 'report.json');
+  try {
+    const written = await captureStderr(() =>
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '1', ESS_REPORT_OUT: path }, () =>
+        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+      ),
+    );
+    assert.equal(written, skipNotice);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('report/1 without a skip, and report/2, print no notice', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'essconform-'));
+  const path = join(directory, 'report.json');
+  try {
+    const counted = await captureStderr(() =>
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: path }, () =>
+        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+      ),
+    );
+    assert.equal(counted, '');
+    const unpublished = await captureStderr(() =>
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '1', ESS_REPORT_OUT: undefined }, () =>
+        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+      ),
+    );
+    assert.equal(unpublished, '');
+    const suite = admitSuiteDocument(suiteText(), false);
+    const clean = await captureStderr(async () =>
+      withEnvironmentAsync({ ESS_REPORT_OUT: path }, async () =>
+        writeReport(
+          new Recorder('conformance'),
+          suite,
+          { name: 'example', version: '0.1.0' },
+          [
+            { id: 'a', status: 'passed' },
+            { id: 'b', status: 'failed' },
+          ],
+          Object.keys(suite.scenarios).length,
+        ),
+      ),
+    );
+    assert.equal(clean, '');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, fmt::Write as _};
 
 pub(super) fn support(emit: &Emit<'_>) -> String {
     let unmet = emit.unmet();
+    emit.import("strings");
     format!(
         r#"
 // SelectionFailureCause is the closed runtime refusal vocabulary.
@@ -56,10 +57,41 @@ func selectionCompare(value string, present bool, expected string, equal bool) i
     if !present {{ return -1 }}
     return selectionBool((value == expected) == equal)
 }}
+func selectionText(value string, present bool, literal string, operation string) int {{
+    if !present {{ return -1 }}
+    switch operation {{
+    case "starts_with": return selectionBool(strings.HasPrefix(value, literal))
+    case "ends_with": return selectionBool(strings.HasSuffix(value, literal))
+    default: return selectionBool(strings.Contains(value, literal))
+    }}
+}}
 func selectionNot(value int) int {{ if value < 0 {{ return -1 }}; return 1-value }}
 func selectionIndex(value int) *int {{ return &value }}
 "#
     )
+}
+
+/// A Go interpreted string literal holding exactly the bytes of `text`.
+///
+/// Printable ASCII other than `"` and `\` is written as itself and every other byte as `\xNN`.
+/// Rust `Debug` is not Go syntax: it writes a combining character as `\u{301}`, which Go rejects,
+/// and a selection literal is free text that may hold one. Byte-exact is also the semantics a
+/// string operator compares by.
+pub(crate) fn go_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for byte in text.bytes() {
+        match byte {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            b' '..=b'~' => out.push(char::from(byte)),
+            other => {
+                let _ = write!(out, "\\x{other:02x}");
+            }
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn unwrap_list(emit: &Emit<'_>, mut ty: ResolvedTypeRef, mut value: String) -> String {
@@ -120,7 +152,8 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
             };
             let id = reads[&path.to_string()];
             format!(
-                "selectionCompare(read{id}, present{id}, {value:?}, {})",
+                "selectionCompare(read{id}, present{id}, {}, {})",
+                go_string(value),
                 *op == CompareOp::Eq
             )
         }
@@ -138,6 +171,18 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
                 .join(",")
         ),
         Predicate::Not(child) => format!("selectionNot({})", self::predicate(child, reads)),
+        Predicate::TextMatch {
+            path,
+            op,
+            value: ess_primitives::facts::FactValue::Text(literal),
+        } => {
+            let id = reads[&path.to_string()];
+            format!(
+                "selectionText(read{id}, present{id}, {}, {:?})",
+                go_string(literal),
+                op.keyword()
+            )
+        }
         _ => unreachable!("admitted finite selector predicate"),
     }
 }
@@ -363,4 +408,58 @@ fn input_prelude(
         let _ = writeln!(out, "selectionInput{input} := {list}\nif selectionInput{input} == nil {{ return {zero}, &SelectionFailure{{Cause: SelectionInvalidInput, Input: {input}}} }}\nif len(selectionInput{input}) > 64 {{ return {zero}, &SelectionFailure{{Cause: SelectionResource, Input: {input}}} }}");
     }
     out.check()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::go_string;
+
+    const TEXTS: [&str; 6] = [
+        "leg-",
+        "e\u{301}",
+        "\u{1F600}b",
+        "say \"hi\" \\ there",
+        "tab\tnew\nline\u{7f}",
+        "",
+    ];
+
+    #[test]
+    fn a_go_literal_escapes_every_byte_that_is_not_printable_ascii() {
+        assert_eq!(go_string("leg-"), "\"leg-\"");
+        assert_eq!(go_string("e\u{301}"), r#""e\xcc\x81""#);
+        assert_eq!(go_string("\"\\"), r#""\"\\""#);
+        assert_eq!(go_string("\u{7f}"), r#""\x7f""#);
+    }
+
+    /// Go itself reads each literal back to the bytes it was written from.
+    #[test]
+    fn go_reads_each_literal_back_to_its_own_bytes() {
+        let root = std::env::temp_dir().join(format!("ess-go-string-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let literals: Vec<String> = TEXTS.iter().map(|text| go_string(text)).collect();
+        let program = format!(
+            "package main\n\nimport \"os\"\n\nfunc main() {{\n\tfor _, text := range []string{{{}}} {{\n\t\tos.Stdout.WriteString(text)\n\t\tos.Stdout.WriteString(\"\\x00\")\n\t}}\n}}\n",
+            literals.join(", ")
+        );
+        std::fs::write(root.join("main.go"), program).unwrap();
+        let output = std::process::Command::new("go")
+            .args(["run", "main.go"])
+            .current_dir(&root)
+            .env("GOWORK", "off")
+            .env("GO111MODULE", "off")
+            .output()
+            .expect("the required Go toolchain executes");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let expected: Vec<u8> = TEXTS
+            .iter()
+            .flat_map(|text| text.bytes().chain([0]))
+            .collect();
+        assert_eq!(output.stdout, expected);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

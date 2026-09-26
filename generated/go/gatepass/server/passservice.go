@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
-// contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
+// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
+// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
 // do not edit: regenerate with `ess synthesize`
 
 // The `pass-service` component of `gatepass` v1, on the wire.
@@ -54,7 +54,7 @@ var RoutesPassService = [][2]string{
 // `runtime` is the same in every language this plan is emitted into, and `cargo xtask synth
 // --check` starts both and compares them.
 var StartupPassService = []string{
-	"{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61\",\"contract_digest\":\"e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":22,\"obligations\":5,\"refused\":2}",
+	"{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba\",\"contract_digest\":\"a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":22,\"obligations\":5,\"refused\":2}",
 	"{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"pass-service\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":7,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/visits/commands/admit-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.AdmitVisitor\"},{\"method\":\"POST\",\"path\":\"/visits/commands/register-visit\",\"serves\":\"command\",\"name\":\"gatepass.visit.RegisterVisit\"},{\"method\":\"POST\",\"path\":\"/visits/commands/sign-out-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.SignOutVisitor\"},{\"method\":\"GET\",\"path\":\"/visits/views/by-id\",\"serves\":\"view\",\"name\":\"gatepass.visit.VisitById\"},{\"method\":\"GET\",\"path\":\"/visits/views/expected\",\"serves\":\"view\",\"name\":\"gatepass.visit.ExpectedVisits\"}]",
 	"{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"gatepass\",\"surfaces\":1",
 }
@@ -179,6 +179,10 @@ func answerGatepassVisitAdmitVisitor(outcome visit.AdmitVisitorOutcome) response
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		body["payload"] = encodeErrorGatepassVisitVisitStateConflict(taken.Error)
 		return rendered(409, body)
+	case visit.AdmitVisitorOutcomeWrongStateUnknownInstance:
+		body["outcome"] = "wrong-state"
+		body["error"] = "gatepass.visit.VisitStateConflict"
+		return rendered(409, body)
 	}
 	// Go cannot check that a switch over a sealed interface is total, which is this target's
 	// standing weakening (see TARGET.md). An outcome no branch above named is a value no
@@ -262,6 +266,10 @@ func answerGatepassVisitSignOutVisitor(outcome visit.SignOutVisitorOutcome) resp
 		body["outcome"] = "wrong-state"
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		body["payload"] = encodeErrorGatepassVisitVisitStateConflict(taken.Error)
+		return rendered(409, body)
+	case visit.SignOutVisitorOutcomeWrongStateUnknownInstance:
+		body["outcome"] = "wrong-state"
+		body["error"] = "gatepass.visit.VisitStateConflict"
 		return rendered(409, body)
 	}
 	// Go cannot check that a switch over a sealed interface is total, which is this target's

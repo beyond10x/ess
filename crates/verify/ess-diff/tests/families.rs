@@ -1892,7 +1892,9 @@ fn review_outcome_sets_are_independent_of_event_payload() {
             .flat_map(|command| &mut command.outcomes)
             .find(|outcome| !outcome.sets.is_empty())
             .expect("billing determines subject fields");
-        outcome.sets.0.clear();
+        // Only `account_id`: `total` and `reminder_count` are read by the entity's invariants, and a
+        // creating branch that leaves them unset is refused (ess#112).
+        outcome.sets.0.retain(|set| set.target != "account_id");
     });
     review_change(&before, &after, "outcome-sets-changed");
 }

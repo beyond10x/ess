@@ -119,9 +119,7 @@ pub(crate) fn preflight(
                 continue;
             };
             let declared = ir.named_type(&name);
-            if declared.reading.is_some()
-                || matches!(&declared.body, ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } if !invariants.is_empty())
-            {
+            if declared.reading.is_some() || declared.body.is_constrained() {
                 return Err(crate::TargetFailure::new(ir, target, plan, vec![crate::TargetFailureCause::new(crate::TargetFailureCode::SelectionConstraint, vec![source, name.name().to_string()], "selection cannot enforce the reachable declared invariant or clock-reading contract; native helpers require unconstrained input types".into())]));
             }
         }

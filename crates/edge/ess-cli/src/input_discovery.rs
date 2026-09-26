@@ -14,6 +14,8 @@ use serde::Deserialize;
 
 const MANIFEST: &str = "ess-inputs.yaml";
 const FORMAT: &str = "ess-inputs/1";
+/// `/1` plus an optional `requires` naming the `ess` release (`docs/design/specification-requires-release.md`).
+const FORMAT_REQUIRES: &str = "ess-inputs/2";
 
 #[derive(Clone, Copy)]
 pub(crate) enum Kind {
@@ -47,6 +49,13 @@ struct Manifest {
     specification: Vec<String>,
     #[serde(deserialize_with = "strings")]
     scenarios: Vec<String>,
+    #[serde(default, deserialize_with = "optional_string")]
+    requires: Option<String>,
+}
+fn optional_string<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    string(d).map(Some)
 }
 fn string<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<String, D::Error> {
     match serde_yaml::Value::deserialize(d)? {
@@ -84,6 +93,25 @@ pub(crate) fn authored(path: Option<&Path>, coverage: bool) -> Result<Vec<Input>
     )
 }
 
+/// The scenarios an immediate `ess-inputs.yaml` lists beside the specification it selects.
+///
+/// `None` when `path` is not a directory carrying the manifest, or the manifest's `scenarios` list
+/// is empty: a model argument never implies scenarios, so only an explicit list is read. `validate`
+/// uses this so a listed scenario that `synthesize --scenarios` would refuse is refused there too
+/// (ess#112). A nonempty list is acquired exactly as `--scenarios <path>` acquires it.
+pub(crate) fn listed_scenarios(path: &Path) -> Result<Option<Vec<Input>>> {
+    let manifest = path.join(MANIFEST);
+    if !path.is_dir() || fs::symlink_metadata(&manifest).is_err() {
+        return Ok(None);
+    }
+    // The specification's own acquisition has already read or refused the manifest, so an
+    // unreadable one here is `acquire`'s to describe rather than a reason to read nothing.
+    if manifest_lists(&manifest).is_ok_and(|configuration| configuration.scenarios.is_empty()) {
+        return Ok(None);
+    }
+    acquire(path, Kind::Authored).map(Some)
+}
+
 pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
     // Keep the requested spelling until manifest-mode link policy has been applied.
     // Direct files do not consult parent or ancestor configuration.
@@ -91,6 +119,17 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
         let manifest = path.join(MANIFEST);
         match fs::symlink_metadata(&manifest) {
             Ok(metadata) => {
+                // The release pin is decided before any selected file is read. A manifest that
+                // does not parse is left to the refusal below, which says how to repair it.
+                if metadata.is_file() && !metadata.file_type().is_symlink() {
+                    if let Ok(Manifest {
+                        requires: Some(requires),
+                        ..
+                    }) = manifest_lists(&manifest)
+                    {
+                        crate::requires::check(&manifest, &requires)?;
+                    }
+                }
                 let repair = || {
                     format!(
                     "refused {} input {} using {}: list real contained files in the {} list; \
@@ -125,17 +164,26 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
     }
 }
 
-fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
+fn manifest_lists(manifest: &Path) -> Result<Manifest> {
     let text =
         fs::read_to_string(manifest).with_context(|| format!("reading {}", manifest.display()))?;
     // Struct deserialization rejects duplicate top-level keys and multiple YAML documents.
     let configuration: Manifest = serde_yaml::from_str(&text).context("invalid input manifest")?;
-    if configuration.format != FORMAT {
+    if configuration.format == FORMAT {
+        if configuration.requires.is_some() {
+            bail!("`requires` needs format {FORMAT_REQUIRES}; {FORMAT} has no such field");
+        }
+    } else if configuration.format != FORMAT_REQUIRES {
         bail!(
-            "unsupported format {:?}; expected {FORMAT}",
+            "unsupported format {:?}; expected {FORMAT} or {FORMAT_REQUIRES}",
             configuration.format
         );
     }
+    Ok(configuration)
+}
+
+fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
+    let configuration = manifest_lists(manifest)?;
     let mut names = BTreeSet::new();
     for (role, entries) in [
         ("specification", &configuration.specification),

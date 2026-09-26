@@ -72,6 +72,35 @@ pub enum ParseError {
         limit: usize,
     },
 
+    /// A comparison against an unquoted `null`, which no fact value can be.
+    ///
+    /// Its own variant, like [`Self::TooDeep`], because it is a refusal a caller has to be able to
+    /// recognise by what it is rather than by its sentence (ess#93). `x == null` used to parse as a
+    /// comparison with the four-character text `null`: it validated, and synthesis then sent
+    /// `"null"` for a field its author meant to leave out. Presence is `defined(x)`, absence is
+    /// `not defined(x)`, and the text is written quoted, `x == "null"`.
+    ///
+    /// Its message carries [`Self::NULL_COMPARISON_CODE`], the stable code `ess specify validate`
+    /// prints for it: the refusal happens while the document is read, before any construct exists
+    /// to hang a diagnostic on, so the code travels in the message.
+    #[error(
+        "{code} cannot parse predicate {expression:?}: unquoted `{spelling}` is null, not a value a \
+         fact can hold, so `{path} {operator} {spelling}` would compare `{path}` with the text \
+         \"{spelling}\"; write `defined({path})` for present or `not defined({path})` for absent, \
+         or quote \"{spelling}\" to compare with that text",
+        code = Self::NULL_COMPARISON_CODE
+    )]
+    NullComparison {
+        /// The offending expression.
+        expression: String,
+        /// The fact path compared with `null`.
+        path: String,
+        /// The comparison operator, as written in the compact form (`==`, `!=`, `<`, …).
+        operator: String,
+        /// The null as it was written: `null`, `Null`, `NULL` or `~`.
+        spelling: String,
+    },
+
     /// A document fragment has the wrong shape.
     #[error("{location}: expected {expected}, found {found}")]
     Shape {
@@ -85,6 +114,10 @@ pub enum ParseError {
 }
 
 impl ParseError {
+    /// The code [`Self::NullComparison`] is refused with: `ess-compiler`'s
+    /// `codes::NULL_COMPARISON`, whose test holds the two spellings equal.
+    pub const NULL_COMPARISON_CODE: &'static str = "ESS-SPEC-017";
+
     /// Builds a [`ParseError::Identifier`].
     pub fn identifier(kind: &'static str, value: &str, reason: String) -> Self {
         Self::Identifier {
@@ -390,6 +423,15 @@ validation_codes! {
     /// from [`Self::EmptyChange`], which is about a branch that does nothing: these branches do
     /// something, and nothing a caller can write selects between them.
     UnreachableBranch => "unreachable_branch",
+
+    /// An entity invariant reads a required field that a creating outcome leaves unset.
+    ///
+    /// After such a branch the field has no specified value, so the invariant holds only if the
+    /// implementation happens to pick a value satisfying it, and a suite checking the invariant
+    /// passes or fails on that undeclared choice (ess#112). Distinct from
+    /// [`Self::UnobservableFact`], where the field does not exist at all: here it exists and
+    /// nothing the specification says gives it a value.
+    InvariantReadsUnsetField => "invariant_reads_unset_field",
 }
 
 impl fmt::Display for ValidationCode {

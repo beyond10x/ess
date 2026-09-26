@@ -73,10 +73,10 @@ fn named(
         .get(name)
         .ok_or_else(|| refuse(format!("unresolved CLI type `{name}`")))?;
     let shape = match &declared.body {
-        ResolvedBody::Newtype { of, invariants } if invariants.is_empty() => {
+        ResolvedBody::Newtype { of, .. } if !declared.body.is_constrained() => {
             resolved_ref(model, of, stack)
         }
-        ResolvedBody::Struct { fields, invariants } if invariants.is_empty() => {
+        ResolvedBody::Struct { fields, .. } if !declared.body.is_constrained() => {
             fields_shape(model, fields, stack)
         }
         // The authored names, not the wire spellings: this shape is what an operator types at

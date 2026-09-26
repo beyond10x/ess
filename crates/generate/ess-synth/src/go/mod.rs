@@ -185,6 +185,14 @@ impl<'a> Emit<'a> {
         )
     }
 
+    /// A command's unknown-instance variant, spelled from inside this package.
+    pub fn reference_unknown_instance_variant(&self, command: &QualifiedName) -> String {
+        self.qualify(
+            self.layout.package_of(command),
+            self.layout.unknown_instance_variant(command),
+        )
+    }
+
     /// One specification primitive's Go type, spelled from inside this package.
     pub fn primitive_type(&self, primitive: ess_domain::types::Primitive) -> String {
         self.go_type(&ResolvedTypeRef::Primitive { name: primitive })

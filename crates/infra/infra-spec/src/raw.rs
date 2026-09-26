@@ -488,6 +488,18 @@ fn kind_of(
                 );
                 return None;
             }
+            // The predicate grammar is shared with ESS, and `infra-spec/1` does not gain the
+            // string operators (beyond10x/ess#95) by accident: admitting them is its own format
+            // decision.
+            if predicate.uses_text_match() {
+                errors.refuse(
+                    InfraCode::SpecInvalidExpectation,
+                    at("workload_predicate"),
+                    "`starts_with`, `ends_with` and `contains` are not part of infra-spec/1; \
+                     compare with `==`, `!=` or `any_of`",
+                );
+                return None;
+            }
             let mut projected = true;
             for path in predicate.fact_paths() {
                 if !is_projected(path) {

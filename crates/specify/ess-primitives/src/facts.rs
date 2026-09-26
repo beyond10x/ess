@@ -1084,6 +1084,32 @@ pub trait FactSource {
     /// The value bound to `path`, or `None` when nothing has observed it.
     fn fact(&self, path: &FactPath) -> Option<FactValue>;
 
+    /// The value a predicate leaf reads at `path`: the bound fact, or else a text's length.
+    ///
+    /// The rule every evaluator lane shares (`docs/design/string-alphabet-and-length.md`, section
+    /// 3): **a bound fact wins; otherwise, when the last segment is `count` and the parent path is
+    /// bound to text, the value is the text's number of Unicode scalar values.** Scalar values and
+    /// not bytes, UTF-16 units or graphemes, because that is the number Rust's `chars`, Go's
+    /// `utf8.RuneCountInString` and TypeScript's `[...text]` agree on for any text a JSON reader
+    /// hands them.
+    ///
+    /// Leaf reads only. [`Self::cardinality`] keeps reading the bound `count`, so a quantifier over
+    /// a text is `Unknown` rather than a walk over its characters.
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        if let Some(bound) = self.fact(path) {
+            return Some(bound);
+        }
+        let segments = path.segments();
+        let (last, parent) = segments.split_last()?;
+        if last != "count" || parent.is_empty() {
+            return None;
+        }
+        match self.fact(&FactPath::from_segments(parent))? {
+            FactValue::Text(text) => Some(FactValue::count(text.chars().count())),
+            _ => None,
+        }
+    }
+
     /// The ordered scales available for non-numeric comparison.
     fn scales(&self) -> &Scales {
         Scales::empty()
@@ -1095,6 +1121,21 @@ pub trait FactSource {
     /// Only a source that knows the declared types can answer `true`; the default knows none, so
     /// every existing source keeps ordering text by its scales alone.
     fn orders_as_instant(&self, _path: &FactPath) -> bool {
+        false
+    }
+
+    /// Whether the text at `path`, where no declared scale orders it, is ordered by its UTF-8
+    /// bytes.
+    ///
+    /// `false` by default, which keeps the reading every AEP source relies on: text is ordered by
+    /// its protocol's scales, and a pair no scale contains is `Unknown`. An ESS source answers
+    /// `true`, because an ESS specification has no scale vocabulary and every ESS evaluator lane —
+    /// Rust, the generated Go runtime and the TypeScript one — orders text byte-wise (ess#94).
+    /// A comparison is ordered by bytes only when every fact it reads answers `true`, so a source
+    /// that knows the declared types keeps a `Duration` — ISO 8601 text, whose bytes put `PT10M`
+    /// below `PT5M` — out of it. A scale that contains both values still decides first, and a
+    /// declared `Timestamp` is ordered by its instant or not at all.
+    fn orders_text_by_bytes(&self, _path: &FactPath) -> bool {
         false
     }
 
@@ -1146,6 +1187,10 @@ pub struct FactStore {
     facts: BTreeMap<FactPath, FactValue>,
     #[serde(skip_serializing_if = "is_empty_scales")]
     scales: Scales,
+    /// What [`FactSource::orders_text_by_bytes`] answers. A property of the evaluator reading the
+    /// facts, not a fact, so it is never serialised.
+    #[serde(skip)]
+    text_by_bytes: bool,
 }
 
 /// Whether a scale set is empty, for output suppression.
@@ -1195,6 +1240,11 @@ impl FactStore {
         self.scales = scales;
     }
 
+    /// Orders texts no scale orders by their UTF-8 bytes; see [`FactSource::orders_text_by_bytes`].
+    pub fn order_text_by_bytes(&mut self) {
+        self.text_by_bytes = true;
+    }
+
     /// The number of bound facts.
     pub fn len(&self) -> usize {
         self.facts.len()
@@ -1224,6 +1274,10 @@ impl FactSource for FactStore {
     fn scales(&self) -> &Scales {
         &self.scales
     }
+
+    fn orders_text_by_bytes(&self, _path: &FactPath) -> bool {
+        self.text_by_bytes
+    }
 }
 
 impl FromIterator<(FactPath, FactValue)> for FactStore {
@@ -1231,6 +1285,7 @@ impl FromIterator<(FactPath, FactValue)> for FactStore {
         Self {
             facts: iter.into_iter().collect(),
             scales: Scales::default(),
+            text_by_bytes: false,
         }
     }
 }

@@ -148,7 +148,11 @@ pub(super) fn conversions(
 /// A named type: newtype, struct, enum or tagged union.
 fn named_type(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     match &declared.body {
-        ResolvedBody::Newtype { of, invariants } => newtype(out, emit, declared, of, invariants),
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => newtype(out, emit, declared, of, alphabet.as_deref(), invariants),
         ResolvedBody::Struct { fields, invariants } => {
             structure(out, emit, declared, fields, invariants);
         }
@@ -168,6 +172,7 @@ fn newtype(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     of: &ResolvedTypeRef,
+    alphabet: Option<&str>,
     invariants: &[Invariant],
 ) {
     let type_name = emit.layout.declared(&declared.name);
@@ -180,6 +185,7 @@ fn newtype(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
+    alphabet_doc(out, alphabet);
     invariant_doc(out, invariants);
     let _ = writeln!(
         out,
@@ -332,6 +338,21 @@ fn command_contract(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand
     for outcome in &command.outcomes {
         outcome_variant(out, emit, command, outcome);
     }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        let variant_name = emit.layout.unknown_instance_variant(&command.name);
+        let _ = writeln!(
+            out,
+            "\n// {variant_name} is `{}` — for an instance no record carries.\n//\n// The same \
+             declared branch and error as [{}], without the error's fields: an\n// instance that \
+             does not exist has nothing for them to describe\n// \
+             (docs/design/unknown-instance-seams.md).\ntype {variant_name} struct{{}}\n\nfunc \
+             ({variant_name}) {}() {{}}",
+            declared.name,
+            emit.layout
+                .outcome_variant(&command.name, declared.name.as_str()),
+            name::marker(emit.layout.outcome(&command.name))
+        );
+    }
     response_checks(out, emit, command);
 }
 
@@ -477,6 +498,13 @@ fn view(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
     if let Some(filter) = &view.filter {
         let _ = write!(out, ", containing instances where `{filter}`");
     }
+    if let Some(aggregation) = &view.aggregation {
+        let _ = write!(
+            out,
+            ".\n//\n// {}",
+            aggregation.grouping_sentence().trim_end_matches('.')
+        );
+    }
     out.push_str(
         ".\n// Serving it is an implementation obligation — see the plan — because how a \
          projection is\n// kept current is a storage decision the specification does not take.\n",
@@ -542,6 +570,14 @@ pub(super) fn sealed(out: &mut String, type_name: &str) {
 pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
     if let Some(summary) = summary {
         let _ = writeln!(out, "//\n// {}", summary.trim());
+    }
+}
+
+/// A declared alphabet, documented as an invariant is and for the same reason: checking is
+/// behaviour, and behaviour is an obligation in this scope.
+fn alphabet_doc(out: &mut String, alphabet: Option<&str>) {
+    if let Some(alphabet) = alphabet {
+        let _ = writeln!(out, "//\n// Every character is one of `{alphabet}`.");
     }
 }
 

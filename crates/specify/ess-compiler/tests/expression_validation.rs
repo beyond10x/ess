@@ -154,6 +154,7 @@ fn binary64_directly_constructed_types_cannot_bypass_version_or_map_key_admissio
     ] {
         let mut raw = RawSpecFile::parse(source).unwrap();
         raw.types[0].body = RawTypeBody::Newtype {
+            alphabet: None,
             of: ty,
             invariants: vec![],
         };
@@ -443,5 +444,90 @@ fn integer_fractional_comparison_and_decimal_interval_both_validate() {
         ),
     ] {
         compile(&assemble(&text).unwrap(), &SourceMap::new()).unwrap();
+    }
+}
+
+/// A `Duration` is carried as ISO 8601 text, and text is ordered by its bytes (ess#94) — which
+/// puts `PT10M` below `PT5M`. So a `Duration` has no ordering: every ordering operator is refused
+/// at validate, in the compact and the map form, against a literal or another `Duration`.
+/// Equality stays: two spellings compared for identity is what the text can answer.
+#[test]
+fn ordering_a_duration_is_refused_and_comparing_one_for_equality_is_not() {
+    let text = SOURCE
+        .replace(
+            "      - {name: flag, type: Boolean}",
+            "      - {name: flag, type: Boolean}\n      - {name: wait, type: Duration}\n      - {name: window, type: sample.data.Window}",
+        )
+        .replace(
+            "  - name: sample.data.Channel\n",
+            "  - name: sample.data.Window\n    kind: struct\n    fields:\n      - {name: wait, type: Duration}\n      - {name: limit, type: Duration}\n  - name: sample.data.Channel\n",
+        );
+    for guard in [
+        r#"wait > "PT5M""#,
+        r#"wait <= "PT5M""#,
+        "wait < PT5M",
+        "{wait: {gte: PT5M}}",
+        "{wait: {lt: PT5M}}",
+        "{all: [flag, wait >= PT1H]}",
+        "window.wait > window.limit",
+    ] {
+        let errors = assemble(&text.replace("when: amount > 0", &format!("when: {guard}")))
+            .expect_err(guard);
+        assert!(
+            errors
+                .as_slice()
+                .iter()
+                .any(|error| error.code == ValidationCode::TypeMismatch
+                    && error.location.contains("command.sample.data.Update")
+                    && error.message.contains("Duration")
+                    && error.message.contains("has no ordering")
+                    && error.message.contains("==")),
+            "`{guard}`: {errors}"
+        );
+    }
+    for guard in [
+        r#"wait == "PT5M""#,
+        "wait != PT5M",
+        "{wait: PT5M}",
+        "window.wait == window.limit",
+    ] {
+        compile(
+            &assemble(&text.replace("when: amount > 0", &format!("when: {guard}")))
+                .unwrap_or_else(|errors| panic!("`{guard}` is equality: {errors}")),
+            &SourceMap::new(),
+        )
+        .unwrap();
+    }
+}
+
+/// The compact form has no `&&` or `||`: an unquoted right-hand side holding either as a token was
+/// one text literal, so `sku == A1 && gift` compared `sku` with the text `A1 && gift`.
+#[test]
+fn a_compact_conjunction_or_disjunction_is_refused_toward_the_structured_form() {
+    let text = SOURCE.replace(
+        "      - {name: flag, type: Boolean}",
+        "      - {name: flag, type: Boolean}\n      - {name: sku, type: String}",
+    );
+    for guard in [
+        "sku == A1 && gift",
+        "sku == A1 || sku == B2",
+        "sku != A1 && flag",
+    ] {
+        let error =
+            RawSpecFile::parse(&text.replace("when: amount > 0", &format!("when: {guard}")))
+                .expect_err(guard);
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("structured") && rendered.contains("all") && rendered.contains("any"),
+            "`{guard}` is refused toward all/any: {rendered}"
+        );
+    }
+    for guard in [
+        r#"sku == "A1 && gift""#,
+        "sku == 'A1 || B2'",
+        "sku == A1&&gift",
+    ] {
+        assemble(&text.replace("when: amount > 0", &format!("when: {guard}")))
+            .unwrap_or_else(|errors| panic!("`{guard}` is one text literal: {errors}"));
     }
 }

@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -81,6 +81,16 @@ impl FormatVersion {
     pub const V6: Self = Self(6);
     /// Retained command results and effect-free finite state refusals.
     pub const V7: Self = Self(7);
+    /// String predicate operators: `starts_with`, `ends_with` and `contains`.
+    pub const V8: Self = Self(8);
+    /// Predicates over the existing subject's declared stored fields (`when_subject: {predicate}`).
+    pub const V9: Self = Self(9);
+    /// Aggregate views: `group_by:` and a field-level `aggregate:`.
+    pub const V10: Self = Self(10);
+    /// Declared `String` alphabets, input examples and `.count` on text.
+    pub const V11: Self = Self(11);
+    /// Outcome groups: one outcome declared once for many commands.
+    pub const V12: Self = Self(12);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1198,6 +1208,7 @@ mod tests {
             reading: None,
             name: name(qualified),
             body: TypeBody::Newtype {
+                alphabet: None,
                 of: TypeRef::Primitive(of),
                 invariants: Vec::new(),
             },
@@ -1251,7 +1262,11 @@ domains:
         assert!(FormatVersion::V5.is_supported());
         assert!(FormatVersion::V6.is_supported());
         assert!(FormatVersion::V7.is_supported());
-        assert!(!FormatVersion::parse("ess/8")
+        assert!(FormatVersion::V8.is_supported());
+        assert!(FormatVersion::V9.is_supported());
+        assert!(FormatVersion::V10.is_supported());
+        assert!(FormatVersion::V11.is_supported());
+        assert!(!FormatVersion::parse("ess/99")
             .expect("parses")
             .is_supported());
     }
@@ -1260,7 +1275,7 @@ domains:
     fn a_document_in_a_later_format_is_refused_rather_than_guessed_at() {
         let errors = system(
             r"
-format: ess/8
+format: ess/99
 system: billing
 ",
         )
@@ -1272,7 +1287,7 @@ system: billing
         );
         let error = &errors.as_slice()[0];
         assert_eq!(error.location, "system.format");
-        assert!(error.message.contains("ess/8"), "{error}");
+        assert!(error.message.contains("ess/99"), "{error}");
         assert!(
             error
                 .hint
@@ -1718,7 +1733,7 @@ domains:
     fn a_specification_reports_every_problem_in_one_run() {
         let errors = system(
             r"
-format: ess/9
+format: ess/99
 system: billing
 domains:
   - domain: shipping.parcel
@@ -1966,7 +1981,7 @@ mod format_version_tests {
                 })
         };
 
-        for accepted in ["ess/1", "ess/2", "ess/10"] {
+        for accepted in ["ess/1", "ess/2", "ess/10", "ess/11", "ess/12"] {
             assert!(
                 FormatVersion::parse(accepted).is_ok(),
                 "{accepted} should parse"

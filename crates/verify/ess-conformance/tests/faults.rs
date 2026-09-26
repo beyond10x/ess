@@ -147,7 +147,7 @@ fn each_specification_is_passed_in_full_by_the_implementation_written_from_it() 
     // matrix would be measuring the reference rather than the suite. Both references, because the
     // oracle fixture is where §26's second claim is made and a fixture nothing passes proves less
     // than nothing.
-    for (system, scenarios) in [(System::Billing, 29), (System::Oracle, 31)] {
+    for (system, scenarios) in [(System::Billing, 32), (System::Oracle, 34)] {
         let report = match system {
             System::Billing => run(system, &Billing::new()),
             System::Oracle => run(system, &Oracle::new()),
@@ -282,8 +282,10 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             claim `Excludes` cannot make. That is the floor doing its job, not
     //                             a scenario over-reaching — `OutstandingInvoices` ranks its rows,
     //                             so every scenario that reads it now says how many it arranged.
-    //   AllowIllegalTransition 2  billing declares two states `cancel` must not run from, `Paid`
-    //                             and `Cancelled`, so one missing guard is two refusals.
+    //   AllowIllegalTransition 3  billing declares two states `cancel` must not run from, `Paid`
+    //                             and `Cancelled`, so one missing guard is two refusals — and the
+    //                             third is the invoice no record carries (beyond10x/ess#113): the
+    //                             fault answers `cancelled` for it too, which is a move of nothing.
     //   IgnoreExternalOutcome  2  the forced failure is what makes the escalation reachable, so the
     //                             binding's failure policy has nothing to observe either.
     //   DropConsistencyToken   9  every scenario that reads a `read_your_writes` view — the ninth
@@ -291,10 +293,11 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             is missing from *every* command result, so §14's demand can be
     //                             made nowhere; the row designates one of the nine because a matrix
     //                             row names a scenario, not because the other eight are collateral.
-    //   ExtraEvent             4  the four scenarios whose asserted command is `CancelInvoice`: its
-    //                             own branch, the `cancel` move, and the two states that move may
-    //                             not run from — where the stray `InvoicePaid` is now caught too,
-    //                             because a command nothing honoured may publish nothing declared.
+    //   ExtraEvent             5  the five scenarios whose asserted command is `CancelInvoice`: its
+    //                             own branch, the `cancel` move, the two states that move may not
+    //                             run from, and the invoice no record carries — where the stray
+    //                             `InvoicePaid` is caught too, because a command nothing honoured
+    //                             may publish nothing declared.
     //   PartialEventPayload    2  `PayInvoice/settled` is asserted twice, once as §10's branch and
     //                             once as §19's move, and an event missing a declared field fails
     //                             both.
@@ -313,18 +316,26 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             scenario and on the transition scenario. The checks at
     //                             `InvoiceById.total` stay green, which is the point of keying the
     //                             family by position.
-    //   WrongRefusalError      3  `issue` runs from `Draft` alone, so `IssueInvoice` answers its
-    //                             `wrong_state:` branch in the other three declared states, and one
-    //                             wrong error name is wrong in all three. Narrower is not available:
-    //                             the injection sees a command and a result, not which invoice.
+    //   AcceptInvalidAmount    2  the injection rewrites every submitted amount to `1`, not only a
+    //                             refused one. `cancel` runs from `Draft` and `Issued`, and the
+    //                             `Issued` source is arranged on a second invoice (ess#111) whose
+    //                             witness amount is `2` — so the rewritten row no longer holds what
+    //                             was submitted, and the transition scenario says so. The row
+    //                             designates the refusal, which is the branch the fault names.
+    //   WrongRefusalError      4  `issue` runs from `Draft` alone, so `IssueInvoice` answers its
+    //                             `wrong_state:` branch in the other three declared states and for
+    //                             an invoice no record carries, and one wrong error name is wrong in
+    //                             all four. Narrower is not available: the injection sees a command
+    //                             and a result, not which invoice.
     let allowance: &[(Fault, usize)] = &[
         (Fault::WrongEvent, 24),
         (Fault::DropConsistencyToken, 9),
         (Fault::DropBinding, 4),
-        (Fault::ExtraEvent, 4),
+        (Fault::ExtraEvent, 5),
         (Fault::StaleReadYourWrites, 9),
-        (Fault::WrongRefusalError, 3),
-        (Fault::AllowIllegalTransition, 2),
+        (Fault::WrongRefusalError, 4),
+        (Fault::AcceptInvalidAmount, 2),
+        (Fault::AllowIllegalTransition, 3),
         (Fault::IgnoreExternalOutcome, 2),
         (Fault::PartialEventPayload, 2),
         (Fault::WrongEventPayload, 2),

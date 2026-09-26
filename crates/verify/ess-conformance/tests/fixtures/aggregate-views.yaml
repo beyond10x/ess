@@ -1,0 +1,94 @@
+format: ess/10
+system: metrics
+version: v1
+domain: metrics.session
+types:
+  - name: metrics.session.Channel
+    kind: enum
+    variants: [Voice, Chat]
+events:
+  - name: metrics.session.Recorded
+    fields: [{name: session_id, type: Uuid}]
+  - name: metrics.session.Completed
+    fields: [{name: session_id, type: Uuid}]
+entities:
+  - name: metrics.session.Session
+    identity: {name: session_id, type: Uuid}
+    fields:
+      - {name: queue_id, type: String}
+      - {name: agent_id, type: String}
+      - {name: caller, type: String}
+      - {name: channel, type: metrics.session.Channel}
+      - {name: talk_seconds, type: Integer}
+      - {name: wait_seconds, type: Integer}
+    lifecycle:
+      initial: Open
+      states: [Open, Completed]
+      terminal: [Completed]
+      transitions:
+        - {name: complete, from: [Open], to: Completed}
+commands:
+  - name: metrics.session.Record
+    input:
+      - {name: queue_id, type: String}
+      - {name: agent_id, type: String}
+      - {name: caller, type: String}
+      - {name: channel, type: metrics.session.Channel}
+      - {name: talk_seconds, type: Integer}
+      - {name: wait_seconds, type: Integer}
+    outcomes:
+      - name: recorded
+        creates: metrics.session.Session
+        instance: session_id
+        sets:
+          queue_id: input.queue_id
+          agent_id: input.agent_id
+          caller: input.caller
+          channel: input.channel
+          talk_seconds: input.talk_seconds
+          wait_seconds: input.wait_seconds
+        emits: [metrics.session.Recorded]
+        payload:
+          metrics.session.Recorded:
+            session_id: {generated: true}
+  - name: metrics.session.Complete
+    input: [{name: session_id, type: Uuid}]
+    outcomes:
+      - name: completed
+        moves: metrics.session.Session.complete
+        instance: session_id
+        emits: [metrics.session.Completed]
+        payload:
+          metrics.session.Completed:
+            session_id: input.session_id
+views:
+  - name: metrics.session.TalkTimeByAgent
+    source: metrics.session.Session
+    consistency: eventual
+    filter: state == Completed
+    group_by: [agent_id]
+    fields:
+      - {name: agent_id, type: String}
+      - {name: sessions, type: Integer, aggregate: {count: {}}}
+      - {name: talk_seconds, type: Integer, aggregate: {sum: talk_seconds}}
+      - {name: longest_wait, type: Optional<Integer>, aggregate: {max: wait_seconds}}
+      - {name: distinct_callers, type: Integer, aggregate: {count_distinct: caller}}
+      - {name: mean_talk, type: Optional<Decimal>, aggregate: {avg: talk_seconds}}
+  - name: metrics.session.QueueTotals
+    source: metrics.session.Session
+    consistency: eventual
+    params: [{name: queue_id, type: String}]
+    filter: [state == Completed, queue_id == param.queue_id]
+    fields:
+      - {name: sessions, type: Integer, aggregate: {count: {}}}
+      - {name: longest_wait, type: Optional<Integer>, aggregate: {max: wait_seconds}}
+  - name: metrics.session.SessionsByAgentChannel
+    source: metrics.session.Session
+    consistency: read_your_writes
+    filter: state == Completed
+    group_by: [agent_id, channel]
+    fields:
+      - {name: agent_id, type: String}
+      - {name: channel, type: metrics.session.Channel}
+      - {name: sessions, type: Integer, aggregate: {count: {}}}
+      - {name: talk_seconds, type: Integer, aggregate: {sum: talk_seconds}}

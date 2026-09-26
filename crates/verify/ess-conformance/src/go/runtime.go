@@ -77,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -301,7 +301,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		number := 0
-		for n := 1; n <= 15; n++ {
+		for n := 1; n <= 17; n++ {
 			if code == fmt.Sprintf("ESS-SYNTH-%03d", n) {
 				number = n
 			}
@@ -310,7 +310,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		effect := "candidate_not_emitted"
-		if number == 5 || number == 11 || number == 12 || number == 14 {
+		if number == 5 || number == 11 || number == 12 || number == 14 || number == 16 || number == 17 {
 			effect = "check_not_emitted"
 		}
 		if r["effect"] != effect {
@@ -850,6 +850,11 @@ func meaningOperator(path, operator string, value any) any {
 		return result
 	case "truthy":
 		return []any{"truthy", path}
+	case "starts_with", "ends_with", "contains":
+		// Its own meaning, never the `any_of` the default below files an unknown operator under.
+		// The operand verbatim: meaningScalar trims, unquotes and reads numbers, and Rust reads a
+		// string operator's operand as exactly the text it spells.
+		return []any{operator, path, value}
 	default:
 		kind := "any_of"
 		if operator == "none_of" || operator == "not_in" {
@@ -1559,8 +1564,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13") && config.version != "2" {
-		t.Fatalf("suite/8 through /13 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17") && config.version != "2" {
+		t.Fatalf("suite/8 through /17 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1719,7 +1724,7 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 	}
 
 	failed := make([]string, 0)
-	anyFailed, anySkipped := false, false
+	anyFailed, skipped := false, 0
 	for _, result := range results {
 		switch result.status {
 		case statusPassed:
@@ -1727,10 +1732,11 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 		case statusFailed:
 			anyFailed = true
 		case statusSkipped:
-			anySkipped = true
+			skipped++
 		}
 		failed = append(failed, result.status+" "+result.id)
 	}
+	anySkipped := skipped > 0
 	status := statusPassed
 	switch {
 	case anyFailed:
@@ -1761,6 +1767,10 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 		return
 	}
 	t.Logf("report: %s, %d scenario(s), %d not passed, written to %s", status, len(results), len(failed), path)
+	// report/1 books a skip inside failed_scenarios; the three counts are report/2's (ess#110).
+	if anySkipped {
+		fmt.Fprintf(os.Stderr, "%d scenario(s) skipped; set ESS_REPORT_FORMAT=2 (or --report-format 2) for passed, failed and skipped counts\n", skipped)
+	}
 }
 
 // run is one scenario in flight, and everything it has bound.
@@ -2708,15 +2718,19 @@ func matches(row map[string]Node, want map[string]Node) bool {
 }
 
 // equal compares two specification values structurally.
+//
+// A number is compared by its value, whatever Go type carries it (beyond10x/ess#101): the suite
+// holds `float64` or `json.Number`, and an implementation's `Node` may hold any of them.
 func equal(left, right Node) bool {
+	if leftNumber, ok := numberValue(left); ok {
+		rightNumber, ok := numberValue(right)
+		return ok && leftNumber.Cmp(rightNumber) == 0
+	}
 	switch left := left.(type) {
 	case nil:
 		return right == nil
 	case bool:
 		other, ok := right.(bool)
-		return ok && left == other
-	case float64:
-		other, ok := asNumber(right)
 		return ok && left == other
 	case string:
 		other, ok := right.(string)
@@ -2748,20 +2762,142 @@ func equal(left, right Node) bool {
 	}
 }
 
+// asNumber is a number's binary64 image, for the checks that read one: admission, truthiness and
+// counts. Comparison reads numberValue instead.
 func asNumber(value Node) (float64, bool) {
 	switch value := value.(type) {
 	case float64:
 		return value, true
-	case int:
-		return float64(value), true
-	case int64:
+	case float32:
 		return float64(value), true
 	case json.Number:
 		parsed, err := value.Float64()
 		return parsed, err == nil
-	default:
-		return 0, false
 	}
+	if number, ok := integerValue(value); ok {
+		parsed, _ := new(big.Float).SetInt(number).Float64()
+		return parsed, true
+	}
+	return 0, false
+}
+
+// integerValue is the integer a Go integer type carries.
+func integerValue(value Node) (*big.Int, bool) {
+	switch value := value.(type) {
+	case int:
+		return big.NewInt(int64(value)), true
+	case int8:
+		return big.NewInt(int64(value)), true
+	case int16:
+		return big.NewInt(int64(value)), true
+	case int32:
+		return big.NewInt(int64(value)), true
+	case int64:
+		return big.NewInt(value), true
+	case uint:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint8:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint16:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint32:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint64:
+		return new(big.Int).SetUint64(value), true
+	}
+	return nil, false
+}
+
+// numberValue is the value a number means under Rust's `Number` equality and order
+// (`ess-primitives/src/facts.rs`), whatever Go type carries it:
+//
+//   - a Go integer type is its integer;
+//   - a `float64` is its canonical decimal: the integer it is, when integral within 2^63, and its
+//     shortest round-tripping decimal otherwise (`canonical_decimal`);
+//   - a `json.Number` is the token it spells, read as `Number::parse_decimal` reads a literal: an
+//     integer whose digits an i128 holds is that integer, and anything else is the canonical
+//     decimal of the binary64 it rounds to — so `1` and `1.0` are one value, `-0` is `0`, and
+//     `9007199254740993` is not `9007199254740992`;
+//   - a `float32` is its shortest round-tripping decimal, read as a `json.Number` spelling it.
+//
+// The token bounds are responseNumber's, so a spelling it refuses is not a number here either.
+func numberValue(value Node) (*big.Rat, bool) {
+	switch value := value.(type) {
+	case float64:
+		return binaryValue(value)
+	case float32:
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return nil, false
+		}
+		return decimalValue(strconv.FormatFloat(float64(value), 'g', -1, 32))
+	case json.Number:
+		return decimalValue(value.String())
+	}
+	if number, ok := integerValue(value); ok {
+		return new(big.Rat).SetInt(number), true
+	}
+	return nil, false
+}
+
+// binaryValue is a binary64's canonical decimal, as Rust's `canonical_decimal` draws it.
+func binaryValue(value float64) (*big.Rat, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil, false
+	}
+	if value == math.Trunc(value) && math.Abs(value) <= integerBound {
+		return new(big.Rat).SetFloat64(value), true
+	}
+	return new(big.Rat).SetString(strconv.FormatFloat(value, 'g', -1, 64))
+}
+
+// i128Bound is 2^127: `exact_of_decimal_text` holds a literal's digits in an i128.
+var i128Bound = new(big.Int).Lsh(big.NewInt(1), 127)
+
+// decimalValue reads a decimal token as `Number::parse_decimal` does.
+//
+// The i128 check is on the digits as written, before trailing zeroes are dropped, because that is
+// the integer Rust parses them into; a spelling whose digits overflow it is the binary64 instead.
+func decimalValue(raw string) (*big.Rat, bool) {
+	authored, ok := responseNumber(json.Number(raw))
+	if !ok {
+		return nil, false
+	}
+	if authored.IsInt() && decimalDigitsFit(raw) {
+		return authored, true
+	}
+	binary, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, false
+	}
+	return binaryValue(binary)
+}
+
+// decimalDigitsFit reports whether a token's digits, scaled by a positive exponent, fit an i128 —
+// the `checked_mul` and `parse::<i128>` of `exact_of_decimal_text`. The digits are parsed before
+// the sign is applied, so the bound is 2^127 on either side.
+func decimalDigitsFit(raw string) bool {
+	mantissa := strings.TrimLeft(raw, "+-")
+	exponent := 0
+	if index := strings.IndexAny(mantissa, "eE"); index >= 0 {
+		parsed, err := strconv.Atoi(mantissa[index+1:])
+		if err != nil {
+			return false
+		}
+		mantissa, exponent = mantissa[:index], parsed
+	}
+	places := 0
+	if index := strings.IndexByte(mantissa, '.'); index >= 0 {
+		places = len(mantissa) - index - 1
+		mantissa = mantissa[:index] + mantissa[index+1:]
+	}
+	units, ok := new(big.Int).SetString(mantissa, 10)
+	if !ok {
+		return false
+	}
+	if scale := places - exponent; scale < 0 {
+		units.Mul(units, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-scale)), nil))
+	}
+	return units.Cmp(i128Bound) < 0
 }
 
 // describe renders a field match for a diagnostic, in a stable order.
@@ -3104,16 +3240,9 @@ func ranked(view string, orderBy []string, rows []Row) (bool, string, bool) {
 
 // compare orders two row values, reporting false where nothing orders them.
 func compare(left, right Node) (int, bool) {
-	if leftNumber, ok := asNumber(left); ok {
-		if rightNumber, ok := asNumber(right); ok {
-			switch {
-			case leftNumber < rightNumber:
-				return -1, true
-			case leftNumber > rightNumber:
-				return 1, true
-			default:
-				return 0, true
-			}
+	if leftNumber, ok := numberValue(left); ok {
+		if rightNumber, ok := numberValue(right); ok {
+			return leftNumber.Cmp(rightNumber), true
 		}
 		return 0, false
 	}
@@ -3374,6 +3503,8 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0]) && q(p[3]) && k(p[4])
 	case len(p) == 5 && p[1] == "invariant" && p[2] == "at":
 		valid = q(p[0]) && q(p[3]) && p[4] != ""
+	case len(p) == 2 && p[1] == "aggregate":
+		valid = q(p[0])
 	}
 	if !valid {
 		return fmt.Errorf("malformed scenario ID %q", id)
@@ -3432,11 +3563,19 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 12
 	case "ess-conformance/13":
 		major = 13
+	case "ess-conformance/14":
+		major = 14
+	case "ess-conformance/15":
+		major = 15
+	case "ess-conformance/16":
+		major = 16
+	case "ess-conformance/17":
+		major = 17
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11 and /13")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15 and /17")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3459,6 +3598,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	for id, scenario := range scenarios {
 		if err := scenarioIdentity(id); err != nil {
 			return suite, err
+		}
+		// An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17.
+		if strings.HasSuffix(id, "/aggregate") && major < 16 {
+			return suite, fmt.Errorf("aggregate views require suite/16 or /17")
 		}
 		s, err := closed(scenario, "purpose steps source", "")
 		if err != nil {
@@ -3501,12 +3644,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
 				if row, ok := item.(map[string]any); ok && row["code"] == "ESS-SYNTH-015" && major < 7 {
 					return suite, fmt.Errorf("accessor refusal requires suite/7")
+				}
+				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-016" || row["code"] == "ESS-SYNTH-017") && major < 17 {
+					return suite, fmt.Errorf("aggregate view refusals require suite/17")
 				}
 			}
 		}
@@ -3527,7 +3673,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3540,7 +3686,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 		return suite, nil
 	}
-	if major == 12 {
+	if major == 12 || major == 14 || major == 16 {
 		decoder := json.NewDecoder(strings.NewReader(raw))
 		decoder.UseNumber()
 		err = decoder.Decode(&suite)
@@ -3558,7 +3704,7 @@ func executionSuite(suite Suite) (Suite, error) {
 			return Suite{}, err
 		}
 		var err error
-		if suite.Provenance.SuiteVersion == "ess-conformance/13" {
+		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" {
 			decoder := json.NewDecoder(strings.NewReader(suite.original))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
@@ -4019,6 +4165,12 @@ func admitPredicateConstraint(value any) error {
 				}
 			case "truthy":
 				// Rust's truthy form ignores its operand; payload validity still applies.
+			case "starts_with", "ends_with", "contains":
+				// Suites are not type-checked, so the operand a model would have been refused for is
+				// refused here: a string operator compares with a JSON string and nothing else.
+				if _, ok := operand.(string); !ok {
+					return fmt.Errorf("predicate %s takes a string", operator)
+				}
 			default:
 				return fmt.Errorf("unknown predicate constraint operator %q", operator)
 			}
@@ -6869,7 +7021,45 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 8 && predicateNeedsLosslessReader(value) {
 		return fmt.Errorf("normalized structured comparison operands require suite/8 or /9")
 	}
+	if major < 14 && predicateUsesTextMatch(value) {
+		return fmt.Errorf("string predicate operators require suite/14 or /15")
+	}
 	return nil
+}
+
+// predicateUsesTextMatch walks the admitted grammar for a string operator (beyond10x/ess#95).
+func predicateUsesTextMatch(value any) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesTextMatch(child) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesTextMatch(child) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesTextMatch(fields["that"]) {
+					return true
+				}
+			default:
+				if operators, ok := child.(map[string]any); ok {
+					for operator := range operators {
+						switch operator {
+						case "starts_with", "ends_with", "contains":
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 func predicateNeedsLosslessReader(value any) bool {
 	switch node := value.(type) {

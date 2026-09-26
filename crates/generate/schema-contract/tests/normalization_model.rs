@@ -124,6 +124,39 @@ fn unevaluated_invariants_cannot_become_a_successful_normalizer() {
             .ends_with("/sample.settings.Guarded/x-ess-invariants")));
 }
 
+/// `x-ess-alphabet` is a model constraint like `x-ess-invariants`: realized as the
+/// `model_alphabet` obligation, never refused as an unknown keyword, and never a normalizer that
+/// silently skips it (`docs/design/string-alphabet-and-length.md`, section 1).
+#[test]
+fn an_unevaluated_alphabet_is_an_obligation_and_cannot_become_a_successful_normalizer() {
+    let source = fixture::SOURCE
+        .replacen("format: ess/1\n", "format: ess/11\n", 1)
+        .replacen(
+            "  - name: sample.settings.Id\n    kind: newtype\n    of: String\n",
+            "  - name: sample.settings.Id\n    kind: newtype\n    of: String\n    alphabet: \"abc\"\n",
+            1,
+        );
+    let model = fixture::selection(&source, &["sample.settings.Decoded"]);
+    let root = Root::pin_model(&model, "sample.settings.Decoded").unwrap();
+    let recipe = json!({"format":"ess-normalization/3", "branches":{"copy":[{"input":root,"output":root,"requires":[],"value":{"op":"read","scope":"input","path":[]}}]}});
+    let errors = Plan::check_with_models(serde_json::from_value(recipe).unwrap(), &[], &[model])
+        .unwrap_err()
+        .0;
+    assert!(
+        errors.iter().any(|error| error.rule == "model_alphabet"
+            && error
+                .pointer
+                .ends_with("/sample.settings.Id/x-ess-alphabet")),
+        "{errors:?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .all(|error| error.rule != "root_selection" && error.rule != "unsupported_keyword"),
+        "{errors:?}"
+    );
+}
+
 #[test]
 fn checked_model_enums_retain_membership_without_flattening_imported_intersections() {
     let model = fixture::selection(fixture::SOURCE, &["sample.settings.Mode"]);

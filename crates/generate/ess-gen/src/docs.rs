@@ -937,6 +937,9 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             Inline::text("."),
         ]);
         about.prose(filter_sentence(view));
+        if let Some(aggregation) = &view.aggregation {
+            about.prose(markdown_code(&aggregation.grouping_sentence()));
+        }
         if view.fields.is_empty() {
             about.sentence(
                 "It exposes no fields, so it answers \"does an instance match\" and nothing about \
@@ -944,7 +947,12 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             );
         } else {
             about.sentence("It exposes:");
-            about.push(bullets(view.fields.iter().map(field_bullet).collect()));
+            about.push(bullets(
+                view.fields
+                    .iter()
+                    .map(|field| view_field_bullet(view, field))
+                    .collect(),
+            ));
         }
         about.prose(order_sentence(view));
         about.prose(consistency_sentence(view.consistency));
@@ -1299,7 +1307,11 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
     let name = Inline::code(declared.name.to_string());
     let mut out = Blocks::new();
     match &declared.body {
-        ResolvedBody::Newtype { of, invariants } => {
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => {
             let mut text = vec![
                 name,
                 Inline::text(" wraps "),
@@ -1309,6 +1321,11 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
                      is the crossings the model then refuses.",
                 ),
             ];
+            if let Some(alphabet) = alphabet {
+                text.push(Inline::text(" Its characters are drawn from "));
+                text.push(Inline::code(alphabet.clone()));
+                text.push(Inline::text("."));
+            }
             let clause = invariants_clause(invariants);
             if !clause.is_empty() {
                 text.push(Inline::text(" "));
@@ -1565,6 +1582,21 @@ fn condition_sentence(
             Inline::code(predicate.to_string()),
             Inline::text(" holds of the input."),
         ],
+        // Rendered as `SubjectState` is — the predicate through `Display` — so the published
+        // contract names the stored fields the branch reads (ess/9).
+        ResolvedCondition::SubjectPredicate { predicate, input } => {
+            let mut out = vec![
+                Inline::text("Taken when the existing subject's stored fields satisfy "),
+                Inline::code(predicate.to_string()),
+            ];
+            if let Some(guard) = input {
+                out.push(Inline::text(", and "));
+                out.push(Inline::code(guard.to_string()));
+                out.push(Inline::text(" holds of the input"));
+            }
+            out.push(Inline::text("."));
+            out
+        }
         ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -2266,6 +2298,37 @@ fn field_bullet(field: &ResolvedField) -> Vec<Inline> {
         out.push(Inline::text(format!(", shown as \"{display}\"")));
     }
     out
+}
+
+/// A view field's bullet: a group key or a projected field reads as any field does, and an
+/// aggregate field says what it computes over the group.
+fn view_field_bullet(view: &ResolvedView, field: &ResolvedField) -> Vec<Inline> {
+    let mut out = field_bullet(field);
+    if let Some(aggregate) = view
+        .aggregation
+        .as_ref()
+        .and_then(|aggregation| aggregation.functions.get(&field.name))
+    {
+        out.push(Inline::text(", the "));
+        out.extend(markdown_code(&aggregate.describe()));
+        out.push(Inline::text(" in the group"));
+    }
+    out
+}
+
+/// Text with `code` spans, as inlines: the shared aggregate wordings quote names in backticks.
+fn markdown_code(text: &str) -> Vec<Inline> {
+    text.split('`')
+        .enumerate()
+        .filter(|(_, part)| !part.is_empty())
+        .map(|(index, part)| {
+            if index % 2 == 1 {
+                Inline::code(part.to_owned())
+            } else {
+                Inline::text(part.to_owned())
+            }
+        })
+        .collect()
 }
 
 /// Which command and branch — or which binding's escalation — causes an event.

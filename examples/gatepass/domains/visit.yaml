@@ -182,6 +182,9 @@ commands:
           gatepass.visit.VisitRegistered:
             visitor: input.visitor
             building: input.building
+        sets:
+          expected_minutes: input.expected_minutes
+          deposit: input.deposit
         summary: The visit is recorded, and the visitor is Expected.
 
       - name: refused

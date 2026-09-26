@@ -23,8 +23,23 @@ pub(crate) enum LoadedSpec {
     },
 }
 
-/// Parses, assembles, validates, and resolves a specification.
-pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
+/// The parsed source documents of a specification, before assembly.
+pub(crate) struct RawLoaded {
+    /// Every document, as parsed, with the source it came from.
+    pub(crate) parsed: Vec<(ess_domain::system::Source, ess_domain::spec::RawSpecFile)>,
+    /// The text of every document, for locating diagnostics.
+    pub(crate) texts: SourceMap,
+    /// How many files were read.
+    pub(crate) files_read: usize,
+    /// Every document that did not parse; empty when all did.
+    pub(crate) problems: Vec<String>,
+}
+
+/// Reads and parses every source document of a specification, and assembles nothing.
+///
+/// The one parse path: [`specification`] is this followed by assembly and compilation, and
+/// `ess verify conform mutate` edits what this returns before doing the same.
+pub(crate) fn raw_specification(path: &Path) -> Result<RawLoaded> {
     let inputs =
         crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?;
     let files_read = inputs.len();
@@ -41,6 +56,22 @@ pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
             Err(error) => problems.push(format!("{}: {error}", source.as_str())),
         }
     }
+    Ok(RawLoaded {
+        parsed,
+        texts,
+        files_read,
+        problems,
+    })
+}
+
+/// Parses, assembles, validates, and resolves a specification.
+pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
+    let RawLoaded {
+        parsed,
+        texts,
+        files_read,
+        problems,
+    } = raw_specification(path)?;
 
     if !problems.is_empty() {
         return Ok(LoadedSpec::Refused {
@@ -87,13 +118,17 @@ pub(crate) enum LoadedInfra {
     Refused(infra_domain::ValidationErrors),
 }
 
-/// Reads either `infra-observation/1` or persisted `infra-ir/1`.
+/// Reads an `infra-observation/1`, `/2` or `/3` bundle, or a persisted `infra-ir/1`, `/2` or `/3`.
 pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let value: serde_json::Value = ess_primitives::json::from_str(&text)
         .with_context(|| format!("{} is not JSON", path.display()))?;
     match value.get("format").and_then(serde_json::Value::as_str) {
-        Some(infra_domain::OBSERVATION_FORMAT | "infra-observation/2") => {
+        Some(
+            infra_domain::OBSERVATION_FORMAT
+            | infra_domain::observation::SCOPED_OBSERVATION_FORMAT
+            | infra_domain::PRESENCE_OBSERVATION_FORMAT,
+        ) => {
             let raw: infra_domain::RawBundle = serde_json::from_value(value)
                 .with_context(|| format!("{} is not an observation bundle", path.display()))?;
             Ok(match infra_domain::Observation::try_from(raw) {
@@ -101,7 +136,7 @@ pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
                 Err(errors) => LoadedInfra::Refused(errors),
             })
         }
-        Some(infra_compiler::IR_FORMAT | "infra-ir/2") => {
+        Some(infra_compiler::IR_FORMAT | "infra-ir/2" | infra_compiler::PRESENCE_IR_FORMAT) => {
             Ok(match infra_compiler::read_document(&value) {
                 Ok(ir) => LoadedInfra::Ir(Box::new(ir)),
                 Err(errors) => LoadedInfra::Refused(errors),
@@ -111,8 +146,8 @@ pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
             "{} declares format {:?}; expected `{}` or `{}`",
             path.display(),
             other.unwrap_or("<none>"),
-            infra_domain::OBSERVATION_FORMAT,
-            infra_compiler::IR_FORMAT
+            infra_domain::PRESENCE_OBSERVATION_FORMAT,
+            infra_compiler::PRESENCE_IR_FORMAT
         ),
     }
 }

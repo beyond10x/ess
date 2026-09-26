@@ -1,0 +1,110 @@
+format: ess/11
+system: keypad
+version: v1
+domain: keypad.dial
+types:
+  - name: keypad.dial.KeySequence
+    kind: newtype
+    of: String
+    # ALPHABET
+    invariants: [value != ""]
+  - name: keypad.dial.Short
+    kind: newtype
+    of: keypad.dial.KeySequence
+    # INNER-ALPHABET
+  - name: keypad.dial.Channel
+    kind: enum
+    variants: [Tone, Pulse]
+  - name: keypad.dial.Label
+    kind: struct
+    fields:
+      - {name: text, type: String}
+    invariants: [text != ""]
+  - name: keypad.dial.Amount
+    kind: newtype
+    of: Integer
+    invariants: [value >= 0]
+entities:
+  - name: keypad.dial.Session
+    identity: {name: session_id, type: Uuid}
+    fields:
+      - {name: name, type: String}
+    invariants: [name != ""]
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+events:
+  - name: keypad.dial.Opened
+    fields:
+      - {name: session_id, type: Uuid}
+  - name: keypad.dial.KeysSent
+    fields:
+      - {name: sent_keys, type: keypad.dial.KeySequence}
+  - name: keypad.dial.Closed
+    fields: []
+errors:
+  - name: keypad.dial.UnsupportedKey
+    fields: []
+commands:
+  - name: keypad.dial.Open
+    input:
+      - {name: name, type: String}
+    outcomes:
+      - name: opened
+        creates: keypad.dial.Session
+        instance: session_id
+        sets: {name: input.name}
+        emits: [keypad.dial.Opened]
+        payload:
+          keypad.dial.Opened:
+            session_id: {generated: true}
+  - name: keypad.dial.SendKeys
+    input:
+      - {name: keys, type: keypad.dial.KeySequence}
+      - {name: short, type: keypad.dial.Short}
+      - {name: note, type: Optional<String>}
+      - {name: tags, type: List<String>}
+      - {name: codes, type: "Map<String, String>"}
+      - {name: label, type: keypad.dial.Label}
+      - {name: channel, type: keypad.dial.Channel}
+      - {name: ref, type: Uuid}
+      - {name: at, type: Timestamp}
+      - {name: wait, type: Duration}
+      - {name: blob, type: Bytes}
+      - {name: n, type: Integer}
+      - {name: amount, type: keypad.dial.Amount}
+      - {name: level, type: Decimal}
+      - {name: ratio, type: Binary64}
+      - {name: flag, type: Boolean}
+    outcomes:
+      - name: too-long
+        when: n > 64
+        error: keypad.dial.UnsupportedKey
+      - name: sent
+        emits: [keypad.dial.KeysSent]
+        payload:
+          keypad.dial.KeysSent:
+            sent_keys: input.keys
+  - name: keypad.dial.Close
+    input:
+      - {name: session_id, type: Uuid}
+    outcomes:
+      - name: unnamed
+        when_subject:
+          predicate: name == "anonymous"
+        error: keypad.dial.UnsupportedKey
+      - name: closed
+        moves: keypad.dial.Session.close
+        instance: session_id
+        emits: [keypad.dial.Closed]
+views:
+  - name: keypad.dial.Sessions
+    source: keypad.dial.Session
+    consistency: read_your_writes
+    filter: name != ""
+    fields:
+      - {name: session_id, type: Uuid}
+      - {name: name, type: String}

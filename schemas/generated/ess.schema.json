@@ -105,6 +105,13 @@
         }
       ]
     },
+    "outcome_groups": {
+      "description": "Outcome groups declared here: one outcome written once for many commands (ess/12).\n\nAbove the domains, like `bindings:`, so any file may carry them. Expanded into their member commands before anything is converted, and never seen by the rest of assembly.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/RawOutcomeGroup"
+      }
+    },
     "summary": {
       "description": "What the system is, in one paragraph.",
       "default": null,
@@ -362,6 +369,11 @@
         }
       ]
     },
+    "Empty": {
+      "description": "The empty map `count` takes: no other spelling of \"no argument\" is accepted.",
+      "type": "object",
+      "additionalProperties": false
+    },
     "EnumVariant": {
       "description": "An enum variant: a bare name, or a mapping that also declares its wire spelling.",
       "anyOf": [
@@ -592,6 +604,69 @@
       },
       "additionalProperties": false
     },
+    "InputField": {
+      "description": "One field of a command's input, as written: a [`Field`] that may also carry an `example:`.\n\nIts own type rather than a key on [`Field`], which struct, event, error, entity, view, parameter and response fields share: an `example:` there would parse in every one of those positions, and each would have to refuse it by hand — one missed position would be an example silently ignored. Here every other position refuses it as an unknown field by construction. The attributes are [`Field`]'s exactly, and `the_published_input_field_is_a_field_plus_exactly_example` holds the two published schemas to differing by that one property (`docs/design/string-alphabet-and-length.md`, section 2).",
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display": {
+          "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "example": {
+          "description": "The value synthesis builds this input from (ess/11). Not a constraint: the input still accepts every value of its type.\n\nAn authored `example: null` is kept as `Some(Node::Null)` rather than read as no example, so validation can refuse it: an example is a value, and `null` is none.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Node"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "summary": {
+          "description": "One line about what it is, for generated documentation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its type.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypeRef"
+            }
+          ]
+        },
+        "wire": {
+          "description": "What this is called on the wire — an HTTP path segment, a topic name, a JSON field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "Invariant": {
       "description": "A condition every instance must satisfy, as a predicate over its fields — an entity's may also read the pseudo-field `state`, a newtype's reads `value`. Transition legality is not written here: a move that is not declared is already impossible.",
       "anyOf": [
@@ -692,6 +767,14 @@
             "of"
           ],
           "properties": {
+            "alphabet": {
+              "description": "The characters every value is drawn from (ess/11); only a newtype of `String` takes one.",
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "invariants": {
               "description": "Conditions every value must satisfy, as predicates over `value`, what it wraps.",
               "type": "array",
@@ -976,6 +1059,11 @@
         }
       ]
     },
+    "OutcomeGroupName": {
+      "description": "An outcome group's identifier, such as `remote-backed`.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
     "OutcomeName": {
       "description": "The lower-kebab name of one outcome, such as `accepted`.",
       "type": "string",
@@ -1090,7 +1178,7 @@
       "additionalProperties": false
     },
     "Predicate": {
-      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint.",
+      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`.",
       "anyOf": [
         {
           "type": "string"
@@ -1174,6 +1262,89 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawAggregate": {
+      "description": "An aggregate as written: a map with exactly one key, the function.\n\nThe shape is the reader's to refuse — an unknown function, two keys, or an argument to `count` fails the parse with serde's message naming the six functions, as an unknown key does anywhere a [`Field`] is read.\n\nRead and written by hand as a one-entry map rather than derived: `serde_yaml` reads and writes a derived externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design page fixes and not what a JSON document can carry. The schema is still the derived one — one object per function with exactly that key.",
+      "oneOf": [
+        {
+          "description": "`{count: {}}`.",
+          "type": "object",
+          "required": [
+            "count"
+          ],
+          "properties": {
+            "count": {
+              "$ref": "#/definitions/Empty"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{count_distinct: field}`.",
+          "type": "object",
+          "required": [
+            "count_distinct"
+          ],
+          "properties": {
+            "count_distinct": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{sum: field}`.",
+          "type": "object",
+          "required": [
+            "sum"
+          ],
+          "properties": {
+            "sum": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{min: field}`.",
+          "type": "object",
+          "required": [
+            "min"
+          ],
+          "properties": {
+            "min": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{max: field}`.",
+          "type": "object",
+          "required": [
+            "max"
+          ],
+          "properties": {
+            "max": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{avg: field}`.",
+          "type": "object",
+          "required": [
+            "avg"
+          ],
+          "properties": {
+            "avg": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "RawBindingSpec": {
       "description": "A binding, as a document says it.",
@@ -1359,7 +1530,7 @@
           "description": "What the caller supplies.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Field"
+            "$ref": "#/definitions/InputField"
           }
         },
         "name": {
@@ -1742,6 +1913,54 @@
       },
       "additionalProperties": false
     },
+    "RawGroupOutcome": {
+      "description": "One outcome of a group: always an external refusal.",
+      "type": "object",
+      "required": [
+        "error",
+        "external",
+        "name"
+      ],
+      "properties": {
+        "error": {
+          "description": "The error it reports.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "external": {
+          "description": "What outside the input decides this branch.",
+          "type": "string"
+        },
+        "name": {
+          "description": "What the outcome is called in every member.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OutcomeName"
+            }
+          ]
+        },
+        "refs": {
+          "description": "The records outside this model that explain it.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalRef"
+          }
+        },
+        "summary": {
+          "description": "One line for generated documentation.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawInvocation": {
       "description": "What a binding does.",
       "type": "object",
@@ -1919,10 +2138,10 @@
           ]
         },
         "when_subject": {
-          "description": "An independently observed subject enum fact (ess/6).",
+          "description": "An independently observed subject fact: an enum field equal to a variant (ess/6), or a predicate over the subject's declared fields (ess/9).",
           "anyOf": [
             {
-              "$ref": "#/definitions/RawSubjectField"
+              "$ref": "#/definitions/RawSubjectFact"
             },
             {
               "type": "null"
@@ -1947,11 +2166,97 @@
       },
       "additionalProperties": false
     },
+    "RawOutcomeGroup": {
+      "description": "One outcome group as written: which commands, and the outcomes each of them gains.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "actor": {
+          "description": "Every command this actor `may:` invoke.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commands": {
+          "description": "Explicit membership, by fully qualified command name.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          },
+          "uniqueItems": true
+        },
+        "domain": {
+          "description": "Every command declared in a file whose `domain:` is this name.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "except": {
+          "description": "Commands the `actor:` or `domain:` selector would include and the group skips.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          },
+          "uniqueItems": true
+        },
+        "name": {
+          "description": "Its identity, unique across the specification.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OutcomeGroupName"
+            }
+          ]
+        },
+        "outcomes": {
+          "description": "The outcomes each member gains, after its own.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RawGroupOutcome"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "RawPayloadSource": {
       "description": "Closed authored payload source; strings retain their original interpretation.",
       "anyOf": [
         {
           "type": "string"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        {
+          "type": "number",
+          "format": "double"
         },
         {
           "$ref": "#/definitions/ExplicitPayloadSource"
@@ -2028,6 +2333,27 @@
       },
       "additionalProperties": false
     },
+    "RawSubjectFact": {
+      "description": "What `when_subject:` says about the existing subject: one of two closed shapes, never both.\n\n`{field, equals}` is the ess/6 form and keeps its bytes. `{predicate}` is the ess/9 form (`docs/design/cross-record-and-stored-field-guards.md`): any predicate over the subject's declared fields. A document writing keys of both shapes in one branch is refused while it is read, because which of the two it meant is not something a later check can recover.",
+      "anyOf": [
+        {
+          "description": "Equality of one declared enum field against one of its variants (ess/6).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawSubjectField"
+            }
+          ]
+        },
+        {
+          "description": "A predicate over the subject's declared fields (ess/9).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawSubjectPredicate"
+            }
+          ]
+        }
+      ]
+    },
     "RawSubjectField": {
       "description": "A bounded fact on an existing subject, not the command input or lifecycle state.",
       "type": "object",
@@ -2043,6 +2369,24 @@
         "field": {
           "description": "The declared enum field to observe.",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawSubjectPredicate": {
+      "description": "A predicate over the existing subject's declared stored fields (ess/9).",
+      "type": "object",
+      "required": [
+        "predicate"
+      ],
+      "properties": {
+        "predicate": {
+          "description": "What must hold of the subject's declared fields, read immediately before selection.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -2090,6 +2434,69 @@
       },
       "additionalProperties": false
     },
+    "RawViewField": {
+      "description": "One view field as written: a [`Field`] that may declare `aggregate:`.\n\nA sibling of [`Field`] rather than [`Field`] flattened, so `Field`'s `deny_unknown_fields` keeps refusing `aggregate:` at every other position a field is written.",
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "aggregate": {
+          "description": "What it computes over the group's rows, where it is an aggregate.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawAggregate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display": {
+          "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "summary": {
+          "description": "One line about what it is, for generated documentation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its type. For an aggregate field, exactly the function's result type.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypeRef"
+            }
+          ]
+        },
+        "wire": {
+          "description": "What this is called on the wire — an HTTP path segment, a topic name, a JSON field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawViewSpec": {
       "description": "A view as written in a document, before validation.",
       "type": "object",
@@ -2108,10 +2515,10 @@
           ]
         },
         "fields": {
-          "description": "What it exposes inline.",
+          "description": "What it exposes inline. A field may declare `aggregate:`.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Field"
+            "$ref": "#/definitions/RawViewField"
           }
         },
         "filter": {
@@ -2124,6 +2531,13 @@
               "type": "null"
             }
           ]
+        },
+        "group_by": {
+          "description": "The view fields the admitted rows are partitioned by. Absent or `[]`: not grouped.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "name": {
           "description": "Its stable identity.",

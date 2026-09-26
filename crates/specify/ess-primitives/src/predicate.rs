@@ -225,6 +225,59 @@ impl fmt::Display for CompareOp {
     }
 }
 
+/// A string operator: a text fact tested against a text literal (beyond10x/ess#95).
+///
+/// Map form only (`caller: {starts_with: "+44"}`), with one spelling each and no negated one:
+/// `not:` negates. Matching is byte-wise and case-sensitive, with no Unicode normalisation, which is
+/// what every lane's standard library answers. `docs/design/string-predicate-operators.md` is the
+/// design.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextOp {
+    /// `starts_with`: the text begins with the bytes of the literal.
+    StartsWith,
+    /// `ends_with`: the text ends with the bytes of the literal.
+    EndsWith,
+    /// `contains`: the bytes of the literal occur in the text.
+    Contains,
+}
+
+impl TextOp {
+    /// Every string operator, in the order the design names them.
+    pub const ALL: [Self; 3] = [Self::StartsWith, Self::EndsWith, Self::Contains];
+
+    /// The map-form key.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::StartsWith => "starts_with",
+            Self::EndsWith => "ends_with",
+            Self::Contains => "contains",
+        }
+    }
+
+    /// Parses the map-form key. There is exactly one spelling of each.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|op| op.keyword() == keyword)
+    }
+
+    /// Whether `text` begins with, ends with or contains `literal`, byte for byte.
+    ///
+    /// `str::contains(&str)` matches bytes: a valid UTF-8 needle can only match a valid UTF-8
+    /// haystack at a character boundary, so byte and character matching agree.
+    pub fn holds(self, text: &str, literal: &str) -> bool {
+        match self {
+            Self::StartsWith => text.as_bytes().starts_with(literal.as_bytes()),
+            Self::EndsWith => text.as_bytes().ends_with(literal.as_bytes()),
+            Self::Contains => text.contains(literal),
+        }
+    }
+}
+
+impl fmt::Display for TextOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
 /// One side of a comparison: either a fact to look up, or a literal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
@@ -239,7 +292,7 @@ impl Operand {
     /// Resolves this operand, returning `None` when a referenced fact is unobserved.
     fn resolve(&self, facts: &dyn FactSource) -> Option<FactValue> {
         match self {
-            Self::Fact(path) => facts.fact(path),
+            Self::Fact(path) => facts.observe(path),
             Self::Literal(value) => Some(value.clone()),
         }
     }
@@ -268,11 +321,29 @@ impl Operand {
     }
 }
 
+/// The unquoted operands a compact comparison refuses, because each is YAML's spelling of null.
+///
+/// Quoted, every one of them is a text like any other: `note == "null"` compares with the four
+/// characters, and [`Operand`]'s `Display` quotes them so that the rendering reads back as that.
+const NULL_SPELLINGS: &[&str] = &["null", "Null", "NULL", "~"];
+
+/// The tokens a compact comparison refuses in an unquoted operand: the compact form has no
+/// conjunction or disjunction, and `sku == A1 && gift` used to compare `sku` with the text
+/// `A1 && gift`. Quoted, they are text like any other.
+const COMBINATORS: &[&str] = &["&&", "||"];
+
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fact(path) => write!(f, "{path}"),
-            Self::Literal(FactValue::Text(text)) if text.contains('.') || text.is_empty() => {
+            Self::Literal(FactValue::Text(text))
+                if text.contains('.')
+                    || text.is_empty()
+                    || NULL_SPELLINGS.contains(&&**text)
+                    || text
+                        .split_whitespace()
+                        .any(|token| COMBINATORS.contains(&token)) =>
+            {
                 write!(f, "{text:?}")
             }
             Self::Literal(value) => write!(f, "{value}"),
@@ -362,6 +433,19 @@ pub enum Predicate {
         path: FactPath,
         /// Rejected values.
         values: Vec<FactValue>,
+    },
+    /// The text fact begins with, ends with or contains a literal (beyond10x/ess#95).
+    ///
+    /// Unobserved is [`Truth::Unknown`]; an observed value that is not text is [`Truth::False`],
+    /// and so is any observed value against a literal that is not text. Validation refuses such a
+    /// literal, so only an unchecked caller reaches that row.
+    TextMatch {
+        /// The fact to read.
+        path: FactPath,
+        /// Which of the three tests.
+        op: TextOp,
+        /// The literal, verbatim as written: never a fact path, never read as a number.
+        value: FactValue,
     },
     /// Every element of a collection satisfies the body.
     ///
@@ -458,6 +542,10 @@ impl FactSource for Element<'_> {
         self.inner.orders_as_instant(&self.rebind(path))
     }
 
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        self.inner.orders_text_by_bytes(&self.rebind(path))
+    }
+
     fn cardinality(&self, path: &FactPath) -> Option<usize> {
         self.inner.cardinality(&self.rebind(path))
     }
@@ -526,15 +614,29 @@ impl Predicate {
             Self::Not(inner) => inner.evaluate(facts).not(),
             Self::Compare { left, op, right } => Self::evaluate_compare(left, *op, right, facts).0,
             Self::Truthy(path) => facts
-                .fact(path)
+                .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
-            Self::Defined(path) => Truth::from_bool(facts.fact(path).is_some()),
-            Self::AnyOf { path, values } => facts.fact(path).map_or(Truth::Unknown, |observed| {
-                Truth::from_bool(values.contains(&observed))
-            }),
-            Self::NoneOf { path, values } => facts.fact(path).map_or(Truth::Unknown, |observed| {
-                Truth::from_bool(!values.contains(&observed))
-            }),
+            Self::Defined(path) => Truth::from_bool(facts.observe(path).is_some()),
+            Self::AnyOf { path, values } => {
+                facts.observe(path).map_or(Truth::Unknown, |observed| {
+                    Truth::from_bool(values.contains(&observed))
+                })
+            }
+            Self::NoneOf { path, values } => {
+                facts.observe(path).map_or(Truth::Unknown, |observed| {
+                    Truth::from_bool(!values.contains(&observed))
+                })
+            }
+            Self::TextMatch { path, op, value } => {
+                facts
+                    .observe(path)
+                    .map_or(Truth::Unknown, |observed| match (&observed, value) {
+                        (FactValue::Text(text), FactValue::Text(literal)) => {
+                            Truth::from_bool(op.holds(text, literal))
+                        }
+                        _ => Truth::False,
+                    })
+            }
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
         }
@@ -554,17 +656,18 @@ impl Predicate {
 
         // A declared Timestamp compares by the instant it names under every operator, so `==`
         // agrees with `<=` and `>=` on two spellings of one instant.
+        let mut declared_instant = false;
         if let (FactValue::Text(left_text), FactValue::Text(right_text)) =
             (&left_value, &right_value)
         {
-            let declared = [left, right].into_iter().any(|operand| {
+            declared_instant = [left, right].into_iter().any(|operand| {
                 operand
                     .fact_path()
                     .is_some_and(|path| facts.orders_as_instant(path))
             });
             let instant = crate::time::Rfc3339Instant::parse_rfc3339;
             if let (true, Some(left_instant), Some(right_instant)) =
-                (declared, instant(left_text), instant(right_text))
+                (declared_instant, instant(left_text), instant(right_text))
             {
                 return (
                     Truth::from_bool(op.accepts(left_instant.cmp(&right_instant))),
@@ -581,6 +684,24 @@ impl Predicate {
             (FactValue::Text(left_text), FactValue::Text(right_text)) if op.needs_ordering() => {
                 match facts.scales().compare(left_text, right_text) {
                     Some(ordering) => (Truth::from_bool(op.accepts(ordering)), None),
+                    // `str`'s `Ord` is the lexicographic order of the UTF-8 bytes, which is the
+                    // order the Go (`strings.Compare`) and TypeScript (`byteCompare`) lanes use.
+                    // Never for a declared `Timestamp` that did not parse: an instant nobody can
+                    // read has no order, and sorting its spelling would invent one.
+                    None if !declared_instant
+                        && [left, right].into_iter().all(|operand| {
+                            operand
+                                .fact_path()
+                                .is_none_or(|path| facts.orders_text_by_bytes(path))
+                        }) =>
+                    {
+                        (
+                            Truth::from_bool(
+                                op.accepts(left_text.as_str().cmp(right_text.as_str())),
+                            ),
+                            None,
+                        )
+                    }
                     None => (
                         Truth::Unknown,
                         Some(format!(
@@ -681,7 +802,7 @@ impl Predicate {
                     let mut observed = Vec::new();
                     let mut missing = Vec::new();
                     for path in leaf.fact_paths() {
-                        match facts.fact(path) {
+                        match facts.observe(path) {
                             Some(value) => observed.push((path.clone(), value)),
                             None => missing.push(path.clone()),
                         }
@@ -752,7 +873,8 @@ impl Predicate {
             Self::Truthy(path)
             | Self::Defined(path)
             | Self::AnyOf { path, .. }
-            | Self::NoneOf { path, .. } => {
+            | Self::NoneOf { path, .. }
+            | Self::TextMatch { path, .. } => {
                 if !bound.contains(&path.namespace()) {
                     visit(path);
                 }
@@ -804,7 +926,30 @@ impl Predicate {
             | Self::Truthy(_)
             | Self::Defined(_)
             | Self::AnyOf { .. }
-            | Self::NoneOf { .. } => {}
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. } => {}
+        }
+    }
+
+    /// Whether any leaf of this predicate, at any depth, is a string operator.
+    ///
+    /// The one question every format gate asks of the construct: `ess/8` for an authored
+    /// specification, the suite pair for a suite, and `infra-spec/1`'s refusal.
+    pub fn uses_text_match(&self) -> bool {
+        match self {
+            Self::TextMatch { .. } => true,
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::uses_text_match),
+            Self::Not(inner) => inner.uses_text_match(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.uses_text_match()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. } => false,
         }
     }
 
@@ -1002,10 +1147,13 @@ impl Predicate {
                 }
                 Ok(Self::all(children))
             }
-            Node::Null => Err(ParseError::predicate(
-                &path.to_string(),
-                "a fact constraint must be a value, a list of values or a mapping of operators",
-            )),
+            // `note: null` is `note == null` in mapping form, and is refused as one.
+            Node::Null => Err(ParseError::NullComparison {
+                expression: format!("{path}: null"),
+                path: path.to_string(),
+                operator: CompareOp::Eq.as_str().to_owned(),
+                spelling: "null".to_owned(),
+            }),
         }
     }
 
@@ -1016,6 +1164,14 @@ impl Predicate {
                 Node::Text(text) => Operand::parse(text),
                 Node::Bool(value) => Operand::Literal(FactValue::Bool(*value)),
                 Node::Number(number) => Operand::Literal(FactValue::Number(*number)),
+                Node::Null => {
+                    return Err(ParseError::NullComparison {
+                        expression: format!("{path}: {{{operator}: null}}"),
+                        path: path.to_string(),
+                        operator: op.as_str().to_owned(),
+                        spelling: "null".to_owned(),
+                    })
+                }
                 other => {
                     return Err(ParseError::predicate(
                         &format!("{path}: {{{operator}: {other}}}"),
@@ -1057,14 +1213,35 @@ impl Predicate {
                 })
             }
             "truthy" => Ok(Self::Truthy(path)),
+            "starts_with" | "ends_with" | "contains" => Self::text_match(path, operator, operand),
             unknown => Err(ParseError::predicate(
                 &format!("{path}: {{{unknown}: …}}"),
                 format!(
                     "unknown operator {unknown:?}; expected one of eq, ne, lt, lte, gt, gte, \
-                     any_of, none_of, exists, truthy"
+                     any_of, none_of, exists, truthy, starts_with, ends_with, contains"
                 ),
             )),
         }
+    }
+
+    /// Parses a string operator's operand: a text is the literal byte for byte, never read through
+    /// [`Operand::parse`], so `"+44"` stays text and `"a.b"` is no fact path. A number or a Boolean
+    /// is kept as that value, for validation to refuse with a code and a site; anything else is not
+    /// a scalar.
+    fn text_match(path: FactPath, operator: &str, operand: &Node) -> Result<Self, ParseError> {
+        let op = TextOp::from_keyword(operator).expect("dispatched on a string operator keyword");
+        let value = match operand {
+            Node::Text(text) => FactValue::Text(text.clone()),
+            Node::Number(number) => FactValue::Number(*number),
+            Node::Bool(value) => FactValue::Bool(*value),
+            other => {
+                return Err(ParseError::predicate(
+                    &format!("{path}: {{{operator}: {other}}}"),
+                    "a comparison operand must be a scalar",
+                ))
+            }
+        };
+        Ok(Self::TextMatch { path, op, value })
     }
 
     /// Parses the compact string form of a predicate.
@@ -1112,6 +1289,19 @@ impl Predicate {
         }
 
         if let Some((left, op, right)) = split_comparison(trimmed) {
+            // Before either side is read as a path or a literal: `null == note` and `~ == note`
+            // are the same mistake as `note == null`, and each would otherwise be refused, or
+            // admitted, for a reason that has nothing to do with it.
+            for (compared, other) in [(left, right), (right, left)] {
+                if NULL_SPELLINGS.contains(&other.trim()) {
+                    return Err(ParseError::NullComparison {
+                        expression: expression.to_owned(),
+                        path: compared.trim().to_owned(),
+                        operator: op.as_str().to_owned(),
+                        spelling: other.trim().to_owned(),
+                    });
+                }
+            }
             let left_path = FactPath::new(left.trim()).map_err(|error| {
                 ParseError::predicate(
                     expression,
@@ -1125,6 +1315,21 @@ impl Predicate {
                 ));
             }
             validate_quoted_operand(right, expression)?;
+            if !right.trim_start().starts_with(['"', '\''])
+                && right
+                    .split_whitespace()
+                    .any(|token| COMBINATORS.contains(&token))
+            {
+                let operand = right.trim();
+                return Err(ParseError::predicate(
+                    expression,
+                    format!(
+                        "`&&` and `||` are not part of the compact form, so `{operand}` is not one \
+                         operand; use structured all/any/not to combine predicates, or quote \
+                         \"{operand}\" to compare with that text"
+                    ),
+                ));
+            }
             return Ok(Self::Compare {
                 left: Operand::Fact(left_path),
                 op,
@@ -1248,6 +1453,16 @@ impl Predicate {
             ),
             Self::Forall(quantified) => quantifier_node("forall", quantified),
             Self::Exists(quantified) => quantifier_node("exists", quantified),
+            // Explicit, never the compact fallback below: there is no compact form, so a string
+            // operator rendered as text would be a document no reader parses back. A text operand
+            // is written as the text, with no quotes added, because the reader takes it verbatim.
+            Self::TextMatch { path, op, value } => Node::Map(
+                [(
+                    path.to_string(),
+                    Node::Map([(op.keyword().to_owned(), value_node(value))].into()),
+                )]
+                .into(),
+            ),
             Self::Compare {
                 left: Operand::Fact(path),
                 op,
@@ -1441,6 +1656,14 @@ impl fmt::Display for Predicate {
             Self::Defined(path) => write!(f, "defined({path})"),
             Self::AnyOf { path, values } => write!(f, "{path} in [{}]", join_values(values)),
             Self::NoneOf { path, values } => write!(f, "{path} not in [{}]", join_values(values)),
+            // For a reader and the semantic diff, never read back: a text literal is quoted by
+            // `Debug`, a number or a Boolean is bare.
+            Self::TextMatch {
+                path,
+                op,
+                value: FactValue::Text(text),
+            } => write!(f, "{path} {op} {text:?}"),
+            Self::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
             Self::Forall(quantified) => write_quantified(f, "forall", quantified),
             Self::Exists(quantified) => write_quantified(f, "exists", quantified),
         }
@@ -1522,7 +1745,8 @@ impl schemars::JsonSchema for Predicate {
         schema.metadata().description = Some(
             "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a \
              list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, \
-             `exists` or a fact path with an operator constraint."
+             `exists` or a fact path with an operator constraint. A text fact is tested against a \
+             text literal, map form only, with `starts_with`, `ends_with` or `contains`."
                 .to_owned(),
         );
         schema.into()
@@ -2123,5 +2347,185 @@ mod tests {
         assert!(error.to_string().contains("unknown operator"), "{error}");
         assert!(Predicate::parse_expression("== 0").is_err());
         assert!(Predicate::parse_expression("").is_err());
+    }
+
+    /// `x == null` used to be a comparison with the four-character text `null` (ess#93).
+    #[test]
+    fn a_comparison_with_an_unquoted_null_is_refused_and_names_the_presence_test() {
+        for (expression, operator, spelling) in [
+            ("note == null", "==", "null"),
+            ("note != null", "!=", "null"),
+            ("note == NULL", "==", "NULL"),
+            ("note != Null", "!=", "Null"),
+            ("note == ~", "==", "~"),
+            ("note < null", "<", "null"),
+            ("null == note", "==", "null"),
+        ] {
+            let error = Predicate::parse_expression(expression).expect_err(expression);
+            let ParseError::NullComparison {
+                path,
+                operator: refused,
+                ..
+            } = &error
+            else {
+                panic!("`{expression}` is refused as a null comparison, not as {error:?}")
+            };
+            assert_eq!(path, "note", "{expression}");
+            assert_eq!(refused, operator, "{expression}");
+            let rendered = error.to_string();
+            assert!(
+                rendered.contains("`defined(note)`") && rendered.contains("`not defined(note)`"),
+                "the refusal names the presence test an author meant: {rendered}"
+            );
+            assert!(
+                rendered.contains(&format!("`note {operator} {spelling}`"))
+                    && rendered.contains(&format!("quote \"{spelling}\""))
+                    && rendered.starts_with(ParseError::NULL_COMPARISON_CODE),
+                "the refusal echoes what was written and carries its code: {rendered}"
+            );
+        }
+
+        for (yaml, operator) in [
+            ("note: {eq: null}", "=="),
+            ("note: {ne: null}", "!="),
+            ("note: null", "=="),
+        ] {
+            let node: Node = serde_yaml::from_str(yaml).expect("yaml");
+            let error = Predicate::from_node(&node).expect_err(yaml);
+            assert!(
+                matches!(
+                    &error,
+                    ParseError::NullComparison { path, operator: refused, .. }
+                        if path == "note" && refused == operator
+                ),
+                "`{yaml}` is refused as a null comparison, not as {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_quoted_null_is_still_the_text_and_survives_its_own_rendering() {
+        for expression in [r#"note == "null""#, "note != 'null'", r#"note == "~""#] {
+            let predicate = parse(expression);
+            let Predicate::Compare {
+                right: Operand::Literal(FactValue::Text(text)),
+                ..
+            } = &predicate
+            else {
+                panic!("`{expression}` compares with text: {predicate:?}")
+            };
+            assert!(["null", "~"].contains(&text.as_str()), "{expression}");
+            assert_eq!(
+                Predicate::parse_expression(&predicate.to_string()).as_ref(),
+                Ok(&predicate),
+                "`{predicate}` reads back as the text it was written as"
+            );
+            assert!(
+                !predicate.requires_structured_text_comparison(),
+                "the compact form stays compact: {predicate}"
+            );
+        }
+        assert_eq!(
+            parse(r#"note == "null""#).evaluate(&store(&[("note", FactValue::text("null"))])),
+            Truth::True
+        );
+    }
+
+    /// `&&` and `||` are not compact syntax; unquoted, they were swallowed into one text literal.
+    #[test]
+    fn an_unquoted_conjunction_or_disjunction_token_is_refused_toward_the_structured_form() {
+        for expression in [
+            "sku == A1 && gift",
+            "sku == A1 || sku == B2",
+            "sku != A1 &&",
+            "count > 1 || count < 0",
+        ] {
+            let error = Predicate::parse_expression(expression).expect_err(expression);
+            let rendered = error.to_string();
+            assert!(
+                matches!(error, ParseError::Predicate { .. })
+                    && rendered.contains("structured all/any/not"),
+                "`{expression}`: {rendered}"
+            );
+        }
+        for (expression, text) in [
+            (r#"sku == "A1 && gift""#, "A1 && gift"),
+            ("sku == 'A1 || B2'", "A1 || B2"),
+            ("sku == A1&&gift", "A1&&gift"),
+        ] {
+            let predicate = parse(expression);
+            assert_eq!(
+                predicate,
+                Predicate::Compare {
+                    left: Operand::Fact("sku".parse().expect("path")),
+                    op: CompareOp::Eq,
+                    right: Operand::Literal(FactValue::text(text)),
+                },
+                "{expression}"
+            );
+            assert_eq!(
+                Predicate::parse_expression(&predicate.to_string()).as_ref(),
+                Ok(&predicate),
+                "`{predicate}` reads back as the text it was written as"
+            );
+            assert!(
+                !predicate.requires_structured_text_comparison(),
+                "{predicate}"
+            );
+        }
+    }
+
+    /// A source that orders text by its bytes, as every ESS lane does (ess#94).
+    #[test]
+    fn a_source_that_orders_text_by_bytes_decides_where_no_scale_does() {
+        let mut facts = store(&[("caller", FactValue::text("B"))]);
+        assert_eq!(
+            parse("caller < a").evaluate(&facts),
+            Truth::Unknown,
+            "a source that did not opt in keeps the scale-only reading AEP relies on"
+        );
+
+        facts.order_text_by_bytes();
+        for (expression, truth) in [
+            // `B` is 0x42 and `a` is 0x61: byte order, not the locale order that puts `a` first.
+            ("caller < a", Truth::True),
+            ("caller > a", Truth::False),
+            ("caller <= B", Truth::True),
+            ("caller >= Ba", Truth::False),
+            (r#"caller > """#, Truth::True),
+        ] {
+            assert_eq!(parse(expression).evaluate(&facts), truth, "{expression}");
+        }
+
+        let mut scales = Scales::default();
+        scales.insert("rank", vec!["a".to_owned(), "B".to_owned()]);
+        facts.set_scales(scales);
+        assert_eq!(
+            parse("caller > a").evaluate(&facts),
+            Truth::True,
+            "a declared scale containing both values still decides first"
+        );
+    }
+
+    #[test]
+    fn a_declared_timestamp_that_does_not_parse_is_not_ordered_by_its_bytes() {
+        struct Declared(FactStore);
+        impl FactSource for Declared {
+            fn fact(&self, path: &FactPath) -> Option<FactValue> {
+                self.0.fact(path)
+            }
+            fn orders_as_instant(&self, _path: &FactPath) -> bool {
+                true
+            }
+            fn orders_text_by_bytes(&self, _path: &FactPath) -> bool {
+                true
+            }
+        }
+        let facts = Declared(store(&[("at", FactValue::text("yesterday"))]));
+        assert_eq!(
+            parse(r#"at < "2020-01-01T00:00:00Z""#).evaluate(&facts),
+            Truth::Unknown,
+            "an instant nobody can read is not a text to sort"
+        );
     }
 }

@@ -732,8 +732,8 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
     );
     assert_eq!(
         on["push"]["branches"],
-        serde_yaml::from_str::<Value>("[main]").unwrap(),
-        "ci.yml no longer runs on every push to main"
+        serde_yaml::from_str::<Value>("[main, 'queue/**']").unwrap(),
+        "ci.yml no longer runs on every push to main and to the bot merge queue"
     );
     let crons: Vec<&str> = on["schedule"]
         .as_sequence()
@@ -753,7 +753,7 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         .job;
     assert_eq!(
         text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]),
-        "${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'number-semantics' || 'full' }}",
+        "${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}",
         "only a pull request or its merge-queue run may narrow the feature-off archive"
     );
 
@@ -1716,30 +1716,28 @@ fn serialised_binaries(config: &str) -> BTreeSet<String> {
 /// Under nextest every test is its own process, so a binary whose tests coordinate through state
 /// shared by every test *in one process* loses that coordination, and runs one test at a time.
 ///
-/// Two such mechanisms exist, both found by the first nextest run (Actions run 36126201626):
-/// `support/browser.rs`'s `STARTUP` mutex, which admits one Firefox start at a time, and a
-/// `Once` that prunes every fixture directory not carrying this process's id — which, with one
-/// process per test, deletes the fixtures of every test running beside it. Both are found here by
-/// what the source says, so a new binary that includes the browser fixture or copies the prune is
-/// serialised or named.
+/// Two such mechanisms have existed, both found by the first nextest run (Actions run
+/// 36126201626): `support/browser.rs`'s `STARTUP` mutex, which admits one Firefox start at a time,
+/// and a `Once` that prunes every fixture directory not carrying this process's id — which, with
+/// one process per test, deletes the fixtures of every test running beside it. Both are found here
+/// by what the source says, so a new binary that includes the browser fixture or copies the prune
+/// is serialised or named.
+///
+/// The other direction holds too: a binary serialised for a reason no scan finds any more runs one
+/// test at a time for nothing. `execution_recovery` was the longest item on the CI critical path
+/// for exactly that, after its prune became safe for neighbouring processes.
 #[test]
-fn nextest_serialises_every_binary_that_coordinates_through_process_state() {
+fn nextest_serialises_exactly_the_binaries_that_coordinate_through_process_state() {
     let config = fs::read_to_string(workspace_root().join(".config/nextest.toml"))
         .expect("the nextest configuration is readable");
     let serialised = serialised_binaries(&config);
     // Split, so that this file does not contain what it scans for.
     let include = ["#[path = \"support/", "browser.rs\"]"].concat();
-    let once = ["std::sync::Once", "::new()"].concat();
-    let prune = ["remove_dir_all(", "entry.path())"].concat();
     let browser = binaries_where(|source| source.contains(&include));
-    let pruning = binaries_where(|source| source.contains(&once) && source.contains(&prune));
+    let pruning = binaries_where(prunes_from_a_once_per_process);
     assert!(
         browser.contains("ess-cli::coverage_browser"),
         "the browser scan found {browser:?}; it no longer sees the fixture it exists to find"
-    );
-    assert!(
-        pruning.contains("ess-cli::execution_recovery"),
-        "the prune scan found {pruning:?}; it no longer sees the binary it exists to find"
     );
     let missing: Vec<&String> = browser
         .iter()
@@ -1750,5 +1748,92 @@ fn nextest_serialises_every_binary_that_coordinates_through_process_state() {
         missing.is_empty(),
         "these binaries coordinate their tests through process-global state and nextest runs \
          them in parallel processes: {missing:?}"
+    );
+    let causeless: Vec<&String> = serialised
+        .iter()
+        .filter(|binary| !browser.contains(*binary) && !pruning.contains(*binary))
+        .collect();
+    assert!(
+        causeless.is_empty(),
+        "nextest runs these binaries one test at a time and no scan finds a reason to: \
+         {causeless:?}"
+    );
+}
+
+/// The binary ids nextest runs with the whole shard to themselves: every `binary_id(...)` in a
+/// filter whose override sets `threads-required = "num-test-threads"`.
+fn whole_shard_binaries(config: &str) -> BTreeSet<String> {
+    let mut whole = BTreeSet::new();
+    for block in config.split("[[profile.default.overrides]]").skip(1) {
+        let field = |name: &str| {
+            block
+                .lines()
+                .find_map(|line| line.trim().strip_prefix(name))
+                .and_then(|rest| rest.trim().strip_prefix('='))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+                .unwrap_or_default()
+        };
+        if field("threads-required") != "num-test-threads" {
+            continue;
+        }
+        for piece in field("filter").split("binary_id(").skip(1) {
+            whole.insert(piece.split(')').next().unwrap().to_owned());
+        }
+    }
+    whole
+}
+
+/// One Firefox at a time is not enough on a busy runner: with only the one-at-a-time group, a
+/// Firefox start still competed with three neighbouring test processes and overran its budget
+/// (ess#85 on 2026-09-25; again on `main` a1cf7233f, job 108296632588, 30.010s at the announce
+/// stage, after ess#107 dropped the whole-shard setting). So every binary that includes the
+/// browser fixture also takes the whole shard, and a later speed pass that removes it fails here
+/// rather than on the next loaded runner.
+#[test]
+fn every_browser_binary_takes_the_whole_shard_while_it_runs() {
+    let config = fs::read_to_string(workspace_root().join(".config/nextest.toml"))
+        .expect("the nextest configuration is readable");
+    let whole = whole_shard_binaries(&config);
+    // Split, so that this file does not contain what it scans for.
+    let include = ["#[path = \"support/", "browser.rs\"]"].concat();
+    let browser = binaries_where(|source| source.contains(&include));
+    assert!(
+        browser.contains("ess-cli::coverage_browser"),
+        "the browser scan found {browser:?}; it no longer sees the fixture it exists to find"
+    );
+    let sharing: Vec<&String> = browser
+        .iter()
+        .filter(|binary| !whole.contains(*binary))
+        .collect();
+    assert!(
+        sharing.is_empty(),
+        "these binaries start a real Firefox and share their shard with other test processes \
+         while it starts: {sharing:?}"
+    );
+}
+
+/// Whether one test source prunes fixture directories from a `Once`, once per process.
+fn prunes_from_a_once_per_process(source: &str) -> bool {
+    // Split, so that this file does not contain what it scans for.
+    let once = ["std::sync::Once", "::new()"].concat();
+    let prune = ["remove_dir_all(", "entry.path())"].concat();
+    source.contains(&once) && source.contains(&prune)
+}
+
+/// The prune scan still sees the shape it exists to find, now that no binary carries it.
+#[test]
+fn the_prune_scan_recognises_a_once_per_process_prune() {
+    let once = ["std::sync::Once", "::new()"].concat();
+    let prune = ["remove_dir_all(", "entry.path())"].concat();
+    let copied =
+        format!("static PRUNED: {once};\nPRUNED.call_once(|| {{ let _ = std::fs::{prune}; }});\n");
+    assert!(prunes_from_a_once_per_process(&copied));
+    assert!(
+        !prunes_from_a_once_per_process(&format!("let _ = std::fs::{prune};\n")),
+        "a prune that is not once per process is not the shape"
+    );
+    assert!(
+        !prunes_from_a_once_per_process(&format!("static STARTED: {once};\n")),
+        "a `Once` that prunes nothing is not the shape"
     );
 }

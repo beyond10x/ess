@@ -2,7 +2,9 @@
 
 use crate::system::{FormatVersion, SystemSpec};
 use crate::{Field, Primitive, Specification, TypeBody, TypeRef};
-use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, ValidationCode, ValidationError, ValidationErrors,
+};
 
 pub(crate) fn reference(
     ty: &TypeRef,
@@ -57,8 +59,16 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
             ));
         }
         match &declared.body {
-            TypeBody::Newtype { of, .. } => {
+            TypeBody::Newtype { of, alphabet, .. } => {
                 reference(of, Some(system.format), &format!("{at}.of"), &mut errors);
+                // An older reader fails `alphabet:` as an unknown field with no version hint.
+                if alphabet.is_some() && system.format.major() < FormatVersion::V11.major() {
+                    errors.push(ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("{at}.alphabet"),
+                        "declared alphabets require specification format ess/11",
+                    ));
+                }
             }
             TypeBody::Struct {
                 fields: members, ..
@@ -130,6 +140,16 @@ fn held_state_conditions(
             "guarded external outcomes, subject facts and preservation require specification format ess/6",
         ));
     }
+    // A new shape of an existing key's value: an older reader fails it with `unknown field
+    // predicate` and no version hint, so the meaning change is a format change of its own
+    // (`docs/design/cross-record-and-stored-field-guards.md`). `{field, equals}` keeps ess/6.
+    if format.major() < 9 && crate::command::subject_fact::uses_predicate(command) {
+        errors.push(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::UnsupportedFormatVersion,
+            "subject predicates require specification format ess/9",
+        ));
+    }
     if format.major() < 3 && crate::command::subject_state::uses_subject_state(command) {
         errors.push(ValidationError::at(
             command.site().key("outcomes"),
@@ -146,8 +166,154 @@ fn held_state_conditions(
     }
 }
 
+/// Every predicate a specification holds, each with the site it is written at.
+///
+/// Command outcome conditions (`when`, and the input predicate beside `when_subject_state`,
+/// `when_state_changes`, `when_subject` and `external`), entity invariants, newtype and struct
+/// invariants, view filters and binding selections. A format gate over predicate vocabulary asks
+/// this one walk, so a position cannot be gated in one construct and forgotten in another; a new
+/// predicate position is added here, not beside the gate that reads it.
+pub fn predicates(
+    spec: &Specification,
+) -> Vec<(ConstructRef, &ess_primitives::predicate::Predicate)> {
+    let mut found = Vec::new();
+    for declared in spec.system().types.iter() {
+        if let TypeBody::Newtype { invariants, .. } | TypeBody::Struct { invariants, .. } =
+            &declared.body
+        {
+            for (index, invariant) in invariants.iter().enumerate() {
+                found.push((
+                    ConstructRef::new(ConstructKind::Type, declared.name.to_string())
+                        .key("invariants")
+                        .index(index),
+                    &invariant.predicate,
+                ));
+            }
+        }
+    }
+    for entity in spec.entities().values() {
+        for (index, invariant) in entity.invariants.iter().enumerate() {
+            found.push((
+                ConstructRef::new(ConstructKind::Entity, entity.name.to_string())
+                    .key("invariants")
+                    .index(index),
+                &invariant.predicate,
+            ));
+        }
+    }
+    for command in spec.commands().values() {
+        for outcome in &command.outcomes {
+            if let Some(predicate) = outcome.condition.predicate() {
+                found.push((
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.to_string()),
+                    predicate,
+                ));
+            }
+            // The stored-field predicate is the same grammar, so a string operator under
+            // `when_subject:` needs the format that admits it as much as one under `when:`.
+            if let crate::command::OutcomeCondition::SubjectPredicate { predicate, .. } =
+                &outcome.condition
+            {
+                found.push((
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.to_string())
+                        .key("when_subject"),
+                    predicate,
+                ));
+            }
+        }
+    }
+    for view in spec.views().values() {
+        if let Some(filter) = &view.filter {
+            found.push((
+                ConstructRef::new(ConstructKind::View, view.name.to_string()).key("filter"),
+                filter,
+            ));
+        }
+    }
+    for binding in spec.bindings().values() {
+        for selection in &binding.selections {
+            if let Some(first) = &selection.first {
+                found.push((
+                    ConstructRef::new(ConstructKind::Binding, binding.name.to_string())
+                        .key("selections")
+                        .named(selection.name.clone()),
+                    &first.predicate,
+                ));
+            }
+        }
+    }
+    found
+}
+
+/// V15 of `docs/design/aggregate-views.md`: an older reader fails `aggregate:` as an unknown field
+/// and no version hint, so the construct is a format of its own. A `group_by` with no aggregate is V5
+/// at every version and has no `Aggregation` to be gated here.
+fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut ValidationErrors) {
+    let Some(aggregation) = &view.aggregation else {
+        return;
+    };
+    if format.major() < FormatVersion::V10.major() {
+        let at = if aggregation.group_by.is_empty() {
+            "fields"
+        } else {
+            "group_by"
+        };
+        errors.push(ValidationError::new(
+            ValidationCode::UnsupportedFormatVersion,
+            format!("view.{}.{at}", view.name),
+            "aggregate views require specification format ess/10",
+        ));
+    }
+}
+
+/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) arrived in `ess/8`.
+fn string_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
+    if format.major() >= FormatVersion::V8.major() {
+        return;
+    }
+    for (site, predicate) in predicates(spec) {
+        if predicate.uses_text_match() {
+            errors.push(ValidationError::at(
+                site,
+                ValidationCode::UnsupportedFormatVersion,
+                "string predicate operators require specification format ess/8",
+            ));
+        }
+    }
+}
+
+/// As for `alphabet:`, an older reader fails `example:` as an unknown field with no version hint,
+/// so an input example is refused below ess/11 at the key the author wrote.
+fn input_examples(
+    command: &crate::command::CommandSpec,
+    format: FormatVersion,
+    errors: &mut ValidationErrors,
+) {
+    if format.major() >= FormatVersion::V11.major() {
+        return;
+    }
+    for field in command.examples.keys() {
+        errors.push(ValidationError::at(
+            command
+                .site()
+                .key("input")
+                .named(field.clone())
+                .key("example"),
+            ValidationCode::UnsupportedFormatVersion,
+            "input examples require specification format ess/11",
+        ));
+    }
+}
+
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
+    string_operators(spec, spec.system().format, &mut errors);
     errors.extend(crate::command::validate_response_contracts(spec));
     let format = spec.system().format;
     for binding in spec.bindings().values() {
@@ -192,6 +358,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     }
     for command in spec.commands().values() {
         held_state_conditions(command, format, &mut errors);
+        input_examples(command, format, &mut errors);
         fields(
             &command.input,
             format,
@@ -223,6 +390,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for view in spec.views().values() {
+        aggregate_view(view, format, &mut errors);
         if let Some(members) = view.projected_fields(&spec.system().types) {
             fields(
                 members,

@@ -588,7 +588,7 @@ fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: SynthesisDisposition::Obligation(ImplementationObligation {
                 reason: behavior_reason(command),
-                contract: behavior_contract(command),
+                contract: behavior_contract(ir, command),
             }),
         });
     }
@@ -610,7 +610,8 @@ fn behavior_reason(command: &ResolvedCommand) -> ObligationReason {
 
 /// The behaviour's contract, phrased against the model: the input, and every declared outcome with
 /// what taking it entails.
-fn behavior_contract(command: &ResolvedCommand) -> String {
+fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String {
+    let unknown = ess_gen::unknown_instance::unknown_instance_answer(ir, command);
     let mut branches = Vec::new();
     for outcome in &command.outcomes {
         let mut branch = format!(
@@ -635,6 +636,9 @@ fn behavior_contract(command: &ResolvedCommand) -> String {
         if let Some(error) = &outcome.error {
             let _ = write!(branch, ", error `{error}`");
         }
+        if unknown.is_some_and(|declared| declared.name == outcome.name) {
+            branch.push_str(", and for an instance no record carries, without the error's fields");
+        }
         branches.push(branch);
     }
     format!(
@@ -652,6 +656,12 @@ fn behavior_contract(command: &ResolvedCommand) -> String {
 pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when `{predicate}`"),
+        ResolvedCondition::SubjectPredicate { predicate, input } => format!(
+            "when the existing subject's stored fields satisfy `{predicate}`{}",
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "when the existing subject is in {state}{}",
             predicate
@@ -764,6 +774,19 @@ fn view_contract(view: &ResolvedView) -> String {
     );
     if let Some(filter) = &view.filter {
         let _ = write!(contract, ", containing instances where `{filter}`");
+    }
+    if let Some(aggregation) = &view.aggregation {
+        let computing: Vec<String> = aggregation
+            .functions
+            .iter()
+            .map(|(field, aggregate)| format!("`{field} = {aggregate}`"))
+            .collect();
+        let _ = write!(
+            contract,
+            ", {}, computing {}",
+            aggregation.grouping_clause(),
+            computing.join(", ")
+        );
     }
     contract
 }

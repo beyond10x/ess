@@ -254,18 +254,19 @@ this block, a count that does not match, and a listed file that has none, are ea
 accessor.rs 1 0
 actor.rs 1 0
 binding.rs 28 0
-command.rs 13 40
+command.rs 13 43
 component.rs 15 9
 domain.rs 5 0
 entity.rs 16 4
 expression.rs 1 0
-primitive_admission.rs 7 4
+outcome_group.rs 17 0
+primitive_admission.rs 9 7
 selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
-types.rs 8 1
-view.rs 11 0
+types.rs 12 1
+view.rs 25 0
 wire.rs 1 0
 ```
 <!-- inventory:end -->
@@ -309,13 +310,14 @@ event command.rs 3
 event component.rs 1
 event primitive_admission.rs 1
 event wire.rs 1
+outcome_groups outcome_group.rs 17
 topology topology.rs 6
 types primitive_admission.rs 1
 types system.rs 3
-types types.rs 4
+types types.rs 6
 types wire.rs 1
-view primitive_admission.rs 2
-view view.rs 5
+view primitive_admission.rs 3
+view view.rs 10
 view wire.rs 2
 ```
 <!-- heads:end -->

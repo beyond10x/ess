@@ -195,6 +195,37 @@ fn entity_setup_checks_collection_members_and_value_object_invariants() {
     .is_complete());
 }
 
+/// A declared alphabet holds an authored setup value as an invariant does
+/// (`docs/design/string-alphabet-and-length.md`, section 1): `keyz` is not a value of a type whose
+/// characters are `abc `.
+#[test]
+fn entity_setup_holds_a_text_to_its_declared_alphabet() {
+    let model = CALL_HISTORY_SETUP_MODEL
+        .replace("format: ess/1\n", "format: ess/11\n")
+        .replace(
+            "entities:",
+            "types:\n  - name: calls.history.Note\n    kind: newtype\n    of: String\n    alphabet: \"abc \"\nentities:",
+        )
+        .replace(
+            "note, type: 'Optional<String>'",
+            "note, type: 'Optional<calls.history.Note>'",
+        );
+    let ir = fixture(&model);
+    let source = CALL_HISTORY_SETUP.replace("note: null", "note: 'a cab'");
+    let admitted = authoring(&ir, &source);
+    assert!(admitted.is_complete(), "{:?}", admitted.refusals);
+    let refused = authoring(&ir, &source.replace("note: 'a cab'", "note: 'keyz'"));
+    assert!(
+        !refused.is_complete(),
+        "an authored value outside the alphabet was admitted"
+    );
+    assert!(
+        format!("{:?}", refused.refusals).contains("not in the alphabet of calls.history.Note"),
+        "{:?}",
+        refused.refusals
+    );
+}
+
 #[test]
 fn entity_setup_checks_union_tags_payloads_and_nested_struct_invariants() {
     for tag in ["kind", "value"] {
@@ -748,7 +779,7 @@ fn rejected_authored_candidate_needs_are_proved_independently_of_an_outside_surv
         let inventory = input.selected().coverage().unwrap();
         assert_eq!(inventory.counts.generated, 2);
         assert_eq!(inventory.counts.authored, 0);
-        assert_eq!(inventory.counts.outside, 28);
+        assert_eq!(inventory.counts.outside, 31);
         assert_eq!(inventory.counts.refused, 1);
         let refusal = &inventory.refused[0];
         assert_eq!(refusal.scope, expected_scope);
@@ -1174,7 +1205,7 @@ fn the_committed_billing_suite_holds_the_authored_scenario_beside_the_generated_
         authored,
         vec!["billing.invoice/authored/outstanding-invoices-rank-latest-first"]
     );
-    assert_eq!(suite.len(), 30, "twenty-nine obligations and one assertion");
+    assert_eq!(suite.len(), 33, "thirty-two obligations and one assertion");
 }
 
 #[test]

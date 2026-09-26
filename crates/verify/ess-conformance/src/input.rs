@@ -27,14 +27,19 @@
 //! | a primitive | nothing to consume: the segment is undeclared | a scalar |
 //! | an enum | nothing to consume: the segment is undeclared | a scalar, as text |
 //! | a union | not a scalar: `a union` | not a scalar: `a union` |
-//! | `List<T>` | not a scalar: `a list` | not a scalar: `a list` |
+//! | `List<T>` | `count`, or an element index into `T` | not a scalar: `a list` |
 //! | `Map<K, V>` | not a scalar: `a map` | not a scalar: `a map` |
+//!
+//! A list publishes its size as `<path>.count` and element `n` under `<path>.<n>`, which is the
+//! convention [`FactSource::cardinality`] and the quantifiers read for an observed collection
+//! (ess#94). So `tags.count > 0`, `lines.0.quantity` and `forall`/`exists` over an input list are
+//! decided rather than refused.
 //!
 //! **Its limits, named rather than discovered later.** A union is not projected *at all*, not even
 //! its tag — which is a `String` a fact could hold, and which a later wave may decide to bind as
-//! `payee.kind`. Lists and maps require collection facts this typed projector does not publish,
-//! including legal cardinality and List ordinal reads. The projection walk is bounded at
-//! [`MAX_TYPE_DEPTH`]; semantic path validation has no such depth limit.
+//! `payee.kind`. A map requires collection facts this typed projector does not publish, including
+//! its legal cardinality. The projection walk is bounded at [`MAX_TYPE_DEPTH`]; semantic path
+//! validation has no such depth limit.
 //!
 //! # A candidate that is not a value of the input's type is refused here
 //!
@@ -48,9 +53,7 @@ use std::fmt;
 
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
-use ess_primitives::facts::{
-    is_canonical_uuid, is_padded_base64, FactPath, FactSource, FactStore, FactValue, Scales,
-};
+use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue, Scales};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, Truth};
 
@@ -97,6 +100,65 @@ pub(crate) fn replay_facts<'ir>(
         facts,
         scales: Scales::default(),
     })
+}
+
+/// Facts read beside the fields that declare them, the way every ESS evaluator reads them.
+///
+/// The declared types are what an ordering needs (ess#94): a `Timestamp` is ordered by the instant
+/// it names, never by its spelling — `2020-01-01T00:30:00+01:00` is before `2020-01-01T00:00:00Z`
+/// although its bytes sort after — a `Duration` is not ordered at all, and any other text no scale
+/// orders is ordered by its UTF-8 bytes, as the generated Go and TypeScript runtimes order it. One
+/// wrapper for every store this crate decides a predicate over with the declaring fields in hand:
+/// an entity's setup, a struct's or a newtype's invariants, a view's filter. [`InputFacts`] answers
+/// the same two questions for a command's input through [`declared_as`].
+pub(crate) struct TypedFacts<'a> {
+    ir: &'a EssIr,
+    fields: &'a [ResolvedField],
+    facts: FactStore,
+}
+
+impl<'a> TypedFacts<'a> {
+    /// `facts`, read against `fields`.
+    pub(crate) fn new(ir: &'a EssIr, fields: &'a [ResolvedField], facts: FactStore) -> Self {
+        Self { ir, fields, facts }
+    }
+
+    /// Binds one more fact.
+    pub(crate) fn set(&mut self, path: FactPath, value: FactValue) {
+        self.facts.set(path, value);
+    }
+}
+
+impl FactSource for TypedFacts<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        self.facts.fact(path)
+    }
+
+    fn scales(&self) -> &Scales {
+        self.facts.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        declared_as(self.ir, self.fields, path, Primitive::Timestamp)
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        !declared_as(self.ir, self.fields, path, Primitive::Duration)
+    }
+}
+
+/// Whether `path` resolves, through any newtype or `Optional`, to the primitive `wanted`.
+///
+/// A path that does not resolve — `state`, a filter's `param.…` — answers `false`.
+pub(crate) fn declared_as(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    path: &FactPath,
+    wanted: Primitive,
+) -> bool {
+    ess_compiler::expression::resolve_path(ir, fields, path, "conformance facts").is_ok_and(
+        |resolved| matches!(resolved.terminal, ResolvedTypeRef::Primitive { name } if name == wanted),
+    )
 }
 
 /// Projects a map of values into facts, guided by the fields some construct declares.
@@ -189,21 +251,12 @@ pub fn validate_entity_setup(
     fields.push(declared.identity.clone());
     let mut supplied = values.clone();
     supplied.insert(declared.identity.name.clone(), identity.clone());
-    let mut facts = setup_fields(ir, &fields, &supplied, 0)?;
-    facts.set_path(
-        "state",
-        ess_primitives::facts::FactValue::Text(state.to_string()),
+    let mut facts = TypedFacts::new(ir, &fields, setup_fields(ir, &fields, &supplied, 0)?);
+    facts.set(
+        FactPath::new("state").expect("static path"),
+        FactValue::Text(state.to_string()),
     );
-    for invariant in &declared.invariants {
-        let truth = invariant.predicate.evaluate(&facts);
-        if truth != ess_primitives::predicate::Truth::True {
-            return Err(format!(
-                "invariant `{}` is {truth:?}; setup requires True",
-                invariant.statement
-            ));
-        }
-    }
-    Ok(())
+    setup_invariants(&declared.invariants, &facts)
 }
 
 fn setup_fields(
@@ -225,7 +278,7 @@ fn setup_fields(
 
 fn setup_invariants(
     invariants: &[ess_domain::entity::Invariant],
-    facts: &FactStore,
+    facts: &dyn FactSource,
 ) -> Result<(), String> {
     for invariant in invariants {
         let truth = invariant.predicate.evaluate(facts);
@@ -290,15 +343,38 @@ fn setup_value(
             Ok(())
         }
         ResolvedTypeRef::Declared { name } => {
-            setup_body(ir, &ir.named_type(name).body, value, depth + 1)
+            let declared = ir.named_type(name);
+            setup_body(ir, &declared.name, &declared.body, value, depth + 1)
         }
     }
 }
 
-fn setup_body(ir: &EssIr, body: &ResolvedBody, value: &Node, depth: usize) -> Result<(), String> {
+fn setup_body(
+    ir: &EssIr,
+    name: &ess_domain::QualifiedName,
+    body: &ResolvedBody,
+    value: &Node,
+    depth: usize,
+) -> Result<(), String> {
     match body {
-        ResolvedBody::Newtype { of, invariants } => {
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => {
             setup_value(ir, of, value, depth)?;
+            // Before the invariants: every character of a text is one of the declared alphabet's
+            // (`docs/design/string-alphabet-and-length.md`, section 1).
+            if let (Some(alphabet), Some(text)) = (alphabet, value.as_text()) {
+                if let Some(outside) = text
+                    .chars()
+                    .find(|character| !alphabet.contains(*character))
+                {
+                    return Err(format!(
+                        "{outside:?} in {text:?} is not in the alphabet of {name}"
+                    ));
+                }
+            }
             let mut facts = FactStore::new();
             let mut errors = Vec::new();
             project(
@@ -313,14 +389,19 @@ fn setup_body(ir: &EssIr, body: &ResolvedBody, value: &Node, depth: usize) -> Re
             if !errors.is_empty() {
                 return Err(format!("newtype facts unavailable: {errors:?}"));
             }
-            setup_invariants(invariants, &facts)
+            let wrapped = [ResolvedField {
+                name: "value".to_owned(),
+                type_ref: of.clone(),
+                naming: ess_domain::name::Naming::default(),
+            }];
+            setup_invariants(invariants, &TypedFacts::new(ir, &wrapped, facts))
         }
         ResolvedBody::Struct { fields, invariants } => {
             let Node::Map(values) = value else {
                 return Err("expected a struct mapping".into());
             };
             let facts = setup_fields(ir, fields, values, depth)?;
-            setup_invariants(invariants, &facts)
+            setup_invariants(invariants, &TypedFacts::new(ir, fields, facts))
         }
         ResolvedBody::Enum { variants } => {
             if value
@@ -444,10 +525,11 @@ impl<'ir> InputFacts<'ir> {
     /// Declares the ordered scales non-numeric comparisons are read against.
     ///
     /// Empty by default, and that default is a fact about the model rather than a placeholder: the
-    /// ESS specification language has no scale vocabulary, so nothing an author writes can order two
-    /// text values. Every `<`, `<=`, `>` and `>=` between two of them is therefore
-    /// [`Reason::TextNotOrdered`] until something outside the specification — an AEP protocol, whose
-    /// `scales:` this takes — supplies the ordering.
+    /// ESS specification language has no scale vocabulary. A text ordering no scale decides is
+    /// decided by the texts' UTF-8 bytes, as in every ESS lane (ess#94); a scale supplied here by
+    /// something outside the specification — an AEP protocol, whose `scales:` this takes — decides
+    /// first wherever it contains both values. [`Reason::TextNotOrdered`] is left for a declared
+    /// `Timestamp` whose text names no instant.
     #[must_use]
     pub fn with_scales(mut self, scales: Scales) -> Self {
         self.scales = scales;
@@ -524,16 +606,19 @@ impl<'ir> InputFacts<'ir> {
             });
         };
         match leaf {
-            // The three leaves that read one path: `Unknown` means nothing is bound there.
+            // The four leaves that read one path: `Unknown` means nothing is bound there.
             // `Defined` is not among them — it reports `False` for an unbound path, by design.
+            // A string operator is `Unknown` only when its path is unbound: its literal always
+            // resolves, and a resolved value that is not text is `False`.
             Predicate::Truthy(path)
             | Predicate::AnyOf { path, .. }
-            | Predicate::NoneOf { path, .. } => push(self.explain_path(path)),
+            | Predicate::NoneOf { path, .. }
+            | Predicate::TextMatch { path, .. } => push(self.explain_path(path)),
             Predicate::Compare { left, op, right } => {
                 let mut unresolved = false;
                 for operand in [left, right] {
                     if let Operand::Fact(path) = operand {
-                        if self.fact(path).is_none() {
+                        if self.observe(path).is_none() {
                             unresolved = true;
                             push(self.explain_path(path));
                         }
@@ -592,7 +677,7 @@ impl<'ir> InputFacts<'ir> {
     /// One operand's value, or `None` when it reads a path nothing bound.
     fn resolve(&self, operand: &Operand) -> Option<FactValue> {
         match operand {
-            Operand::Fact(path) => self.fact(path),
+            Operand::Fact(path) => self.observe(path),
             Operand::Literal(value) => Some(value.clone()),
         }
     }
@@ -629,22 +714,16 @@ impl FactSource for InputFacts<'_> {
         &self.scales
     }
 
+    /// Every path but a declared `Duration`: an ESS specification declares no scale, and every ESS
+    /// lane orders text by bytes — but a `Duration` has no ordering (validate refuses one), and its
+    /// ISO 8601 bytes would put `PT10M` below `PT5M`.
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        !declared_as(self.ir, &self.command.input, path, Primitive::Duration)
+    }
+
     /// A path whose declared terminal type is `Timestamp`, through any newtype or `Optional`.
     fn orders_as_instant(&self, path: &FactPath) -> bool {
-        ess_compiler::expression::resolve_path(
-            self.ir,
-            &self.command.input,
-            path,
-            "conformance input",
-        )
-        .is_ok_and(|resolved| {
-            matches!(
-                resolved.terminal,
-                ResolvedTypeRef::Primitive {
-                    name: Primitive::Timestamp
-                }
-            )
-        })
+        declared_as(self.ir, &self.command.input, path, Primitive::Timestamp)
     }
 }
 
@@ -712,6 +791,11 @@ pub(crate) fn projection_target(
     }
     if resolved.access.collection {
         return Target::Aggregate("a collection");
+    }
+    // A text length is a leaf the evaluator derives, and no suite format carries one to a view
+    // row: it is asserted where values are built, on command input and setup.
+    if resolved.access.text_length {
+        return Target::Aggregate("a text length");
     }
     if resolved.scalar.is_some() {
         return Target::Scalar;
@@ -791,13 +875,13 @@ fn project(
             Some(fact) => facts.set(path.clone(), fact),
             None => wrong(errors, name.to_string()),
         },
-        // Checked for shape but not projected: legal count and List ordinal paths require
-        // collection facts this producer does not currently publish.
-        ResolvedTypeRef::List { .. } => {
-            if !matches!(value, Node::Seq(_)) {
-                wrong(errors, format!("{type_ref}"));
-            }
-        }
+        // A list publishes its size as `<path>.count` and each element under `<path>.<index>`,
+        // the convention `FactSource::cardinality` reads for an observed collection — so a
+        // quantifier and a `.count` guard over command input are decided (ess#94).
+        ResolvedTypeRef::List { of } => match value {
+            Node::Seq(elements) => project_list(ir, of, elements, path, depth, facts, errors),
+            _ => wrong(errors, format!("{type_ref}")),
+        },
         ResolvedTypeRef::Map { .. } => {
             if !matches!(value, Node::Map(_)) {
                 wrong(errors, format!("{type_ref}"));
@@ -878,36 +962,37 @@ fn project(
     }
 }
 
+/// Binds `<path>.count` and each element of a list under `<path>.<index>`.
+fn project_list(
+    ir: &EssIr,
+    of: &ResolvedTypeRef,
+    elements: &[Node],
+    path: &FactPath,
+    depth: usize,
+    facts: &mut FactStore,
+    errors: &mut Vec<ShapeError>,
+) {
+    facts.set(path.child("count"), FactValue::count(elements.len()));
+    for (index, element) in elements.iter().enumerate() {
+        project(
+            ir,
+            of,
+            element,
+            &path.child(&index.to_string()),
+            depth + 1,
+            facts,
+            errors,
+        );
+    }
+}
+
 /// The fact value a primitive-typed node projects to, or `None` when the node is the wrong shape.
 ///
 /// Crate-visible rather than private because [`Holds::admits`](crate::Holds::admits) asks the same
 /// question of an event's payload. One table, so that a payload and a command input cannot come to
 /// different conclusions about whether `1.5` is an `Integer`.
 pub(crate) fn primitive_value(primitive: Primitive, value: &Node) -> Option<FactValue> {
-    match (primitive, value) {
-        (Primitive::Boolean, Node::Bool(flag)) => Some(FactValue::Bool(*flag)),
-        (Primitive::Decimal, Node::Number(number)) => Some(FactValue::Number(*number)),
-        // An integer that is not integral is refused rather than rounded: a candidate binding `1.5`
-        // to an `Integer` would decide `quantity == 1` differently from the system it is testing.
-        (Primitive::Integer, Node::Number(number)) if number.is_integral() => {
-            Some(FactValue::Number(*number))
-        }
-        // A grammar, not merely a shape. `Uuid` bound any text at all, so a candidate spelling an
-        // identifier `x` was admitted by a runner and refused by every schema this repository
-        // publishes for the same field (`ess-gen`'s `UUID_PATTERN`) — review finding F08. The two
-        // constrained primitives now ask the one grammar `ess-primitives` holds, which the Go
-        // runtime and the browser adapter ask in their own words against the same corpus.
-        (Primitive::Uuid, Node::Text(text)) if is_canonical_uuid(text) => {
-            Some(FactValue::text(text))
-        }
-        (Primitive::Bytes, Node::Text(text)) if is_padded_base64(text) => {
-            Some(FactValue::text(text))
-        }
-        (Primitive::String | Primitive::Timestamp | Primitive::Duration, Node::Text(text)) => {
-            Some(FactValue::text(text))
-        }
-        _ => None,
-    }
+    primitive.admits(value)
 }
 
 /// A candidate that is not a value of the command's declared input type.

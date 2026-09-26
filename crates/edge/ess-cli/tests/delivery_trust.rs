@@ -16,6 +16,8 @@ use std::{
 
 #[path = "support/bundle_fixture.rs"]
 mod bundle_fixture;
+#[path = "support/compiled_fixture.rs"]
+mod compiled_fixture;
 
 const QUALIFIERS: [&str; 4] = [
     "attachment binding: unverified",
@@ -300,26 +302,18 @@ fn tool_path() -> std::ffi::OsString {
         let root = std::env::temp_dir().join(format!("ess-release-tools-{}", std::process::id()));
         fs::create_dir(&root).unwrap();
         let compiler = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-        let out = Command::new(compiler)
-            .args(["--edition=2021"])
-            .arg(
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("tests/support/fake_release_component.rs"),
-            )
-            .arg("-o")
-            .arg(root.join("oras"))
-            .output()
-            .unwrap();
-        fs::write(root.join("compiler.stdout"), &out.stdout).unwrap();
-        fs::write(root.join("compiler.stderr"), &out.stderr).unwrap();
-        fs::write(root.join("compiler.status"), out.status.to_string()).unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
+        let program = compiled_fixture::compiled(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/fake_release_component.rs"),
+            &compiler,
+            &["--edition=2021"],
         );
-        for tool in ["docker", "helm", "cosign", "syft"] {
-            fs::copy(root.join("oras"), root.join(tool)).unwrap();
+        fs::write(
+            root.join("compiler.program"),
+            format!("{}\n", program.display()),
+        )
+        .unwrap();
+        for tool in ["oras", "docker", "helm", "cosign", "syft"] {
+            fs::copy(&program, root.join(tool)).unwrap();
         }
         root
     });

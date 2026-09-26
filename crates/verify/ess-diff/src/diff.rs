@@ -479,11 +479,28 @@ fn body_changes(before: &ResolvedBody, after: &ResolvedBody, mut push: impl FnMu
     }
 
     match (before, after) {
-        (ResolvedBody::Newtype { of: was, .. }, ResolvedBody::Newtype { of: is, .. }) => {
+        (
+            ResolvedBody::Newtype {
+                of: was,
+                alphabet: was_alphabet,
+                ..
+            },
+            ResolvedBody::Newtype {
+                of: is,
+                alphabet: is_alphabet,
+                ..
+            },
+        ) => {
             if was != is {
                 push(TypeChange::RepresentationChanged {
                     before: was.to_string(),
                     after: is.to_string(),
+                });
+            }
+            if was_alphabet != is_alphabet {
+                push(TypeChange::AlphabetChanged {
+                    before: was_alphabet.clone(),
+                    after: is_alphabet.clone(),
                 });
             }
         }
@@ -926,6 +943,12 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 fn written_condition(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when {predicate}"),
+        ResolvedCondition::SubjectPredicate { predicate, input } => format!(
+            "when subject fields satisfy {predicate}{}",
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "when subject state is {state}{}",
             predicate
@@ -1302,6 +1325,26 @@ fn compare_commands(
             after: owns,
         });
     }
+    // An example on an input both revisions declare; an added or removed input already says so.
+    let example = |value: Option<&ess_primitives::node::Node>| {
+        value.map(|node| serde_json::to_string(node).expect("a node serializes"))
+    };
+    for field in &is.input {
+        if !was.input.iter().any(|kept| kept.name == field.name) {
+            continue;
+        }
+        let (before, after) = (
+            example(was.examples.get(&field.name)),
+            example(is.examples.get(&field.name)),
+        );
+        if before != after {
+            push(CommandChange::InputExampleChanged {
+                field: field.name.clone(),
+                before,
+                after,
+            });
+        }
+    }
 
     field_deltas(&was.input, &is.input, |delta| match delta {
         FieldDelta::Added(field, type_ref) => push(CommandChange::InputAdded { field, type_ref }),
@@ -1560,6 +1603,7 @@ fn compare_views(
             after: is.filter.as_ref().map(ToString::to_string),
         });
     }
+    compare_aggregations(was, is, push);
     if was.consistency != is.consistency {
         push(ViewChange::ConsistencyChanged {
             before: was.consistency.as_str().to_owned(),
@@ -1581,6 +1625,46 @@ fn compare_views(
                 before: a,
                 after: b,
             }),
+        }
+    }
+}
+
+/// Aggregate views (`docs/design/aggregate-views.md`): the grouping, then what each field
+/// computes, over the union of field names. A view with no aggregation on either side reports
+/// nothing here, so its delta keeps its format.
+fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl FnMut(ViewChange)) {
+    let grouping = |view: &ResolvedView| {
+        view.aggregation
+            .as_ref()
+            .map(|aggregation| aggregation.group_by.clone())
+            .unwrap_or_default()
+    };
+    if grouping(was) != grouping(is) {
+        push(ViewChange::GroupingChanged {
+            before: grouping(was),
+            after: grouping(is),
+        });
+    }
+    let computes = |view: &ResolvedView, field: &str| {
+        view.aggregation
+            .as_ref()
+            .and_then(|aggregation| aggregation.functions.get(field))
+            .map(ToString::to_string)
+    };
+    let names: std::collections::BTreeSet<&str> = was
+        .fields
+        .iter()
+        .chain(&is.fields)
+        .map(|field| field.name.as_str())
+        .collect();
+    for field in names {
+        let (before, after) = (computes(was, field), computes(is, field));
+        if before != after {
+            push(ViewChange::FieldAggregateChanged {
+                field: field.to_owned(),
+                before,
+                after,
+            });
         }
     }
 }
@@ -2024,7 +2108,10 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
         "types" => {
             if let Some(body) = declaration.get_mut("body") {
                 residual_fields(body, "fields");
-                remove_keys(body, &["kind", "of", "invariants", "variants", "tag"]);
+                remove_keys(
+                    body,
+                    &["kind", "of", "alphabet", "invariants", "variants", "tag"],
+                );
             }
         }
         "entities" => residual_entity(declaration),
@@ -2091,6 +2178,8 @@ fn residual_entity(declaration: &mut serde_json::Value) {
 
 fn residual_command(declaration: &mut serde_json::Value) {
     residual_fields(declaration, "input");
+    // Compared as `InputExampleChanged`, input by input.
+    remove_keys(declaration, &["examples"]);
     if let Some(outcomes) = declaration
         .get_mut("outcomes")
         .and_then(serde_json::Value::as_array_mut)

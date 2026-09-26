@@ -1002,12 +1002,17 @@ fn delivery_arm(
         .filter(|outcome| outcome.error.is_none())
         .map(|outcome| name::pascal(outcome.name.as_str()))
         .collect();
-    let refusals: Vec<String> = command
+    let mut refusals: Vec<String> = command
         .outcomes
         .iter()
         .filter(|outcome| outcome.error.is_some())
         .map(|outcome| name::pascal(outcome.name.as_str()))
         .collect();
+    // An unknown instance is refused with the same declared error, so the policy runs for it too.
+    refusals.extend(
+        ess_gen::unknown_instance::unknown_instance_answer(ir, command)
+            .map(super::items::unknown_instance_variant),
+    );
 
     let _ = writeln!(
         out,

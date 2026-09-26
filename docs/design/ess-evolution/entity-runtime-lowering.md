@@ -73,7 +73,7 @@ pub struct LoweredService {
 }
 
 pub const ENTITY_RUNTIME_REVISION: &str =
-    "77aac6eac95d0392a00e8dee8d04038ef70e47de";
+    "4746bd7cc37d27c7cc5815c44a62a96f3ddc1f44";
 
 pub struct BindingPlan {
     commands: BTreeMap<QualifiedName, CommandBinding>,
@@ -242,6 +242,7 @@ pub enum LoweringCode {
     ClearedValueUnsupported,
     SilentPreserveUnsupported,
     TargetDefinitionRefused,
+    TextOrderingUnsupported,
 }
 ```
 
@@ -579,6 +580,7 @@ validation error and weaken or rewrite the definition around it.
 | `LiteralShapeUnsupported` | a string-form ESS literal targets a non-scalar representation | no exact structured value can be recovered without guessing |
 | `ClearedValueUnsupported` | an operation outcome clears an `Optional` field (ESS `Cleared`) | ER admits `Remove` only as a host-supplied action; a definition cannot state a removal, and handing the field to the host would let it choose `Set` |
 | `SilentPreserveUnsupported` | a `Preserves` outcome that returns no response | ER refuses a branch with no effect, write, event or response (`UnobservableOutcome`) |
+| `TextOrderingUnsupported` | a command-input or stored-field guard orders text (`<`, `<=`, `>`, `>=` over a `String`; ess#75) | ESS orders text by its UTF-8 bytes and entity-core has no operator that does; `compare` answers `Unknown` for every row, so the lowered guard would error on every call. A `Timestamp` ordering lowers to `before`/`after` instead |
 
 These refusals are bounded and path-bearing. They do not make billing or gatepass acceptance pass by
 subtraction. At target `da5d3687`, `billing.invoice`'s `invoice-service` is blocked at

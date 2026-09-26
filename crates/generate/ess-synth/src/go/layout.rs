@@ -111,6 +111,8 @@ mod key {
     pub const RESPONSE: &str = "response";
     /// One variant type of a command's outcome.
     pub const OUTCOME_VARIANT: &str = "outcomevariant";
+    /// The variant answering `wrong_state` for an instance no record carries.
+    pub const UNKNOWN_INSTANCE: &str = "unknowninstance";
     /// A command's behaviour obligation.
     pub const BEHAVIOR: &str = "behavior";
     /// A view's query obligation.
@@ -350,6 +352,13 @@ impl Layout {
     /// One variant type of a command's outcome.
     pub fn outcome_variant(&self, command: &QualifiedName, outcome: &str) -> &str {
         self.name(&[key::OUTCOME_VARIANT, &command.to_string(), outcome])
+    }
+
+    /// The variant answering a command's `wrong_state` branch for an instance no record carries
+    /// (`docs/design/unknown-instance-seams.md`); allocated only where
+    /// [`ess_gen::unknown_instance::unknown_instance_answer`] is `Some`.
+    pub fn unknown_instance_variant(&self, command: &QualifiedName) -> &str {
+        self.name(&[key::UNKNOWN_INSTANCE, &command.to_string()])
     }
 
     /// A command's behaviour obligation.
@@ -652,6 +661,27 @@ impl Layout {
                 &package,
                 &[key::QUERY, &view.name.to_string()],
                 format!("{type_name}Query"),
+            );
+        }
+
+        // Last, so every declared name keeps the spelling it had before this variant existed; a
+        // clash is resolved against the new variant rather than by renaming a declared one.
+        for command in ir.commands().values() {
+            let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(ir, command)
+            else {
+                continue;
+            };
+            let package = self.package_of(&command.name).clone();
+            let candidate = format!(
+                "{}Outcome{}UnknownInstance",
+                self.declared(&command.name),
+                name::exported(declared.name.as_str())
+            );
+            self.put(
+                taken,
+                &package,
+                &[key::UNKNOWN_INSTANCE, &command.name.to_string()],
+                candidate,
             );
         }
     }

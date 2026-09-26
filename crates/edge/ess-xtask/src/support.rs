@@ -322,6 +322,8 @@ struct ConformanceFacts {
     run_format: String,
     report_format: String,
     coverage_suite: String,
+    mutate_targets: Vec<String>,
+    mutate_classes: Vec<String>,
 }
 
 fn observe_conformance(root: &Path) -> Result<ConformanceFacts> {
@@ -332,6 +334,9 @@ fn observe_conformance(root: &Path) -> Result<ConformanceFacts> {
     let report_default = default(&run_help, "--report-format")?;
     let report_choices = choices(&run_help, "--report-format")?;
     let reference_targets = choices(&run_help, "--target")?;
+    let mutate_help = cli(root, &["verify", "conform", "mutate", "--help"])?;
+    let mutate_targets = choices(&mutate_help, "--target")?;
+    let mutate_classes = choices(&mutate_help, "--class")?;
 
     // Standalone report/1 has no stdout mode. Retain this small actual CLI output under target;
     // unique, exclusive directory creation prevents concurrent checks overwriting each other.
@@ -409,6 +414,8 @@ fn observe_conformance(root: &Path) -> Result<ConformanceFacts> {
         run_format,
         report_format,
         coverage_suite,
+        mutate_targets,
+        mutate_classes,
     })
 }
 
@@ -522,6 +529,8 @@ fn render(root: &Path) -> Result<String> {
         run_format,
         report_format,
         coverage_suite,
+        mutate_targets,
+        mutate_classes,
     } = observe_conformance(root)?;
 
     let mut output = format!("{BEGIN}\n\nThe source checkout’s workspace version is `{version}` and includes separately documented unreleased changes.\n\n| Capability | Current source | Limits and evidence |\n|---|---|---|\n");
@@ -568,6 +577,7 @@ fn render(root: &Path) -> Result<String> {
     row(&mut output, "Conformance targets", &code_list(&reference_targets), "Built-in reference implementations. A production adapter must establish its own execution boundary; these targets do not prove independent deployment.");
     row(&mut output, "Conformance formats", &format!("Defaults: `{default_suite}`, `{default_report}`. Explicit count surfaces: `{report_format}`, `{run_format}`. CLI suite choices: {} (default `{suite_default}`); report choices: {} (default `{report_default}`).", code_list(&suite_choices), code_list(&report_choices)), &format!("Actual report markers and CLI metadata; all-pass legacy execution can still mean inconclusive conformance. {}.", source("count-report tests", "crates/edge/ess-cli/tests/count_reports.rs")));
     row(&mut output, "Coverage qualification", &format!("Current-source `{coverage_suite}` requires explicit report/2 before execution"), &format!("Only a nonempty all-pass selection with complete inventory and no in-scope refusal can qualify. Suite/5, carrier and paired replay were introduced in 0.21.0. {} and [conformance guide](../guides/verify-conformance.md#opt-into-declared-coverage).", source("coverage CLI tests", "crates/edge/ess-cli/tests/coverage_cli.rs")));
+    row(&mut output, "Mutation audit", &format!("`verify conform mutate` against {}; classes {}; writes `ess-mutation-report/1`", code_list(&mutate_targets), code_list(&mutate_classes)), &format!("Mutates the specification, not the implementation, and runs no authored scenario: a survivor is a rule synthesis does not pin, answered by the model or a synthesis gap. {} and [conformance guide](../guides/verify-conformance.md#audit-the-suite-with-specification-mutants).", source("mutation audit tests", "crates/verify/ess-conformance/tests/mutation_audit.rs")));
     row(&mut output, "Browser conformance", "Replay presentation with no execution report", &format!("A green replay is not independent execution evidence; digest comparison does not authenticate the publisher. {}.", source("browser admission tests", "crates/edge/ess-cli/tests/coverage_browser.rs")));
     row(
         &mut output,
@@ -843,7 +853,7 @@ mod tests {
             .filter(|(_, line)| line.starts_with("| ") && !line.starts_with("| Capability |"))
             .map(|(index, _)| index)
             .collect();
-        assert_eq!(rows.len(), 21);
+        assert_eq!(rows.len(), 22);
         let mut refused = 0;
         for &index in &rows {
             let cells: Vec<_> = lines[index].split('|').map(str::to_owned).collect();

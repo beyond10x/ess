@@ -84,7 +84,7 @@ use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::refs::Refs;
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
-use ess_domain::view::{AssertionStyle, Consistency, Ranking};
+use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Ranking};
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
@@ -306,6 +306,12 @@ pub enum ResolvedBody {
     Newtype {
         /// What it wraps.
         of: ResolvedTypeRef,
+        /// The characters every value is drawn from, when declared (ess/11).
+        ///
+        /// Skipped when absent, so the IR of a model that declares none keeps its bytes and its
+        /// `spec_digest`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        alphabet: Option<String>,
         /// Conditions every value satisfies, as predicates over `value`.
         invariants: Vec<Invariant>,
     },
@@ -331,6 +337,27 @@ pub enum ResolvedBody {
         /// The variants, by tag value.
         variants: BTreeMap<String, ResolvedTypeRef>,
     },
+}
+
+impl ResolvedBody {
+    /// Whether a value of this type is held to more than its representation: a newtype or a struct
+    /// with any invariant, or a newtype with a declared alphabet.
+    ///
+    /// The one question every site that refuses a constrained type asks. Matching on `invariants`
+    /// alone, as those sites did before ess/11, would let an alphabet-only newtype through where
+    /// an invariant-carrying one is refused (`docs/design/string-alphabet-and-length.md`, section
+    /// 6).
+    pub fn is_constrained(&self) -> bool {
+        match self {
+            Self::Newtype {
+                alphabet,
+                invariants,
+                ..
+            } => alphabet.is_some() || !invariants.is_empty(),
+            Self::Struct { invariants, .. } => !invariants.is_empty(),
+            Self::Enum { .. } | Self::Union { .. } => false,
+        }
+    }
 }
 
 /// A type that is known to be declared.
@@ -545,6 +572,19 @@ pub enum ResolvedCondition {
         equals: String,
         /// Additional input eligibility.
         predicate: Option<Predicate>,
+    },
+    /// A predicate over the existing subject's declared stored fields, conjunctive with an optional
+    /// input guard (ess/9).
+    ///
+    /// Beside [`SubjectField`](Self::SubjectField), which is unchanged so every ess/6 model keeps
+    /// its IR bytes. A branch carrying it without a subject of its own reads the subject its
+    /// siblings name.
+    SubjectPredicate {
+        /// What must hold of the subject's stored fields, read immediately before selection.
+        predicate: Predicate,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
     },
     /// Taken when this predicate over the command's input holds.
     When {
@@ -890,6 +930,11 @@ pub struct ResolvedCommand {
     pub domain: DomainHandle,
     /// Its input, in declaration order.
     pub input: Vec<ResolvedField>,
+    /// The authored `example:` of each input that declares one, by input name (ess/11).
+    ///
+    /// Skipped when empty, so the IR of a command without examples keeps its bytes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub examples: BTreeMap<String, ess_primitives::node::Node>,
     /// Closed declared response fields, omitted for legacy commands.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<ResolvedField>,
@@ -996,6 +1041,23 @@ impl ResolvedCommand {
                 (matches!(outcome.condition, ResolvedCondition::Otherwise)
                     && outcome.error.is_some())
                 .then(|| self.outcomes.iter().find_map(|o| o.subject.as_ref()))
+                .flatten()
+            })
+            .or_else(|| {
+                // A refusal guarded by the subject's stored fields names no subject of its own and
+                // reads the existing one its siblings name (ess/9).
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::SubjectPredicate { .. }
+                )
+                .then(|| {
+                    self.outcomes
+                        .iter()
+                        .filter_map(|o| o.subject.as_ref())
+                        .find(|subject| {
+                            matches!(subject.instance, ResolvedInstance::Supplied { .. })
+                        })
+                })
                 .flatten()
             })
     }
@@ -1112,6 +1174,14 @@ pub struct ResolvedView {
     /// Which instances it contains, as a parsed predicate. `None` means all of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// What makes this an aggregate view, where it is one (`docs/design/aggregate-views.md`).
+    ///
+    /// Omitted when `None`, so the IR bytes and digest of every model without an aggregate view
+    /// are unchanged. The aggregate fields stay in [`Self::fields`] under their declared result
+    /// types; a consumer that assumes one row per entity row must skip a view for which
+    /// [`Self::is_aggregate`] holds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregation: Option<ResolvedAggregation>,
     /// The order the rows are ranked in, most significant key first. Empty means unordered.
     ///
     /// Every key names a field in [`Self::fields`], checked by `ess-domain`, so a consumer of this
@@ -1133,7 +1203,113 @@ pub struct ResolvedView {
     pub naming: Naming,
 }
 
+/// One aggregate field's computation, with its input resolved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAggregate {
+    /// The function.
+    pub function: AggregateFunction,
+    /// The source field read, resolved against the source entity's observable fields. Absent for
+    /// `count`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<ResolvedField>,
+}
+
+impl std::fmt::Display for ResolvedAggregate {
+    /// `sum(talk_seconds)`, or `count()`: the rendering every projection of the construct uses.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.function,
+            self.input.as_ref().map_or("", |input| input.name.as_str())
+        )
+    }
+}
+
+/// What makes a view an aggregate view.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAggregation {
+    /// Group-key view field names, in declaration order. Empty: exactly one row.
+    pub group_by: Vec<String>,
+    /// Aggregate view field name → its computation.
+    pub functions: BTreeMap<String, ResolvedAggregate>,
+}
+
+impl ResolvedAggregate {
+    /// What the field reports, for a reader: "count of instances", "sum of `talk_seconds`", …
+    ///
+    /// One wording, read by every projection that renders the construct — the `OpenAPI` response
+    /// description, the documentation page, the native plan and the generated row types — so two
+    /// artifacts of one model cannot describe one field two ways.
+    pub fn describe(&self) -> String {
+        let input = self
+            .input
+            .as_ref()
+            .map_or_else(String::new, |input| format!("`{}`", input.name));
+        match self.function {
+            AggregateFunction::Count => "count of instances".to_owned(),
+            AggregateFunction::CountDistinct => format!("count of distinct {input} values"),
+            AggregateFunction::Sum => format!("sum of {input}"),
+            AggregateFunction::Min => format!("least {input}"),
+            AggregateFunction::Max => format!("greatest {input}"),
+            AggregateFunction::Avg => {
+                format!("average of {input}, rounded to 6 places half-even")
+            }
+        }
+    }
+}
+
+impl ResolvedAggregation {
+    /// Whether the view returns exactly one row.
+    pub fn is_ungrouped(&self) -> bool {
+        self.group_by.is_empty()
+    }
+
+    /// "grouped by `agent_id`, `channel`", or "one row": the clause a contract line carries.
+    pub fn grouping_clause(&self) -> String {
+        if self.is_ungrouped() {
+            "one row".to_owned()
+        } else {
+            format!("grouped by {}", self.keys())
+        }
+    }
+
+    /// The sentence a description carries: "Grouped by `agent_id`; one row per group holding at
+    /// least one instance.", or "Always exactly one row."
+    pub fn grouping_sentence(&self) -> String {
+        if self.is_ungrouped() {
+            "Always exactly one row.".to_owned()
+        } else {
+            format!(
+                "Grouped by {}; one row per group holding at least one instance.",
+                self.keys()
+            )
+        }
+    }
+
+    /// One `field` = what it computes clause per aggregate field, in field-name order.
+    pub fn clauses(&self) -> Vec<String> {
+        self.functions
+            .iter()
+            .map(|(field, aggregate)| format!("`{field}` = {}", aggregate.describe()))
+            .collect()
+    }
+
+    fn keys(&self) -> String {
+        self.group_by
+            .iter()
+            .map(|key| format!("`{key}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 impl ResolvedView {
+    /// Whether this view computes aggregates rather than one row per instance.
+    pub fn is_aggregate(&self) -> bool {
+        self.aggregation.is_some()
+    }
+
     /// The projected field with this name.
     pub fn field(&self, name: &str) -> Option<&ResolvedField> {
         self.fields.iter().find(|field| field.name == name)
@@ -1917,6 +2093,16 @@ impl EssIr {
         json
     }
 
+    /// The compact JSON of this model, with no trailing newline: exactly the bytes
+    /// [`source_digest`](Self::source_digest) hashes.
+    ///
+    /// One function for both, so an emitted `ir.json` and the digest a suite carries cannot drift:
+    /// a reader holding the file checks it against the digest and then depends on nothing else.
+    pub fn to_compact_json(&self) -> String {
+        serde_json::to_string(self)
+            .unwrap_or_else(|error| panic!("cannot digest an IR that does not serialize: {error}"))
+    }
+
     /// The full SHA-256 digest of this resolved model's canonical semantic bytes.
     ///
     /// The digest ignores source-file layout and comments: two source trees that compile to the
@@ -1927,9 +2113,7 @@ impl EssIr {
         use sha2::{Digest as _, Sha256};
         use std::fmt::Write as _;
 
-        let json = serde_json::to_vec(self)
-            .unwrap_or_else(|error| panic!("cannot digest an IR that does not serialize: {error}"));
-        let hash = Sha256::digest(&json);
+        let hash = Sha256::digest(self.to_compact_json().as_bytes());
         let mut out = String::with_capacity(64);
         for byte in &hash {
             let _ = write!(out, "{byte:02x}");

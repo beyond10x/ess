@@ -622,7 +622,7 @@
   ],
   "snapshot": {
     "context": "k3d-dev-cluster",
-    "digest": "9ed0e8608fd69c43c3b0405a7a5fd599fad61a6246b42e2cdd4cffd1e29c8e75"
+    "digest": "73b68c18c311bd81a36d76b50238ae08ffb0621ae16753ff54b7329778deb785"
   },
   "specification": "k3d dev cluster, as it ought to be",
   "summary": {

@@ -1,11 +1,11 @@
 {
-  "format": "infra-ir/1",
+  "format": "infra-ir/3",
   "provenance": {
     "context": "k3d-dev-cluster",
     "scanned_at": "2026-08-20T22:30:30Z",
     "scout_version": "0.1.0"
   },
-  "digest": "9ed0e8608fd69c43c3b0405a7a5fd599fad61a6246b42e2cdd4cffd1e29c8e75",
+  "digest": "73b68c18c311bd81a36d76b50238ae08ffb0621ae16753ff54b7329778deb785",
   "model": {
     "namespaces": {
       "kube-system": {
@@ -1034,8 +1034,7 @@
         "secret_type": "devspace.sh/remote-cache",
         "keys": {
           "cache": {
-            "sha256": "f4276be53bccb56fa4ea7e74402f401bb2db0b934359599d753443732d837cec",
-            "length": 1376
+            "present": true
           }
         }
       },
@@ -1049,8 +1048,7 @@
         "secret_type": "kubernetes.io/service-account-token",
         "keys": {
           "token": {
-            "sha256": "1f7dbf1a0f5f2a9c4c8db1c65b1a1f6a2f9f0f4d3e2b1a0c9d8e7f6a5b4c3d2e",
-            "length": 942
+            "present": true
           }
         }
       },
@@ -1072,8 +1070,7 @@
         "secret_type": "Opaque",
         "keys": {
           "turn-secret": {
-            "sha256": "3baf68f596a73c1c95aea267e1974447cbe52355eecbdc62b4079466f1cebec8",
-            "length": 32
+            "present": true
           }
         }
       }

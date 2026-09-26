@@ -9,6 +9,7 @@ mod normalize;
 mod observed_bindings;
 mod output_ownership;
 mod release_evidence;
+mod requires;
 mod schema;
 mod schema_bundle;
 mod site;
@@ -29,6 +30,9 @@ use ess_gen::graph::SystemGraph;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Refuse, rather than warn, where `ess-inputs.yaml` `requires` an older `ess` release.
+    #[arg(long, global = true)]
+    strict_requires: bool,
 }
 
 /// The four areas the first level of `ess` is made of.
@@ -193,6 +197,12 @@ struct GenerateArgs {
     out: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
+    /// Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.
+    ///
+    /// Without it the same condition is a note on stderr and the exit stays 0: an empty
+    /// projection is legal, and the note is what tells it apart from a clean one.
+    #[arg(long)]
+    strict: bool,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -560,6 +570,67 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Audit the suite with specification mutants, each replayed against a reference target.
+    ///
+    /// Derives mutants from the specification — one altering edit each — synthesizes a fresh
+    /// ordinary suite for the specification and for every mutant, and runs each on a fresh
+    /// target that implements the unchanged specification. A mutant is killed when its suite
+    /// fails there; a survivor is a declared rule no synthesized scenario pins down. It is
+    /// answered by declaring what makes the rule observable, or by filing a synthesis gap — not
+    /// by authoring a scenario, which runs identically in every mutant's suite and so can never
+    /// kill one. No authored scenario is run.
+    ///
+    /// Exit 0: the baseline passed, at least one mutant ran, and every mutant that ran was
+    /// killed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
+    /// the baseline suite did not pass (ESS-MUTATE-001), the classes found no site
+    /// (ESS-MUTATE-003), or no mutant survived and at least one was inconclusive or none ran.
+    Mutate {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The reference implementation every suite runs against.
+        #[arg(long, value_enum)]
+        target: ReferenceTarget,
+        /// Only these classes; every class when absent.
+        #[arg(long, value_enum)]
+        class: Vec<MutateClass>,
+        /// Where to write the `ess-mutation-report/1` document.
+        #[arg(long)]
+        report_out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+}
+
+/// The mutant classes `mutate --class` takes, one per `ess_conformance::mutate::MutantClass`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum MutateClass {
+    // No doc comment on any variant, for the reason `ReferenceTarget` gives: one would switch clap
+    // from the inline `[possible values: …]` list to a described block.
+    FromDrop,
+    TransitionTo,
+    GuardBoundary,
+    SetsRetarget,
+    GuardNegate,
+    GuardConnective,
+    ErrorSwap,
+    EmitDrop,
+    OrderFlip,
+}
+
+impl From<MutateClass> for ess_conformance::mutate::MutantClass {
+    fn from(class: MutateClass) -> Self {
+        match class {
+            MutateClass::FromDrop => Self::FromDrop,
+            MutateClass::TransitionTo => Self::TransitionTo,
+            MutateClass::GuardBoundary => Self::GuardBoundary,
+            MutateClass::SetsRetarget => Self::SetsRetarget,
+            MutateClass::GuardNegate => Self::GuardNegate,
+            MutateClass::GuardConnective => Self::GuardConnective,
+            MutateClass::ErrorSwap => Self::ErrorSwap,
+            MutateClass::EmitDrop => Self::EmitDrop,
+            MutateClass::OrderFlip => Self::OrderFlip,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -631,7 +702,7 @@ enum ReferenceTarget {
 enum ImportAdapter {
     /// Import a sanitized observation bundle, or scan one live cluster at the credential edge.
     Kubernetes {
-        /// Existing `infra-observation/1` bundle.
+        /// Existing `infra-observation/1`, `/2` or `/3` bundle.
         #[arg(long, conflicts_with = "context")]
         path: Option<PathBuf>,
         /// Live kubeconfig context. Requires `--observation-out`.
@@ -643,7 +714,7 @@ enum ImportAdapter {
         /// Where a live scan writes its sanitized source bundle.
         #[arg(long, requires = "context")]
         observation_out: Option<PathBuf>,
-        /// Where to write `infra-ir/1`.
+        /// Where to write the compiled `infra-ir` document.
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -710,6 +781,9 @@ enum ProjectAdapter {
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+        /// With `--path`: refuse, writing nothing, where a domain has no owning component.
+        #[arg(long, requires = "path")]
+        strict: bool,
     },
 }
 
@@ -1053,6 +1127,7 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(error) => error.format(&mut parser).exit(),
     };
+    requires::set_strict(cli.strict_requires);
     match run(cli) {
         Ok(code) => code,
         Err(error) => {
@@ -1142,6 +1217,7 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         &arguments.site,
         arguments.out.as_deref(),
         arguments.format,
+        arguments.strict,
     )
 }
 
@@ -2009,27 +2085,72 @@ fn validate(path: &Path, format: Format) -> Result<ExitCode> {
     let Ok((ir, files_read)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
+    // The scenarios an `ess-inputs.yaml` lists, compiled against the model exactly as
+    // `synthesize --scenarios` compiles them before it runs, so a scenario that step would refuse
+    // is not validated green here (ess#112). Nothing is read when nothing is listed.
+    let authored = match input_discovery::listed_scenarios(path)? {
+        None => None,
+        Some(inputs) => {
+            let sources: Vec<_> = inputs.into_iter().map(authored_source).collect();
+            let refusals = ess_conformance::authored::compile(&ir, &sources).refusals;
+            Some((sources.len(), refusals))
+        }
+    };
+    let refusals = authored
+        .as_ref()
+        .map_or(&[][..], |(_, refusals)| refusals.as_slice());
+    let scenario_refusals: Vec<ScenarioRefusal> = refusals
+        .iter()
+        .map(|refusal| ScenarioRefusal {
+            code: refusal.code().to_string(),
+            origin: &refusal.origin,
+            scenario: refusal.scenario.as_ref().map(ToString::to_string),
+            message: refusal.to_string(),
+        })
+        .collect();
+    let valid = refusals.is_empty();
     let report = ValidationSummary {
-        valid: true,
+        valid,
         system: ir.system().to_string(),
         version: ir.version().to_string(),
         files_read,
+        scenarios: authored.as_ref().map(|(count, _)| *count),
         domains: ir.domains().len(),
         commands: ir.commands().len(),
         events: ir.events().len(),
         components: ir.components().len(),
         unresolved_references: &[],
+        scenario_refusals,
     };
     if matches!(format, Format::Text) {
-        println!(
-            "{} {} — {files_read} file(s), valid",
-            ir.system(),
-            ir.version()
-        );
+        let scenarios = report
+            .scenarios
+            .map_or_else(String::new, |count| format!(", {count} scenario(s)"));
+        if valid {
+            println!(
+                "{} {} — {files_read} file(s){scenarios}, valid",
+                ir.system(),
+                ir.version()
+            );
+        } else {
+            for refusal in refusals {
+                eprintln!("{refusal}");
+            }
+            eprintln!(
+                "{} {} — {files_read} file(s){scenarios}, {} scenario refusal(s)",
+                ir.system(),
+                ir.version(),
+                refusals.len()
+            );
+        }
     } else {
         render(&report, format)?;
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(if valid {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
 }
 
 fn compile(path: &Path, out: Option<&Path>, format: Format) -> Result<ExitCode> {
@@ -2623,6 +2744,24 @@ fn write_preflighted_files<'a>(files: impl IntoIterator<Item = (PathBuf, &'a str
     Ok(())
 }
 
+/// Every declared domain that no component's `owns` names, in the IR's own order.
+fn unowned_domains(ir: &ess_compiler::EssIr) -> Vec<&ess_domain::name::QualifiedName> {
+    let owned: std::collections::BTreeSet<_> = ir
+        .components()
+        .values()
+        .flat_map(|component| {
+            component
+                .owns
+                .iter()
+                .map(ess_compiler::ir::DomainHandle::name)
+        })
+        .collect();
+    ir.domains()
+        .keys()
+        .filter(|domain| !owned.contains(domain))
+        .collect()
+}
+
 /// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
@@ -2630,6 +2769,7 @@ fn generate(
     site_options: &site::Options,
     out: Option<&Path>,
     format: Format,
+    strict: bool,
 ) -> Result<ExitCode> {
     if !matches!(kind, Some(Projection::Site))
         && (site_options.strict_links
@@ -2642,6 +2782,24 @@ fn generate(
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
+    // `openapi` and `asyncapi` write one document per component, so a domain no component owns
+    // is absent from both, and a specification with no components projects to nothing at all.
+    // That is legal; saying nothing about it is what made it look like a clean run (ess#102).
+    if matches!(
+        kind,
+        None | Some(Projection::OpenApi | Projection::AsyncApi)
+    ) {
+        let unowned = unowned_domains(&ir);
+        for domain in &unowned {
+            eprintln!(
+                "{}: no component owns {domain}; declare it in components.yaml",
+                if strict { "refused" } else { "note" }
+            );
+        }
+        if strict && !unowned.is_empty() {
+            return Ok(ExitCode::from(1));
+        }
+    }
     let mut publications = Vec::new();
     let artifacts = match kind {
         // Not a `Generator`: it writes the document the generators read, so it has no rendering of
@@ -2852,7 +3010,88 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                 format,
             )
         }
+        ConformCommand::Mutate {
+            path,
+            target,
+            class,
+            report_out,
+            format,
+        } => conform_mutate(&path, target, &class, report_out.as_deref(), format),
     }
+}
+
+/// `ess verify conform mutate`: the specification's mutants, each run against `target`.
+fn conform_mutate(
+    path: &Path,
+    target: ReferenceTarget,
+    classes: &[MutateClass],
+    report_out: Option<&Path>,
+    format: Format,
+) -> Result<ExitCode> {
+    use ess_conformance::mutate::{self, MutantClass, Verdict};
+
+    // The loader's own refusal path first, so a specification that does not compile is reported
+    // exactly as `run` reports it, and exits 1.
+    let Ok(_) = resolved(path, format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let raw = load::raw_specification(path)?;
+    let classes: Vec<MutantClass> = if classes.is_empty() {
+        MutantClass::ALL.to_vec()
+    } else {
+        classes.iter().copied().map(MutantClass::from).collect()
+    };
+    let audited = match target {
+        ReferenceTarget::Billing => mutate::audit(
+            &raw.parsed,
+            &raw.texts,
+            &classes,
+            ess_conformance::reference::Billing::new,
+        ),
+        ReferenceTarget::OracleFixture => mutate::audit(
+            &raw.parsed,
+            &raw.texts,
+            &classes,
+            ess_conformance::reference::Oracle::new,
+        ),
+        ReferenceTarget::Interpreted => mutate::audit(
+            &raw.parsed,
+            &raw.texts,
+            &classes,
+            ess_conformance::interpret::Interpreted::new,
+        ),
+    };
+    let report = match audited {
+        Ok(report) => report,
+        Err(refusal) if refusal.code().is_some() => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(3));
+        }
+        Err(refusal) => return Err(refusal.into()),
+    };
+
+    let json = report.to_canonical_json();
+    if let Some(out) = report_out {
+        fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+    }
+    match format {
+        Format::Text => print!("{}", report.render_text()),
+        Format::Json => print!("{json}"),
+        Format::Yaml => render(&report, format)?,
+    }
+    let counts = &report.counts;
+    let ran = report
+        .mutants
+        .iter()
+        .filter(|entry| entry.verdict != Verdict::Stillborn)
+        .count();
+    Ok(if counts.survived > 0 {
+        ExitCode::from(1)
+    } else if counts.inconclusive > 0 || ran == 0 {
+        ExitCode::from(3)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn fresh_legacy_run_suite(
@@ -2930,6 +3169,7 @@ fn render_conformance_report(
 /// join without touching the verb around it.
 fn write_suite(
     suite: &ess_conformance::ConformanceSuite,
+    ir: &EssIr,
     target: SuiteTarget,
     json: &str,
     out: &Path,
@@ -2941,14 +3181,14 @@ fn write_suite(
     let (files, family) = match target {
         SuiteTarget::Ir => unreachable!("answered above"),
         SuiteTarget::Go => (
-            ess_conformance::go::emit(suite)?
+            ess_conformance::go::emit_with_model(suite, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
             "conformance-go",
         ),
         SuiteTarget::Typescript => (
-            ess_conformance::ts::emit(suite)?
+            ess_conformance::ts::emit_with_model(suite, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
@@ -3027,7 +3267,7 @@ fn synthesize_suite(
     // tries twice.
     let written = match &out {
         None => None,
-        Some(out) => Some(write_suite(&synthesis.suite, target, &json, out)?),
+        Some(out) => Some(write_suite(&synthesis.suite, &ir, target, &json, out)?),
     };
 
     match input.format {
@@ -3044,6 +3284,10 @@ fn synthesize_suite(
             // suite does not hold has to be visible somewhere other than by its absence.
             for outside in &synthesis.outside {
                 println!("outside: {outside}");
+            }
+            // And a question the specification does not answer, so no scenario is owed for it.
+            for note in &synthesis.notes {
+                println!("note: {note}");
             }
             let written = written.unwrap_or_else(|| "nothing written".to_owned());
             // Counted apart, because they are not the same claim. A generated scenario is an
@@ -3188,10 +3432,12 @@ fn author_suite(
 fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::authored::Source>> {
     Ok(input_discovery::authored(scenarios, false)?
         .into_iter()
-        .map(|input| {
-            ess_conformance::authored::Source::new(input.origin.display().to_string(), input.text)
-        })
+        .map(authored_source)
         .collect())
+}
+
+fn authored_source(input: input_discovery::Input) -> ess_conformance::authored::Source {
+    ess_conformance::authored::Source::new(input.origin.display().to_string(), input.text)
 }
 
 #[derive(serde::Serialize)]
@@ -3220,11 +3466,27 @@ struct ValidationSummary<'a> {
     system: String,
     version: String,
     files_read: usize,
+    /// How many authored scenarios `ess-inputs.yaml` listed; absent when it listed none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenarios: Option<usize>,
     domains: usize,
     commands: usize,
     events: usize,
     components: usize,
     unresolved_references: &'a [&'a str],
+    /// Every listed scenario `synthesize --scenarios` would refuse, and why.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    scenario_refusals: Vec<ScenarioRefusal<'a>>,
+}
+
+/// One `ESS-AUTHOR-*` refusal of a listed scenario, as `validate --format json|yaml` reports it.
+#[derive(serde::Serialize)]
+struct ScenarioRefusal<'a> {
+    code: String,
+    origin: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenario: Option<String>,
+    message: String,
 }
 
 fn import(adapter: ImportAdapter) -> Result<ExitCode> {
@@ -3253,7 +3515,9 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                 .map_err(anyhow::Error::msg)?;
                 observation
             };
-            let ir = resolved_infrastructure(&source)?;
+            // A legacy `infra-ir/1` source reads back with its unsalted Secret digests; nothing
+            // this build writes carries one, so the written document is `infra-ir/3`.
+            let ir = resolved_infrastructure(&source)?.without_secret_digests();
             let document = ir.document();
             if let Some(path) = &out {
                 let mut json = serde_json::to_string_pretty(&document)?;
@@ -3433,6 +3697,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
             ir,
             out,
             format,
+            strict,
         } => match (path, ir) {
             (Some(path), None) => generate(
                 &path,
@@ -3440,6 +3705,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 &site::Options::default(),
                 out.as_deref(),
                 format,
+                strict,
             ),
             (None, Some(ir)) => project_openapi_interface(&ir, out.as_deref(), format),
             _ => bail!("exactly one of --path or --ir is required"),
@@ -3668,6 +3934,24 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
+    /// `--class` offers exactly the library's classes, in its order, under its names.
+    #[test]
+    fn every_mutant_class_is_offered_by_its_own_name() {
+        let offered: Vec<ess_conformance::mutate::MutantClass> = MutateClass::value_variants()
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect();
+        assert_eq!(offered, ess_conformance::mutate::MutantClass::ALL);
+        for class in MutateClass::value_variants() {
+            let library: ess_conformance::mutate::MutantClass = (*class).into();
+            assert_eq!(
+                class.to_possible_value().expect("visible").get_name(),
+                library.as_str()
+            );
+        }
+    }
+
     #[test]
     fn every_artifact_destination_is_checked_before_the_first_write() {
         for invalid in [
@@ -3885,7 +4169,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 59;
+    const AREA_LEAVES: usize = 60;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in

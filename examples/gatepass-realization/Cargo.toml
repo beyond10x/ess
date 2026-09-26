@@ -28,6 +28,8 @@ gatepass-server = { path = "../../generated/rust/gatepass/crates/gatepass-server
 pass-service = { path = "../../generated/rust/gatepass/crates/pass-service" }
 
 [dev-dependencies]
+ess-conformance.workspace = true
+ess-primitives.workspace = true
 serde_json.workspace = true
 
 [lints]

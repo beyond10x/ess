@@ -266,7 +266,7 @@ fn views(bridge: &Bridge<'_>) -> Value {
             continue;
         }
         let source = view.name.to_string();
-        out.push(json!({
+        let mut card = json!({
             "name": source,
             "display": view.naming.display_or(&view.name),
             "summary": view.naming.summary.as_deref().map(str::trim),
@@ -276,7 +276,24 @@ fn views(bridge: &Bridge<'_>) -> Value {
             "fields": fields(&view.fields),
             "served": disposition(bridge, CapabilityKind::ViewQuery, &source),
             "component": bridge.view_components.get(&view.name).map(ToString::to_string),
-        }));
+        });
+        // Only an aggregate view carries these, so every other catalog keeps its bytes.
+        if let Some(aggregation) = &view.aggregation {
+            card["group_by"] = json!(aggregation.group_by);
+            if let Some(Value::Array(fields)) = card.get_mut("fields") {
+                for field in fields {
+                    let computed = field
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .and_then(|name| aggregation.functions.get(name))
+                        .map(ToString::to_string);
+                    if let (Some(computed), Some(field)) = (computed, field.as_object_mut()) {
+                        field.insert("aggregate".to_owned(), Value::String(computed));
+                    }
+                }
+            }
+        }
+        out.push(card);
     }
     Value::Array(out)
 }
@@ -384,8 +401,17 @@ fn types(bridge: &Bridge<'_>) -> Value {
             entry.insert("summary".to_owned(), json!(summary.trim()));
         }
         match &declared.body {
-            ess_compiler::ir::ResolvedBody::Newtype { of, invariants } => {
+            ess_compiler::ir::ResolvedBody::Newtype {
+                of,
+                alphabet,
+                invariants,
+            } => {
                 entry.insert("kind".to_owned(), json!("newtype"));
+                // The characters a value is drawn from, where declared; an example is a witness
+                // input rather than contract, so it is not catalogued.
+                if let Some(alphabet) = alphabet {
+                    entry.insert("alphabet".to_owned(), json!(alphabet));
+                }
                 entry.insert(
                     "of".to_owned(),
                     serde_json::to_value(of)

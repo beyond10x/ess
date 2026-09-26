@@ -1,11 +1,15 @@
-//! Configmaps and secrets: keys and digests, never values.
+//! Configmaps and secrets: keys, configmap digests, never values.
 //!
 //! Two rules meet here, and they are the two this crate exists to hold:
 //!
-//! * **A secret value never enters the model.** The scanner already replaced every value with
-//!   `{sha256, length}` before writing the bundle; this module *refuses* a bundle where that did
-//!   not happen ([`InfraCode::UnsanitizedSecret`]), so the guarantee does not depend on which
-//!   scanner produced the file. Defense in depth: two independent mechanisms, either sufficient.
+//! * **Nothing derived from a secret value enters the model.** The scanner replaced every value
+//!   with `{"present": true}` before writing an `infra-observation/3` bundle; this module
+//!   *refuses* a bundle where that did not happen ([`InfraCode::UnsanitizedSecret`],
+//!   [`InfraCode::MalformedSecretPresence`]), so the guarantee does not depend on which scanner
+//!   produced the file. Defense in depth: two independent mechanisms, either sufficient. A legacy
+//!   `infra-observation/1` bundle carries an unsalted `{sha256, length}` per value; its shape is
+//!   checked and the digest is dropped, because an unsalted digest of a low-entropy secret lets
+//!   anyone holding a file confirm a guess.
 //! * **A configmap value never enters the model either** — it is hashed at validation into the
 //!   same `{sha256, length}` shape. Not because configuration is secret, but because the IR is a
 //!   function of semantic cluster state: what IW2–IW4 ask is "which keys exist and did a value
@@ -43,7 +47,37 @@ pub struct ConfigMap {
     pub keys: BTreeMap<String, ValueDigest>,
 }
 
-/// A secret: its keys, each with the digest the scanner recorded.
+/// What the model records about one Secret value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SecretValue {
+    /// A value exists under the key, and nothing derived from its content is recorded.
+    ///
+    /// Not a digest, not a length: an unsalted digest of a low-entropy secret lets anyone
+    /// holding the file confirm a guess, and a length narrows the guessing. Serialized as
+    /// `{"present": true}`.
+    Present,
+    /// The unsalted `{sha256, length}` a persisted `infra-ir/1` document carries.
+    ///
+    /// Held only while that document's own digest is checked; the reader returns the IR with every
+    /// such value replaced by [`Self::Present`]. Never compared and never written.
+    LegacyDigest(ValueDigest),
+}
+
+impl Serialize for SecretValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        match self {
+            Self::Present => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("present", &true)?;
+                map.end()
+            }
+            Self::LegacyDigest(digest) => digest.serialize(serializer),
+        }
+    }
+}
+
+/// A secret: its keys, and for each only that a value is present.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Secret {
     /// Identity.
@@ -53,7 +87,7 @@ pub struct Secret {
     /// The secret's type, such as `Opaque`.
     pub secret_type: String,
     /// Every key, from `data` and `stringData` together.
-    pub keys: BTreeMap<String, ValueDigest>,
+    pub keys: BTreeMap<String, SecretValue>,
 }
 
 impl ConfigMap {
@@ -93,20 +127,37 @@ impl ConfigMap {
     }
 }
 
+/// How a bundle's format says its Secret values were written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SecretEncoding {
+    /// `infra-observation/1` and `/2`: the scanner's legacy `{sha256, length}` per value.
+    LegacyDigest,
+    /// `infra-observation/3`: `{"present": true}` per value.
+    Presence,
+}
+
 impl Secret {
     pub(crate) fn from_raw(
         raw: &RawSecret,
         location: &str,
+        encoding: SecretEncoding,
         errors: &mut ValidationErrors,
     ) -> Option<Self> {
         let identity = identity(&raw.metadata, true, location, errors)?;
         let mut keys = BTreeMap::new();
         for (field, entries) in [("data", &raw.data), ("stringData", &raw.string_data)] {
             for (key, value) in entries {
-                if let Some(digest) =
-                    sanitized_digest(value, &format!("{location}.{field}.{key}"), errors)
-                {
-                    keys.insert(key.clone(), digest);
+                let site = format!("{location}.{field}.{key}");
+                // A legacy digest is checked for shape, so a malformed bundle is still refused,
+                // and then dropped: the model keeps that the value exists and nothing else.
+                let admitted = match encoding {
+                    SecretEncoding::LegacyDigest => {
+                        sanitized_digest(value, &site, errors).is_some()
+                    }
+                    SecretEncoding::Presence => presence_marker(value, &site, errors),
+                };
+                if admitted {
+                    keys.insert(key.clone(), SecretValue::Present);
                 }
             }
         }
@@ -126,7 +177,37 @@ impl Secret {
     }
 }
 
-/// Checks that a secret's value is a well-formed `{sha256, length}` digest.
+/// Checks that an `infra-observation/3` secret value is exactly `{"present": true}`.
+///
+/// Like [`sanitized_digest`], never echoes the value.
+fn presence_marker(value: &Value, location: &str, errors: &mut ValidationErrors) -> bool {
+    if value.is_string() {
+        errors.refuse(
+            InfraCode::UnsanitizedSecret,
+            location.to_owned(),
+            "the value is a plain string; secret values must never appear in a bundle — \
+             re-scan with a sanitizing scout",
+        );
+        return false;
+    }
+    let is_marker = value.as_object().is_some_and(|object| {
+        object.len() == 1 && object.get("present") == Some(&Value::Bool(true))
+    });
+    if !is_marker {
+        errors.refuse(
+            InfraCode::MalformedSecretPresence,
+            location.to_owned(),
+            format!(
+                "the value is {}, not {{\"present\": true}}; observation/3 records that a value \
+                 exists and nothing derived from it",
+                value_kind(value)
+            ),
+        );
+    }
+    is_marker
+}
+
+/// Checks that a legacy `infra-observation/1` secret value is a well-formed `{sha256, length}` digest.
 ///
 /// The messages here deliberately never echo the value: the plain-string branch is exactly the
 /// case where the value *is* a secret, and a refusal that quotes it would put the secret in a
@@ -204,7 +285,10 @@ fn digest_of(text: &str) -> ValueDigest {
 mod tests {
     use super::*;
 
-    fn secret(data: &serde_json::Value) -> Result<Secret, ValidationErrors> {
+    fn secret_as(
+        encoding: SecretEncoding,
+        data: &serde_json::Value,
+    ) -> Result<Secret, ValidationErrors> {
         let raw: RawSecret = serde_json::from_value(serde_json::json!({
             "metadata": { "name": "creds", "namespace": "app", "uid": "u1" },
             "type": "Opaque",
@@ -212,7 +296,7 @@ mod tests {
         }))
         .expect("the raw secret parses");
         let mut errors = ValidationErrors::new();
-        let validated = Secret::from_raw(&raw, "kinds.secrets.items[0]", &mut errors);
+        let validated = Secret::from_raw(&raw, "kinds.secrets.items[0]", encoding, &mut errors);
         if errors.is_empty() {
             Ok(validated.expect("no errors means a secret"))
         } else {
@@ -220,16 +304,59 @@ mod tests {
         }
     }
 
+    fn secret(data: &serde_json::Value) -> Result<Secret, ValidationErrors> {
+        secret_as(SecretEncoding::LegacyDigest, data)
+    }
+
     const DIGEST: &str = "8a94462377096e0657f57b6e6bc0e29000464398727091d7863726ce50974968";
 
     #[test]
-    fn a_sanitized_secret_keeps_its_keys_and_digests() {
+    fn a_legacy_digest_is_checked_and_then_recorded_as_presence_only() {
         let secret = secret(&serde_json::json!({
             "token": { "sha256": DIGEST, "length": 42 }
         }))
-        .expect("a digest object is what a sanitized bundle carries");
-        assert_eq!(secret.keys["token"].length, 42);
-        assert_eq!(secret.keys["token"].sha256, DIGEST);
+        .expect("a digest object is what an observation/1 scanner wrote");
+        assert_eq!(secret.keys["token"], SecretValue::Present);
+        let serialized = serde_json::to_string(&secret).expect("the model serializes");
+        assert!(
+            !serialized.contains(DIGEST) && !serialized.contains("42"),
+            "the legacy digest and length must not survive into the model: {serialized}"
+        );
+    }
+
+    #[test]
+    fn a_presence_marker_is_what_observation_three_carries_and_all_it_may_carry() {
+        let secret = secret_as(
+            SecretEncoding::Presence,
+            &serde_json::json!({ "token": { "present": true } }),
+        )
+        .expect("a presence marker is what an observation/3 scanner writes");
+        assert_eq!(secret.keys["token"], SecretValue::Present);
+        assert_eq!(
+            serde_json::to_value(&secret.keys).expect("serializes"),
+            serde_json::json!({ "token": { "present": true } })
+        );
+        for bad in [
+            serde_json::json!({ "sha256": DIGEST, "length": 4 }),
+            serde_json::json!({ "present": true, "length": 4 }),
+            serde_json::json!({ "present": false }),
+            serde_json::json!({}),
+            serde_json::json!(true),
+        ] {
+            let errors = secret_as(SecretEncoding::Presence, &serde_json::json!({ "k": bad }))
+                .expect_err("observation/3 carries a presence marker and nothing else");
+            assert!(
+                errors.contains(InfraCode::MalformedSecretPresence),
+                "expected INFRA-SECRET-003 for {bad}, got: {errors}"
+            );
+        }
+        let errors = secret_as(
+            SecretEncoding::Presence,
+            &serde_json::json!({ "k": "hunter2" }),
+        )
+        .expect_err("a plain value is refused in every format");
+        assert!(errors.contains(InfraCode::UnsanitizedSecret), "{errors}");
+        assert!(!errors.to_string().contains("hunter2"), "{errors}");
     }
 
     #[test]

@@ -301,6 +301,13 @@ fn handler(
         }
         out.push_str("            }\n");
     }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(ir, command) {
+        let _ = writeln!(
+            out,
+            "            {outcome_type}::{} => {{}}",
+            items::unknown_instance_variant(declared)
+        );
+    }
     out.push_str("        }\n        Ok(outcome)\n    }\n");
 }
 

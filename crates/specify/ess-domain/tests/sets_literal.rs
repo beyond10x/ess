@@ -14,8 +14,10 @@
 //! The first cut of this check refused every non-text primitive, which took 52 lines of an
 //! adopter's model from compiling-and-silently-dropped to not compiling: `paused: "false"`,
 //! `recording: "true"` and `unread: "0"` each say something true and checkable, and the obvious
-//! repair is not available either, because an unquoted `paused: false` is not a `PayloadSource` at
-//! all. That last refusal is pinned below so nobody closes this by loosening the deserializer.
+//! repair was not available either, because an unquoted `paused: false` was not a `PayloadSource`
+//! at all. Since beyond10x/ess#113 it is: the reader keeps the YAML type and the same rule types
+//! it, admitting exactly what the quoted form is admitted as and naming the quotes as the repair
+//! where the target is text.
 
 fn spec(body: &str) -> Result<ess_domain::Specification, String> {
     let raw = ess_domain::spec::RawSpecFile::parse(body).map_err(|e| e.to_string())?;
@@ -101,6 +103,111 @@ commands:
     )
 }
 
+/// [`model`], with the literal written unquoted: a YAML boolean, integer or decimal.
+fn unquoted(target: &str, value: &str) -> String {
+    model(target, value).replace(
+        &format!("{target}: \"{value}\""),
+        &format!("{target}: {value}"),
+    )
+}
+
+#[test]
+fn an_unquoted_boolean_or_integer_sets_the_field_of_its_own_type() {
+    // beyond10x/ess#113: `items: 0` was refused by the reader while `items: '0'` compiled. The
+    // domain keeps the YAML type so the rule can check it; the compiler test in `ess-compiler`
+    // (`typed_literals.rs`) holds the IR to the quoted form's bytes.
+    for (target, value) in [
+        ("paused", "false"),
+        ("paused", "true"),
+        ("tries", "0"),
+        ("tries", "12"),
+        ("tries", "-3"),
+    ] {
+        spec(&unquoted(target, value))
+            .unwrap_or_else(|error| panic!("`{target}: {value}` must compile:\n{error}"));
+    }
+}
+
+#[test]
+fn an_unquoted_scalar_over_text_is_refused_with_the_quoted_spelling() {
+    // A text target takes the quoted form, so the repair is exactly one pair of quotes, and the
+    // refusal says so rather than naming a type the author did not write.
+    for (target, value) in [("label", "0"), ("label", "true"), ("label", "1.5")] {
+        let error = spec(&unquoted(target, value))
+            .expect_err("an unquoted scalar over text is not the text it spells");
+        assert!(
+            error.contains("type_mismatch"),
+            "`{target}: {value}`:\n{error}"
+        );
+        assert!(
+            error.contains(&format!("quote it: `{target}: '{value}'`")),
+            "`{target}: {value}`: the hint spells the quoted form:\n{error}"
+        );
+    }
+}
+
+#[test]
+fn an_unquoted_scalar_of_the_wrong_primitive_gets_the_quoted_forms_refusal() {
+    // The quoted form is refused here too, so quoting is no repair and the hint is the one the
+    // quoted form already carries: what the field DOES accept.
+    for (target, value, accepted) in [
+        ("paused", "1", "`true` or `false`"),
+        ("paused", "0.5", "`true` or `false`"),
+        ("tries", "true", "without a sign or leading zeroes"),
+        ("tries", "1.5", "without a sign or leading zeroes"),
+        ("tries", "3.0", "without a sign or leading zeroes"),
+        ("reason", "false", "is not a variant"),
+        (
+            "tries",
+            "9999999999999999999",
+            "without a sign or leading zeroes",
+        ),
+    ] {
+        let error = spec(&unquoted(target, value))
+            .expect_err("a scalar of another type is not a value of this one");
+        assert!(
+            error.contains("type_mismatch") && error.contains(accepted),
+            "`{target}: {value}` expected {accepted:?}:\n{error}"
+        );
+        assert!(
+            !error.contains("quote it"),
+            "`{target}: {value}`: quoting would not help, so it is not offered:\n{error}"
+        );
+    }
+    // A structured target has no literal at all, quoted or not.
+    let error = spec(&unquoted("window", "0")).expect_err("a struct has no literal");
+    assert!(error.contains("has structure"), "{error}");
+}
+
+#[test]
+fn a_payload_literal_is_read_by_the_same_rule() {
+    // One reader serves `sets:` and `payload:`, and one rule types both.
+    let payload = |value: &str| {
+        model("label", "manual")
+            .replace(
+                "  - name: demo.dial.Finished\n    fields: []",
+                "  - name: demo.dial.Finished\n    fields:\n      - {name: attempts, type: Integer}\n      - {name: note, type: String}",
+            )
+            .replace(
+                "        emits: [demo.dial.Finished]\n",
+                &format!(
+                    "        emits: [demo.dial.Finished]\n        payload:\n          demo.dial.Finished:\n            attempts: {value}\n            note: \"n\"\n"
+                ),
+            )
+    };
+    spec(&payload("3")).expect("`attempts: 3` over an Integer payload field compiles");
+    let error = spec(&payload("true")).expect_err("a boolean is not an Integer");
+    assert!(
+        error.contains("type_mismatch") && error.contains("without a sign or leading zeroes"),
+        "{error}"
+    );
+    let text = payload("3")
+        .replace("attempts: 3", "attempts: '3'")
+        .replace("note: \"n\"", "note: 0");
+    let error = spec(&text).expect_err("an integer is not text");
+    assert!(error.contains("quote it: `note: '0'`"), "{error}");
+}
+
 #[test]
 fn a_literal_the_field_can_hold_still_compiles() {
     // Text, and a newtype over text, are what a literal may be — that reading is unchanged.
@@ -165,15 +272,21 @@ fn an_integer_literal_is_canonical_decimal_or_it_is_refused() {
 }
 
 #[test]
-fn an_unquoted_boolean_is_not_a_source_at_all() {
-    // The repair an author reaches for after the refusal above, and it is not available: a
-    // `PayloadSource` is text or a mapping. Pinned so this construct is never closed by loosening
-    // the deserializer instead — the admitted spelling is the quoted one, decided in one place.
-    let error = spec(&model("paused", "false").replace("\"false\"", "false"))
-        .expect_err("an unquoted boolean is not a payload source");
+fn an_unquoted_boolean_is_typed_by_the_rule_and_not_admitted_by_the_reader() {
+    // This case used to pin the reader's refusal of `paused: false` (`invalid type: boolean`), so
+    // the construct could not be closed by loosening the deserializer. beyond10x/ess#113 reversed
+    // the reading on purpose; what the pin protected still holds: the reader admits the scalar
+    // and the ONE rule that types a literal decides it, so the loosened reader lets nothing
+    // through that the quoted form would not.
+    spec(&unquoted("paused", "false")).expect("an unquoted boolean over a Boolean compiles");
+    let error = spec(&unquoted("tries", "false")).expect_err("a boolean is not an Integer");
     assert!(
-        error.contains("invalid type: boolean"),
-        "the reader refuses it before any rule sees it:\n{error}"
+        !error.contains("invalid type"),
+        "the reader no longer decides it:\n{error}"
+    );
+    assert!(
+        error.contains("type_mismatch") && error.contains("without a sign or leading zeroes"),
+        "the rule decides it, as it decides `tries: \"false\"`:\n{error}"
     );
 }
 

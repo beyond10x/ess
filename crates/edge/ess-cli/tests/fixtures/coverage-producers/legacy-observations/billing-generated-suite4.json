@@ -3,8 +3,8 @@
     "suite_version": "ess-conformance/4",
     "system": "billing",
     "specification_version": "v3",
-    "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-    "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+    "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+    "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
   },
   "scenarios": {
     "billing.email.SendEmail/outcome/failed": {
@@ -431,6 +431,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -558,6 +562,101 @@
         {
           "kind": "view",
           "name": "billing.invoice.OutstandingInvoices"
+        }
+      ]
+    },
+    "billing.invoice.CancelInvoice/outcome/wrong-state": {
+      "purpose": "`billing.invoice.CancelInvoice` for an identity no record carries takes `wrong-state` and reports `billing.invoice.InvoiceStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.CancelInvoice",
+          "input": {
+            "invoice_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-bf63819dc626"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.CancelInvoice",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "billing.invoice.InvoiceStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.email.DeliveryEscalated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.email.EmailSent"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceCancelled"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceCreated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceIssued"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoicePaid"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "billing.invoice.Invoice"
+        },
+        {
+          "kind": "command",
+          "name": "billing.invoice.CancelInvoice"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "billing.invoice.CancelInvoice",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "billing.email.DeliveryEscalated"
+        },
+        {
+          "kind": "event",
+          "name": "billing.email.EmailSent"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceCancelled"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceCreated"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceIssued"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoicePaid"
+        },
+        {
+          "kind": "error",
+          "name": "billing.invoice.InvoiceStateConflict"
         }
       ]
     },
@@ -763,6 +862,10 @@
                 "kind": "observed",
                 "event": "billing.invoice.InvoiceCreated",
                 "field": "invoice_id"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
               },
               "total": {
                 "kind": "literal",
@@ -3175,6 +3278,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -3226,6 +3333,110 @@
             "order_by": [
               "issued_at desc"
             ]
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.CreateInvoice",
+          "actor": "billing.invoice.Customer",
+          "input": {
+            "account_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-36f23b61c73a"
+            },
+            "amount": {
+              "kind": "literal",
+              "value": {
+                "amount": 4.0,
+                "currency": "amount.currency-3"
+              }
+            },
+            "customer_email": {
+              "kind": "literal",
+              "value": "customer_email-3"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.CreateInvoice",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "invoice-4",
+          "entity": "billing.invoice.Invoice",
+          "event": "billing.invoice.InvoiceCreated",
+          "field": "invoice_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.IssueInvoice",
+          "input": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice-4"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.IssueInvoice",
+            "outcome": "issued"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.CancelInvoice",
+          "input": {
+            "invoice_id": {
+              "kind": "instance",
+              "instance": "invoice-4"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.CancelInvoice",
+            "outcome": "cancelled"
+          }
+        },
+        {
+          "step": "expect_event",
+          "event": "billing.invoice.InvoiceCancelled",
+          "shape": {
+            "invoice_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "eventually_view",
+          "view": "billing.invoice.InvoiceById",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "invoice_id": {
+                "kind": "instance",
+                "instance": "invoice-4"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
+              "total": {
+                "kind": "literal",
+                "value": {
+                  "amount": 4.0,
+                  "currency": "amount.currency-3"
+                }
+              }
+            }
           }
         }
       ],
@@ -3453,6 +3664,10 @@
               "invoice_id": {
                 "kind": "instance",
                 "instance": "invoice"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
               },
               "total": {
                 "kind": "literal",
@@ -3820,6 +4035,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -4103,6 +4322,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -4226,6 +4449,101 @@
         {
           "kind": "view",
           "name": "billing.invoice.OutstandingInvoices"
+        }
+      ]
+    },
+    "billing.invoice.IssueInvoice/outcome/wrong-state": {
+      "purpose": "`billing.invoice.IssueInvoice` for an identity no record carries takes `wrong-state` and reports `billing.invoice.InvoiceStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.IssueInvoice",
+          "input": {
+            "invoice_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-bf63819dc626"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.IssueInvoice",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "billing.invoice.InvoiceStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.email.DeliveryEscalated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.email.EmailSent"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceCancelled"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceCreated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceIssued"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoicePaid"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "billing.invoice.Invoice"
+        },
+        {
+          "kind": "command",
+          "name": "billing.invoice.IssueInvoice"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "billing.invoice.IssueInvoice",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "billing.email.DeliveryEscalated"
+        },
+        {
+          "kind": "event",
+          "name": "billing.email.EmailSent"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceCancelled"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceCreated"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceIssued"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoicePaid"
+        },
+        {
+          "kind": "error",
+          "name": "billing.invoice.InvoiceStateConflict"
         }
       ]
     },
@@ -4799,6 +5117,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -4930,6 +5252,108 @@
         {
           "kind": "view",
           "name": "billing.invoice.OutstandingInvoices"
+        }
+      ]
+    },
+    "billing.invoice.PayInvoice/outcome/wrong-state": {
+      "purpose": "`billing.invoice.PayInvoice` for an identity no record carries takes `wrong-state` and reports `billing.invoice.InvoiceStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "billing.invoice.PayInvoice",
+          "input": {
+            "amount": {
+              "kind": "literal",
+              "value": {
+                "amount": 1.0,
+                "currency": "amount.currency"
+              }
+            },
+            "invoice_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-bf63819dc626"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "billing.invoice.PayInvoice",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "billing.invoice.InvoiceStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.email.DeliveryEscalated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.email.EmailSent"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceCancelled"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceCreated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoiceIssued"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "billing.invoice.InvoicePaid"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "billing.invoice.Invoice"
+        },
+        {
+          "kind": "command",
+          "name": "billing.invoice.PayInvoice"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "billing.invoice.PayInvoice",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "billing.email.DeliveryEscalated"
+        },
+        {
+          "kind": "event",
+          "name": "billing.email.EmailSent"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceCancelled"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceCreated"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoiceIssued"
+        },
+        {
+          "kind": "event",
+          "name": "billing.invoice.InvoicePaid"
+        },
+        {
+          "kind": "error",
+          "name": "billing.invoice.InvoiceStateConflict"
         }
       ]
     },

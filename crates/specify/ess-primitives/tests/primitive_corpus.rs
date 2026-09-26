@@ -17,6 +17,7 @@ const CORPUS: &str = include_str!("vectors/primitive-semantics.json");
 struct Corpus {
     numbers: Vec<NumberVector>,
     orderings: Vec<OrderingVector>,
+    text_orderings: Vec<OrderingVector>,
     admission: Vec<AdmissionVector>,
 }
 
@@ -128,6 +129,51 @@ fn every_ordering_vector_compares_exactly_and_facts_agree_with_numbers() {
             "{}: as facts",
             vector.name
         );
+    }
+}
+
+/// Text is ordered by its UTF-8 bytes wherever ESS orders it (ess#94), and this is the Rust lane of
+/// that claim: the predicate evaluator, over a source that opts into byte order, answers every
+/// `text_orderings` vector. `crates/verify/ess-conformance/tests/primitive_corpus.rs` hands the same
+/// vectors to the Go runtime, and `src/ts/predicate.test.ts` answers them in TypeScript.
+#[test]
+fn every_text_ordering_vector_is_the_ordering_the_evaluator_answers() {
+    use ess_primitives::facts::{FactPath, FactStore};
+    use ess_primitives::predicate::{CompareOp, Operand, Predicate, Truth};
+
+    let vectors = corpus().text_orderings;
+    assert!(vectors.len() >= 8, "the corpus states fewer text orderings");
+    for vector in vectors {
+        let mut facts = FactStore::new();
+        facts.set(
+            FactPath::new("caller").expect("a path"),
+            FactValue::text(&vector.left),
+        );
+        facts.order_text_by_bytes();
+        let expected = match vector.ordering.as_str() {
+            "less" => Ordering::Less,
+            "greater" => Ordering::Greater,
+            "equal" => Ordering::Equal,
+            other => panic!("{other} is not an ordering"),
+        };
+        for (op, holds) in [
+            (CompareOp::Lt, expected == Ordering::Less),
+            (CompareOp::Le, expected != Ordering::Greater),
+            (CompareOp::Gt, expected == Ordering::Greater),
+            (CompareOp::Ge, expected != Ordering::Less),
+        ] {
+            let predicate = Predicate::Compare {
+                left: Operand::Fact(FactPath::new("caller").expect("a path")),
+                op,
+                right: Operand::Literal(FactValue::text(&vector.right)),
+            };
+            assert_eq!(
+                predicate.evaluate(&facts),
+                if holds { Truth::True } else { Truth::False },
+                "{}: {predicate}",
+                vector.name
+            );
+        }
     }
 }
 

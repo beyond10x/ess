@@ -79,7 +79,7 @@ tasks:
   # anywhere else those paths name nothing. That holds only where the archive was built in
   # `./target` of a checkout at the same path, which is every GitHub runner.
   test-shard:
-    desc: Run one partition of the workspace test archive, e.g. `task test-shard SHARD=1/2`; needs `task test-archive`.
+    desc: Run one partition of the workspace test archive, e.g. `task test-shard SHARD=1/4`; needs `task test-archive`.
     requires:
       vars: [SHARD]
     cmds:
@@ -91,7 +91,7 @@ tasks:
       - cargo test --workspace --exclude ess-xtask --locked --doc
 
   test-feature-off:
-    desc: Run one partition of the archive of packages without `arbitrary_precision`, e.g. `SHARD=1/2`; needs `task test-archive`.
+    desc: Run one partition of the archive of packages without `arbitrary_precision`, e.g. `SHARD=1/4`; needs `task test-archive`.
     requires:
       vars: [SHARD]
     cmds:

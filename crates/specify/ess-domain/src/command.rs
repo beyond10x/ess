@@ -210,11 +210,13 @@ use std::str::FromStr;
 use ess_primitives::error::{
     ConstructKind, ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
 };
+use ess_primitives::facts::FactValue;
+use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
-use crate::types::{EnumVariant, Field, Primitive, TypeRegistry};
+use crate::types::{EnumVariant, Field, Primitive, TypeRef, TypeRegistry};
 
 /// The name of one outcome of a command, such as `accepted`, `rejected` or `not-found`.
 ///
@@ -382,6 +384,20 @@ pub enum OutcomeCondition {
         /// Additional input eligibility.
         predicate: Option<Predicate>,
     },
+    /// A predicate over the existing subject's declared stored fields, read immediately before
+    /// selection, conjunctive with an optional input guard (ess/9).
+    ///
+    /// A sibling of [`SubjectField`](Self::SubjectField) rather than a widening of it, so every
+    /// ess/6 model keeps its bytes. It reads the entity's declared `fields` and nothing else: not
+    /// the input, which stays with `input`, and not `state`, which stays with the lifecycle guards.
+    /// A branch that names no subject of its own — a refusal — reads the subject its siblings name.
+    /// See `docs/design/cross-record-and-stored-field-guards.md`.
+    SubjectPredicate {
+        /// What must hold of the subject's stored fields.
+        predicate: Predicate,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
     /// Taken when the named existing subject is in this state and the optional input guard holds.
     SubjectState {
         /// The held lifecycle state, read from the subject rather than the input.
@@ -445,6 +461,7 @@ impl OutcomeCondition {
             Self::SubjectState { predicate, .. }
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
+            Self::SubjectPredicate { input, .. } => input.as_ref(),
             Self::Otherwise | Self::External { .. } | Self::WrongState => None,
         }
     }
@@ -456,6 +473,7 @@ impl OutcomeCondition {
             Self::When(_)
             | Self::SubjectState { .. }
             | Self::SubjectField { .. }
+            | Self::SubjectPredicate { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState => None,
@@ -466,7 +484,9 @@ impl OutcomeCondition {
     pub fn test_strategy(&self) -> TestStrategy {
         match self {
             Self::When(_) => TestStrategy::ConstructInput,
-            Self::SubjectField { .. } => TestStrategy::ObserveSubjectFact,
+            Self::SubjectField { .. } | Self::SubjectPredicate { .. } => {
+                TestStrategy::ObserveSubjectFact
+            }
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
@@ -485,6 +505,43 @@ impl OutcomeCondition {
     /// branch selected, and it carries its own precedence.
     pub fn reads_held_state(&self) -> bool {
         matches!(self, Self::SubjectState { .. } | Self::StateChange { .. })
+    }
+
+    /// `true` when this condition reads the existing subject's stored fields, in either
+    /// `when_subject:` shape.
+    pub fn reads_subject_fact(&self) -> bool {
+        matches!(
+            self,
+            Self::SubjectField { .. } | Self::SubjectPredicate { .. }
+        )
+    }
+
+    /// What this condition requires of the subject's stored fields, as one predicate over them.
+    ///
+    /// The `{field, equals}` form is the one-leaf predicate `field == equals`, which is how the
+    /// partition and every consumer that arranges a row read both shapes with one evaluator.
+    /// `None` for a condition that reads no stored field, and for a field name no fact path can
+    /// spell — which the declaration checks refuse on their own.
+    pub fn subject_predicate(&self) -> Option<Predicate> {
+        match self {
+            Self::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
+            Self::SubjectField { field, equals, .. } => Some(Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(
+                    ess_primitives::facts::FactPath::new(field).ok()?,
+                ),
+                op: ess_primitives::predicate::CompareOp::Eq,
+                right: ess_primitives::predicate::Operand::Literal(
+                    ess_primitives::facts::FactValue::text(equals.clone()),
+                ),
+            }),
+            Self::When(_)
+            | Self::SubjectState { .. }
+            | Self::StateChange { .. }
+            | Self::Otherwise
+            | Self::ExternalWhen { .. }
+            | Self::External { .. }
+            | Self::WrongState => None,
+        }
     }
 }
 
@@ -759,6 +816,19 @@ pub enum PayloadSource {
         /// The value, as written.
         value: String,
     },
+    /// A literal written as an unquoted YAML boolean, integer or decimal: `items: 0`.
+    ///
+    /// Kept apart from [`Literal`](Self::Literal) only until it is checked, because the rule that
+    /// types it needs the YAML type: `0` over a `String` is refused with the quoted spelling as its
+    /// repair, where `'0'` over a `String` is the text `0`. Once admitted it compiles to exactly
+    /// what its quoted form does — `value` is that form's text — so no IR byte depends on which of
+    /// the two an author wrote (`docs/design/typed-literals-and-unknown-instances.md`).
+    Scalar {
+        /// The canonical text of the scalar: `false`, `0`, `-3`, `1.5`.
+        value: String,
+        /// Which YAML scalar it was written as.
+        scalar: ScalarKind,
+    },
     /// The branch leaves this field holding NOTHING: `{cleared: true}`.
     ///
     /// An entity source only, and refused on an event payload — an event field the emitter has no
@@ -799,11 +869,33 @@ impl fmt::Display for PayloadSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InputField { field } => write!(f, "{}{field}", Self::INPUT_PREFIX),
-            Self::Literal { value } => f.write_str(value),
+            Self::Literal { value } | Self::Scalar { value, .. } => f.write_str(value),
             Self::ResponseField { field } => write!(f, "response field `{field}`"),
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
         }
+    }
+}
+
+/// The YAML scalar a [`PayloadSource::Scalar`] was written as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScalarKind {
+    /// `true` or `false`.
+    Boolean,
+    /// A whole number: `0`, `-3`.
+    Integer,
+    /// A number with a fraction or an exponent: `1.5`, `3.0`.
+    Decimal,
+}
+
+impl fmt::Display for ScalarKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Decimal => "decimal",
+        })
     }
 }
 
@@ -821,6 +913,10 @@ pub struct PayloadField {
 #[serde(untagged)]
 enum RawPayloadSource {
     Text(String),
+    Boolean(bool),
+    Integer(i64),
+    Unsigned(u64),
+    Decimal(f64),
     Explicit(ExplicitPayloadSource),
 }
 
@@ -835,12 +931,31 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(
-                    "a string, `{response: <field>}`, `{generated: true}`, or `{cleared: true}`",
+                    "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
+                     or `{cleared: true}`",
                 )
             }
 
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
                 Ok(RawPayloadSource::Text(value.to_owned()))
+            }
+
+            // The scalars are read rather than refused so the rule that types a literal can say
+            // what to write instead — `quote it: items: '0'` — which a reader error cannot.
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Boolean(value))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Integer(value))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Unsigned(value))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Decimal(value))
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
@@ -872,6 +987,26 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
     fn try_from(raw: RawPayloadSource) -> Result<Self, Self::Error> {
         match raw {
             RawPayloadSource::Text(value) => Ok(Self::parse(&value)),
+            RawPayloadSource::Boolean(value) => Ok(Self::Scalar {
+                value: value.to_string(),
+                scalar: ScalarKind::Boolean,
+            }),
+            RawPayloadSource::Integer(value) => Ok(Self::Scalar {
+                value: value.to_string(),
+                scalar: ScalarKind::Integer,
+            }),
+            RawPayloadSource::Unsigned(value) => Ok(Self::Scalar {
+                value: value.to_string(),
+                scalar: ScalarKind::Integer,
+            }),
+            // Written by `serde_json`'s shortest round-trip form, so `3.0` stays `3.0` rather than
+            // becoming the `3` an `Integer` would accept.
+            RawPayloadSource::Decimal(value) => serde_json::Number::from_f64(value)
+                .map(|number| Self::Scalar {
+                    value: number.to_string(),
+                    scalar: ScalarKind::Decimal,
+                })
+                .ok_or("a decimal literal must be a finite number"),
             RawPayloadSource::Explicit(ExplicitPayloadSource {
                 response: Some(field),
                 generated: None,
@@ -912,6 +1047,19 @@ impl From<&PayloadSource> for RawPayloadSource {
                 generated: None,
                 cleared: Some(true),
             }),
+            // Written back as the scalar it was read as, so a document round-trips to its own
+            // YAML type. The text is this type's own rendering, so each parse succeeds.
+            PayloadSource::Scalar { value, scalar } => match scalar {
+                ScalarKind::Boolean => Self::Boolean(value == "true"),
+                ScalarKind::Integer => value
+                    .parse()
+                    .map(Self::Integer)
+                    .or_else(|_| value.parse().map(Self::Unsigned))
+                    .unwrap_or_else(|_| Self::Text(value.clone())),
+                ScalarKind::Decimal => value
+                    .parse()
+                    .map_or_else(|_| Self::Text(value.clone()), Self::Decimal),
+            },
             _ => Self::Text(source.to_string()),
         }
     }
@@ -1218,7 +1366,8 @@ impl Outcome {
             | OutcomeCondition::External { .. }
             | OutcomeCondition::ExternalWhen { .. }
             | OutcomeCondition::WrongState
-            | OutcomeCondition::SubjectField { .. } => false,
+            | OutcomeCondition::SubjectField { .. }
+            | OutcomeCondition::SubjectPredicate { .. } => false,
         }
     }
 
@@ -1263,6 +1412,11 @@ pub struct CommandSpec {
     pub name: QualifiedName,
     /// What the caller supplies, in declaration order.
     pub input: Vec<Field>,
+    /// The authored `example:` of each input that declares one, by input name (ess/11).
+    ///
+    /// Kept beside [`Self::input`] rather than on it, so every predicate environment built over
+    /// the input is the one it was before examples existed.
+    pub examples: BTreeMap<String, Node>,
     /// Closed fields of the response returned by this command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
@@ -1324,6 +1478,7 @@ impl CommandSpec {
                 OutcomeCondition::WrongState
                     | OutcomeCondition::StateChange { .. }
                     | OutcomeCondition::SubjectField { .. }
+                    | OutcomeCondition::SubjectPredicate { .. }
             )
         {
             errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
@@ -1840,6 +1995,22 @@ impl CommandSpec {
             return errors;
         }
 
+        // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
+        // two"): a command selecting on stored fields and on the held lifecycle state at once is
+        // refused before either partition is asked about it.
+        if subject_fact::uses(self)
+            && self
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition.reads_held_state())
+        {
+            errors.push(ValidationError::at(
+                self.site().key("outcomes"),
+                ValidationCode::ConflictingDeclaration,
+                "subject fact and lifecycle guards cannot be combined in one command",
+            ));
+            return errors;
+        }
         // A subject-state command needs the complete entity declarations. Its joint coverage
         // and subject authority are checked by subject_state::validate at specification assembly.
         if self
@@ -1848,6 +2019,11 @@ impl CommandSpec {
             .any(|outcome| outcome.condition.reads_held_state())
         {
             return subject_state::validate_shape(self);
+        }
+        // Likewise a command reading the subject's stored fields: its partition crosses those
+        // fields with the input, and their types are the entity's, known at assembly.
+        if subject_fact::uses(self) {
+            return subject_fact::validate_shape(self);
         }
 
         let unconditional: Vec<&OutcomeName> = self
@@ -2028,6 +2204,7 @@ impl CommandSpec {
                 &self.site().key("input").index(index).key("type"),
             ));
         }
+        found.extend(self.validate_examples(types));
 
         for outcome in &self.outcomes {
             let location = self.site().key("outcomes").named(outcome.name.as_str());
@@ -2200,7 +2377,19 @@ fn check_payload_entry(
         }
         PayloadSource::Literal { value } => {
             errors.extend(check_payload_literal(
-                at, command, event, target, filled, value, resolved,
+                at, command, event, target, filled, value, None, resolved,
+            ));
+        }
+        PayloadSource::Scalar { value, scalar } => {
+            errors.extend(check_payload_literal(
+                at,
+                command,
+                event,
+                target,
+                filled,
+                value,
+                Some(*scalar),
+                resolved,
             ));
         }
         PayloadSource::Cleared => {
@@ -2354,25 +2543,23 @@ pub fn validate_sets(
                     errors.extend(check_cleared_target(at, &entity.name, target, held));
                     continue;
                 }
-                if let PayloadSource::Literal { value } = source {
-                    // The same rule a payload literal is held to, against the entity's field
-                    // instead of the event's. It used to say it was checked "where a payload
-                    // literal is", and it was not: `literal_representation` was reachable from the
-                    // payload path alone, so a literal set on a `Boolean` or a struct compiled
-                    // clean and the synthesizer abstained on it in silence.
-                    if let Some(refusal) = literal_representation(
-                        &entity.name,
-                        target,
-                        held,
-                        value,
-                        "`sets:` entry",
-                        command,
-                        Resolved {
-                            types,
-                            conversions,
-                            inhabitation: &inhabitation,
-                        },
-                    ) {
+                // The same rule a payload literal is held to, against the entity's field instead of
+                // the event's. It used to say it was checked "where a payload literal is", and it
+                // was not: `literal_representation` was reachable from the payload path alone, so a
+                // literal set on a `Boolean` or a struct compiled clean and the synthesizer
+                // abstained on it in silence.
+                if matches!(
+                    source,
+                    PayloadSource::Literal { .. } | PayloadSource::Scalar { .. }
+                ) {
+                    let resolved = Resolved {
+                        types,
+                        conversions,
+                        inhabitation: &inhabitation,
+                    };
+                    if let Some(refusal) =
+                        sets_literal(&entity.name, target, held, source, command, resolved)
+                    {
                         errors.push(
                             ValidationError::new(ValidationCode::TypeMismatch, at, refusal.reason)
                                 .with_hint(refusal.hint),
@@ -2414,12 +2601,127 @@ pub fn validate_sets(
     errors
 }
 
+/// Checks that every required field an entity invariant reads is set by every branch creating it.
+///
+/// The literal rule for one `sets:` entry, and `None` for a source that is no literal. An unquoted
+/// scalar is typed by the same rule as quoted text, with the YAML type it was written as
+/// (beyond10x/ess#113).
+fn sets_literal(
+    entity: &QualifiedName,
+    target: &str,
+    held: &Field,
+    source: &PayloadSource,
+    command: &CommandSpec,
+    resolved: Resolved<'_>,
+) -> Option<LiteralRefusal> {
+    let place = "`sets:` entry";
+    match source {
+        PayloadSource::Literal { value } => {
+            literal_representation(entity, target, held, value, place, command, resolved)
+        }
+        PayloadSource::Scalar { value, scalar } => scalar_representation(
+            entity, target, held, value, *scalar, place, command, resolved,
+        ),
+        _ => None,
+    }
+}
+
+/// A `creates:` branch that does not name a field in `sets:` leaves it with no specified value, so
+/// an invariant reading it holds only if the implementation happens to choose a value satisfying it
+/// — and the generated "still satisfies what it declares" scenario then passes or fails on that
+/// undeclared choice (ess#112). The identity and `state` are always determined by the creation
+/// itself, and an `Optional<…>` field may be absent, so neither is asked for. Any read counts,
+/// including one under a disjunction: which side an unset value would take is again the
+/// implementation's choice.
+pub fn validate_created_invariant_fields(
+    commands: &BTreeMap<QualifiedName, CommandSpec>,
+    entities: &BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for command in commands.values() {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            if subject.effect != Effect::Creates {
+                continue;
+            }
+            let Some(entity) = entities.get(&subject.entity) else {
+                continue;
+            };
+            for field in &entity.fields {
+                if field.type_ref.is_optional() || outcome.sets.contains_key(&field.name) {
+                    continue;
+                }
+                // Statements, not invariants: two copies of one statement are one reason.
+                let readers: BTreeSet<&str> = entity
+                    .invariants
+                    .iter()
+                    .filter(|invariant| {
+                        invariant
+                            .predicate
+                            .fact_paths()
+                            .iter()
+                            .any(|path| path.namespace() == field.name)
+                    })
+                    .map(|invariant| invariant.statement.as_str())
+                    .collect();
+                if readers.is_empty() {
+                    continue;
+                }
+                errors.push(
+                    ValidationError::at(
+                        command
+                            .site()
+                            .key("outcomes")
+                            .named(outcome.name.as_str())
+                            .key("creates"),
+                        ValidationCode::InvariantReadsUnsetField,
+                        format!(
+                            "outcome `{}` of `{}` creates `{}` without setting `{}`, which {} {} \
+                             reads; after this branch `{}` has no specified value, so the \
+                             invariant holds only if the implementation happens to pick one that \
+                             satisfies it",
+                            outcome.name,
+                            command.name,
+                            entity.name,
+                            field.name,
+                            if readers.len() == 1 {
+                                "the invariant"
+                            } else {
+                                "the invariants"
+                            },
+                            readers
+                                .iter()
+                                .map(|statement| format!("`{statement}`"))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            field.name,
+                        ),
+                    )
+                    .with_hint(format!(
+                        "set it on the outcome, with a literal (`sets: {{{name}: '0'}}` for a \
+                         number) or an input (`sets: {{{name}: input.<field>}}`); or declare the \
+                         field `Optional<{required}>` if an instance may lack it",
+                        name = field.name,
+                        required = field.type_ref.required(),
+                    )),
+                );
+            }
+        }
+    }
+    errors
+}
+
 /// A payload literal, against the representation of the event field it fills.
 ///
 /// The same three guards a binding's literal gets, because the mistake is the same one wearing the
 /// other prefix: a reference meant and text written. `amount: amount` names the input without its
 /// prefix; `amount: inptu.amount` misspells the prefix; and a well-meant literal still has to be
 /// spellable as the field's representation, which only text and an enum variant are.
+/// `scalar` is the YAML type an unquoted literal was written as, and `None` for quoted text. An
+/// unquoted number or boolean cannot be a misspelled `input.<field>`, so only text is read for one.
+#[allow(clippy::too_many_arguments)]
 fn check_payload_literal(
     at: &ConstructRef,
     command: &CommandSpec,
@@ -2427,6 +2729,7 @@ fn check_payload_literal(
     target: &str,
     filled: &Field,
     value: &str,
+    scalar: Option<ScalarKind>,
     resolved: Resolved<'_>,
 ) -> ValidationErrors {
     use crate::binding::{is_field_name, near_miss};
@@ -2434,7 +2737,7 @@ fn check_payload_literal(
     let mut errors = ValidationErrors::new();
     let prefix = PayloadSource::INPUT_PREFIX;
 
-    if command.input_field(value).is_some() {
+    if scalar.is_none() && command.input_field(value).is_some() {
         errors.push(
             ValidationError::at(
                 at.clone(),
@@ -2452,7 +2755,7 @@ fn check_payload_literal(
         return errors;
     }
 
-    if let Some((written, rest)) = value.split_once('.') {
+    if let Some((written, rest)) = value.split_once('.').filter(|_| scalar.is_none()) {
         let meant_input = near_miss(written, "input") && is_field_name(rest);
         // `event.amount` in a payload is the binding's prefix carried over: it reads nothing here,
         // because the event is what is being *filled*.
@@ -2476,15 +2779,28 @@ fn check_payload_literal(
         }
     }
 
-    if let Some(refusal) = literal_representation(
-        &event.name,
-        target,
-        filled,
-        value,
-        "payload",
-        command,
-        resolved,
-    ) {
+    let refusal = match scalar {
+        Some(scalar) => scalar_representation(
+            &event.name,
+            target,
+            filled,
+            value,
+            scalar,
+            "payload",
+            command,
+            resolved,
+        ),
+        None => literal_representation(
+            &event.name,
+            target,
+            filled,
+            value,
+            "payload",
+            command,
+            resolved,
+        ),
+    };
+    if let Some(refusal) = refusal {
         errors.push(
             ValidationError::at(at.clone(), ValidationCode::TypeMismatch, refusal.reason)
                 .with_hint(refusal.hint),
@@ -2577,6 +2893,49 @@ fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'s
         | Primitive::Bytes => return Err(None),
     };
     Err(Some(spelling))
+}
+
+/// Whether an unquoted YAML scalar can be the value of `held`, a field of `owner`.
+///
+/// Decided by the quoted form, and the only thing the YAML type changes is the repair. Over a
+/// primitive the quoted form's own rule is the whole answer: `paused: false` over a `Boolean` is
+/// admitted as `"false"` is, and `paused: 1` is refused as `"1"` is, with the hint that says what
+/// the field takes — quoting it would not help. Over text or an enum the quoted form may well be
+/// admitted — `items: 0` over a `String` is the text `0` once quoted — so the author meant the
+/// text and one pair of quotes is the fix, and the refusal spells it
+/// (`docs/design/typed-literals-and-unknown-instances.md`).
+///
+/// A decimal is never admitted: [`primitive_literal`] claims no spelling for `Decimal`, for the
+/// reason it gives, and a scalar compiling where its quoted form does not would put a second rule
+/// into the model.
+#[allow(clippy::too_many_arguments)]
+fn scalar_representation(
+    owner: &QualifiedName,
+    target: &str,
+    held: &Field,
+    value: &str,
+    scalar: ScalarKind,
+    place: &str,
+    command: &CommandSpec,
+    resolved: Resolved<'_>,
+) -> Option<LiteralRefusal> {
+    use crate::binding::{representation, Representation, Resolution};
+
+    let quoted = literal_representation(owner, target, held, value, place, command, resolved);
+    match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
+        Resolution::Established(Representation::Primitive(_)) => quoted,
+        // Deferred exactly as the quoted form defers: another pass reports the type itself.
+        Resolution::Undeclared | Resolution::Uninhabited => None,
+        _ => quoted.or_else(|| {
+            Some(LiteralRefusal {
+                reason: format!(
+                    "`{owner}.{target}` is `{}`, and `{value}` is written as a YAML {scalar}",
+                    held.type_ref
+                ),
+                hint: format!("quote it: `{target}: '{value}'`"),
+            })
+        }),
+    }
 }
 
 /// Whether `value` can be written as the literal value of `held`, a field of `owner`.
@@ -2782,6 +3141,195 @@ fn field_shape(fields: &[Field], location: &str) -> ValidationErrors {
     errors
 }
 
+impl CommandSpec {
+    /// Each authored `example:` held to the input it sits on (ess/11): a scalar input, a value of
+    /// its type, inside every alphabet and true of every invariant of every newtype layer.
+    ///
+    /// `docs/design/string-alphabet-and-length.md`, section 2. The example is what synthesis builds
+    /// the input from, so an example its own type refuses would be a witness no correct
+    /// implementation accepts.
+    fn validate_examples(&self, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        for (name, example) in &self.examples {
+            let Some(field) = self.input_field(name) else {
+                continue;
+            };
+            if let Err((code, message, hint)) = example_admitted(types, &field.type_ref, example) {
+                errors.push(
+                    ValidationError::at(
+                        self.site().key("input").named(name.clone()).key("example"),
+                        code,
+                        message,
+                    )
+                    .with_hint(hint),
+                );
+            }
+        }
+        errors
+    }
+}
+
+/// Why an example is not admitted: its class, the message, and the repair.
+type ExampleRefusal = (ValidationCode, String, &'static str);
+
+/// Whether `example` is a value `declared` accepts, answered as validation reports it.
+fn example_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    example: &Node,
+) -> Result<(), ExampleRefusal> {
+    const SCALAR: &str =
+        "an example sits on a scalar input: a primitive other than Binary64, or an \
+                          enum, through any newtype or Optional";
+    let mismatch =
+        |message: String, hint: &'static str| Err((ValidationCode::TypeMismatch, message, hint));
+    if matches!(example, Node::Null) {
+        return mismatch(
+            format!("`null` is not a value of `{declared}`, so it cannot be an example of one"),
+            "leave `example:` out where no example is meant",
+        );
+    }
+    let layers = types.newtype_layers(declared);
+    let (value, instant) = match &layers.terminal {
+        TypeRef::Primitive(Primitive::Binary64) => {
+            return mismatch(
+                format!("`{declared}` is a Binary64, which a conformance witness cannot carry"),
+                SCALAR,
+            )
+        }
+        TypeRef::Primitive(primitive) => {
+            let Some(value) = primitive.admits(example) else {
+                let quoted = if matches!(example, Node::Number(_) | Node::Bool(_))
+                    && *primitive == Primitive::String
+                {
+                    "; YAML reads an unquoted `0123` as the number 123, so quote a text example"
+                } else {
+                    ""
+                };
+                return mismatch(
+                    format!("`{example}` is not a value of `{declared}` ({primitive}){quoted}"),
+                    "write a value of the input's type",
+                );
+            };
+            if *primitive == Primitive::Timestamp
+                && ess_primitives::time::Rfc3339Instant::parse_rfc3339(
+                    example.as_text().unwrap_or_default(),
+                )
+                .is_none()
+            {
+                return mismatch(
+                    format!("`{example}` is not an RFC 3339 instant, so it is not a Timestamp"),
+                    "write one such as \"2020-01-01T00:00:00Z\"",
+                );
+            }
+            (value, *primitive == Primitive::Timestamp)
+        }
+        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+            Some(crate::types::TypeBody::Enum { variants }) => match example.as_text() {
+                Some(text) if variants.iter().any(|variant| variant.name() == text) => {
+                    (FactValue::text(text), false)
+                }
+                _ => {
+                    return mismatch(
+                        format!(
+                            "`{example}` is not a variant of `{name}`; it declares {}",
+                            join(variants.iter().map(EnumVariant::name))
+                        ),
+                        "write one of the declared variants",
+                    )
+                }
+            },
+            Some(_) => {
+                return mismatch(
+                    format!("`{declared}` reaches `{name}`, which is not a scalar"),
+                    SCALAR,
+                )
+            }
+            // An unresolved name is refused where input types are resolved.
+            None => return Ok(()),
+        },
+        TypeRef::List(_) | TypeRef::Map(..) | TypeRef::Optional(_) => {
+            return mismatch(format!("`{declared}` is not a scalar"), SCALAR)
+        }
+    };
+    example_layers(&layers.newtypes, example, &value, instant)
+}
+
+/// Every newtype layer's alphabet and invariants, held against one example read as `value`.
+fn example_layers(
+    newtypes: &[&crate::types::NamedType],
+    example: &Node,
+    value: &FactValue,
+    instant: bool,
+) -> Result<(), ExampleRefusal> {
+    for layer in newtypes {
+        let crate::types::TypeBody::Newtype {
+            alphabet,
+            invariants,
+            ..
+        } = &layer.body
+        else {
+            continue;
+        };
+        if let (Some(alphabet), Some(text)) = (alphabet, example.as_text()) {
+            if let Some(outside) = text
+                .chars()
+                .find(|character| !alphabet.contains(*character))
+            {
+                return Err((
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{example}` holds {outside:?}, which is not in the alphabet of `{}` \
+                         (\"{alphabet}\")",
+                        layer.name
+                    ),
+                    "write an example from the characters the type declares",
+                ));
+            }
+        }
+        let facts = ExampleFacts {
+            value: value.clone(),
+            instant,
+        };
+        for invariant in invariants {
+            if !invariant.predicate.evaluate(&facts).is_satisfied() {
+                return Err((
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{example}` is not a value of `{}`: its invariant `{invariant}` does not \
+                         hold for it",
+                        layer.name
+                    ),
+                    "write an example every invariant of the type holds for",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One example, read as `value`: what a newtype's invariants read.
+struct ExampleFacts {
+    value: FactValue,
+    /// Whether the value is a `Timestamp`, ordered by the instant it names.
+    instant: bool,
+}
+
+impl ess_primitives::facts::FactSource for ExampleFacts {
+    fn fact(&self, path: &ess_primitives::facts::FactPath) -> Option<FactValue> {
+        (path.segments().len() == 1 && path.namespace() == crate::types::NamedType::VALUE)
+            .then(|| self.value.clone())
+    }
+
+    fn orders_as_instant(&self, _path: &ess_primitives::facts::FactPath) -> bool {
+        self.instant
+    }
+
+    fn orders_text_by_bytes(&self, _path: &ess_primitives::facts::FactPath) -> bool {
+        !self.instant
+    }
+}
+
 /// Renders a list of names for a diagnostic, saying so when the list is empty.
 fn join<T: fmt::Display>(items: impl Iterator<Item = T>) -> String {
     let rendered: Vec<String> = items.map(|item| format!("`{item}`")).collect();
@@ -2800,7 +3348,7 @@ pub struct RawCommandSpec {
     pub name: QualifiedName,
     /// What the caller supplies.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub input: Vec<Field>,
+    pub input: Vec<InputField>,
     /// Closed fields of the response returned by this command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
@@ -2817,6 +3365,80 @@ pub struct RawCommandSpec {
     pub refs: Refs,
 }
 
+/// One field of a command's input, as written: a [`Field`] that may also carry an `example:`.
+///
+/// Its own type rather than a key on [`Field`], which struct, event, error, entity, view,
+/// parameter and response fields share: an `example:` there would parse in every one of those
+/// positions, and each would have to refuse it by hand — one missed position would be an example
+/// silently ignored. Here every other position refuses it as an unknown field by construction.
+/// The attributes are [`Field`]'s exactly, and `the_published_input_field_is_a_field_plus_exactly_example`
+/// holds the two published schemas to differing by that one property
+/// (`docs/design/string-alphabet-and-length.md`, section 2).
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct InputField {
+    /// Its name.
+    #[serde(deserialize_with = "crate::types::deserialize_field_name")]
+    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    pub name: String,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// What it is on the wire, and what a person is shown.
+    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
+    /// The value synthesis builds this input from (ess/11). Not a constraint: the input still
+    /// accepts every value of its type.
+    ///
+    /// An authored `example: null` is kept as `Some(Node::Null)` rather than read as no example,
+    /// so validation can refuse it: an example is a value, and `null` is none.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_example",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub example: Option<Node>,
+}
+
+/// Reads a present `example:` as written, `null` included.
+fn deserialize_example<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Node>, D::Error> {
+    <Node as serde::Deserialize>::deserialize(deserializer).map(Some)
+}
+
+impl InputField {
+    /// The field and its example, apart.
+    pub fn split(self) -> (Field, Option<Node>) {
+        (
+            Field {
+                name: self.name,
+                type_ref: self.type_ref,
+                naming: self.naming,
+            },
+            self.example,
+        )
+    }
+
+    /// A field with an example beside it, or none.
+    pub fn joined(field: Field, example: Option<Node>) -> Self {
+        Self {
+            name: field.name,
+            type_ref: field.type_ref,
+            naming: field.naming,
+            example,
+        }
+    }
+}
+
+impl From<Field> for InputField {
+    fn from(field: Field) -> Self {
+        Self::joined(field, None)
+    }
+}
+
 /// A bounded fact on an existing subject, not the command input or lifecycle state.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -2825,6 +3447,81 @@ pub struct RawSubjectField {
     pub field: String,
     /// One declared variant of that field's enum.
     pub equals: String,
+}
+
+/// A predicate over the existing subject's declared stored fields (ess/9).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawSubjectPredicate {
+    /// What must hold of the subject's declared fields, read immediately before selection.
+    pub predicate: Predicate,
+}
+
+/// What `when_subject:` says about the existing subject: one of two closed shapes, never both.
+///
+/// `{field, equals}` is the ess/6 form and keeps its bytes. `{predicate}` is the ess/9 form
+/// (`docs/design/cross-record-and-stored-field-guards.md`): any predicate over the subject's
+/// declared fields. A document writing keys of both shapes in one branch is refused while it is
+/// read, because which of the two it meant is not something a later check can recover.
+#[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum RawSubjectFact {
+    /// Equality of one declared enum field against one of its variants (ess/6).
+    Field(RawSubjectField),
+    /// A predicate over the subject's declared fields (ess/9).
+    Predicate(RawSubjectPredicate),
+}
+
+impl RawSubjectFact {
+    /// The shape a condition is written back as, where it reads the subject's stored fields.
+    fn written(condition: &OutcomeCondition) -> Option<Self> {
+        match condition {
+            OutcomeCondition::SubjectField { field, equals, .. } => {
+                Some(Self::Field(RawSubjectField {
+                    field: field.clone(),
+                    equals: equals.clone(),
+                }))
+            }
+            OutcomeCondition::SubjectPredicate { predicate, .. } => {
+                Some(Self::Predicate(RawSubjectPredicate {
+                    predicate: predicate.clone(),
+                }))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawSubjectFact {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// Every key either shape may carry, read once so the refusal can say which were mixed.
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Written {
+            #[serde(default)]
+            field: Option<String>,
+            #[serde(default)]
+            equals: Option<String>,
+            #[serde(default)]
+            predicate: Option<Predicate>,
+        }
+        let written = Written::deserialize(deserializer)?;
+        match (written.field, written.equals, written.predicate) {
+            (None, None, Some(predicate)) => Ok(Self::Predicate(RawSubjectPredicate { predicate })),
+            (Some(field), Some(equals), None) => Ok(Self::Field(RawSubjectField { field, equals })),
+            (field, equals, Some(_)) if field.is_some() || equals.is_some() => {
+                Err(serde::de::Error::custom(
+                    "`when_subject` takes `{field, equals}` or `{predicate}`, never both in one \
+                     branch",
+                ))
+            }
+            (Some(_), None, None) => Err(serde::de::Error::missing_field("equals")),
+            (None, Some(_), None) => Err(serde::de::Error::missing_field("field")),
+            _ => Err(serde::de::Error::custom(
+                "`when_subject` takes `{field, equals}` or `{predicate}`",
+            )),
+        }
+    }
 }
 
 /// One outcome as written in a document, before validation.
@@ -2845,9 +3542,10 @@ pub struct RawOutcome {
     /// A predicate over the command's input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Predicate>,
-    /// An independently observed subject enum fact (ess/6).
+    /// An independently observed subject fact: an enum field equal to a variant (ess/6), or a
+    /// predicate over the subject's declared fields (ess/9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when_subject: Option<RawSubjectField>,
+    pub when_subject: Option<RawSubjectFact>,
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject_state: Option<crate::entity::StateName>,
@@ -3078,6 +3776,54 @@ fn outcome_condition(
     }
 }
 
+/// Whether a branch that reads what its subject already holds names a subject it can read.
+///
+/// A subject fact reads a row that already exists, so a branch bringing one into existence has
+/// nothing to read, and is refused at `when_subject`, the key the author wrote. The `{field,
+/// equals}` form and the held-state guards name their subject themselves, as they always have;
+/// the predicate form may also sit on a branch that names none — a refusal — which reads the
+/// subject its siblings name, and whether one does is a question about the command, answered
+/// there (`subject_fact::validate_shape`).
+fn subject_authority(
+    name: &OutcomeName,
+    condition: &OutcomeCondition,
+    subject: Option<&Subject>,
+    replays: bool,
+    held_state_key: &str,
+) -> Result<(), ValidationErrors> {
+    if condition.reads_subject_fact()
+        && subject.is_some_and(|subject| subject.surface() != InstanceSurface::CommandInput)
+    {
+        return Err(outcome_conflict(
+            name,
+            "when_subject",
+            "a subject fact reads a row that already exists, and a creating branch brings its \
+             subject into existence"
+                .to_owned(),
+            "guard the branch that moves, updates or preserves the existing subject, or a \
+             refusal beside it",
+        ));
+    }
+    if (condition.reads_held_state() || matches!(condition, OutcomeCondition::SubjectField { .. }))
+        && !replays
+        && !subject.is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
+    {
+        let key = if condition.reads_subject_fact() {
+            "when_subject"
+        } else {
+            held_state_key
+        };
+        return Err(outcome_conflict(
+            name,
+            key,
+            "a subject-state guard requires an existing moves or updates subject and input identity"
+                .to_owned(),
+            "name the existing subject with moves or updates and instance",
+        ));
+    }
+    Ok(())
+}
+
 /// Which of the two held-state keys the author wrote, so a refusal names the one they would edit.
 fn held_state_key(literal: bool) -> &'static str {
     if literal {
@@ -3118,10 +3864,14 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.wrong_state,
         )?;
         let condition = match subject_fact {
-            Some(fact) => OutcomeCondition::SubjectField {
+            Some(RawSubjectFact::Field(fact)) => OutcomeCondition::SubjectField {
                 field: fact.field,
                 equals: fact.equals,
                 predicate: input_predicate,
+            },
+            Some(RawSubjectFact::Predicate(fact)) => OutcomeCondition::SubjectPredicate {
+                predicate: fact.predicate,
+                input: input_predicate,
             },
             None => condition,
         };
@@ -3148,19 +3898,13 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.preserves,
             raw.instance,
         )?;
-        if (condition.reads_held_state()
-            || matches!(condition, OutcomeCondition::SubjectField { .. }))
-            && raw.replays.is_none()
-            && !subject
-                .as_ref()
-                .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
-        {
-            return Err(conflict(
-                held_state_key,
-                "a subject-state guard requires an existing moves or updates subject and input identity".to_owned(),
-                "name the existing subject with moves or updates and instance",
-            ));
-        }
+        subject_authority(
+            &raw.name,
+            &condition,
+            subject.as_ref(),
+            raw.replays.is_some(),
+            held_state_key,
+        )?;
         // `updates:` takes no transition and `creates:` starts at the lifecycle's initial state, so
         // neither declares an arrival state for this condition to be about. Refused rather than
         // read as "any state", which is the reading that would make the key decide nothing.
@@ -3412,9 +4156,19 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             }
         }
 
+        let mut input = Vec::with_capacity(raw.input.len());
+        let mut examples = BTreeMap::new();
+        for field in raw.input {
+            let (field, example) = field.split();
+            if let Some(example) = example {
+                examples.insert(field.name.clone(), example);
+            }
+            input.push(field);
+        }
         let spec = Self {
             name: raw.name,
-            input: raw.input,
+            input,
+            examples,
             response: raw.response,
             outcomes,
             naming: raw.naming,
@@ -3454,37 +4208,33 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
 
 impl From<Outcome> for RawOutcome {
     fn from(outcome: Outcome) -> Self {
-        let when_subject = match &outcome.condition {
-            OutcomeCondition::SubjectField { field, equals, .. } => Some(RawSubjectField {
-                field: field.clone(),
-                equals: equals.clone(),
-            }),
-            _ => None,
-        };
+        let when_subject = RawSubjectFact::written(&outcome.condition);
         let preserves = outcome
             .subject
             .as_ref()
             .filter(|subject| subject.effect == Effect::Preserves)
             .map(|subject| subject.entity.clone());
-        let (when, when_subject_state, when_state_changes, external, wrong_state) =
-            match outcome.condition {
-                OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
-                OutcomeCondition::SubjectField { predicate, .. } => {
-                    (predicate, None, None, None, false)
-                }
-                OutcomeCondition::SubjectState { state, predicate } => {
-                    (predicate, Some(state), None, None, false)
-                }
-                OutcomeCondition::StateChange { changes, predicate } => {
-                    (predicate, None, Some(changes), None, false)
-                }
-                OutcomeCondition::Otherwise => (None, None, None, None, false),
-                OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
-                OutcomeCondition::ExternalWhen { cause, predicate } => {
-                    (Some(predicate), None, None, Some(cause), false)
-                }
-                OutcomeCondition::WrongState => (None, None, None, None, true),
-            };
+        let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
+            .condition
+        {
+            OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
+            OutcomeCondition::SubjectField { predicate, .. } => {
+                (predicate, None, None, None, false)
+            }
+            OutcomeCondition::SubjectPredicate { input, .. } => (input, None, None, None, false),
+            OutcomeCondition::SubjectState { state, predicate } => {
+                (predicate, Some(state), None, None, false)
+            }
+            OutcomeCondition::StateChange { changes, predicate } => {
+                (predicate, None, Some(changes), None, false)
+            }
+            OutcomeCondition::Otherwise => (None, None, None, None, false),
+            OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
+            OutcomeCondition::ExternalWhen { cause, predicate } => {
+                (Some(predicate), None, None, Some(cause), false)
+            }
+            OutcomeCondition::WrongState => (None, None, None, None, true),
+        };
         let (creates, moves, updates, instance) = match outcome.subject {
             None => (None, None, None, None),
             Some(Subject {
@@ -3560,10 +4310,18 @@ impl From<Outcome> for RawOutcome {
 }
 
 impl From<CommandSpec> for RawCommandSpec {
-    fn from(command: CommandSpec) -> Self {
+    fn from(mut command: CommandSpec) -> Self {
+        let input = command
+            .input
+            .into_iter()
+            .map(|field| {
+                let example = command.examples.remove(&field.name);
+                InputField::joined(field, example)
+            })
+            .collect();
         Self {
             name: command.name,
-            input: command.input,
+            input,
             response: command.response,
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
@@ -3615,6 +4373,7 @@ mod tests {
                 reading: None,
                 name: name("billing.invoice.Email"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },
@@ -3673,6 +4432,7 @@ outcomes:
 
     fn command_with(outcomes: Vec<Outcome>) -> CommandSpec {
         CommandSpec {
+            examples: BTreeMap::new(),
             name: name("billing.invoice.CreateInvoice"),
             input: vec![Field::new(
                 "amount",
@@ -4851,6 +5611,7 @@ outcomes:
         // The fixture reaches the state where the rule bites: the guard is well formed, `invoice_id`
         // *is* a declared input field, and the only thing wrong with reading it is this rule.
         let command = CommandSpec {
+            examples: BTreeMap::new(),
             name: name("billing.invoice.PayInvoice"),
             input: vec![
                 Field::new("invoice_id", TypeRef::Named(name("billing.invoice.Email"))),
@@ -5284,6 +6045,7 @@ payload:
                     reading: None,
                     name: name(&format!("billing.chain.Link{index}")),
                     body: TypeBody::Newtype {
+                        alphabet: None,
                         of: TypeRef::Named(name(&of)),
                         invariants: Vec::new(),
                     },
@@ -5302,6 +6064,7 @@ payload:
                 reading: None,
                 name: name("billing.chain.Cycle"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Optional(Box::new(TypeRef::Named(name("billing.chain.Cycle")))),
                     invariants: Vec::new(),
                 },
@@ -5403,6 +6166,7 @@ payload:
                 reading: None,
                 name: name("billing.chain.Ring"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Named(name("billing.chain.Ring")),
                     invariants: Vec::new(),
                 },

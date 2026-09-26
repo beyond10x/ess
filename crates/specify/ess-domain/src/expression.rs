@@ -8,7 +8,7 @@ use std::fmt;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
@@ -92,6 +92,30 @@ pub trait TypeEnvironment {
     fn is_instant(&self, _reference: &Self::Type) -> bool {
         false
     }
+    /// Whether this terminal type is the `Duration` primitive, which has no ordering.
+    ///
+    /// A `Duration` is carried as ISO 8601 text, and text is ordered by its bytes, which puts
+    /// `PT10M` below `PT5M`. So an ordering over one is refused rather than answered wrongly.
+    fn is_duration(&self, _reference: &Self::Type) -> bool {
+        false
+    }
+    /// Whether this terminal type is the `String` primitive, the one type a string operator
+    /// (`starts_with`, `ends_with`, `contains`) applies to.
+    ///
+    /// Asked of the resolved terminal, so a newtype of `String` at any depth and an `Optional` of
+    /// one answer `true` too. [`ScalarKind::Text`] cannot say it: it also covers `Timestamp`,
+    /// `Duration`, `Uuid`, `Bytes` and enums.
+    fn is_string(&self, _reference: &Self::Type) -> bool {
+        false
+    }
+    /// Whether this environment admits `.count` on a `String`, the length in Unicode scalar values
+    /// that `ess/11` introduced.
+    ///
+    /// `true` by default: the compiler's environment reads an IR, which exists only after
+    /// validation admitted it. [`DomainEnvironment`] answers from the format its registry serves.
+    fn admits_text_length(&self) -> bool {
+        true
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -109,6 +133,11 @@ pub trait TypeEnvironment {
 pub struct Access {
     /// The path requires collection cardinality or element projection.
     pub collection: bool,
+    /// The path reads the length of a text (`keys.count` over a `String`, ess/11).
+    ///
+    /// Apart from [`Self::collection`], which a producer reads as "count the elements": a text
+    /// length is a leaf read the evaluator derives from the text itself.
+    pub text_length: bool,
     /// Transparent unwraps and member/element descents required by the path.
     pub depth: usize,
 }
@@ -216,6 +245,17 @@ impl<'a> DomainEnvironment<'a> {
 impl TypeEnvironment for DomainEnvironment<'_> {
     fn is_instant(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Primitive(Primitive::Timestamp))
+    }
+    fn is_duration(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Primitive(Primitive::Duration))
+    }
+    fn is_string(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Primitive(Primitive::String))
+    }
+    fn admits_text_length(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V11.major())
     }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
@@ -467,20 +507,19 @@ fn resolve<E: TypeEnvironment>(
                 };
                 let next = match shape {
                     Shape::Struct => environment.member(&current, segment),
+                    Shape::Scalar(ScalarKind::Text)
+                        if segment == "count" && environment.is_string(&current) =>
+                    {
+                        let at = (position, optional, access);
+                        return text_length(environment, path, owner, at, &context);
+                    }
                     Shape::List(_) | Shape::Map(_) if segment == "count" => {
                         access.collection = true;
                         if let Some(next) = segments.get(position + 1) {
                             return Err(error(owner, ValidationCode::UnobservableFact, Some(path), Some(next),
                                 format!("`{path}` cannot select `{next}` from collection count of type Integer (Number){context}")));
                         }
-                        return Ok(Resolution {
-                            terminal: environment.cardinality_type(),
-                            declared: "Integer".to_owned(),
-                            scalar: Some(ScalarKind::Number),
-                            variants: None,
-                            optional,
-                            access,
-                        });
+                        return Ok(count_of(environment, optional, access));
                     }
                     Shape::List(of) if canonical_ordinal(segment) => {
                         access.collection = true;
@@ -504,6 +543,74 @@ fn resolve<E: TypeEnvironment>(
             }
         }
     }
+}
+
+/// `.count` on a `String` at `(position, optional, access)`: the length of a text in Unicode scalar
+/// values (beyond10x/ess#104).
+///
+/// Only a `String` has one — asked of the resolved terminal, so a newtype of one at any depth and
+/// an `Optional` of one are admitted — and every other text scalar falls through to the
+/// `cannot select` refusal it always had.
+fn text_length<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    owner: &str,
+    (position, optional, mut access): (usize, bool, Access),
+    context: &str,
+) -> Result<Resolution<E::Type>, ExpressionError> {
+    access.text_length = true;
+    text_length_refusal(environment, path, position, owner, context)
+        .map(|()| count_of(environment, optional, access))
+}
+
+/// A `.count` — of a collection or of a text — resolves to an `Integer`.
+fn count_of<E: TypeEnvironment>(
+    environment: &E,
+    optional: bool,
+    access: Access,
+) -> Resolution<E::Type> {
+    Resolution {
+        terminal: environment.cardinality_type(),
+        declared: "Integer".to_owned(),
+        scalar: Some(ScalarKind::Number),
+        variants: None,
+        optional,
+        access,
+    }
+}
+
+/// The two refusals a text length can meet: a format before ess/11, and a selector past it.
+fn text_length_refusal<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    position: usize,
+    owner: &str,
+    context: &str,
+) -> Result<(), ExpressionError> {
+    let segments = path.segments();
+    let through = FactPath::from_segments(&segments[..=position]);
+    if !environment.admits_text_length() {
+        return Err(error(
+            owner,
+            ValidationCode::UnsupportedFormatVersion,
+            Some(path),
+            segments.get(position).map(String::as_str),
+            format!("`{through}`: the length of a String requires specification format ess/11"),
+        ));
+    }
+    if let Some(next) = segments.get(position + 1) {
+        return Err(error(
+            owner,
+            ValidationCode::UnobservableFact,
+            Some(path),
+            Some(next),
+            format!(
+                "`{through}` is a text length of type Integer (Number); `{next}` selects nothing \
+                 from it{context}"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn canonical_ordinal(segment: &str) -> bool {
@@ -553,6 +660,10 @@ struct ValueType {
     variants: Option<Vec<String>>,
     /// Whether the terminal type is `Timestamp`, ordered by the RFC 3339 instant it names.
     instant: bool,
+    /// Whether the terminal type is `Duration`, which has no ordering.
+    duration: bool,
+    /// Whether the terminal type is `String`, which a string operator applies to.
+    string: bool,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -592,6 +703,8 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         match operand {
             Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
                 instant: self.environment.is_instant(&resolved.terminal),
+                duration: self.environment.is_duration(&resolved.terminal),
+                string: self.environment.is_string(&resolved.terminal),
                 declaring_variants: resolved
                     .variants
                     .is_some()
@@ -608,6 +721,8 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     scalar: Some(scalar),
                     variants: None,
                     instant: false,
+                    duration: false,
+                    string: false,
                 })
             }
         }
@@ -635,7 +750,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         );
         let unreadable = match expression {
             Predicate::Truthy(path) | Predicate::Defined(path) => Some(path),
-            Predicate::AnyOf { path, .. } | Predicate::NoneOf { path, .. }
+            Predicate::AnyOf { path, .. }
+            | Predicate::NoneOf { path, .. }
+            | Predicate::TextMatch { path, .. }
                 if left.scalar.is_none() =>
             {
                 Some(path)
@@ -754,11 +871,34 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// Refuses an ordering over a `Duration`, which has none: its ISO 8601 text would put `PT10M`
+    /// below `PT5M` under the byte order text is compared by. One refusal per comparison.
+    fn duration_ordering(&mut self, predicate: &Predicate, operands: [(&Operand, &ValueType); 2]) {
+        let Some((operand, _)) = operands.into_iter().find(|(_, typed)| typed.duration) else {
+            return;
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            ValidationCode::TypeMismatch,
+            match operand {
+                Operand::Fact(path) => Some(path),
+                Operand::Literal(_) => None,
+            },
+            None,
+            format!(
+                "`{predicate}`: a Duration has no ordering, because its ISO 8601 text would put \
+                 `PT10M` below `PT5M`; compare it with `==` or `!=`, or declare the length as a \
+                 number, such as whole seconds in an Integer, to order it"
+            ),
+        ));
+    }
+
     fn quantified(&mut self, predicate: &Predicate, quantified: &Quantified) {
         let target = self.read(&quantified.over, true);
         let mut reference = None;
         let mut access = Access {
             collection: true,
+            text_length: false,
             depth: 0,
         };
         let mut optional = false;
@@ -793,59 +933,127 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         self.bindings.pop();
     }
 
+    /// One comparison: its operands agree in kind, and every ordering, enum and text-literal rule
+    /// that applies to them holds.
+    fn compare(&mut self, predicate: &Predicate, left: &Operand, op: CompareOp, right: &Operand) {
+        let left_type = self.operand(left);
+        let right_type = self.operand(right);
+        if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
+            let compatible = left_type.scalar.is_some()
+                && left_type.scalar == right_type.scalar
+                && (matches!(op, CompareOp::Eq | CompareOp::Ne)
+                    || left_type.scalar != Some(ScalarKind::Bool));
+            if !compatible {
+                self.mismatch(predicate, &op.to_string(), &left_type, Some(&right_type));
+            }
+            if op.needs_ordering() {
+                self.duration_ordering(predicate, [(left, &left_type), (right, &right_type)]);
+            }
+            if let Operand::Literal(value) = right {
+                self.enum_literal(predicate, &left_type, value);
+            }
+            if let Operand::Literal(value) = left {
+                self.enum_literal(predicate, &right_type, value);
+            }
+            self.text_literal(predicate, left, op, right, &left_type);
+            self.text_literal(predicate, right, op, left, &right_type);
+            if let (Operand::Fact(left_path), Operand::Fact(right_path)) = (left, right) {
+                if compatible && op.needs_ordering() && left_type.instant != right_type.instant {
+                    let (instant, text) = if left_type.instant {
+                        (left_path, right_path)
+                    } else {
+                        (right_path, left_path)
+                    };
+                    self.checked.errors.push(error(
+                        self.owner,
+                        ValidationCode::TypeMismatch,
+                        Some(text),
+                        None,
+                        format!(
+                            "`{predicate}`: cannot order the Timestamp `{instant}` against \
+                             `{text}`, which is not a Timestamp; a Timestamp is ordered only \
+                             against another Timestamp or an RFC 3339 instant literal"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// A string operator (beyond10x/ess#95): a `String` fact, or a newtype of one at any depth,
+    /// against a text literal that is not empty and does not name a field.
+    fn text_match(
+        &mut self,
+        predicate: &Predicate,
+        path: &FactPath,
+        op: TextOp,
+        value: &FactValue,
+    ) {
+        if let Some(typed) = self.operand(&Operand::Fact(path.clone())) {
+            if !typed.string {
+                self.mismatch(predicate, op.keyword(), &typed, None);
+            }
+        }
+        let text = match value {
+            FactValue::Text(text) => text,
+            other => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}`: the operand is a {}, not text; `{op}` compares with a text \
+                         literal. YAML reads an unquoted scalar such as `+44` as a number and \
+                         `true` as a Boolean before ESS sees it, so the spelling it had is gone: \
+                         quote the literal exactly as written",
+                        other.type_name()
+                    ),
+                ));
+                return;
+            }
+        };
+        if text.is_empty() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::EmptyDeclaration,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` holds for every text, and its negation for none; write \
+                     `defined({path})` if presence is meant"
+                ),
+            ));
+            return;
+        }
+        // The #74 refusal, as for `==`: a bare word naming a declared field reads as that text.
+        if self.environment.root(text).is_some() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` reads `{text}` as the text literal \"{text}\", not the field \
+                     `{text}`: a string operator compares with a literal only"
+                ),
+            ));
+        }
+    }
+
     fn predicate(&mut self, predicate: &Predicate) {
         match predicate {
             Predicate::Always | Predicate::Never => {}
+            Predicate::TextMatch { path, op, value } => {
+                self.text_match(predicate, path, *op, value);
+            }
             Predicate::All(children) | Predicate::Any(children) => {
                 for child in children {
                     self.predicate(child);
                 }
             }
             Predicate::Not(inner) => self.predicate(inner),
-            Predicate::Compare { left, op, right } => {
-                let left_type = self.operand(left);
-                let right_type = self.operand(right);
-                if let (Some(left_type), Some(right_type)) = (left_type, right_type) {
-                    let compatible = left_type.scalar.is_some()
-                        && left_type.scalar == right_type.scalar
-                        && (matches!(op, CompareOp::Eq | CompareOp::Ne)
-                            || left_type.scalar != Some(ScalarKind::Bool));
-                    if !compatible {
-                        self.mismatch(predicate, &op.to_string(), &left_type, Some(&right_type));
-                    }
-                    if let Operand::Literal(value) = right {
-                        self.enum_literal(predicate, &left_type, value);
-                    }
-                    if let Operand::Literal(value) = left {
-                        self.enum_literal(predicate, &right_type, value);
-                    }
-                    self.text_literal(predicate, left, *op, right, &left_type);
-                    self.text_literal(predicate, right, *op, left, &right_type);
-                    if let (Operand::Fact(left_path), Operand::Fact(right_path)) = (left, right) {
-                        if compatible
-                            && op.needs_ordering()
-                            && left_type.instant != right_type.instant
-                        {
-                            let (instant, text) = if left_type.instant {
-                                (left_path, right_path)
-                            } else {
-                                (right_path, left_path)
-                            };
-                            self.checked.errors.push(error(
-                                self.owner,
-                                ValidationCode::TypeMismatch,
-                                Some(text),
-                                None,
-                                format!(
-                                    "`{predicate}`: cannot order the Timestamp `{instant}` against \
-                                     `{text}`, which is not a Timestamp; a Timestamp is ordered only \
-                                     against another Timestamp or an RFC 3339 instant literal"
-                                ),
-                            ));
-                        }
-                    }
-                }
-            }
+            Predicate::Compare { left, op, right } => self.compare(predicate, left, *op, right),
             Predicate::Truthy(path) | Predicate::Defined(path) => {
                 if let Some(value) = self.operand(&Operand::Fact(path.clone())) {
                     if value.scalar.is_none() {
@@ -884,6 +1092,8 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             scalar: Some(kind),
                             variants: None,
                             instant: false,
+                            duration: false,
+                            string: false,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }

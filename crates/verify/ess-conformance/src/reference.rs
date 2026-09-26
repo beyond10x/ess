@@ -27,14 +27,16 @@
 //!   word `eventual`, and the first real projection would find that out in production.
 //!   `billing.invoice.OutstandingInvoices` declares `read_your_writes` and *is* immediate, because
 //!   that is what the specification says.
-//! * **A refusal the model does not declare is reported as one.** `IssueInvoice` on an invoice this
-//!   target has never seen reaches no declared outcome, so it answers
+//! * **A refusal the model does not declare is reported as one.** A command whose input names no
+//!   invoice at all reaches no declared outcome, so it answers
 //!   [`SemanticCommandResult::undeclared`] rather than picking a branch that would make the
-//!   assertion pass. `IssueInvoice` on an invoice that exists and is already `Paid` is a different
-//!   question, and the specification does answer it: the `wrong_state:` branch, reporting
-//!   `billing.invoice.InvoiceStateConflict` and carrying the state the invoice is really in. Both
-//!   halves matter — reporting the second as `undeclared` would have hidden a declared branch, and
-//!   reporting the first as a state conflict would have claimed a subject that does not exist.
+//!   assertion pass. `IssueInvoice` on an invoice this target has never seen is answered by the
+//!   unknown-instance rule (`docs/design/typed-literals-and-unknown-instances.md`): the
+//!   `wrong_state:` branch and `billing.invoice.InvoiceStateConflict`, carrying no `state`, because
+//!   such an invoice is in none. On an invoice that exists and is already `Paid` the same branch
+//!   carries the state the invoice is really in. Reporting either as `undeclared` would have hidden
+//!   a declared branch, and inventing a state for the first would have claimed a subject that does
+//!   not exist.
 //!
 //! # Where the identifiers come from
 //!
@@ -562,7 +564,7 @@ fn issue_invoice(
         return SemanticCommandResult::undeclared();
     };
     let Some(current) = state.invoices.get(&id).map(|invoice| invoice.state) else {
-        return SemanticCommandResult::undeclared();
+        return unknown_invoice(ISSUE_INVOICE);
     };
     if current != Lifecycle::Draft {
         return wrong_state(ISSUE_INVOICE, current);
@@ -594,7 +596,7 @@ fn cancel_invoice(
         return SemanticCommandResult::undeclared();
     };
     let Some(current) = state.invoices.get(&id).map(|invoice| invoice.state) else {
-        return SemanticCommandResult::undeclared();
+        return unknown_invoice(CANCEL_INVOICE);
     };
     if !matches!(current, Lifecycle::Draft | Lifecycle::Issued) {
         return wrong_state(CANCEL_INVOICE, current);
@@ -636,7 +638,7 @@ fn pay_invoice(
         return SemanticCommandResult::undeclared();
     };
     let Some(current) = state.invoices.get(&id).map(|invoice| invoice.state) else {
-        return SemanticCommandResult::undeclared();
+        return unknown_invoice(PAY_INVOICE);
     };
     if current != Lifecycle::Issued {
         return wrong_state(PAY_INVOICE, current);
@@ -682,6 +684,18 @@ fn wrong_state(command_name: &str, current: Lifecycle) -> SemanticCommandResult 
     SemanticCommandResult::took(outcome(command_name, "wrong-state")).with_error(
         DeclaredErrorValue::new(declared_error(INVOICE_STATE_CONFLICT))
             .with("state", Node::Text(current.declared().to_owned())),
+    )
+}
+
+/// The branch each lifecycle command declares, for an invoice this target has never seen.
+///
+/// The unknown-instance rule (`docs/design/typed-literals-and-unknown-instances.md`): the
+/// command's `wrong_state` branch and its declared error. The error carries no `state`, because
+/// an invoice that does not exist is in none, and inventing one would tell the caller something
+/// false; the suite requires the error by name and no field of it.
+fn unknown_invoice(command_name: &str) -> SemanticCommandResult {
+    SemanticCommandResult::took(outcome(command_name, "wrong-state")).with_error(
+        DeclaredErrorValue::new(declared_error(INVOICE_STATE_CONFLICT)),
     )
 }
 
@@ -992,10 +1006,13 @@ impl Oracle {
         let Some(id) = order_instance(request) else {
             return SemanticCommandResult::undeclared();
         };
-        // An order that does not exist is not an order in the wrong state: the specification says
-        // nothing about a subject it has never seen, so that one still answers `undeclared`.
+        // An order this target has never seen is answered with the command's `wrong_state`
+        // branch: the unknown-instance rule (`docs/design/typed-literals-and-unknown-instances.md`).
+        // It carries the declared error and moves nothing, because there is nothing to move.
         let Some(current) = state.by_id.get(&id).map(|order| order.state) else {
-            return SemanticCommandResult::undeclared();
+            return SemanticCommandResult::took(outcome(moving.command, "wrong-state")).with_error(
+                DeclaredErrorValue::new(declared_error(ORDER_STATE_CONFLICT)),
+            );
         };
         if !moving.from.contains(&current) {
             return SemanticCommandResult::took(outcome(moving.command, "wrong-state")).with_error(

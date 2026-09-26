@@ -3,6 +3,13 @@ use ess_cli_contract::{compile, Binding};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 
+/// The Cargo target every generated package of this crate's tests builds into, shared with
+/// `projection.rs`: the adopter workspace is new each time, so it always compiles, and its
+/// registry dependencies compile once rather than once for each test's own target.
+fn nested_target() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("ess-cli-project-target")
+}
+
 #[test]
 fn generated_library_is_a_path_dependency_of_an_enclosing_workspace() {
     let model = Specification::assemble(vec![(
@@ -72,7 +79,7 @@ fn generated_library_is_a_path_dependency_of_an_enclosing_workspace() {
         .current_dir(root)
         .args(["test", "--offline", "--workspace"])
         .env("CARGO_BUILD_JOBS", "2")
-        .env("CARGO_TARGET_DIR", root.join("target"))
+        .env("CARGO_TARGET_DIR", nested_target())
         .env("CARGO_INCREMENTAL", "0")
         .env("CARGO_PROFILE_DEV_DEBUG", "0")
         .env("CARGO_PROFILE_TEST_DEBUG", "0")

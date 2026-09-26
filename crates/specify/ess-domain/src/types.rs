@@ -592,6 +592,14 @@ pub enum TypeBody {
         /// What it wraps.
         #[serde(rename = "of")]
         of: TypeRef,
+        /// The characters every value is drawn from, when declared (ess/11).
+        ///
+        /// A set written in a fixed order: every character of a value is one of these, decided per
+        /// Unicode scalar value with no normalization or case folding. The order is canonical,
+        /// which is why a character written twice is refused, and it is what the witness maps a
+        /// field's own text into (`docs/design/string-alphabet-and-length.md`, section 4).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        alphabet: Option<String>,
         /// Conditions every value must satisfy, as predicates over `value`, what it wraps.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         invariants: Vec<Invariant>,
@@ -690,6 +698,14 @@ impl NamedType {
             );
         }
 
+        if let TypeBody::Newtype {
+            alphabet: Some(alphabet),
+            ..
+        } = &self.body
+        {
+            errors.extend(self.check_alphabet(alphabet));
+        }
+
         // A tagged union whose tag collides with a variant's own field is decodable only by luck.
         if let TypeBody::Union { tag, .. } = &self.body {
             if tag.is_empty() {
@@ -707,6 +723,119 @@ impl NamedType {
             }
         }
 
+        errors
+    }
+
+    /// The rules an alphabet keeps on its own: it holds a character, and each only once.
+    ///
+    /// A character written twice is refused rather than read as one, so the written order is the
+    /// canonical order: two spellings of one set would diff as a change and synthesize different
+    /// witnesses (`docs/design/string-alphabet-and-length.md`, section 1).
+    fn check_alphabet(&self, alphabet: &str) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at = format!("types.{}.alphabet", self.name);
+        if alphabet.is_empty() {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::EmptyDeclaration,
+                    at.clone(),
+                    format!(
+                        "`{}` declares an empty alphabet, which admits no character",
+                        self.name
+                    ),
+                )
+                .with_hint("list the characters a value may hold, or delete `alphabet:`"),
+            );
+        }
+        let mut first: BTreeMap<char, usize> = BTreeMap::new();
+        for (index, character) in alphabet.chars().enumerate() {
+            let position = index + 1;
+            if let Some(earlier) = first.get(&character) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::DuplicateDeclaration,
+                        at.clone(),
+                        format!(
+                            "`{}` writes {character:?} twice in its alphabet, at positions \
+                             {earlier} and {position}",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "an alphabet is a set written in a fixed order; write each character once",
+                    ),
+                );
+            } else {
+                first.insert(character, position);
+            }
+        }
+        errors
+    }
+
+    /// Check a declared alphabet against the registry: what it sits on is text, and it shares a
+    /// character with every alphabet it wraps.
+    pub fn validate_alphabet(&self, registry: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let TypeBody::Newtype {
+            of,
+            alphabet: Some(alphabet),
+            ..
+        } = &self.body
+        else {
+            return errors;
+        };
+        let at = format!("types.{}.alphabet", self.name);
+        let layers = registry.newtype_layers(of);
+        match &layers.terminal {
+            TypeRef::Primitive(Primitive::String) if !layers.optional => {}
+            // An unresolved name is its own refusal, made where references are resolved.
+            TypeRef::Named(name) if registry.get(name).is_none() => {}
+            other => {
+                let reached = match other {
+                    TypeRef::Named(name) => format!("`{name}`"),
+                    _ if layers.optional => format!("`{of}`, which may be absent,"),
+                    _ => format!("`{other}`"),
+                };
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::TypeMismatch,
+                        at.clone(),
+                        format!(
+                            "`{}` declares an alphabet over `{of}`, which is {reached} rather \
+                             than text",
+                            self.name
+                        ),
+                    )
+                    .with_hint("only a newtype of `String`, at any depth, takes `alphabet:`"),
+                );
+            }
+        }
+        for inner in &layers.newtypes {
+            let TypeBody::Newtype {
+                alphabet: Some(held),
+                ..
+            } = &inner.body
+            else {
+                continue;
+            };
+            if !alphabet.is_empty() && !alphabet.chars().any(|character| held.contains(character)) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        at.clone(),
+                        format!(
+                            "`{}`'s alphabet shares no character with the alphabet of `{}`, which \
+                             it wraps, so no text but the empty one is a value of it",
+                            self.name, inner.name
+                        ),
+                    )
+                    .with_hint(
+                        "a nested alphabet narrows the one it wraps; keep at least one character \
+                         both hold",
+                    ),
+                );
+            }
+        }
         errors
     }
 
@@ -739,7 +868,7 @@ impl NamedType {
         let value;
         let (fields, invariants) = match &self.body {
             TypeBody::Struct { fields, invariants } => (fields.as_slice(), invariants),
-            TypeBody::Newtype { of, invariants } => {
+            TypeBody::Newtype { of, invariants, .. } => {
                 value = [Field::new(Self::VALUE, of.clone())];
                 (value.as_slice(), invariants)
             }
@@ -837,6 +966,9 @@ pub enum RawTypeBody {
         /// What it wraps.
         #[serde(rename = "of")]
         of: TypeRef,
+        /// The characters every value is drawn from (ess/11); only a newtype of `String` takes one.
+        #[serde(default)]
+        alphabet: Option<String>,
         /// Conditions every value must satisfy, as predicates over `value`, what it wraps.
         #[serde(default)]
         invariants: Vec<RawInvariant>,
@@ -866,8 +998,13 @@ pub enum RawTypeBody {
 impl From<RawTypeBody> for TypeBody {
     fn from(raw: RawTypeBody) -> Self {
         match raw {
-            RawTypeBody::Newtype { of, invariants } => Self::Newtype {
+            RawTypeBody::Newtype {
                 of,
+                alphabet,
+                invariants,
+            } => Self::Newtype {
+                of,
+                alphabet,
                 invariants: invariants.into_iter().map(Invariant::from).collect(),
             },
             RawTypeBody::Struct { fields, invariants } => Self::Struct {
@@ -1088,6 +1225,14 @@ impl ConversionRegistry {
 #[serde(transparent)]
 pub struct TypeRegistry {
     types: BTreeMap<QualifiedName, NamedType>,
+    /// The format of the specification this registry serves, when it serves one.
+    ///
+    /// Skipped, so the registry stays `serde(transparent)` and serializes as its types alone. Set
+    /// once, where every predicate environment's registry is built, so a construct gated on the
+    /// format is gated in every position the checker serves
+    /// (`docs/design/string-alphabet-and-length.md`, section 3).
+    #[serde(skip)]
+    format: Option<crate::system::FormatVersion>,
 }
 
 impl TypeRegistry {
@@ -1129,10 +1274,74 @@ impl TypeRegistry {
         self.types.is_empty()
     }
 
-    /// Recheck all named-type predicates against the complete registry.
+    /// The format of the specification this registry serves, when one was recorded.
+    pub fn format(&self) -> Option<crate::system::FormatVersion> {
+        self.format
+    }
+
+    /// This registry, recorded as serving a specification in `format`.
+    #[must_use]
+    pub fn with_format(mut self, format: crate::system::FormatVersion) -> Self {
+        self.format = Some(format);
+        self
+    }
+
+    /// The newtypes `reference` is declared through, outermost first, and what they end at.
+    ///
+    /// Walks `Optional` and every named newtype, as the predicate checker does; stops at the first
+    /// type that is neither. Bounded by [`MAX_TYPE_DEPTH`], so a newtype that wraps itself ends the
+    /// walk rather than the stack.
+    pub fn newtype_layers<'a>(&'a self, reference: &'a TypeRef) -> NewtypeLayers<'a> {
+        let mut layers = NewtypeLayers {
+            newtypes: Vec::new(),
+            terminal: reference.clone(),
+            optional: false,
+        };
+        let mut current = reference;
+        for _ in 0..=MAX_TYPE_DEPTH {
+            match current {
+                TypeRef::Optional(of) => {
+                    layers.optional = true;
+                    current = of;
+                }
+                TypeRef::Named(name) => match self.get(name) {
+                    Some(declared) => match &declared.body {
+                        TypeBody::Newtype { of, .. } => {
+                            layers.newtypes.push(declared);
+                            current = of;
+                        }
+                        _ => break,
+                    },
+                    None => break,
+                },
+                _ => break,
+            }
+        }
+        layers.terminal = current.clone();
+        layers
+    }
+
+    /// The characters every value of `reference` is drawn from: the outermost declared alphabet's
+    /// characters that every inner one also holds, in the outer one's order. `None` when no layer
+    /// declares one; a layer that declares none imposes nothing.
+    pub fn effective_alphabet(&self, reference: &TypeRef) -> Option<String> {
+        effective_alphabet(
+            self.newtype_layers(reference)
+                .newtypes
+                .iter()
+                .filter_map(|declared| match &declared.body {
+                    TypeBody::Newtype { alphabet, .. } => alphabet.as_deref(),
+                    _ => None,
+                }),
+        )
+    }
+
+    /// Recheck all named-type predicates, and every declared alphabet, against the complete
+    /// registry.
     pub(crate) fn validate_invariants(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         for declared in self.iter() {
+            errors.extend(declared.validate_alphabet(self));
             errors.extend(declared.validate_invariants(self));
         }
         errors
@@ -1197,6 +1406,73 @@ impl TypeRegistry {
     }
 }
 
+/// What [`TypeRegistry::newtype_layers`] walked through.
+#[derive(Debug, Clone)]
+pub struct NewtypeLayers<'a> {
+    /// The named newtypes, outermost first.
+    pub newtypes: Vec<&'a NamedType>,
+    /// The first type that is neither a newtype nor an `Optional`.
+    pub terminal: TypeRef,
+    /// Whether an `Optional` was passed on the way.
+    pub optional: bool,
+}
+
+/// The intersection of nested alphabets, written outermost first: the first one's characters that
+/// every later one also holds, in the first one's order.
+///
+/// One function, so the conformance witness and the domain's own checks agree on what a chain of
+/// newtypes admits.
+pub fn effective_alphabet<'a>(alphabets: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let mut alphabets = alphabets.into_iter();
+    let outer = alphabets.next()?;
+    let inner: Vec<&str> = alphabets.collect();
+    Some(
+        outer
+            .chars()
+            .filter(|character| inner.iter().all(|held| held.contains(*character)))
+            .collect(),
+    )
+}
+
+impl Primitive {
+    /// The fact value `value` is as this primitive, or `None` when it is not a value of it.
+    ///
+    /// The one table for "is this node a value of this primitive": `ess-conformance` asks it of
+    /// every candidate, setup value and payload, and validation asks it of an authored `example:`
+    /// (`docs/design/string-alphabet-and-length.md`, section 2). A second copy would be a second
+    /// opinion about whether `1.5` is an `Integer`.
+    pub fn admits(
+        self,
+        value: &ess_primitives::node::Node,
+    ) -> Option<ess_primitives::facts::FactValue> {
+        use ess_primitives::facts::{is_canonical_uuid, is_padded_base64, FactValue};
+        use ess_primitives::node::Node;
+        match (self, value) {
+            (Self::Boolean, Node::Bool(flag)) => Some(FactValue::Bool(*flag)),
+            (Self::Decimal, Node::Number(number)) => Some(FactValue::Number(*number)),
+            // An integer that is not integral is refused rather than rounded: a candidate binding
+            // `1.5` to an `Integer` would decide `quantity == 1` differently from the system it is
+            // testing.
+            (Self::Integer, Node::Number(number)) if number.is_integral() => {
+                Some(FactValue::Number(*number))
+            }
+            // A grammar, not merely a shape (review finding F08): the two constrained primitives
+            // ask the one grammar `ess-primitives` holds, which the Go runtime and the browser
+            // adapter ask in their own words against the same corpus.
+            (Self::Uuid, Node::Text(text)) if is_canonical_uuid(text) => {
+                Some(FactValue::text(text))
+            }
+            (Self::Bytes, Node::Text(text)) if is_padded_base64(text) => {
+                Some(FactValue::text(text))
+            }
+            (Self::String | Self::Timestamp | Self::Duration, Node::Text(text)) => {
+                Some(FactValue::text(text))
+            }
+            _ => None,
+        }
+    }
+}
+
 /// `true` when a value of `source` can be used where `target` is expected.
 ///
 /// Deliberately strict: identical, or an optional target accepting a required source. Nothing else,
@@ -1236,6 +1512,7 @@ mod tests {
                 reading: None,
                 name: name("billing.Email"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },

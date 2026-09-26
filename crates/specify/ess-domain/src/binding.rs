@@ -2103,6 +2103,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
 
     fn newtype(of: &str) -> TypeBody {
         TypeBody::Newtype {
+            alphabet: None,
             of: type_ref(of),
             invariants: Vec::new(),
         }
@@ -2126,6 +2127,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     /// binding reads it.
     fn command(declared: &str, input: &[(&str, &str)]) -> BTreeMap<QualifiedName, CommandSpec> {
         let spec = CommandSpec {
+            examples: BTreeMap::new(),
             name: name(declared),
             input: input
                 .iter()

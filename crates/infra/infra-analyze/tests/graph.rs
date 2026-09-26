@@ -427,3 +427,27 @@ fn the_json_document_chains_to_the_ir_it_was_built_from() {
     assert_eq!(document.nodes.len(), graph.nodes().len());
     assert_eq!(document.edges.len(), graph.edge_count());
 }
+
+#[test]
+fn a_graph_of_a_legacy_ir_names_the_stripped_model_not_the_one_holding_secret_digests() {
+    let text = include_str!("../../infra-compiler/tests/fixtures/legacy-k3d-dev-cluster.ir-1.json");
+    let frozen: serde_json::Value = serde_json::from_str(text).expect("JSON");
+    let mut model = frozen["model"].clone();
+    for secret in model["secrets"]
+        .as_object_mut()
+        .expect("secrets")
+        .values_mut()
+    {
+        for value in secret["keys"].as_object_mut().expect("keys").values_mut() {
+            *value = serde_json::json!({ "present": true });
+        }
+    }
+    let stripped = infra_compiler::digest_of_canonical(&serde_json::to_vec(&model).expect("model"));
+    assert_ne!(
+        stripped, frozen["digest"],
+        "the legacy fixture carries no Secret digest"
+    );
+    let legacy = infra_compiler::read_document(&frozen).expect("the legacy document is still read");
+    let graph = GraphDocument::of(&InfraGraph::of(&legacy), &legacy, None);
+    assert_eq!(graph.source_digest, stripped);
+}

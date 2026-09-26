@@ -3,8 +3,8 @@
     "suite_version": "ess-conformance/4",
     "system": "oracle",
     "specification_version": "v1",
-    "spec_digest": "4288d50a003fa7d5b39743327880aa7e2f97ff6d9408f8a5ddb908c8b6af79ee",
-    "contract_digest": "9c8f1b65057d7378da54f3072e27e6bb046abd22265bbdf1c1caadb94ecaa1bd"
+    "spec_digest": "7ca8e1ba4935adbffad0c3e57e1d7651c7397a5c9b52f6d0cd54488cba83fb2b",
+    "contract_digest": "003eb0f2aab6cc1251288e3dc03526173e257f09b6a592df36618cff9d431d67"
   },
   "scenarios": {
     "handoff-on-held/binding/delivery": {
@@ -1938,6 +1938,27 @@
               }
             }
           }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.AmendOrder",
+          "input": {
+            "order_id": {
+              "kind": "instance",
+              "instance": "order"
+            },
+            "weight_grams": {
+              "kind": "literal",
+              "value": 0.0
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.AmendOrder",
+            "outcome": "amended"
+          }
         }
       ],
       "source": [
@@ -2302,6 +2323,109 @@
         }
       ]
     },
+    "oracle.order.CancelOrder/outcome/wrong-state": {
+      "purpose": "`oracle.order.CancelOrder` for an identity no record carries takes `wrong-state` and reports `oracle.order.OrderStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "oracle.order.CancelOrder",
+          "input": {
+            "order_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-29ee57d01497"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.CancelOrder",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "oracle.order.OrderStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.dispatch.HandedOff"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.dispatch.HandoffEscalated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderAmended"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderCancelled"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderHeld"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderPlaced"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderShipped"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "oracle.order.Order"
+        },
+        {
+          "kind": "command",
+          "name": "oracle.order.CancelOrder"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "oracle.order.CancelOrder",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "oracle.dispatch.HandedOff"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.dispatch.HandoffEscalated"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderAmended"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderCancelled"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderHeld"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderPlaced"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderShipped"
+        },
+        {
+          "kind": "error",
+          "name": "oracle.order.OrderStateConflict"
+        }
+      ]
+    },
     "oracle.order.HoldOrder/outcome/held": {
       "purpose": "`oracle.order.HoldOrder` answers `held` for an input no other branch's guard claims",
       "steps": [
@@ -2493,6 +2617,109 @@
         {
           "kind": "view",
           "name": "oracle.order.OpenOrders"
+        }
+      ]
+    },
+    "oracle.order.HoldOrder/outcome/wrong-state": {
+      "purpose": "`oracle.order.HoldOrder` for an identity no record carries takes `wrong-state` and reports `oracle.order.OrderStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "oracle.order.HoldOrder",
+          "input": {
+            "order_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-29ee57d01497"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.HoldOrder",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "oracle.order.OrderStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.dispatch.HandedOff"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.dispatch.HandoffEscalated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderAmended"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderCancelled"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderHeld"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderPlaced"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderShipped"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "oracle.order.Order"
+        },
+        {
+          "kind": "command",
+          "name": "oracle.order.HoldOrder"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "oracle.order.HoldOrder",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "oracle.dispatch.HandedOff"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.dispatch.HandoffEscalated"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderAmended"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderCancelled"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderHeld"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderPlaced"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderShipped"
+        },
+        {
+          "kind": "error",
+          "name": "oracle.order.OrderStateConflict"
         }
       ]
     },
@@ -4026,6 +4253,82 @@
               }
             }
           }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.PlaceOrder",
+          "input": {
+            "alternate_contact": {
+              "kind": "literal",
+              "value": "alternate_contact-1"
+            },
+            "contact": {
+              "kind": "literal",
+              "value": "contact-1"
+            },
+            "weight_grams": {
+              "kind": "literal",
+              "value": 2.0
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.PlaceOrder",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "order-2",
+          "entity": "oracle.order.Order",
+          "event": "oracle.order.OrderPlaced",
+          "field": "order_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.HoldOrder",
+          "input": {
+            "order_id": {
+              "kind": "instance",
+              "instance": "order-2"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.HoldOrder",
+            "outcome": "held"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.CancelOrder",
+          "input": {
+            "order_id": {
+              "kind": "instance",
+              "instance": "order-2"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.CancelOrder",
+            "outcome": "cancelled"
+          }
+        },
+        {
+          "step": "expect_event",
+          "event": "oracle.order.OrderCancelled",
+          "shape": {
+            "order_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
         }
       ],
       "source": [
@@ -4043,6 +4346,10 @@
         },
         {
           "kind": "command",
+          "name": "oracle.order.HoldOrder"
+        },
+        {
+          "kind": "command",
           "name": "oracle.order.PlaceOrder"
         },
         {
@@ -4050,6 +4357,13 @@
           "name": {
             "command": "oracle.order.CancelOrder",
             "outcome": "cancelled"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "oracle.order.HoldOrder",
+            "outcome": "held"
           }
         },
         {
@@ -4586,6 +4900,31 @@
               }
             }
           }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.PlaceOrder",
+          "input": {
+            "alternate_contact": {
+              "kind": "literal",
+              "value": "alternate_contact"
+            },
+            "contact": {
+              "kind": "literal",
+              "value": "contact"
+            },
+            "weight_grams": {
+              "kind": "literal",
+              "value": 0.0
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.PlaceOrder",
+            "outcome": "accepted"
+          }
         }
       ],
       "source": [
@@ -4952,6 +5291,109 @@
         {
           "kind": "view",
           "name": "oracle.order.OpenOrders"
+        }
+      ]
+    },
+    "oracle.order.ShipOrder/outcome/wrong-state": {
+      "purpose": "`oracle.order.ShipOrder` for an identity no record carries takes `wrong-state` and reports `oracle.order.OrderStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "oracle.order.ShipOrder",
+          "input": {
+            "order_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-29ee57d01497"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.ShipOrder",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "oracle.order.OrderStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.dispatch.HandedOff"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.dispatch.HandoffEscalated"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderAmended"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderCancelled"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderHeld"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderPlaced"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "oracle.order.OrderShipped"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "oracle.order.Order"
+        },
+        {
+          "kind": "command",
+          "name": "oracle.order.ShipOrder"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "oracle.order.ShipOrder",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "oracle.dispatch.HandedOff"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.dispatch.HandoffEscalated"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderAmended"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderCancelled"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderHeld"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderPlaced"
+        },
+        {
+          "kind": "event",
+          "name": "oracle.order.OrderShipped"
+        },
+        {
+          "kind": "error",
+          "name": "oracle.order.OrderStateConflict"
         }
       ]
     }

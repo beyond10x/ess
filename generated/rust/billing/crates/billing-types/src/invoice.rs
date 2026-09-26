@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
-// contract digest cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c
+// model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+// contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
 // do not edit: regenerate with `ess synthesize`
 
 //! Invoicing — `billing.invoice`.
@@ -499,6 +499,11 @@ pub enum CancelInvoiceOutcome {
         /// Why it was refused: `billing.invoice.InvoiceStateConflict`.
         error: InvoiceStateConflict,
     },
+    /// `wrong-state` — for an instance no record carries.
+    ///
+    /// The same declared branch and error as [`Self::WrongState`], without the error's fields: an instance
+    /// that does not exist has nothing for them to describe (`docs/design/unknown-instance-seams.md`).
+    WrongStateUnknownInstance,
 }
 
 /// Create invoice — the input of `billing.invoice.CreateInvoice`.
@@ -567,6 +572,11 @@ pub enum IssueInvoiceOutcome {
         /// Why it was refused: `billing.invoice.InvoiceStateConflict`.
         error: InvoiceStateConflict,
     },
+    /// `wrong-state` — for an instance no record carries.
+    ///
+    /// The same declared branch and error as [`Self::WrongState`], without the error's fields: an instance
+    /// that does not exist has nothing for them to describe (`docs/design/unknown-instance-seams.md`).
+    WrongStateUnknownInstance,
 }
 
 /// Pay invoice — the input of `billing.invoice.PayInvoice`.
@@ -608,6 +618,11 @@ pub enum PayInvoiceOutcome {
         /// Why it was refused: `billing.invoice.InvoiceStateConflict`.
         error: InvoiceStateConflict,
     },
+    /// `wrong-state` — for an instance no record carries.
+    ///
+    /// The same declared branch and error as [`Self::WrongState`], without the error's fields: an instance
+    /// that does not exist has nothing for them to describe (`docs/design/unknown-instance-seams.md`).
+    WrongStateUnknownInstance,
 }
 
 /// InvoiceCancelled — the event `billing.invoice.InvoiceCancelled`.
@@ -704,7 +719,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: the contract is declared; the algorithm is not.
     ///
-    /// Contract: given `billing.invoice.CancelInvoice` input, decide and enact exactly one outcome — `cancelled` otherwise, takes `cancel` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCancelled`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`.
+    /// Contract: given `billing.invoice.CancelInvoice` input, decide and enact exactly one outcome — `cancelled` otherwise, takes `cancel` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCancelled`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait CancelInvoiceBehavior {
         /// Decides and enacts exactly one declared outcome of `billing.invoice.CancelInvoice`.
         ///
@@ -730,7 +745,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: the contract is declared; the algorithm is not.
     ///
-    /// Contract: given `billing.invoice.IssueInvoice` input, decide and enact exactly one outcome — `issued` otherwise, takes `issue` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceIssued`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`.
+    /// Contract: given `billing.invoice.IssueInvoice` input, decide and enact exactly one outcome — `issued` otherwise, takes `issue` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceIssued`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait IssueInvoiceBehavior {
         /// Decides and enacts exactly one declared outcome of `billing.invoice.IssueInvoice`.
         ///
@@ -743,7 +758,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: the contract is declared; the algorithm is not.
     ///
-    /// Contract: given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`.
+    /// Contract: given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait PayInvoiceBehavior {
         /// Decides and enacts exactly one declared outcome of `billing.invoice.PayInvoice`.
         ///

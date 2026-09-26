@@ -1,6 +1,6 @@
 {
   "context": "k3d-dev-cluster",
-  "format": "infra-observation/1",
+  "format": "infra-observation/3",
   "kinds": {
     "configmaps": {
       "apiVersion": "v1",
@@ -1342,8 +1342,7 @@
         {
           "data": {
             "turn-secret": {
-              "length": 32,
-              "sha256": "3baf68f596a73c1c95aea267e1974447cbe52355eecbdc62b4079466f1cebec8"
+              "present": true
             }
           },
           "metadata": {
@@ -1365,8 +1364,7 @@
         {
           "data": {
             "cache": {
-              "length": 1376,
-              "sha256": "f4276be53bccb56fa4ea7e74402f401bb2db0b934359599d753443732d837cec"
+              "present": true
             }
           },
           "metadata": {
@@ -1383,8 +1381,7 @@
         {
           "data": {
             "token": {
-              "length": 942,
-              "sha256": "1f7dbf1a0f5f2a9c4c8db1c65b1a1f6a2f9f0f4d3e2b1a0c9d8e7f6a5b4c3d2e"
+              "present": true
             }
           },
           "metadata": {

@@ -1,6 +1,6 @@
 // generated from gatepass v1
-// model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61
-// contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e
+// model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba
+// contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c
 // do not edit: regenerate with `ess synthesize`
 
 // Package passservice is pass-service — the `pass-service` component of `gatepass` v1.
@@ -104,6 +104,7 @@ func (c *PassService) AdmitVisitor(input visit.AdmitVisitor) (visit.AdmitVisitor
 	case visit.AdmitVisitorOutcomeAdmitted:
 		c.outbox = append(c.outbox, PublishedEventVisitorAdmitted{Event: value.VisitorAdmitted})
 	case visit.AdmitVisitorOutcomeWrongState:
+	case visit.AdmitVisitorOutcomeWrongStateUnknownInstance:
 	}
 	return outcome, nil
 }
@@ -140,6 +141,7 @@ func (c *PassService) SignOutVisitor(input visit.SignOutVisitor) (visit.SignOutV
 	case visit.SignOutVisitorOutcomeSignedOut:
 		c.outbox = append(c.outbox, PublishedEventVisitorDeparted{Event: value.VisitorDeparted})
 	case visit.SignOutVisitorOutcomeWrongState:
+	case visit.SignOutVisitorOutcomeWrongStateUnknownInstance:
 	}
 	return outcome, nil
 }
