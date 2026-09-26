@@ -2,11 +2,11 @@
 format: aep.planning-md/2
 id: story:full-scan-secret-digest-oracle
 kind: story
-status: draft
+status: implemented
 title: The full-cluster scan does not write a guessable digest of a Secret value
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 # The full-cluster scan does not write a guessable digest of a Secret value
 
