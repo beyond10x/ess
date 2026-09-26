@@ -183,12 +183,7 @@ pub(crate) fn run(root: &Path, args: &Args) -> Result<String> {
         .context("--scratch needs a parent")?
         .canonicalize()
         .context("--scratch parent must exist")?;
-    if let Some(checkout) = git_ancestor(&scratch_parent) {
-        bail!(
-            "--scratch must be outside Git checkouts; {} is one",
-            checkout.display()
-        );
-    }
+    scratch_outside_checkouts(&scratch_parent)?;
     fs::create_dir(&args.scratch)?;
     fs::create_dir(&args.evidence)?;
     let scratch = args.scratch.canonicalize()?;
@@ -1233,10 +1228,16 @@ fn dns_label(value: &str) -> bool {
         && !value.ends_with('-')
 }
 
-fn git_ancestor(path: &Path) -> Option<PathBuf> {
-    path.ancestors()
-        .find(|a| fs::symlink_metadata(a.join(".git")).is_ok())
-        .map(Path::to_path_buf)
+fn scratch_outside_checkouts(scratch_parent: &Path) -> Result<()> {
+    if let Some(checkout) = crate::git_checkout::enclosing_checkout(scratch_parent)
+        .context("--scratch must be outside Git checkouts; cannot establish that it is")?
+    {
+        bail!(
+            "--scratch must be outside Git checkouts; {} is one",
+            checkout.display()
+        );
+    }
+    Ok(())
 }
 
 /// A random value, the one input `render` takes that is not an embedded template. Only
@@ -2597,6 +2598,66 @@ mod tests {
         assert_eq!(base64(b"f"), "Zg==");
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foo"), "Zm9v");
+    }
+
+    /// A fresh directory under the test temp dir; `$TMPDIR` must itself be outside checkouts.
+    fn placement_root(case: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "ess-xtask-scratch-placement-{case}-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("work")).unwrap();
+        root
+    }
+
+    #[test]
+    fn a_scratch_below_a_git_directory_holding_only_an_exclude_file_is_admitted() {
+        // What a harness leaves behind when a session starts in a directory that is no repository.
+        let root = placement_root("exclude-only");
+        fs::create_dir_all(root.join(".git/info")).unwrap();
+        fs::write(root.join(".git/info/exclude"), "# harness runtime\n").unwrap();
+        let admitted = scratch_outside_checkouts(&root.join("work"));
+        fs::remove_dir_all(&root).unwrap();
+        admitted.expect("a .git directory Git cannot open is not a checkout");
+    }
+
+    #[test]
+    fn a_scratch_below_a_repository_a_gitfile_or_a_git_symlink_is_refused() {
+        let repository = placement_root("repository");
+        for dir in [".git/objects", ".git/refs"] {
+            fs::create_dir_all(repository.join(dir)).unwrap();
+        }
+        fs::write(repository.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let gitfile = placement_root("gitfile");
+        fs::write(gitfile.join(".git"), "gitdir: /unavailable/linked-tree\n").unwrap();
+        let symlink = placement_root("symlink");
+        std::os::unix::fs::symlink(symlink.join("work"), symlink.join(".git")).unwrap();
+        for root in [repository, gitfile, symlink] {
+            let refused = scratch_outside_checkouts(&root.join("work"));
+            fs::remove_dir_all(&root).unwrap();
+            let error = format!("{:#}", refused.expect_err("a checkout marker was admitted"));
+            assert!(error.contains("outside Git checkouts"), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_scratch_below_an_unreadable_git_directory_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = placement_root("unreadable");
+        fs::create_dir(root.join(".git")).unwrap();
+        fs::set_permissions(root.join(".git"), fs::Permissions::from_mode(0o000)).unwrap();
+        // A privileged runner reads through the mode bits, so there is nothing to observe.
+        let privileged = fs::read_dir(root.join(".git")).is_ok();
+        let refused = scratch_outside_checkouts(&root.join("work"));
+        fs::set_permissions(root.join(".git"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        if !privileged {
+            assert!(
+                refused.is_err(),
+                "an unreadable marker cannot prove absence"
+            );
+        }
     }
 
     #[test]

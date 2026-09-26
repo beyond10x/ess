@@ -2,6 +2,8 @@
 
 mod consumer_coverage;
 mod docs;
+#[path = "../../ess-cli/src/git_checkout.rs"]
+mod git_checkout;
 mod infra_acceptance;
 mod support;
 mod whats_changed;

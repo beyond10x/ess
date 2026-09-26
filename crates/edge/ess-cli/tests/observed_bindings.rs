@@ -332,6 +332,67 @@ fn live_output_in_a_checkout_is_refused_before_collection() {
     assert!(!output_path.exists());
 }
 
+fn live_placement_detail(fixture: &Fixture) -> String {
+    let bin = fixture.dir.join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let output_path = fixture.dir.join("new-observation.json");
+    let output = fixture
+        .command()
+        .args(["--live", "--observation-out"])
+        .arg(&output_path)
+        .env("PATH", &bin)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!output_path.exists());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    report["checks"][0]["detail"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn live_output_below_a_git_directory_holding_only_an_exclude_file_reaches_collection() {
+    // What a harness leaves behind when a session starts in a directory that is no repository.
+    let fixture = Fixture::new();
+    std::fs::create_dir_all(fixture.dir.join(".git/info")).unwrap();
+    std::fs::write(fixture.dir.join(".git/info/exclude"), "# harness runtime\n").unwrap();
+    let detail = live_placement_detail(&fixture);
+    assert!(!detail.contains("outside Git"), "{detail}");
+    assert!(detail.contains("kubectl"), "{detail}");
+}
+
+#[test]
+fn live_output_below_a_repository_or_a_git_symlink_is_refused_before_collection() {
+    let repository = Fixture::new();
+    for dir in [".git/objects", ".git/refs"] {
+        std::fs::create_dir_all(repository.dir.join(dir)).unwrap();
+    }
+    std::fs::write(repository.dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    let symlink = Fixture::new();
+    std::fs::create_dir(symlink.dir.join("elsewhere")).unwrap();
+    std::os::unix::fs::symlink(symlink.dir.join("elsewhere"), symlink.dir.join(".git")).unwrap();
+    for fixture in [&repository, &symlink] {
+        let detail = live_placement_detail(fixture);
+        assert!(detail.contains("outside Git"), "{detail}");
+    }
+}
+
+#[test]
+fn live_output_below_an_unreadable_git_directory_is_refused_before_collection() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let marker = fixture.dir.join(".git");
+    std::fs::create_dir(&marker).unwrap();
+    std::fs::set_permissions(&marker, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // A privileged runner reads through the mode bits, so there is nothing to observe.
+    let privileged = std::fs::read_dir(&marker).is_ok();
+    let detail = live_placement_detail(&fixture);
+    std::fs::set_permissions(&marker, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if !privileged {
+        assert!(!detail.contains("kubectl"), "{detail}");
+        assert!(detail.contains("placement"), "{detail}");
+    }
+}
+
 #[test]
 fn discovery_manifest_model_preserves_offline_binding_results_and_refuses_before_collection() {
     // Preserve this new fixture and its exact process records for the acquisition boundary.
