@@ -408,6 +408,9 @@ pub enum LoweringCode {
     ClearedValueUnsupported,
     SilentPreserveUnsupported,
     TargetDefinitionRefused,
+    /// A typed guard orders text (`<`, `<=`, `>`, `>=` over a string), which ESS orders by its UTF-8
+    /// bytes and entity-core has no operator for.
+    TextOrderingUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1572,15 +1575,18 @@ impl Projector<'_> {
         let mut when = None;
         let mut in_state = None;
         let mut wrong_state = false;
+        let source = self.service.source();
+        let input = Typing::over(source, &command.input);
+        let stored = Typing::over(source, &entity.fields);
         match &outcome.condition {
             ResolvedCondition::When { predicate } => {
-                when = Some(lower_predicate(predicate, &PathRewrite::Input));
+                when = Some(lower_typed(predicate, &PathRewrite::Input, &input));
             }
             ResolvedCondition::SubjectState { state, predicate } => {
                 in_state = Some(state.to_string());
                 when = predicate
                     .as_ref()
-                    .map(|predicate| lower_predicate(predicate, &PathRewrite::Input));
+                    .map(|predicate| lower_typed(predicate, &PathRewrite::Input, &input));
             }
             ResolvedCondition::SubjectField {
                 field,
@@ -1594,7 +1600,16 @@ impl Projector<'_> {
                         right: escape_template_literal(Value::String(equals.clone())),
                     }),
                 };
-                when = Some(with_input_guard(subject, predicate.as_ref()));
+                when = Some(with_input_guard(subject, predicate.as_ref(), &input));
+            }
+            // The stored-field predicate lowers through the rewrite entity invariants already use:
+            // every path is a declared field of the addressed row, never `state` (ess/9).
+            ResolvedCondition::SubjectPredicate {
+                predicate,
+                input: guard,
+            } => {
+                let subject = lower_typed(predicate, &PathRewrite::Entity, &stored);
+                when = Some(with_input_guard(subject, guard.as_ref(), &input));
             }
             ResolvedCondition::StateChange {
                 states, predicate, ..
@@ -1610,20 +1625,34 @@ impl Projector<'_> {
                         ),
                     ],
                 };
-                when = Some(with_input_guard(held, predicate.as_ref()));
+                when = Some(with_input_guard(held, predicate.as_ref(), &input));
             }
             ResolvedCondition::Otherwise => {}
             ResolvedCondition::External { cause } => {
                 when = Some(external_evidence(command, outcome, cause, slots));
             }
             ResolvedCondition::ExternalWhen { cause, predicate } => {
-                let eligible = lower_predicate(predicate, &PathRewrite::Input);
+                let eligible = lower_typed(predicate, &PathRewrite::Input, &input);
                 let evidence = external_evidence(command, outcome, cause, slots);
                 when = Some(Condition::All {
                     all: vec![eligible, evidence],
                 });
             }
             ResolvedCondition::WrongState => wrong_state = true,
+        }
+        for ordering in input
+            .take_refused()
+            .into_iter()
+            .chain(stored.take_refused())
+        {
+            self.diagnostic(
+                LoweringCode::TextOrderingUnsupported,
+                &path,
+                format!(
+                    "`{ordering}` orders text, which ESS orders by its bytes and Entity Runtime has \
+                     no operator for; a lowered guard would be Unknown for every row"
+                ),
+            );
         }
 
         let effect = outcome
@@ -2967,11 +2996,18 @@ impl PathRewrite {
     }
 }
 
-fn with_input_guard(selector: Condition, predicate: Option<&Predicate>) -> Condition {
+fn with_input_guard(
+    selector: Condition,
+    predicate: Option<&Predicate>,
+    typing: &Typing<'_>,
+) -> Condition {
     match predicate {
         None => selector,
         Some(predicate) => Condition::All {
-            all: vec![selector, lower_predicate(predicate, &PathRewrite::Input)],
+            all: vec![
+                selector,
+                lower_typed(predicate, &PathRewrite::Input, typing),
+            ],
         },
     }
 }
@@ -3010,6 +3046,10 @@ fn external_evidence(
 }
 
 fn lower_predicate(predicate: &Predicate, rewrite: &PathRewrite) -> Condition {
+    lower_typed(predicate, rewrite, &Typing::untyped())
+}
+
+fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>) -> Condition {
     match predicate {
         Predicate::Always => Condition::Literal(true),
         Predicate::Never => Condition::Literal(false),
@@ -3017,19 +3057,24 @@ fn lower_predicate(predicate: &Predicate, rewrite: &PathRewrite) -> Condition {
         Predicate::All(children) => Condition::All {
             all: children
                 .iter()
-                .map(|child| lower_predicate(child, rewrite))
+                .map(|child| lower_typed(child, rewrite, typing))
                 .collect(),
         },
         Predicate::Any(children) if children.is_empty() => Condition::Literal(false),
         Predicate::Any(children) => Condition::Any {
             any: children
                 .iter()
-                .map(|child| lower_predicate(child, rewrite))
+                .map(|child| lower_typed(child, rewrite, typing))
                 .collect(),
         },
         Predicate::Not(child) => Condition::Not {
-            not: Box::new(lower_predicate(child, rewrite)),
+            not: Box::new(lower_typed(child, rewrite, typing)),
         },
+        Predicate::Compare { left, op, right }
+            if op.needs_ordering() && typing.orders(left, right) != Ordering::Plain =>
+        {
+            ordered(left, *op, right, rewrite, typing)
+        }
         Predicate::Compare { left, op, right } => Condition::Compare {
             compare: Box::new(Comparison {
                 left: lower_operand(left, rewrite),
@@ -3082,12 +3127,17 @@ fn lower_predicate(predicate: &Predicate, rewrite: &PathRewrite) -> Condition {
                 TextOp::Contains => Condition::Contains { contains: operands },
             }
         }
-        Predicate::Forall(quantified) => lower_quantified(quantified, rewrite, true),
-        Predicate::Exists(quantified) => lower_quantified(quantified, rewrite, false),
+        Predicate::Forall(quantified) => lower_quantified(quantified, rewrite, typing, true),
+        Predicate::Exists(quantified) => lower_quantified(quantified, rewrite, typing, false),
     }
 }
 
-fn lower_quantified(quantified: &Quantified, rewrite: &PathRewrite, universal: bool) -> Condition {
+fn lower_quantified(
+    quantified: &Quantified,
+    rewrite: &PathRewrite,
+    typing: &Typing<'_>,
+    universal: bool,
+) -> Condition {
     let nested = PathRewrite::Bound {
         outer: Box::new(rewrite.clone()),
         binder: quantified.bind.clone(),
@@ -3095,7 +3145,7 @@ fn lower_quantified(quantified: &Quantified, rewrite: &PathRewrite, universal: b
     let closed = Quantifier {
         over: rewrite.path(&quantified.over),
         bind: quantified.bind.clone(),
-        body: Box::new(lower_predicate(&quantified.body, &nested)),
+        body: Box::new(lower_typed(&quantified.body, &nested, typing)),
     };
     if universal {
         Condition::ForAll {
@@ -3112,6 +3162,137 @@ fn lower_operand(operand: &Operand, rewrite: &PathRewrite) -> Value {
     match operand {
         Operand::Fact(path) => rewrite.path(path),
         Operand::Literal(value) => fact_value(value),
+    }
+}
+
+/// What an ordering comparison orders, read from the declared type of the facts it compares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ordering {
+    /// Numbers, or nothing the typing knows: entity-core's `compare` answers it.
+    Plain,
+    /// A declared `Timestamp`: ordered by the instant, which `compare` does not do.
+    Instant,
+    /// Text: ESS orders it by its bytes (ess#94) and entity-core has no operator that does.
+    Text,
+}
+
+/// What a resolved fact path ends at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Terminal {
+    Primitive(Primitive),
+    Composite,
+}
+
+/// The declared fields a guard's facts resolve against, and the orderings it could not lower.
+///
+/// Untyped for every lowering that predates ess#75's typed guards — invariants and the older
+/// binding conditions keep the reading they had. A guard over a command's input or a subject's
+/// stored fields is lowered typed, so an ordering over a `Timestamp` becomes `before`/`after`
+/// and an ordering over text is refused by name instead of lowered to a comparison that is
+/// `Unknown` for every row.
+struct Typing<'a> {
+    ir: Option<&'a EssIr>,
+    fields: &'a [ResolvedField],
+    refused: std::cell::RefCell<Vec<String>>,
+}
+
+impl<'a> Typing<'a> {
+    fn untyped() -> Self {
+        Self {
+            ir: None,
+            fields: &[],
+            refused: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    fn over(ir: &'a EssIr, fields: &'a [ResolvedField]) -> Self {
+        Self {
+            ir: Some(ir),
+            fields,
+            refused: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    /// What one fact path resolves to, or `None` for a literal or a path this typing cannot
+    /// resolve.
+    fn primitive(&self, operand: &Operand) -> Option<Terminal> {
+        let (Some(ir), Operand::Fact(path)) = (self.ir, operand) else {
+            return None;
+        };
+        let resolved =
+            ess_compiler::expression::resolve_path(ir, self.fields, path, "entity runtime guard")
+                .ok()?;
+        Some(match resolved.terminal {
+            ResolvedTypeRef::Primitive { name } => Terminal::Primitive(name),
+            _ => Terminal::Composite,
+        })
+    }
+
+    fn orders(&self, left: &Operand, right: &Operand) -> Ordering {
+        let kinds: Vec<Terminal> = [left, right]
+            .into_iter()
+            .filter_map(|operand| self.primitive(operand))
+            .collect();
+        if kinds.contains(&Terminal::Primitive(Primitive::Timestamp)) {
+            Ordering::Instant
+        } else if kinds.is_empty()
+            || kinds.iter().any(|kind| {
+                matches!(
+                    kind,
+                    Terminal::Primitive(
+                        Primitive::Integer | Primitive::Decimal | Primitive::Binary64
+                    )
+                )
+            })
+        {
+            Ordering::Plain
+        } else {
+            Ordering::Text
+        }
+    }
+
+    /// The orderings this guard needed and entity-core cannot express, as written.
+    fn take_refused(&self) -> Vec<String> {
+        std::mem::take(&mut self.refused.borrow_mut())
+    }
+}
+
+/// One ordering over a declared `Timestamp` as entity-core's `before`/`after`, or a text ordering
+/// recorded as refused.
+///
+/// `before` and `after` read both operands as ISO-8601 instants and answer `Unknown` for an
+/// operand they cannot read, which is the three-valued reading ESS gives a declared timestamp.
+/// `<=` and `>=` are the negations of the strict opposite, so `Unknown` stays `Unknown`.
+fn ordered(
+    left: &Operand,
+    op: CompareOp,
+    right: &Operand,
+    rewrite: &PathRewrite,
+    typing: &Typing<'_>,
+) -> Condition {
+    let pair = [lower_operand(left, rewrite), lower_operand(right, rewrite)];
+    if typing.orders(left, right) == Ordering::Text {
+        typing.refused.borrow_mut().push(
+            Predicate::Compare {
+                left: left.clone(),
+                op,
+                right: right.clone(),
+            }
+            .to_string(),
+        );
+        return Condition::Literal(false);
+    }
+    let before = |pair| Condition::Before { before: pair };
+    let after = |pair| Condition::After { after: pair };
+    let not = |condition| Condition::Not {
+        not: Box::new(condition),
+    };
+    match op {
+        CompareOp::Lt => before(pair),
+        CompareOp::Gt => after(pair),
+        CompareOp::Le => not(after(pair)),
+        CompareOp::Ge => not(before(pair)),
+        CompareOp::Eq | CompareOp::Ne => unreachable!("only orderings are lowered here"),
     }
 }
 

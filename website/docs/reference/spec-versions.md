@@ -61,6 +61,16 @@ are map form only and apply to `String` and newtypes of it. Earlier source forma
 `unsupported_format_version` at the position that uses one. A model that uses none keeps its bytes
 and its compiled digest. See [string operators](./predicates.md#string-operators).
 
+`ess/9`, not yet released, admits `when_subject: {predicate: …}`: a predicate over the declared
+stored fields of the subject a command addresses, read immediately before selection and
+conjunctive with an ordinary `when:`. It reads the entity's fields and nothing else — not the
+input, not `state`. A refusal may carry it without naming a subject of its own; it reads the one its
+sibling branches name. Closed stored-field domains enter the branch partition beside the input, and
+an open one, such as `weight_kg > 20`, needs a genuine default. Conformance arranges a row to the
+guard through the arranging commands' `sets:` mappings and observes it before the command runs. An
+older build refuses the header; this build refuses the predicate form under an earlier header with
+`unsupported_format_version`. `{field, equals}` keeps `ess/6` and its bytes.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 

@@ -198,3 +198,70 @@ pub fn analyze_with_states<E: TypeEnvironment>(
     }
     Some(result)
 }
+
+/// One guarded branch of a command that reads the subject's stored fields (ess#75).
+///
+/// The held side of [`StateGuard`] generalised from one lifecycle state to an assignment over the
+/// stored fields the guards name. The two namespaces stay apart — each side is analysed in its own
+/// environment — so an input field and a stored field of one name are two facts, as they are when
+/// the command runs.
+#[derive(Debug, Clone)]
+pub struct FieldGuard<'a> {
+    /// What the branch requires of the stored fields, or any stored row.
+    pub fields: Option<&'a Predicate>,
+    /// The ordinary input guard, or any admitted input.
+    pub input: Option<&'a Predicate>,
+}
+
+/// One complete joint assignment: stored fields crossed with input.
+#[derive(Debug, Clone)]
+pub struct FieldCase {
+    /// Values for every stored field the guards read.
+    pub fields: BTreeMap<FactPath, String>,
+    /// Values for every input field the guards read.
+    pub input: BTreeMap<FactPath, String>,
+    /// Guard positions whose stored and input sides both evaluate true.
+    pub selected: Vec<usize>,
+}
+
+/// The finite input proof run over the stored fields and over the input, crossed under one bound.
+///
+/// Declines exactly where [`analyze`] declines on either side — an open domain, an optional or
+/// collection path, a guard the checker refuses — and where the product exceeds
+/// [`MAX_ASSIGNMENTS`]. A side no guard reads contributes one empty assignment.
+pub fn analyze_with_fields<F: TypeEnvironment, I: TypeEnvironment>(
+    fields: &F,
+    input: &I,
+    guards: &[FieldGuard<'_>],
+) -> Option<Vec<FieldCase>> {
+    let always = Predicate::Always;
+    let stored: Vec<_> = guards
+        .iter()
+        .map(|guard| guard.fields.unwrap_or(&always))
+        .collect();
+    let supplied: Vec<_> = guards
+        .iter()
+        .map(|guard| guard.input.unwrap_or(&always))
+        .collect();
+    let stored = analyze_inputs(fields, &stored, true)?;
+    let supplied = analyze_inputs(input, &supplied, true)?;
+    if stored.len().checked_mul(supplied.len())? > MAX_ASSIGNMENTS {
+        return None;
+    }
+    let mut result = Vec::new();
+    for row in &stored {
+        for sent in &supplied {
+            result.push(FieldCase {
+                fields: row.values.clone(),
+                input: sent.values.clone(),
+                selected: row
+                    .selected
+                    .iter()
+                    .copied()
+                    .filter(|index| sent.selected.contains(index))
+                    .collect(),
+            });
+        }
+    }
+    Some(result)
+}

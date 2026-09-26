@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -83,6 +83,8 @@ impl FormatVersion {
     pub const V7: Self = Self(7);
     /// String predicate operators: `starts_with`, `ends_with` and `contains`.
     pub const V8: Self = Self(8);
+    /// Predicates over the existing subject's declared stored fields (`when_subject: {predicate}`).
+    pub const V9: Self = Self(9);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1254,6 +1256,7 @@ domains:
         assert!(FormatVersion::V6.is_supported());
         assert!(FormatVersion::V7.is_supported());
         assert!(FormatVersion::V8.is_supported());
+        assert!(FormatVersion::V9.is_supported());
         assert!(!FormatVersion::parse("ess/99")
             .expect("parses")
             .is_supported());
@@ -1721,7 +1724,7 @@ domains:
     fn a_specification_reports_every_problem_in_one_run() {
         let errors = system(
             r"
-format: ess/9
+format: ess/10
 system: billing
 domains:
   - domain: shipping.parcel

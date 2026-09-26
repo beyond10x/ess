@@ -1,0 +1,67 @@
+format: ess/9
+system: shipping
+version: v1
+domain: shipping.parcel
+types:
+  - name: shipping.parcel.Service
+    kind: enum
+    variants: [Standard, Express]
+entities:
+  - name: shipping.parcel.Parcel
+    identity: {name: parcel_id, type: Uuid}
+    fields:
+      - {name: service, type: shipping.parcel.Service}
+      - {name: weight_kg, type: Integer}
+    lifecycle:
+      initial: Created
+      states: [Created, Dispatched]
+      terminal: [Dispatched]
+      transitions:
+        - {name: dispatch, from: [Created], to: Dispatched}
+events:
+  - name: shipping.parcel.Created
+    fields:
+      - {name: parcel_id, type: Uuid}
+  - name: shipping.parcel.Dispatched
+    fields: []
+errors:
+  - name: shipping.parcel.ExpressOverweight
+    fields: []
+commands:
+  - name: shipping.parcel.Create
+    input:
+      - {name: service, type: shipping.parcel.Service}
+      - {name: weight_kg, type: Integer}
+    outcomes:
+      - name: created
+        creates: shipping.parcel.Parcel
+        instance: parcel_id
+        sets: {service: input.service, weight_kg: input.weight_kg}
+        emits: [shipping.parcel.Created]
+        payload:
+          shipping.parcel.Created:
+            parcel_id: {generated: true}
+  - name: shipping.parcel.Dispatch
+    input:
+      - {name: parcel_id, type: Uuid}
+    outcomes:
+      - name: refused-overweight
+        when_subject:
+          predicate:
+            all:
+              - service == Express
+              - weight_kg > 20
+        error: shipping.parcel.ExpressOverweight
+      - name: dispatched
+        moves: shipping.parcel.Parcel.dispatch
+        instance: parcel_id
+        emits: [shipping.parcel.Dispatched]
+views:
+  - name: shipping.parcel.Parcels
+    source: shipping.parcel.Parcel
+    consistency: read_your_writes
+    fields:
+      - {name: parcel_id, type: Uuid}
+      - {name: state, type: shipping.parcel.Parcel.State}
+      - {name: service, type: shipping.parcel.Service}
+      - {name: weight_kg, type: Integer}

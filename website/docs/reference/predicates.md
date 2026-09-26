@@ -23,6 +23,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | Place | What the predicate reads | Notes |
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
+| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch | Not the input and not `state`. Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
 | an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
@@ -31,8 +32,10 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 
 Two outcome keys that look like guards are **not** predicates:
 
-- `when_subject` (`ess/6`) is exactly `{field: <enum field>, equals: <variant>}` over the subject
-  entity. It takes no other form, and a predicate written there is refused.
+- `when_subject: {field: <enum field>, equals: <variant>}` (`ess/6`) is one enum field equal to one
+  variant. Its other shape, `when_subject: {predicate: …}` (`ess/9`), is a predicate and is listed
+  above. A mapping that writes keys of both shapes is refused while the document is read, and the
+  predicate shape under a header older than `ess/9` is refused with `unsupported_format_version`.
 - `when_subject_state` is one lifecycle state name.
 
 A binding's `when:` names its cause, such as `periodic:`. It is not a predicate.

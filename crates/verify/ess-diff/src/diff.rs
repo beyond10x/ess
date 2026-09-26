@@ -926,6 +926,12 @@ fn component_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticCh
 fn written_condition(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when {predicate}"),
+        ResolvedCondition::SubjectPredicate { predicate, input } => format!(
+            "when subject fields satisfy {predicate}{}",
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "when subject state is {state}{}",
             predicate

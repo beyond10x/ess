@@ -1272,6 +1272,43 @@ fn a_silent_preserving_outcome_is_refused_because_er_cannot_observe_it() {
     );
 }
 
+/// `when_subject: {predicate}` (ess/9) lowers through the rewrite entity invariants use, and a
+/// refusal carrying it reads the entity its sibling moves (ess#75).
+#[test]
+fn a_stored_field_predicate_on_a_refusal_lowers_to_the_row_fields() {
+    let mut changes = vec![("system.yaml", "format: ess/1\n", "format: ess/9\n")];
+    let refusal = "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: posted\n        when_subject:\n          predicate:\n            all:\n              - channel == Post\n              - total.amount > 100\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n";
+    changes.extend([
+        (
+            "domains/email.yaml",
+            "            recipient: input.recipient\n",
+            "            recipient: input.recipient\n            message_id: {generated: true}\n",
+        ),
+        (
+            "domains/invoice.yaml",
+            "          billing.invoice.InvoiceCreated:\n",
+            "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+        ),
+        ("domains/invoice.yaml", KEPT_INPUT, refusal),
+    ]);
+    let ir = compile_changes(&example("billing"), &changes);
+    let lowered = lower_billing_changes(&ir).expect("a stored-field refusal lowers");
+    let invoice = &lowered.definitions()[&name("billing.invoice.Invoice")];
+    let posted = &invoice.operations["billing.invoice.CancelInvoice"].outcomes[0];
+    assert_eq!(posted.name, "posted");
+    let when = serde_json::to_value(&posted.when).expect("condition serializes");
+    let text = when.to_string();
+    assert!(
+        text.contains("\"$fields.channel\"") && text.contains("\"$fields.total.amount\""),
+        "{when}"
+    );
+    assert!(
+        !text.contains("$args.input"),
+        "the predicate reads the row, not the input: {when}"
+    );
+    assert!(posted.effect.is_none());
+}
+
 #[test]
 fn subject_field_selection_and_a_responding_preserve_lower_and_decide_faithfully() {
     let replacement = format!(
@@ -1511,6 +1548,165 @@ fn the_advertised_revision_is_the_locked_entity_core_commit() {
     assert_eq!(
         ENTITY_RUNTIME_REVISION, locked,
         "ENTITY_RUNTIME_REVISION names a commit other than the locked entity-core source {source}"
+    );
+}
+
+/// Adversary (ess#75): lower `CancelInvoice` with a refusal `posted` guarded by `predicate` over
+/// the stored fields and the default `cancelled`, then decide it against a Draft Email invoice with
+/// `field` set to `value` (absent where `None`). Returns the lowered `when` and what was taken.
+fn adv_cancel_ir(predicate: &str) -> EssIr {
+    let mut changes = vec![("system.yaml", "format: ess/1\n", "format: ess/9\n")];
+    let refusal = format!("      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: posted\n        when_subject: {{predicate: '{predicate}'}}\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n");
+    changes.extend([
+        (
+            "domains/email.yaml",
+            "            recipient: input.recipient\n",
+            "            recipient: input.recipient\n            message_id: {generated: true}\n",
+        ),
+        (
+            "domains/invoice.yaml",
+            "          billing.invoice.InvoiceCreated:\n",
+            "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+        ),
+        ("domains/invoice.yaml", KEPT_INPUT, refusal.as_str()),
+    ]);
+    compile_changes(&example("billing"), &changes)
+}
+
+fn adv_cancel_taken(predicate: &str, field: &str, value: Option<Value>) -> (Value, String) {
+    let ir = adv_cancel_ir(predicate);
+    let lowered = lower_billing_changes(&ir).expect("a stored-field refusal lowers");
+    let posted = &lowered.definitions()[&name("billing.invoice.Invoice")].operations
+        ["billing.invoice.CancelInvoice"]
+        .outcomes[0];
+    let lowered_when = serde_json::to_value(&posted.when).expect("condition serializes");
+    let registry = registry(&lowered);
+    let runtime = Runtime::new(&registry);
+    let binding = &lowered.bindings().commands()[&name("billing.invoice.CancelInvoice")];
+    let arguments = json!({
+        "input": {"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225"},
+        "bound": bound_for(binding, |_| None)
+    });
+    let mut row = invoice_instance("Draft", "Email");
+    if let Some(value) = value {
+        row.fields.insert(field.to_owned(), value);
+    }
+    let taken = match runtime.decide_before_load(
+        &row.entity,
+        row.version,
+        row.id.clone(),
+        "billing.invoice.CancelInvoice",
+        arguments,
+    ) {
+        Ok(PreloadDecision::Load(prepared)) => match prepared.select_with(&row) {
+            Ok(LoadedDecision::NeedsFulfillment(prepared)) => prepared.outcome().to_owned(),
+            Ok(LoadedDecision::Complete(evaluation)) => match evaluation.into_decision() {
+                Ok(_) => "accepted without fulfillment".to_owned(),
+                Err(refusal) => format!("refused: {refusal:?}"),
+            },
+            Err(error) => format!("error: {error:?}"),
+        },
+        Ok(_) => "decided before load".to_owned(),
+        Err(error) => format!("error before load: {error:?}"),
+    };
+    (lowered_when, taken)
+}
+
+/// Adversary (ess#75): the design's `Unknown` rule — "an unknown fact selects no branch and never
+/// the default" (`cross-record-and-stored-field-guards.md`, Optional fields) — holds in the Entity
+/// Runtime the predicate lowers to. A row whose `Optional` `issued_at` is absent cannot decide
+/// `issued_at < "2026-01-01T00:00:00Z"`, so `CancelInvoice` must not take its default
+/// `cancelled`; conformance never arranges that row (`selects` answers `None` on `Unknown`), so no
+/// generated suite checks it.
+#[test]
+fn adv_an_unresolved_optional_stored_field_selects_neither_the_guard_nor_the_default() {
+    // `note` (Optional<String>) against a literal by equality, which the runtime decides; the
+    // Timestamp ordering the doc comment was first written with is not decided at all, see
+    // `adv_a_timestamp_stored_ordering_is_decided_by_the_lowered_runtime`.
+    let guard = "note == urgent";
+    let (when, other) = adv_cancel_taken(guard, "note", Some(json!("routine")));
+    assert_eq!(other, "cancelled", "control, lowered `when`: {when}");
+    let (_, urgent) = adv_cancel_taken(guard, "note", Some(json!("urgent")));
+    assert!(urgent.starts_with("refused"), "control: {urgent}");
+    let (_, absent) = adv_cancel_taken(guard, "note", None);
+    assert_ne!(
+        absent, "cancelled",
+        "an absent Optional stored field is Unknown under ESS and selects no branch"
+    );
+}
+
+/// Adversary (ess#75), re-pinned in correction round 1 (F4): the brief admits byte-wise text
+/// ordering over stored fields and the conformance side witnesses `note < m`, but entity-core has
+/// no operator that orders text by its bytes. A guard lowered to `compare` was `Unknown` for every
+/// row, so every call errored; lowering now refuses the construct by name instead.
+#[test]
+fn adv_a_byte_wise_text_stored_guard_is_refused_by_name_by_the_lowering() {
+    let diagnostics = lower_billing_changes(&adv_cancel_ir("note < m"))
+        .expect_err("text ordering has no entity-core operator")
+        .into_vec();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.path.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            LoweringCode::TextOrderingUnsupported,
+            "billing.invoice.CancelInvoice.posted"
+        )]
+    );
+    assert!(
+        diagnostics[0].message.contains("note < m"),
+        "{diagnostics:?}"
+    );
+}
+
+/// Adversary (ess#75): the parcels shape — an ordering over a stored `Integer` — is decided by the
+/// lowered runtime: an invoice with `reminder_count` 0 is cancelled, one with 9 is refused.
+#[test]
+fn adv_a_numeric_stored_ordering_is_decided_by_the_lowered_runtime() {
+    let (when, taken) = adv_cancel_taken("reminder_count > 5", "reminder_count", Some(json!(0)));
+    assert_eq!(taken, "cancelled", "lowered `when`: {when}");
+    let (_, refused) = adv_cancel_taken("reminder_count > 5", "reminder_count", Some(json!(9)));
+    assert!(refused.starts_with("refused"), "{refused}");
+}
+
+/// Adversary (ess#75): a Timestamp ordering over a stored field — a form the brief admits and the
+/// conformance side witnesses — is decided by the lowered runtime: an invoice issued in 2027 is
+/// not before 2026 and is cancelled.
+#[test]
+fn adv_a_timestamp_stored_ordering_is_decided_by_the_lowered_runtime() {
+    let guard = "issued_at < \"2026-01-01T00:00:00Z\"";
+    let (when, late) = adv_cancel_taken(guard, "issued_at", Some(json!("2027-01-01T00:00:00Z")));
+    assert_eq!(late, "cancelled", "lowered `when`: {when}");
+}
+
+/// Correction round 1 (F4): an input guard's `Timestamp` ordering lowers to `before`/`after` too, and
+/// `<=`/`>=` are the negation of the strict opposite, so `Unknown` stays `Unknown`.
+#[test]
+fn an_input_timestamp_ordering_lowers_to_entity_core_instant_operators() {
+    let mut changes = vec![("system.yaml", "format: ess/1\n", "format: ess/9\n")];
+    let refusal = "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n      - name: requested_at\n        type: Timestamp\n\n    outcomes:\n      - name: posted\n        when: requested_at <= \"2026-01-01T00:00:00Z\"\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n";
+    changes.extend([
+        (
+            "domains/email.yaml",
+            "            recipient: input.recipient\n",
+            "            recipient: input.recipient\n            message_id: {generated: true}\n",
+        ),
+        (
+            "domains/invoice.yaml",
+            "          billing.invoice.InvoiceCreated:\n",
+            "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+        ),
+        ("domains/invoice.yaml", KEPT_INPUT, refusal),
+    ]);
+    let ir = compile_changes(&example("billing"), &changes);
+    let lowered = lower_billing_changes(&ir).expect("an input timestamp ordering lowers");
+    let posted = &lowered.definitions()[&name("billing.invoice.Invoice")].operations
+        ["billing.invoice.CancelInvoice"]
+        .outcomes[0];
+    assert_eq!(
+        serde_json::to_value(&posted.when).expect("condition serializes"),
+        json!({"not": {"after": ["$args.input.requested_at", "2026-01-01T00:00:00Z"]}})
     );
 }
 

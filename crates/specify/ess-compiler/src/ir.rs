@@ -546,6 +546,19 @@ pub enum ResolvedCondition {
         /// Additional input eligibility.
         predicate: Option<Predicate>,
     },
+    /// A predicate over the existing subject's declared stored fields, conjunctive with an optional
+    /// input guard (ess/9).
+    ///
+    /// Beside [`SubjectField`](Self::SubjectField), which is unchanged so every ess/6 model keeps
+    /// its IR bytes. A branch carrying it without a subject of its own reads the subject its
+    /// siblings name.
+    SubjectPredicate {
+        /// What must hold of the subject's stored fields, read immediately before selection.
+        predicate: Predicate,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
+    },
     /// Taken when this predicate over the command's input holds.
     When {
         /// The predicate.
@@ -996,6 +1009,23 @@ impl ResolvedCommand {
                 (matches!(outcome.condition, ResolvedCondition::Otherwise)
                     && outcome.error.is_some())
                 .then(|| self.outcomes.iter().find_map(|o| o.subject.as_ref()))
+                .flatten()
+            })
+            .or_else(|| {
+                // A refusal guarded by the subject's stored fields names no subject of its own and
+                // reads the existing one its siblings name (ess/9).
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::SubjectPredicate { .. }
+                )
+                .then(|| {
+                    self.outcomes
+                        .iter()
+                        .filter_map(|o| o.subject.as_ref())
+                        .find(|subject| {
+                            matches!(subject.instance, ResolvedInstance::Supplied { .. })
+                        })
+                })
                 .flatten()
             })
     }

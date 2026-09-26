@@ -899,13 +899,9 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
     schema
 }
 
-/// What the model says about one outcome, as prose.
-fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(summary) = &outcome.summary {
-        parts.push(summary.clone());
-    }
-    parts.push(match &outcome.condition {
+/// What decides one outcome, as the sentence its `OpenAPI` description opens with.
+fn condition_description(condition: &ResolvedCondition) -> String {
+    match condition {
         ResolvedCondition::SubjectField {
             field,
             equals,
@@ -914,6 +910,13 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
         ResolvedCondition::When { predicate } => {
             format!("Taken when `{predicate}` holds of the input.")
         }
+        // Through `Display`, as `SubjectState` is: the stored fields are part of the contract.
+        ResolvedCondition::SubjectPredicate { predicate, input } => format!(
+            "Taken when the existing subject's stored fields satisfy `{predicate}`{}.",
+            input.as_ref().map_or(String::new(), |guard| format!(
+                " and `{guard}` holds of the input"
+            )),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -950,7 +953,16 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
              from. Which states those are is the lifecycle's answer, not this command's."
                 .to_owned()
         }
-    });
+    }
+}
+
+/// What the model says about one outcome, as prose.
+fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(summary) = &outcome.summary {
+        parts.push(summary.clone());
+    }
+    parts.push(condition_description(&outcome.condition));
     // What the caller's request did to the system's state, in the response that reports it. A
     // caller reading `202` learns that a branch was taken; without this it does not learn that an
     // invoice now exists, and the specification does say so.
