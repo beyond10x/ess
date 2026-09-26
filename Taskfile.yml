@@ -4,7 +4,7 @@ vars:
   FEATURE_OFF_PACKAGES: >-
     --package ess-primitives --package ess-conformance --package schema-contract
     --package ess-cli --package ess-kubernetes
-  # Where `test-archive` writes the nextest archives and the test shards read them.
+  # Where the `test-archive-*` tasks write the nextest archives and the test shards read them.
   NEXTEST_ARCHIVES: target/nextest-archives
   # The feature-off cases a pull request runs, when `FEATURE_OFF=number-semantics`: every package
   # but ess-cli, ess-cli's unit tests, and the ess-cli binaries about number semantics — every one
@@ -62,14 +62,26 @@ tasks:
       - task: test-xtask
 
   # The CI halves of `test`. `.github/workflows/ci.yml` compiles the test binaries once with
-  # `test-archive` and runs them as parallel shards with `test-shard` and `test-feature-off`;
+  # `test-archive-workspace` and `test-archive-feature-off` and runs them as parallel shards with
+  # `test-shard` and `test-feature-off`;
   # `crates/edge/ess-xtask/tests/ci_lanes.rs` holds the jobs to `check`. Nextest runs every test
   # in its own process and runs no doc-tests, so the doc-tests are tasks of their own.
   test-archive:
     desc: Compile the workspace and feature-off test binaries into the nextest archives the shards run.
     cmds:
+      - task: test-archive-workspace
+      - task: test-archive-feature-off
+
+  test-archive-workspace:
+    desc: Compile the workspace test binaries into the nextest archive `test-shard` runs.
+    cmds:
       - mkdir -p {{.NEXTEST_ARCHIVES}}
       - cargo nextest archive --workspace --exclude ess-xtask --locked --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst
+
+  test-archive-feature-off:
+    desc: Compile the feature-off test binaries into the nextest archive `test-feature-off` runs.
+    cmds:
+      - mkdir -p {{.NEXTEST_ARCHIVES}}
       # A second archive, not a second selection of the first: without entity-core in the build,
       # serde_json's `arbitrary_precision` is off, so these are different binaries.
       - cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} {{if eq .FEATURE_OFF "number-semantics"}}-E '{{.FEATURE_OFF_NUMBER_SEMANTICS}}'{{end}} --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst
@@ -79,11 +91,11 @@ tasks:
   # anywhere else those paths name nothing. That holds only where the archive was built in
   # `./target` of a checkout at the same path, which is every GitHub runner.
   test-shard:
-    desc: Run one partition of the workspace test archive, e.g. `task test-shard SHARD=1/4`; needs `task test-archive`.
+    desc: Run one partition of the workspace test archive, e.g. `task test-shard SHARD=1/4`; needs `task test-archive-workspace`.
     requires:
       vars: [SHARD]
     cmds:
-      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition count:{{.SHARD}}
+      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 
   test-doc:
     desc: Run the workspace doc-tests, which nextest does not.
@@ -91,11 +103,11 @@ tasks:
       - cargo test --workspace --exclude ess-xtask --locked --doc
 
   test-feature-off:
-    desc: Run one partition of the archive of packages without `arbitrary_precision`, e.g. `SHARD=1/4`; needs `task test-archive`.
+    desc: Run one partition of the archive of packages without `arbitrary_precision`, e.g. `SHARD=1/4`; needs `task test-archive-feature-off`.
     requires:
       vars: [SHARD]
     cmds:
-      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition count:{{.SHARD}}
+      - cargo nextest run --archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst --workspace-remap . --extract-to . --extract-overwrite --no-fail-fast --partition slice:{{.SHARD}}
 
   test-feature-off-doc:
     desc: Run the doc-tests of the packages without `arbitrary_precision`, which nextest does not.

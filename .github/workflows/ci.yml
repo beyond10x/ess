@@ -5,9 +5,10 @@
 # `task check` runs here as a few jobs, each running Taskfile tasks as steps, and the `Gate` job
 # carries their joint result under the required check's name:
 #
-#   checks       ci-lint, ci-smoke, test-feature-off-doc, test-xtask, fuzz-check, one after another
-#   build-tests  test-archive: every test binary compiled once, into two nextest archives
-#   test (m/n)   test-shard and test-feature-off: partition m of each archive, compiling nothing
+#   checks             ci-lint, ci-smoke, test-feature-off-doc, test-xtask, fuzz-check, one after another
+#   build-tests        test-archive-workspace: the workspace test binaries, compiled once
+#   build-feature-off  test-archive-feature-off: the feature-off test binaries, beside it
+#   test (m/n)         test-shard and test-feature-off: partition m of each archive, compiling nothing
 #
 # `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when a step of `task check` runs in no job, when
 # the shards leave a partition unrun, or when `Gate` does not carry a job's result.
@@ -128,13 +129,12 @@ jobs:
         run: task fuzz-check
 
   build-tests:
-    name: Build test archives
+    name: Build workspace test archive
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # A pull request's feature-off archive holds the number-semantics cases only
-      # (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile); every other event archives all of them.
-      FEATURE_OFF: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -173,21 +173,78 @@ jobs:
       - name: Fetch locked dependencies
         run: cargo fetch --locked
 
-      - name: Compile the workspace and feature-off test archives
-        run: task test-archive
+      - name: Compile the workspace test archive
+        run: task test-archive-workspace
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nextest-archives
+          name: nextest-archive-workspace
           path: target/nextest-archives
           if-no-files-found: error
           # The archives are zstd already; the shards of this run are their only reader.
           compression-level: 0
           retention-days: 1
 
+  build-feature-off:
+    name: Build feature-off test archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      # A pull request's feature-off archive holds the number-semantics cases only
+      # (`FEATURE_OFF_NUMBER_SEMANTICS` in the Taskfile); every other event archives all of them.
+      FEATURE_OFF: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')) && 'number-semantics' || 'full' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.1
+          targets: wasm32-unknown-unknown
+
+      - name: Install go-task
+        env:
+          TASK_VERSION: "3.52.0"
+          TASK_SHA256: 02c679ffae53dca791804847d78b31731615894e292948397c971c87ac9e95bd
+        run: |
+          curl --fail --silent --show-error --location --output "$RUNNER_TEMP/task.tar.gz" \
+            "https://github.com/go-task/task/releases/download/v$TASK_VERSION/task_linux_amd64.tar.gz"
+          echo "$TASK_SHA256  $RUNNER_TEMP/task.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/task-bin"
+          tar -xzf "$RUNNER_TEMP/task.tar.gz" -C "$RUNNER_TEMP/task-bin" task
+          echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
+
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest@0.9.143
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: test-feature-off
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
+
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+
+      - name: Compile the feature-off test archive
+        run: task test-archive-feature-off
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-archive-feature-off
+          path: target/nextest-archives
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
   test:
     name: Test ${{ matrix.shard }}
-    needs: build-tests
+    needs: [build-tests, build-feature-off]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -269,7 +326,14 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         id: archives
         with:
-          name: nextest-archives
+          name: nextest-archive-workspace
+          path: target/nextest-archives
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        id: feature-off-archive
+        if: ${{ !cancelled() }}
+        with:
+          name: nextest-archive-feature-off
           path: target/nextest-archives
 
       - name: Workspace tests ${{ matrix.shard }}
@@ -277,12 +341,12 @@ jobs:
         run: task test-shard SHARD=${{ matrix.shard }}
 
       - name: Feature-off tests ${{ matrix.shard }}
-        if: ${{ !cancelled() && steps.archives.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.feature-off-archive.outcome == 'success' }}
         run: task test-feature-off SHARD=${{ matrix.shard }}
 
   gate:
     name: Gate
-    needs: [checks, build-tests, test]
+    needs: [checks, build-tests, build-feature-off, test]
     # A skipped required check reads as passing, so this runs whatever the jobs did and fails
     # unless every one of them succeeded.
     if: ${{ always() }}
@@ -293,10 +357,11 @@ jobs:
         env:
           CHECKS: ${{ needs.checks.result }}
           BUILD_TESTS: ${{ needs.build-tests.result }}
+          BUILD_FEATURE_OFF: ${{ needs.build-feature-off.result }}
           TEST: ${{ needs.test.result }}
         run: |
           status=0
-          for job in "checks=$CHECKS" "build-tests=$BUILD_TESTS" "test=$TEST"; do
+          for job in "checks=$CHECKS" "build-tests=$BUILD_TESTS" "build-feature-off=$BUILD_FEATURE_OFF" "test=$TEST"; do
             echo "$job"
             if [ "${job#*=}" != "success" ]; then
               echo "::error::the ${job%%=*} job finished with '${job#*=}', not 'success'" >&2
