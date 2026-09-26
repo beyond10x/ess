@@ -292,7 +292,8 @@ fn every_step_of_task_check_runs_in_some_pull_request_lane() {
          {missing:?}"
     );
     for replacement in [
-        "test-archive",
+        "test-archive-workspace",
+        "test-archive-feature-off",
         "test-shard",
         "test-feature-off",
         "test-feature-off-doc",
@@ -391,6 +392,42 @@ fn consumer_check_runs_in_task_check_only_when_opted_in() {
     );
 }
 
+/// The archives select what `task test` selects, one task each, so that two jobs can build them
+/// side by side; local `task test-archive` still builds both.
+fn assert_each_archive_selects_what_task_test_selects(taskfile: &Value) {
+    assert_eq!(
+        direct_subtasks(taskfile, "test-archive"),
+        ["test-archive-workspace", "test-archive-feature-off"],
+        "`task test-archive` no longer builds both archives"
+    );
+    let archive = shell_commands(taskfile, "test-archive-workspace").join("\n");
+    assert!(
+        archive.contains(
+            "cargo nextest archive --workspace --exclude ess-xtask --locked \
+             --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst"
+        ),
+        "{archive}"
+    );
+    assert!(
+        !archive.contains("/feature-off.tar.zst"),
+        "the workspace archive task also builds the feature-off archive: {archive}"
+    );
+    // Its pull-request narrowing is held by
+    // `pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_all_of_it`.
+    let archive = shell_commands(taskfile, "test-archive-feature-off").join("\n");
+    let feature_off = archive
+        .lines()
+        .find(|line| line.contains("/feature-off.tar.zst"))
+        .unwrap_or_else(|| {
+            panic!("`test-archive-feature-off` builds no feature-off archive: {archive}")
+        });
+    assert!(
+        feature_off.starts_with("cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} ")
+            && feature_off.ends_with("--archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst"),
+        "{feature_off}"
+    );
+}
+
 #[test]
 fn the_workspace_shards_are_one_complete_partition() {
     let ci = yaml(".github/workflows/ci.yml");
@@ -414,31 +451,19 @@ fn the_workspace_shards_are_one_complete_partition() {
         "{local:?}"
     );
 
-    // The archives select what `task test` selects.
-    let archive = shell_commands(&taskfile, "test-archive").join("\n");
-    assert!(
-        archive.contains(
-            "cargo nextest archive --workspace --exclude ess-xtask --locked \
-             --archive-file {{.NEXTEST_ARCHIVES}}/workspace.tar.zst"
-        ),
-        "{archive}"
-    );
-    // Its pull-request narrowing is held by
-    // `pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_all_of_it`.
-    let feature_off = archive
-        .lines()
-        .find(|line| line.contains("/feature-off.tar.zst"))
-        .unwrap_or_else(|| panic!("`test-archive` builds no feature-off archive: {archive}"));
-    assert!(
-        feature_off.starts_with("cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} ")
-            && feature_off.ends_with("--archive-file {{.NEXTEST_ARCHIVES}}/feature-off.tar.zst"),
-        "{feature_off}"
-    );
+    assert_each_archive_selects_what_task_test_selects(&taskfile);
 
     // A shard runs one archive's partition and compiles nothing. It extracts into the checkout,
     // because test binaries bake `env!("CARGO_BIN_EXE_…")` and `env!("CARGO_TARGET_TMPDIR")` in
     // at build time: extracted anywhere else, those paths name nothing and the tests that spawn
     // the CLI fail with `NotFound`.
+    //
+    // The partition is `slice:`, not `count:`. `count:` deals each binary's tests out on its own,
+    // starting at shard 1, so a binary of one test always lands on shard 1 and shard n gets only
+    // what is left over: queue run 36233791835 ran 1,072 / 960 / 875 / 780 workspace tests for
+    // 584 / 575 / 414 / 273 test-seconds. `slice:` deals the whole sorted list out once, which
+    // on that run's own timings is 407 / 520 / 432 / 489 and 147 / 154 / 148 / 125 feature-off
+    // test-seconds against 185 / 202 / 124 / 64.
     for (task, file) in [
         ("test-shard", "workspace"),
         ("test-feature-off", "feature-off"),
@@ -459,7 +484,7 @@ fn the_workspace_shards_are_one_complete_partition() {
         for (flag, value) in [
             ("--workspace-remap", "."),
             ("--extract-to", "."),
-            ("--partition", "count:{{.SHARD}}"),
+            ("--partition", "slice:{{.SHARD}}"),
         ] {
             assert!(
                 passes(run, flag, value),
@@ -503,11 +528,15 @@ fn the_workspace_shards_are_one_complete_partition() {
     }
 }
 
-/// The test binaries are compiled once. One unmatrixed job builds both archives and uploads the
-/// directory the Taskfile names; every shard job waits for it, downloads that artifact into the
-/// same directory before its first task, and runs nothing but the two archive-running tasks.
+/// The test binaries are compiled once, each archive by a job of its own so that the two compile
+/// side by side: in queue run 36233791835 one job built them one after the other, the workspace
+/// archive in 3:11 and then the feature-off one in 1:44, and every shard waited for both. Each
+/// build job is unmatrixed, runs its one archive task and uploads the directory the Taskfile
+/// names under an artifact name of its own; every shard job waits for both, downloads both
+/// artifacts into that directory before its first task, and runs nothing but the two
+/// archive-running tasks.
 #[test]
-fn the_test_shards_run_the_archives_one_job_builds_and_compile_nothing() {
+fn the_test_shards_run_the_archives_two_jobs_build_side_by_side_and_compile_nothing() {
     let ci = yaml(".github/workflows/ci.yml");
     let taskfile = yaml("Taskfile.yml");
     let lanes = lane_invocations(&ci);
@@ -516,28 +545,54 @@ fn the_test_shards_run_the_archives_one_job_builds_and_compile_nothing() {
         !directory.is_empty(),
         "Taskfile.yml names no NEXTEST_ARCHIVES directory"
     );
-
-    let builds: Vec<&Lane> = lanes
-        .iter()
-        .filter(|lane| lane.task == "test-archive")
-        .collect();
-    let [build] = builds.as_slice() else {
-        panic!(
-            "`test-archive` runs {} times across ci.yml, not once: {builds:?}",
-            builds.len()
-        )
-    };
-    let builder = &ci["jobs"][build.job.as_str()];
-    let (upload_at, upload) = step_using(builder, "actions/upload-artifact")
-        .unwrap_or_else(|| panic!("`{}` uploads no archive", build.job));
     assert!(
-        upload_at > build.step,
-        "`{}` uploads before it builds",
-        build.job
+        !lanes.iter().any(|lane| lane.task == "test-archive"),
+        "a job of ci.yml builds both archives one after the other"
     );
-    assert_eq!(text(&upload["with"]["path"]), directory);
-    assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
-    let artifact = text(&upload["with"]["name"]);
+
+    let mut builders: BTreeMap<String, String> = BTreeMap::new();
+    for task in ["test-archive-workspace", "test-archive-feature-off"] {
+        let builds: Vec<&Lane> = lanes.iter().filter(|lane| lane.task == task).collect();
+        let [build] = builds.as_slice() else {
+            panic!(
+                "`{task}` runs {} times across ci.yml, not once: {builds:?}",
+                builds.len()
+            )
+        };
+        let builder = &ci["jobs"][build.job.as_str()];
+        let (upload_at, upload) = step_using(builder, "actions/upload-artifact")
+            .unwrap_or_else(|| panic!("`{}` uploads no archive", build.job));
+        assert!(
+            upload_at > build.step,
+            "`{}` uploads before it builds",
+            build.job
+        );
+        assert_eq!(text(&upload["with"]["path"]), directory);
+        assert_eq!(text(&upload["with"]["if-no-files-found"]), "error");
+        let artifact = text(&upload["with"]["name"]).to_owned();
+        assert!(!artifact.is_empty(), "`{}` names no artifact", build.job);
+        assert!(
+            !builders.values().any(|job| job == &build.job),
+            "`{}` builds both archives one after the other",
+            build.job
+        );
+        assert!(
+            builders
+                .insert(artifact.clone(), build.job.clone())
+                .is_none(),
+            "both archive jobs upload the artifact `{artifact}`"
+        );
+    }
+    for job in builders.values() {
+        let waits_for: Vec<&String> = builders
+            .values()
+            .filter(|other| needs_of(&ci["jobs"][job.as_str()]).contains(*other))
+            .collect();
+        assert!(
+            waits_for.is_empty(),
+            "`{job}` waits for {waits_for:?}, so the archives do not build side by side"
+        );
+    }
 
     let runners: BTreeSet<&String> = lanes
         .iter()
@@ -546,24 +601,33 @@ fn the_test_shards_run_the_archives_one_job_builds_and_compile_nothing() {
         .collect();
     assert!(!runners.is_empty(), "no job runs the test archives");
     for runner in runners {
-        assert_ne!(runner, &build.job, "the archive job also runs a shard");
-        let job = &ci["jobs"][runner.as_str()];
         assert!(
-            needs_of(job).contains(&build.job),
-            "`{runner}` does not wait for `{}`",
-            build.job
+            !builders.values().any(|job| job == runner),
+            "an archive job also runs a shard"
         );
-        let (download_at, download) = step_using(job, "actions/download-artifact")
-            .unwrap_or_else(|| panic!("`{runner}` downloads no archive"));
-        assert_eq!(text(&download["with"]["name"]), artifact);
-        assert_eq!(text(&download["with"]["path"]), directory);
+        let job = &ci["jobs"][runner.as_str()];
         let own: Vec<&Lane> = lanes.iter().filter(|lane| &lane.job == runner).collect();
-        for lane in own {
+        let first = own.iter().map(|lane| lane.step).min().unwrap();
+        for (artifact, builder) in &builders {
             assert!(
-                lane.step > download_at,
-                "`{runner}` runs `{}` before it downloads the archives",
-                lane.task
+                needs_of(job).contains(builder),
+                "`{runner}` does not wait for `{builder}`"
             );
+            let download = job["steps"]
+                .as_sequence()
+                .into_iter()
+                .flatten()
+                .take(first)
+                .find(|step| {
+                    text(&step["uses"]).starts_with("actions/download-artifact@")
+                        && text(&step["with"]["name"]) == artifact
+                })
+                .unwrap_or_else(|| {
+                    panic!("`{runner}` does not download `{artifact}` before its first task")
+                });
+            assert_eq!(text(&download["with"]["path"]), directory);
+        }
+        for lane in own {
             assert!(
                 lane.task == "test-shard" || lane.task == "test-feature-off",
                 "`{runner}` also runs `{}`, which compiles",
@@ -748,8 +812,8 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
 
     let builder = lane_invocations(&ci)
         .into_iter()
-        .find(|lane| lane.task == "test-archive")
-        .expect("a job builds the archives")
+        .find(|lane| lane.task == "test-archive-feature-off")
+        .expect("a job builds the feature-off archive")
         .job;
     assert_eq!(
         text(&ci["jobs"][builder.as_str()]["env"]["FEATURE_OFF"]),
@@ -757,7 +821,7 @@ fn pull_requests_run_feature_off_on_number_semantics_and_every_other_run_runs_al
         "only a pull request or its merge-queue run may narrow the feature-off archive"
     );
 
-    let archive = shell_commands(&taskfile, "test-archive").join("\n");
+    let archive = shell_commands(&taskfile, "test-archive-feature-off").join("\n");
     assert!(
         archive.contains(
             "cargo nextest archive --locked {{.FEATURE_OFF_PACKAGES}} \
@@ -898,6 +962,51 @@ fn test_builds_are_cheap_to_compile_link_and_run() {
         !config.contains("fuse-ld"),
         "`.cargo/config.toml` changes the linker for local builds and release binaries too"
     );
+}
+
+/// The CI archive jobs compile the test binaries with no debug information at all, which Cargo
+/// then strips, standard library included. Even line tables were about half of every binary the
+/// shards download: the 0.34.0 queue run's archives (run 36239205801, artifact 10904603287) held
+/// 16.7 GB of workspace and 7.1 GB of feature-off binaries in 4.15 GB of zstd, and
+/// `objcopy --strip-debug` took a sample of three of them from 449 MB to 244 MB, and from 77 MB to
+/// 42 MB compressed. The shards spent 0:35 to 4:12 downloading that artifact and 1:00 extracting
+/// it. A failing test still names its file and line; only a backtrace loses its line numbers.
+/// Local builds keep the manifest's line tables, held by `test_builds_are_cheap_to_compile_link_and_run`.
+#[test]
+fn the_archive_jobs_build_the_test_binaries_without_debug_information() {
+    let ci = yaml(".github/workflows/ci.yml");
+    let builders: BTreeSet<String> = lane_invocations(&ci)
+        .into_iter()
+        .filter(|lane| lane.task.starts_with("test-archive"))
+        .map(|lane| lane.job)
+        .collect();
+    assert!(
+        !builders.is_empty(),
+        "no job of ci.yml builds a test archive"
+    );
+    for id in &builders {
+        let env = &ci["jobs"][id.as_str()]["env"];
+        for variable in ["CARGO_PROFILE_DEV_DEBUG", "CARGO_PROFILE_TEST_DEBUG"] {
+            assert_eq!(
+                scalar_or_empty(&env[variable]),
+                "0",
+                "`{id}` builds test binaries with debug information: `{variable}` is not \"0\""
+            );
+        }
+    }
+    assert!(
+        ci["env"]["CARGO_PROFILE_DEV_DEBUG"].is_null()
+            && ci["env"]["CARGO_PROFILE_TEST_DEBUG"].is_null(),
+        "ci.yml drops debug information for every job, not only the archive builds"
+    );
+}
+
+fn scalar_or_empty(value: &Value) -> String {
+    if value.is_null() {
+        String::new()
+    } else {
+        scalar(value)
+    }
 }
 
 /// Just enough TOML to read `key = value` lines under `[section]` headers, which is all the

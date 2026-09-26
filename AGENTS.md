@@ -69,9 +69,12 @@ task check
 
 CI runs `task check` as a few jobs, each running Taskfile tasks as steps. `checks` runs `ci-lint`,
 `ci-smoke`, `test-feature-off-doc`, `test-xtask` and `fuzz-check` one after another after one
-setup. `build-tests` runs `test-archive`: it compiles every test binary once into two nextest
-archives, the workspace and the feature-off packages. `test (<m>/4)` downloads both and runs
-`test-shard` and `test-feature-off` for partition `m`, compiling nothing. The shards extract into
+setup. Every test binary is compiled once, into two nextest archives built side by side:
+`build-tests` runs `test-archive-workspace` and `build-feature-off` runs
+`test-archive-feature-off` (local `task test-archive` runs both). `test (<m>/4)` downloads both and
+runs `test-shard` and `test-feature-off` for partition `slice:m/4`, compiling nothing; `slice:`
+deals the whole test list out, where `count:` dealt each binary's out from shard 1 and left shard
+4 with half the work of shard 1. The shards extract into
 the checkout's own `target/`, because test binaries bake `CARGO_BIN_EXE_*` and
 `CARGO_TARGET_TMPDIR` in at build time. The `Gate` job carries their joint result, and
 `crates/edge/ess-xtask/tests/ci_lanes.rs` fails when a step of `check` is in no job, when the
