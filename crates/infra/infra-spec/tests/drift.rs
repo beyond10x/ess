@@ -139,6 +139,64 @@ fn a_reference_change_is_only_reported_for_a_holder_present_in_both_snapshots() 
 }
 
 #[test]
+fn a_full_scan_drift_claims_the_version_whose_secret_changed_keys_are_always_empty() {
+    // Under `infra-drift/1` an empty `changed_keys` for a Secret meant "not rotated"; this build
+    // cannot tell, so the same empty list means "not known" and the document says so by its
+    // version. `/2` is taken by the namespace topology profile and keeps that meaning.
+    let report = example_drift();
+    assert_eq!(report.format, "infra-drift/3");
+    assert_eq!(infra_spec::DRIFT_FORMAT, "infra-drift/3");
+    assert!(report.to_json().contains("\"format\": \"infra-drift/3\""));
+}
+
+#[test]
+fn a_secret_value_rotation_is_never_reported_even_between_legacy_digests() {
+    // An `infra-ir/1` document still carries the scanner's legacy unsalted digest per Secret key.
+    // Those digests are dropped when it is read: a rotated value is unknown, not changed, so a
+    // report cannot be turned back into "this key's value moved" — or into a guess oracle.
+    let frozen = support::read(
+        "crates/infra/infra-compiler/tests/fixtures/legacy-k3d-dev-cluster.ir-1.json",
+    );
+    let before: serde_json::Value = serde_json::from_str(&frozen).expect("frozen legacy IR");
+    let mut after = before.clone();
+    let token = &mut after["model"]["secrets"]["shop/storefront-server"]["keys"]["turn-secret"];
+    assert!(
+        token["sha256"].is_string(),
+        "the legacy document carries a digest to rotate"
+    );
+    token["sha256"] = serde_json::json!("0".repeat(64));
+    token["length"] = serde_json::json!(33);
+    let canonical = serde_json::to_vec(&after["model"]).expect("the model serializes");
+    after["digest"] = serde_json::json!(infra_compiler::digest_of_canonical(&canonical));
+    let before = infra_compiler::read_document(&before).expect("the legacy document reads");
+    let after = infra_compiler::read_document(&after).expect("the rotated legacy document reads");
+
+    for (label, from, to) in [
+        ("two legacy documents", &before, &after),
+        ("legacy to current", &before, &support::example_ir()),
+    ] {
+        let report = drift(from, to).expect("one cluster");
+        let secret_changes: Vec<_> = report
+            .changes
+            .iter()
+            .filter(|change| {
+                matches!(
+                    change,
+                    InfraChange::ConfigContentChanged {
+                        kind: MemberKind::Secret,
+                        ..
+                    }
+                )
+            })
+            .collect();
+        assert!(
+            secret_changes.is_empty(),
+            "{label}: a Secret whose keys did not move is not a change: {secret_changes:#?}"
+        );
+    }
+}
+
+#[test]
 fn comparing_a_snapshot_with_itself_reports_no_change_at_all() {
     let ir = support::example_ir();
     let report = drift(&ir, &ir).expect("one snapshot is one cluster");
@@ -223,4 +281,13 @@ fn reordering_a_templates_containers_is_not_a_change_because_containers_compare_
         "a positional comparison would have reported both containers moved: {:#?}",
         report.changes
     );
+}
+
+#[test]
+fn drift_over_a_legacy_ir_names_the_stripped_model_not_the_one_holding_secret_digests() {
+    let legacy = support::legacy_ir();
+    let report = drift(&legacy, &support::drifted_ir()).expect("one cluster");
+    assert_eq!(report.from.digest, support::stripped_legacy_digest());
+    let report = drift(&support::example_ir(), &legacy).expect("one cluster");
+    assert_eq!(report.to.digest, support::stripped_legacy_digest());
 }

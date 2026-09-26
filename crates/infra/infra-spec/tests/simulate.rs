@@ -507,3 +507,12 @@ fn a_report_names_every_subject_the_scope_selected_including_the_ones_that_held(
         .subjects
         .contains(&"workloads/shop/deployment/storefront-server".to_owned()));
 }
+
+#[test]
+fn a_simulation_of_a_legacy_ir_names_the_stripped_model_not_the_one_holding_secret_digests() {
+    let simulation = infra_spec::simulate(&support::example_spec(), &support::legacy_ir());
+    assert_eq!(
+        simulation.snapshot.digest,
+        support::stripped_legacy_digest()
+    );
+}

@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Security
+
+- A full Kubernetes scan no longer writes a digest or length of any Secret value. It used to write
+  each value's unsalted SHA-256 and exact byte length, so anyone holding the observation file could
+  confirm a guess of a low-entropy secret such as `hunter2`. The scanner now writes
+  `infra-observation/3`, where each Secret `data`/`stringData` value is `{"present": true}`: the
+  key name and that a value exists. The observation reader refuses anything else beside the marker
+  (`INFRA-SECRET-003`).
+- Compiling any full observation with a Secret key, `infra-observation/1` included, writes
+  `infra-ir/3`, whose Secret keys hold the same marker and nothing derived from the value. A
+  legacy `/1` observation is still read; its digests are checked for shape and discarded. An IR
+  without a Secret key keeps `infra-ir/1` and its bytes.
+- A legacy `infra-ir/1` is read with its own digest checked and then returned with each Secret
+  key reduced to presence, as `infra-ir/3`. `ess infra import kubernetes --path <legacy> --out`
+  writes that IR/3, and every derived document — graph `source_digest`, drift `from`/`to`,
+  the simulation snapshot, the projection `snapshot_digest` and `SUMMARY.md`, and the
+  observed-bindings observation digest — names its model digest. None of them chains to the
+  legacy file's own digest any more: that digest, computed over the unsalted Secret digests, would
+  confirm a guessed value beside the IR/3 written from the same file.
+- A Secret item in an observation, or a Secret block in an IR document, that does not read as its
+  shape is refused with fixed text (`INFRA-OBJECT-001`, `INFRA-IR-003`). The refusal used to be
+  the parser's message, which quotes the value it could not read, such as
+  `invalid type: string "…"`.
+
+### Changed
+
+- `ess infra diff` writes `infra-drift/3` for full scans and no longer detects a rotated Secret
+  value. For a Secret, `config_content_changed` names added and removed keys, and `changed_keys`
+  is always empty, including between two legacy `infra-ir/1` documents, whose digests are
+  dropped when they are read. An empty list therefore means "not known"
+  where `infra-drift/1` meant "not rotated", hence the new version; `/2` stays the namespace
+  topology profile. Detecting a rotation needs a record derived from the value, and an unsalted
+  digest of a low-entropy secret is a guess oracle. Configmap content changes are detected as
+  before.
+
 ## [0.32.1] — 2026-09-25
 
 ### Changed
