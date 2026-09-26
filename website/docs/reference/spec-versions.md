@@ -162,7 +162,8 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
 | `ess-scenario/` | [0.23.0][r23] | `/2` authored setup establishes typed, isolated backend entity rows. |
 | `infra-observation/` | [0.1.0][r1] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. |
-| `ess-observed-bindings-report/` | next release | `/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. |
+| `ess-observed-bindings-report/` | [0.32.0][r32] | `/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. |
+| `ess-observed-bindings/` | next release | `/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
 
 ## Still at version 1
 
@@ -208,3 +209,5 @@ for a release and promises none.
 [r28]: https://github.com/beyond10x/ess/releases/tag/0.28.0
 
 [r29]: https://github.com/beyond10x/ess/releases/tag/0.29.0
+
+[r32]: https://github.com/beyond10x/ess/releases/tag/0.32.0

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess verify bindings` reads `ess-observed-bindings/2`, whose optional `foreign_containers`
+  acknowledges, per bound workload, a container or native sidecar the service does not build (a
+  mesh proxy, a vendor agent) by `name` and nonempty `reason`. `OBS-BIND-008` counts it as
+  accounted for instead of requiring a binding that would misstate it, and the report lists it
+  under the binding's `acknowledged`, not as a binding. An acknowledged container running a
+  binding's declared image or an implementation's artifact locator, or the same `@sha256:` digest
+  under another repository or tag, or a container artifact's `identity` digest, violates
+  `OBS-BIND-008`; tags alone are not compared. An
+  acknowledgement naming no observed container or native sidecar leaves `OBS-BIND-008`
+  `unknown`, naming it: the infrastructure model does not record plain init containers, so it
+  may name one. One naming a bound container, a workload no binding binds, a duplicate or a
+  blank reason is refused before collection. `ess-observed-bindings/1` is read unchanged,
+  acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even as
+  `[]`, is refused, and older readers refuse `/2`. The report is now `ess-observed-bindings-report/3`: it adds `acknowledged`, and a
+  satisfied `OBS-BIND-008` no longer means every entry is bound.
+
 ## [0.32.1] — 2026-09-25
 
 ### Changed

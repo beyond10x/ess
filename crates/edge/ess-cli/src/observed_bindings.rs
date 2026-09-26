@@ -14,8 +14,11 @@ use ess_realization::{
 };
 use serde::{Deserialize, Serialize};
 
-const INPUT_FORMAT: &str = "ess-observed-bindings/1";
-const REPORT_FORMAT: &str = "ess-observed-bindings-report/2";
+/// The first input format: bindings only, so it acknowledges no foreign container.
+const INPUT_FORMAT_1: &str = "ess-observed-bindings/1";
+/// Adds `foreign_containers`, which changes what a satisfied `OBS-BIND-008` means.
+const INPUT_FORMAT_2: &str = "ess-observed-bindings/2";
+const REPORT_FORMAT: &str = "ess-observed-bindings-report/3";
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct Args {
@@ -25,7 +28,7 @@ pub(crate) struct Args {
     /// Source-owned ess-realization/1 or /2 document.
     #[arg(long)]
     realization: PathBuf,
-    /// Environment-owned ess-observed-bindings/1 document.
+    /// Environment-owned ess-observed-bindings/1 or /2 document.
     #[arg(long)]
     bindings: PathBuf,
     /// Existing native infrastructure observation or IR; never implies a fresh live read.
@@ -95,6 +98,22 @@ struct Binding {
     evidence: Vec<SourceEvidence>,
 }
 
+/// A container in a bound workload that this realization does not build — a third-party proxy or
+/// agent — declared so `OBS-BIND-008` accounts for it without a binding that would misstate it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForeignContainer {
+    name: String,
+    reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForeignWorkload {
+    workload: Workload,
+    containers: Vec<ForeignContainer>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BindingDocument {
@@ -103,13 +122,41 @@ struct BindingDocument {
     realization_digest: ArtifactIdentity,
     scope: Scope,
     bindings: Vec<Binding>,
+    // `None` when the key is absent, so a `/1` document keeps the binding digest it had before `/2`
+    // existed and a `/1` document that carries the key at all, even empty or null, can be refused.
+    // `Some(None)` is an explicit null: present, so refused in `/1`, and acknowledging nothing.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[allow(clippy::option_option)]
+    // Absent, null and a list are three states serde must keep apart.
+    foreign_containers: Option<Option<Vec<ForeignWorkload>>>,
+}
+
+/// Reads a key that is present, whatever its value, as `Some`; an absent key takes the default.
+#[allow(clippy::option_option)]
+fn present<'de, D, T>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 impl BindingDocument {
     fn validate(&self, realization: &RealizationIr) -> Result<()> {
         let mut errors = Vec::new();
-        if self.format != INPUT_FORMAT {
-            errors.push(format!("expected format {INPUT_FORMAT}"));
+        if self.format != INPUT_FORMAT_1 && self.format != INPUT_FORMAT_2 {
+            errors.push(format!(
+                "expected format {INPUT_FORMAT_1} or {INPUT_FORMAT_2}"
+            ));
+        }
+        if self.format == INPUT_FORMAT_1 && self.foreign_containers.is_some() {
+            errors.push(format!(
+                "foreign_containers requires format {INPUT_FORMAT_2}"
+            ));
         }
         if &self.realization_digest != realization.realization_digest() {
             errors.push("realization digest does not match the compiled source".to_owned());
@@ -184,10 +231,67 @@ impl BindingDocument {
                 }
             }
         }
+        self.validate_foreign(&targets, &mut errors);
         if errors.is_empty() {
             Ok(())
         } else {
             bail!("{}", errors.join("; "))
+        }
+    }
+    /// An acknowledgement is only read for a bound workload, and it may not restate a binding: a
+    /// container is either built by this realization or foreign, never both.
+    fn validate_foreign(
+        &self,
+        targets: &BTreeSet<(&'static str, &String, &String)>,
+        errors: &mut Vec<String>,
+    ) {
+        let mut workloads = BTreeSet::new();
+        for entry in self.foreign_containers.iter().flatten().flatten() {
+            let (kind, name) = (entry.workload.kind.key(), &entry.workload.name);
+            if !workloads.insert((kind, name)) {
+                errors.push(format!(
+                    "duplicate foreign_containers entry for {kind}/{name}"
+                ));
+            }
+            if !targets.iter().any(|(k, n, _)| *k == kind && *n == name) {
+                errors.push(format!(
+                    "foreign_containers names {kind}/{name}, which no binding binds"
+                ));
+            }
+            if entry.containers.is_empty() {
+                errors.push(format!(
+                    "foreign_containers for {kind}/{name} must not be empty"
+                ));
+            }
+            let mut names = BTreeSet::new();
+            for container in &entry.containers {
+                if !dns_label(&container.name, 63) {
+                    errors.push(format!(
+                        "foreign container {kind}/{name}/{} has an invalid name",
+                        container.name
+                    ));
+                }
+                if !names.insert(&container.name) {
+                    errors.push(format!(
+                        "duplicate foreign container {kind}/{name}/{}",
+                        container.name
+                    ));
+                }
+                if targets.contains(&(kind, name, &container.name)) {
+                    errors.push(format!(
+                        "foreign container {kind}/{name}/{} is also named by a binding",
+                        container.name
+                    ));
+                }
+                if container.reason.trim().is_empty()
+                    || container.reason.chars().any(char::is_control)
+                {
+                    errors.push(format!(
+                        "foreign container {kind}/{name}/{} requires a reason",
+                        container.name
+                    ));
+                }
+            }
         }
     }
     fn canonical(&self) -> Self {
@@ -198,7 +302,30 @@ impl BindingDocument {
                 (&a.repository, &a.revision, &a.path).cmp(&(&b.repository, &b.revision, &b.path))
             });
         }
+        if let Some(Some(foreign)) = &mut ordered.foreign_containers {
+            foreign.sort_by(|a, b| {
+                (a.workload.kind.key(), &a.workload.name)
+                    .cmp(&(b.workload.kind.key(), &b.workload.name))
+            });
+            for entry in foreign {
+                entry.containers.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+        }
         ordered
+    }
+    /// The acknowledged foreign containers of one workload, by name.
+    fn foreign(&self, workload: &Workload) -> BTreeMap<&str, &str> {
+        self.foreign_containers
+            .iter()
+            .flatten()
+            .flatten()
+            .filter(|entry| {
+                entry.workload.kind.key() == workload.kind.key()
+                    && entry.workload.name == workload.name
+            })
+            .flat_map(|entry| &entry.containers)
+            .map(|c| (c.name.as_str(), c.reason.as_str()))
+            .collect()
     }
 }
 
@@ -261,8 +388,16 @@ struct BindingResult {
     observed_uid: Option<String>,
     observed_image: Option<String>,
     declared_evidence: Vec<SourceEvidence>,
+    /// Acknowledged foreign containers observed in this workload's template: accounted for by
+    /// `OBS-BIND-008`, and not bound, so no image or artifact check covers them.
+    acknowledged: Vec<Acknowledged>,
     status: Status,
     checks: Vec<Check>,
+}
+#[derive(Debug, Serialize)]
+struct Acknowledged {
+    container: String,
+    reason: String,
 }
 impl BindingResult {
     fn check(&mut self, code: &'static str, status: Status, detail: impl Into<String>) {
@@ -403,6 +538,7 @@ fn evaluate(
             .as_ref()
             .is_some_and(|c| c.namespace() == spec.scope.namespace);
     report.status = Status::Satisfied;
+    let own = own_images(spec, realization);
     for binding in &spec.canonical().bindings {
         let implementation = &realization.implementations()[&binding.implementation];
         let artifact = implementation.artifact();
@@ -427,6 +563,7 @@ fn evaluate(
             observed_uid: None,
             observed_image: None,
             declared_evidence: binding.evidence.clone(),
+            acknowledged: Vec::new(),
             status: Status::Satisfied,
             checks: Vec::new(),
         };
@@ -470,13 +607,9 @@ fn evaluate(
                 let (status, detail) = absent_container(target);
                 result.check("OBS-BIND-003", status, detail);
             }
-            let (status, detail) = unbound_containers(
-                spec,
-                binding,
-                template_entries(target).map(|(name, _)| name),
-                target.native_sidecars.is_some(),
-                &ir.provenance.scout_version,
-            );
+            let (status, detail, acknowledged) =
+                unbound_containers(spec, binding, &own, target, &ir.provenance.scout_version);
+            result.acknowledged = acknowledged;
             result.check("OBS-BIND-008", status, detail);
         } else {
             result.check(
@@ -488,6 +621,55 @@ fn evaluate(
         report.status = report.status.combine(result.status);
         report.bindings.insert(binding.id.to_string(), result);
     }
+}
+
+/// Every image reference this document and realization declare as their own code: each binding's
+/// declared `image` and each implementation's artifact locator, and the `@sha256:` digest of each
+/// that pins one. A container running one of them, or the same digest under another repository or
+/// tag, is not foreign, whatever an acknowledgement calls it. Tags are never compared: the same tag
+/// under another repository is not evidence of the same bytes.
+fn own_images<'a>(spec: &'a BindingDocument, realization: &'a RealizationIr) -> BTreeSet<&'a str> {
+    let references: Vec<&str> = spec
+        .bindings
+        .iter()
+        .map(|binding| binding.image.as_str())
+        .chain(
+            realization
+                .implementations()
+                .values()
+                .map(|implementation| implementation.artifact().locator()),
+        )
+        .collect();
+    let digests = references
+        .iter()
+        .filter_map(|reference| image_digest(reference));
+    // A container artifact's identity is its image digest, as `OBS-BIND-005` reads it.
+    let identities = realization
+        .implementations()
+        .values()
+        .map(ess_realization::Implementation::artifact)
+        .filter(|artifact| matches!(artifact.kind(), ArtifactKind::Container))
+        .map(|artifact| artifact.identity().as_str())
+        .filter(|identity| Digest::new(*identity).is_ok());
+    references
+        .iter()
+        .copied()
+        .chain(digests)
+        .chain(identities)
+        .collect()
+}
+
+/// The `sha256:…` digest a reference is pinned to, if it is pinned to a well-formed one.
+fn image_digest(reference: &str) -> Option<&str> {
+    reference
+        .rsplit_once('@')
+        .map(|(_, digest)| digest)
+        .filter(|digest| Digest::new(*digest).is_ok())
+}
+
+/// Whether an observed image is one of this document's own references, or carries one's digest.
+fn is_own(own: &BTreeSet<&str>, image: &str) -> bool {
+    own.contains(image) || image_digest(image).is_some_and(|digest| own.contains(digest))
 }
 
 /// Every entry a binding may name — containers, then native sidecars — as `(name, image)`.
@@ -534,13 +716,23 @@ struct Observed<'a> {
 /// not account for. Plain init containers run to completion before the pod starts and are not
 /// checked, and the detail says so. Only this workload's template is read, so unbound workloads
 /// elsewhere stay uncovered, not violated.
-fn unbound_containers<'a>(
+///
+/// An acknowledged foreign container is accounted for without being bound, unless it runs an image
+/// this document or realization declares as its own: that is this realization's code under another
+/// name, and it violates. The infrastructure model records containers and native sidecars but
+/// never a plain init container's name, so an acknowledgement naming neither may name a plain init
+/// container (or, where init containers went unrecorded, a native sidecar). It is named and leaves
+/// the result unknown: it can be neither shown stale nor satisfied.
+///
+/// Returns the status, the detail, and the acknowledgements that account for an observed entry.
+fn unbound_containers(
     spec: &BindingDocument,
     binding: &Binding,
-    observed: impl Iterator<Item = &'a str>,
-    sidecars_recorded: bool,
+    own: &BTreeSet<&str>,
+    target: &infra_compiler::ResolvedWorkload,
     producer: &str,
-) -> (Status, String) {
+) -> (Status, String, Vec<Acknowledged>) {
+    let sidecars_recorded = target.native_sidecars.is_some();
     let bound: BTreeSet<&str> = spec
         .bindings
         .iter()
@@ -550,35 +742,80 @@ fn unbound_containers<'a>(
         })
         .map(|other| other.container.as_str())
         .collect();
-    let unbound: BTreeSet<&str> = observed.filter(|name| !bound.contains(name)).collect();
-    if unbound.is_empty() && !sidecars_recorded {
+    let foreign = spec.foreign(&binding.workload);
+    let observed: BTreeMap<&str, &str> = template_entries(target).collect();
+    let names = |keep: &dyn Fn(&str, &str) -> bool| -> Vec<&str> {
+        observed
+            .iter()
+            .filter(|(name, image)| keep(name, image))
+            .map(|(name, _)| *name)
+            .collect()
+    };
+    let unbound = names(&|name, _| !bound.contains(name) && !foreign.contains_key(name));
+    let disguised = names(&|name, image| foreign.contains_key(name) && is_own(own, image));
+    let acknowledged = names(&|name, image| foreign.contains_key(name) && !is_own(own, image));
+    let unseen: Vec<&str> = foreign
+        .keys()
+        .copied()
+        .filter(|name| !observed.contains_key(name))
+        .collect();
+    let mut detail = if !unbound.is_empty() {
+        format!(
+            "workload template has containers or native sidecars no binding names and no \
+             acknowledgement accounts for: {}",
+            unbound.join(", ")
+        )
+    } else if !sidecars_recorded {
         // Unknown differs from false: silence about init containers is not their absence.
         let (major, minor, patch) = infra_compiler::FIRST_PRODUCER_RECORDING_INIT_CONTAINERS;
-        (
-            Status::Unknown,
-            format!(
-                "every container is named by a binding, but this observation does not record init \
-                 containers: its producer `{producer}` is not a release at or after \
-                 {major}.{minor}.{patch}, the first that collects them, so an unbound native \
-                 sidecar cannot be ruled out"
-            ),
-        )
-    } else if unbound.is_empty() {
-        (
-            Status::Satisfied,
-            "each container and native sidecar in the workload template is named by a binding; \
-             plain init containers are not checked"
-                .to_owned(),
+        format!(
+            "every container is named by a binding or acknowledged, but this observation does not \
+             record init containers: its producer `{producer}` is not a release at or after \
+             {major}.{minor}.{patch}, the first that collects them, so an unbound native sidecar \
+             cannot be ruled out"
         )
     } else {
-        (
-            Status::Violated,
-            format!(
-                "workload template has containers or native sidecars no binding names: {}",
-                unbound.into_iter().collect::<Vec<_>>().join(", ")
-            ),
-        )
-    }
+        "each container and native sidecar in the workload template is named by a binding or \
+         acknowledged as foreign; plain init containers are not checked"
+            .to_owned()
+    };
+    let mut clause = |text: &str, list: &[&str]| {
+        if !list.is_empty() {
+            write!(detail, "; {text}: {}", list.join(", ")).expect("String formatting cannot fail");
+        }
+    };
+    clause("acknowledged as foreign, not bound", &acknowledged);
+    clause(
+        "acknowledged as foreign but running an image a binding or implementation declares",
+        &disguised,
+    );
+    clause(
+        if sidecars_recorded {
+            "acknowledged foreign containers not among the template's containers or native \
+             sidecars; this observation does not record plain init containers, so each may name \
+             one or be stale"
+        } else {
+            "acknowledged foreign containers not among the template's containers; this observation \
+             records neither native sidecars nor plain init containers, so each may name one or be \
+             stale"
+        },
+        &unseen,
+    );
+    let status = if !unbound.is_empty() || !disguised.is_empty() {
+        Status::Violated
+    } else if !sidecars_recorded || !unseen.is_empty() {
+        Status::Unknown
+    } else {
+        Status::Satisfied
+    };
+    let acknowledged = acknowledged
+        .into_iter()
+        .map(|name| Acknowledged {
+            container: name.to_owned(),
+            reason: foreign[name].to_owned(),
+        })
+        .collect();
+    (status, detail, acknowledged)
 }
 
 fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
