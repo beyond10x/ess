@@ -2,11 +2,14 @@
 format: aep.planning-md/2
 id: story:observed-bindings-foreign-sidecar
 kind: story
-status: draft
+status: implemented
 title: A binding document can acknowledge a container ESS does not realize
 relations:
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/observed_bindings.rs
+revision: 5
 ---
 # A binding document can acknowledge a container ESS does not realize
 
