@@ -18,6 +18,9 @@ use std::{
 mod bundle_fixture;
 #[path = "support/compiled_fixture.rs"]
 mod compiled_fixture;
+#[allow(dead_code)]
+#[path = "support/executable.rs"]
+mod executable;
 
 const QUALIFIERS: [&str; 4] = [
     "attachment binding: unverified",
@@ -313,7 +316,7 @@ fn tool_path() -> std::ffi::OsString {
         )
         .unwrap();
         for tool in ["oras", "docker", "helm", "cosign", "syft"] {
-            fs::copy(&program, root.join(tool)).unwrap();
+            executable::install_copy(&program, &root.join(tool)).unwrap();
         }
         root
     });

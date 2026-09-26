@@ -11,6 +11,9 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[allow(dead_code)]
+#[path = "support/executable.rs"]
+mod executable;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -148,7 +151,7 @@ impl Case {
             .output()
             .unwrap();
         assert!(compiled.status.success(), "{compiled:?}");
-        std::fs::copy(&kubectl, bin.join("date")).unwrap();
+        executable::install_copy(&kubectl, &bin.join("date")).unwrap();
         let output = self
             .verify()
             .args(["--live", "--observation-out"])

@@ -36,6 +36,9 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use ess_cli::recovery::model::{invalid, Admitted, Refusal, RefusalCode, Uuid};
 use ess_cli::recovery::{Barrier, FileFacts, Host};
 
+#[path = "executable.rs"]
+mod executable;
+
 /// Where a fixture's protected administrative tree lives under its scratch root.
 pub const ADMIN: &str = "etc/ess/recovery";
 /// Where a fixture's admitted tool installation lives under its scratch root.
@@ -365,18 +368,17 @@ pub fn write_kubeconfig(
 /// The bytes are whatever the caller supplies, which is the point: the digest in the authority has
 /// to be the digest of what is actually there, and a fixture that installed something else would
 /// be testing the fixture.
+///
+/// The file is written by [`executable::install_bytes`], so no fork another case makes can hold it
+/// open for writing and make the kernel refuse to execute it (`ETXTBSY`), which `run` would report
+/// as a child that was never launched.
 pub fn install_helm(root: &Path, bytes: &[u8]) -> std::io::Result<(PathBuf, String)> {
     let digest = ess_cli::recovery::model::Digest::of_bytes(bytes);
     let hex = digest.as_str().trim_start_matches("sha256:").to_owned();
     let directory = root.join(TOOLS).join(&hex);
     std::fs::create_dir_all(&directory)?;
     let path = directory.join("helm");
-    std::fs::write(&path, bytes)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
-    }
+    executable::install_bytes(&path, bytes)?;
     Ok((path, digest.as_str().to_owned()))
 }
 
@@ -385,42 +387,9 @@ pub fn install_helm(root: &Path, bytes: &[u8]) -> std::io::Result<(PathBuf, Stri
 /// The bytes are copied rather than linked, so the installed file is a real regular file with its
 /// own digest under the admitted `<prefix><sha256hex>/helm` arrangement, and the probes meet a
 /// real executable rather than a script.
-///
-/// It returns only once the installed file can be executed. `cargo test` runs the cases as threads
-/// of one process, and a child another case forks while the file is open for writing inherits the
-/// write descriptor until it executes; until then the kernel refuses to execute the file with
-/// `ETXTBSY`, which `run` would report as a child that was never launched. The installer's own
-/// descriptor is closed before the first probe, so once one probe executes no descriptor remains
-/// that a later fork could inherit, and every later execution by the case meets the file ready.
 pub fn install_executable(root: &Path, source: &Path) -> std::io::Result<(PathBuf, String)> {
     let bytes = std::fs::read(source)?;
-    let installed = install_helm(root, &bytes)?;
-    await_executable(&installed.0)?;
-    Ok(installed)
-}
-
-/// Executes `path` with the stand-in's read-only `version` probe until the kernel stops refusing
-/// it as busy, and fails with the last refusal if another case's fork holds it for 30 seconds.
-fn await_executable(path: &Path) -> std::io::Result<()> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        let probe = std::process::Command::new(path)
-            .arg("version")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        match probe {
-            Err(error)
-                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
-                    && std::time::Instant::now() < deadline =>
-            {
-                std::thread::sleep(std::time::Duration::from_millis(2));
-            }
-            Err(error) => return Err(error),
-            Ok(_) => return Ok(()),
-        }
-    }
+    install_helm(root, &bytes)
 }
 
 /// Lays out a complete protected arrangement whose authority admits exactly `desired`.
