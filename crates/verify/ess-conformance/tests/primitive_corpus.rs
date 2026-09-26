@@ -11,6 +11,7 @@ use std::process::Command;
 
 use ess_conformance::{AdmittedSuite, Holds};
 use ess_domain::Primitive;
+use ess_primitives::facts::{FactValue, Number};
 use ess_primitives::node::Node;
 use serde_json::{json, Value};
 
@@ -370,6 +371,235 @@ fn the_go_runtime_answers_every_text_match_the_corpus_states() {
         String::from_utf8_lossy(&output.stdout).contains("--- PASS: TestTextMatchCorpus"),
         "the Go case ran rather than selecting nothing: {record}"
     );
+}
+
+/// The corpus number a `numbers` vector builds, the way `ess-primitives/tests/primitive_corpus.rs`
+/// builds it, and the spelling it was authored in.
+fn corpus_number(from: &Value) -> (Number, String) {
+    if let Some(value) = from.get("integer").and_then(Value::as_i64) {
+        return (Number::from(value), value.to_string());
+    }
+    if let Some(text) = from.get("decimal").and_then(Value::as_str) {
+        let number = FactValue::parse_literal(text)
+            .as_number()
+            .unwrap_or_else(|| panic!("{text} is a numeric literal"));
+        return (number, text.to_owned());
+    }
+    let value = from["binary64"].as_f64().expect("a corpus binary64");
+    (
+        Number::new(value).expect("a finite binary64"),
+        format!("{value}"),
+    )
+}
+
+/// The same number as a decimal literal, where Rust reads that literal as this number.
+fn literal_is(text: &str, number: Number) -> bool {
+    FactValue::parse_literal(text).as_number() == Some(number)
+}
+
+/// Every Go type an implementation might return this number in, where the value that type carries
+/// is the number Rust decides — each decided by Rust, not by the Go runtime under test.
+///
+/// `json.Number` is read as the token it spells, `float64` as its own value, and `float32` as its
+/// shortest round-tripping decimal — the value the implementation wrote down. The integer types
+/// carry every integer that fits them.
+fn go_carriers(number: Number, authored: &str) -> Vec<Value> {
+    let mut carriers = vec![json!({"type": "json.Number", "text": number.exact_text()})];
+    if authored != number.exact_text() && literal_is(authored, number) {
+        carriers.push(json!({"type": "json.Number", "text": authored}));
+    }
+    let binary = number.get();
+    if Number::new(binary).ok() == Some(number) {
+        carriers.push(json!({"type": "float64", "text": format!("{binary}")}));
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let single = binary as f32;
+    if single.is_finite() && literal_is(&format!("{single}"), number) {
+        carriers.push(json!({"type": "float32", "text": format!("{single}")}));
+    }
+    if let Some(integer) = number.as_i64() {
+        let text = integer.to_string();
+        let mut fits = vec!["int64", "int"];
+        if i32::try_from(integer).is_ok() {
+            fits.push("int32");
+        }
+        if i16::try_from(integer).is_ok() {
+            fits.push("int16");
+        }
+        if i8::try_from(integer).is_ok() {
+            fits.push("int8");
+        }
+        if u64::try_from(integer).is_ok() {
+            fits.extend(["uint64", "uint"]);
+        }
+        if u32::try_from(integer).is_ok() {
+            fits.push("uint32");
+        }
+        if u16::try_from(integer).is_ok() {
+            fits.push("uint16");
+        }
+        if u8::try_from(integer).is_ok() {
+            fits.push("uint8");
+        }
+        carriers.extend(
+            fits.into_iter()
+                .map(|kind| json!({"type": kind, "text": text})),
+        );
+    }
+    carriers
+}
+
+/// The table the Go case reads: every corpus number in its carriers, and every ordered pair of
+/// corpus numbers with the ordering `Number::cmp` gives it.
+fn carrier_table() -> Value {
+    #[derive(serde::Deserialize)]
+    struct Numbers {
+        numbers: Vec<NumberVector>,
+    }
+    #[derive(serde::Deserialize)]
+    struct NumberVector {
+        name: String,
+        from: Value,
+    }
+    let vectors = serde_json::from_str::<Numbers>(CORPUS)
+        .expect("the corpus is readable")
+        .numbers;
+    let mut numbers: Vec<(String, Number, String)> = vectors
+        .into_iter()
+        .map(|vector| {
+            let (number, authored) = corpus_number(&vector.from);
+            (vector.name, number, authored)
+        })
+        .collect();
+    // Beyond the corpus, and still decided by Rust: the edges of the rule a Go runtime has to draw
+    // itself — a binary64 above 2^63 is its shortest decimal, an integer token is exact while its
+    // digits fit an i128 and the binary64 once they do not, and `.0` keeps an integer exact.
+    for (name, from) in [
+        ("ten-to-23-as-binary64", json!({"binary64": 1e23})),
+        ("ten-to-23", json!({"decimal": "100000000000000000000000"})),
+        ("ten-to-23-with-an-exponent", json!({"decimal": "1e23"})),
+        (
+            "i128-max",
+            json!({"decimal": "170141183460469231731687303715884105727"}),
+        ),
+        (
+            "two-to-127-overflows-i128-digits",
+            json!({"decimal": "170141183460469231731687303715884105728"}),
+        ),
+        (
+            "minus-two-to-127-overflows-i128-digits",
+            json!({"decimal": "-170141183460469231731687303715884105728"}),
+        ),
+        (
+            "two-to-53-plus-one-with-a-point",
+            json!({"decimal": "9007199254740993.0"}),
+        ),
+        ("a-small-decimal", json!({"decimal": "1e-7"})),
+    ] {
+        let (number, authored) = corpus_number(&from);
+        numbers.push((name.to_owned(), number, authored));
+    }
+    let mut pairs = Vec::new();
+    for (left, a, _) in &numbers {
+        for (right, b, _) in &numbers {
+            let ordering = match a.cmp(b) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            };
+            pairs.push(json!({"left": left, "right": right, "ordering": ordering}));
+        }
+    }
+    json!({
+        "numbers": numbers.iter().map(|(name, number, authored)| json!({
+            "name": name,
+            "display": number.exact_text(),
+            "integer": number.as_i64().is_some(),
+            "carriers": go_carriers(*number, authored),
+        })).collect::<Vec<_>>(),
+        "pairs": pairs,
+    })
+}
+
+/// beyond10x/ess#101: a payload the implementation returned as `int64` or `json.Number` never
+/// equalled the suite's number, so a conforming implementation failed until it returned `float64`.
+/// Every comparison the Go runtime makes must answer by value, as Rust's `Number` does, whatever
+/// Go numeric type carries it.
+#[test]
+fn the_go_runtime_compares_every_number_carrier_by_the_value_rust_decides() {
+    let table = carrier_table();
+    let numbers = table["numbers"].as_array().expect("numbers");
+    let equal_pairs = table["pairs"]
+        .as_array()
+        .expect("pairs")
+        .iter()
+        .filter(|pair| pair["ordering"] == json!(0))
+        .count();
+    assert!(
+        equal_pairs > numbers.len(),
+        "the corpus holds numbers that are one value under two spellings"
+    );
+    let types: std::collections::BTreeSet<&str> = numbers
+        .iter()
+        .flat_map(|number| number["carriers"].as_array().expect("carriers"))
+        .map(|carrier| carrier["type"].as_str().expect("a type"))
+        .collect();
+    assert_eq!(
+        types.len(),
+        13,
+        "every Go numeric carrier is asked: {types:?}"
+    );
+
+    let root = directory("go-numbers");
+    let package = root.join("essconform");
+    std::fs::create_dir_all(&package).unwrap();
+    for artifact in ess_conformance::go::emit(minimal_suite().suite()).expect("the suite emits") {
+        std::fs::write(root.join(&artifact.path), artifact.contents).unwrap();
+    }
+    std::fs::write(root.join("go.mod"), "module numbercarriers\n\ngo 1.24\n").unwrap();
+    std::fs::write(
+        package.join("number-carriers.json"),
+        serde_json::to_string_pretty(&table).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        package.join("number_carriers_test.go"),
+        include_str!("fixtures/number-carriers.go"),
+    )
+    .unwrap();
+
+    let output = Command::new("go")
+        .args([
+            "test",
+            "-count=1",
+            "-v",
+            "./...",
+            "-run",
+            "^TestEveryNumberCarrier|^TestSuiteExpectationsMatchWhateverTypeCarriesTheNumber$",
+        ])
+        .current_dir(&root)
+        .env("GOWORK", "off")
+        .output()
+        .expect("the required Go toolchain executes");
+    let record = format!(
+        "exit: {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::write(root.join("go.log"), &record).unwrap();
+    assert!(output.status.success(), "{record}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for case in [
+        "TestEveryNumberCarrierComparesByTheValueRustDecides",
+        "TestEveryNumberCarrierIsAdmittedAsTheKindItHolds",
+        "TestSuiteExpectationsMatchWhateverTypeCarriesTheNumber",
+    ] {
+        assert!(
+            stdout.contains(&format!("--- PASS: {case}")),
+            "{case} ran rather than selecting nothing: {record}"
+        );
+    }
 }
 
 /// The harness that asks the browser adapter's own export about every vector.
