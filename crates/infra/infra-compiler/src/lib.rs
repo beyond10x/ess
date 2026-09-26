@@ -1,4 +1,4 @@
-//! Validated observation → `infra-ir/1`: normalized, content-addressed, deterministic.
+//! Validated observation → `infra-ir`: normalized, content-addressed, deterministic.
 //!
 //! The second half of the infrastructure pipeline. `infra-domain` is the boundary a scanned
 //! bundle crosses — parse permissively, validate strictly, refuse loudly; this crate is what the
@@ -33,6 +33,6 @@ pub use ir::{
     ResolvedEnvSource, ResolvedEnvVar, ResolvedIngress, ResolvedIngressBackend,
     ResolvedIngressPath, ResolvedIngressRule, ResolvedPod, ResolvedVolume, ResolvedVolumeSource,
     ResolvedWorkload, SecretHandle, ServiceAccountHandle, ServiceHandle, UnresolvedReference,
-    UnresolvedTarget, IR_FORMAT,
+    UnresolvedTarget, IR_FORMAT, PRESENCE_IR_FORMAT,
 };
 pub use read::read_document;

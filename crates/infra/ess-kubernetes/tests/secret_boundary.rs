@@ -271,6 +271,90 @@ fn malformed_secret_response_corpus_is_refused_without_output_or_diagnostic_valu
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// A value a person would guess first, as `stringData` holds it and as `data` holds it (base64).
+const LOW_ENTROPY: &str = "hunter2";
+const LOW_ENTROPY_BASE64: &str = "aHVudGVyMg==";
+
+fn sha256_hex(text: &str) -> String {
+    use sha2::Digest as _;
+    use std::fmt::Write as _;
+    sha2::Sha256::digest(text.as_bytes())
+        .iter()
+        .fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
+}
+
+/// Every Secret value in a written observation, as `(field.key, value)`.
+fn written_secret_values(observation: &Value) -> Vec<(String, Value)> {
+    let mut values = Vec::new();
+    for item in observation["kinds"]["secrets"]["items"]
+        .as_array()
+        .expect("a secrets list")
+    {
+        for field in ["data", "stringData"] {
+            for (key, value) in item[field].as_object().into_iter().flatten() {
+                values.push((format!("{field}.{key}"), value.clone()));
+            }
+        }
+    }
+    values
+}
+
+#[test]
+fn a_full_scan_writes_nothing_from_which_a_low_entropy_secret_can_be_confirmed() {
+    let response = json!({"items": [{
+        "metadata": {"name": "weak", "namespace": "default", "uid": "u-weak"},
+        "data": {"password": LOW_ENTROPY_BASE64},
+        "stringData": {"plain": LOW_ENTROPY},
+        "type": "Opaque"
+    }]});
+    let (output, destination) = scan(&response.to_string(), false);
+    assert!(output.status.success(), "{output:?}");
+    let text = std::fs::read_to_string(destination).expect("sanitized observation");
+
+    // What a holder of the file computes to test a guess: the unsalted digest of the guess in
+    // either encoding. None of it may be in the file.
+    for oracle in [
+        LOW_ENTROPY.to_owned(),
+        LOW_ENTROPY_BASE64.to_owned(),
+        sha256_hex(LOW_ENTROPY),
+        sha256_hex(LOW_ENTROPY_BASE64),
+    ] {
+        assert!(
+            !text.contains(&oracle),
+            "the written observation confirms a guess of {LOW_ENTROPY:?}: it carries {oracle}"
+        );
+    }
+
+    // Structurally, too: a keyed or salted digest would pass the oracle check above and still
+    // be a digest. A Secret value is recorded as present and as nothing else — no digest, no
+    // length, nothing derived from the content.
+    let observation: Value = serde_json::from_str(&text).expect("JSON observation");
+    assert_eq!(observation["format"], "infra-observation/3");
+    let values = written_secret_values(&observation);
+    assert_eq!(values.len(), 2, "both keys are named: {values:?}");
+    for (key, value) in &values {
+        assert_eq!(
+            value,
+            &json!({"present": true}),
+            "{key} carries something derived from the Secret value"
+        );
+    }
+
+    let raw: infra_domain::RawBundle = serde_json::from_value(observation).expect("a bundle");
+    let admitted = infra_domain::Observation::try_from(raw).expect("presence-only is admitted");
+    assert_eq!(
+        admitted.secrets[0].keys.keys().collect::<Vec<_>>(),
+        ["password", "plain"]
+    );
+    assert!(admitted.secrets[0]
+        .keys
+        .values()
+        .all(|value| *value == infra_domain::SecretValue::Present));
+}
+
 #[test]
 fn valid_secret_observation_bytes_remain_compatible() {
     let response = json!({"items": [{
@@ -287,11 +371,21 @@ fn valid_secret_observation_bytes_remain_compatible() {
     let (output, destination) = scan(&response.to_string(), true);
     assert!(output.status.success(), "{output:?}");
     let bytes = std::fs::read(destination).expect("sanitized observation");
-    // All envelope fields, kind ordering, whitespace, digest and UTF-8 byte lengths are frozen.
+    // All envelope fields, kind ordering and whitespace are frozen, and every Secret value is a
+    // presence marker: no digest and no byte length of any value.
     let expected = include_str!("fixtures/valid-observation.json")
         .replace("@SCOUT_VERSION@", env!("CARGO_PKG_VERSION"));
     assert_eq!(bytes, expected.trim_end().as_bytes());
     let text = String::from_utf8(bytes).expect("UTF-8 observation");
+    let values = written_secret_values(&serde_json::from_str(&text).expect("JSON observation"));
+    assert_eq!(values.len(), 3, "every key is named: {values:?}");
+    for (key, value) in values {
+        assert_eq!(
+            value,
+            json!({"present": true}),
+            "{key} is not presence-only"
+        );
+    }
     for value in [
         "SYNTHETIC-BASE64-VALUE",
         "SYNTHETIC-STRING-VALUE",
@@ -326,13 +420,8 @@ fn absent_optional_secret_fields_and_empty_maps_remain_allowed() {
         &items[..4],
         &response["items"].as_array().expect("source items")[..4]
     );
-    assert_eq!(
-        items[4]["data"]["empty"],
-        json!({
-            "length": 0,
-            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        })
-    );
+    // An empty value is still a value: present, and nothing else — not even that it is empty.
+    assert_eq!(items[4]["data"]["empty"], json!({"present": true}));
 }
 
 #[test]

@@ -1042,3 +1042,35 @@ fn adversary2_a_first_format_document_carrying_a_null_foreign_containers_is_refu
     );
     assert_eq!(output.status.code(), Some(1), "{report:#}");
 }
+
+#[test]
+fn a_bindings_report_over_a_legacy_ir_names_the_stripped_model_not_the_one_holding_secret_digests()
+{
+    let legacy =
+        root().join("crates/infra/infra-compiler/tests/fixtures/legacy-k3d-dev-cluster.ir-1.json");
+    let frozen: Value = serde_json::from_slice(&std::fs::read(&legacy).unwrap()).unwrap();
+    let mut model = frozen["model"].clone();
+    for secret in model["secrets"].as_object_mut().unwrap().values_mut() {
+        for value in secret["keys"].as_object_mut().unwrap().values_mut() {
+            *value = json!({ "present": true });
+        }
+    }
+    let stripped = infra_compiler::digest_of_canonical(&serde_json::to_vec(&model).unwrap());
+    assert_ne!(
+        stripped, frozen["digest"],
+        "the legacy fixture carries no Secret digest"
+    );
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .arg("--infra")
+        .arg(&legacy)
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&output.stdout).expect("one JSON report");
+    assert_eq!(
+        report["observation"]["digest"],
+        json!(stripped),
+        "{report:#}"
+    );
+}

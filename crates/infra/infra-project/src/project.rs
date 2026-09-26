@@ -1200,8 +1200,8 @@ fn owe(
             ObligationReason::TargetUnknown,
             format!(
                 "create the {target} this cluster expects at {site}, or change the reference. \
-                 Its contents are not in the snapshot — a secret is only ever there as a digest \
-                 — so nothing here can write one"
+                 Its contents are not in the snapshot — a secret is only ever there as the names \
+                 of its keys — so nothing here can write one"
             ),
         ),
         Gap::NamespaceNotAllowed { have, allowed } => obligation(
