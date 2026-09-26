@@ -6,11 +6,34 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 /// Positive, whole seconds; unlike elapsed observations, a period cannot be zero.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Period(NonZeroU32);
+
+/// Written by hand because the derive describes the `NonZeroU32` inside, and on the wire a period
+/// is the `PT<seconds>S` string `#[serde(try_from, into)]` makes it.
+///
+/// The pattern is [`Period::parse`] as a regex: no leading zero, and at most `u32::MAX` seconds,
+/// bounded digit by digit because a regex cannot compare magnitudes.
+/// `tests/serialized_string_schema.rs` holds the two together across every split of that bound.
+impl schemars::JsonSchema for Period {
+    fn schema_name() -> String {
+        "Period".to_owned()
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        serde_json::from_value(serde_json::json!({
+            "description": "Positive, whole seconds, written `PT<seconds>S`; unlike elapsed \
+                            observations, a period cannot be zero.",
+            "type": "string",
+            "pattern": "^PT([1-9][0-9]{0,8}|[1-3][0-9]{9}|4[01][0-9]{8}|42[0-8][0-9]{7}\
+                        |429[0-3][0-9]{6}|4294[0-8][0-9]{5}|42949[0-5][0-9]{4}\
+                        |429496[0-6][0-9]{3}|4294967[01][0-9]{2}|42949672[0-8][0-9]\
+                        |429496729[0-5])S$",
+        }))
+        .expect("a literal schema")
+    }
+}
 impl Period {
     /// Parse canonical `PT<seconds>S`, with no alternate spellings.
     pub fn parse(value: &str) -> Result<Self, ParseError> {

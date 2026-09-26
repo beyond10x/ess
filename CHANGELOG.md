@@ -12,6 +12,13 @@
   explicit skip; browser replay refuses fixtures. Fixture-free models and suites keep their bytes.
   (#58)
 
+### Fixed
+
+- `schemas/generated/ess.schema.json` describes `ExternalRef` as the `provider:key` string and a
+  periodic cause's `every` (`Period`) as the `PT<seconds>S` string ESS reads and writes, instead of
+  an object with `provider`/`reference` and a bare integer. Each pattern admits exactly what the
+  parser reads, held by a parity test over the committed schema. No source format changes.
+
 ## [0.34.0] — 2026-09-26
 
 ### Added

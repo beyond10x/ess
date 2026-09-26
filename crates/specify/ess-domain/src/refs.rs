@@ -31,8 +31,7 @@ use std::str::FromStr;
 use ess_primitives::error::ParseError;
 
 /// One record outside this model, named as `provider:key`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, schemars::JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExternalRef {
     /// The system holding the record, such as `jira`.
     pub provider: String,
@@ -109,6 +108,58 @@ impl<'de> serde::Deserialize<'de> for ExternalRef {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let written = String::deserialize(deserializer)?;
         Self::parse(&written).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A regex class body naming every character `str::trim` removes, which the parser refuses at either
+/// end of a key.
+///
+/// Derived from `char::is_whitespace` rather than typed: `\s` means a different set in ECMA-262,
+/// which a JSON Schema pattern is, than in Rust, so the class is spelled out, and a list written by
+/// hand beside the predicate it copies is a list that drifts from it. Every such character is in the
+/// Basic Multilingual Plane, so the four-digit escape both dialects read covers all of them.
+fn key_edge_whitespace() -> String {
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for character in ('\0'..=char::MAX).filter(|character| character.is_whitespace()) {
+        let code = u32::from(character);
+        assert!(code <= 0xFFFF, "a four-digit escape cannot name U+{code:X}");
+        match runs.last_mut() {
+            Some((_, end)) if *end + 1 == code => *end = code,
+            _ => runs.push((code, code)),
+        }
+    }
+    runs.into_iter()
+        .map(|(start, end)| {
+            if start == end {
+                format!("\\u{start:04X}")
+            } else {
+                format!("\\u{start:04X}-\\u{end:04X}")
+            }
+        })
+        .collect()
+}
+
+/// Written by hand because the derive describes the Rust fields, and on the wire this is one
+/// `provider:key` string — `#[schemars(with = "String")]` on the struct is ignored by schemars 0.8,
+/// which is how the published schema came to describe an object ESS never reads.
+///
+/// The pattern is [`ExternalRef::parse`] as a regex: a provider of lower-case letters, digits and
+/// hyphens, the first colon, and a non-empty key with no whitespace at either end. `not` carries
+/// the URL refusal. `tests/serialized_string_schema.rs` holds the two together over one corpus.
+impl schemars::JsonSchema for ExternalRef {
+    fn schema_name() -> String {
+        "ExternalRef".to_owned()
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let edge = format!("[^{}]", key_edge_whitespace());
+        serde_json::from_value(serde_json::json!({
+            "description": "One record outside this model, named as `provider:key`.",
+            "type": "string",
+            "pattern": format!(r"^[a-z0-9-]+:{edge}([\s\S]*{edge})?$"),
+            "not": { "pattern": "^[a-z0-9-]+://" },
+        }))
+        .expect("a literal schema")
     }
 }
 

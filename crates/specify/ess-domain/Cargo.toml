@@ -20,5 +20,13 @@ thiserror.workspace = true
 name = "billing"
 path = "tests/billing.rs"
 
+[dev-dependencies]
+# `tests/serialized_string_schema.rs` validates serialized values against the committed document
+# schema with a conforming validator, which is what makes `pattern` checked. Already in the
+# workspace: same version and spelling as `ess-gen` and `schema-contract`, so one validator
+# behaviour across the workspace and no new entry in the lock file. `default-features = false` drops
+# the HTTP and file retrievers; every `$ref` the document schema emits is a same-document pointer.
+jsonschema = { version = "0.52.1", default-features = false }
+
 [lints]
 workspace = true
