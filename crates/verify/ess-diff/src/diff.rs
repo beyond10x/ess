@@ -1566,6 +1566,7 @@ fn compare_views(
             after: is.filter.as_ref().map(ToString::to_string),
         });
     }
+    compare_aggregations(was, is, push);
     if was.consistency != is.consistency {
         push(ViewChange::ConsistencyChanged {
             before: was.consistency.as_str().to_owned(),
@@ -1587,6 +1588,46 @@ fn compare_views(
                 before: a,
                 after: b,
             }),
+        }
+    }
+}
+
+/// Aggregate views (`docs/design/aggregate-views.md`): the grouping, then what each field
+/// computes, over the union of field names. A view with no aggregation on either side reports
+/// nothing here, so its delta keeps its format.
+fn compare_aggregations(was: &ResolvedView, is: &ResolvedView, push: &mut impl FnMut(ViewChange)) {
+    let grouping = |view: &ResolvedView| {
+        view.aggregation
+            .as_ref()
+            .map(|aggregation| aggregation.group_by.clone())
+            .unwrap_or_default()
+    };
+    if grouping(was) != grouping(is) {
+        push(ViewChange::GroupingChanged {
+            before: grouping(was),
+            after: grouping(is),
+        });
+    }
+    let computes = |view: &ResolvedView, field: &str| {
+        view.aggregation
+            .as_ref()
+            .and_then(|aggregation| aggregation.functions.get(field))
+            .map(ToString::to_string)
+    };
+    let names: std::collections::BTreeSet<&str> = was
+        .fields
+        .iter()
+        .chain(&is.fields)
+        .map(|field| field.name.as_str())
+        .collect();
+    for field in names {
+        let (before, after) = (computes(was, field), computes(is, field));
+        if before != after {
+            push(ViewChange::FieldAggregateChanged {
+                field: field.to_owned(),
+                before,
+                after,
+            });
         }
     }
 }

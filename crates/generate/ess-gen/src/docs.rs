@@ -937,6 +937,9 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             Inline::text("."),
         ]);
         about.prose(filter_sentence(view));
+        if let Some(aggregation) = &view.aggregation {
+            about.prose(markdown_code(&aggregation.grouping_sentence()));
+        }
         if view.fields.is_empty() {
             about.sentence(
                 "It exposes no fields, so it answers \"does an instance match\" and nothing about \
@@ -944,7 +947,12 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             );
         } else {
             about.sentence("It exposes:");
-            about.push(bullets(view.fields.iter().map(field_bullet).collect()));
+            about.push(bullets(
+                view.fields
+                    .iter()
+                    .map(|field| view_field_bullet(view, field))
+                    .collect(),
+            ));
         }
         about.prose(order_sentence(view));
         about.prose(consistency_sentence(view.consistency));
@@ -2281,6 +2289,37 @@ fn field_bullet(field: &ResolvedField) -> Vec<Inline> {
         out.push(Inline::text(format!(", shown as \"{display}\"")));
     }
     out
+}
+
+/// A view field's bullet: a group key or a projected field reads as any field does, and an
+/// aggregate field says what it computes over the group.
+fn view_field_bullet(view: &ResolvedView, field: &ResolvedField) -> Vec<Inline> {
+    let mut out = field_bullet(field);
+    if let Some(aggregate) = view
+        .aggregation
+        .as_ref()
+        .and_then(|aggregation| aggregation.functions.get(&field.name))
+    {
+        out.push(Inline::text(", the "));
+        out.extend(markdown_code(&aggregate.describe()));
+        out.push(Inline::text(" in the group"));
+    }
+    out
+}
+
+/// Text with `code` spans, as inlines: the shared aggregate wordings quote names in backticks.
+fn markdown_code(text: &str) -> Vec<Inline> {
+    text.split('`')
+        .enumerate()
+        .filter(|(_, part)| !part.is_empty())
+        .map(|(index, part)| {
+            if index % 2 == 1 {
+                Inline::code(part.to_owned())
+            } else {
+                Inline::text(part.to_owned())
+            }
+        })
+        .collect()
 }
 
 /// Which command and branch — or which binding's escalation — causes an event.

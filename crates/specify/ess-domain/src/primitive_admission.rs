@@ -243,6 +243,27 @@ pub(crate) fn predicates(
     found
 }
 
+/// V15 of `docs/design/aggregate-views.md`: an older reader fails `aggregate:` as an unknown field
+/// and no version hint, so the construct is a format of its own. A `group_by` with no aggregate is V5
+/// at every version and has no `Aggregation` to be gated here.
+fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut ValidationErrors) {
+    let Some(aggregation) = &view.aggregation else {
+        return;
+    };
+    if format.major() < FormatVersion::V10.major() {
+        let at = if aggregation.group_by.is_empty() {
+            "fields"
+        } else {
+            "group_by"
+        };
+        errors.push(ValidationError::new(
+            ValidationCode::UnsupportedFormatVersion,
+            format!("view.{}.{at}", view.name),
+            "aggregate views require specification format ess/10",
+        ));
+    }
+}
+
 /// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) arrived in `ess/8`.
 fn string_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
     if format.major() >= FormatVersion::V8.major() {
@@ -337,6 +358,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         );
     }
     for view in spec.views().values() {
+        aggregate_view(view, format, &mut errors);
         if let Some(members) = view.projected_fields(&spec.system().types) {
             fields(
                 members,

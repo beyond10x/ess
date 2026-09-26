@@ -54,7 +54,7 @@ func decodeExactSteps(raw []json.RawMessage) ([]Step, error) {
 }
 
 func decodeExactSuiteSteps(suite *Suite) error {
-	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" {
+	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" && suite.Provenance.SuiteVersion != "ess-conformance/16" && suite.Provenance.SuiteVersion != "ess-conformance/17" {
 		return nil
 	}
 	var raw struct {

@@ -181,7 +181,7 @@ fn subject(subject: &ess_compiler::ir::ResolvedSubject) -> serde_json::Value {
 }
 
 fn view(view: &ess_compiler::ir::ResolvedView) -> serde_json::Value {
-    serde_json::json!({
+    let mut card = serde_json::json!({
         "name": view.name.to_string(),
         "display": view.naming.display_or(&view.name),
         "entity": view.source.to_string(),
@@ -189,7 +189,18 @@ fn view(view: &ess_compiler::ir::ResolvedView) -> serde_json::Value {
         "filter": view.filter.as_ref().map(ToString::to_string),
         "fields": view.fields.iter().map(|f| f.name.clone()).collect::<Vec<_>>(),
         "params": view.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
-    })
+    });
+    // Only an aggregate view carries these, so every other catalog keeps its bytes. The rendering
+    // is the semantic diff's: `sum(talk_seconds)`, `count()`.
+    if let Some(aggregation) = &view.aggregation {
+        card["group_by"] = serde_json::json!(aggregation.group_by);
+        card["aggregates"] = serde_json::json!(aggregation
+            .functions
+            .iter()
+            .map(|(field, aggregate)| (field.clone(), aggregate.to_string()))
+            .collect::<std::collections::BTreeMap<_, _>>());
+    }
+    card
 }
 
 fn actor(actor: &ess_compiler::ir::ResolvedActor) -> serde_json::Value {

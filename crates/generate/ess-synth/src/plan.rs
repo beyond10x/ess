@@ -771,6 +771,19 @@ fn view_contract(view: &ResolvedView) -> String {
     if let Some(filter) = &view.filter {
         let _ = write!(contract, ", containing instances where `{filter}`");
     }
+    if let Some(aggregation) = &view.aggregation {
+        let computing: Vec<String> = aggregation
+            .functions
+            .iter()
+            .map(|(field, aggregate)| format!("`{field} = {aggregate}`"))
+            .collect();
+        let _ = write!(
+            contract,
+            ", {}, computing {}",
+            aggregation.grouping_clause(),
+            computing.join(", ")
+        );
+    }
     contract
 }
 

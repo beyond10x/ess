@@ -394,6 +394,8 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
     match cause {
         RefusalCause::ViewUndecidable { .. }
         | RefusalCause::OrderUnwitnessed { .. }
+        | RefusalCause::AggregateUnscoped { .. }
+        | RefusalCause::AggregateUnwitnessed { .. }
         | RefusalCause::InvariantUnobservable { .. }
         | RefusalCause::RefusalUndeclared { .. } => Effect::CheckNotEmitted,
         RefusalCause::NoWitness(_)
@@ -474,21 +476,31 @@ fn coverage_version(
     suite: &crate::ConformanceSuite,
     inventory: &Inventory,
 ) -> crate::scenario::SuiteFormat {
-    crate::scenario::SuiteFormat::parse(if crate::text_match_format::used_by(suite) {
-        "ess-conformance/15"
-    } else if crate::replay::used_by(suite) {
-        "ess-conformance/13"
-    } else if suite.requires_preservation_format() {
-        "ess-conformance/11"
-    } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite) {
-        "ess-conformance/9"
-    } else if suite.requires_extended_format()
-        || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
-    {
-        "ess-conformance/7"
-    } else {
-        coverage::COVERAGE_SUITE_FORMAT
-    })
+    crate::scenario::SuiteFormat::parse(
+        if crate::aggregate::used_by(suite)
+            || inventory
+                .refused
+                .iter()
+                .any(|r| crate::aggregate::is_aggregate_refusal(&r.code))
+        {
+            "ess-conformance/17"
+        } else if crate::text_match_format::used_by(suite) {
+            "ess-conformance/15"
+        } else if crate::replay::used_by(suite) {
+            "ess-conformance/13"
+        } else if suite.requires_preservation_format() {
+            "ess-conformance/11"
+        } else if crate::response::used_by(suite) || crate::quoted_predicate_format::used_by(suite)
+        {
+            "ess-conformance/9"
+        } else if suite.requires_extended_format()
+            || inventory.refused.iter().any(|r| r.code == "ESS-SYNTH-015")
+        {
+            "ess-conformance/7"
+        } else {
+            coverage::COVERAGE_SUITE_FORMAT
+        },
+    )
     .expect("constant suite version")
 }
 

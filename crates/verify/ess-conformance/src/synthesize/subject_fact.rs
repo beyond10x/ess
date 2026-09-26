@@ -276,7 +276,7 @@ fn selects<'a>(
 }
 
 /// Whether an input alone selects `outcome` of a command that reads no stored field.
-fn input_selects(
+pub(super) fn input_selects(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
@@ -879,7 +879,8 @@ fn observer<'ir>(
 ) -> Option<&'ir ess_compiler::ir::ResolvedView> {
     let declared = ir.entity(entity);
     ir.views().values().find(|view| {
-        view.source == *entity
+        !view.is_aggregate()
+            && view.source == *entity
             && view.params.is_empty()
             && view.filter.is_none()
             && view.assertion_style == AssertionStyle::Expect
@@ -1306,7 +1307,8 @@ fn preserve(
     let mut after = Vec::new();
     let mut source = BTreeSet::new();
     for view in ir.views().values().filter(|view| {
-        view.source == subject.entity
+        !view.is_aggregate()
+            && view.source == subject.entity
             && view.params.is_empty()
             && setup.after.as_ref().is_some_and(|state| {
                 shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)

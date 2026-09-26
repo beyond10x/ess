@@ -96,12 +96,14 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess", 7, Some("0.29.0")),
     ("ess", 8, None),
     ("ess", 9, None),
+    ("ess", 10, None),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
     ("ess-diff", 3, Some("0.23.0")),
     ("ess-diff", 4, Some("0.23.0")),
     ("ess-diff", 5, Some("0.27.0")),
     ("ess-diff", 6, Some("0.29.0")),
+    ("ess-diff", 7, None),
     ("ess-conformance", 1, Some("0.1.0")),
     ("ess-conformance", 2, Some("0.7.0")),
     ("ess-conformance", 3, Some("0.16.0")),
@@ -117,6 +119,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 13, Some("0.29.0")),
     ("ess-conformance", 14, None),
     ("ess-conformance", 15, None),
+    ("ess-conformance", 16, None),
+    ("ess-conformance", 17, None),
 ];
 
 /// Checks the published documents against the source and the changelog.
@@ -228,28 +232,39 @@ fn supported_versions(root: &Path) -> Result<BTreeMap<String, Vec<u32>>, String>
     for &(family, path, constant) in SUPPORTED {
         let text =
             fs::read_to_string(root.join(path)).map_err(|error| format!("read {path}: {error}"))?;
-        let needle = format!("pub const {constant}: &[u32] = &[");
-        let start = text
-            .find(&needle)
-            .ok_or_else(|| format!("{path} has no {constant}"))?
-            + needle.len();
-        let end = text[start..]
-            .find(']')
-            .ok_or_else(|| format!("{constant} in {path} is not one bracketed list"))?
-            + start;
-        let parsed = text[start..end]
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|value| {
-                value
-                    .parse::<u32>()
-                    .map_err(|_| format!("{constant} in {path} holds `{value}`"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        versions.insert(family.to_owned(), parsed);
+        versions.insert(family.to_owned(), constant_list(&text, path, constant)?);
     }
     Ok(versions)
+}
+
+/// The numbers one `pub const NAME: &[u32] = &[…];` declares.
+///
+/// Read up to the `=` and then past whatever whitespace `rustfmt` puts before the list once it no
+/// longer fits on the declaration's line — which a family's list does as it grows, as
+/// `SUPPORTED_SUITE_FORMATS` did at `ess-conformance/17`.
+fn constant_list(text: &str, path: &str, constant: &str) -> Result<Vec<u32>, String> {
+    let needle = format!("pub const {constant}: &[u32] =");
+    let declared = text
+        .find(&needle)
+        .ok_or_else(|| format!("{path} has no {constant}"))?
+        + needle.len();
+    let list = text[declared..]
+        .trim_start()
+        .strip_prefix("&[")
+        .ok_or_else(|| format!("{constant} in {path} is not one bracketed list"))?;
+    let end = list
+        .find(']')
+        .ok_or_else(|| format!("{constant} in {path} is not one bracketed list"))?;
+    list[..end]
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .map_err(|_| format!("{constant} in {path} holds `{value}`"))
+        })
+        .collect()
 }
 
 /// Reads the reference pages a format version may be documented in.
@@ -547,6 +562,21 @@ mod tests {
             trailing <= BLOG_LAG,
             "{path} is for {tag}, {trailing} minors behind {newest}"
         );
+    }
+
+    #[test]
+    fn a_supported_list_is_read_whether_or_not_rustfmt_wrapped_it() {
+        let one_line = "pub const X: &[u32] = &[1, 2, 3];\n";
+        let wrapped = "pub const X: &[u32] =\n    &[1, 2, 3, 16, 17];\n";
+        let exploded = "pub const X: &[u32] = &[\n    1, 2,\n    3,\n];\n";
+        assert_eq!(constant_list(one_line, "a.rs", "X"), Ok(vec![1, 2, 3]));
+        assert_eq!(
+            constant_list(wrapped, "a.rs", "X"),
+            Ok(vec![1, 2, 3, 16, 17])
+        );
+        assert_eq!(constant_list(exploded, "a.rs", "X"), Ok(vec![1, 2, 3]));
+        assert!(constant_list("pub const X: &[u32] = Y;\n", "a.rs", "X").is_err());
+        assert!(constant_list("pub const Z: &[u32] = &[1];\n", "a.rs", "X").is_err());
     }
 
     #[test]

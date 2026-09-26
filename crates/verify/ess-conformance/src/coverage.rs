@@ -23,6 +23,7 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/11"
             | "ess-conformance/13"
             | "ess-conformance/15"
+            | "ess-conformance/17"
     )
 }
 /// Carrier retaining exact selected and parent documents.
@@ -389,12 +390,24 @@ impl Inventory {
         };
         Ok(())
     }
+    /// An aggregate view refusal (`ESS-SYNTH-016`, `-017`) needs coverage suite/17.
+    fn aggregate_refusals(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+        require(
+            suite.provenance.suite_version.major() >= crate::aggregate::COVERAGE
+                || !self
+                    .refused
+                    .iter()
+                    .any(|r| crate::aggregate::is_aggregate_refusal(&r.code)),
+            "aggregate view refusals require suite/17",
+        )
+    }
     pub(crate) fn validate(&self, suite: &ConformanceSuite) -> Result<(), AdmissionError> {
         require(
             suite.provenance.suite_version.major() >= 7
                 || self.refused.iter().all(|r| r.code != "ESS-SYNTH-015"),
             "accessor observation refusals require suite/7",
         )?;
+        self.aggregate_refusals(suite)?;
         let component = match &self.selection.scope {
             Scope::System => None,
             Scope::Component { component } => Some(component.as_str()),
@@ -548,10 +561,13 @@ impl Inventory {
                     r.subject.is_some() && r.source.is_none(),
                     "generated refusal requires subject and null source",
                 )?;
-                let expected = (1..=15)
+                let expected = (1..=crate::aggregate::UNWITNESSED)
                     .find(|n| r.code == format!("ESS-SYNTH-{n:03}"))
                     .ok_or_else(|| error("unknown generated refusal code"))?;
-                let effect = if matches!(expected, 5 | 11 | 12 | 14) {
+                let effect = if matches!(expected, 5 | 11 | 12 | 14)
+                    || [crate::aggregate::UNSCOPED, crate::aggregate::UNWITNESSED]
+                        .contains(&expected)
+                {
                     Effect::CheckNotEmitted
                 } else {
                     Effect::CandidateNotEmitted

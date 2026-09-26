@@ -382,6 +382,45 @@ still checks each of its fields against the source entity. Compiled IR carries b
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
 
+### Aggregate views
+
+A read API that reports counts, sums and extremes over one entity's rows is a view with `group_by:`
+and a field-level `aggregate:`. It needs `format: ess/10`.
+
+```yaml
+views:
+  - name: metrics.session.TalkTimeByAgent
+    source: metrics.session.Session
+    consistency: eventual
+    filter: state == Completed
+    group_by: [agent_id]
+    fields:
+      - {name: agent_id, type: String}
+      - {name: sessions, type: Integer, aggregate: {count: {}}}
+      - {name: talk_seconds, type: Integer, aggregate: {sum: talk_seconds}}
+      - {name: longest_wait, type: Optional<Integer>, aggregate: {max: wait_seconds}}
+      - {name: distinct_callers, type: Integer, aggregate: {count_distinct: caller}}
+      - {name: mean_talk, type: Optional<Decimal>, aggregate: {avg: talk_seconds}}
+```
+
+The filter runs on each source row first, the admitted rows are grouped by the `group_by` fields,
+and each aggregate is computed per group. A group with no admitted row is absent. A view without
+`group_by` returns exactly one row: `count` is `0` and `min`, `max` and `avg` are absent when no row
+passes the filter. Every field without `aggregate:` must be listed in `group_by`.
+
+Each field declares its result type exactly, and validation names the one it expects: `Integer`
+for `count`, `count_distinct` and `sum` of an `Integer`; `Decimal` for `sum` of a `Decimal`;
+`Optional<T>` for `min` and `max`, keeping a newtype; `Optional<Decimal>` for `avg`, which is
+rounded to 6 fractional digits, ties to even. An aggregate reads one top-level field of the source
+that every row holds, so an `Optional` argument or group key is refused, and so is grouping by a
+`Timestamp` or ranking an aggregate view with `order_by:`.
+
+Conformance creates the rows itself, through the declared creating outcome, and asserts every
+group's exact numbers. Because a target may be shared, the rows are kept apart from every other
+scenario's by a group key or a parameter compared with one (`queue_id == param.queue_id`) that is a
+`String` or `Uuid` the creating command sets from its input. A view with neither gets no scenario
+and the refusal `ESS-SYNTH-016`.
+
 ### A binding says what happens when it fails
 
 Bindings live above the domains, in `components.yaml`:

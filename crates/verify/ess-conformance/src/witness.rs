@@ -1355,6 +1355,15 @@ fn uuid(path: &FactPath, distinction: Distinction) -> String {
     format!("00000000-0000-4000-8000-{digest:012x}")
 }
 
+/// The [`uuid`] builder seeded with a text of the caller's choosing rather than a fact path.
+///
+/// An aggregate view's scoped group values are `uuid("<view>/<group>")` for a `Uuid` key
+/// (`docs/design/aggregate-views.md`, "Scoping"), so the digest is the same 48-bit FNV-1a spread.
+pub(crate) fn uuid_of(seed: &str) -> String {
+    let digest = fnv1a(seed.as_bytes()) & 0xffff_ffff_ffff;
+    format!("00000000-0000-4000-8000-{digest:012x}")
+}
+
 /// FNV-1a, 64-bit.
 ///
 /// Written out rather than taken as a dependency: `ess-gen` has `sha2` for a provenance digest that

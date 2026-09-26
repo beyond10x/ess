@@ -6,8 +6,8 @@ description: What each ESS format version number means, which release introduced
 
 # Format version history
 
-An ESS document declares its own format in its bytes — `ess/7`, `ess-diff/6`,
-`ess-conformance/13`. That number is the format's major version and nothing else. It is not the
+An ESS document declares its own format in its bytes — `ess/10`, `ess-diff/7`,
+`ess-conformance/17`. That number is the format's major version and nothing else. It is not the
 release that produced the document, and not the specification version the document describes;
 [Formats and digests](./formats.md) separates those three. This page says what each number changed,
 which release introduced it, and what happens when an older reader meets a newer document.
@@ -22,7 +22,7 @@ Every family is read by a build that states which versions it implements and ref
 refusal is the point: a reader that accepts a shape it does not understand returns a wrong answer
 about somebody's system, and blames the document for the age of the tool.
 
-A version number is per family. `ess/8` and `ess-conformance/15` count
+A version number is per family. `ess/10` and `ess-conformance/17` count
 separately and always have.
 
 ## `ess/` — the authored specification
@@ -71,6 +71,16 @@ guard through the arranging commands' `sets:` mappings and observes it before th
 older build refuses the header; this build refuses the predicate form under an earlier header with
 `unsupported_format_version`. `{field, equals}` keeps `ess/6` and its bytes.
 
+`ess/10`, not yet released, admits aggregate views: a view field may declare `aggregate:` — one of
+`count`, `count_distinct`, `sum`, `min`, `max` and `avg` — and a view may declare `group_by:` over
+its other fields. The filter runs per source row, the admitted rows are grouped, and a group with no
+admitted row is absent; a view without `group_by` returns exactly one row. Each aggregate field
+declares its result type exactly: `Integer` for the counts and for `sum` of an `Integer`, `Optional<T>`
+for `min` and `max`, and `Optional<Decimal>` for `avg`, rounded to 6 places half-even. An older build
+refuses the header, and this build refuses the construct under an earlier header with
+`unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
+[aggregate views](../guides/write-a-specification.md#aggregate-views).
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -87,6 +97,7 @@ back as a bare name, so a specification written before `ess/5` keeps its exact b
 | `ess-diff/4` | [0.23.0][r23] | Error and response deltas. | Refuses the delta. |
 | `ess-diff/5` | [0.27.0][r27] | `VariantWireNameChanged`, `VariantDisplayNameChanged` and `VariantSummaryChanged` on `TypeChange`. | Refuses a delta carrying any of the three. |
 | `ess-diff/6` | [0.29.0][r29] | Typed deltas retain the before/after originating replay relation and complete refusal-observation requirement. | Refuses the new vocabulary; existing changes retain their earlier format. |
+| `ess-diff/7` | unreleased | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -140,6 +151,15 @@ and refuse an operand that is not a JSON string. Older envelopes refuse the oper
 TypeScript and browser readers refuse these envelopes by their version. A string guard over
 command input is decided at synthesis and never reaches the suite, so such a suite keeps its
 earlier format.
+
+`ess-conformance/16` and `/17`, unreleased, carry the `<view>/aggregate` scenario: rows created
+through the declared creating outcome with values only that scenario uses, and one read asserting
+every group's exact aggregates and the absence of every group whose rows the filter refuses.
+Version 16 is ordinary and 17 carries declared coverage; each implies every major below it.
+Coverage 17 also carries the refusals `ESS-SYNTH-016` (no group key or parameter scopes the
+view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust and Go admit and run them;
+older envelopes refuse an aggregate scenario or refusal, and the TypeScript and browser readers
+refuse these envelopes by their version.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
