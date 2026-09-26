@@ -1,4 +1,4 @@
-//! The permissive half: what an `infra-observation/1` bundle deserializes into.
+//! The permissive half: what an `infra-observation/1`, `/2` or `/3` bundle deserializes into.
 //!
 //! Everything here implements [`Deserialize`] and nothing here is trusted. A
 //! live cluster always carries more than the model — unknown fields are tolerated everywhere,
@@ -21,7 +21,7 @@ use crate::code::{InfraCode, ValidationErrors};
 /// A whole observation bundle, exactly as the scanner wrote it.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawBundle {
-    /// The format claim, `infra-observation/1`.
+    /// The format claim, such as `infra-observation/3`.
     #[serde(default)]
     pub format: String,
     /// The kubeconfig context the scan targeted.
@@ -614,7 +614,8 @@ pub struct RawConfigMap {
     pub binary_data: BTreeMap<String, Value>,
 }
 
-/// A secret, already sanitized by the scanner: values are `{sha256, length}` digests.
+/// A secret, already sanitized by the scanner: values are `{"present": true}` markers, or the
+/// legacy `{sha256, length}` digests of an `infra-observation/1` bundle.
 ///
 /// Values deserialize as [`Value`] because whether each one *is* a digest object is the hard rule
 /// [`crate::code::InfraCode::UnsanitizedSecret`] enforces, and a rule needs to see what it refuses.
@@ -626,10 +627,10 @@ pub struct RawSecret {
     /// The secret's type, such as `Opaque`.
     #[serde(default, rename = "type")]
     pub secret_type: Option<String>,
-    /// Digest entries from `data`.
+    /// Sanitized entries from `data`.
     #[serde(default)]
     pub data: BTreeMap<String, Value>,
-    /// Digest entries from `stringData`.
+    /// Sanitized entries from `stringData`.
     #[serde(default, rename = "stringData")]
     pub string_data: BTreeMap<String, Value>,
 }
@@ -898,6 +899,11 @@ pub(crate) fn optional_items<T: serde::de::DeserializeOwned>(
     Some(items(raw, kind, errors))
 }
 
+/// The refusal of a Secret item that does not read as the raw shape. Fixed text: the parser's
+/// own message can quote the Secret value it failed to read.
+const SECRET_SHAPE_REFUSAL: &str = "the item does not read as a Secret (metadata, type, and \
+    `data`/`stringData` maps); the parser's message is withheld because it can quote a Secret value";
+
 /// Pulls one kind's items out of the bundle, refusing an absent kind and any item that does not
 /// read as the kind's raw shape — and continuing past both.
 pub(crate) fn items<T: serde::de::DeserializeOwned>(
@@ -927,7 +933,14 @@ pub(crate) fn items<T: serde::de::DeserializeOwned>(
         match serde_json::from_value::<T>(entry.clone()) {
             Ok(item) => parsed.push((location, item)),
             Err(error) => {
-                errors.refuse(InfraCode::MalformedObject, location, error.to_string());
+                // A parser message quotes the value it could not read, and in a Secret item that
+                // value can be the secret itself (`invalid type: string "…", expected a map`).
+                let message = if kind == "secrets" {
+                    SECRET_SHAPE_REFUSAL.to_owned()
+                } else {
+                    error.to_string()
+                };
+                errors.refuse(InfraCode::MalformedObject, location, message);
             }
         }
     }

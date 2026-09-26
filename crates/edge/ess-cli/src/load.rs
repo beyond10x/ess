@@ -87,13 +87,17 @@ pub(crate) enum LoadedInfra {
     Refused(infra_domain::ValidationErrors),
 }
 
-/// Reads either `infra-observation/1` or persisted `infra-ir/1`.
+/// Reads an `infra-observation/1`, `/2` or `/3` bundle, or a persisted `infra-ir/1`, `/2` or `/3`.
 pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let value: serde_json::Value = ess_primitives::json::from_str(&text)
         .with_context(|| format!("{} is not JSON", path.display()))?;
     match value.get("format").and_then(serde_json::Value::as_str) {
-        Some(infra_domain::OBSERVATION_FORMAT | "infra-observation/2") => {
+        Some(
+            infra_domain::OBSERVATION_FORMAT
+            | infra_domain::observation::SCOPED_OBSERVATION_FORMAT
+            | infra_domain::PRESENCE_OBSERVATION_FORMAT,
+        ) => {
             let raw: infra_domain::RawBundle = serde_json::from_value(value)
                 .with_context(|| format!("{} is not an observation bundle", path.display()))?;
             Ok(match infra_domain::Observation::try_from(raw) {
@@ -101,7 +105,7 @@ pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
                 Err(errors) => LoadedInfra::Refused(errors),
             })
         }
-        Some(infra_compiler::IR_FORMAT | "infra-ir/2") => {
+        Some(infra_compiler::IR_FORMAT | "infra-ir/2" | infra_compiler::PRESENCE_IR_FORMAT) => {
             Ok(match infra_compiler::read_document(&value) {
                 Ok(ir) => LoadedInfra::Ir(Box::new(ir)),
                 Err(errors) => LoadedInfra::Refused(errors),
@@ -111,8 +115,8 @@ pub(crate) fn infrastructure(path: &Path) -> Result<LoadedInfra> {
             "{} declares format {:?}; expected `{}` or `{}`",
             path.display(),
             other.unwrap_or("<none>"),
-            infra_domain::OBSERVATION_FORMAT,
-            infra_compiler::IR_FORMAT
+            infra_domain::PRESENCE_OBSERVATION_FORMAT,
+            infra_compiler::PRESENCE_IR_FORMAT
         ),
     }
 }

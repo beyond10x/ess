@@ -89,8 +89,11 @@ subset small enough to review and rich enough that every construct the model rea
 * **Extended for IW3**, the desired-state wave. Two fixtures joined the directory and the
   observation itself gained nothing — IW3 reads what IW2.5 already collected.
 
-Secret values were `{sha256, length}` digests before the scanner ever wrote the bundle;
-this repository refuses a bundle where they are anything else (`INFRA-SECRET-001`).
+Secret values were replaced by `{"present": true}` before the scanner ever wrote the bundle
+(`infra-observation/3`): the key names survive and nothing derived from a value does. This
+repository refuses a bundle carrying a plain value (`INFRA-SECRET-001`) or anything beside the
+marker (`INFRA-SECRET-003`). The bundles were first committed as `infra-observation/1`, with an
+unsalted `{sha256, length}` per value; that form still reads, and its digests are discarded.
 
 The compiled IR carries exactly four unresolved references — the optional `coredns-custom`
 configmap, the `lost-lookup` selector, the `retired-api` backend, and `flaky-agent`'s required

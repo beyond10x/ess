@@ -441,6 +441,26 @@ fn a_start_past_the_deadline_is_a_fixture_environment_refusal_not_a_bidi_defect(
     );
 }
 
+/// A slow runner is not a defect in the page under test, so the fixture's own waits are sized for
+/// the slowest runner seen rather than for a quiet one. `main` a1cf7233f lost a real start at
+/// 30.010s of a 30s budget (job 108296632588, stage `announce`) and a `BiDi` read at the old 20s
+/// session timeout earlier the same day; both budgets are two minutes now, and this case is what
+/// fails if a later speed pass trims them back into the range a loaded runner reaches.
+#[test]
+fn the_fixture_waits_minutes_for_a_loaded_runner_before_giving_up() {
+    let loaded_runner = Duration::from_secs(120);
+    assert!(
+        browser::STARTUP_DEADLINE >= loaded_runner,
+        "a Firefox start is given {:?}; a loaded runner has taken past 30s",
+        browser::STARTUP_DEADLINE
+    );
+    assert!(
+        browser::SESSION_TIMEOUT >= loaded_runner,
+        "a BiDi call is given {:?}; a loaded runner has taken past 20s",
+        browser::SESSION_TIMEOUT
+    );
+}
+
 /// The variant names of one enum, read out of the fixture's own source. A case
 /// that walks a list of stages has to walk the stages the fixture declares; a
 /// literal list is a claim about the fixture that nothing checks, and the last
@@ -493,10 +513,12 @@ fn a_startup_refusal_attaches_the_stderr_firefox_actually_wrote() {
             label.starts_with(&variant.to_lowercase()),
             "Stage::ALL is out of step with the declared variants: {label} against {variant}"
         );
+        // A 30s budget given explicitly: this case holds how a refusal prints a measurement
+        // beside a deadline, not what the fixture's own budget is.
         let refusal = browser::startup_refusal(
             *stage,
             Duration::from_millis(31_500),
-            browser::STARTUP_DEADLINE,
+            Duration::from_secs(30),
             &evidence,
         );
         assert!(
@@ -604,11 +626,12 @@ fn a_browser_that_exits_during_startup_refuses_with_its_own_stderr_too() {
     let evidence =
         std::env::temp_dir().join(format!("ess-browser-startup-exit-{}", std::process::id()));
     fs::create_dir_all(&evidence).unwrap();
-    // A program that is not Firefox exits at once and writes its own reason.
+    // A program that is not Firefox exits at once and writes its own reason. The 30s budget is
+    // explicit because this case holds how an unexpired deadline is printed, not its size.
     let Err(refusal) = browser::Browser::launch_program(
         &evidence,
         env!("CARGO_BIN_EXE_ess").as_ref(),
-        browser::STARTUP_DEADLINE,
+        Duration::from_secs(30),
     ) else {
         panic!("a browser that exited admitted a session")
     };

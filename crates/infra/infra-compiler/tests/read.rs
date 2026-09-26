@@ -357,8 +357,27 @@ fn deleting_any_referenced_target_is_refused_without_changing_the_source_owner()
 
 #[test]
 fn privacy_and_noop_transform_preserve_the_frozen_base_writer_document() {
-    // Captured with the unmodified base CLI at 28e97095d9e06c8b4585876a681a5eda5278c1ab;
-    // it exactly matched this committed example, including the final newline.
+    // Captured with the unmodified base CLI at 28e97095d9e06c8b4585876a681a5eda5278c1ab, when it
+    // was the committed example: an `infra-ir/1` document with the scanner's legacy Secret
+    // digests. This build still reads it, and returns it stripped: exactly the committed IR/3.
+    let frozen = include_str!("fixtures/legacy-k3d-dev-cluster.ir-1.json");
+    let legacy = infra_compiler::read_document(&serde_json::from_str(frozen).unwrap()).unwrap();
+    let legacy_transformed = legacy
+        .try_transform(|_| {})
+        .expect("a no-op preserves validity");
+    let committed = include_str!("../../../../examples/k3d-dev-cluster/cluster.ir.json");
+    for ir in [&legacy, &legacy_transformed] {
+        assert_eq!(
+            format!(
+                "{}\n",
+                serde_json::to_string_pretty(&ir.document()).unwrap()
+            ),
+            committed
+        );
+        assert_eq!(ir.digest(), legacy.digest());
+    }
+
+    // The committed example is what this build writes from the committed observation.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let raw: RawBundle = serde_json::from_str(
         &std::fs::read_to_string(root.join("examples/k3d-dev-cluster/observation.json")).unwrap(),
@@ -614,4 +633,158 @@ fn before_0_32_0_only_an_explicit_empty_list_or_a_native_sidecar_writes_the_fiel
         sidecars_of("0.31.0", serde_json::json!([])),
         serde_json::json!([])
     );
+}
+
+/// The fixture bundle as an `infra-observation/1` scanner wrote it for a Secret holding
+/// `hunter2`: the value's unsalted SHA-256 and length, which confirm that guess to anyone.
+fn legacy_bundle_with_a_guessable_digest() -> (serde_json::Value, String) {
+    let guessable = infra_compiler::digest_of_canonical(b"hunter2");
+    let mut bundle = bundle();
+    bundle["kinds"]["secrets"]["items"][0]["data"]["token"] =
+        serde_json::json!({ "sha256": guessable, "length": 7 });
+    (bundle, guessable)
+}
+
+#[test]
+fn compiling_a_legacy_observation_writes_no_digest_or_length_of_a_secret_value() {
+    let (bundle, guessable) = legacy_bundle_with_a_guessable_digest();
+    let raw: RawBundle = serde_json::from_value(bundle).expect("the bundle parses");
+    let ir = infra_compiler::compile(&Observation::try_from(raw).expect("observation/1 is read"));
+    let document = serde_json::to_value(ir.document()).expect("the document serializes");
+    let written = serde_json::to_string_pretty(&document).expect("the document renders");
+    assert!(
+        !written.contains(&guessable),
+        "the compiled IR confirms a guess of \"hunter2\": it carries {guessable}"
+    );
+    assert_eq!(document["format"], "infra-ir/3");
+    assert_eq!(
+        document["model"]["secrets"]["app/creds"]["keys"],
+        serde_json::json!({ "token": { "present": true } }),
+        "a Secret key is recorded as present and nothing else — no digest, no length"
+    );
+    let read = infra_compiler::read_document(&document).expect("what was written reads back");
+    assert_eq!(read, ir);
+}
+
+#[test]
+fn a_frozen_legacy_ir_document_is_read_and_returned_without_its_secret_digests() {
+    let frozen: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/legacy-k3d-dev-cluster.ir-1.json"))
+            .expect("frozen legacy IR");
+    assert_eq!(frozen["format"], "infra-ir/1");
+    let read = infra_compiler::read_document(&frozen).expect("the old document is still read");
+    let document = serde_json::to_value(read.document()).expect("serializes");
+    // The file's own digest no longer names what was read: a digest over the unsalted Secret
+    // digests, beside the IR/3 of the same model, confirms a guessed Secret value.
+    assert_eq!(document["format"], "infra-ir/3");
+    assert_ne!(document["digest"], frozen["digest"]);
+    assert!(read
+        .model()
+        .secrets
+        .values()
+        .flat_map(|secret| secret.keys.values())
+        .all(|value| *value == infra_domain::SecretValue::Present));
+}
+
+#[test]
+fn a_document_whose_format_disagrees_with_its_secret_values_is_refused() {
+    let presence = persisted();
+    assert_eq!(presence["format"], "infra-ir/3");
+    let digest = serde_json::json!({
+        "sha256": "8a94462377096e0657f57b6e6bc0e29000464398727091d7863726ce50974968",
+        "length": 12
+    });
+    let mut cases = Vec::new();
+    // IR/3 promises presence only; a digest inside it is exactly what the version removed.
+    let mut digest_in_three = presence.clone();
+    digest_in_three["model"]["secrets"]["app/creds"]["keys"]["token"] = digest.clone();
+    cases.push(("a digest in IR/3", digest_in_three));
+    // IR/1 never carried a presence marker, so an IR/1 claiming one was not written by anyone.
+    let mut presence_in_one = presence.clone();
+    presence_in_one["format"] = serde_json::json!("infra-ir/1");
+    cases.push(("a presence marker in IR/1", presence_in_one));
+    let mut not_present = presence.clone();
+    not_present["model"]["secrets"]["app/creds"]["keys"]["token"] =
+        serde_json::json!({ "present": false });
+    cases.push(("a marker that is not `present: true`", not_present));
+    let mut widened = presence.clone();
+    widened["model"]["secrets"]["app/creds"]["keys"]["token"] =
+        serde_json::json!({ "present": true, "length": 7 });
+    cases.push(("a marker carrying a length", widened));
+    let mut mixed = presence.clone();
+    mixed["model"]["secrets"]["app/creds"]["keys"]["other"] = digest;
+    cases.push(("presence and a digest in one model", mixed));
+    for (label, mut document) in cases {
+        restamp_digest(&mut document);
+        let errors = infra_compiler::read_document(&document)
+            .expect_err(&format!("{label} must be refused"));
+        assert!(errors.contains(InfraCode::IrMalformed), "{label}: {errors}");
+    }
+}
+
+/// Every shape a Secret can arrive in that is not the IR shape, each carrying the value itself.
+#[test]
+fn no_ir_refusal_on_a_malformed_secret_quotes_what_it_was_given() {
+    const GUESS: &str = "hunter2";
+    // (label, the object to edit, the member to set, what to set it to)
+    let edits = [
+        (
+            "secrets as a value",
+            "",
+            "secrets",
+            serde_json::json!(GUESS),
+        ),
+        (
+            "a secret as a value",
+            "/secrets",
+            "app/creds",
+            serde_json::json!(GUESS),
+        ),
+        (
+            "keys as a value",
+            "/secrets/app~1creds",
+            "keys",
+            serde_json::json!(GUESS),
+        ),
+        (
+            "a key as a value",
+            "/secrets/app~1creds/keys",
+            "token",
+            serde_json::json!(GUESS),
+        ),
+        (
+            "a marker holding it",
+            "/secrets/app~1creds/keys",
+            "token",
+            serde_json::json!({ "present": GUESS }),
+        ),
+        (
+            "an extra field holding it",
+            "/secrets/app~1creds",
+            "extra",
+            serde_json::json!(GUESS),
+        ),
+        (
+            "a type as a list",
+            "/secrets/app~1creds",
+            "secret_type",
+            serde_json::json!([GUESS]),
+        ),
+    ];
+    for (label, parent, member, value) in edits {
+        let mut document = persisted();
+        document["model"]
+            .pointer_mut(parent)
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("the fixture has the object being edited")
+            .insert(member.to_owned(), value);
+        restamp_digest(&mut document);
+        let errors = infra_compiler::read_document(&document)
+            .expect_err(&format!("{label} must be refused"));
+        assert!(errors.contains(InfraCode::IrMalformed), "{label}: {errors}");
+        assert!(
+            !errors.to_string().contains(GUESS),
+            "{label}: the refusal quotes the Secret content back: {errors}"
+        );
+    }
 }
