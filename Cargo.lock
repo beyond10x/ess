@@ -492,6 +492,7 @@ name = "ess-domain"
 version = "0.34.0"
 dependencies = [
  "ess-primitives",
+ "jsonschema",
  "schemars",
  "serde",
  "serde_json",

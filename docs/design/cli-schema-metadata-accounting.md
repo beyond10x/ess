@@ -243,3 +243,20 @@ Review updates only the three existing RootDefinitionsContainer shape pins. The 
 literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
 unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
 This review grants no new exemption or runtime conformance claim.
+
+## Serialized-string container review — 2026-09-26
+
+The schema's `ExternalRef` and `Period` definitions change from the Rust shapes (an object with
+`provider` and `reference`; a `uint32` integer) to the strings ESS actually reads and writes: a
+`provider:key` string with the parser's pattern and URL refusal, and a `PT<seconds>S` string
+bounded to `u32::MAX` (story:schema-describes-serialized-strings). No document ESS reads changes
+and no source format moves; the schema stops describing documents ESS refuses. Neither change
+makes the three CLI pipelines consumers of the generated schema document.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `fb292f6d49799efe775923c52a35307cedc8266d25a68c4ee3eb6b5e0a764ce5`
+to `aea620213fc71de3aa8a89cb1afb0af0d265f86f9c75137cac8267ee3c517475`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
+This review grants no new exemption or runtime conformance claim.
