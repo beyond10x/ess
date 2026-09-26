@@ -9,7 +9,12 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-pub(super) const FORMAT: &str = "ess-output-state/1";
+/// Written by every publication: `/1` plus the `producer` that last published into the tree.
+pub(super) const FORMAT: &str = "ess-output-state/2";
+/// Read and kept by recovery and adoption; it records no producer.
+pub(super) const FORMAT_V1: &str = "ess-output-state/1";
+/// This release, as a checkpoint records it.
+pub(super) const PRODUCER: &str = concat!("ess ", env!("CARGO_PKG_VERSION"));
 pub(super) const RESERVED: &str = ".ess-output";
 pub(super) const INIT_PREFIX: &str = ".ess-output-init-";
 
@@ -593,6 +598,19 @@ pub(super) struct Payload {
     pub(super) directory: Identity,
     pub(super) sequence: u64,
     pub(super) checkpoint: Checkpoint,
+    /// The `ess` release that last published into the tree: required in `/2`, absent in `/1`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) producer: Option<String>,
+}
+impl Payload {
+    /// Record this release as the producer, returning the different one it replaces, if any.
+    ///
+    /// A `/1` checkpoint recorded nobody, so it has nothing to report.
+    pub(super) fn produced_here(&mut self) -> Option<String> {
+        let previous = self.producer.replace(PRODUCER.to_owned());
+        FORMAT.clone_into(&mut self.format);
+        previous.filter(|previous| previous != PRODUCER)
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Profile {
@@ -643,7 +661,20 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Payload> {
     Ok(envelope.payload)
 }
 fn validate(payload: &Payload) -> Result<()> {
-    ensure!(payload.format == FORMAT, "unsupported output-state version");
+    match payload.format.as_str() {
+        FORMAT => ensure!(
+            payload
+                .producer
+                .as_deref()
+                .is_some_and(|producer| !producer.is_empty()),
+            "output-state {FORMAT} requires a nonempty producer"
+        ),
+        FORMAT_V1 => ensure!(
+            payload.producer.is_none(),
+            "output-state {FORMAT_V1} has no producer field"
+        ),
+        _ => bail!("unsupported output-state version"),
+    }
     ensure!(
         payload.profile == Profile::current(),
         "output-state platform profile mismatch"
