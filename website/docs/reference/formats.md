@@ -355,13 +355,22 @@ whole-system semantic validity or support in the separate restricted TypeScript 
 ## Infrastructure records
 
 The `ess verify bindings` command, introduced in 0.21.0, connects admitted realization selections to
-native infrastructure observations. `ess-observed-bindings/1` is a closed authored JSON/YAML DTO;
-its binding digest hashes compact typed JSON after sorting bindings by id and sorting
-declared evidence. It retains all authored image expectations and the exact realization digest.
-`ess-observed-bindings-report/2` is serialize-only, deterministic pretty JSON plus LF with no
-whole-report digest or report-admission reader. It has the fields of `/1` and adds the
-`OBS-BIND-008` check (an unbound container or native sidecar in a bound workload violates), so the
-same input can be satisfied under `/1` and violated under `/2`; a `/1` reader must reject `/2`. It carries that binding digest, realization digest,
+native infrastructure observations. `ess-observed-bindings/1` and `/2` are closed authored
+JSON/YAML DTOs; the binding digest hashes compact typed JSON after sorting bindings by id and
+sorting declared evidence, and, for `/2`, sorting `foreign_containers` by workload and container
+name. It retains all authored image expectations and the exact realization digest. `/2` adds
+optional `foreign_containers`: per bound workload, containers this realization does not build,
+each with a `name` and a nonempty `reason` and no image. `/1` is read unchanged and acknowledges
+nothing; its binding digest is the one earlier releases computed, and a `/1` document carrying
+`foreign_containers` is refused. Earlier readers refuse `/2` by its format.
+`ess-observed-bindings-report/3` is serialize-only, deterministic pretty JSON plus LF with no
+whole-report digest or report-admission reader. `/2` added the `OBS-BIND-008` check (an unbound
+container or native sidecar in a bound workload violates), so the same input can be satisfied
+under `/1` and violated under `/2`. `/3` adds each binding's `acknowledged` list (`container`,
+`reason`) of acknowledged foreign containers observed in its workload; a satisfied `OBS-BIND-008`
+now means each entry is bound or acknowledged. An acknowledged container running a declared
+image or artifact locator, or its `@sha256:` digest under another name, violates it, and an acknowledgement naming no observed container or
+native sidecar leaves it unknown, since plain init containers are not recorded. A `/1` reader must reject `/2`, and a `/2` reader `/3`. It carries that binding digest, realization digest,
 observation model digest and provenance, per-binding results and explicit exclusions. These
 identities name different bytes. Missing evidence produces unknown, never an empty successful
 comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).

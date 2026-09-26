@@ -16,7 +16,7 @@ and no existing persisted format or runtime one-workload-per-component rule is r
 
 ## Authored input
 
-`ess-observed-bindings/1` is a closed document with `format`, stable `id`, exact
+`ess-observed-bindings/1` (and `/2`, below) is a closed document with `format`, stable `id`, exact
 `realization_digest`, `scope` (explicit Kubernetes context and namespace), and nonempty `bindings`.
 Each binding has a stable `id`, an existing `implementation`, a `workload` (kind and name), an
 explicit `container`, and the declared `image` reference. Optional source evidence records name
@@ -39,7 +39,7 @@ reader as offline verification. Require an explicit unused output outside Git ch
 clobber observations or accepted models. `--format json` writes a single deterministic report;
 `--markdown-out` optionally writes a generated reference table after report admission.
 
-The closed `ess-observed-bindings-report/2` report carries the exact binding digest, realization
+The closed `ess-observed-bindings-report/3` report carries the exact binding digest, realization
 digest, observation digest/provenance/coverage when available, per-binding semantic component and
 implementation identities, checks, and explicit exclusions. It is a result document, not an
 admissible authority for another check. The report states observed workload UID and image reference.
@@ -78,8 +78,47 @@ new semantics, so a reader of `/1` must not read `/2` as `/1`. The input stays
 `ess-observed-bindings/1` with the same fields, and its meaning widens: a document that binds some
 containers of a workload now claims that the workload runs nothing else. A document whose bound
 workload carries an unbound sidecar, which was satisfied under report `/1`, is violated under `/2`.
-Acknowledging a third-party sidecar without binding it would need an input format change and is not
-part of this version.
+
+### Acknowledged foreign containers
+
+A third-party proxy or agent in a bound workload is not an implementation of this realization, and
+binding it to one would misstate what the service builds. `ess-observed-bindings/2` adds optional
+`foreign_containers`: per bound workload, the containers the document acknowledges as foreign, each
+with a DNS-label `name` and a nonempty `reason`, and no image. The format moves because the
+document can now say something `/1` could not, and what a satisfied `OBS-BIND-008` means depends on
+it (the rule in `website/docs/reference/spec-versions.md`, "When the number moves", and the
+repository's `AGENTS.md`). An optional field under `/1` would have been refused by older readers
+only through `deny_unknown_fields`, a refusal that blames the document rather than naming the
+version.
+
+Before collection, an acknowledgement is refused when its workload is bound by no binding (it
+would never be read), when it names a container a binding also names (a container is built here
+or foreign, never both), when a workload appears twice or a container twice in one workload, when
+its container list is empty, or when a reason is blank. A `/1` document carrying the key is
+refused, even as `[]`; a `/1` document without it is read unchanged, acknowledges nothing, and
+keeps its binding digest, since an absent field is omitted from the digested bytes.
+
+At evaluation, an observed container or native sidecar that is acknowledged counts as accounted
+for, and the binding result lists it under `acknowledged` with its reason; it is not bound, so no
+artifact check covers it. Its image is compared with this document's own: one running a binding's
+declared `image` or any implementation's artifact locator is this realization's code under another
+name, and so is one whose `@sha256:` digest equals the digest pinned by either, or a container artifact's `identity` (the image digest `OBS-BIND-005` compares): a digest names the
+artifact, and the repository and tag in front of it only say where it was fetched. Either violates
+`OBS-BIND-008`, naming it, without being listed as acknowledged. Tags are not compared, since the
+same tag under another repository is not evidence of the same bytes.
+
+An acknowledgement naming no observed container or native sidecar cannot be shown stale. The
+infrastructure model keeps containers and, from producers that collect them, native sidecars; it
+never keeps a plain init container's name (`native_sidecars` in `infra-domain` filters on
+`restartPolicy: Always`, and `infra-ir` has no field for the rest). So the observation
+distinguishes present containers and native sidecars from everything else, and "everything else"
+always includes plain init containers it did not keep. Such an acknowledgement leaves
+`OBS-BIND-008` `unknown`, never satisfied, and the detail names it and says why; where init
+containers went unrecorded altogether it may also be an unrecorded native sidecar. Turning a stale
+acknowledgement back into a violation needs plain init container names in the infrastructure
+model, which is an `infra-ir` change and not part of this version. The report moves to
+`ess-observed-bindings-report/3`: the `acknowledged` field is new, and a satisfied `OBS-BIND-008`
+no longer means every entry is bound, so a `/2` reader must not read `/3`.
 
 Native sidecars reach the comparison through an optional `native_sidecars` field of the
 infrastructure model (name and image only). Unknown differs from false, so the field has three
