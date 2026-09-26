@@ -48,8 +48,32 @@ use infra_domain::policy::{HorizontalPodAutoscaler, PodDisruptionBudget};
 use infra_domain::workload::{Probes, Resources, VolumeMount, WorkloadKind};
 use serde::Serialize;
 
-/// The format string a persisted IR document carries.
+/// The format string a legacy persisted IR document carries: Secret keys hold the scanner's
+/// unsalted `{sha256, length}`. Still read, never written from an observation.
 pub const IR_FORMAT: &str = "infra-ir/1";
+
+/// The format of an IR whose Secret keys are recorded as `{"present": true}` and nothing else.
+///
+/// `/1` with one meaning changed. An IR with no Secret key has the same meaning under both and
+/// keeps `/1`, so a cluster without secrets keeps its bytes and its model digest.
+pub const PRESENCE_IR_FORMAT: &str = "infra-ir/3";
+
+/// The format a model implies: `/2` for qualified coverage, `/3` once any Secret key is recorded
+/// as present, `/1` otherwise. A reader refuses a document declaring anything else.
+pub(crate) fn implied_format(model: &InfraModel) -> &'static str {
+    if model.coverage.is_some() {
+        "infra-ir/2"
+    } else if model
+        .secrets
+        .values()
+        .flat_map(|secret| secret.keys.values())
+        .any(|value| *value == infra_domain::SecretValue::Present)
+    {
+        PRESENCE_IR_FORMAT
+    } else {
+        IR_FORMAT
+    }
+}
 
 /// Declares every handle kind and its total accessor on [`InfraIr`] from one line each — the
 /// `ess-compiler` idiom, kept because its argument transfers whole: a handle is only mintable by
@@ -642,7 +666,7 @@ pub struct InfraIr {
 /// The persisted form emitted by the ESS infrastructure compiler.
 #[derive(Debug, Clone, Serialize)]
 pub struct InfraIrDocument<'a> {
-    /// The format claim, `infra-ir/1`.
+    /// The format claim: `infra-ir/1`, `/2` or `/3`, as the model implies.
     pub format: &'static str,
     /// Where the observation came from.
     pub provenance: &'a Provenance,
@@ -725,14 +749,27 @@ impl InfraIr {
         digest_of_canonical(&canonical)
     }
 
+    /// This IR with every legacy Secret digest replaced by presence: the form this build writes.
+    ///
+    /// [`crate::read_document`] applies it to every legacy `infra-ir/1` it admits, after checking
+    /// the document's own digest, so no IR reaching a caller holds the unsalted digests. The
+    /// result is `infra-ir/3` with its own model digest. Nothing else changes, so every handle
+    /// stays valid.
+    #[must_use]
+    pub fn without_secret_digests(&self) -> Self {
+        let mut ir = self.clone();
+        for secret in ir.model.secrets.values_mut() {
+            for value in secret.keys.values_mut() {
+                *value = infra_domain::SecretValue::Present;
+            }
+        }
+        ir
+    }
+
     /// The persistable document, digest computed.
     pub fn document(&self) -> InfraIrDocument<'_> {
         InfraIrDocument {
-            format: if self.model.coverage.is_some() {
-                "infra-ir/2"
-            } else {
-                IR_FORMAT
-            },
+            format: implied_format(&self.model),
             provenance: &self.provenance,
             digest: self.digest(),
             model: &self.model,

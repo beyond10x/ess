@@ -53,8 +53,13 @@ use infra_domain::network::Service;
 use infra_domain::observation::PersistentVolumeClaim;
 use serde::Serialize;
 
-/// The format string a persisted drift document carries.
-pub const DRIFT_FORMAT: &str = "infra-drift/1";
+/// The format string a full-scan drift document carries.
+///
+/// `/3` because `/1` compared Secret value digests: an empty `changed_keys` for a Secret meant
+/// "not rotated", and here it means "not known" — the IR no longer records anything from which
+/// a rotation could be detected. `/2` is the namespace topology profile, whose Secrets never
+/// carried a key, and it keeps its meaning. No reader of drift documents exists in this build.
+pub const DRIFT_FORMAT: &str = "infra-drift/3";
 
 /// Why two snapshots cannot be compared at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -295,10 +300,12 @@ pub enum InfraChange {
         /// The ingress's IR key.
         subject: String,
     },
-    /// A configmap's or secret's key set or content digests moved — the config-hash change.
+    /// A configmap's key set or content digests moved, or a secret's key set moved.
     ///
-    /// Content, never values: the IR carries `{sha256, length}` per key and nothing else, so this
-    /// says *that* a value changed and can never say what it changed to.
+    /// Content, never values: the IR carries a configmap's `{sha256, length}` per key and
+    /// nothing else, so this says *that* a value changed and can never say what it changed to.
+    /// For a secret, `changed_keys` is always empty: the IR records a Secret key as present and
+    /// nothing derived from its value, so a rotated value is not detected.
     ConfigContentChanged {
         /// Which kind — configmap or secret.
         kind: MemberKind,
@@ -436,7 +443,7 @@ pub struct InfraDrift {
     /// Compared scope/profile; omitted content is unobserved even with no reported changes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coverage: Option<infra_domain::coverage::CollectionCoverage>,
-    /// The format claim, `infra-drift/1`.
+    /// The format claim: `infra-drift/3`, or `/2` for the namespace topology profile.
     pub format: &'static str,
     /// The snapshot compared from.
     pub from: DriftSideRef,
@@ -766,7 +773,7 @@ fn config_maps(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     }
 }
 
-/// Secret membership and content.
+/// Secret membership and key sets; a Secret value is never compared.
 fn secrets(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
     membership(
         MemberKind::Secret,
@@ -781,8 +788,8 @@ fn secrets(from: &InfraIr, to: &InfraIr, changes: &mut Vec<InfraChange>) {
         content(
             MemberKind::Secret,
             key,
-            &secret_digests(before),
-            &secret_digests(after),
+            &secret_keys(before),
+            &secret_keys(after),
             changes,
         );
     }
@@ -797,13 +804,16 @@ fn digests(config_map: &ConfigMap) -> BTreeMap<&str, &str> {
         .collect()
 }
 
-/// A secret's keys and the digest of each value. Values never existed here to compare.
-fn secret_digests(secret: &Secret) -> BTreeMap<&str, &str> {
-    secret
-        .keys
-        .iter()
-        .map(|(key, digest)| (key.as_str(), digest.sha256.as_str()))
-        .collect()
+/// A secret's keys, each mapped to the same placeholder: only a key arriving or leaving is a
+/// change.
+///
+/// A rotated Secret value is unknown, never changed. The IR records a Secret key as present and
+/// nothing about its value, because an unsalted digest of a low-entropy secret lets anyone
+/// holding the file confirm a guess. A legacy `infra-ir/1` document's digests are dropped when it
+/// is read, and only key names are compared here in any case, so the answer does not depend on
+/// the snapshot's age.
+fn secret_keys(secret: &Secret) -> BTreeMap<&str, &str> {
+    secret.keys.keys().map(|key| (key.as_str(), "")).collect()
 }
 
 /// Records one config-content change when the key sets or any digest moved.

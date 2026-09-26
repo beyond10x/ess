@@ -13,7 +13,7 @@ struct Cli {
 enum Command {
     /// List kubeconfig contexts available to the adapter.
     Contexts,
-    /// Scan one cluster into a sanitized `infra-observation/1` bundle.
+    /// Scan one cluster into a sanitized `infra-observation/3` bundle.
     Scan {
         /// Kubeconfig context; the current context when omitted.
         #[arg(long)]

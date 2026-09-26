@@ -2,7 +2,7 @@
 
 Every gap this projection did **not** write a change for, and the reason. Applying every file in the tree beside this one leaves exactly these.
 
-Computed from specification `6f52fb34191df4f822a31f9242e103c7e61976b69bed41b772aba8a72f747689` against snapshot `9ed0e8608fd69c43c3b0405a7a5fd599fad61a6246b42e2cdd4cffd1e29c8e75` of `k3d-dev-cluster`.
+Computed from specification `6f52fb34191df4f822a31f9242e103c7e61976b69bed41b772aba8a72f747689` against snapshot `73b68c18c311bd81a36d76b50238ae08ffb0621ae16753ff54b7329778deb785` of `k3d-dev-cluster`.
 
 ## Decisions owed (16)
 
@@ -88,7 +88,7 @@ Computed from specification `6f52fb34191df4f822a31f9242e103c7e61976b69bed41b772a
 
 * **observed:** containers[agent].env[AGENT_TOKEN] requires secret agent-credentials, which was not observed
 * **why not a patch:** nobody observed what this points at
-* **decision:** create the secret agent-credentials this cluster expects at containers[agent].env[AGENT_TOKEN], or change the reference. Its contents are not in the snapshot — a secret is only ever there as a digest — so nothing here can write one
+* **decision:** create the secret agent-credentials this cluster expects at containers[agent].env[AGENT_TOKEN], or change the reference. Its contents are not in the snapshot — a secret is only ever there as the names of its keys — so nothing here can write one
 
 ### `shop-only` — `workloads/kube-system/daemonset/svclb-traefik-2290261f`
 

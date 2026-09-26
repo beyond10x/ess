@@ -55,7 +55,7 @@ macro_rules! infra_codes {
 }
 
 infra_codes! {
-    /// The bundle's `format` is not `infra-observation/1`.
+    /// The bundle's `format` is not `infra-observation/1`, `/2` or `/3`.
     UnsupportedFormat => "INFRA-BUNDLE-001",
 
     /// One of the twelve observed kinds is absent from `kinds`.
@@ -78,7 +78,8 @@ infra_codes! {
     /// by hand — and an IR keyed by identity would silently drop one of the two.
     DuplicateIdentity => "INFRA-OBJECT-003",
 
-    /// A secret's data value is a plain string rather than a `{sha256, length}` digest.
+    /// A secret's data value is a plain string rather than the sanitized marker its format
+    /// requires.
     ///
     /// The hard rule, enforced twice by design: the scanner sanitizes before writing, and this
     /// model refuses what an unsanitized bundle would carry — so a secret value cannot enter the
@@ -86,9 +87,16 @@ infra_codes! {
     /// echoes the value.
     UnsanitizedSecret => "INFRA-SECRET-001",
 
-    /// A secret's data value is an object but not a well-formed digest: `sha256` is not 64
-    /// lowercase hex characters, or `length` is not a non-negative integer.
+    /// An `infra-observation/1` secret value is not a well-formed legacy digest: `sha256` is not
+    /// 64 lowercase hex characters, or `length` is not a non-negative integer.
     MalformedSecretDigest => "INFRA-SECRET-002",
+
+    /// An `infra-observation/3` secret value is not exactly `{"present": true}`.
+    ///
+    /// Version 3 records that a value exists and nothing derived from it. A digest, a length or
+    /// any other field beside the marker is refused rather than dropped: a producer writing one
+    /// is writing a guess oracle, and a reader that tolerated it would hide that.
+    MalformedSecretPresence => "INFRA-SECRET-003",
 
     /// A labels or selector map carries a value that is not a string.
     NonStringSelector => "INFRA-SELECTOR-001",
@@ -105,7 +113,7 @@ infra_codes! {
     /// An ingress path's backend names no service.
     IncompleteBackend => "INFRA-INGRESS-001",
 
-    /// A persisted IR document's `format` is not `infra-ir/1`.
+    /// A persisted IR document's `format` is not `infra-ir/1`, `/2` or `/3`.
     IrUnsupportedFormat => "INFRA-IR-001",
 
     /// A persisted IR document's digest does not match its model — the document was edited
@@ -297,8 +305,8 @@ mod tests {
     fn every_code_renders_in_the_infra_namespace_and_the_generated_list_holds_them_all() {
         assert_eq!(
             InfraCode::ALL.len(),
-            26,
-            "the catalogue is twenty-six codes: twelve observation refusals, four IR-document \
+            27,
+            "the catalogue is twenty-seven codes: thirteen observation refusals, four IR-document \
              ones and ten desired-state-specification ones"
         );
         for code in InfraCode::ALL {

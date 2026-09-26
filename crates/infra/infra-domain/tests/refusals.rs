@@ -62,3 +62,51 @@ fn every_defect_class_in_a_broken_bundle_is_reported_in_one_run() {
         "exactly the five planted defects, nothing spurious: {errors}"
     );
 }
+
+/// Every shape a Secret item can arrive in that is not the raw shape, each carrying the value.
+#[test]
+fn no_observation_refusal_on_a_malformed_secret_item_quotes_what_it_was_given() {
+    const GUESS: &str = "hunter2";
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../examples/k3d-dev-cluster/observation.json"),
+    )
+    .expect("the committed example exists");
+    let shapes = [
+        (
+            "data as a value",
+            serde_json::json!({"metadata": {"name": "s", "namespace": "shop", "uid": "u"}, "data": GUESS}),
+        ),
+        (
+            "stringData as a value",
+            serde_json::json!({"metadata": {"name": "s", "namespace": "shop", "uid": "u"}, "stringData": GUESS}),
+        ),
+        (
+            "data as a list",
+            serde_json::json!({"metadata": {"name": "s", "namespace": "shop", "uid": "u"}, "data": [GUESS]}),
+        ),
+        (
+            "metadata as a value",
+            serde_json::json!({"metadata": GUESS}),
+        ),
+        (
+            "type as a list",
+            serde_json::json!({"metadata": {"name": "s", "namespace": "shop", "uid": "u"}, "type": [GUESS]}),
+        ),
+        ("the item as a value", serde_json::json!(GUESS)),
+        (
+            "a key holding a list",
+            serde_json::json!({"metadata": {"name": "s", "namespace": "shop", "uid": "u"}, "data": {"k": [GUESS]}}),
+        ),
+    ];
+    for (label, item) in shapes {
+        let mut bundle: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+        bundle["kinds"]["secrets"]["items"] = serde_json::json!([item]);
+        let raw: RawBundle = serde_json::from_value(bundle).expect("the bundle parses");
+        let errors = Observation::try_from(raw).expect_err(&format!("{label} is refused"));
+        assert!(
+            !errors.to_string().contains(GUESS),
+            "{label}: the refusal quotes the Secret content back: {errors}"
+        );
+    }
+}

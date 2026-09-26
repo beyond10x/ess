@@ -1,8 +1,8 @@
 //! The observation model for infrastructure: the Kubernetes subset, v1.
 //!
 //! The integrated Kubernetes credential-edge adapter reads a cluster and writes an
-//! `infra-observation/1` bundle — raw API objects keyed by kind, with every secret value already
-//! replaced by `{sha256, length}`. This crate is the boundary that bundle crosses into the
+//! `infra-observation/3` bundle — raw API objects keyed by kind, with every secret value already
+//! replaced by `{"present": true}`. This crate is the boundary that bundle crosses into the
 //! toolchain: it parses permissively, validates strictly and accumulates every refusal, exactly
 //! as `ess-domain` does for specifications. This model crate never reaches a cluster, holds a
 //! credential or opens a network connection; the scanner is the actor, this is the model.
@@ -16,7 +16,7 @@
 //! | [`controller`] | replicasets, jobs, cronjobs: the ownership rungs between workloads and pods |
 //! | [`policy`] | pod disruption budgets and autoscalers: claims about workloads |
 //! | [`network`] | services and ingresses |
-//! | [`config`] | configmaps and secrets: keys and digests, never values |
+//! | [`config`] | configmaps and secrets: keys and configmap digests, never values |
 //!
 //! The [`controller`] and [`policy`] kinds are **optional in a bundle**: the scanner grew them
 //! after `infra-observation/1` shipped, so a bundle without their keys still validates and
@@ -52,8 +52,9 @@
 //!   `progressDeadlineSeconds`, pod management policies. How a change rolls out is not part of
 //!   what the cluster *is*.
 //! * **Values of configuration and secrets** — a secret's value never entered the bundle
-//!   (refused if it did: `INFRA-SECRET-001`), and a configmap's value is reduced to
-//!   `{sha256, length}` at validation. Keys and change-detection survive; content does not.
+//!   (refused if it did: `INFRA-SECRET-001`), and neither does anything derived from it: a
+//!   secret key is only ever present. A configmap's value is reduced to `{sha256, length}` at
+//!   validation. Keys survive, and so does configmap change-detection; content does not.
 //!
 //! Exclusion happens by construction: the `Raw*` types tolerate every unknown field, and the
 //! validated types simply have nowhere to put the noise.
@@ -69,13 +70,13 @@ pub mod raw;
 pub mod workload;
 
 pub use code::{InfraCode, ValidationError, ValidationErrors};
-pub use config::{ConfigMap, Secret, ValueDigest};
+pub use config::{ConfigMap, Secret, SecretValue, ValueDigest};
 pub use controller::{CronJob, Job, ReplicaSet};
 pub use network::{Ingress, IngressBackend, IngressPath, IngressRule, Service, ServicePort};
 pub use observation::{
     ClaimPhase, ContainerStatus, Identity, Namespace, Node, NodeInfo, Observation, OwnerRef,
     PersistentVolumeClaim, Pod, PodPhase, ServiceAccount, KINDS, OBSERVATION_FORMAT,
-    OPTIONAL_KINDS,
+    OPTIONAL_KINDS, PRESENCE_OBSERVATION_FORMAT,
 };
 pub use policy::{HorizontalPodAutoscaler, PodDisruptionBudget, ScaleTarget};
 pub use raw::RawBundle;

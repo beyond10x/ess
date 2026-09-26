@@ -84,7 +84,8 @@ Adapters use one explicit contract:
 - `ess generate project <adapter>` writes reviewable artifacts, obligations, and refusals. It never
   applies infrastructure or mutates an external system.
 - Kubernetes import accepts a sanitized bundle or performs a live scan at the credential edge.
-  Secret values are digested before any serialization or filesystem write.
+  Secret values are replaced by a presence marker, with no digest or length, before any
+  serialization or filesystem write.
 - OpenAPI import writes `ess-openapi-import/1`, retaining the original source, its SHA-256, the
   typed service interface and replay-checked accounting. Unpreserved semantics become durable gaps
   or refusals; unresolved reference sites remain explicit. Checked `--ir` projection refuses partial,
