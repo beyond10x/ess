@@ -1,4 +1,4 @@
-//! Reading a persisted `infra-ir/1` document back into a typed [`InfraIr`].
+//! Reading a persisted `infra-ir/1`, `/2` or `/3` document back into a typed [`InfraIr`].
 //!
 //! # Why this is a validation and not a `Deserialize`
 //!
@@ -45,14 +45,17 @@ use crate::ir::{
     ResolvedEnvVar, ResolvedIngress, ResolvedIngressBackend, ResolvedIngressPath,
     ResolvedIngressRule, ResolvedPod, ResolvedVolume, ResolvedVolumeSource, ResolvedWorkload,
     SecretHandle, ServiceAccountHandle, ServiceHandle, UnresolvedReference, UnresolvedTarget,
-    IR_FORMAT,
+    IR_FORMAT, PRESENCE_IR_FORMAT,
 };
 
-/// Reads a persisted `infra-ir/1` document back into a typed IR, or refuses it.
+/// Reads a persisted `infra-ir/1`, `/2` or `/3` document back into a typed IR, or refuses it.
 ///
 /// One run reports every problem it can still reach: a digest mismatch and every dangling
 /// handle arrive together. A document whose shape does not read as the format at all is refused
 /// with `INFRA-IR-003` alone, because nothing behind an unreadable shape is checkable.
+///
+/// A legacy `infra-ir/1` is checked as written, digest included, and returned with each Secret
+/// key reduced to presence: an `infra-ir/3` IR whose model digest differs from the file's.
 ///
 /// # Errors
 ///
@@ -63,12 +66,18 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
     let mut errors = ValidationErrors::new();
 
     let declared = value.get("format").and_then(serde_json::Value::as_str);
-    if declared != Some(IR_FORMAT) && declared != Some("infra-ir/2") {
+    if ![
+        Some(IR_FORMAT),
+        Some("infra-ir/2"),
+        Some(PRESENCE_IR_FORMAT),
+    ]
+    .contains(&declared)
+    {
         errors.refuse(
             InfraCode::IrUnsupportedFormat,
             "format",
             format!(
-                "`{}` is not a format this build reads; expected `{IR_FORMAT}`",
+                "`{}` is not a format this build reads; expected `{PRESENCE_IR_FORMAT}`",
                 declared.unwrap_or("<none>")
             ),
         );
@@ -114,6 +123,10 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
         );
     }
 
+    if !secrets_read_as_the_ir_shape(&document.model, &mut errors) {
+        return Err(errors);
+    }
+
     let model: ModelMirror = match serde_json::from_value(document.model) {
         Ok(model) => model,
         Err(error) => {
@@ -134,13 +147,70 @@ pub fn read_document(value: &serde_json::Value) -> Result<InfraIr, ValidationErr
         return Err(errors);
     }
 
+    if !secret_values_are_one_kind(&model) {
+        errors.refuse(
+            InfraCode::IrMalformed,
+            "model.secrets",
+            "a Secret value is either a legacy digest or exactly `{\"present\": true}`, and one \
+             model does not mix them",
+        );
+        return Err(errors);
+    }
+
     let ir = model.into_ir(document.provenance, &mut errors);
+    if !declared_format_is_implied(declared, &ir, &mut errors) {
+        return Err(errors);
+    }
     validate_qualified_model(&ir, &mut errors);
     if errors.is_empty() {
-        Ok(ir)
+        // Checked as written, returned stripped: every document derived from this IR names it by
+        // its model digest, and a digest over the legacy unsalted Secret digests, beside the
+        // `infra-ir/3` this build writes from it, confirms a guessed Secret value.
+        Ok(ir.without_secret_digests())
     } else {
         Err(errors)
     }
+}
+
+/// Whether the declared format is the one the model implies, refusing it otherwise.
+fn declared_format_is_implied(
+    declared: Option<&str>,
+    ir: &InfraIr,
+    errors: &mut ValidationErrors,
+) -> bool {
+    let implied = crate::ir::implied_format(ir.model());
+    if declared == Some(implied) {
+        return true;
+    }
+    errors.refuse(
+        InfraCode::IrMalformed,
+        "format",
+        format!(
+            "the model is `{implied}`: IR/3 records Secret keys as present, IR/1 as legacy \
+             digests, and a document declaring the other was not written by a compiler"
+        ),
+    );
+    false
+}
+
+/// Reads the Secret block on its own and refuses it with fixed text when it does not parse.
+///
+/// A parser message quotes the value it could not read, and here that value can be a Secret's.
+/// Once this block reads, the whole-model parser message cannot originate inside it.
+fn secrets_read_as_the_ir_shape(model: &serde_json::Value, errors: &mut ValidationErrors) -> bool {
+    if let Some(secrets) = model.get("secrets") {
+        if serde_json::from_value::<BTreeMap<String, SecretMirror>>(secrets.clone()).is_err() {
+            errors.refuse(
+                InfraCode::IrMalformed,
+                "model.secrets",
+                "the secrets do not read as the IR Secret shape (identity, labels, secret_type, and \
+                 keys each `{\"present\": true}` or a legacy digest); the parser's message is \
+                 withheld because it can quote a Secret value",
+            );
+            return false;
+        }
+    }
+    true
 }
 
 fn validate_qualified_model(ir: &InfraIr, errors: &mut ValidationErrors) {
@@ -456,7 +526,39 @@ struct SecretMirror {
     identity: IdentityMirror,
     labels: BTreeMap<String, String>,
     secret_type: String,
-    keys: BTreeMap<String, ValueDigestMirror>,
+    keys: BTreeMap<String, SecretValueMirror>,
+}
+
+/// A Secret key's recorded value: IR/3's presence marker, or IR/1's legacy digest.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SecretValueMirror {
+    Present(PresenceMirror),
+    Digest(ValueDigestMirror),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PresenceMirror {
+    present: bool,
+}
+
+/// Whether every Secret value is `{"present": true}`, or every one is a legacy digest.
+fn secret_values_are_one_kind(model: &ModelMirror) -> bool {
+    let values = || {
+        model
+            .secrets
+            .values()
+            .flat_map(|secret| secret.keys.values())
+    };
+    let all_present = values().all(|value| {
+        matches!(
+            value,
+            SecretValueMirror::Present(PresenceMirror { present: true })
+        )
+    });
+    let all_digests = values().all(|value| matches!(value, SecretValueMirror::Digest(_)));
+    all_present || all_digests
 }
 
 #[derive(Deserialize)]
@@ -1054,7 +1156,21 @@ impl ModelMirror {
                         keys: mirror
                             .keys
                             .into_iter()
-                            .map(|(name, digest)| (name, digest.into_digest()))
+                            .map(|(name, value)| {
+                                (
+                                    name,
+                                    match value {
+                                        SecretValueMirror::Present(_) => {
+                                            infra_domain::SecretValue::Present
+                                        }
+                                        SecretValueMirror::Digest(digest) => {
+                                            infra_domain::SecretValue::LegacyDigest(
+                                                digest.into_digest(),
+                                            )
+                                        }
+                                    },
+                                )
+                            })
                             .collect(),
                     },
                 )

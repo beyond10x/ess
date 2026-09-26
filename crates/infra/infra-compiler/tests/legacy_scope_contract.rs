@@ -22,10 +22,9 @@ fn old_reader_accepts(value: Value) -> bool {
 
 #[test]
 fn version_two_cannot_be_silently_admitted_by_the_version_one_envelope() {
-    let mut old: Value = serde_json::from_str(include_str!(
-        "../../../../examples/k3d-dev-cluster/cluster.ir.json"
-    ))
-    .expect("frozen legacy IR");
+    let mut old: Value =
+        serde_json::from_str(include_str!("fixtures/legacy-k3d-dev-cluster.ir-1.json"))
+            .expect("frozen legacy IR");
     assert!(old_reader_accepts(old.clone()));
     old["format"] = json!("infra-ir/2");
     assert!(!old_reader_accepts(old));
@@ -33,10 +32,9 @@ fn version_two_cannot_be_silently_admitted_by_the_version_one_envelope() {
 
 #[test]
 fn version_one_cannot_gain_an_envelope_field() {
-    let mut old: Value = serde_json::from_str(include_str!(
-        "../../../../examples/k3d-dev-cluster/cluster.ir.json"
-    ))
-    .expect("frozen legacy IR");
+    let mut old: Value =
+        serde_json::from_str(include_str!("fixtures/legacy-k3d-dev-cluster.ir-1.json"))
+            .expect("frozen legacy IR");
     old["coverage"] = json!({"profile": "namespace_topology", "namespace": "app"});
     assert!(!old_reader_accepts(old.clone()));
     assert!(infra_compiler::read_document(&old).is_err());

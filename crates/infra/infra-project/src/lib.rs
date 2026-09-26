@@ -52,10 +52,11 @@
 //! # Secrets
 //!
 //! A patch cannot contain a secret value, because nothing upstream of it holds one: the
-//! observation model refuses an unsanitized secret (`INFRA-SECRET-001`) and carries only
-//! `{sha256, length}` per key. `tests/secrets.rs` asserts it anyway, by scanning every emitted
-//! byte for the fixture's own key names and digests — a property this cheap to check is one worth
-//! checking rather than arguing about.
+//! observation model refuses an unsanitized secret (`INFRA-SECRET-001`) and records only that a
+//! value is present under each key, with no digest and no length. A legacy `infra-ir/1` read back
+//! still holds the scanner's old `{sha256, length}` per key. `tests/secrets.rs` asserts it anyway,
+//! by scanning every byte projected from both for the fixture's own key names and legacy digests —
+//! a property this cheap to check is one worth checking rather than arguing about.
 //!
 //! # Determinism
 //!

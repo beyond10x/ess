@@ -23,7 +23,8 @@ types:
     of: String
     invariants: ['value != ""']
 
-  # `--path` an existing `infra-observation/1` bundle, or `--context` a live kubeconfig context.
+  # `--path` an existing `infra-observation/1`, `/2` or `/3` bundle, or `--context` a live
+  # kubeconfig context.
   # The two conflict on the command line, which is why this is a closed choice rather than two
   # optional fields.
   - name: toolchain.infra.ObservationSource
@@ -144,7 +145,7 @@ errors:
     summary: The credential edge has no kubeconfig authority for the named context.
 
   - name: toolchain.infra.ImportRefused
-    summary: The bundle is not an admitted `infra-observation/1` document.
+    summary: The bundle is not an admitted `infra-observation/1`, `/2` or `/3` document.
 
   - name: toolchain.infra.AlreadyImported
     summary: This observation is already imported, so it was not imported again.

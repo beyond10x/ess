@@ -3,12 +3,12 @@
 # finds such binaries from their source and fails when one is missing here.
 
 [test-groups]
-# `support/browser.rs`'s `STARTUP` mutex admits one Firefox start per process; in parallel processes Firefox BiDi startup overran its 30 s deadline in CI.
 firefox = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "binary_id(ess-cli::coverage_browser) | binary_id(ess-cli::coverage_writer_adversary_pass1) | binary_id(ess-cli::coverage_writer_adversary_pass2) | binary_id(ess-cli::browser_startup_slow_serve_boundary) | binary_id(ess-cli::browser_startup_refusal_boundary) | binary_id(ess-cli::replay_fidelity_browser)"
 test-group = "firefox"
+threads-required = "num-test-threads"
 
 # A wall-clock ratio between two timings in one process: a neighbouring test skews one timing and
 # not the other (ess#85, 2026-09-25), so it runs with the whole shard to itself.

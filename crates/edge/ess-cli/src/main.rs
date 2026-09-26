@@ -641,7 +641,7 @@ enum ReferenceTarget {
 enum ImportAdapter {
     /// Import a sanitized observation bundle, or scan one live cluster at the credential edge.
     Kubernetes {
-        /// Existing `infra-observation/1` bundle.
+        /// Existing `infra-observation/1`, `/2` or `/3` bundle.
         #[arg(long, conflicts_with = "context")]
         path: Option<PathBuf>,
         /// Live kubeconfig context. Requires `--observation-out`.
@@ -653,7 +653,7 @@ enum ImportAdapter {
         /// Where a live scan writes its sanitized source bundle.
         #[arg(long, requires = "context")]
         observation_out: Option<PathBuf>,
-        /// Where to write `infra-ir/1`.
+        /// Where to write the compiled `infra-ir` document.
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -3368,7 +3368,9 @@ fn import(adapter: ImportAdapter) -> Result<ExitCode> {
                 .map_err(anyhow::Error::msg)?;
                 observation
             };
-            let ir = resolved_infrastructure(&source)?;
+            // A legacy `infra-ir/1` source reads back with its unsalted Secret digests; nothing
+            // this build writes carries one, so the written document is `infra-ir/3`.
+            let ir = resolved_infrastructure(&source)?.without_secret_digests();
             let document = ir.document();
             if let Some(path) = &out {
                 let mut json = serde_json::to_string_pretty(&document)?;

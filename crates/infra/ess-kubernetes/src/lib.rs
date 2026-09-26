@@ -1,7 +1,7 @@
 //! Kubernetes credential-edge adapter for ESS.
 //!
 //! The adapter is the only ESS component that invokes `kubectl`. It sanitizes every Secret before
-//! serializing an `infra-observation/1` bundle; all compilation and analysis happens downstream on
+//! serializing an `infra-observation/3` bundle; all compilation and analysis happens downstream on
 //! those credential-free bytes.
 
 use std::io::Write;
@@ -55,7 +55,7 @@ pub fn contexts() -> Result<(), String> {
     Ok(())
 }
 
-/// Scans one cluster and writes a sanitized `infra-observation/1` bundle.
+/// Scans one cluster and writes a sanitized `infra-observation/3` bundle.
 ///
 /// Secret values are replaced before the first serialization or filesystem write. This function
 /// never writes raw Kubernetes response bytes.
@@ -91,7 +91,7 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
     }
 
     let bundle = serde_json::json!({
-        "format": "infra-observation/1",
+        "format": infra_domain::PRESENCE_OBSERVATION_FORMAT,
         "context": context,
         "scanned_at": utc_timestamp(),
         "scout_version": env!("CARGO_PKG_VERSION"),
@@ -110,7 +110,10 @@ pub fn scan(context: Option<&str>, output_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Replaces all Secret values with their digest and byte length.
+/// Replaces every Secret value with `{"present": true}`: the key survives, nothing about the value.
+///
+/// Not a digest and not a length. An unsalted digest of a low-entropy value lets anyone holding
+/// the file confirm a guess, and a length narrows the guessing; nothing downstream needs either.
 fn sanitize_secret_list(list: &mut serde_json::Value) -> Result<(), String> {
     let items = list
         .get_mut("items")
@@ -126,14 +129,10 @@ fn sanitize_secret_list(list: &mut serde_json::Value) -> Result<(), String> {
                     .as_object_mut()
                     .ok_or_else(|| format!("secret {field} is not an object"))?;
                 for value in values.values_mut() {
-                    let original = value
-                        .as_str()
-                        .ok_or_else(|| format!("secret {field} value is not a string"))?
-                        .as_bytes();
-                    *value = serde_json::json!({
-                        "sha256": hex(&sha2::Sha256::digest(original)),
-                        "length": original.len(),
-                    });
+                    if !value.is_string() {
+                        return Err(format!("secret {field} value is not a string"));
+                    }
+                    *value = serde_json::json!({"present": true});
                 }
             }
         }
@@ -207,8 +206,16 @@ mod tests {
             list["items"][0]["metadata"]["annotations"]["kept"],
             "visible"
         );
-        assert_eq!(list["items"][0]["data"]["password"]["length"], 17);
-        assert_eq!(list["items"][0]["stringData"]["token"]["length"], 17);
+        // Presence, and nothing derived from the value: no digest to test a guess against and no
+        // length to narrow one.
+        assert_eq!(
+            list["items"][0]["data"]["password"],
+            serde_json::json!({"present": true})
+        );
+        assert_eq!(
+            list["items"][0]["stringData"]["token"],
+            serde_json::json!({"present": true})
+        );
     }
 
     #[test]

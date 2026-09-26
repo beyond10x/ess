@@ -21,11 +21,20 @@ use crate::raw::{
 };
 use crate::workload::{Workload, WorkloadKind};
 
-/// The format string this model reads.
+/// The legacy full-scan format: each Secret value is the scanner's unsalted `{sha256, length}`.
+///
+/// Still read; its digests are checked for shape and then discarded, so nothing this build writes
+/// from one carries them.
 pub const OBSERVATION_FORMAT: &str = "infra-observation/1";
 
 /// Scoped, qualified observations; never interpreted as a complete cluster scan.
 pub const SCOPED_OBSERVATION_FORMAT: &str = "infra-observation/2";
+
+/// The full-scan format the scanner writes: each Secret value is `{"present": true}`.
+///
+/// `/1` with one meaning changed — a Secret value records that it exists and nothing derived from
+/// it — which is why it is a version and not a variant of `/1`.
+pub const PRESENCE_OBSERVATION_FORMAT: &str = "infra-observation/3";
 
 /// The kind keys a bundle must carry, in the scanner's order.
 pub const KINDS: &[&str] = &[
@@ -423,7 +432,7 @@ pub struct Observation {
     pub ingresses: Vec<Ingress>,
     /// Configmaps: keys and value digests, never values.
     pub config_maps: Vec<ConfigMap>,
-    /// Secrets: keys and value digests, never values.
+    /// Secrets: keys and that each holds a value, never values or digests of them.
     pub secrets: Vec<Secret>,
     /// Service accounts.
     pub service_accounts: Vec<ServiceAccount>,
@@ -453,18 +462,29 @@ impl TryFrom<RawBundle> for Observation {
     fn try_from(raw: RawBundle) -> Result<Self, Self::Error> {
         let mut errors = ValidationErrors::new();
 
-        if raw.format != OBSERVATION_FORMAT && raw.format != SCOPED_OBSERVATION_FORMAT {
+        if ![
+            OBSERVATION_FORMAT,
+            SCOPED_OBSERVATION_FORMAT,
+            PRESENCE_OBSERVATION_FORMAT,
+        ]
+        .contains(&raw.format.as_str())
+        {
             errors.refuse(
                 InfraCode::UnsupportedFormat,
                 "format",
                 format!(
-                    "`{}` is not a format this build reads; expected `{OBSERVATION_FORMAT}`",
+                    "`{}` is not a format this build reads; expected `{PRESENCE_OBSERVATION_FORMAT}`",
                     raw.format
                 ),
             );
         }
 
         validate_coverage(&raw, &mut errors);
+        let secret_encoding = if raw.format == PRESENCE_OBSERVATION_FORMAT {
+            crate::config::SecretEncoding::Presence
+        } else {
+            crate::config::SecretEncoding::LegacyDigest
+        };
 
         let namespaces = items::<RawNamespace>(&raw, "namespaces", &mut errors)
             .into_iter()
@@ -508,7 +528,9 @@ impl TryFrom<RawBundle> for Observation {
             .collect();
         let secrets = items::<crate::raw::RawSecret>(&raw, "secrets", &mut errors)
             .into_iter()
-            .filter_map(|(location, item)| Secret::from_raw(&item, &location, &mut errors))
+            .filter_map(|(location, item)| {
+                Secret::from_raw(&item, &location, secret_encoding, &mut errors)
+            })
             .collect();
         let service_accounts = items::<RawServiceAccount>(&raw, "serviceaccounts", &mut errors)
             .into_iter()

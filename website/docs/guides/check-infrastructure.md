@@ -109,7 +109,7 @@ Upgrade readers before selecting this profile; older readers reject version 2.
 ## Connect implementation selections to observed workloads
 
 `ess verify bindings` was introduced in 0.21.0. The service owns its semantic
-model and realization; the system owns environment-specific `ess-observed-bindings/1` declarations.
+model and realization; the system owns environment-specific `ess-observed-bindings/1` or `/2` declarations.
 Infrastructure remains a separate observed authority. A monolith may assign several components
 to one implementation and bind that implementation to several named deployment roles.
 
@@ -162,7 +162,37 @@ workload is bound as a whole: a container, or a native sidecar (an `initContaine
 `restartPolicy: Always`), that no binding names violates `OBS-BIND-008`, and the finding names
 it. Bind every container and native sidecar the workload runs; a binding names a native sidecar
 the same way it names a container. Plain init containers finish before the pod starts and are
-not checked, and the report says so. An observation or IR written by ESS 0.31.0 or earlier never
+not checked, and the report says so.
+
+A container the service does not build, such as a service-mesh proxy or a vendor agent, is not an
+implementation, so do not bind it. Acknowledge it in an `ess-observed-bindings/2` document
+instead, with the reason it runs there:
+
+```yaml
+format: ess-observed-bindings/2
+# id, realization_digest, scope and bindings as above
+foreign_containers:
+  - workload:
+      kind: deployment
+      name: billing
+    containers:
+      - name: mesh-proxy
+        reason: service-mesh proxy the platform injects
+```
+
+`OBS-BIND-008` counts an acknowledged container or native sidecar as accounted for, and the
+report lists it under the binding's `acknowledged`, not as a binding. Its image is compared only
+with your own: an acknowledged container running a binding's declared image or an
+implementation's artifact locator, or the same `@sha256:` digest under another repository or tag,
+violates `OBS-BIND-008`, because that is your code. Tags alone are not compared.
+Acknowledgements are refused before collection when their workload is not bound, when they name
+a container a binding also names, or when a reason is empty. One that names no observed
+container or native sidecar leaves `OBS-BIND-008` `unknown` and the finding names it: the
+observation does not keep plain init containers, so ESS cannot tell a stale acknowledgement from
+one for a plain init container. Remove an acknowledgement when its container goes. An
+`ess-observed-bindings/1` document is read unchanged and acknowledges nothing.
+
+An observation or IR written by ESS 0.31.0 or earlier never
 recorded init containers, so over it `OBS-BIND-008` is `unknown` rather than satisfied; take a new
 live read to settle it. Wrong context or missing/different namespace coverage leaves the result
 unknown. A digest-pinned container artifact and identical digest-pinned template reference can

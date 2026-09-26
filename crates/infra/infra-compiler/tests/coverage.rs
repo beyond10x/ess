@@ -50,13 +50,16 @@ fn omitted_keys_are_unknown_and_coverage_round_trips_without_changing_legacy_byt
         model.digest()
     );
     assert!(model.try_transform(|m| m.coverage = None).is_err());
-    let legacy: Value = serde_json::from_str(include_str!(
+    let legacy: Value =
+        serde_json::from_str(include_str!("fixtures/legacy-k3d-dev-cluster.ir-1.json")).unwrap();
+    // A legacy IR/1 still reads, stripped of its Secret digests: the committed example's IR/3.
+    let committed: Value = serde_json::from_str(include_str!(
         "../../../../examples/k3d-dev-cluster/cluster.ir.json"
     ))
     .unwrap();
     assert_eq!(
         serde_json::to_value(read_document(&legacy).unwrap().document()).unwrap(),
-        legacy
+        committed
     );
 }
 

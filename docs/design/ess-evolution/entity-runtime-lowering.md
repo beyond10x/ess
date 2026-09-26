@@ -73,7 +73,7 @@ pub struct LoweredService {
 }
 
 pub const ENTITY_RUNTIME_REVISION: &str =
-    "77aac6eac95d0392a00e8dee8d04038ef70e47de";
+    "4746bd7cc37d27c7cc5815c44a62a96f3ddc1f44";
 
 pub struct BindingPlan {
     commands: BTreeMap<QualifiedName, CommandBinding>,

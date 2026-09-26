@@ -572,23 +572,30 @@ fn a_stall_on_final_provenance_uses_the_original_deadline_and_is_reaped() {
     let g = Graph::new(false, false, Content::Original, true);
     let f = Fixture::with_deadline(DEADLINE);
     g.install(&f);
-    // The manifest and the first two blobs answer after a third, a sixth and a twelfth of the
-    // deadline, and the final provenance blob stalls. The original deadline ends the acquisition
-    // at `DEADLINE`; a deadline restarted per client call would end it seven twelfths later,
-    // past the upper bound.
-    let delays = [DEADLINE / 3, DEADLINE / 6, DEADLINE / 12].map(|delay| delay.as_millis());
+    // The manifest and the first two blobs answer after three eighths, a quarter and an eighth of
+    // the deadline, and the final provenance blob stalls. The original deadline ends the
+    // acquisition at `DEADLINE`; a deadline restarted per client call restarts it when the stall
+    // begins, which cannot be before the three delays have passed, so it cannot end before
+    // `DEADLINE` plus their sum however fast the runner is. That instant is the upper bound, and
+    // a loaded runner has three quarters of the deadline to spare rather than a fixed 2.5s.
+    let delays = [DEADLINE * 3 / 8, DEADLINE / 4, DEADLINE / 8];
+    let restarted = DEADLINE + delays.iter().sum::<std::time::Duration>();
+    let delays = delays.map(|delay| delay.as_millis());
     std::fs::write(
         f.0.join("deadline"),
         format!("{} {} {}", delays[0], delays[1], delays[2]),
     )
     .unwrap();
+    // The fake clients are compiled on first use. That compile is not the acquisition, and on a
+    // loaded runner it put seconds into the measured window, so it happens before the clock.
+    clients();
     let start = std::time::Instant::now();
     g.refuse(&f, "owned ORAS child killed and reaped", false);
     let elapsed = start.elapsed();
     assert!(
-        elapsed + std::time::Duration::from_millis(500) >= DEADLINE
-            && elapsed < DEADLINE + std::time::Duration::from_millis(2500),
-        "{elapsed:?} is not the {DEADLINE:?} acquisition deadline"
+        elapsed + std::time::Duration::from_millis(500) >= DEADLINE && elapsed < restarted,
+        "{elapsed:?} is not the {DEADLINE:?} acquisition deadline: a deadline restarted per \
+         client call ends at {restarted:?} or later"
     );
     let pid = std::fs::read_to_string(f.0.join("stalled-pid")).unwrap();
     let dead = !Path::new("/proc").join(pid.trim()).exists();

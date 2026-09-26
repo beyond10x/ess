@@ -541,10 +541,13 @@ fn a_native_sidecar_is_checked_like_a_container_and_a_plain_init_container_is_na
 }
 
 #[test]
-fn the_report_names_its_second_format_version() {
+fn the_report_names_its_third_format_version() {
+    // `/3` adds acknowledged foreign containers, so a satisfied `OBS-BIND-008` no longer means
+    // every container is bound; a `/2` reader must not read it as `/2`.
     let fixture = Fixture::new();
     let (_, report) = fixture.run();
-    assert_eq!(report["format"], "ess-observed-bindings-report/2");
+    assert_eq!(report["format"], "ess-observed-bindings-report/3");
+    assert_eq!(report["bindings"]["api"]["acknowledged"], json!([]));
 }
 
 /// Unknown differs from false: a template that does not record `initContainers`, from a producer
@@ -594,4 +597,480 @@ fn an_observation_that_never_recorded_init_containers_leaves_obs_bind_008_unknow
     let (output, report) = fixture.run();
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+}
+
+fn detail(report: &Value, code: &str) -> String {
+    report["bindings"]["api"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["code"] == code)
+        .unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Runs the web deployment's template with a third-party mesh proxy as a native sidecar and a
+/// third-party agent as a plain container; neither is code this realization builds, and neither
+/// runs an image a binding or implementation declares.
+fn with_foreign_sidecars(fixture: &mut Fixture) {
+    let template =
+        &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+    template["initContainers"] =
+        json!([{"name": "mesh-proxy", "image": "mesh.example/proxy:9", "restartPolicy": "Always"}]);
+    template["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"name": "log-agent", "image": "vendor.example/log-agent:3"}));
+}
+
+fn acknowledge(fixture: &mut Fixture, containers: &Value) {
+    fixture.bindings["format"] = json!("ess-observed-bindings/2");
+    fixture.bindings["foreign_containers"] =
+        json!([{"workload": {"kind": "deployment", "name": "web"}, "containers": containers}]);
+}
+
+#[test]
+fn an_acknowledged_foreign_sidecar_satisfies_obs_bind_008_and_is_reported_acknowledged_not_bound() {
+    let mut fixture = Fixture::new();
+    with_foreign_sidecars(&mut fixture);
+    acknowledge(
+        &mut fixture,
+        &json!([
+            {"name": "mesh-proxy", "reason": "service-mesh proxy the platform injects"},
+            {"name": "log-agent", "reason": "vendor log shipper"}
+        ]),
+    );
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "satisfied", "{report:#}");
+    // Acknowledged, not bound: no binding result is minted for either, and each is listed with
+    // its reason on the binding whose workload runs it.
+    assert_eq!(report["bindings"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        report["bindings"]["api"]["acknowledged"],
+        json!([
+            {"container": "log-agent", "reason": "vendor log shipper"},
+            {"container": "mesh-proxy", "reason": "service-mesh proxy the platform injects"}
+        ])
+    );
+    let text = detail(&report, "OBS-BIND-008");
+    assert!(
+        text.contains("acknowledged") && text.contains("mesh-proxy"),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_unacknowledged_sidecar_still_violates_obs_bind_008_beside_an_acknowledged_one() {
+    let mut fixture = Fixture::new();
+    with_foreign_sidecars(&mut fixture);
+    acknowledge(
+        &mut fixture,
+        &json!([{"name": "mesh-proxy", "reason": "service-mesh proxy the platform injects"}]),
+    );
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+    let text = detail(&report, "OBS-BIND-008");
+    // The finding names what is unaccounted for, up to the next clause, and only that.
+    let unbound = text.split_once("no binding names").map_or_else(
+        || panic!("{text}"),
+        |(_, rest)| rest.split(';').next().unwrap_or_default(),
+    );
+    assert!(
+        unbound.contains("log-agent") && !unbound.contains("mesh-proxy"),
+        "{text}"
+    );
+    assert_eq!(
+        report["bindings"]["api"]["acknowledged"][0]["container"],
+        "mesh-proxy"
+    );
+}
+
+/// The infrastructure model records containers and native sidecars but never a plain init
+/// container's name, so an acknowledgement naming neither may name a plain init container: it
+/// cannot be shown stale, and it cannot satisfy either. It is `unknown`, named, and not listed as
+/// acknowledged.
+#[test]
+fn a_stale_acknowledgement_is_named_and_never_satisfies_obs_bind_008() {
+    let mut fixture = Fixture::new();
+    acknowledge(
+        &mut fixture,
+        &json!([{"name": "retired-proxy", "reason": "proxy removed last quarter"}]),
+    );
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "unknown");
+    let text = detail(&report, "OBS-BIND-008");
+    assert!(
+        text.contains("retired-proxy") && text.contains("plain init"),
+        "{text}"
+    );
+    assert_eq!(report["bindings"]["api"]["acknowledged"], json!([]));
+    // Over an observation that never recorded init containers, the name may also be an
+    // unrecorded native sidecar: still not evidence of staleness either way.
+    let template =
+        &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+    template.as_object_mut().unwrap().remove("initContainers");
+    fixture.observation["scout_version"] = json!("0.31.0");
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "unknown");
+    assert!(
+        detail(&report, "OBS-BIND-008").contains("retired-proxy"),
+        "{report:#}"
+    );
+}
+
+/// One edit that turns a valid acknowledgement document into one the contract must refuse.
+type Mutation = fn(&mut Value);
+
+#[test]
+fn malformed_acknowledgements_are_refused_before_acquisition() {
+    let mut fixture = Fixture::new();
+    acknowledge(
+        &mut fixture,
+        &json!([{"name": "mesh-proxy", "reason": "service-mesh proxy the platform injects"}]),
+    );
+    let cases: [(&str, Mutation); 8] = [
+        ("duplicates a binding", |v| {
+            v["foreign_containers"][0]["containers"][0]["name"] = json!("web");
+        }),
+        ("empty reason", |v| {
+            v["foreign_containers"][0]["containers"][0]["reason"] = json!("  ");
+        }),
+        ("invalid container name", |v| {
+            v["foreign_containers"][0]["containers"][0]["name"] = json!("Mesh_Proxy");
+        }),
+        ("duplicate container", |v| {
+            let again = v["foreign_containers"][0]["containers"][0].clone();
+            v["foreign_containers"][0]["containers"]
+                .as_array_mut()
+                .unwrap()
+                .push(again);
+        }),
+        ("duplicate workload", |v| {
+            let again = v["foreign_containers"][0].clone();
+            v["foreign_containers"].as_array_mut().unwrap().push(again);
+        }),
+        ("empty containers", |v| {
+            v["foreign_containers"][0]["containers"] = json!([]);
+        }),
+        ("workload no binding binds", |v| {
+            v["foreign_containers"][0]["workload"]["name"] = json!("worker");
+        }),
+        ("first format carrying acknowledgements", |v| {
+            v["format"] = json!("ess-observed-bindings/1");
+        }),
+    ];
+    for (label, mutate) in cases {
+        let mut changed = fixture.bindings.clone();
+        mutate(&mut changed);
+        let mut command = fixture.command();
+        write(&fixture.dir.join("bindings.json"), &changed);
+        let output = command
+            .args(["--infra", "/deliberately-missing-observation"])
+            .output()
+            .unwrap();
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output.status.code(), Some(1), "{label}: {report:#}");
+        assert_eq!(
+            report["checks"][0]["code"], "OBS-BIND-000",
+            "{label}: {report:#}"
+        );
+        assert!(report["observation"].is_null(), "{label}");
+    }
+}
+
+/// `ess-observed-bindings/1` is read unchanged: it acknowledges nothing, so an unbound sidecar
+/// still violates, and its binding digest is the one ESS 0.32.1 computed for the same bytes.
+#[test]
+fn the_first_input_format_still_reads_unchanged_and_acknowledges_nothing() {
+    let mut fixture = Fixture::new();
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        report["binding_digest"],
+        "sha256:f35e7ee642fe6a4f424ffbdfd52cd1d3465af3b9cf158e10ef57ccaaf347bafd"
+    );
+    with_foreign_sidecars(&mut fixture);
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+    let text = detail(&report, "OBS-BIND-008");
+    assert!(
+        text.contains("mesh-proxy") && text.contains("log-agent"),
+        "{text}"
+    );
+}
+
+/// Adversary (wave 0021, ess-sidecar): an acknowledgement is for a container "this realization
+/// does not build" (design, "Acknowledged foreign containers"). A container running the exact
+/// image a binding declares is this realization's own code; acknowledging it as foreign must not
+/// let `OBS-BIND-008` pass it unchecked.
+#[test]
+fn adversary_an_acknowledgement_cannot_hide_a_container_running_a_bound_image() {
+    let mut fixture = Fixture::new();
+    let image = fixture.bindings["bindings"][0]["image"].clone();
+    fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+        ["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"name": "worker", "image": image}));
+    acknowledge(
+        &mut fixture,
+        &json!([{"name": "worker", "reason": "vendor agent"}]),
+    );
+    let (output, report) = fixture.run();
+    assert_ne!(
+        check(&report, "OBS-BIND-008"),
+        "satisfied",
+        "container `worker` runs the bound image {image} yet was accepted as foreign (exit {:?}): {}",
+        output.status.code(),
+        detail(&report, "OBS-BIND-008")
+    );
+}
+
+/// Adversary (wave 0021, ess-sidecar): a plain init container is in the workload template, so an
+/// acknowledgement naming it is not stale. The mesh pattern without native sidecars injects exactly
+/// this pair. Coordinator's decision on what this asserts: the infrastructure model drops plain init
+/// containers, so their names are never evidence either way, and the acknowledgement is `unknown`
+/// (not a stale violation, and not satisfied) with a detail that says plain init containers are
+/// not recorded.
+#[test]
+fn adversary_acknowledging_a_plain_init_container_is_not_a_stale_violation() {
+    let mut fixture = Fixture::new();
+    // A producer that records init containers, so the template's init list is evidence.
+    fixture.observation["scout_version"] = json!("0.32.0");
+    let template =
+        &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+    template["initContainers"] = json!([{"name": "mesh-init", "image": "mesh.example/init:9"}]);
+    template["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"name": "mesh-proxy", "image": "mesh.example/proxy:9"}));
+    acknowledge(
+        &mut fixture,
+        &json!([
+            {"name": "mesh-init", "reason": "mesh traffic-redirect init container"},
+            {"name": "mesh-proxy", "reason": "service-mesh proxy the platform injects"}
+        ]),
+    );
+    let (output, report) = fixture.run();
+    let text = detail(&report, "OBS-BIND-008");
+    assert_eq!(
+        check(&report, "OBS-BIND-008"),
+        "unknown",
+        "a plain init container present in the template was reported stale (exit {:?}): {text}",
+        output.status.code(),
+    );
+    assert_eq!(output.status.code(), Some(2), "{text}");
+    assert!(
+        text.contains("mesh-init") && text.contains("plain init containers"),
+        "{text}"
+    );
+    // The plain container of the pair is present and is acknowledged.
+    assert_eq!(
+        report["bindings"]["api"]["acknowledged"],
+        json!([{"container": "mesh-proxy", "reason": "service-mesh proxy the platform injects"}])
+    );
+}
+
+/// Adversary (wave 0021, ess-sidecar): "A `/1` document carrying `foreign_containers` is refused."
+/// Before `/2` existed the closed `/1` reader refused the key outright; an empty list is still the
+/// key, and accepting it widens `/1`.
+#[test]
+fn adversary_a_first_format_document_carrying_an_empty_foreign_containers_is_refused() {
+    let mut fixture = Fixture::new();
+    fixture.bindings["foreign_containers"] = json!([]);
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{report:#}");
+    assert_eq!(report["checks"][0]["code"], "OBS-BIND-000", "{report:#}");
+}
+
+/// An acknowledgement is for code this realization does not build. A container running a
+/// binding's declared image, or an implementation's artifact locator, is this realization's own
+/// code under another name, so acknowledging it violates `OBS-BIND-008`, naming it.
+#[test]
+fn an_acknowledged_container_running_a_declared_image_or_artifact_locator_violates() {
+    let mut fixture = Fixture::new();
+    let locator = fixture.bindings["bindings"][0]["image"].clone();
+    // The binding declares a tag, so the locator is only reachable through the realization.
+    fixture.bindings["bindings"][0]["image"] = json!("registry.example/billing:1");
+    let template =
+        &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+    template["containers"][0]["image"] = json!("registry.example/billing:1");
+    template["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"name": "worker", "image": locator}));
+    acknowledge(
+        &mut fixture,
+        &json!([{"name": "worker", "reason": "vendor agent"}]),
+    );
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{report:#}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+    let text = detail(&report, "OBS-BIND-008");
+    assert!(text.contains("worker"), "{text}");
+    assert_eq!(report["bindings"]["api"]["acknowledged"], json!([]));
+    // The same container under a binding's own declared image.
+    fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"]
+        ["containers"][1]["image"] = json!("registry.example/billing:1");
+    let (output, report) = fixture.run();
+    assert_eq!(output.status.code(), Some(1), "{report:#}");
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated");
+    assert!(detail(&report, "OBS-BIND-008").contains("worker"));
+}
+
+/// A digest names the artifact; the repository in front of it is only where it was fetched from.
+/// An acknowledged container whose `@sha256:` digest equals a binding's image digest or an
+/// implementation's artifact locator digest is that artifact under another name, and violates.
+/// Tags are not compared: the same tag under another repository is not evidence of the same bytes.
+#[test]
+fn an_acknowledged_container_running_a_declared_digest_under_another_name_violates() {
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let run = |binding_image: &str, foreign_image: &str| {
+        let mut fixture = Fixture::new();
+        fixture.bindings["bindings"][0]["image"] = json!(binding_image);
+        let template = &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]
+            ["template"]["spec"];
+        template["containers"][0]["image"] = json!(binding_image);
+        template["containers"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name": "worker", "image": foreign_image}));
+        acknowledge(
+            &mut fixture,
+            &json!([{"name": "worker", "reason": "vendor agent"}]),
+        );
+        fixture.run().1
+    };
+    // The binding's own digest-pinned image, mirrored under another repository and tag.
+    let report = run(
+        &format!("registry.example/billing@{digest}"),
+        &format!("mirror.example/vendor/agent:7@{digest}"),
+    );
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated", "{report:#}");
+    assert!(detail(&report, "OBS-BIND-008").contains("worker"));
+    assert_eq!(report["bindings"]["api"]["acknowledged"], json!([]));
+    // The binding declares a tag, so only the implementation's artifact locator carries the digest.
+    let report = run(
+        "registry.example/billing:1",
+        &format!("mirror.example/agent@{digest}"),
+    );
+    assert_eq!(check(&report, "OBS-BIND-008"), "violated", "{report:#}");
+    // A different digest, and the same tag under another repository, are foreign.
+    let report = run(
+        "registry.example/billing:1",
+        &format!("mirror.example/agent@sha256:{}", "b".repeat(64)),
+    );
+    assert_ne!(check(&report, "OBS-BIND-008"), "violated", "{report:#}");
+    let report = run("registry.example/billing:1", "mirror.example/billing:1");
+    assert_ne!(check(&report, "OBS-BIND-008"), "violated", "{report:#}");
+    assert_eq!(
+        report["bindings"]["api"]["acknowledged"][0]["container"],
+        "worker"
+    );
+}
+
+/// Adversary 2 (wave 0021, ess-sidecar): "a digest names the artifact" (design, "Acknowledged
+/// foreign containers"). A container implementation's `identity` is that digest — `OBS-BIND-005`
+/// compares a pinned template digest with it — and the realization accepts a tag-only locator
+/// beside it. An acknowledged container running `…@<identity>` under another repository is then
+/// the implementation's exact bytes, yet neither the locator nor the binding image pins it.
+#[test]
+fn adversary2_an_acknowledged_container_running_the_artifact_identity_digest_violates() {
+    let mut fixture = Fixture::new();
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let path = fixture.dir.join("realization.json");
+    let mut realization: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    realization["implementations"][0]["artifact"] = json!({
+        "kind": "container", "locator": "registry.example/billing:1", "identity": digest
+    });
+    write(&path, &realization);
+    let compiled = ess()
+        .args(["specify", "realization", "compile", "--path"])
+        .arg(&path)
+        .arg("--spec")
+        .arg(root().join("examples/billing"))
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(compiled.status.success(), "{compiled:?}");
+    let ir: Value = serde_json::from_slice(&compiled.stdout).unwrap();
+    fixture.bindings["realization_digest"] = ir["realization_digest"].clone();
+    fixture.bindings["bindings"][0]["image"] = json!("registry.example/billing:1");
+    let template =
+        &mut fixture.observation["kinds"]["deployments"]["items"][0]["spec"]["template"]["spec"];
+    template["containers"][0]["image"] = json!("registry.example/billing:1");
+    template["containers"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"name": "worker", "image": format!("mirror.example/agent@{digest}")}));
+    acknowledge(
+        &mut fixture,
+        &json!([{"name": "worker", "reason": "vendor agent"}]),
+    );
+    let (output, report) = fixture.run();
+    assert_eq!(
+        check(&report, "OBS-BIND-008"),
+        "violated",
+        "`worker` runs the implementation's artifact identity {digest} yet was accepted as \
+         foreign (exit {:?}): {}; acknowledged {}",
+        output.status.code(),
+        detail(&report, "OBS-BIND-008"),
+        report["bindings"]["api"]["acknowledged"]
+    );
+}
+
+/// Adversary 2 (wave 0021, ess-sidecar): "a `/1` document carrying `foreign_containers` is
+/// refused, even as `[]`" (CHANGELOG). `foreign_containers: null` — in YAML, the bare key
+/// `foreign_containers:` — is the key carried, and the closed `/1` reader before `/2` refused it.
+#[test]
+fn adversary2_a_first_format_document_carrying_a_null_foreign_containers_is_refused() {
+    let mut fixture = Fixture::new();
+    fixture.bindings["foreign_containers"] = Value::Null;
+    let (output, report) = fixture.run();
+    assert_eq!(
+        report["checks"][0]["code"],
+        "OBS-BIND-000",
+        "a /1 document carrying `foreign_containers: null` was read (exit {:?}): {report:#}",
+        output.status.code()
+    );
+    assert_eq!(output.status.code(), Some(1), "{report:#}");
+}
+
+#[test]
+fn a_bindings_report_over_a_legacy_ir_names_the_stripped_model_not_the_one_holding_secret_digests()
+{
+    let legacy =
+        root().join("crates/infra/infra-compiler/tests/fixtures/legacy-k3d-dev-cluster.ir-1.json");
+    let frozen: Value = serde_json::from_slice(&std::fs::read(&legacy).unwrap()).unwrap();
+    let mut model = frozen["model"].clone();
+    for secret in model["secrets"].as_object_mut().unwrap().values_mut() {
+        for value in secret["keys"].as_object_mut().unwrap().values_mut() {
+            *value = json!({ "present": true });
+        }
+    }
+    let stripped = infra_compiler::digest_of_canonical(&serde_json::to_vec(&model).unwrap());
+    assert_ne!(
+        stripped, frozen["digest"],
+        "the legacy fixture carries no Secret digest"
+    );
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .arg("--infra")
+        .arg(&legacy)
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&output.stdout).expect("one JSON report");
+    assert_eq!(
+        report["observation"]["digest"],
+        json!(stripped),
+        "{report:#}"
+    );
 }

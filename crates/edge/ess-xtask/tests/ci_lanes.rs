@@ -1760,6 +1760,58 @@ fn nextest_serialises_exactly_the_binaries_that_coordinate_through_process_state
     );
 }
 
+/// The binary ids nextest runs with the whole shard to themselves: every `binary_id(...)` in a
+/// filter whose override sets `threads-required = "num-test-threads"`.
+fn whole_shard_binaries(config: &str) -> BTreeSet<String> {
+    let mut whole = BTreeSet::new();
+    for block in config.split("[[profile.default.overrides]]").skip(1) {
+        let field = |name: &str| {
+            block
+                .lines()
+                .find_map(|line| line.trim().strip_prefix(name))
+                .and_then(|rest| rest.trim().strip_prefix('='))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+                .unwrap_or_default()
+        };
+        if field("threads-required") != "num-test-threads" {
+            continue;
+        }
+        for piece in field("filter").split("binary_id(").skip(1) {
+            whole.insert(piece.split(')').next().unwrap().to_owned());
+        }
+    }
+    whole
+}
+
+/// One Firefox at a time is not enough on a busy runner: with only the one-at-a-time group, a
+/// Firefox start still competed with three neighbouring test processes and overran its budget
+/// (ess#85 on 2026-09-25; again on `main` a1cf7233f, job 108296632588, 30.010s at the announce
+/// stage, after ess#107 dropped the whole-shard setting). So every binary that includes the
+/// browser fixture also takes the whole shard, and a later speed pass that removes it fails here
+/// rather than on the next loaded runner.
+#[test]
+fn every_browser_binary_takes_the_whole_shard_while_it_runs() {
+    let config = fs::read_to_string(workspace_root().join(".config/nextest.toml"))
+        .expect("the nextest configuration is readable");
+    let whole = whole_shard_binaries(&config);
+    // Split, so that this file does not contain what it scans for.
+    let include = ["#[path = \"support/", "browser.rs\"]"].concat();
+    let browser = binaries_where(|source| source.contains(&include));
+    assert!(
+        browser.contains("ess-cli::coverage_browser"),
+        "the browser scan found {browser:?}; it no longer sees the fixture it exists to find"
+    );
+    let sharing: Vec<&String> = browser
+        .iter()
+        .filter(|binary| !whole.contains(*binary))
+        .collect();
+    assert!(
+        sharing.is_empty(),
+        "these binaries start a real Firefox and share their shard with other test processes \
+         while it starts: {sharing:?}"
+    );
+}
+
 /// Whether one test source prunes fixture directories from a `Once`, once per process.
 fn prunes_from_a_once_per_process(source: &str) -> bool {
     // Split, so that this file does not contain what it scans for.

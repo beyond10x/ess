@@ -377,13 +377,22 @@ whole-system semantic validity or support in the separate restricted TypeScript 
 ## Infrastructure records
 
 The `ess verify bindings` command, introduced in 0.21.0, connects admitted realization selections to
-native infrastructure observations. `ess-observed-bindings/1` is a closed authored JSON/YAML DTO;
-its binding digest hashes compact typed JSON after sorting bindings by id and sorting
-declared evidence. It retains all authored image expectations and the exact realization digest.
-`ess-observed-bindings-report/2` is serialize-only, deterministic pretty JSON plus LF with no
-whole-report digest or report-admission reader. It has the fields of `/1` and adds the
-`OBS-BIND-008` check (an unbound container or native sidecar in a bound workload violates), so the
-same input can be satisfied under `/1` and violated under `/2`; a `/1` reader must reject `/2`. It carries that binding digest, realization digest,
+native infrastructure observations. `ess-observed-bindings/1` and `/2` are closed authored
+JSON/YAML DTOs; the binding digest hashes compact typed JSON after sorting bindings by id and
+sorting declared evidence, and, for `/2`, sorting `foreign_containers` by workload and container
+name. It retains all authored image expectations and the exact realization digest. `/2` adds
+optional `foreign_containers`: per bound workload, containers this realization does not build,
+each with a `name` and a nonempty `reason` and no image. `/1` is read unchanged and acknowledges
+nothing; its binding digest is the one earlier releases computed, and a `/1` document carrying
+`foreign_containers` is refused. Earlier readers refuse `/2` by its format.
+`ess-observed-bindings-report/3` is serialize-only, deterministic pretty JSON plus LF with no
+whole-report digest or report-admission reader. `/2` added the `OBS-BIND-008` check (an unbound
+container or native sidecar in a bound workload violates), so the same input can be satisfied
+under `/1` and violated under `/2`. `/3` adds each binding's `acknowledged` list (`container`,
+`reason`) of acknowledged foreign containers observed in its workload; a satisfied `OBS-BIND-008`
+now means each entry is bound or acknowledged. An acknowledged container running a declared
+image or artifact locator, or its `@sha256:` digest under another name, violates it, and an acknowledgement naming no observed container or
+native sidecar leaves it unknown, since plain init containers are not recorded. A `/1` reader must reject `/2`, and a `/2` reader `/3`. It carries that binding digest, realization digest,
 observation model digest and provenance, per-binding results and explicit exclusions. These
 identities name different bytes. Missing evidence produces unknown, never an empty successful
 comparison. [Binding guide](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads).
@@ -399,9 +408,12 @@ for omitted content, comparison restrictions and projection refusal.
 | Document and discriminator | Independent identity | Reader and byte contract |
 |---|---|---|
 | `format: infra-observation/1` | Context, scan time, scanner release | Sanitized scanner output; permissive raw DTO → observation validation. Pretty JSON without an appended LF; scanner-reported hash covers those file bytes. It does not prove complete collection scope. [Writer][scanner], [reader][observation] |
+| `format: infra-observation/3` | Context, scan time, scanner release | What `ess-kubernetes scan` writes for a full scan. `/1` with one meaning changed: each Secret `data`/`stringData` value is exactly `{"present": true}` — the key name and that a value exists, with no digest and no length. Anything else is refused (`INFRA-SECRET-001` for a plain value, `INFRA-SECRET-003` otherwise). `/1` wrote each value's unsalted SHA-256 and byte length, which let anyone holding the file confirm a guessed low-entropy secret; `/1` still reads, its digests are checked for shape and discarded. Same byte contract as `/1`. [Writer][scanner], [reader][observation] |
 | `format: infra-ir/1` | Observation provenance and model digest | `read_document` checks exact format, closed mirrors, hash and resolved-reference membership. CLI pretty envelope; **infrastructure-model** digest. Checked model transformations add no wire version or completeness proof. A workload's optional `native_sidecars` (name and image of each `initContainers` entry with `restartPolicy: Always`) is absent when the observation did not record init containers and `[]` when it recorded none; before 0.32.0 the field is written only for a native sidecar or an explicit `initContainers: []`, so every other document from those producers keeps its bytes and digest; older readers refuse a document that carries the field. [API][infra-ir], [reader][infra-reader] |
+| `format: infra-ir/3` | Observation provenance and model digest | `/1` with one meaning changed: each Secret key holds `{"present": true}` and nothing derived from its value. Written for every full observation that has a Secret key, including a compiled `infra-observation/1`; an IR with no Secret key keeps `/1` and its bytes. `read_document` refuses a document whose declared version disagrees with its Secret values, and one model mixing markers and legacy digests. A persisted `/1` still reads: its own digest is checked, then each Secret key is reduced to presence, so what was read is `/3` with a different model digest. Every derived document (graph `source_digest`, drift `from`/`to`, simulation snapshot, projection `snapshot_digest`, observed-bindings observation) names that stripped digest, and none chains to the `/1` file's own digest any more: a digest over the unsalted Secret digests, beside the `/3` of the same model, confirms a guessed Secret value. [API][infra-ir], [reader][infra-reader] |
 | `format: infra-spec/1` | Human-readable intent name and typed-intent digest | JSON/YAML → raw shapes → validated `InfraSpec`. `digest()` hashes the compact sorted typed intent; no canonical authored-file digest. [Reader][infra-spec], [digest][infra-spec-digest] |
-| `format: infra-drift/1` | Before/after context and model digests | Serialize-only typed comparison; key-sorted pretty JSON. Context agreement does not prove equal collection scope. [Source][infra-drift] |
+| `format: infra-drift/1` | Before/after context and model digests | Written by earlier releases for full scans. Serialize-only typed comparison; key-sorted pretty JSON. Context agreement does not prove equal collection scope. For a Secret, `changed_keys` named keys whose value digest moved, so an empty list meant "not rotated". This build no longer writes it. [Source][infra-drift] |
+| `format: infra-drift/3` | Before/after context and model digests | What `ess infra diff` writes for full scans: `/1`'s fields with one meaning changed. For a Secret, `config_content_changed` names added and removed keys only and `changed_keys` is always empty, over any pair of IR versions: a rotated Secret value is unknown, not unchanged, because the IR no longer records anything that would detect it — a digest of a low-entropy secret is a guess oracle. `/2` remains the namespace topology profile. Serialize-only; no drift reader exists. [Source][infra-drift] |
 | `format: infra-simulation/1` | Intent name and snapshot digest | Serialize-only simulation with unknown outcomes; key-sorted pretty JSON, no simulation hash. [Source][infra-simulation] |
 | `format: infra-graph/1` | Context/namespace and `source_digest` | Serialize-only graph; pretty JSON. Its source digest names the **InfraIR model**, not EssIr. [Source][infra-graph] |
 | `format: infra-projection/1` JSON, **artifacts list** | Intent name; `provenance.snapshot_digest` names InfraIR model, `provenance.specification_digest` names typed InfraSpec | `ProjectionDocument` contains emitted file contents and both input digests; key-sorted pretty JSON, no reader or whole-output hash. [Source][infra-project] |

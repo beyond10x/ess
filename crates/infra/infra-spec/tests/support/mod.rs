@@ -138,3 +138,35 @@ pub fn daemonset(namespace: &str, name: &str, containers: &serde_json::Value) ->
 pub fn container(name: &str, image: &str) -> serde_json::Value {
     serde_json::json!({"name": name, "image": image, "resources": {}})
 }
+
+/// The frozen legacy `infra-ir/1` of the example: each Secret key holds the unsalted digest.
+pub const LEGACY_IR: &str =
+    "crates/infra/infra-compiler/tests/fixtures/legacy-k3d-dev-cluster.ir-1.json";
+
+/// The legacy document, read.
+pub fn legacy_ir() -> InfraIr {
+    infra_compiler::read_document(&serde_json::from_str(&read(LEGACY_IR)).expect("JSON"))
+        .expect("the legacy document is still read")
+}
+
+/// The model digest of the legacy document with each Secret key reduced to presence, computed
+/// from the file itself rather than by the reader. Asserted different from the legacy digest.
+pub fn stripped_legacy_digest() -> String {
+    let frozen: serde_json::Value = serde_json::from_str(&read(LEGACY_IR)).expect("JSON");
+    let mut model = frozen["model"].clone();
+    for secret in model["secrets"]
+        .as_object_mut()
+        .expect("secrets")
+        .values_mut()
+    {
+        for value in secret["keys"].as_object_mut().expect("keys").values_mut() {
+            *value = serde_json::json!({ "present": true });
+        }
+    }
+    let stripped = infra_compiler::digest_of_canonical(&serde_json::to_vec(&model).expect("model"));
+    assert_ne!(
+        stripped, frozen["digest"],
+        "the legacy fixture carries no Secret digest to strip"
+    );
+    stripped
+}
