@@ -167,11 +167,11 @@ impl InvoiceRealization {
 
 /// The one answer the generated seam cannot spell, refused loudly rather than guessed.
 ///
-/// The conformance target interface answers a command against a subject it has never seen with
-/// *no declared outcome* — the refusal the specification does not model. The generated behaviour
-/// trait cannot: its `Ok` is the outcome enum, and the `wrong-state` variant demands the
-/// `InvoiceStateConflict` state the invoice is really in, which an invoice that does not exist
-/// does not have. Fabricating one would be manufactured evidence, so the honest total answer is
+/// The unknown-instance rule (`docs/design/typed-literals-and-unknown-instances.md`) answers a
+/// command against a subject the system has never seen with its `wrong-state` branch. The
+/// generated behaviour trait cannot: its `Ok` is the outcome enum, and the `wrong-state` variant
+/// demands the `InvoiceStateConflict` state the invoice is really in, which an invoice that does
+/// not exist does not have. Fabricating one would be manufactured evidence, so the honest total answer is
 /// the typed refusal — loud, and never a state nobody observed. The conformance bridge checks
 /// [`SharedInvoices::knows`] first and never routes an unknown subject here; that the seam needs
 /// this workaround at all is a recorded W6.3 finding about the generator.

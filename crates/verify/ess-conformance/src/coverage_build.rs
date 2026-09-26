@@ -136,6 +136,7 @@ fn merge_inventory(
             suite: ConformanceSuite::new(crate::SuiteProvenance::of(ir)),
             refusals: Vec::new(),
             outside: Vec::new(),
+            notes: Vec::new(),
         }
     };
     finish_inventory(ir, batches, scope, origins, synthesis)
@@ -569,7 +570,7 @@ mod tests {
         let input =
             finish_inventory(&ir, &[], Scope::System, Origins::Generated, synthesis).unwrap();
         let inventory = input.selected().coverage().unwrap();
-        assert_eq!(inventory.counts.generated, 29);
+        assert_eq!(inventory.counts.generated, 32);
         assert_eq!(inventory.counts.refused, 1);
         let refusal = &inventory.refused[0];
         assert_eq!(refusal.scenario.as_ref(), Some(&id));

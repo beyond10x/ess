@@ -91,7 +91,7 @@ fn every_scenario_the_billing_specification_obliges_passes_against_the_reference
     let suite = suite();
     assert_eq!(
         suite.len(),
-        29,
+        32,
         "the fixture is the whole suite, not a subset of it; a run over fewer scenarios would \
          prove less than it looks like it proves"
     );
@@ -114,7 +114,7 @@ fn every_scenario_the_billing_specification_obliges_passes_against_the_reference
             .next()
             .map_or_else(|| "none".to_owned(), ToString::to_string)
     );
-    assert_eq!(report.scenarios.len(), 29);
+    assert_eq!(report.scenarios.len(), 32);
     assert_eq!(report.status, ConformanceStatus::Passed);
     assert!(report.is_conformant());
     assert_eq!(
@@ -310,7 +310,7 @@ fn a_target_that_cannot_expose_an_observation_fails_the_run_rather_than_skipping
             .iter()
             .filter(|result| result.status == Status::Passed)
             .count(),
-        28,
+        31,
         "everything the target *can* answer still answered; only the one observation is missing"
     );
     let diagnostic = result

@@ -1,7 +1,7 @@
 //! The closure from a delta to what a committed suite owes again.
 //!
 //! The fixture pair under `examples/revision-pair/` differs by exactly six changes, and its
-//! specification obliges ten scenarios — so this file can assert *which* scenarios each change
+//! specification obliges twelve scenarios — so this file can assert *which* scenarios each change
 //! puts back to owed, rather than that some number of them did. That distinction is the whole
 //! reason the fixture exists: an impact engine's failure mode is a plausible answer nobody checks.
 //!
@@ -119,7 +119,9 @@ fn the_suite_the_fixture_obliges_is_ten_scenarios_and_the_delta_is_six_changes()
     // this file pass by reporting nothing.
     let report = catalog_impact();
 
-    assert_eq!(report.churn.conformance_scenarios_total, Some(10));
+    // Ten, and since beyond10x/ess#113 the two lifecycle commands' `wrong-state` branches, each
+    // sent for a price list no record carries.
+    assert_eq!(report.churn.conformance_scenarios_total, Some(12));
     assert_eq!(report.churn.semantic_changes_total, 6);
     assert_eq!(report.churn.actor_grants_changed, 2);
 }
@@ -138,8 +140,9 @@ fn an_edited_entity_invariant_owes_every_scenario_that_rests_on_the_entity_and_n
 
     assert_eq!(
         owed.len(),
-        9,
-        "nine of the ten scenarios create, move or refuse-to-move a price list: {owed:?}"
+        11,
+        "eleven of the twelve scenarios create, move or refuse-to-move a price list, or are sent \
+         for one no record carries: {owed:?}"
     );
     assert!(
         !owed.contains("catalog.pricing.CreatePriceList/outcome/rejected"),
@@ -164,7 +167,15 @@ fn an_edited_outcome_guard_owes_every_scenario_because_every_scenario_creates_th
         "command/catalog.pricing.CreatePriceList/outcome-condition-changed/created",
     );
 
-    assert_eq!(owed.len(), 10, "{owed:?}");
+    // Every scenario but one. The two unknown-instance scenarios (beyond10x/ess#113) create
+    // nothing: `PublishPriceList/outcome/wrong-state` is still owed, because it acts as the pricing
+    // manager, who may invoke `CreatePriceList`; `RetirePriceList/outcome/wrong-state` acts as the
+    // auditor, who may not, and is the one scenario this edit does not reach.
+    assert_eq!(owed.len(), 11, "{owed:?}");
+    assert!(
+        !owed.contains("catalog.pricing.RetirePriceList/outcome/wrong-state"),
+        "{owed:?}"
+    );
     let suite = catalog_suite();
     for id in &owed {
         let scenario = suite
@@ -176,9 +187,10 @@ fn an_edited_outcome_guard_owes_every_scenario_because_every_scenario_creates_th
                     || construct
                         .to_string()
                         .starts_with("outcome catalog.pricing.CreatePriceList/")
+                    || construct.to_string() == "actor catalog.pricing.PricingManager"
             }),
-            "`{id}` is owed by the guard edit, so its own dependency set must name the command \
-             or one of its branches"
+            "`{id}` is owed by the guard edit, so its own dependency set must name the command, \
+             one of its branches, or the actor that may invoke it"
         );
     }
 }
@@ -196,8 +208,9 @@ fn taking_a_grant_from_an_actor_owes_only_the_scenarios_that_act_as_that_actor()
 
     assert_eq!(
         owed.len(),
-        4,
-        "four of the ten scenarios act as the auditor: {owed:?}"
+        5,
+        "five of the twelve scenarios act as the auditor, the unknown-instance one included: \
+         {owed:?}"
     );
     assert!(owed.contains("catalog.pricing.RetirePriceList/outcome/retired"));
     assert!(
@@ -231,7 +244,7 @@ fn a_variant_removed_from_an_enum_reaches_the_entity_that_holds_it_transitively(
 
     assert_eq!(
         owed.len(),
-        10,
+        12,
         "every scenario in this fixture either handles a price list priced in a currency or \
          submits a floor price in one: {owed:?}"
     );
@@ -368,7 +381,7 @@ fn a_suite_produced_from_the_later_revision_is_refused_rather_than_narrowed() {
     let before = compiled("examples/revision-pair/before");
     let after = compiled("examples/revision-pair/after");
     let later = synthesize(&after).suite;
-    assert_eq!(later.len(), 10, "the later suite is a real suite");
+    assert_eq!(later.len(), 12, "the later suite is a real suite");
 
     let refusal =
         impact(&before, &after, Some(&later), None).expect_err("the wrong suite is refused");

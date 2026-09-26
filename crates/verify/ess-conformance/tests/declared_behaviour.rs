@@ -285,6 +285,9 @@ enum Mutant {
     ItemsStrict,
     /// `n >= 1` moved to `n >= 0`.
     RestockFromZero,
+    /// An order no row carries answered `undeclared` instead of the command's `wrong_state`
+    /// branch: the unknown-instance rule broken (beyond10x/ess#113).
+    UnknownUndeclared,
 }
 
 struct Shop {
@@ -363,6 +366,18 @@ impl ConformanceTarget for Shop {
 impl Shop {
     /// Whether the command's input guard admits the request: `items >= 0` and `n >= 1 and
     /// limit > 0`, each as its mutant moves it.
+    /// The unknown-instance rule: the two commands declaring `wrong_state` answer it for an order
+    /// no row carries, with the declared error and no state, because it is in none.
+    fn unknown(&self, name: &str, command: &CommandRef) -> SemanticCommandResult {
+        let declares = matches!(name, "shop.orders.HoldOrder" | "shop.orders.CloseOrder");
+        if declares && self.mutant != Mutant::UnknownUndeclared {
+            return SemanticCommandResult::took(outcome(command, "wrong-state")).with_error(
+                DeclaredErrorValue::new("shop.orders.OrderStateConflict".parse().unwrap()),
+            );
+        }
+        SemanticCommandResult::undeclared()
+    }
+
     fn admits(&self, command: &str, request: &SemanticCommandRequest) -> bool {
         match command {
             "shop.orders.SetItems" => {
@@ -427,7 +442,7 @@ impl Shop {
         };
         let id = id.clone();
         let Some(row) = rows.get_mut(&id) else {
-            return Ok(SemanticCommandResult::undeclared());
+            return Ok(self.unknown(&name, &command));
         };
         let state = match &row["state"] {
             Node::Text(state) => state.clone(),
@@ -548,4 +563,14 @@ fn a_boundary_moved_past_the_literal_fails_the_success() {
 #[test]
 fn a_boundary_moved_below_one_conjunct_fails_the_refusal() {
     fails(Mutant::RestockFromZero, RESTOCK_REFUSED);
+}
+
+#[test]
+fn an_unknown_order_answered_undeclared_fails_the_wrong_state_outcome() {
+    for id in [
+        "shop.orders.CloseOrder/outcome/wrong-state",
+        "shop.orders.HoldOrder/outcome/wrong-state",
+    ] {
+        fails(Mutant::UnknownUndeclared, id);
+    }
 }

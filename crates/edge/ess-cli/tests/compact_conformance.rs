@@ -186,8 +186,8 @@ fn compact_reports_bind_new_bytes_and_retain_actual_execution_outcomes() {
             results[0]["summary"]["conformance_status"],
             results[1]["summary"]["conformance_status"]
         );
-        assert_eq!(results[0]["summary"]["counts"]["passed"], 29);
-        assert_eq!(results[1]["summary"]["counts"]["passed"], 29);
+        assert_eq!(results[0]["summary"]["counts"]["passed"], 32);
+        assert_eq!(results[1]["summary"]["counts"]["passed"], 32);
         for result in &mut results {
             for scenario in result["scenarios"].as_array_mut().unwrap() {
                 scenario.as_object_mut().unwrap().remove("duration_ms");

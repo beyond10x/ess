@@ -3142,6 +3142,10 @@ fn synthesize_suite(
             for outside in &synthesis.outside {
                 println!("outside: {outside}");
             }
+            // And a question the specification does not answer, so no scenario is owed for it.
+            for note in &synthesis.notes {
+                println!("note: {note}");
+            }
             let written = written.unwrap_or_else(|| "nothing written".to_owned());
             // Counted apart, because they are not the same claim. A generated scenario is an
             // obligation the specification derived; an authored one is what a person asserted about

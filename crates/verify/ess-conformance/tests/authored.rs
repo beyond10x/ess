@@ -779,7 +779,7 @@ fn rejected_authored_candidate_needs_are_proved_independently_of_an_outside_surv
         let inventory = input.selected().coverage().unwrap();
         assert_eq!(inventory.counts.generated, 2);
         assert_eq!(inventory.counts.authored, 0);
-        assert_eq!(inventory.counts.outside, 28);
+        assert_eq!(inventory.counts.outside, 31);
         assert_eq!(inventory.counts.refused, 1);
         let refusal = &inventory.refused[0];
         assert_eq!(refusal.scope, expected_scope);
@@ -1205,7 +1205,7 @@ fn the_committed_billing_suite_holds_the_authored_scenario_beside_the_generated_
         authored,
         vec!["billing.invoice/authored/outstanding-invoices-rank-latest-first"]
     );
-    assert_eq!(suite.len(), 30, "twenty-nine obligations and one assertion");
+    assert_eq!(suite.len(), 33, "thirty-two obligations and one assertion");
 }
 
 #[test]

@@ -16,8 +16,9 @@
 //! ports; nothing is computed here that the system did not do.
 //!
 //! One boundary decision lives here and is argued at [`Synthesized::subject_is_unknown`]: a
-//! command against a subject the system has never seen answers "no declared outcome", which the
-//! generated behaviour seam cannot spell — a recorded finding about the generator.
+//! command against a subject the system has never seen answers its `wrong-state` branch (the
+//! unknown-instance rule), which the generated behaviour seam cannot spell — a recorded finding
+//! about the generator.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -368,7 +369,7 @@ fn issue_invoice(
 ) -> Result<SemanticCommandResult, TargetError> {
     let invoice_id = invoice_id_input(request)?;
     if subject_is_unknown(live, &invoice_id) {
-        return Ok(SemanticCommandResult::undeclared());
+        return Ok(unknown_invoice(ISSUE_INVOICE));
     }
     let outcome = live
         .assembled
@@ -401,7 +402,7 @@ fn cancel_invoice(
 ) -> Result<SemanticCommandResult, TargetError> {
     let invoice_id = invoice_id_input(request)?;
     if subject_is_unknown(live, &invoice_id) {
-        return Ok(SemanticCommandResult::undeclared());
+        return Ok(unknown_invoice(CANCEL_INVOICE));
     }
     let outcome = live
         .assembled
@@ -439,7 +440,7 @@ fn pay_invoice(
     let invoice_id = invoice_id_input(request)?;
     let amount = money_input(request, "amount")?;
     if positive(&amount) && subject_is_unknown(live, &invoice_id) {
-        return Ok(SemanticCommandResult::undeclared());
+        return Ok(unknown_invoice(PAY_INVOICE));
     }
     let outcome = live
         .assembled
@@ -505,8 +506,8 @@ fn send_email(
     })
 }
 
-/// Whether the system has never seen this invoice — the boundary where §9's "no declared
-/// outcome" is answered.
+/// Whether the system has never seen this invoice — the boundary where the unknown-instance rule
+/// is answered (`docs/design/typed-literals-and-unknown-instances.md`).
 ///
 /// It has to be answered *here*, before the port, because the generated behaviour seam cannot
 /// spell it: the seam's `Ok` is the outcome enum, whose `wrong-state` variant demands the state
@@ -516,6 +517,14 @@ fn send_email(
 /// `billing_realization::invoice`.
 fn subject_is_unknown(live: &Live, invoice_id: &InvoiceId) -> bool {
     !live.assembled.invoices.knows(invoice_id)
+}
+
+/// The rule's answer for an invoice the system has never seen: the command's `wrong-state` branch
+/// and its declared error, with no `state`, because such an invoice is in none. Decided at this
+/// boundary for the reason [`subject_is_unknown`] gives, as the `undeclared` it replaces was.
+fn unknown_invoice(command: &str) -> SemanticCommandResult {
+    SemanticCommandResult::took(outcome_ref(command, "wrong-state"))
+        .with_error(DeclaredErrorValue::new(error_ref(INVOICE_STATE_CONFLICT)))
 }
 
 /// The branch each lifecycle command declares for an invoice it will not act on, with the state
@@ -778,9 +787,9 @@ fn the_committed_suite_unchanged_passes_the_linked_synthesized_system() {
     let suite = committed_suite();
     assert_eq!(
         suite.len(),
-        30,
+        33,
         "the criterion is the whole committed suite; fewer scenarios would prove less than wave \
-         6 claims. Twenty-nine are the specification's obligations and the thirtieth is the \
+         6 claims. Thirty-two are the specification's obligations and the thirty-third is the \
          authored scenario `examples/billing/scenarios/` carries — a generated implementation has \
          to answer a person's claim about the order of a view as well as the model's own"
     );
@@ -804,7 +813,7 @@ fn the_committed_suite_unchanged_passes_the_linked_synthesized_system() {
             .next()
             .map_or_else(|| "none".to_owned(), ToString::to_string)
     );
-    assert_eq!(report.scenarios.len(), 30);
+    assert_eq!(report.scenarios.len(), 33);
     assert_eq!(report.status, ConformanceStatus::Passed);
     assert!(report.is_conformant());
     assert_eq!(

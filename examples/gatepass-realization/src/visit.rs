@@ -82,13 +82,14 @@ impl VisitRealization {
 
 /// The one answer the generated seam cannot spell, refused loudly rather than guessed.
 ///
-/// A command naming a visit that was never registered has no declared outcome: `wrong-state`
-/// demands the `VisitStateConflict` state the visit is really in, and a visit that does not exist
-/// does not have one. Fabricating a state would be manufacturing an observation, so the honest
-/// total answer is the typed refusal — which the served surface reports as `501`, naming the
-/// obligation. That it has to is a gap in the *model*, not in this file: the specification language
-/// has no way to declare "no such subject", and the same finding is recorded against the billing
-/// realization.
+/// A command naming a visit that was never registered is answered, by the unknown-instance rule
+/// (`docs/design/typed-literals-and-unknown-instances.md`), with its `wrong-state` branch — which
+/// this seam cannot spell: `wrong-state` demands the `VisitStateConflict` state the visit is
+/// really in, and a visit that does not exist does not have one. Fabricating a state would be
+/// manufacturing an observation, so the honest total answer is the typed refusal — which the served
+/// surface reports as `501`, naming the obligation, and which the suite's unknown-instance scenario
+/// fails. That it has to is a gap in the generated seam, not in this file, and the same finding is
+/// recorded against the billing realization.
 fn unknown_subject(source: &'static str) -> UnmetObligation {
     UnmetObligation {
         capability: "command behaviour",

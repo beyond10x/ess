@@ -25,9 +25,9 @@ ess verify conform synthesize --path examples/billing \
 
 | suite | checks | scenarios | authored | no scenario | generated from |
 | --- | --- | --- | --- | --- | --- |
-| [`billing/suite.json`](billing/suite.json) | billing v3 (model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1, contract digest d0791c480f462a0bd205e4eda077f60c22bedf0f83756f7ff35687682ce8e3dd) | 30 | 1 | 0 | [`examples/billing`](../../examples/billing) |
-| [`gatepass/suite.json`](gatepass/suite.json) | gatepass v1 (model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba, contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c) | 12 | 0 | 5 | [`examples/gatepass`](../../examples/gatepass) |
-| [`oracle-fixture/suite.json`](oracle-fixture/suite.json) | oracle v1 (model digest 7ca8e1ba4935adbffad0c3e57e1d7651c7397a5c9b52f6d0cd54488cba83fb2b, contract digest 003eb0f2aab6cc1251288e3dc03526173e257f09b6a592df36618cff9d431d67) | 31 | 0 | 6 | [`examples/oracle-fixture`](../../examples/oracle-fixture) |
+| [`billing/suite.json`](billing/suite.json) | billing v3 (model digest 62706dc8de60f859f9fa11d363bae20825e7c74e71435e2fd28691488d787af1, contract digest d0791c480f462a0bd205e4eda077f60c22bedf0f83756f7ff35687682ce8e3dd) | 33 | 1 | 0 | [`examples/billing`](../../examples/billing) |
+| [`gatepass/suite.json`](gatepass/suite.json) | gatepass v1 (model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba, contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c) | 14 | 0 | 5 | [`examples/gatepass`](../../examples/gatepass) |
+| [`oracle-fixture/suite.json`](oracle-fixture/suite.json) | oracle v1 (model digest 7ca8e1ba4935adbffad0c3e57e1d7651c7397a5c9b52f6d0cd54488cba83fb2b, contract digest 003eb0f2aab6cc1251288e3dc03526173e257f09b6a592df36618cff9d431d67) | 34 | 0 | 6 | [`examples/oracle-fixture`](../../examples/oracle-fixture) |
 
 ## Authored, and counted apart
 
@@ -87,3 +87,8 @@ What would close them:
 
 * `drop` is unobservable by design; write `escalate:` with an event if the failure has to be provable
 * publish the fields the invariant reads in a view of this entity, or state the invariant over what one already publishes
+
+One question the specification does not answer, so no scenario is owed for it (a note, not a
+refusal): `oracle.order.AmendOrder` declares no `wrong_state` outcome, so what it answers when its
+`instance:` names no record is undeclared
+([`docs/design/typed-literals-and-unknown-instances.md`](../../docs/design/typed-literals-and-unknown-instances.md)).

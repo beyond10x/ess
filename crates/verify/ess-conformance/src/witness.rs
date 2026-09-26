@@ -140,6 +140,13 @@ impl Distinction {
         Self(nth)
     }
 
+    /// The witness for an identity no scenario creates: the unknown-instance scenario's
+    /// (`docs/design/typed-literals-and-unknown-instances.md`, section 2).
+    ///
+    /// Far past every further instance an arrangement numbers — those count from one and stop at
+    /// [`MAX_CANDIDATES`] — so where a type has that many values, no arrangement reaches it.
+    pub const UNKNOWN: Self = Self(1 << 20);
+
     /// How far from the plain witness this one is.
     pub const fn get(self) -> usize {
         self.0
