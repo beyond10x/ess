@@ -2644,6 +2644,61 @@ fn an_effect_before_failure_and_a_lost_acknowledgement_are_both_indeterminate() 
     }
 }
 
+/// A freshly installed artifact launches even while other cases in this process spawn children.
+///
+/// `cargo test` runs these cases as threads of one process. A child forked by any thread while the
+/// installer holds the artifact open for writing inherits that descriptor until it executes, and
+/// while it holds it the kernel refuses to execute the artifact (`ETXTBSY`). `run` reports that as a
+/// child that was never launched, `status: None`, which is how
+/// `an_effect_before_failure_and_a_lost_acknowledgement_are_both_indeterminate` failed on a loaded
+/// machine: the installer, not the process boundary under test, decided the outcome.
+#[test]
+fn a_freshly_installed_artifact_launches_while_other_cases_spawn() {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    const ROUNDS: usize = 40;
+    let stop = Arc::new(AtomicBool::new(false));
+    let spawners: Vec<_> = (0..3)
+        .map(|_| {
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let _ = Command::new(env!("CARGO_BIN_EXE_ess-recovery-fake"))
+                        .arg("version")
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+            })
+        })
+        .collect();
+    let mut unlaunched = Vec::new();
+    for round in 0..ROUNDS {
+        let root = scratch("helm-fresh");
+        let (path, _binary) = fake_artifact(&root);
+        let mut command = Command::new(&path);
+        command.arg("version");
+        let outcome = run(command, OUTPUT_LIMIT, Duration::from_secs(30)).expect("an outcome");
+        if !outcome.launched {
+            unlaunched.push(format!(
+                "round {round}: {}",
+                String::from_utf8_lossy(&outcome.stderr)
+            ));
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    stop.store(true, Ordering::Relaxed);
+    for spawner in spawners {
+        spawner.join().expect("a spawner thread finishes");
+    }
+    assert!(
+        unlaunched.is_empty(),
+        "{} of {ROUNDS} freshly installed artifacts were never launched: {unlaunched:#?}",
+        unlaunched.len()
+    );
+}
+
 /// A child that fails before any effect leaves the target exactly as it was.
 #[test]
 fn a_failure_before_any_effect_leaves_the_target_untouched() {
