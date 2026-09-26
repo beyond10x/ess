@@ -3,8 +3,8 @@
     "suite_version": "ess-conformance/4",
     "system": "billing",
     "specification_version": "v3",
-    "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-    "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+    "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+    "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
   },
   "scenarios": {
     "billing.email.SendEmail/outcome/failed": {
@@ -431,6 +431,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -763,6 +767,10 @@
                 "kind": "observed",
                 "event": "billing.invoice.InvoiceCreated",
                 "field": "invoice_id"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
               },
               "total": {
                 "kind": "literal",
@@ -3175,6 +3183,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -3453,6 +3465,10 @@
               "invoice_id": {
                 "kind": "instance",
                 "instance": "invoice"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
               },
               "total": {
                 "kind": "literal",
@@ -3820,6 +3836,10 @@
                 "kind": "instance",
                 "instance": "invoice"
               },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
+              },
               "total": {
                 "kind": "literal",
                 "value": {
@@ -4102,6 +4122,10 @@
               "invoice_id": {
                 "kind": "instance",
                 "instance": "invoice"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
               },
               "total": {
                 "kind": "literal",
@@ -4798,6 +4822,10 @@
               "invoice_id": {
                 "kind": "instance",
                 "instance": "invoice"
+              },
+              "reminder_count": {
+                "kind": "literal",
+                "value": 0.0
               },
               "total": {
                 "kind": "literal",

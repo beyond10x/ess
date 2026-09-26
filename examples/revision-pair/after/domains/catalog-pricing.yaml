@@ -73,6 +73,8 @@ commands:
         instance: price_list_id
         emits:
           - catalog.pricing.PriceListCreated
+        sets:
+          floor: input.floor
         summary: The price list is created in Draft, at the headline price it was given.
 
       - name: rejected

@@ -423,6 +423,15 @@ validation_codes! {
     /// from [`Self::EmptyChange`], which is about a branch that does nothing: these branches do
     /// something, and nothing a caller can write selects between them.
     UnreachableBranch => "unreachable_branch",
+
+    /// An entity invariant reads a required field that a creating outcome leaves unset.
+    ///
+    /// After such a branch the field has no specified value, so the invariant holds only if the
+    /// implementation happens to pick a value satisfying it, and a suite checking the invariant
+    /// passes or fails on that undeclared choice (ess#112). Distinct from
+    /// [`Self::UnobservableFact`], where the field does not exist at all: here it exists and
+    /// nothing the specification says gives it a value.
+    InvariantReadsUnsetField => "invariant_reads_unset_field",
 }
 
 impl fmt::Display for ValidationCode {

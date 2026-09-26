@@ -72,8 +72,9 @@ Only the active role resolves filesystem entries. Its list must be nonempty. The
 selected files and intermediate directories below that root must not be symlinks; selected inputs
 must be regular files whose canonical targets stay inside the root and are not repeated. Inactive
 paths receive structural checks only and may name missing files. Unlisted files are not enumerated,
-inspected or read. Distinct copied or hardlinked files retain separate identities and can trigger
-existing semantic duplicate refusals.
+inspected or read. `ess specify validate` treats a nonempty `scenarios` list as active beside
+`specification`, so its files must exist and compile against the model. Distinct copied or
+hardlinked files retain separate identities and can trigger existing semantic duplicate refusals.
 
 Selected original UTF-8 text is retained without newline conversion. Entries are read in sorted
 identity order. Model Source/SourceMap and suite/5 source identities are the listed relative paths;

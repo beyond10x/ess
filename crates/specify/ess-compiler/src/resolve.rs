@@ -138,6 +138,7 @@ fn view_handles(names: &std::collections::BTreeSet<QualifiedName>) -> BTreeSet<V
 /// | a projected field the source entity does not have, or whose type disagrees with it | `ess-domain`, `ViewSpec::validate` | `ESS-VIEW-001`, `ESS-VIEW-002` |
 /// | a lifecycle's states: unknown, unreachable, dead-ended, duplicated | `ess-domain`, `StateMachine::validate_at` | `ESS-ENTITY-011`, `ESS-ENTITY-006` |
 /// | an invariant reading a field the entity does not have | `ess-domain`, `EntitySpec::validate` | `ESS-ENTITY-003` |
+/// | an invariant reading a required field a `creates:` branch leaves unset | `ess-domain`, `validate_created_invariant_fields` | [`CREATION_LEAVES_INVARIANT_FIELD_UNSET`](codes::CREATION_LEAVES_INVARIANT_FIELD_UNSET), `ESS-COMMAND-018` |
 ///
 /// An actor grant is not a §20 bullet of its own. It is refused as a reference with nothing behind
 /// it — the same reading `ess-domain`'s `ActorSpec::validate` takes, which is why both produce
@@ -231,6 +232,8 @@ pub mod codes {
         pub const ACCESSOR_RESOURCE: u16 = 16;
         /// A predicate compares a fact with an unquoted `null`, which no fact value can be.
         pub const NULL_COMPARISON: u16 = 17;
+        /// An invariant reads a required field that a creating branch leaves with no value.
+        pub const UNSET_AT_CREATION: u16 = 18;
 
         /// Every class, in code order.
         pub const ALL: &[u16] = &[
@@ -251,6 +254,7 @@ pub mod codes {
             PARTIAL_ACCESSOR,
             ACCESSOR_RESOURCE,
             NULL_COMPARISON,
+            UNSET_AT_CREATION,
         ];
     }
 
@@ -389,6 +393,15 @@ pub mod codes {
         /// and not a rule: both are a key the document did not write that what it did write makes
         /// required, and both are repaired by writing it.
         UNMAPPED_COMMAND_INPUT = family::BINDING, class::MISSING;
+
+        /// A `creates:` branch leaves a required entity field unset, and an invariant of that
+        /// entity reads it (ess#112).
+        ///
+        /// Bridged from `ess-domain`'s `invariant_reads_unset_field`, which owns the rule
+        /// (`validate_created_invariant_fields`). Filed under `COMMAND` because the site is the
+        /// creating outcome: the usual repair is a `sets:` entry there, the other is declaring the
+        /// field `Optional<…>`, and the hint names both.
+        CREATION_LEAVES_INVARIANT_FIELD_UNSET = family::COMMAND, class::UNSET_AT_CREATION;
     }
 
     /// `true` when two families are the same string.
@@ -843,6 +856,7 @@ fn class_of(code: ValidationCode) -> u16 {
         | Refused::DeadEndState
         | Refused::UnreachableState
         | Refused::UnknownPhase => codes::class::LIFECYCLE,
+        Refused::InvariantReadsUnsetField => codes::class::UNSET_AT_CREATION,
         _ => codes::class::OTHER,
     }
 }
@@ -3688,6 +3702,15 @@ mod tests {
         );
         assert_eq!(codes::VIEW_UNDECLARED_REFERENCE.to_string(), "ESS-VIEW-001");
         assert_eq!(
+            codes::CREATION_LEAVES_INVARIANT_FIELD_UNSET.to_string(),
+            "ESS-COMMAND-018"
+        );
+        assert_eq!(
+            class_of(ValidationCode::InvariantReadsUnsetField),
+            codes::class::UNSET_AT_CREATION,
+            "the bridge files the domain refusal under the named code's class"
+        );
+        assert_eq!(
             codes::ACTOR_UNDECLARED_REFERENCE.to_string(),
             "ESS-ACTOR-001"
         );
@@ -3719,6 +3742,7 @@ mod tests {
             codes::MAPPING_READS_UNDECLARED_FIELD,
             codes::UNMAPPED_COMMAND_INPUT,
             codes::NULL_COMPARISON,
+            codes::CREATION_LEAVES_INVARIANT_FIELD_UNSET,
         ] {
             assert!(codes::ALL.contains(&code), "{code} is not in ALL");
         }

@@ -124,8 +124,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M13",
@@ -230,8 +230,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M22"
@@ -285,8 +285,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M22"
@@ -463,8 +463,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M21"
@@ -697,8 +697,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M23"
@@ -935,8 +935,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M23",
@@ -1175,8 +1175,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M19"
@@ -1232,8 +1232,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M26"
@@ -1293,8 +1293,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M24",
@@ -1579,8 +1579,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M25",
@@ -1986,8 +1986,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M59",
@@ -2395,8 +2395,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M47",
@@ -2480,8 +2480,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M42"
@@ -2581,8 +2581,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M43",
@@ -2638,8 +2638,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M13"
@@ -2719,8 +2719,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
-        "contract_digest": "cb634bd5e6f1afa6ebc8e9dca752e9901a9a68a2e51fc5009d099f155680606c"
+        "spec_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+        "contract_digest": "a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301"
       },
       "matrix_rows": [
         "M44"
@@ -3118,8 +3118,8 @@
         "suite_version": "ess-conformance/4",
         "system": "billing",
         "specification_version": "v3",
-        "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-        "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+        "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+        "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
       },
       "matrix_rows": [
         "M49",
@@ -3220,7 +3220,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3306,7 +3306,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S02-generated-rust-passed",
@@ -3395,7 +3395,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3457,7 +3457,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3542,7 +3542,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3622,7 +3622,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S05-child-rust-passed",
@@ -3684,7 +3684,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3746,7 +3746,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3803,7 +3803,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S07-empty-rust-passed",
@@ -3864,7 +3864,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -3921,7 +3921,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S08-unknown-rust-passed",
@@ -3984,7 +3984,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4043,7 +4043,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S09-unknown-child-rust-passed",
@@ -4106,7 +4106,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4199,7 +4199,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4263,7 +4263,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4322,7 +4322,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3"
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446"
     },
     {
       "id": "S12-gap-filtered-away-rust-passed",
@@ -4385,7 +4385,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4449,7 +4449,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4508,7 +4508,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S14-refused-then-accepted-rust-passed",
@@ -4571,7 +4571,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4630,7 +4630,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-go v3",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-passed",
@@ -4684,7 +4684,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-passed",
@@ -4739,7 +4739,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S16-final-merge-rust-passed",
@@ -4802,7 +4802,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942",
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4864,7 +4864,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "billing-reference 0.20.0",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
+      "expected_model_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
       "timing_note": "Use advancing time for scenarios with eventual observations; a fixed clock must not unbound timeout loops. Exact completion is the last independently logged runner Clock value, resolved without reading report fields."
     },
     {
@@ -4921,7 +4921,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-error",
@@ -4977,7 +4977,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-unsupported",
@@ -5033,7 +5033,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-failed",
@@ -5090,7 +5090,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-skipped",
@@ -5147,7 +5147,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-skip-then-teardown-error",
@@ -5204,7 +5204,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-skipped-strict",
@@ -5261,7 +5261,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-9007199254740993",
@@ -5315,7 +5315,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-9223372036854775807",
@@ -5369,7 +5369,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-9223372036854775808",
@@ -5423,7 +5423,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-rust-clock-18446744073709551615",
@@ -5477,7 +5477,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-clock-9007199254740993",
@@ -5532,7 +5532,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     },
     {
       "id": "S15-single-complete-go-clock-9223372036854775807",
@@ -5587,7 +5587,7 @@
       "exit_scope_note": "Rust is semantic runner/CLI status; export harness process may return success after deliberately recording a non-pass run and must record both statuses separately.",
       "expected_implementation": "coverage-producer-control 1",
       "expected_specification": "billing/v3",
-      "expected_model_digest": "56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942"
+      "expected_model_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c"
     }
   ],
   "requested_refusal_controls": [

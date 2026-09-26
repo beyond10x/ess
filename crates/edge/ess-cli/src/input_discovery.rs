@@ -84,6 +84,25 @@ pub(crate) fn authored(path: Option<&Path>, coverage: bool) -> Result<Vec<Input>
     )
 }
 
+/// The scenarios an immediate `ess-inputs.yaml` lists beside the specification it selects.
+///
+/// `None` when `path` is not a directory carrying the manifest, or the manifest's `scenarios` list
+/// is empty: a model argument never implies scenarios, so only an explicit list is read. `validate`
+/// uses this so a listed scenario that `synthesize --scenarios` would refuse is refused there too
+/// (ess#112). A nonempty list is acquired exactly as `--scenarios <path>` acquires it.
+pub(crate) fn listed_scenarios(path: &Path) -> Result<Option<Vec<Input>>> {
+    let manifest = path.join(MANIFEST);
+    if !path.is_dir() || fs::symlink_metadata(&manifest).is_err() {
+        return Ok(None);
+    }
+    // The specification's own acquisition has already read or refused the manifest, so an
+    // unreadable one here is `acquire`'s to describe rather than a reason to read nothing.
+    if manifest_lists(&manifest).is_ok_and(|configuration| configuration.scenarios.is_empty()) {
+        return Ok(None);
+    }
+    acquire(path, Kind::Authored).map(Some)
+}
+
 pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
     // Keep the requested spelling until manifest-mode link policy has been applied.
     // Direct files do not consult parent or ancestor configuration.
@@ -125,7 +144,7 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
     }
 }
 
-fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
+fn manifest_lists(manifest: &Path) -> Result<Manifest> {
     let text =
         fs::read_to_string(manifest).with_context(|| format!("reading {}", manifest.display()))?;
     // Struct deserialization rejects duplicate top-level keys and multiple YAML documents.
@@ -136,6 +155,11 @@ fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
             configuration.format
         );
     }
+    Ok(configuration)
+}
+
+fn manifest_selection(manifest: &Path, kind: Kind) -> Result<Vec<String>> {
+    let configuration = manifest_lists(manifest)?;
     let mut names = BTreeSet::new();
     for (role, entries) in [
         ("specification", &configuration.specification),

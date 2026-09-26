@@ -149,6 +149,8 @@ commands:
           library.lending.CopyAdded:
             branch_id: input.branch_id
             title: input.title
+        sets:
+          pages: input.pages
         summary: The copy is on the shelf and Available.
 
       - name: refused

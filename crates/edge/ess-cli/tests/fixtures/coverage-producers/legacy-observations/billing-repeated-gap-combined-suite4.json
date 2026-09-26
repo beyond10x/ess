@@ -3,8 +3,8 @@
     "suite_version": "ess-conformance/4",
     "system": "billing",
     "specification_version": "v3",
-    "spec_digest": "fd1f9a9e3b5dcf750014ad3dac7ebcee3113650b37685ecaced8c2b6ca4561f3",
-    "contract_digest": "2f611309d71257a20fe4dcfdc8ab1b293055c65657bd99505477a3fc092a0c66"
+    "spec_digest": "14b27dab10c9e8cc806d32667d2cc32a290786f339fcc90da62ddfafccacf446",
+    "contract_digest": "0a6a735733f97d389fe303943bf00ee123e90d76f521f9129b955ceb4b13d2d9"
   },
   "scenarios": {
     "billing.email.SendEmail/outcome/failed": {

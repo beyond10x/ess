@@ -148,6 +148,7 @@ commands:
             commit: input.commit
         sets:
           commit: input.commit
+          asset_count: "0"
         summary: >-
           An annotated bare-version tag is pinned to one commit. Merge the branch, then tag: 0.10.0
           was tagged on a feature branch and `main` did not have a line of it.

@@ -17,9 +17,9 @@
     },
     {
       "path": "inputs/models/billing/domains/invoice.yaml",
-      "sha256": "3e129f60c1b3f12319ab991bf3326516361c4418d168e26acd2850284fa1dbae",
+      "sha256": "aa3a3bdbfc7c903677028f04c19f7485fd98109e59511a4cf9f51db626c6dc8d",
       "original": "examples/billing/domains/invoice.yaml",
-      "original_sha256": "3e129f60c1b3f12319ab991bf3326516361c4418d168e26acd2850284fa1dbae",
+      "original_sha256": "aa3a3bdbfc7c903677028f04c19f7485fd98109e59511a4cf9f51db626c6dc8d",
       "derivation": "verbatim"
     },
     {
@@ -52,9 +52,9 @@
     },
     {
       "path": "inputs/models/billing-repeated-gap/domains/invoice.yaml",
-      "sha256": "d72675fd91cefda8dce627b071e6a34523931a4e4a4bb3e8860206bd8568bb66",
+      "sha256": "dde047139889407ef114f0546642959f16b45ac9baa7369f23cc1191f2b99e45",
       "original": "examples/billing/domains/invoice.yaml",
-      "original_sha256": "3e129f60c1b3f12319ab991bf3326516361c4418d168e26acd2850284fa1dbae",
+      "original_sha256": "aa3a3bdbfc7c903677028f04c19f7485fd98109e59511a4cf9f51db626c6dc8d",
       "derivation": "duplicate entity invariant reminder_count >= 0 once; remove only published InvoiceById reminder_count field; preserve entity field and all other bytes"
     },
     {

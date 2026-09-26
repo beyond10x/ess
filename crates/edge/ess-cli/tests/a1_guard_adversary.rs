@@ -62,6 +62,11 @@ commands:
         creates: shop.order.Order
         instance: order_id
         emits: [shop.order.OrderPlaced]
+        sets:
+          channel: input.channel
+          quantity: input.quantity
+          sku: input.sku
+          tags: input.tags
       - name: refused
         error: shop.order.Refused
   - name: shop.order.CloseOrder
@@ -320,7 +325,18 @@ fn every_spelling_of_a_duration_ordering_is_refused_at_validate() {
             ),
         ),
         ("entity invariant", {
-            let mut model = model();
+            // `ttl` is set by the creating branch, so the only refusal left to name `Duration` is
+            // the ordering one this case is about (ess#112 refuses an invariant over an unset
+            // field, and its hint names the type too).
+            let mut model = with_input(model(), "{name: ttl, type: Duration}");
+            named(place_order(&mut model), "outcomes", "placed")
+                .get_mut("sets")
+                .and_then(Value::as_mapping_mut)
+                .expect("`placed` sets fields")
+                .insert(
+                    Value::String("ttl".to_owned()),
+                    Value::String("input.ttl".to_owned()),
+                );
             let order = named(&mut model, "entities", "shop.order.Order");
             push_seq(order, "fields", "{name: ttl, type: Duration}");
             push_seq(order, "invariants", "ttl > PT5M");

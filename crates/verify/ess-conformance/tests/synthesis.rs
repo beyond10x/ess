@@ -82,7 +82,7 @@ fn coverage_missing_lifecycle_and_view_checks_remain_beside_actual_passing_resul
             let mut unknown = view.clone();
             unknown.name = QualifiedName::new("billing.invoice.UnknowableInvoices").unwrap();
             unknown.filter =
-                Some(serde_json::from_value(serde_json::json!("reminder_count > 100")).unwrap());
+                Some(serde_json::from_value(serde_json::json!("channel == Post")).unwrap());
             unknown.order_by.clear();
             view.filter = Some(
                 serde_json::from_value(

@@ -24,7 +24,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
 | a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch | Not the input and not `state`. Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
-| an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. |
+| an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
 | a view's `filter` | the source entity's fields and its lifecycle `state` | Selects the rows the view returns. |
@@ -93,6 +93,7 @@ commands:
       - {name: coupon, type: Optional<String>}
       - {name: tags, type: List<String>}
       - {name: gift, type: Boolean}
+      - {name: labels, type: "Map<String, String>"}
     outcomes:
       - name: placed
         when: quantity > 0
@@ -102,6 +103,12 @@ commands:
         payload:
           shop.order.OrderPlaced:
             order_id: {generated: true}
+        sets:
+          channel: input.channel
+          quantity: input.quantity
+          sku: input.sku
+          tags: input.tags
+          labels: input.labels
       - name: refused
         error: shop.order.Refused
   - name: shop.order.CloseOrder
