@@ -93,6 +93,7 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             ResolvedCondition::WrongState
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::SubjectField { .. }
+            | ResolvedCondition::SubjectPredicate { .. }
             | ResolvedCondition::StateChange { .. },
             true,
         ) => CONFLICT,

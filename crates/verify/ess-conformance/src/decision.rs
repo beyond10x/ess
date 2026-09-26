@@ -34,6 +34,7 @@ pub fn when(outcome: &ResolvedOutcome) -> Option<&Predicate> {
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::ExternalWhen { .. }
+        | ResolvedCondition::SubjectPredicate { .. }
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::WrongState => None,
     }

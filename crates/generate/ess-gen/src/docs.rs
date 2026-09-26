@@ -1565,6 +1565,21 @@ fn condition_sentence(
             Inline::code(predicate.to_string()),
             Inline::text(" holds of the input."),
         ],
+        // Rendered as `SubjectState` is — the predicate through `Display` — so the published
+        // contract names the stored fields the branch reads (ess/9).
+        ResolvedCondition::SubjectPredicate { predicate, input } => {
+            let mut out = vec![
+                Inline::text("Taken when the existing subject's stored fields satisfy "),
+                Inline::code(predicate.to_string()),
+            ];
+            if let Some(guard) = input {
+                out.push(Inline::text(", and "));
+                out.push(Inline::code(guard.to_string()));
+                out.push(Inline::text(" holds of the input"));
+            }
+            out.push(Inline::text("."));
+            out
+        }
         ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(

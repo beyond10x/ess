@@ -1326,6 +1326,7 @@ fn exercise(
             event: event.clone(),
         });
     }
+    steps.extend(run.after_steps.iter().cloned());
     // After everything that reads the branch, and before anything that reads a view. Both halves of
     // that are load-bearing. Put later, the arrangement would run after the view it exists to fill;
     // put earlier, its own creating command would publish the first occurrence of the event the
@@ -1374,6 +1375,9 @@ struct Run {
     input: BTreeMap<String, ScenarioValue>,
     /// What the arrangement depends on.
     source: BTreeSet<EssSemanticRef>,
+    /// Observations of the subject that belong after the branch's own assertions: the row a
+    /// branch that names no subject of its own leaves exactly as it was observed before it.
+    after_steps: Vec<ScenarioStep>,
     /// What the subject's fields hold once the branch under test has run.
     ///
     /// The arrangement's, with this branch's own `sets:` applied over the top — this branch runs
@@ -1415,7 +1419,8 @@ fn run(
         }
         return Err(first.expect("nonempty finite lifecycle"));
     }
-    let (mut setup, input) = if subject_fact::uses(command) && outcome.subject.is_some() {
+    let routed = subject_fact::routes(command, outcome);
+    let (mut setup, input) = if routed {
         subject_fact::prepare(ir, command, outcome, actors)?
     } else if has_subject_guards(command) {
         prepare_state_input(ir, command, outcome, actors)?
@@ -1438,12 +1443,14 @@ fn run(
             force: outcome_ref.clone(),
         });
     }
-    let supplied = supply(
-        &input,
-        outcome.subject.as_ref(),
-        setup.instance.as_ref(),
-        &setup.bound,
-    );
+    // A branch reading stored fields that names no subject of its own — a refusal — reads the one
+    // its siblings name, and is sent for the row the arrangement made for it.
+    let reads = if routed {
+        subject_fact::reading(command, outcome)
+    } else {
+        outcome.subject.as_ref()
+    };
+    let supplied = supply(&input, reads, setup.instance.as_ref(), &setup.bound);
     invoke.push(ScenarioStep::ExecuteCommand {
         command: command_ref,
         actor: actor.clone(),
@@ -1456,6 +1463,11 @@ fn run(
     if subject_fact::uses(command) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
+    let after_steps = if routed {
+        subject_fact::around(ir, command, outcome, actors, &mut setup, &supplied)?
+    } else {
+        Vec::new()
+    };
     if outcome
         .subject
         .as_ref()
@@ -1486,6 +1498,7 @@ fn run(
         super::synthesize::settled(ir, outcome, &supplied),
     );
     Ok(Run {
+        after_steps,
         setup: setup.steps,
         invoke,
         after: setup.after,
@@ -1571,6 +1584,7 @@ fn run_state_refusal(
         OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()).into(),
     );
     Ok(Run {
+        after_steps: Vec::new(),
         setup: steps,
         invoke,
         after: Some(state.clone()),
@@ -1710,6 +1724,7 @@ fn run_replay(
     );
     source.insert(EntityRef::from(&replay.subject.entity).into());
     Ok(Run {
+        after_steps: Vec::new(),
         setup,
         invoke,
         instance: Some(instance),
@@ -1807,50 +1822,65 @@ fn replay_condition(
         .as_ref()
         .expect("replay origin has a post-state");
     let settled = &origin.settled;
-    let predicate = match &branch.condition {
-        ResolvedCondition::When { predicate } => Some(predicate),
-        ResolvedCondition::SubjectState { predicate, .. }
-        | ResolvedCondition::StateChange { predicate, .. } => {
-            observed.insert(EntitySpec::STATE.into());
-            if !admits_held_state(&branch.condition, held) {
-                return Ok(false);
+    let predicate =
+        match &branch.condition {
+            ResolvedCondition::When { predicate } => Some(predicate),
+            ResolvedCondition::SubjectState { predicate, .. }
+            | ResolvedCondition::StateChange { predicate, .. } => {
+                observed.insert(EntitySpec::STATE.into());
+                if !admits_held_state(&branch.condition, held) {
+                    return Ok(false);
+                }
+                predicate.as_ref()
             }
-            predicate.as_ref()
-        }
-        ResolvedCondition::SubjectField {
-            field,
-            equals,
-            predicate,
-        } => {
-            observed.insert(field.clone());
-            let actual = settled
-                .get(field)
-                .and_then(|value| value.value.as_literal())
-                .and_then(Node::as_text)
-                .ok_or_else(|| {
-                    RefusalCause::NoWitness(WitnessGap {
+            ResolvedCondition::SubjectField {
+                field,
+                equals,
+                predicate,
+            } => {
+                observed.insert(field.clone());
+                let actual = settled
+                    .get(field)
+                    .and_then(|value| value.value.as_literal())
+                    .and_then(Node::as_text)
+                    .ok_or_else(|| {
+                        RefusalCause::NoWitness(WitnessGap {
                         path: format!("{}.{}", subject.entity, field),
                         type_ref: "post-origin subject fact".into(),
                         reason:
                             "the original invocation did not establish the replay selection fact",
                     })
-                })?;
-            if actual != equals {
-                return Ok(false);
+                    })?;
+                if actual != equals {
+                    return Ok(false);
+                }
+                predicate.as_ref()
             }
-            predicate.as_ref()
-        }
-        ResolvedCondition::WrongState => {
-            observed.insert(EntitySpec::STATE.into());
-            return Ok(ir
-                .wrong_states(command)
-                .get(&subject.entity)
-                .is_some_and(|states| states.contains(held)));
-        }
-        ResolvedCondition::Otherwise
-        | ResolvedCondition::External { .. }
-        | ResolvedCondition::ExternalWhen { .. } => return Ok(false),
-    };
+            ResolvedCondition::WrongState => {
+                observed.insert(EntitySpec::STATE.into());
+                return Ok(ir
+                    .wrong_states(command)
+                    .get(&subject.entity)
+                    .is_some_and(|states| states.contains(held)));
+            }
+            ResolvedCondition::SubjectPredicate { predicate, input } => {
+                observed.extend(subject_fact::read_by(ir, &subject.entity, predicate));
+                match subject_fact::row_truth(ir, &subject.entity, settled, predicate) {
+                    Truth::True => {}
+                    Truth::False => return Ok(false),
+                    Truth::Unknown => return Err(RefusalCause::NoWitness(WitnessGap {
+                        path: format!("{}.{predicate}", subject.entity),
+                        type_ref: "post-origin subject fact".into(),
+                        reason:
+                            "the original invocation did not establish the replay selection fact",
+                    })),
+                }
+                input.as_ref()
+            }
+            ResolvedCondition::Otherwise
+            | ResolvedCondition::External { .. }
+            | ResolvedCondition::ExternalWhen { .. } => return Ok(false),
+        };
     decides(facts, &predicate.into_iter().collect::<Vec<_>>(), true)
 }
 
@@ -2079,6 +2109,75 @@ fn arrange(
         from: ir.entity(entity).lifecycle.initial.clone(),
     })?;
 
+    let mut arrangement = created(ir, entity, creator, actors, distinction, arranging, None)?;
+    for driver in route {
+        // A move whose command reads the row's stored fields is taken only where the row the
+        // arrangement built selects it, so that is checked rather than assumed. Where the plain
+        // witness does not, the route is searched again for a row that does — the same search a
+        // branch guarded by the stored fields is arranged with.
+        let moved = if subject_fact::uses(driver.command) {
+            match subject_fact::step(ir, entity, &driver, &arrangement, actors) {
+                Some(next) => next,
+                None if distinction == Distinction::PLAIN && arranging.is_empty() => {
+                    return subject_fact::reach_state(ir, entity, target, actors).map_err(|_| {
+                        Unreachable::Unwitnessable {
+                            outcome: OutcomeRef::new(
+                                CommandRef::new(driver.command.name.clone()),
+                                driver.outcome.name.clone(),
+                            ),
+                        }
+                    });
+                }
+                None => {
+                    return Err(Unreachable::Unwitnessable {
+                        outcome: OutcomeRef::new(
+                            CommandRef::new(driver.command.name.clone()),
+                            driver.outcome.name.clone(),
+                        ),
+                    })
+                }
+            }
+        } else {
+            let invoked = invoke(
+                ir,
+                &driver,
+                Some(&arrangement.instance),
+                Some(&arrangement.state),
+                actors,
+                distinction,
+                // A move acts on a row that already exists, so its input names that row and
+                // nothing else: whatever owner it needed was arranged before the row was created.
+                &BTreeMap::new(),
+            )?;
+            let mut next = arrangement.clone();
+            next.steps.extend(invoked.steps);
+            next.source.extend(invoked.source);
+            absorb(&mut next.settled, driver.outcome, invoked.settled);
+            if let Some(transition) = driver.effect.transition() {
+                next.state = transition.to.clone();
+            }
+            next
+        };
+        arrangement = moved;
+    }
+    arrangement.state = target.clone();
+    Ok(arrangement)
+}
+
+/// One new instance of `entity`, resting where its lifecycle starts, and the name it is bound as.
+///
+/// The first half of [`arrange`], and the start of every search for a row with particular stored
+/// values: `input` is the creating command's input where the caller chose one toward a goal, and
+/// `None` where the plain witness the creating branch reaches will do.
+fn created(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+    input: Option<&BTreeMap<String, Node>>,
+) -> Result<Arrangement, Unreachable> {
     let instance = instance_name(&ir.entity(entity).name, distinction);
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
@@ -2098,7 +2197,10 @@ fn arrange(
     };
 
     let mut settled = BTreeMap::new();
-    let created = invoke(ir, creator, None, None, actors, distinction, &bound)?;
+    let created = match input {
+        Some(input) => invoke_with(ir, creator, None, actors, &bound, input),
+        None => invoke(ir, creator, None, None, actors, distinction, &bound)?,
+    };
     steps.extend(created.steps);
     source.extend(created.source);
     absorb(&mut settled, creator.outcome, created.settled);
@@ -2118,29 +2220,9 @@ fn arrange(
     });
     source.insert(EventRef::from(event).into());
 
-    let mut held = ir.entity(entity).lifecycle.initial.clone();
-    for driver in route {
-        let moved = invoke(
-            ir,
-            &driver,
-            Some(&instance),
-            Some(&held),
-            actors,
-            distinction,
-            // A move acts on a row that already exists, so its input names that row and nothing
-            // else: whatever owner it needed was arranged before the row was created.
-            &BTreeMap::new(),
-        )?;
-        steps.extend(moved.steps);
-        source.extend(moved.source);
-        absorb(&mut settled, driver.outcome, moved.settled);
-        if let Some(transition) = driver.effect.transition() {
-            held = transition.to.clone();
-        }
-    }
     Ok(Arrangement {
         instance,
-        state: target.clone(),
+        state: ir.entity(entity).lifecycle.initial.clone(),
         steps,
         source,
         settled,
@@ -2255,14 +2337,31 @@ fn invoke(
     .map_err(|_| Unreachable::Unwitnessable {
         outcome: outcome_ref.clone(),
     })?;
+    Ok(invoke_with(ir, driver, instance, actors, bound, &input))
+}
 
+/// One arranging invocation with an input already chosen: its steps, and what its `sets:` leave.
+///
+/// The half of [`invoke`] that does not choose. Split out so an arrangement can choose the input
+/// to a goal — a creating command sent the weight a stored-field guard compares against — and
+/// still run it exactly as every other arranging command is run.
+fn invoke_with(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    instance: Option<&InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    bound: &BTreeMap<String, InstanceName>,
+    input: &BTreeMap<String, Node>,
+) -> Invocation {
+    let command_ref = CommandRef::new(driver.command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), driver.outcome.name.clone());
     let mut steps = Vec::new();
     if driver.outcome.test_strategy == TestStrategy::InjectFault {
         steps.push(ScenarioStep::ConfigureExternalOutcome {
             force: outcome_ref.clone(),
         });
     }
-    let supplied = supply(&input, driver.outcome.subject.as_ref(), instance, bound);
+    let supplied = supply(input, driver.outcome.subject.as_ref(), instance, bound);
     let settled = settled(ir, driver.outcome, &supplied);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
@@ -2276,11 +2375,11 @@ fn invoke(
     let source: BTreeSet<EssSemanticRef> = [command_ref.into(), outcome_ref.into()]
         .into_iter()
         .collect();
-    Ok(Invocation {
+    Invocation {
         steps,
         source,
         settled,
-    })
+    }
 }
 
 /// One invoked branch: the steps that run it, what they depend on, and what they left behind.
@@ -2498,7 +2597,8 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::External { .. }
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::WrongState
-        | ResolvedCondition::SubjectField { .. } => None,
+        | ResolvedCondition::SubjectField { .. }
+        | ResolvedCondition::SubjectPredicate { .. } => None,
     }
 }
 
@@ -3257,12 +3357,17 @@ fn settled(
             // generated suite catches an implementation that files the new row under a different
             // owner. Restricting this to literals dropped the field instead, which asserted nothing
             // about it at all.
-            ResolvedPayloadValue::InputField { field: read, .. } => {
-                let Some(value) = supplied.get(read) else {
-                    continue;
-                };
-                value.clone()
-            }
+            ResolvedPayloadValue::InputField { field: read, .. } => match supplied.get(read) {
+                Some(value) => value.clone(),
+                // An `Optional` input the invocation left out — absent on the wire, never `null`
+                // — leaves the `Optional` field it fills absent, which a row carries as a null
+                // exactly as `{cleared: true}` does. It is the one way a scenario can arrange a
+                // row that `not defined(field)` selects.
+                None if field.target_type.is_optional() => {
+                    ScenarioValue::Literal { value: Node::Null }
+                }
+                None => continue,
+            },
             _ => continue,
         };
         out.insert(

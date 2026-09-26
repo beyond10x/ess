@@ -3559,6 +3559,12 @@ fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> Resolve
             equals: equals.clone(),
             predicate: predicate.clone(),
         },
+        OutcomeCondition::SubjectPredicate { predicate, input } => {
+            ResolvedCondition::SubjectPredicate {
+                predicate: predicate.clone(),
+                input: input.clone(),
+            }
+        }
         OutcomeCondition::Otherwise => ResolvedCondition::Otherwise,
         OutcomeCondition::ExternalWhen { cause, predicate } => ResolvedCondition::ExternalWhen {
             cause: cause.clone(),

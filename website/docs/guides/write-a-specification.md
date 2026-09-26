@@ -223,6 +223,57 @@ state/input assignments for gaps and overlaps using the shared finite coverage
 proof; unsupported or open input domains require a genuine default. Runtime
 witnesses additionally validate their concrete inputs and invariants.
 
+### Guard an outcome by the subject's stored fields
+
+"Express parcels over 20 kg are refused at dispatch" depends on two fields stored when the parcel
+was created, not on anything the dispatch request carries. `ess/9` (not yet released) states it with
+`when_subject: {predicate: …}`, a predicate over the declared fields of the entity the command
+addresses:
+
+```yaml
+commands:
+  - name: shipping.parcel.Create
+    input:
+      - {name: service, type: shipping.parcel.Service}   # enum: Standard | Express
+      - {name: weight_kg, type: Integer}
+    outcomes:
+      - name: created
+        creates: shipping.parcel.Parcel
+        instance: parcel_id
+        sets: {service: input.service, weight_kg: input.weight_kg}
+        emits: [shipping.parcel.Created]
+        payload:
+          shipping.parcel.Created:
+            parcel_id: {generated: true}
+
+  - name: shipping.parcel.Dispatch
+    input: [{name: parcel_id, type: Uuid}]
+    outcomes:
+      - name: refused-overweight
+        when_subject:
+          predicate:
+            all:
+              - service == Express
+              - weight_kg > 20
+        error: shipping.parcel.ExpressOverweight
+      - name: dispatched
+        moves: shipping.parcel.Parcel.dispatch
+        instance: parcel_id
+        emits: [shipping.parcel.Dispatched]
+```
+
+The predicate reads the entity's declared fields and nothing else: not the input, which stays in
+`when:` beside it, and not `state`, which stays with `when_subject_state:`. The refusal names no
+subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
+absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
+
+Validation partitions closed enum fields jointly with the input, so two branches that split an enum
+need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
+`dispatched`. Declare an immediate, unfiltered view that projects the identity, `state` and every
+guarded field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg
+for the refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that
+view, and dispatches it. The older `when_subject: {field, equals}` form keeps `ess/6`.
+
 ### An outcome the input cannot decide says that too
 
 Whether a mail provider accepts an address is not a function of the request. From

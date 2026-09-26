@@ -1,6 +1,7 @@
 # Guards over stored fields and constraints across records
 
-Status: proposed (beyond10x/ess#75). No source, IR or format change is made by this page.
+Status: rule 1 implemented in source format `ess/9` (beyond10x/ess#75). Rule 2 stays out of scope, as
+below.
 
 ## Behavior and authority
 
@@ -241,7 +242,12 @@ parts, and the `{field, equals}` form runs on it as a one-leaf predicate:
 4. **Visited key = branch-selection vector.** The search node is the lifecycle state crossed with
    the truth (`True`, `False`, `Unknown`) of every guarded branch's predicate over the row — finite
    where the field values are not, and exactly the distinction that matters: two arrangements that
-   decide every branch alike are one node. The cap of 64 nodes stays.
+   decide every branch alike are one node. The cap of 64 nodes stays. As implemented the node is
+   refined by how each *leaf* of those predicates decides and whether the row sits on the leaf's
+   own literal, which is still finite and keeps a boundary row from being merged into a far one.
+   Where several rows at one depth reach the branch, the one satisfying the most leaves, then
+   sitting on the most literals, is taken — which is what makes the default's witness `Express`
+   at `20` rather than the plain `Standard` at `1`.
 
 **Observation.** `observe` in `subject_fact.rs` already requires an immediate, unfiltered,
 parameterless view exposing the identity, `state` and the one guarded field, and asserts them
@@ -270,7 +276,9 @@ weight fails step 5 of the first witness; one that refuses every Express parcel 
 carries, then `expect_no_event` for every event and `expect_view` `Parcels` *excludes* that
 identity (`ViewExpectation::Excludes` exists in `scenario.rs`). It asserts nothing about the error,
 because the specification declares no absent-subject outcome, and a suite that required
-`ExpressOverweight` there — today's — would be inventing one.
+`ExpressOverweight` there — today's — would be inventing one. It opens the scenario of every branch
+that names no subject of its own — `refused-overweight` here — before that scenario's arrangement,
+so it needs no scenario id and no new vocabulary.
 
 **Transition and invariant scenarios** that route through a guarded branch reuse the same
 arrangement; a `dispatch` transition witness arranges a row the guard does not refuse.
@@ -313,9 +321,9 @@ no bump, because it was a new key on `RawOutcome`, which denies unknown fields, 
 refused it by name (`state-change-outcome-guards.md`). This construct is neither: it is a new shape
 of an existing key's value, and an older reader fails it with `unknown field predicate` — a parse
 error with no version hint. `AGENTS.md` requires a new format version when meaning changes, and the
-meaning of `when_subject` does. **The predicate form requires `ess/8`**, gated beside the ess/6 and
+meaning of `when_subject` does. **The predicate form requires `ess/9`**, gated beside the ess/6 and
 ess/7 gates in `primitive_admission.rs` with `unsupported_format_version`: "subject predicates
-require specification format ess/8". `{field, equals}` documents keep ess/6 and their bytes.
+require specification format ess/9". `{field, equals}` documents keep ess/6 and their bytes.
 
 - The domain gains `OutcomeCondition::SubjectPredicate` and the IR
   `ResolvedCondition::SubjectPredicate { predicate, input }` beside `SubjectField`, which is
@@ -325,10 +333,11 @@ require specification format ess/8". `{field, equals}` documents keep ess/6 and 
   view, run — is the same.
 - `RawSpecFile` changes, so `schemas/generated/ess.schema.json` is stale until `cargo xtask schema`
   runs, and `projection-check` is the only thing that sees it.
-- The suite needs no new vocabulary: every step above exists. Old-reader refusal of `ess/8`, byte
+- The suite needs no new vocabulary: every step above exists. Old-reader refusal of `ess/9`, byte
   preservation of ess/6 and ess/7 models, and the arranged witness against a guard-ignoring mutation
   are the deciding checks. The test in `crates/specify/ess-domain/src/spec.rs` that uses `ess/8` as
-  a header this build cannot read moves to `ess/9`.
+  a header this build cannot read moves to `ess/10`, past both `ess/9` and the `ess/8` that
+  #95 takes (`docs/design/string-predicate-operators.md`).
 
 ### What was rejected
 

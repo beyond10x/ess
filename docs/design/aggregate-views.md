@@ -345,7 +345,7 @@ CHANGELOG entry. The page writes them as placeholders:
 
 | format | at base `bb771888907` | this construct | old reader |
 |---|---|---|---|
-| source | `ess/1`–`ess/7` supported (`crates/specify/ess-domain/src/system.rs:53`); `ess/8` claimed by C (`cross-record-and-stored-field-guards.md:316-318`) | **`ess/S`**: `FormatVersion::V<S>`, `SUPPORTED_FORMATS` gains `S`, V15 gates the construct | refuses the header version; a build that predates `ess/S` reading `aggregate:` under an older header fails `unknown field aggregate`, as today |
+| source | `ess/1`–`ess/7` supported (`crates/specify/ess-domain/src/system.rs:53`); `ess/9` claimed by C (`cross-record-and-stored-field-guards.md:316-318`) | **`ess/S`**: `FormatVersion::V<S>`, `SUPPORTED_FORMATS` gains `S`, V15 gates the construct | refuses the header version; a build that predates `ess/S` reading `aggregate:` under an older header fails `unknown field aggregate`, as today |
 | document schema | `schemas/generated/ess.schema.json` (`RawViewSpec` at `:2093`) | regenerate with `cargo xtask schema`; `projection-check` is the only thing that sees staleness (`AGENTS.md`, "A change to `RawSpecFile`…") | — |
 | IR | no `ess-ir/2` | additive, omitted when `None` | — |
 | suite | ordinary `ess-conformance/12`, coverage `/13` newest (`crates/verify/ess-conformance/src/scenario.rs:155-168`, `:368`) | **`/Q` and `/Q+1`**: new `ScenarioId` variant and new refusal causes; admission gates below | Rust: closed parse and the admission gate; Go: version switch (`crates/verify/ess-conformance/src/go/runtime.go:3417-3436`); TypeScript admits up to `/11` (`crates/verify/ess-conformance/src/ts/runtime.ts:4205-4215`) and refuses before callbacks |
@@ -391,7 +391,7 @@ cannot read". When D2's numbers are added, each literal moves to the first numbe
 
 | test | literal at base | family |
 |---|---|---|
-| `crates/specify/ess-domain/src/spec.rs:1746` | `ess/8` (C moves it first, per its page) | source |
+| `crates/specify/ess-domain/src/spec.rs:1746` | `ess/8` (C moves it past its `ess/9` first, per its page) | source |
 | `crates/specify/ess-domain/src/system.rs:1721` (`a_specification_reports_every_problem_in_one_run`) | `ess/9` | source |
 | `crates/specify/ess-domain/src/system.rs:1254` and `:1263-1275` | `ess/8` (C moves them — *inferred*) | source |
 | `crates/verify/ess-conformance/src/scenario.rs:2677` | `ess-conformance/14` | suite |

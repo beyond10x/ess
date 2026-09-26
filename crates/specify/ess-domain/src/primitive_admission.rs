@@ -130,6 +130,16 @@ fn held_state_conditions(
             "guarded external outcomes, subject facts and preservation require specification format ess/6",
         ));
     }
+    // A new shape of an existing key's value: an older reader fails it with `unknown field
+    // predicate` and no version hint, so the meaning change is a format change of its own
+    // (`docs/design/cross-record-and-stored-field-guards.md`). `{field, equals}` keeps ess/6.
+    if format.major() < 9 && crate::command::subject_fact::uses_predicate(command) {
+        errors.push(ValidationError::at(
+            command.site().key("outcomes"),
+            ValidationCode::UnsupportedFormatVersion,
+            "subject predicates require specification format ess/9",
+        ));
+    }
     if format.major() < 3 && crate::command::subject_state::uses_subject_state(command) {
         errors.push(ValidationError::at(
             command.site().key("outcomes"),

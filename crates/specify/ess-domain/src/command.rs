@@ -382,6 +382,20 @@ pub enum OutcomeCondition {
         /// Additional input eligibility.
         predicate: Option<Predicate>,
     },
+    /// A predicate over the existing subject's declared stored fields, read immediately before
+    /// selection, conjunctive with an optional input guard (ess/9).
+    ///
+    /// A sibling of [`SubjectField`](Self::SubjectField) rather than a widening of it, so every
+    /// ess/6 model keeps its bytes. It reads the entity's declared `fields` and nothing else: not
+    /// the input, which stays with `input`, and not `state`, which stays with the lifecycle guards.
+    /// A branch that names no subject of its own — a refusal — reads the subject its siblings name.
+    /// See `docs/design/cross-record-and-stored-field-guards.md`.
+    SubjectPredicate {
+        /// What must hold of the subject's stored fields.
+        predicate: Predicate,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
     /// Taken when the named existing subject is in this state and the optional input guard holds.
     SubjectState {
         /// The held lifecycle state, read from the subject rather than the input.
@@ -445,6 +459,7 @@ impl OutcomeCondition {
             Self::SubjectState { predicate, .. }
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
+            Self::SubjectPredicate { input, .. } => input.as_ref(),
             Self::Otherwise | Self::External { .. } | Self::WrongState => None,
         }
     }
@@ -456,6 +471,7 @@ impl OutcomeCondition {
             Self::When(_)
             | Self::SubjectState { .. }
             | Self::SubjectField { .. }
+            | Self::SubjectPredicate { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState => None,
@@ -466,7 +482,9 @@ impl OutcomeCondition {
     pub fn test_strategy(&self) -> TestStrategy {
         match self {
             Self::When(_) => TestStrategy::ConstructInput,
-            Self::SubjectField { .. } => TestStrategy::ObserveSubjectFact,
+            Self::SubjectField { .. } | Self::SubjectPredicate { .. } => {
+                TestStrategy::ObserveSubjectFact
+            }
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
@@ -485,6 +503,43 @@ impl OutcomeCondition {
     /// branch selected, and it carries its own precedence.
     pub fn reads_held_state(&self) -> bool {
         matches!(self, Self::SubjectState { .. } | Self::StateChange { .. })
+    }
+
+    /// `true` when this condition reads the existing subject's stored fields, in either
+    /// `when_subject:` shape.
+    pub fn reads_subject_fact(&self) -> bool {
+        matches!(
+            self,
+            Self::SubjectField { .. } | Self::SubjectPredicate { .. }
+        )
+    }
+
+    /// What this condition requires of the subject's stored fields, as one predicate over them.
+    ///
+    /// The `{field, equals}` form is the one-leaf predicate `field == equals`, which is how the
+    /// partition and every consumer that arranges a row read both shapes with one evaluator.
+    /// `None` for a condition that reads no stored field, and for a field name no fact path can
+    /// spell — which the declaration checks refuse on their own.
+    pub fn subject_predicate(&self) -> Option<Predicate> {
+        match self {
+            Self::SubjectPredicate { predicate, .. } => Some(predicate.clone()),
+            Self::SubjectField { field, equals, .. } => Some(Predicate::Compare {
+                left: ess_primitives::predicate::Operand::Fact(
+                    ess_primitives::facts::FactPath::new(field).ok()?,
+                ),
+                op: ess_primitives::predicate::CompareOp::Eq,
+                right: ess_primitives::predicate::Operand::Literal(
+                    ess_primitives::facts::FactValue::text(equals.clone()),
+                ),
+            }),
+            Self::When(_)
+            | Self::SubjectState { .. }
+            | Self::StateChange { .. }
+            | Self::Otherwise
+            | Self::ExternalWhen { .. }
+            | Self::External { .. }
+            | Self::WrongState => None,
+        }
     }
 }
 
@@ -1218,7 +1273,8 @@ impl Outcome {
             | OutcomeCondition::External { .. }
             | OutcomeCondition::ExternalWhen { .. }
             | OutcomeCondition::WrongState
-            | OutcomeCondition::SubjectField { .. } => false,
+            | OutcomeCondition::SubjectField { .. }
+            | OutcomeCondition::SubjectPredicate { .. } => false,
         }
     }
 
@@ -1324,6 +1380,7 @@ impl CommandSpec {
                 OutcomeCondition::WrongState
                     | OutcomeCondition::StateChange { .. }
                     | OutcomeCondition::SubjectField { .. }
+                    | OutcomeCondition::SubjectPredicate { .. }
             )
         {
             errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
@@ -1840,6 +1897,22 @@ impl CommandSpec {
             return errors;
         }
 
+        // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
+        // two"): a command selecting on stored fields and on the held lifecycle state at once is
+        // refused before either partition is asked about it.
+        if subject_fact::uses(self)
+            && self
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition.reads_held_state())
+        {
+            errors.push(ValidationError::at(
+                self.site().key("outcomes"),
+                ValidationCode::ConflictingDeclaration,
+                "subject fact and lifecycle guards cannot be combined in one command",
+            ));
+            return errors;
+        }
         // A subject-state command needs the complete entity declarations. Its joint coverage
         // and subject authority are checked by subject_state::validate at specification assembly.
         if self
@@ -1848,6 +1921,11 @@ impl CommandSpec {
             .any(|outcome| outcome.condition.reads_held_state())
         {
             return subject_state::validate_shape(self);
+        }
+        // Likewise a command reading the subject's stored fields: its partition crosses those
+        // fields with the input, and their types are the entity's, known at assembly.
+        if subject_fact::uses(self) {
+            return subject_fact::validate_shape(self);
         }
 
         let unconditional: Vec<&OutcomeName> = self
@@ -2827,6 +2905,81 @@ pub struct RawSubjectField {
     pub equals: String,
 }
 
+/// A predicate over the existing subject's declared stored fields (ess/9).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawSubjectPredicate {
+    /// What must hold of the subject's declared fields, read immediately before selection.
+    pub predicate: Predicate,
+}
+
+/// What `when_subject:` says about the existing subject: one of two closed shapes, never both.
+///
+/// `{field, equals}` is the ess/6 form and keeps its bytes. `{predicate}` is the ess/9 form
+/// (`docs/design/cross-record-and-stored-field-guards.md`): any predicate over the subject's
+/// declared fields. A document writing keys of both shapes in one branch is refused while it is
+/// read, because which of the two it meant is not something a later check can recover.
+#[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum RawSubjectFact {
+    /// Equality of one declared enum field against one of its variants (ess/6).
+    Field(RawSubjectField),
+    /// A predicate over the subject's declared fields (ess/9).
+    Predicate(RawSubjectPredicate),
+}
+
+impl RawSubjectFact {
+    /// The shape a condition is written back as, where it reads the subject's stored fields.
+    fn written(condition: &OutcomeCondition) -> Option<Self> {
+        match condition {
+            OutcomeCondition::SubjectField { field, equals, .. } => {
+                Some(Self::Field(RawSubjectField {
+                    field: field.clone(),
+                    equals: equals.clone(),
+                }))
+            }
+            OutcomeCondition::SubjectPredicate { predicate, .. } => {
+                Some(Self::Predicate(RawSubjectPredicate {
+                    predicate: predicate.clone(),
+                }))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawSubjectFact {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// Every key either shape may carry, read once so the refusal can say which were mixed.
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Written {
+            #[serde(default)]
+            field: Option<String>,
+            #[serde(default)]
+            equals: Option<String>,
+            #[serde(default)]
+            predicate: Option<Predicate>,
+        }
+        let written = Written::deserialize(deserializer)?;
+        match (written.field, written.equals, written.predicate) {
+            (None, None, Some(predicate)) => Ok(Self::Predicate(RawSubjectPredicate { predicate })),
+            (Some(field), Some(equals), None) => Ok(Self::Field(RawSubjectField { field, equals })),
+            (field, equals, Some(_)) if field.is_some() || equals.is_some() => {
+                Err(serde::de::Error::custom(
+                    "`when_subject` takes `{field, equals}` or `{predicate}`, never both in one \
+                     branch",
+                ))
+            }
+            (Some(_), None, None) => Err(serde::de::Error::missing_field("equals")),
+            (None, Some(_), None) => Err(serde::de::Error::missing_field("field")),
+            _ => Err(serde::de::Error::custom(
+                "`when_subject` takes `{field, equals}` or `{predicate}`",
+            )),
+        }
+    }
+}
+
 /// One outcome as written in a document, before validation.
 ///
 /// `when`, `external` and `wrong_state` are the three spellings of a condition; writing none of them
@@ -2845,9 +2998,10 @@ pub struct RawOutcome {
     /// A predicate over the command's input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Predicate>,
-    /// An independently observed subject enum fact (ess/6).
+    /// An independently observed subject fact: an enum field equal to a variant (ess/6), or a
+    /// predicate over the subject's declared fields (ess/9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when_subject: Option<RawSubjectField>,
+    pub when_subject: Option<RawSubjectFact>,
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject_state: Option<crate::entity::StateName>,
@@ -3078,6 +3232,54 @@ fn outcome_condition(
     }
 }
 
+/// Whether a branch that reads what its subject already holds names a subject it can read.
+///
+/// A subject fact reads a row that already exists, so a branch bringing one into existence has
+/// nothing to read, and is refused at `when_subject`, the key the author wrote. The `{field,
+/// equals}` form and the held-state guards name their subject themselves, as they always have;
+/// the predicate form may also sit on a branch that names none — a refusal — which reads the
+/// subject its siblings name, and whether one does is a question about the command, answered
+/// there (`subject_fact::validate_shape`).
+fn subject_authority(
+    name: &OutcomeName,
+    condition: &OutcomeCondition,
+    subject: Option<&Subject>,
+    replays: bool,
+    held_state_key: &str,
+) -> Result<(), ValidationErrors> {
+    if condition.reads_subject_fact()
+        && subject.is_some_and(|subject| subject.surface() != InstanceSurface::CommandInput)
+    {
+        return Err(outcome_conflict(
+            name,
+            "when_subject",
+            "a subject fact reads a row that already exists, and a creating branch brings its \
+             subject into existence"
+                .to_owned(),
+            "guard the branch that moves, updates or preserves the existing subject, or a \
+             refusal beside it",
+        ));
+    }
+    if (condition.reads_held_state() || matches!(condition, OutcomeCondition::SubjectField { .. }))
+        && !replays
+        && !subject.is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
+    {
+        let key = if condition.reads_subject_fact() {
+            "when_subject"
+        } else {
+            held_state_key
+        };
+        return Err(outcome_conflict(
+            name,
+            key,
+            "a subject-state guard requires an existing moves or updates subject and input identity"
+                .to_owned(),
+            "name the existing subject with moves or updates and instance",
+        ));
+    }
+    Ok(())
+}
+
 /// Which of the two held-state keys the author wrote, so a refusal names the one they would edit.
 fn held_state_key(literal: bool) -> &'static str {
     if literal {
@@ -3118,10 +3320,14 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.wrong_state,
         )?;
         let condition = match subject_fact {
-            Some(fact) => OutcomeCondition::SubjectField {
+            Some(RawSubjectFact::Field(fact)) => OutcomeCondition::SubjectField {
                 field: fact.field,
                 equals: fact.equals,
                 predicate: input_predicate,
+            },
+            Some(RawSubjectFact::Predicate(fact)) => OutcomeCondition::SubjectPredicate {
+                predicate: fact.predicate,
+                input: input_predicate,
             },
             None => condition,
         };
@@ -3148,19 +3354,13 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.preserves,
             raw.instance,
         )?;
-        if (condition.reads_held_state()
-            || matches!(condition, OutcomeCondition::SubjectField { .. }))
-            && raw.replays.is_none()
-            && !subject
-                .as_ref()
-                .is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
-        {
-            return Err(conflict(
-                held_state_key,
-                "a subject-state guard requires an existing moves or updates subject and input identity".to_owned(),
-                "name the existing subject with moves or updates and instance",
-            ));
-        }
+        subject_authority(
+            &raw.name,
+            &condition,
+            subject.as_ref(),
+            raw.replays.is_some(),
+            held_state_key,
+        )?;
         // `updates:` takes no transition and `creates:` starts at the lifecycle's initial state, so
         // neither declares an arrival state for this condition to be about. Refused rather than
         // read as "any state", which is the reading that would make the key decide nothing.
@@ -3454,37 +3654,33 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
 
 impl From<Outcome> for RawOutcome {
     fn from(outcome: Outcome) -> Self {
-        let when_subject = match &outcome.condition {
-            OutcomeCondition::SubjectField { field, equals, .. } => Some(RawSubjectField {
-                field: field.clone(),
-                equals: equals.clone(),
-            }),
-            _ => None,
-        };
+        let when_subject = RawSubjectFact::written(&outcome.condition);
         let preserves = outcome
             .subject
             .as_ref()
             .filter(|subject| subject.effect == Effect::Preserves)
             .map(|subject| subject.entity.clone());
-        let (when, when_subject_state, when_state_changes, external, wrong_state) =
-            match outcome.condition {
-                OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
-                OutcomeCondition::SubjectField { predicate, .. } => {
-                    (predicate, None, None, None, false)
-                }
-                OutcomeCondition::SubjectState { state, predicate } => {
-                    (predicate, Some(state), None, None, false)
-                }
-                OutcomeCondition::StateChange { changes, predicate } => {
-                    (predicate, None, Some(changes), None, false)
-                }
-                OutcomeCondition::Otherwise => (None, None, None, None, false),
-                OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
-                OutcomeCondition::ExternalWhen { cause, predicate } => {
-                    (Some(predicate), None, None, Some(cause), false)
-                }
-                OutcomeCondition::WrongState => (None, None, None, None, true),
-            };
+        let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
+            .condition
+        {
+            OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
+            OutcomeCondition::SubjectField { predicate, .. } => {
+                (predicate, None, None, None, false)
+            }
+            OutcomeCondition::SubjectPredicate { input, .. } => (input, None, None, None, false),
+            OutcomeCondition::SubjectState { state, predicate } => {
+                (predicate, Some(state), None, None, false)
+            }
+            OutcomeCondition::StateChange { changes, predicate } => {
+                (predicate, None, Some(changes), None, false)
+            }
+            OutcomeCondition::Otherwise => (None, None, None, None, false),
+            OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
+            OutcomeCondition::ExternalWhen { cause, predicate } => {
+                (Some(predicate), None, None, Some(cause), false)
+            }
+            OutcomeCondition::WrongState => (None, None, None, None, true),
+        };
         let (creates, moves, updates, instance) = match outcome.subject {
             None => (None, None, None, None),
             Some(Subject {

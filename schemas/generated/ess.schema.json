@@ -1919,10 +1919,10 @@
           ]
         },
         "when_subject": {
-          "description": "An independently observed subject enum fact (ess/6).",
+          "description": "An independently observed subject fact: an enum field equal to a variant (ess/6), or a predicate over the subject's declared fields (ess/9).",
           "anyOf": [
             {
-              "$ref": "#/definitions/RawSubjectField"
+              "$ref": "#/definitions/RawSubjectFact"
             },
             {
               "type": "null"
@@ -2028,6 +2028,27 @@
       },
       "additionalProperties": false
     },
+    "RawSubjectFact": {
+      "description": "What `when_subject:` says about the existing subject: one of two closed shapes, never both.\n\n`{field, equals}` is the ess/6 form and keeps its bytes. `{predicate}` is the ess/9 form (`docs/design/cross-record-and-stored-field-guards.md`): any predicate over the subject's declared fields. A document writing keys of both shapes in one branch is refused while it is read, because which of the two it meant is not something a later check can recover.",
+      "anyOf": [
+        {
+          "description": "Equality of one declared enum field against one of its variants (ess/6).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawSubjectField"
+            }
+          ]
+        },
+        {
+          "description": "A predicate over the subject's declared fields (ess/9).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/RawSubjectPredicate"
+            }
+          ]
+        }
+      ]
+    },
     "RawSubjectField": {
       "description": "A bounded fact on an existing subject, not the command input or lifecycle state.",
       "type": "object",
@@ -2043,6 +2064,24 @@
         "field": {
           "description": "The declared enum field to observe.",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawSubjectPredicate": {
+      "description": "A predicate over the existing subject's declared stored fields (ess/9).",
+      "type": "object",
+      "required": [
+        "predicate"
+      ],
+      "properties": {
+        "predicate": {
+          "description": "What must hold of the subject's declared fields, read immediately before selection.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
         }
       },
       "additionalProperties": false

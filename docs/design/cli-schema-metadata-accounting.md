@@ -162,3 +162,20 @@ The root dialect, six literal relationships, consumer profiles, guard source,
 baseline and behavioral accounting remain unchanged. The metadata guard and
 fresh-provider qualification still have to execute; this review grants no new
 exemption or runtime conformance claim.
+
+## ess/9 container review — 2026-09-26
+
+The generated schema changes `RawOutcome.when_subject` from a reference to `RawSubjectField`
+to a reference to the new `RawSubjectFact`, an `anyOf` of the unchanged `RawSubjectField` and
+the new `RawSubjectPredicate` (`{predicate}`, beyond10x/ess#75). The ess/9 subject predicate is
+authored-domain behavior; it does not make these CLI pipelines consumers of the generated schema
+document. Its descendants keep their ordinary behavioral obligations.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `fb4c0b29d046e5f20a7379422ae41f77ebc0caed42167716ed130e38de329873`
+to `ce18e2b8593d657226635ec33a36698ece87fa78309ef47971e04399574a1bdc`.
+Review updates only the three existing RootDefinitionsContainer shape pins.
+The root dialect, six literal relationships, consumer profiles, guard source,
+baseline and behavioral accounting remain unchanged. The metadata guard and
+fresh-provider qualification still have to execute; this review grants no new
+exemption or runtime conformance claim.

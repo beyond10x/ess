@@ -652,6 +652,12 @@ fn behavior_contract(command: &ResolvedCommand) -> String {
 pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
     match condition {
         ResolvedCondition::When { predicate } => format!("when `{predicate}`"),
+        ResolvedCondition::SubjectPredicate { predicate, input } => format!(
+            "when the existing subject's stored fields satisfy `{predicate}`{}",
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and `{guard}`")),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "when the existing subject is in {state}{}",
             predicate
