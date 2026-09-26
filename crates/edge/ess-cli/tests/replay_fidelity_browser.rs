@@ -272,9 +272,20 @@ impl Fixture {
         }
         fs::write(self.evidence.join("persisted-suite.json"), original).unwrap();
     }
-    fn browse(&self, script: &str) -> Value {
+    /// Run `script` against this fixture's site in the test's Firefox, starting it on first use.
+    ///
+    /// One Firefox per test rather than per fixture: a test that loops over routes and modes
+    /// started up to eight, and a start is the slowest part of a browse on a loaded runner. Each
+    /// browse still gets its own server, so its own origin, and a new tab; the start's evidence
+    /// stays with the fixture that started it, and `browser.txt` here names that fixture.
+    fn browse(&self, firefox: &mut Option<browser::Browser>, script: &str) -> Value {
         let server = browser::Server::new(&self.site);
-        let mut browser = browser::Browser::new(&self.evidence);
+        let browser = firefox.get_or_insert_with(|| browser::Browser::new(&self.evidence));
+        fs::write(
+            self.evidence.join("browser.txt"),
+            format!("{}\n", browser.evidence().display()),
+        )
+        .unwrap();
         let context = browser.open(&format!("{}/index.html", server.url));
         let expression = format!(
             r"(async()=>{{
@@ -343,9 +354,13 @@ fn unknown_fields(result: &Value, alias: &str, fields: &[&str]) {
 
 #[test]
 fn b01_capture_establishes_only_local_alias_and_initial_state() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b01", route, SPEC, &scenario(false));
-        let r = f.browse("await click('Step');return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await click('Step');return JSON.stringify(snapshot());",
+        );
         assert_eq!(r["world"]["instances"]["first"]["state"], "Draft");
         unknown_fields(&r, "first", &["id", "label", "rank", "detail"]);
         contains(&r, "first");
@@ -356,9 +371,13 @@ fn b01_capture_establishes_only_local_alias_and_initial_state() {
 }
 #[test]
 fn b02_move_processes_every_set_without_guessing_subject() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b02", route, SPEC, &scenario(false));
-        let r = f.browse("await all();return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await all();return JSON.stringify(snapshot());",
+        );
         for alias in ["first", "second"] {
             unknown_fields(&r, alias, &["label", "rank"]);
             assert!(r["world"]["instances"][alias].get("state").is_none(), "{r}");
@@ -375,9 +394,13 @@ fn b02_move_processes_every_set_without_guessing_subject() {
 }
 #[test]
 fn b03_missing_literals_never_copy_same_named_decoys() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b03", route, SPEC, &scenario(false));
-        let r = f.browse("await click('Step');return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await click('Step');return JSON.stringify(snapshot());",
+        );
         unknown_fields(
             &r,
             "first",
@@ -409,9 +432,13 @@ fn b03_missing_literals_never_copy_same_named_decoys() {
 }
 #[test]
 fn b04_typed_literals_are_retained_and_literal_mapping_is_no_reference() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b04", route, SPEC, &scenario(false));
-        let r = f.browse("await click('Step');return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await click('Step');return JSON.stringify(snapshot());",
+        );
         for (field, value) in [
             ("null_value", json!(null)),
             ("boolean_value", json!(false)),
@@ -435,6 +462,7 @@ fn b04_typed_literals_are_retained_and_literal_mapping_is_no_reference() {
 }
 #[test]
 fn b05_different_conversion_models_have_same_unknown_reduced_assignment() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut shapes = Vec::new();
         for (name, spec) in [
@@ -449,7 +477,10 @@ fn b05_different_conversion_models_have_same_unknown_reduced_assignment() {
         ] {
             let f = Fixture::emit(&format!("b05-{name}"), route, &spec, &scenario(false));
             shapes.push(f.model["commands"][0]["outcomes"][0]["sets"].clone());
-            let r = f.browse("await click('Step');return JSON.stringify(snapshot());");
+            let r = f.browse(
+                &mut firefox,
+                "await click('Step');return JSON.stringify(snapshot());",
+            );
             unknown_fields(&r, "first", &["copied"]);
             contains(&r, CONVERSION);
         }
@@ -458,6 +489,7 @@ fn b05_different_conversion_models_have_same_unknown_reduced_assignment() {
 }
 #[test]
 fn b06_swapped_ordered_alias_vectors_never_select_a_subject() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut vectors = Vec::new();
         for swapped in [false, true] {
@@ -493,7 +525,10 @@ fn b06_swapped_ordered_alias_vectors_never_select_a_subject() {
                 json!({"kind":"literal","value":"real-looking-id"})
             );
             vectors.push(vector);
-            let r = f.browse("await all();return JSON.stringify(snapshot());");
+            let r = f.browse(
+                &mut firefox,
+                "await all();return JSON.stringify(snapshot());",
+            );
             contains(&r, SUBJECT);
             assert_eq!(r["world"]["instances"].as_object().unwrap().len(), 2);
             for alias in ["first", "second"] {
@@ -505,6 +540,7 @@ fn b06_swapped_ordered_alias_vectors_never_select_a_subject() {
 }
 #[test]
 fn b07_both_model_rank_directions_have_no_computed_rows() {
+    let mut firefox = None;
     for route in [4, 5] {
         for order in ["asc", "desc"] {
             let f = Fixture::emit(
@@ -517,7 +553,10 @@ fn b07_both_model_rank_directions_have_no_computed_rows() {
                     scenario(false)
                 },
             );
-            let r = f.browse("await all();await click('Views');return JSON.stringify(snapshot());");
+            let r = f.browse(
+                &mut firefox,
+                "await all();await click('Views');return JSON.stringify(snapshot());",
+            );
             assert_eq!(r["views"].as_array().unwrap().len(), 3);
             for view in r["views"].as_array().unwrap() {
                 assert!(view.get("rows").is_none(), "{r}");
@@ -529,11 +568,15 @@ fn b07_both_model_rank_directions_have_no_computed_rows() {
 }
 #[test]
 fn b08_supplied_and_unresolved_query_parameters_remain_unknown() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut f = Fixture::emit("b08", route, SPEC, &scenario(false));
         f.steps().push(json!({"step":"query_view","view":"replay.items.ByLabel","params":{"wanted":{"kind":"observed","event":"replay.items.Created","field":"label"}}}));
         f.persist();
-        let r = f.browse("await all();await click('Views');return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await all();await click('Views');return JSON.stringify(snapshot());",
+        );
         contains(&r, PARAMETER);
         contains(&r, "wanted");
         contains(&r, "alpha");
@@ -547,6 +590,7 @@ fn b08_supplied_and_unresolved_query_parameters_remain_unknown() {
 }
 #[test]
 fn b09_filters_are_visible_without_partial_evaluation() {
+    let mut firefox = None;
     for route in [4, 5] {
         for (i, filter) in [
             "{all: ['rank >= 0', 'rank < 5']}",
@@ -563,7 +607,10 @@ fn b09_filters_are_visible_without_partial_evaluation() {
                 &SPEC.replace("filter: rank >= 0", &format!("filter: {filter}")),
                 &scenario(false),
             );
-            let r = f.browse("await all();await click('Views');return JSON.stringify(snapshot());");
+            let r = f.browse(
+                &mut firefox,
+                "await all();await click('Views');return JSON.stringify(snapshot());",
+            );
             let expected = [
                 "(rank >= 0 and rank < 5)",
                 "(rank >= 0 or rank < 5)",
@@ -591,11 +638,12 @@ fn b09_filters_are_visible_without_partial_evaluation() {
 }
 #[test]
 fn b10_unbound_effects_and_zero_candidates_are_unknown() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut f = Fixture::emit("b10", route, SPEC, &scenario(false));
         f.steps().retain(|s| s["step"] != "capture_instance");
         f.persist();
-        let r=f.browse("await click('Views');const empty=snapshot();await all();const after=snapshot();await click('State');return JSON.stringify({...snapshot(),empty,after});");
+        let r=f.browse(&mut firefox, "await click('Views');const empty=snapshot();await all();const after=snapshot();await click('State');return JSON.stringify({...snapshot(),empty,after});");
         for key in ["empty", "after"] {
             contains(&r[key], PARAMETER);
             contains(&r[key], "ordering was not projected");
@@ -616,6 +664,7 @@ fn b10_unbound_effects_and_zero_candidates_are_unknown() {
 }
 #[test]
 fn b11_original_controls_and_expectations_are_unexecuted() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut f = Fixture::emit("b11", route, SPEC, &scenario(false));
         f.steps()
@@ -650,7 +699,10 @@ fn b11_original_controls_and_expectations_are_unexecuted() {
             }
         }
         f.persist();
-        let r = f.browse("await all();return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await all();return JSON.stringify(snapshot());",
+        );
         let actual: Vec<_> = r["acts"]
             .as_array()
             .unwrap()
@@ -686,9 +738,10 @@ fn b11_original_controls_and_expectations_are_unexecuted() {
 }
 #[test]
 fn b12_controls_reconstruct_prefixes_and_cancel_stale_playback() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b12", route, SPEC, &scenario(false));
-        let r=f.browse(r"
+        let r=f.browse(&mut firefox, r"
           await click('Step');const first=snapshot();await click('Step');const second=snapshot();
           await click('Step');const moved=snapshot();await click('◂ Back');const back=snapshot();await click('Step');const replayed=snapshot();
           await click('Reset');const reset=snapshot();p.state.speed=30;await click('▶ Play');await click('Reset');
@@ -711,11 +764,12 @@ fn b12_controls_reconstruct_prefixes_and_cancel_stale_playback() {
 
 #[test]
 fn b02_unknown_writes_invalidate_existing_values_and_preserve_unrelated_facts() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b02-invalidation", route, SPEC, &scenario(false));
         // A skin can retain knowledge through the public reactive API. An unresolved write must
         // remove affected values even in that case, while preserving a field the effect never sets.
-        let r=f.browse(r"await click('Step');await click('Step');
+        let r=f.browse(&mut firefox, r"await click('Step');await click('Step');
           for(const i of Object.values(p.state.world.instances)){i.fields.label='prior';i.fields.rank=99;i.fields.detail={score:42};}
           await nextTick();const before=snapshot();await click('Step');return JSON.stringify({before,after:snapshot()});");
         for alias in ["first", "second"] {
@@ -735,6 +789,7 @@ fn b02_unknown_writes_invalidate_existing_values_and_preserve_unrelated_facts() 
 }
 #[test]
 fn b01_conflicting_captures_outcomes_and_missing_assignment_input_are_diagnostic() {
+    let mut firefox = None;
     for route in [4, 5] {
         for mode in [
             "duplicate-capture",
@@ -771,7 +826,10 @@ fn b01_conflicting_captures_outcomes_and_missing_assignment_input_are_diagnostic
                 _ => unreachable!(),
             }
             f.persist();
-            let r = f.browse("await click('Step');return JSON.stringify(snapshot());");
+            let r = f.browse(
+                &mut firefox,
+                "await click('Step');return JSON.stringify(snapshot());",
+            );
             if mode == "missing-input" {
                 unknown_fields(&r, "first", &["copied"]);
                 contains(&r, "assignment input \"copied\" is missing");
@@ -828,6 +886,7 @@ fn b08_missing_required_authored_parameter_still_refuses() {
 }
 #[test]
 fn b11_refusal_preserves_established_declarations_and_unknown_facts() {
+    let mut firefox = None;
     for route in [4, 5] {
         // Wrong-state is a legitimate authored declared refusal; replay does not decide its guard.
         let authored = scenario(false).replace("outcome: finished", "outcome: wrong-state");
@@ -840,7 +899,7 @@ fn b11_refusal_preserves_established_declarations_and_unknown_facts() {
             .unwrap();
         assert_eq!(command["outcomes"][0]["refuses"], true);
         assert_eq!(command["outcomes"][0]["subject"]["kind"], "creates");
-        let r=f.browse("await click('Step');await click('Step');const before=snapshot();await click('Step');return JSON.stringify({before,after:snapshot()});");
+        let r=f.browse(&mut firefox, "await click('Step');await click('Step');const before=snapshot();await click('Step');return JSON.stringify({before,after:snapshot()});");
         for key in ["instances", "unknownEffects", "events", "notes"] {
             assert_eq!(
                 r["before"]["world"][key], r["after"]["world"][key],
@@ -854,9 +913,10 @@ fn b11_refusal_preserves_established_declarations_and_unknown_facts() {
 }
 #[test]
 fn b12_reset_select_pause_and_restart_cancel_callbacks_from_previous_play() {
+    let mut firefox = None;
     for route in [4, 5] {
         let f = Fixture::emit("b12-timers", route, SPEC, &scenario(false));
-        let r=f.browse(r"
+        let r=f.browse(&mut firefox, r"
           const wait=()=>new Promise(r=>setTimeout(r,200));const saved=[];
           p.state.speed=30;await click('▶ Play');await click('Reset');p.state.speed=1000;await click('▶ Play');await wait();saved.push(snapshot());await click('❙❙ Pause');await click('Reset');
           p.state.speed=30;await click('▶ Play');document.querySelector('.scn').click();await nextTick();p.state.speed=1000;await click('▶ Play');await wait();saved.push(snapshot());await click('❙❙ Pause');await click('Reset');
@@ -873,12 +933,16 @@ fn b12_reset_select_pause_and_restart_cancel_callbacks_from_previous_play() {
 
 #[test]
 fn b01_capture_event_field_need_not_equal_entity_identity_field() {
+    let mut firefox = None;
     for route in [4, 5] {
         let spec=SPEC.replacen("fields: [{name: id, type: replay.items.Id}, {name: label, type: String}]", "fields: [{name: generated_id, type: replay.items.Id}, {name: label, type: String}]", 1)
             .replace("        instance: id\n", "        instance: generated_id\n");
         let authored = scenario(false).replace("field: id}", "field: generated_id}");
         let f = Fixture::emit("b01-capture-field", route, &spec, &authored);
-        let r = f.browse("await click('Step');return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await click('Step');return JSON.stringify(snapshot());",
+        );
         assert_eq!(r["world"]["instances"]["first"]["state"], "Draft");
         unknown_fields(&r, "first", &["id", "generated_id"]);
         contains(&r, "generated_id");
@@ -886,6 +950,7 @@ fn b01_capture_event_field_need_not_equal_entity_identity_field() {
 }
 #[test]
 fn b06_update_with_single_reference_keeps_state_but_cannot_choose_subject() {
+    let mut firefox = None;
     for route in [4, 5] {
         let update = r"  - name: replay.items.Update
     input:
@@ -909,7 +974,10 @@ fn b06_update_with_single_reference_keeps_state_but_cannot_choose_subject() {
             )
             .replace("z: {$instance: second}", "z: literal-subject");
         let f = Fixture::emit("b06-update", route, &spec, &authored);
-        let r = f.browse("await all();return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await all();return JSON.stringify(snapshot());",
+        );
         assert_eq!(r["world"]["instances"].as_object().unwrap().len(), 2);
         contains(&r, SUBJECT);
         for alias in ["first", "second"] {
@@ -920,6 +988,7 @@ fn b06_update_with_single_reference_keeps_state_but_cannot_choose_subject() {
 }
 #[test]
 fn b11_binding_and_external_controls_never_create_observations_or_instances() {
+    let mut firefox = None;
     for route in [4, 5] {
         let entity = r"  - name: replay.items.Receipt
     identity: {name: id, type: replay.items.Id}
@@ -956,7 +1025,10 @@ bindings:
         f.steps().insert(0,json!({"step":"configure_external_outcome","force":{"command":"replay.items.Record","outcome":"unavailable"}}));
         f.steps().push(json!({"step":"expect_invocation","binding":"record-created","command":"replay.items.Record","input":{"label":{"kind":"observed","event":"replay.items.Created","field":"label"}}}));
         f.persist();
-        let r = f.browse("await all();return JSON.stringify(snapshot());");
+        let r = f.browse(
+            &mut firefox,
+            "await all();return JSON.stringify(snapshot());",
+        );
         assert_eq!(r["world"]["instances"].as_object().unwrap().len(), 2);
         assert_eq!(r["world"]["events"], json!([]));
         contains(&r, "record-created");
@@ -1051,15 +1123,48 @@ fn adversary_upper_only_count_mounts_suite5() {
     adversary_single_count_bound(5, "at_most");
 }
 
+/// The fixtures of one test share the Firefox the first of them started, and each still
+/// replays its own site: the reuse is what `browse` claims, and the evidence says so.
+#[test]
+fn one_firefox_serves_every_fixture_of_a_test() {
+    let mut firefox = None;
+    let mut fixtures = Vec::new();
+    for route in [4, 5] {
+        let f = Fixture::emit("one-firefox", route, SPEC, &scenario(false));
+        let r = f.browse(
+            &mut firefox,
+            "await click('Step');return JSON.stringify(snapshot());",
+        );
+        assert_eq!(r["cursor"], 0, "route {route}: {r}");
+        assert_eq!(r["boom"], "", "route {route}: {r}");
+        fixtures.push(f);
+    }
+    let [first, second] = fixtures.as_slice() else {
+        unreachable!()
+    };
+    assert!(first.evidence.join("firefox.pid").is_file());
+    assert!(
+        !second.evidence.join("firefox.pid").exists(),
+        "the second fixture of the test started a second Firefox"
+    );
+    for f in &fixtures {
+        assert_eq!(
+            fs::read_to_string(f.evidence.join("browser.txt")).unwrap(),
+            format!("{}\n", first.evidence.display())
+        );
+    }
+}
+
 #[test]
 fn adversary_query_only_prefix_remains_visible_and_reconstructible() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut f = Fixture::emit("adversary-query-only", route, SPEC, &scenario(false));
         f.steps()
             .retain(|step| matches!(step["step"].as_str(), Some("query_view" | "expect_view")));
         assert!(!f.steps().is_empty());
         f.persist();
-        let result = f.browse(r"await click('Views');const initial=snapshot();await click('Step');const reached=snapshot();await click('◂ Back');const back=snapshot();await click('Step');return JSON.stringify({initial,reached,back,replayed:snapshot()});");
+        let result = f.browse(&mut firefox, r"await click('Views');const initial=snapshot();await click('Step');const reached=snapshot();await click('◂ Back');const back=snapshot();await click('Step');return JSON.stringify({initial,reached,back,replayed:snapshot()});");
         assert_eq!(result["initial"], result["back"]);
         assert_eq!(result["reached"], result["replayed"]);
         assert_eq!(result["reached"]["world"]["instances"], json!({}));
@@ -1152,6 +1257,7 @@ fn adversary_explicit_null_count_mounts_suite5() {
 // Independent ordinary browser-source review pass 2; inherited assertions remain unchanged.
 #[test]
 fn adversary2_exact_metadata_and_literal_lookalikes_keep_distinct_kinds() {
+    let mut firefox = None;
     let mut f = Fixture::emit("adversary2-metadata", 5, SPEC, &scenario(false));
     let large = u64::MAX;
     let literal = json!({"elapsed":null,"after":false,"expectation":{"at_least":0,"at_most":"18446744073709551615","position":{"index":{"raw":"literal text"}}}});
@@ -1165,7 +1271,10 @@ fn adversary2_exact_metadata_and_literal_lookalikes_keep_distinct_kinds() {
         json!({"step":"expect_view","view":"replay.items.Ranked","expectation":{"expect":"at","order_by":["rank desc"],"position":{"row":"nth","index":large},"fields":{"rank":{"kind":"literal","value":0}}}}),
     ]);
     f.persist();
-    let r = f.browse("await all();await click('Views');return JSON.stringify(snapshot());");
+    let r = f.browse(
+        &mut firefox,
+        "await all();await click('Views');return JSON.stringify(snapshot());",
+    );
     assert_eq!(r["boom"], "");
     assert_eq!(r["acts"][1]["input"]["mapping_value"]["value"], literal);
     let declarations: Vec<_> = r["acts"]
@@ -1214,6 +1323,7 @@ fn adversary2_exact_metadata_and_literal_lookalikes_keep_distinct_kinds() {
 
 #[test]
 fn adversary2_reused_creation_alias_is_diagnostic_and_preserves_prior_prefix() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut f = Fixture::emit("adversary2-reused-alias", route, SPEC, &scenario(false));
         f.steps()
@@ -1222,7 +1332,7 @@ fn adversary2_reused_creation_alias_is_diagnostic_and_preserves_prior_prefix() {
             .nth(1)
             .unwrap()["instance"] = json!("first");
         f.persist();
-        let r = f.browse(r"await click('Step');const first=snapshot();await click('Step');const duplicate=snapshot();await click('◂ Back');const back=snapshot();await click('Step');return JSON.stringify({first,duplicate,back,replayed:snapshot()});");
+        let r = f.browse(&mut firefox, r"await click('Step');const first=snapshot();await click('Step');const duplicate=snapshot();await click('◂ Back');const back=snapshot();await click('Step');return JSON.stringify({first,duplicate,back,replayed:snapshot()});");
         assert_eq!(r["first"], r["back"]);
         assert_eq!(r["duplicate"], r["replayed"]);
         assert_eq!(
@@ -1249,6 +1359,7 @@ fn adversary2_reused_creation_alias_is_diagnostic_and_preserves_prior_prefix() {
 
 #[test]
 fn adversary2_switching_to_a_distinct_authored_scenario_cancels_pending_play() {
+    let mut firefox = None;
     for route in [4, 5] {
         let mut f = Fixture::emit("adversary2-scenario-select", route, SPEC, &scenario(false));
         let sources = f.evidence.join("two-scenarios");
@@ -1289,7 +1400,7 @@ fn adversary2_switching_to_a_distinct_authored_scenario_cancels_pending_play() {
             let original = fs::read_to_string(f.site.join("replay.json")).unwrap();
             ess_conformance::web_replay::AdmittedReplay::from_json(&original).unwrap();
         }
-        let r = f.browse(r"const names=p.scenarios.map(s=>s.name);if(names.length!==2)throw Error('expected two scenarios');
+        let r = f.browse(&mut firefox, r"const names=p.scenarios.map(s=>s.name);if(names.length!==2)throw Error('expected two scenarios');
           const selectAlternate=async()=>{document.querySelectorAll('.scn')[1].click();await nextTick();};
           await selectAlternate();await click('Step');const expected=snapshot();
           document.querySelectorAll('.scn')[0].click();await nextTick();p.state.speed=30;await click('▶ Play');await selectAlternate();
