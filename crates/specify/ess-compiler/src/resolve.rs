@@ -1258,13 +1258,18 @@ impl<'a> Resolver<'a> {
         needles: &[String],
     ) -> Option<ResolvedBody> {
         match &declared.body {
-            TypeBody::Newtype { of, invariants } => {
+            TypeBody::Newtype {
+                of,
+                alphabet,
+                invariants,
+            } => {
                 let mut of_needles = vec![format!("of: {of}")];
                 of_needles.extend_from_slice(needles);
                 let subject = declared.name.to_string();
                 let of = self.type_ref(code, of, &subject, path, &of_needles)?;
                 Some(ResolvedBody::Newtype {
                     of,
+                    alphabet: alphabet.clone(),
                     invariants: invariants.clone(),
                 })
             }
@@ -1633,6 +1638,7 @@ impl<'a> Resolver<'a> {
                         name: command.name,
                         domain,
                         input,
+                        examples: command.examples,
                         response,
                         outcomes,
                         naming: command.naming,

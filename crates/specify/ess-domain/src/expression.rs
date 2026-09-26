@@ -108,6 +108,14 @@ pub trait TypeEnvironment {
     fn is_string(&self, _reference: &Self::Type) -> bool {
         false
     }
+    /// Whether this environment admits `.count` on a `String`, the length in Unicode scalar values
+    /// that `ess/11` introduced.
+    ///
+    /// `true` by default: the compiler's environment reads an IR, which exists only after
+    /// validation admitted it. [`DomainEnvironment`] answers from the format its registry serves.
+    fn admits_text_length(&self) -> bool {
+        true
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -125,6 +133,11 @@ pub trait TypeEnvironment {
 pub struct Access {
     /// The path requires collection cardinality or element projection.
     pub collection: bool,
+    /// The path reads the length of a text (`keys.count` over a `String`, ess/11).
+    ///
+    /// Apart from [`Self::collection`], which a producer reads as "count the elements": a text
+    /// length is a leaf read the evaluator derives from the text itself.
+    pub text_length: bool,
     /// Transparent unwraps and member/element descents required by the path.
     pub depth: usize,
 }
@@ -238,6 +251,11 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     }
     fn is_string(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Primitive(Primitive::String))
+    }
+    fn admits_text_length(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V11.major())
     }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
@@ -489,20 +507,19 @@ fn resolve<E: TypeEnvironment>(
                 };
                 let next = match shape {
                     Shape::Struct => environment.member(&current, segment),
+                    Shape::Scalar(ScalarKind::Text)
+                        if segment == "count" && environment.is_string(&current) =>
+                    {
+                        let at = (position, optional, access);
+                        return text_length(environment, path, owner, at, &context);
+                    }
                     Shape::List(_) | Shape::Map(_) if segment == "count" => {
                         access.collection = true;
                         if let Some(next) = segments.get(position + 1) {
                             return Err(error(owner, ValidationCode::UnobservableFact, Some(path), Some(next),
                                 format!("`{path}` cannot select `{next}` from collection count of type Integer (Number){context}")));
                         }
-                        return Ok(Resolution {
-                            terminal: environment.cardinality_type(),
-                            declared: "Integer".to_owned(),
-                            scalar: Some(ScalarKind::Number),
-                            variants: None,
-                            optional,
-                            access,
-                        });
+                        return Ok(count_of(environment, optional, access));
                     }
                     Shape::List(of) if canonical_ordinal(segment) => {
                         access.collection = true;
@@ -526,6 +543,74 @@ fn resolve<E: TypeEnvironment>(
             }
         }
     }
+}
+
+/// `.count` on a `String` at `(position, optional, access)`: the length of a text in Unicode scalar
+/// values (beyond10x/ess#104).
+///
+/// Only a `String` has one — asked of the resolved terminal, so a newtype of one at any depth and
+/// an `Optional` of one are admitted — and every other text scalar falls through to the
+/// `cannot select` refusal it always had.
+fn text_length<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    owner: &str,
+    (position, optional, mut access): (usize, bool, Access),
+    context: &str,
+) -> Result<Resolution<E::Type>, ExpressionError> {
+    access.text_length = true;
+    text_length_refusal(environment, path, position, owner, context)
+        .map(|()| count_of(environment, optional, access))
+}
+
+/// A `.count` — of a collection or of a text — resolves to an `Integer`.
+fn count_of<E: TypeEnvironment>(
+    environment: &E,
+    optional: bool,
+    access: Access,
+) -> Resolution<E::Type> {
+    Resolution {
+        terminal: environment.cardinality_type(),
+        declared: "Integer".to_owned(),
+        scalar: Some(ScalarKind::Number),
+        variants: None,
+        optional,
+        access,
+    }
+}
+
+/// The two refusals a text length can meet: a format before ess/11, and a selector past it.
+fn text_length_refusal<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    position: usize,
+    owner: &str,
+    context: &str,
+) -> Result<(), ExpressionError> {
+    let segments = path.segments();
+    let through = FactPath::from_segments(&segments[..=position]);
+    if !environment.admits_text_length() {
+        return Err(error(
+            owner,
+            ValidationCode::UnsupportedFormatVersion,
+            Some(path),
+            segments.get(position).map(String::as_str),
+            format!("`{through}`: the length of a String requires specification format ess/11"),
+        ));
+    }
+    if let Some(next) = segments.get(position + 1) {
+        return Err(error(
+            owner,
+            ValidationCode::UnobservableFact,
+            Some(path),
+            Some(next),
+            format!(
+                "`{through}` is a text length of type Integer (Number); `{next}` selects nothing \
+                 from it{context}"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn canonical_ordinal(segment: &str) -> bool {
@@ -813,6 +898,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         let mut reference = None;
         let mut access = Access {
             collection: true,
+            text_length: false,
             depth: 0,
         };
         let mut optional = false;

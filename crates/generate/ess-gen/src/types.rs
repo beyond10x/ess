@@ -282,6 +282,15 @@ pub(crate) struct Node {
     /// Conditions every value satisfies, as the author wrote them. An annotation, not an assertion.
     #[serde(rename = "x-ess-invariants", skip_serializing_if = "Vec::is_empty")]
     pub(crate) invariants: Vec<String>,
+    /// The characters every value is drawn from, as the author wrote them (ess/11). An annotation:
+    /// no `pattern` is derived, because an ECMA-262 character class is not certainly right for a
+    /// supplementary-plane character without the `u` flag.
+    #[serde(rename = "x-ess-alphabet", skip_serializing_if = "Option::is_none")]
+    pub(crate) alphabet: Option<String>,
+    /// The authored example of a command input, as JSON Schema's `examples`: what synthesis
+    /// builds the input from, and not a constraint a validator applies.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) examples: Vec<ess_primitives::node::Node>,
     /// The relation this property carries, on the property that carries it.
     #[serde(rename = "x-ess-relation", skip_serializing_if = "Option::is_none")]
     pub(crate) relation: Option<Relation>,
@@ -629,6 +638,18 @@ pub(crate) fn object(fields: &[ResolvedField]) -> Node {
 /// Keyed by the field's **declared** name rather than its wire name, because `via:` names a
 /// declaration: a field renamed on the wire still carries the relation the model gave it.
 pub(crate) fn object_with(fields: &[ResolvedField], relations: &BTreeMap<&str, Relation>) -> Node {
+    object_annotated(fields, relations, None)
+}
+
+/// The same object, with each command input's authored `example:` as its property's `examples`.
+///
+/// Keyed by the declared name, as `relations` is. `None` for every message but a command's input,
+/// the one position an example is written in.
+pub(crate) fn object_annotated(
+    fields: &[ResolvedField],
+    relations: &BTreeMap<&str, Relation>,
+    examples: Option<&BTreeMap<String, ess_primitives::node::Node>>,
+) -> Node {
     let mut properties = Properties::default();
     let mut required = Vec::new();
 
@@ -639,6 +660,9 @@ pub(crate) fn object_with(fields: &[ResolvedField], relations: &BTreeMap<&str, R
         }
         let mut property = field(declared);
         property.relation = relations.get(declared.name.as_str()).cloned();
+        if let Some(example) = examples.and_then(|examples| examples.get(&declared.name)) {
+            property.examples = vec![example.clone()];
+        }
         properties.insert(wire, property);
     }
 
@@ -657,8 +681,13 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
         // Referenced, never inlined, even though a newtype over `String` has the same assertions as
         // a `String`. The reference is what keeps `Email` and `EmailAddress` two types in the
         // document and in anything generated from it.
-        ResolvedBody::Newtype { of, invariants } => Node {
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => Node {
             invariants: statements(invariants),
+            alphabet: alphabet.clone(),
             ..type_ref(of)
         },
         ResolvedBody::Struct { fields, invariants } => Node {
@@ -797,6 +826,8 @@ pub(crate) struct Message<'a> {
     /// but an entity: a relation is declared on an entity, and a message is a copy of some of its
     /// values rather than the thing itself.
     pub(crate) relations: BTreeMap<&'a str, Relation>,
+    /// The authored examples of a command's input, by input name; `None` for every other message.
+    pub(crate) examples: Option<&'a BTreeMap<String, ess_primitives::node::Node>>,
 }
 
 impl<'a> Message<'a> {
@@ -809,6 +840,7 @@ impl<'a> Message<'a> {
             description: command.naming.summary.clone(),
             fields: &command.input,
             relations: BTreeMap::new(),
+            examples: Some(&command.examples),
         }
     }
 
@@ -821,6 +853,7 @@ impl<'a> Message<'a> {
             description: command.naming.summary.clone(),
             fields: &command.response,
             relations: BTreeMap::new(),
+            examples: None,
         }
     }
 
@@ -833,6 +866,7 @@ impl<'a> Message<'a> {
             description: event.naming.summary.clone(),
             fields: &event.fields,
             relations: BTreeMap::new(),
+            examples: None,
         }
     }
 
@@ -848,6 +882,7 @@ impl<'a> Message<'a> {
             description: error.summary.clone(),
             fields: &error.fields,
             relations: BTreeMap::new(),
+            examples: None,
         }
     }
 
@@ -864,6 +899,7 @@ impl<'a> Message<'a> {
             description: view.naming.summary.clone(),
             fields: &view.fields,
             relations: BTreeMap::new(),
+            examples: None,
         }
     }
 
@@ -884,6 +920,7 @@ impl<'a> Message<'a> {
             description: entity.naming.summary.clone(),
             fields,
             relations,
+            examples: None,
         }
     }
 
@@ -909,7 +946,7 @@ pub(crate) fn message(carried: &Message<'_>) -> Node {
         description: carried.description.clone(),
         ess_name: Some(carried.name.to_string()),
         ess_kind: Some(carried.kind),
-        ..object_with(carried.fields, &carried.relations)
+        ..object_annotated(carried.fields, &carried.relations, carried.examples)
     }
 }
 

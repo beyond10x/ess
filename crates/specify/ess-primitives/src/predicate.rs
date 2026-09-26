@@ -292,7 +292,7 @@ impl Operand {
     /// Resolves this operand, returning `None` when a referenced fact is unobserved.
     fn resolve(&self, facts: &dyn FactSource) -> Option<FactValue> {
         match self {
-            Self::Fact(path) => facts.fact(path),
+            Self::Fact(path) => facts.observe(path),
             Self::Literal(value) => Some(value.clone()),
         }
     }
@@ -614,18 +614,22 @@ impl Predicate {
             Self::Not(inner) => inner.evaluate(facts).not(),
             Self::Compare { left, op, right } => Self::evaluate_compare(left, *op, right, facts).0,
             Self::Truthy(path) => facts
-                .fact(path)
+                .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
-            Self::Defined(path) => Truth::from_bool(facts.fact(path).is_some()),
-            Self::AnyOf { path, values } => facts.fact(path).map_or(Truth::Unknown, |observed| {
-                Truth::from_bool(values.contains(&observed))
-            }),
-            Self::NoneOf { path, values } => facts.fact(path).map_or(Truth::Unknown, |observed| {
-                Truth::from_bool(!values.contains(&observed))
-            }),
+            Self::Defined(path) => Truth::from_bool(facts.observe(path).is_some()),
+            Self::AnyOf { path, values } => {
+                facts.observe(path).map_or(Truth::Unknown, |observed| {
+                    Truth::from_bool(values.contains(&observed))
+                })
+            }
+            Self::NoneOf { path, values } => {
+                facts.observe(path).map_or(Truth::Unknown, |observed| {
+                    Truth::from_bool(!values.contains(&observed))
+                })
+            }
             Self::TextMatch { path, op, value } => {
                 facts
-                    .fact(path)
+                    .observe(path)
                     .map_or(Truth::Unknown, |observed| match (&observed, value) {
                         (FactValue::Text(text), FactValue::Text(literal)) => {
                             Truth::from_bool(op.holds(text, literal))
@@ -798,7 +802,7 @@ impl Predicate {
                     let mut observed = Vec::new();
                     let mut missing = Vec::new();
                     for path in leaf.fact_paths() {
-                        match facts.fact(path) {
+                        match facts.observe(path) {
                             Some(value) => observed.push((path.clone(), value)),
                             None => missing.push(path.clone()),
                         }

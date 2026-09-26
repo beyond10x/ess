@@ -59,8 +59,16 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
             ));
         }
         match &declared.body {
-            TypeBody::Newtype { of, .. } => {
+            TypeBody::Newtype { of, alphabet, .. } => {
                 reference(of, Some(system.format), &format!("{at}.of"), &mut errors);
+                // An older reader fails `alphabet:` as an unknown field with no version hint.
+                if alphabet.is_some() && system.format.major() < FormatVersion::V11.major() {
+                    errors.push(ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("{at}.alphabet"),
+                        "declared alphabets require specification format ess/11",
+                    ));
+                }
             }
             TypeBody::Struct {
                 fields: members, ..
@@ -165,7 +173,7 @@ fn held_state_conditions(
 /// invariants, view filters and binding selections. A format gate over predicate vocabulary asks
 /// this one walk, so a position cannot be gated in one construct and forgotten in another; a new
 /// predicate position is added here, not beside the gate that reads it.
-pub(crate) fn predicates(
+pub fn predicates(
     spec: &Specification,
 ) -> Vec<(ConstructRef, &ess_primitives::predicate::Predicate)> {
     let mut found = Vec::new();
@@ -280,6 +288,29 @@ fn string_operators(spec: &Specification, format: FormatVersion, errors: &mut Va
     }
 }
 
+/// As for `alphabet:`, an older reader fails `example:` as an unknown field with no version hint,
+/// so an input example is refused below ess/11 at the key the author wrote.
+fn input_examples(
+    command: &crate::command::CommandSpec,
+    format: FormatVersion,
+    errors: &mut ValidationErrors,
+) {
+    if format.major() >= FormatVersion::V11.major() {
+        return;
+    }
+    for field in command.examples.keys() {
+        errors.push(ValidationError::at(
+            command
+                .site()
+                .key("input")
+                .named(field.clone())
+                .key("example"),
+            ValidationCode::UnsupportedFormatVersion,
+            "input examples require specification format ess/11",
+        ));
+    }
+}
+
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
     string_operators(spec, spec.system().format, &mut errors);
@@ -327,6 +358,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     }
     for command in spec.commands().values() {
         held_state_conditions(command, format, &mut errors);
+        input_examples(command, format, &mut errors);
         fields(
             &command.input,
             format,

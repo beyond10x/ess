@@ -822,3 +822,66 @@ test('every text ordering the corpus states is the byte ordering the evaluator a
     }
   }
 });
+
+// ---- text lengths ------------------------------------------------------------------------------
+
+// `.count` on text (beyond10x/ess#104): a bound fact wins; otherwise, when the last segment is
+// `count` and the parent is bound to text, the text's number of code points. The corpus path comes
+// from `ESS_PRIMITIVE_VECTORS`, which `tests/typescript_runtime.rs` sets, and this case fails rather
+// than skipping without it: a lane that selects nothing is indistinguishable from a green one.
+test('every text length the corpus states is the count the evaluator reads', () => {
+  const at = process.env.ESS_PRIMITIVE_VECTORS;
+  assert.ok(at, 'ESS_PRIMITIVE_VECTORS names the primitive corpus');
+  const vectors = JSON.parse(readFileSync(at, 'utf8')).text_lengths as {
+    name: string;
+    facts: Record<string, Node>;
+    path: string;
+    expected: number | string;
+  }[];
+  assert.ok(vectors.length >= 8, `the corpus states ${vectors.length} text lengths`);
+  const equals = (path: string, value: number): Predicate =>
+    new Predicate({
+      kind: 'compare',
+      left: new Operand({ path, isFact: true }),
+      op: '==',
+      right: new Operand({ literal: value }),
+    });
+  for (const vector of vectors) {
+    const facts = source(vector.facts);
+    if (typeof vector.expected === 'number') {
+      assert.equal(equals(vector.path, vector.expected).evaluate(facts), TruthTrue, vector.name);
+      assert.equal(
+        equals(vector.path, vector.expected + 1).evaluate(facts),
+        TruthFalse,
+        vector.name,
+      );
+    } else {
+      assert.equal(vector.expected, 'unknown', vector.name);
+      assert.equal(equals(vector.path, 0).evaluate(facts), TruthUnknown, vector.name);
+    }
+  }
+});
+
+test('a text reads as if its count were bound, in every leaf kind, and a quantifier over it stays unknown', () => {
+  const bare = source({ keys: 'abc' });
+  const bound = source({ keys: 'abc', 'keys.count': 3 });
+  // One per leaf kind; the two membership leaves have no expression spelling, so they are built.
+  const leaves = [
+    parseLeaf('keys.count == 3'),
+    parseLeaf('defined(keys.count)'),
+    parseLeaf('keys.count'),
+    new Predicate({ kind: 'any_of', path: 'keys.count', values: [3, 4] }),
+    new Predicate({ kind: 'none_of', path: 'keys.count', values: [1, 2] }),
+  ];
+  for (const leaf of leaves) {
+    assert.equal(leaf.evaluate(bare), leaf.evaluate(bound), String(leaf));
+    assert.notEqual(leaf.evaluate(bare), TruthUnknown, String(leaf));
+  }
+  const quantified = new Predicate({
+    kind: 'forall',
+    over: 'keys',
+    bind: 'k',
+    body: parseLeaf('k == x'),
+  });
+  assert.equal(quantified.evaluate(source({ keys: '' })), TruthUnknown);
+});

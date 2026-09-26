@@ -50,7 +50,7 @@ replaces the guard of outcome `placed`. An `invariants:` fragment replaces the i
 `shop.order.Order`. A `filter:` fragment replaces the filter of `shop.order.OpenOrders`.
 
 ```yaml ess-check="model"
-format: ess/8
+format: ess/11
 system: shop
 version: v1
 domain: shop.order
@@ -485,7 +485,18 @@ element. A map has no ordinals.
 when: tags.0 == vip
 ```
 
-Validate type-checks the path. `.count` on a field that is neither a list nor a map is refused.
+`.count` on a `String`, or on a newtype of one at any depth, is the text's length in Unicode scalar
+values (`ess/11`). `é` written as one character counts 1, and `e` followed by a combining accent
+counts 2: this is not a grapheme count. Synthesis witnesses a length guard with a text one character
+either side of the literal, drawn from the type's `alphabet:` when it declares one, up to 1024
+characters; past that the guard is refused as `ESS-SYNTH-018`. A length is not asserted on a view
+row in this suite format, so an invariant that reads one is held where values are built.
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when: sku.count > 0
+```
+
+Validate type-checks the path. `.count` on a field that is not a list, a map or a String is refused.
 So is any other suffix on a list, such as `.length`, and so is a key on a map.
 
 ```yaml ess-check="invariants" ess-expect="refused" ess-says="cannot select"
@@ -494,7 +505,7 @@ invariants:
 ```
 
 ```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-003"
-when: sku.count > 0
+when: quantity.count > 0
 ```
 
 ```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-003"

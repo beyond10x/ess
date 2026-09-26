@@ -96,15 +96,20 @@ pub(super) fn selection(
     };
     match selected {
         Ok(plan) => {
+            // A model constraint a normalizer cannot execute is a refusal, whichever kind it is.
             for obligation in plan
                 .obligations
                 .iter()
-                .filter(|item| item.rule == "model_invariants")
+                .filter(|item| item.rule == "model_invariants" || item.rule == "model_alphabet")
             {
                 found.push(finding(
                     &format!("{at}{}", obligation.pointer),
-                    "model_invariants",
-                    "normalization cannot execute the selected model invariant statements",
+                    &obligation.rule,
+                    if obligation.rule == "model_alphabet" {
+                        "normalization cannot enforce the selected model alphabet"
+                    } else {
+                        "normalization cannot execute the selected model invariant statements"
+                    },
                 ));
             }
             Some(plan)

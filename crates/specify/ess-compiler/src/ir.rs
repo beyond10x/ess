@@ -306,6 +306,12 @@ pub enum ResolvedBody {
     Newtype {
         /// What it wraps.
         of: ResolvedTypeRef,
+        /// The characters every value is drawn from, when declared (ess/11).
+        ///
+        /// Skipped when absent, so the IR of a model that declares none keeps its bytes and its
+        /// `spec_digest`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        alphabet: Option<String>,
         /// Conditions every value satisfies, as predicates over `value`.
         invariants: Vec<Invariant>,
     },
@@ -331,6 +337,27 @@ pub enum ResolvedBody {
         /// The variants, by tag value.
         variants: BTreeMap<String, ResolvedTypeRef>,
     },
+}
+
+impl ResolvedBody {
+    /// Whether a value of this type is held to more than its representation: a newtype or a struct
+    /// with any invariant, or a newtype with a declared alphabet.
+    ///
+    /// The one question every site that refuses a constrained type asks. Matching on `invariants`
+    /// alone, as those sites did before ess/11, would let an alphabet-only newtype through where
+    /// an invariant-carrying one is refused (`docs/design/string-alphabet-and-length.md`, section
+    /// 6).
+    pub fn is_constrained(&self) -> bool {
+        match self {
+            Self::Newtype {
+                alphabet,
+                invariants,
+                ..
+            } => alphabet.is_some() || !invariants.is_empty(),
+            Self::Struct { invariants, .. } => !invariants.is_empty(),
+            Self::Enum { .. } | Self::Union { .. } => false,
+        }
+    }
 }
 
 /// A type that is known to be declared.
@@ -903,6 +930,11 @@ pub struct ResolvedCommand {
     pub domain: DomainHandle,
     /// Its input, in declaration order.
     pub input: Vec<ResolvedField>,
+    /// The authored `example:` of each input that declares one, by input name (ess/11).
+    ///
+    /// Skipped when empty, so the IR of a command without examples keeps its bytes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub examples: BTreeMap<String, ess_primitives::node::Node>,
     /// Closed declared response fields, omitted for legacy commands.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<ResolvedField>,

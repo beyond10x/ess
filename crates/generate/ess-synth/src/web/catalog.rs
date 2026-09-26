@@ -401,8 +401,17 @@ fn types(bridge: &Bridge<'_>) -> Value {
             entry.insert("summary".to_owned(), json!(summary.trim()));
         }
         match &declared.body {
-            ess_compiler::ir::ResolvedBody::Newtype { of, invariants } => {
+            ess_compiler::ir::ResolvedBody::Newtype {
+                of,
+                alphabet,
+                invariants,
+            } => {
                 entry.insert("kind".to_owned(), json!("newtype"));
+                // The characters a value is drawn from, where declared; an example is a witness
+                // input rather than contract, so it is not catalogued.
+                if let Some(alphabet) = alphabet {
+                    entry.insert("alphabet".to_owned(), json!(alphabet));
+                }
                 entry.insert(
                     "of".to_owned(),
                     serde_json::to_value(of)

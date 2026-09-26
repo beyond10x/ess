@@ -99,9 +99,7 @@ impl Observation {
                     return Err("response declaration resource limit".into());
                 }
                 let ty = ir.types().get(&name).ok_or("response type is absent")?;
-                if ty.reading.is_some()
-                    || matches!(&ty.body, ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } if !invariants.is_empty())
-                {
+                if ty.reading.is_some() || ty.body.is_constrained() {
                     return Err(
                         "response constrained type needs an executable invariant/reading observer"
                             .into(),

@@ -520,6 +520,14 @@ impl Builder {
                 "x-ess-invariants" if self.model => {
                     self.obligations.insert(finding(&location, "model_invariants", "enforce the retained model invariant statements; structural codecs do not evaluate predicates"));
                 }
+                "x-ess-alphabet" if self.model => {
+                    self.obligations.insert(finding(
+                        &location,
+                        "model_alphabet",
+                        "enforce the retained model alphabet: every character of the text is one of \
+                         it; structural codecs do not check characters",
+                    ));
+                }
                 "propertyNames" if self.model => {
                     self.obligations.insert(finding(
                         &location,

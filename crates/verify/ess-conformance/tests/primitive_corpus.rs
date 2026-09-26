@@ -373,6 +373,120 @@ fn the_go_runtime_answers_every_text_match_the_corpus_states() {
     );
 }
 
+/// The Go test that asks the runtime's leaf reads every `text_lengths` vector (beyond10x/ess#104):
+/// a bound fact wins; otherwise `<parent>.count` over bound text is its rune count. A `null` is
+/// bound, as the Go flattener binds one, and has no length. Every leaf kind reads through the same
+/// rule, and a quantifier over a text stays `Unknown`, because cardinality is not a length.
+const GO_TEXT_LENGTH_TEST: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+func TestTextLengthCorpus(t *testing.T) {
+	raw, err := os.ReadFile("vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus struct {
+		TextLengths []struct {
+			Name     string          `json:"name"`
+			Facts    map[string]any  `json:"facts"`
+			Path     string          `json:"path"`
+			Expected json.RawMessage `json:"expected"`
+		} `json:"text_lengths"`
+	}
+	if err := json.Unmarshal(raw, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	if len(corpus.TextLengths) < 8 {
+		t.Fatalf("the corpus selected %d text lengths", len(corpus.TextLengths))
+	}
+	equals := func(path string, value float64) predicate {
+		return predicate{kind: "compare", left: operand{path: path, isFact: true}, op: "==", right: operand{literal: value}}
+	}
+	for _, vector := range corpus.TextLengths {
+		source := factSource{}
+		for path, value := range vector.Facts {
+			source[path] = value
+		}
+		var count float64
+		if err := json.Unmarshal(vector.Expected, &count); err == nil {
+			if got := equals(vector.Path, count).evaluate(source); got != truthTrue {
+				t.Errorf("Go %s: %s == %v over %v: got %v", vector.Name, vector.Path, count, source, got)
+			}
+			if got := equals(vector.Path, count+1).evaluate(source); got != truthFalse {
+				t.Errorf("Go %s: %s == %v over %v: got %v", vector.Name, vector.Path, count+1, source, got)
+			}
+			continue
+		}
+		if got := equals(vector.Path, 0).evaluate(source); got != truthUnknown {
+			t.Errorf("Go %s: %s has no length over %v, got %v", vector.Name, vector.Path, source, got)
+		}
+	}
+	bare := factSource{"keys": "abc"}
+	bound := factSource{"keys": "abc", "keys.count": 3.0}
+	leaves := []predicate{
+		equals("keys.count", 3),
+		{kind: "defined", path: "keys.count"},
+		{kind: "truthy", path: "keys.count"},
+		{kind: "any_of", path: "keys.count", values: []Node{3.0, 4.0}},
+		{kind: "none_of", path: "keys.count", values: []Node{1.0, 2.0}},
+	}
+	for _, leaf := range leaves {
+		if leaf.evaluate(bare) != leaf.evaluate(bound) || leaf.evaluate(bare) == truthUnknown {
+			t.Errorf("Go %v: over text %v, over the bound count %v", leaf.kind, leaf.evaluate(bare), leaf.evaluate(bound))
+		}
+	}
+	body := equals("k", 1)
+	quantified := predicate{kind: "forall", over: "keys", bind: "k", body: &body}
+	if got := quantified.evaluate(factSource{"keys": ""}); got != truthUnknown {
+		t.Errorf("Go forall over a text: got %v", got)
+	}
+}
+"#;
+
+#[test]
+fn the_go_runtime_reads_every_text_length_the_corpus_states() {
+    let root = directory("go-text-length");
+    let package = root.join("essconform");
+    std::fs::create_dir_all(&package).unwrap();
+    for artifact in ess_conformance::go::emit(minimal_suite().suite()).expect("the suite emits") {
+        std::fs::write(root.join(&artifact.path), artifact.contents).unwrap();
+    }
+    std::fs::write(root.join("go.mod"), "module textlengthcorpus\n\ngo 1.24\n").unwrap();
+    std::fs::write(package.join("vectors.json"), CORPUS).unwrap();
+    std::fs::write(package.join("text_length_test.go"), GO_TEXT_LENGTH_TEST).unwrap();
+
+    let output = Command::new("go")
+        .args([
+            "test",
+            "-count=1",
+            "-v",
+            "./...",
+            "-run",
+            "^TestTextLengthCorpus$",
+        ])
+        .current_dir(&root)
+        .env("GOWORK", "off")
+        .output()
+        .expect("the required Go toolchain executes");
+    let record = format!(
+        "exit: {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::write(root.join("go.log"), &record).unwrap();
+    assert!(output.status.success(), "{record}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("--- PASS: TestTextLengthCorpus"),
+        "the Go case ran rather than selecting nothing: {record}"
+    );
+}
+
 /// The corpus number a `numbers` vector builds, the way `ess-primitives/tests/primitive_corpus.rs`
 /// builds it, and the spelling it was authored in.
 fn corpus_number(from: &Value) -> (Number, String) {

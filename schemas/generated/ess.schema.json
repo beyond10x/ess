@@ -597,6 +597,69 @@
       },
       "additionalProperties": false
     },
+    "InputField": {
+      "description": "One field of a command's input, as written: a [`Field`] that may also carry an `example:`.\n\nIts own type rather than a key on [`Field`], which struct, event, error, entity, view, parameter and response fields share: an `example:` there would parse in every one of those positions, and each would have to refuse it by hand — one missed position would be an example silently ignored. Here every other position refuses it as an unknown field by construction. The attributes are [`Field`]'s exactly, and `the_published_input_field_is_a_field_plus_exactly_example` holds the two published schemas to differing by that one property (`docs/design/string-alphabet-and-length.md`, section 2).",
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display": {
+          "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "example": {
+          "description": "The value synthesis builds this input from (ess/11). Not a constraint: the input still accepts every value of its type.\n\nAn authored `example: null` is kept as `Some(Node::Null)` rather than read as no example, so validation can refuse it: an example is a value, and `null` is none.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Node"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "summary": {
+          "description": "One line about what it is, for generated documentation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its type.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypeRef"
+            }
+          ]
+        },
+        "wire": {
+          "description": "What this is called on the wire — an HTTP path segment, a topic name, a JSON field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "Invariant": {
       "description": "A condition every instance must satisfy, as a predicate over its fields — an entity's may also read the pseudo-field `state`, a newtype's reads `value`. Transition legality is not written here: a move that is not declared is already impossible.",
       "anyOf": [
@@ -697,6 +760,14 @@
             "of"
           ],
           "properties": {
+            "alphabet": {
+              "description": "The characters every value is drawn from (ess/11); only a newtype of `String` takes one.",
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "invariants": {
               "description": "Conditions every value must satisfy, as predicates over `value`, what it wraps.",
               "type": "array",
@@ -1447,7 +1518,7 @@
           "description": "What the caller supplies.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Field"
+            "$ref": "#/definitions/InputField"
           }
         },
         "name": {

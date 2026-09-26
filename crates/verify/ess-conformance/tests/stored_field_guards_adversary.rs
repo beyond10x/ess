@@ -274,28 +274,45 @@ fn with_mapped(field_decl: &str, name: &str, guard: &str) -> String {
 
 /// The brief: "every form the grammar admits after unit A1 (`defined`, `.count`, ordinals,
 /// byte-wise text, Timestamp instants) works here" — admitted by validation *and* witnessed.
-/// Re-pinned in correction round 1 (F3, deferred): a `.count` guard above 1 is admitted by
-/// validation and not yet synthesized. The witness search builds a list of at most one element
-/// (unit A1), over input and stored fields alike; the refusal names the guard and its repair.
+/// Re-pinned in correction round 1 (F3, deferred) as a refusal, and flipped by
+/// `story:count-guards-above-one-are-synthesized`: the witness builds lists of `N + 1` and `N`
+/// elements for `.count` against `N`, over input and stored fields alike, so both branches have a
+/// scenario and the row that selects the refusal was created with two labels.
 #[test]
-fn adv_a_count_guard_over_a_stored_list_is_refused_until_count_synthesis() {
-    let result = synthesis(&with_mapped(
+fn adv_a_count_guard_over_a_stored_list_is_witnessed_by_two_elements() {
+    let model = with_mapped(
         "{name: labels, type: List<String>}",
         "labels",
         "'labels.count > 1'",
-    ));
-    let about = refusals_about(&result, REFUSAL);
-    assert!(
-        scenario(&result.suite, REFUSAL).is_none()
-            && about
-                .iter()
-                .any(|refusal| refusal.contains("ESS-SYNTH-003") && refusal.contains("labels")),
-        "count guards above 1 are not yet synthesized; tracked as a follow-up story: {about:?}"
     );
-    assert!(
-        refusals_about(&result, SUCCESS).is_empty() && scenario(&result.suite, SUCCESS).is_some(),
-        "the default is still witnessed: {:?}",
-        refusals_about(&result, SUCCESS)
+    both_witnessed(&model);
+    let result = synthesis(&model);
+    let created: Vec<usize> = scenario(&result.suite, REFUSAL)
+        .unwrap()
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. }
+                if command.to_string() == "shipping.parcel.Create" =>
+            {
+                input.get("labels").and_then(|value| match value {
+                    ess_conformance::ScenarioValue::Literal {
+                        value: Node::Seq(labels),
+                    } => Some(labels.len()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(created, [2], "the refusing row holds two labels");
+    // And the rule, run: a Dispatch that refuses a parcel with more than one label passes.
+    assert_eq!(
+        failing(
+            &model,
+            |row| matches!(row.get("labels"), Some(Node::Seq(labels)) if labels.len() > 1)
+        ),
+        Vec::<String>::new()
     );
 }
 
@@ -407,12 +424,12 @@ fn adv_two_refusals_on_different_stored_fields_are_each_witnessed() {
     }
 }
 
-/// Re-pinned in correction round 1 (F3, deferred). Control for the `.count` case: the same guard
-/// over the *input* of the creating command. Red too
-/// (ESS-SYNTH-003, "no candidate of the 2 tried"), from `witness.rs`, which this unit does not
-/// touch — so the stored-field `.count` gap is inherited from the input witness search.
+/// Re-pinned in correction round 1 (F3, deferred) as a refusal, and flipped by
+/// `story:count-guards-above-one-are-synthesized`. Control for the `.count` case: the same guard
+/// over the *input* of the creating command, where the gap the stored-field case inherited lived.
+/// Both branches have a scenario, and the input that satisfies the guard holds two elements.
 #[test]
-fn adv_control_the_same_count_guard_over_input_is_refused_until_count_synthesis() {
+fn adv_control_the_same_count_guard_over_input_is_witnessed_by_two_elements() {
     let model = with_mapped(
         "{name: labels, type: List<String>}",
         "labels",
@@ -423,15 +440,58 @@ fn adv_control_the_same_count_guard_over_input_is_refused_until_count_synthesis(
         "      - name: bulky\n        when: labels.count > 1\n        error: shipping.parcel.ExpressOverweight\n      - name: created\n        creates: shipping.parcel.Parcel\n",
     );
     let result = synthesis(&model);
-    let id = "shipping.parcel.Create/outcome/bulky";
-    let about = refusals_about(&result, id);
+    for id in [
+        "shipping.parcel.Create/outcome/bulky",
+        "shipping.parcel.Create/outcome/created",
+    ] {
+        assert!(
+            refusals_about(&result, id).is_empty() && scenario(&result.suite, id).is_some(),
+            "{id}: {:?}",
+            refusals_about(&result, id)
+        );
+    }
+    let bulky = scenario(&result.suite, "shipping.parcel.Create/outcome/bulky").unwrap();
+    let labels: Vec<usize> = bulky
+        .steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExecuteCommand { input, .. } => {
+                input.get("labels").and_then(|value| match value {
+                    ess_conformance::ScenarioValue::Literal {
+                        value: Node::Seq(labels),
+                    } => Some(labels.len()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(labels, [2], "the satisfying input holds two elements");
+}
+
+/// Past the witness cap, a stored count guard is named by what it needs rather than told to drop
+/// the field from the command's input (`story:count-guards-above-one-are-synthesized`, third
+/// acceptance line).
+#[test]
+fn adv_a_stored_count_guard_past_the_cap_is_refused_as_a_count_not_as_a_missing_value() {
+    let result = synthesis(&with_mapped(
+        "{name: labels, type: List<String>}",
+        "labels",
+        "'labels.count > 5000'",
+    ));
+    let about = refusals_about(&result, REFUSAL);
+    assert!(scenario(&result.suite, REFUSAL).is_none(), "{about:?}");
     assert!(
-        scenario(&result.suite, id).is_none()
-            && about
-                .iter()
-                .any(|refusal| refusal.contains("ESS-SYNTH-003")
-                    && refusal.contains("labels.count > 1")),
-        "count guards above 1 are not yet synthesized; tracked as a follow-up story: {about:?}"
+        about
+            .iter()
+            .any(|refusal| refusal.contains("ESS-SYNTH-018")),
+        "{about:?}"
+    );
+    assert!(
+        about
+            .iter()
+            .all(|refusal| !refusal.contains("drop it from the command's input")),
+        "{about:?}"
     );
 }
 
