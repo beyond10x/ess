@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- String predicate operators `starts_with`, `ends_with` and `contains` (map form, `String` and its
+  newtypes, byte-wise and case-sensitive) in every predicate position, source format `ess/8`.
+  Synthesis witnesses both branches; suites carrying one take `ess-conformance/14`/`15`; Rust and Go
+  evaluate them, TypeScript and the browser refuse them by version. entity-core is pinned by rev to
+  `718a702` (beyond10x/entity-runtime#40). (#95)
+- `when_subject: {predicate: …}` guards an outcome by a predicate over the addressed entity's stored
+  fields, source format `ess/9`; refusals read the sibling subject; conformance arranges the row
+  through `sets:` mappings, adds rows refuting one conjunct at a time and an absent-subject witness.
+  `{field, equals}` keeps `ess/6` and its bytes. Timestamp orderings lower to entity-core
+  `before`/`after`; text orderings are refused at lowering. (#75)
+- Aggregate views: `group_by:` and field `aggregate:` (`count`, `count_distinct`, `sum`, `min`, `max`,
+  `avg`), source format `ess/10`, `ess-conformance/16`/`17`, `ess-diff/7`, `ESS-SYNTH-016`/`017`.
+  Empty groups are absent; `avg` is `Optional<Decimal>`, 6 places half-even. Models without aggregate
+  views keep their IR bytes. (#96)
+- Synthesis gives both sides of a presence guard a scenario by omitting the optional; command-input
+  lists publish `.count` and their elements, and `.count`, `exists`, `forall` and positional guards
+  are synthesized. (#93, #94)
+- `website/docs/reference/predicates.md` lists every predicate form, where it is accepted and what
+  synthesis can witness; a test runs every example on it. (#92)
+
+### Changed
+
+- An unquoted `x == null` / `!= null` (and `~`, `Null`, `NULL`) is refused with `ESS-SPEC-017`,
+  naming `defined(x)`; a quoted `"null"` is text. Ordering a `Duration` and an unquoted compact
+  operand containing `&&` or `||` are refused. Artifacts written by 0.32.x that carry such literals
+  must be regenerated. (#93)
+- Text orders byte-wise in every evaluator; Timestamps order as instants wherever declared types are
+  known. (#94)
+- A create's omitted `Optional` input leaves its mapped field null in generated suites.
+
 ## [0.32.1] — 2026-09-25
 
 ### Changed
