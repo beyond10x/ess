@@ -1495,7 +1495,8 @@ fn a_release_reuses_the_gate_of_a_merged_pull_request_only_when_it_tested_the_ta
 #[test]
 fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives() {
     let release = yaml(".github/workflows/release.yml");
-    let package = &release["jobs"]["package"];
+    let packaging = yaml(".github/workflows/package.yml");
+    let package = &packaging["jobs"]["package"];
     let runners: BTreeMap<String, String> = matrix_rows(package)
         .into_iter()
         .map(|row| (row["target"].clone(), row["runner"].clone()))
@@ -1587,6 +1588,442 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
             "SHA256SUMS no longer checks {target}"
         );
     }
+}
+
+/// The one rule every compile cache follows: saved by a `main` or pull-request run, whose scope a
+/// later run can restore, and never by a queue branch or a tag, whose scope nothing restores. The
+/// 0.33.0 queue run saved 1.1 GB under `queue/pr-119` and its release saved four `release-*`
+/// keys under the tag, while the repository sat at 10.77 GB of its 10 GB cache allowance. A manual
+/// dispatch saves nothing either: one from `main` runs at `main`'s ref, and a release backfill so
+/// dispatched builds an old tag's source.
+const CACHE_SAVE_IF: &str = "${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}";
+
+#[test]
+fn compile_caches_are_saved_only_where_a_later_run_restores_them() {
+    let root = workspace_root();
+    let mut files: Vec<PathBuf> = fs::read_dir(root.join(".github/workflows"))
+        .expect("the workflow directory is readable")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "yml"))
+        .collect();
+    files.sort();
+    let mut seen = 0;
+    let mut wrong = Vec::new();
+    for file in files {
+        let relative = file.strip_prefix(&root).unwrap().display().to_string();
+        let workflow = yaml(&relative);
+        for (id, job) in workflow["jobs"].as_mapping().into_iter().flatten() {
+            for step in job["steps"].as_sequence().into_iter().flatten() {
+                if !text(&step["uses"]).starts_with("Swatinem/rust-cache@") {
+                    continue;
+                }
+                seen += 1;
+                let save_if = text(&step["with"]["save-if"]);
+                if save_if != CACHE_SAVE_IF {
+                    wrong.push(format!("{relative} `{}`: save-if `{save_if}`", text(id)));
+                }
+            }
+        }
+    }
+    assert!(seen > 0, "no workflow restores a compile cache");
+    assert!(
+        wrong.is_empty(),
+        "these compile caches save under a scope no later run restores: {wrong:?}"
+    );
+}
+
+/// The release archives of a queue commit are built while that commit's required checks run, so
+/// the tag's release publishes them instead of compiling them again: 0.33.0's four package jobs
+/// took 6:20 of its 7:45 release, all four from a cold cache. A queue run packages only a commit
+/// whose workspace version has a dated changelog section and no tag yet; the release publishes a
+/// prebuilt run only when `prebuilt` found one for the exact tagged commit, and builds otherwise.
+#[test]
+// Both workflows' halves of one contract, which reads best whole.
+#[allow(clippy::too_many_lines)]
+fn a_queue_run_prebuilds_the_archives_the_tag_publishes_and_the_release_builds_them_otherwise() {
+    let packaging = yaml(".github/workflows/package.yml");
+    let release = yaml(".github/workflows/release.yml");
+
+    let on = &packaging["on"];
+    assert_eq!(
+        on["push"]["branches"],
+        serde_yaml::from_str::<Value>("['queue/**']").unwrap(),
+        "package.yml does not run on exactly the queue branches"
+    );
+    for input in ["ref", "version"] {
+        assert!(
+            !on["workflow_call"]["inputs"][input].is_null(),
+            "the release cannot pass `{input}` to package.yml"
+        );
+    }
+    let candidate = &packaging["jobs"]["candidate"];
+    let decide: String = candidate["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .map(|step| text(&step["run"]).to_owned())
+        .collect();
+    assert!(decide.contains("cargo xtask release verify"), "{decide}");
+    assert!(decide.contains("refs/tags/"), "{decide}");
+    assert_eq!(
+        text(&candidate["outputs"]["version"]),
+        "${{ steps.version.outputs.version }}"
+    );
+    let package = &packaging["jobs"]["package"];
+    assert!(needs_of(package).contains("candidate"));
+    assert_eq!(
+        text(&package["if"]),
+        "${{ needs.candidate.outputs.version != '' }}"
+    );
+    let build = package["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .map(|step| text(&step["run"]))
+        .find(|run| run.contains("cargo build --locked --release --bin ess"))
+        .expect("package builds the binary");
+    assert!(
+        build.contains("cargo xtask release verify \"$TAG\""),
+        "{build}"
+    );
+    assert!(
+        build.contains("git cat-file -e \"refs/tags/$TAG^{tag}\""),
+        "a release build no longer checks the annotated tag: {build}"
+    );
+
+    let jobs = &release["jobs"];
+    let resolve = &jobs["resolve"];
+    assert_eq!(text(&resolve["permissions"]["actions"]), "read");
+    assert_eq!(
+        text(&resolve["outputs"]["prebuilt-run"]),
+        "${{ steps.prebuilt.outputs.run }}"
+    );
+    let fallback = &jobs["package"];
+    assert_eq!(text(&fallback["uses"]), "./.github/workflows/package.yml");
+    assert_eq!(
+        text(&fallback["if"]),
+        "${{ needs.resolve.outputs.prebuilt-run == '' }}"
+    );
+    assert_eq!(
+        text(&fallback["with"]["ref"]),
+        "${{ needs.resolve.outputs.commit }}"
+    );
+    assert_eq!(
+        text(&fallback["with"]["version"]),
+        "${{ needs.resolve.outputs.tag }}"
+    );
+
+    let publish = &jobs["release"];
+    assert!(
+        text(&publish["if"]).contains(
+            "(needs.package.result == 'success' || (needs.package.result == 'skipped' && \
+             needs.resolve.outputs.prebuilt-run != ''))"
+        ),
+        "publication accepts skipped packaging without a prebuilt run: {:?}",
+        publish["if"]
+    );
+    assert_eq!(text(&publish["permissions"]["actions"]), "read");
+    let downloads: Vec<&Value> = publish["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .filter(|step| text(&step["uses"]).starts_with("actions/download-artifact@"))
+        .collect();
+    let [own, prebuilt] = downloads.as_slice() else {
+        panic!("publish downloads {} times, not twice", downloads.len())
+    };
+    assert_eq!(
+        text(&own["if"]),
+        "${{ needs.resolve.outputs.prebuilt-run == '' }}"
+    );
+    assert!(own["with"]["run-id"].is_null());
+    assert_eq!(
+        text(&prebuilt["if"]),
+        "${{ needs.resolve.outputs.prebuilt-run != '' }}"
+    );
+    assert_eq!(
+        text(&prebuilt["with"]["run-id"]),
+        "${{ needs.resolve.outputs.prebuilt-run }}"
+    );
+    for download in [own, prebuilt] {
+        assert_eq!(text(&download["with"]["pattern"]), "release-*");
+    }
+    let smoke = publish["steps"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .map(|step| text(&step["run"]))
+        .find(|run| run.contains("--version"))
+        .expect("publish never runs a published binary");
+    assert!(
+        smoke.contains("ess-$TAG-x86_64-unknown-linux-gnu.tar.gz"),
+        "{smoke}"
+    );
+}
+
+fn prebuilt_step(release: &Value) -> &Value {
+    release["jobs"]["resolve"]["steps"]
+        .as_sequence()
+        .expect("resolve steps")
+        .iter()
+        .find(|step| text(&step["id"]) == "prebuilt")
+        .expect("resolve looks for prebuilt archives")
+}
+
+/// Stands in for `gh api <path> --jq <filter>`: answers from `<path without query, / as _>.json`
+/// in `$GH_STUB_RESPONSES` through the real `jq`, and fails like an HTTP error when there is none.
+const GH_PATH_STUB: &str = r#"#!/usr/bin/env bash
+set -euo pipefail
+if [ "$#" -ne 4 ] || [ "$1" != api ] || [ "$3" != --jq ]; then
+  echo "gh stub: unexpected arguments: $*" >&2
+  exit 2
+fi
+path="${2%%\?*}"
+file="$GH_STUB_RESPONSES/${path//\//_}.json"
+if [ ! -f "$file" ]; then
+  echo "gh: HTTP 404: Not Found (https://api.github.com/$2)" >&2
+  exit 1
+fi
+exec jq -r "$4" "$file"
+"#;
+
+/// The canned API answers one `prebuilt` case serves: each API path with the JSON it returns.
+type Answers = Vec<(String, serde_json::Value)>;
+
+/// Runs release.yml's `prebuilt` step the way Actions runs a `shell: bash` step and returns the
+/// `run` value it wrote, then its log.
+fn prebuilt(
+    root: &Path,
+    index: usize,
+    commit: &str,
+    responses: &[(&str, serde_json::Value)],
+) -> String {
+    let release = yaml(".github/workflows/release.yml");
+    let step = prebuilt_step(&release);
+    for name in ["GH_TOKEN", "REPOSITORY", "COMMIT"] {
+        assert!(
+            !step["env"][name].is_null(),
+            "the prebuilt step no longer receives {name}; this harness supplies it"
+        );
+    }
+    let case = &root.join(format!("prebuilt-{index}"));
+    let bin = case.join("bin");
+    let answers = case.join("responses");
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(&answers).unwrap();
+    let stub = bin.join("gh");
+    fs::write(&stub, GH_PATH_STUB).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    for (path, body) in responses {
+        fs::write(
+            answers.join(format!("{}.json", path.replace('/', "_"))),
+            body.to_string(),
+        )
+        .unwrap();
+    }
+    let script = case.join("prebuilt.sh");
+    fs::write(&script, text(&step["run"])).unwrap();
+    let output_file = case.join("github-output");
+    fs::write(&output_file, "").unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = isolated("bash", case)
+        .args(["--noprofile", "--norc", "-eo", "pipefail"])
+        .arg(&script)
+        .env("PATH", path)
+        .env("GH_TOKEN", "fixture")
+        .env("REPOSITORY", "owner/repository")
+        .env("COMMIT", commit)
+        .env("GITHUB_OUTPUT", &output_file)
+        .env("GH_STUB_RESPONSES", &answers)
+        .output()
+        .unwrap();
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.status.success(),
+        "the prebuilt step failed the resolve job instead of deciding: {log}"
+    );
+    let written = fs::read_to_string(&output_file).unwrap();
+    let decisions: Vec<&str> = written
+        .lines()
+        .filter_map(|line| line.strip_prefix("run="))
+        .collect();
+    let [decision] = decisions.as_slice() else {
+        panic!("the prebuilt step wrote {decisions:?}, not one decision: {log}")
+    };
+    format!("{decision}\n{log}")
+}
+
+fn package_run(id: u64, sha: &str, branch: &str, path: &str, started: &str) -> serde_json::Value {
+    json!({
+        "id": id, "head_sha": sha, "head_branch": branch, "path": path, "event": "push",
+        "status": "completed", "conclusion": "success", "run_started_at": started,
+    })
+}
+
+fn artifacts(names: &[&str], expired: &[&str]) -> serde_json::Value {
+    json!({ "artifacts": names
+        .iter()
+        .map(|name| json!({ "name": name, "expired": expired.contains(name) }))
+        .collect::<Vec<_>>() })
+}
+
+/// A prebuilt run counts only when it is a successful `package.yml` push run of a queue branch at
+/// the exact tagged commit, and the newest such run still holds all four unexpired archives. Every
+/// other answer — and every API failure — builds the archives in the release.
+#[test]
+// One table of cases, which reads best whole.
+#[allow(clippy::too_many_lines)]
+fn a_release_publishes_only_a_queue_run_of_the_tagged_commit_that_holds_all_four_archives() {
+    let root = Scratch::new("release-prebuilt");
+    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+    let other = "5090405eeef545e9731ff362911ed5707e4b9293";
+    let runs = "repos/owner/repository/actions/workflows/package.yml/runs";
+    let workflow = ".github/workflows/package.yml";
+    let four = [
+        "release-x86_64-unknown-linux-gnu",
+        "release-aarch64-unknown-linux-gnu",
+        "release-x86_64-apple-darwin",
+        "release-aarch64-apple-darwin",
+    ];
+    let all = || artifacts(&four, &[]);
+    let queued = |id| package_run(id, commit, "queue/pr-119", workflow, "2026-01-01T00:00:05Z");
+    let listing = |list: Vec<serde_json::Value>| json!({ "workflow_runs": list });
+    let held = |id: u64| format!("repos/owner/repository/actions/runs/{id}/artifacts");
+
+    let cases: Vec<(&str, Answers, &str)> = vec![
+        (
+            "a queue run of the tagged commit holds all four archives",
+            vec![
+                (runs.to_owned(), listing(vec![queued(7)])),
+                (held(7), all()),
+            ],
+            "7",
+        ),
+        (
+            "the newest of two queue runs is the one published",
+            vec![
+                (
+                    runs.to_owned(),
+                    listing(vec![
+                        queued(9),
+                        package_run(8, commit, "queue/pr-119", workflow, "2026-01-01T00:00:01Z"),
+                    ]),
+                ),
+                (held(9), all()),
+                (held(8), all()),
+            ],
+            "9",
+        ),
+        (
+            "no package run built the tagged commit",
+            vec![(runs.to_owned(), listing(vec![]))],
+            "",
+        ),
+        ("the package runs are unavailable", vec![], ""),
+        (
+            "the only run built another commit",
+            vec![
+                (
+                    runs.to_owned(),
+                    listing(vec![package_run(
+                        7,
+                        other,
+                        "queue/pr-119",
+                        workflow,
+                        "2026-01-01T00:00:05Z",
+                    )]),
+                ),
+                (held(7), all()),
+            ],
+            "",
+        ),
+        (
+            "the only run was not a queue branch's",
+            vec![
+                (
+                    runs.to_owned(),
+                    listing(vec![package_run(
+                        7,
+                        commit,
+                        "feature",
+                        workflow,
+                        "2026-01-01T00:00:05Z",
+                    )]),
+                ),
+                (held(7), all()),
+            ],
+            "",
+        ),
+        (
+            "the only run came from another workflow file",
+            vec![
+                (
+                    runs.to_owned(),
+                    listing(vec![package_run(
+                        7,
+                        commit,
+                        "queue/pr-119",
+                        ".github/workflows/ci.yml",
+                        "2026-01-01T00:00:05Z",
+                    )]),
+                ),
+                (held(7), all()),
+            ],
+            "",
+        ),
+        (
+            "the run holds three of the four archives",
+            vec![
+                (runs.to_owned(), listing(vec![queued(7)])),
+                (held(7), artifacts(&four[..3], &[])),
+            ],
+            "",
+        ),
+        (
+            "one of the four archives has expired",
+            vec![
+                (runs.to_owned(), listing(vec![queued(7)])),
+                (held(7), artifacts(&four, &["release-x86_64-apple-darwin"])),
+            ],
+            "",
+        ),
+        (
+            "the run's artifacts are unavailable",
+            vec![(runs.to_owned(), listing(vec![queued(7)]))],
+            "",
+        ),
+    ];
+
+    let mut wrong = Vec::new();
+    for (index, (name, responses, expected)) in cases.into_iter().enumerate() {
+        let borrowed: Vec<(&str, serde_json::Value)> = responses
+            .iter()
+            .map(|(path, body)| (path.as_str(), body.clone()))
+            .collect();
+        let answer = prebuilt(&root.0, index, commit, &borrowed);
+        let (decision, log) = answer.split_once('\n').unwrap();
+        if decision != expected {
+            wrong.push(format!(
+                "{name}: run={decision}, expected {expected:?}\n{log}"
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the prebuilt step decided these wrongly:\n{}",
+        wrong.join("\n")
+    );
 }
 
 /// The Cargo workspaces a job's tasks build: the root, and every `--manifest-path` directory.
@@ -1835,5 +2272,160 @@ fn the_prune_scan_recognises_a_once_per_process_prune() {
     assert!(
         !prunes_from_a_once_per_process(&format!("static STARTED: {once};\n")),
         "a `Once` that prunes nothing is not the shape"
+    );
+}
+
+/// A pull request can edit `package.yml` to run on `pull_request`, and with fast-forward merges its
+/// head is the commit later tagged, so such a run of the tagged commit is reachable. So is a queue
+/// run that failed or was cancelled after uploading. The prebuilt step refuses all three twice: in
+/// the API query and in its `jq` filter. The stub answers by path alone, so the query half is held
+/// as text and the filter half by these runs.
+#[test]
+fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_tagged_commit() {
+    let release = yaml(".github/workflows/release.yml");
+    let query = text(&prebuilt_step(&release)["run"]);
+    for pin in ["event=push", "status=success"] {
+        assert!(
+            query.contains(&format!("&{pin}&")),
+            "the package-run query no longer asks for `{pin}`: {query}"
+        );
+    }
+
+    let root = Scratch::new("release-prebuilt-review");
+    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+    let runs = "repos/owner/repository/actions/workflows/package.yml/runs";
+    let held = "repos/owner/repository/actions/runs/7/artifacts";
+    let four = artifacts(
+        &[
+            "release-x86_64-unknown-linux-gnu",
+            "release-aarch64-unknown-linux-gnu",
+            "release-x86_64-apple-darwin",
+            "release-aarch64-apple-darwin",
+        ],
+        &[],
+    );
+    let run = |field: &str, value: &str| {
+        let mut changed = package_run(
+            7,
+            commit,
+            "queue/pr-119",
+            ".github/workflows/package.yml",
+            "2026-01-01T00:00:05Z",
+        );
+        changed[field] = json!(value);
+        json!({ "workflow_runs": [changed] })
+    };
+    let cases = [
+        (
+            "a pull_request run of package.yml",
+            run("event", "pull_request"),
+        ),
+        ("a failed queue run", run("conclusion", "failure")),
+        ("a cancelled queue run", run("conclusion", "cancelled")),
+    ];
+    let mut wrong = Vec::new();
+    for (index, (name, listing)) in cases.into_iter().enumerate() {
+        let answer = prebuilt(
+            &root.0,
+            index,
+            commit,
+            &[(runs, listing), (held, four.clone())],
+        );
+        let (decision, log) = answer.split_once('\n').unwrap();
+        if !decision.is_empty() {
+            wrong.push(format!("{name}: run={decision}\n{log}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the prebuilt step published these:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// Whether a `save-if` of the shape `${{ <a> == '<x>' && <b> != '<y>' || <c> == '<z>' }}` holds
+/// for a run whose `github.ref` is `reference` and whose `github.event_name` is `event`. `&&` binds
+/// tighter than `||`, as in GitHub's expression language.
+fn save_if_holds(expression: &str, reference: &str, event: &str) -> bool {
+    let inner = expression
+        .strip_prefix("${{")
+        .and_then(|rest| rest.strip_suffix("}}"))
+        .unwrap_or_else(|| panic!("save-if `{expression}` is not one expression"));
+    inner.split("||").any(|conjunction| {
+        conjunction.split("&&").all(|term| {
+            let (name, literal, equal) = term
+                .split_once("!=")
+                .map(|(name, literal)| (name, literal, false))
+                .or_else(|| {
+                    term.split_once("==")
+                        .map(|(name, literal)| (name, literal, true))
+                })
+                .unwrap_or_else(|| panic!("save-if term `{term}` is not a comparison"));
+            let literal = literal.trim().trim_matches('\'');
+            let matches = match name.trim() {
+                "github.ref" => literal == reference,
+                "github.event_name" => literal == event,
+                other => {
+                    panic!("save-if term names `{other}`, which this reader does not evaluate")
+                }
+            };
+            matches == equal
+        })
+    })
+}
+
+/// `release.yml`'s header documents a manual dispatch that backfills an existing tag, and a
+/// dispatch from `main` runs with `github.ref` at `refs/heads/main`. `save-if` keys on that ref, so
+/// the backfill's release job, its `package.yml` call and its `ci.yml` gate save compile caches
+/// built from the old tag's source under `main`'s scope — the one every later run restores, and
+/// the allowance the `save-if` rule was introduced to protect.
+#[test]
+fn a_release_backfill_dispatched_from_main_saves_no_compile_cache() {
+    let root = workspace_root();
+    let mut files: Vec<PathBuf> = fs::read_dir(root.join(".github/workflows"))
+        .expect("the workflow directory is readable")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "yml"))
+        .collect();
+    files.sort();
+    let mut saving = Vec::new();
+    for file in files {
+        let relative = &file.strip_prefix(&root).unwrap().display().to_string();
+        let workflow = yaml(relative);
+        for (id, job) in workflow["jobs"].as_mapping().into_iter().flatten() {
+            for step in job["steps"].as_sequence().into_iter().flatten() {
+                if !text(&step["uses"]).starts_with("Swatinem/rust-cache@") {
+                    continue;
+                }
+                let save_if = text(&step["with"]["save-if"]);
+                if save_if_holds(save_if, "refs/heads/main", "workflow_dispatch") {
+                    saving.push(format!("{relative} `{}`", text(id)));
+                }
+            }
+        }
+    }
+    for (reference, event) in [
+        ("refs/heads/main", "push"),
+        ("refs/heads/main", "schedule"),
+        ("refs/pull/7/merge", "pull_request"),
+    ] {
+        assert!(
+            save_if_holds(CACHE_SAVE_IF, reference, event),
+            "the rule no longer saves the cache of a {event} run on {reference}"
+        );
+    }
+    for (reference, event) in [
+        ("refs/heads/main", "workflow_dispatch"),
+        ("refs/heads/queue/pr-119", "push"),
+        ("refs/tags/0.33.0", "push"),
+    ] {
+        assert!(
+            !save_if_holds(CACHE_SAVE_IF, reference, event),
+            "the rule saves the cache of a {event} run on {reference}"
+        );
+    }
+    assert!(
+        saving.is_empty(),
+        "a release backfill dispatched from main saves these compile caches: {saving:?}"
     );
 }

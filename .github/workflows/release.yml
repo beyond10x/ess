@@ -46,10 +46,12 @@ jobs:
       # merge commit closed.
       checks: read
       pull-requests: read
+      actions: read
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
       gate-passed: ${{ steps.prior-gate.outputs.passed }}
+      prebuilt-run: ${{ steps.prebuilt.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -150,6 +152,43 @@ jobs:
           fi
           decide false "running the gate: head $head of #$number has no green Gate"
 
+      - name: Look for the archives a queue run built from the tagged commit
+        id: prebuilt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          decide() {
+            echo "$2"
+            echo "run=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          run=$(gh api "repos/$REPOSITORY/actions/workflows/package.yml/runs?head_sha=$COMMIT&event=push&status=success&per_page=100" --jq '
+              [.workflow_runs[]
+                | select(.head_sha == env.COMMIT and .path == ".github/workflows/package.yml"
+                    and .event == "push" and .conclusion == "success"
+                    and (.head_branch | startswith("queue/")))]
+              | sort_by(.run_started_at) | last
+              | if . == null then "none" else "\(.id)" end') \
+            || decide "" "building the archives: the package runs of $COMMIT are unavailable"
+          if [[ ! "$run" =~ ^[0-9]+$ ]]; then
+            decide "" "building the archives: no successful queue package run built $COMMIT"
+          fi
+          held=$(gh api "repos/$REPOSITORY/actions/runs/$run/artifacts?per_page=100" --jq '
+              [.artifacts[] | select(.expired == false) | .name] | join(" ")') \
+            || decide "" "building the archives: the artifacts of package run $run are unavailable"
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            case " $held " in
+              *" release-$target "*) ;;
+              *) decide "" "building the archives: package run $run holds no release-$target" ;;
+            esac
+          done
+          decide "$run" "publishing the archives package run $run built from $COMMIT"
+
   gate:
     needs: resolve
     if: ${{ needs.resolve.outputs.gate-passed != 'true' }}
@@ -189,119 +228,29 @@ jobs:
           echo "$RUNNER_TEMP/task-bin" >> "$GITHUB_PATH"
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
       - name: Build and verify the WASM compiler and browser lab
         run: task site-lab
 
   package:
-    name: Package ${{ matrix.target }}
     needs: resolve
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Ubuntu 22.04 keeps the glibc floor lower than `ubuntu-latest` for downloaded binaries.
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-22.04-arm
-          # Both macOS archives are built on `macos-15`, the standard Apple Silicon runner; the
-          # Intel one is cross-compiled there and smoke-run under Rosetta. The Intel runner took
-          # 16.9 of the 0.32.0 release's 19.2 minutes. The explicit label avoids silently changing
-          # architecture when `macos-latest` moves.
-          - target: x86_64-apple-darwin
-            runner: macos-15
-          - target: aarch64-apple-darwin
-            runner: macos-15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.resolve.outputs.commit }}
-          fetch-depth: 0
-          fetch-tags: true
-          persist-credentials: false
-
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: release-${{ matrix.target }}
-
-      # The cross-compiled Intel binary is smoke-run below, which on Apple Silicon needs Rosetta.
-      - name: Provide Rosetta for the Intel smoke run
-        if: ${{ matrix.target == 'x86_64-apple-darwin' }}
-        run: |
-          if ! /usr/bin/arch -x86_64 /usr/bin/true 2> /dev/null; then
-            sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license
-          fi
-          /usr/bin/arch -x86_64 /usr/bin/true
-
-      - name: Build and smoke-test the binary
-        shell: bash
-        env:
-          TAG: ${{ needs.resolve.outputs.tag }}
-          TARGET: ${{ matrix.target }}
-          EXPECTED_COMMIT: ${{ needs.resolve.outputs.commit }}
-        run: |
-          set -euo pipefail
-          cargo xtask release verify "$TAG"
-          tag_commit=$(git rev-parse "refs/tags/$TAG^{commit}")
-          head_commit=$(git rev-parse HEAD)
-          git cat-file -e "refs/tags/$TAG^{tag}"
-          if [ "$head_commit" != "$EXPECTED_COMMIT" ] || [ "$tag_commit" != "$EXPECTED_COMMIT" ]; then
-            echo "::error::release resolved to $EXPECTED_COMMIT, checkout is $head_commit, and tag $TAG now points to $tag_commit" >&2
-            exit 1
-          fi
-          cargo build --locked --release --bin ess --target "$TARGET"
-          bin="target/$TARGET/release/ess"
-          # A macOS runner can execute both architectures, so name the one that was built.
-          case "$TARGET" in
-            x86_64-apple-darwin) expected=x86_64 ;;
-            aarch64-apple-darwin) expected=arm64 ;;
-            *) expected="" ;;
-          esac
-          if [ -n "$expected" ] && [ "$(lipo -archs "$bin")" != "$expected" ]; then
-            echo "::error::$bin is $(lipo -archs "$bin"), not $expected" >&2
-            exit 1
-          fi
-          "$bin" --help > /dev/null
-          printed=$("$bin" --version | awk '{print $NF}')
-          if [ "$printed" != "$TAG" ]; then
-            echo "::error::the built binary reports $printed, but the release tag is $TAG" >&2
-            exit 1
-          fi
-
-      - name: Package
-        shell: bash
-        env:
-          TAG: ${{ needs.resolve.outputs.tag }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          package="ess-$TAG-$TARGET"
-          mkdir -p "dist/$package"
-          cp "target/$TARGET/release/ess" "dist/$package/"
-          cp LICENSE README.md "dist/$package/"
-          tar -C dist -czf "dist/$package.tar.gz" "$package"
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-${{ matrix.target }}
-          path: dist/*.tar.gz
-          if-no-files-found: error
+    if: ${{ needs.resolve.outputs.prebuilt-run == '' }}
+    uses: ./.github/workflows/package.yml
+    with:
+      ref: ${{ needs.resolve.outputs.commit }}
+      version: ${{ needs.resolve.outputs.tag }}
 
   release:
     name: Publish the release
     needs: [resolve, gate, wasm, package]
-    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && needs.package.result == 'success' }}
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && needs.resolve.outputs.gate-passed == 'true')) && needs.wasm.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.resolve.outputs.prebuilt-run != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -315,6 +264,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-notes
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
       # Notes come from the matching dated changelog section. The Rust helper refuses a missing,
       # empty, undated, or version-mismatched release before GitHub is mutated.
@@ -335,10 +285,20 @@ jobs:
           cat notes.md
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ needs.resolve.outputs.prebuilt-run == '' }}
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ needs.resolve.outputs.prebuilt-run != '' }}
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.prebuilt-run }}
+          github-token: ${{ github.token }}
 
       - name: Verify and combine checksums
         env:
@@ -365,6 +325,20 @@ jobs:
           sha256sum *.tar.gz > SHA256SUMS
           sha256sum --check SHA256SUMS
           cat SHA256SUMS
+
+      - name: Smoke-run the Linux archive that is published
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          smoke="$RUNNER_TEMP/smoke"
+          mkdir -p "$smoke"
+          tar -xzf "dist/ess-$TAG-x86_64-unknown-linux-gnu.tar.gz" -C "$smoke"
+          printed=$("$smoke/ess-$TAG-x86_64-unknown-linux-gnu/ess" --version | awk '{print $NF}')
+          if [ "$printed" != "$TAG" ]; then
+            echo "::error::the published Linux binary reports $printed, but the release tag is $TAG" >&2
+            exit 1
+          fi
 
       # Idempotent on purpose: a dispatch can backfill a release that already exists, and a rerun
       # after one failed asset upload must reconcile all assets rather than stop at "already exists".
