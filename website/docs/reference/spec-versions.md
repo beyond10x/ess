@@ -55,13 +55,13 @@ constructs. A replay response containing Decimal or Binary64, including through
 nested declarations, is outside the exact-result observation profile and refuses
 synthesis. This does not change existing response-to-event comparisons.
 
-`ess/8`, unreleased, admits the string operators `starts_with`, `ends_with` and `contains` in
+`ess/8`, introduced in [0.34.0][r34], admits the string operators `starts_with`, `ends_with` and `contains` in
 every predicate position: command guards, invariants, view filters and binding selections. They
 are map form only and apply to `String` and newtypes of it. Earlier source formats refuse them with
 `unsupported_format_version` at the position that uses one. A model that uses none keeps its bytes
 and its compiled digest. See [string operators](./predicates.md#string-operators).
 
-`ess/9`, not yet released, admits `when_subject: {predicate: …}`: a predicate over the declared
+`ess/9`, introduced in [0.34.0][r34], admits `when_subject: {predicate: …}`: a predicate over the declared
 stored fields of the subject a command addresses, read immediately before selection and
 conjunctive with an ordinary `when:`. It reads the entity's fields and nothing else — not the
 input, not `state`. A refusal may carry it without naming a subject of its own; it reads the one its
@@ -71,7 +71,7 @@ guard through the arranging commands' `sets:` mappings and observes it before th
 older build refuses the header; this build refuses the predicate form under an earlier header with
 `unsupported_format_version`. `{field, equals}` keeps `ess/6` and its bytes.
 
-`ess/10`, not yet released, admits aggregate views: a view field may declare `aggregate:` — one of
+`ess/10`, introduced in [0.34.0][r34], admits aggregate views: a view field may declare `aggregate:` — one of
 `count`, `count_distinct`, `sum`, `min`, `max` and `avg` — and a view may declare `group_by:` over
 its other fields. The filter runs per source row, the admitted rows are grouped, and a group with no
 admitted row is absent; a view without `group_by` returns exactly one row. Each aggregate field
@@ -81,14 +81,14 @@ refuses the header, and this build refuses the construct under an earlier header
 `unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
 [aggregate views](../guides/write-a-specification.md#aggregate-views).
 
-`ess/11`, not yet released, admits three things. A newtype of `String` may declare `alphabet:`, the
+`ess/11`, introduced in [0.34.0][r34], admits three things. A newtype of `String` may declare `alphabet:`, the
 characters every value is drawn from. A command input may declare `example:`, the value synthesis
 builds it from. And `.count` on a `String` is its length in Unicode scalar values, in every
 predicate position. An older build refuses the header, and this build refuses each construct under
 an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its
 compiled digest.
 
-`ess/12`, not yet released, admits `outcome_groups:`, a top-level list that declares one external
+`ess/12`, introduced in [0.34.0][r34], admits `outcome_groups:`, a top-level list that declares one external
 refusal once for many commands. A group selects its members by an explicit `commands:` list, by
 `actor:` (every command that actor `may:` invoke) or by `domain:` (every command that domain's
 files declare), with `except:` beside a selector. Each member gains the group's outcomes after its
@@ -116,8 +116,8 @@ back as a bare name, so a specification written before `ess/5` keeps its exact b
 | `ess-diff/4` | [0.23.0][r23] | Error and response deltas. | Refuses the delta. |
 | `ess-diff/5` | [0.27.0][r27] | `VariantWireNameChanged`, `VariantDisplayNameChanged` and `VariantSummaryChanged` on `TypeChange`. | Refuses a delta carrying any of the three. |
 | `ess-diff/6` | [0.29.0][r29] | Typed deltas retain the before/after originating replay relation and complete refusal-observation requirement. | Refuses the new vocabulary; existing changes retain their earlier format. |
-| `ess-diff/7` | unreleased | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
-| `ess-diff/8` | unreleased | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
+| `ess-diff/7` | [0.34.0][r34] | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
+| `ess-diff/8` | [0.34.0][r34] | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -164,7 +164,7 @@ admitted in this response profile. This immediate witness cannot distinguish a
 current-head result while it still equals the original; adopters must separately
 test later-head and restart retries through their real handlers.
 
-`ess-conformance/14` and `/15`, unreleased, carry a string operator where a suite carries a
+`ess-conformance/14` and `/15`, introduced in [0.34.0][r34], carry a string operator where a suite carries a
 predicate: a `satisfies` expectation or an observed selection plan. Version 14 is ordinary and 15
 carries declared coverage; each implies every major below it. Rust and Go admit and evaluate them,
 and refuse an operand that is not a JSON string. Older envelopes refuse the operators, and the
@@ -172,7 +172,7 @@ TypeScript and browser readers refuse these envelopes by their version. A string
 command input is decided at synthesis and never reaches the suite, so such a suite keeps its
 earlier format.
 
-`ess-conformance/16` and `/17`, unreleased, carry the `<view>/aggregate` scenario: rows created
+`ess-conformance/16` and `/17`, introduced in [0.34.0][r34], carry the `<view>/aggregate` scenario: rows created
 through the declared creating outcome with values only that scenario uses, and one read asserting
 every group's exact aggregates and the absence of every group whose rows the filter refuses.
 Version 16 is ordinary and 17 carries declared coverage; each implies every major below it.
@@ -279,3 +279,5 @@ for a release and promises none.
 [r32]: https://github.com/beyond10x/ess/releases/tag/0.32.0
 
 [r33]: https://github.com/beyond10x/ess/releases/tag/0.33.0
+
+[r34]: https://github.com/beyond10x/ess/releases/tag/0.34.0

@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/aggregate-views-0.34.0
+repository: ess
+publishedAt: 2026-09-26T12:00:00Z
+title: String operators, subject guards, aggregate views and outcome groups, and a mutation audit
+summary: >-
+  Source formats `ess/8`–`ess/12` add `starts_with`/`ends_with`/`contains`, `when_subject: {predicate: …}`, aggregate views with `group_by:`, `alphabet:` and input `example:`, and `outcome_groups:`. `ess verify conform mutate` audits a suite with specification mutants. Older readers refuse each new format; models that use none keep their bytes.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.34.0
+  version: 0.34.0
+journeys: [specify, verify-conformance]
+affectedSurfaces: [ess/docs]

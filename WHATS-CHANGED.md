@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.34.0](#string-operators-subject-guards-aggregate-views-and-outcome-groups-and-a-mutation-audit) | String operators, subject guards, aggregate views and outcome groups, and a mutation audit | capability | significant |
 | [0.33.0](#a-scan-records-only-that-a-secret-value-exists-and-a-bound-workload-can-acknowledge-foreign-containers) | A scan records only that a Secret value exists, and a bound workload can acknowledge foreign containers | capability | significant |
 | [0.32.0](#openapi-30-imports-and-a-bound-workloads-unbound-sidecars-are-violations) | OpenAPI 3.0 imports, and a bound workload's unbound sidecars are violations | capability | significant |
 | [0.31.0](#a-service-contract-lowers-to-entity-runtime-definitions) | A service contract lowers to Entity Runtime definitions | capability | significant |
@@ -27,6 +28,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.34.0 — 2026-09-26
+
+### String operators, subject guards, aggregate views and outcome groups, and a mutation audit
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.34.0)
+
+Source formats `ess/8`–`ess/12` add `starts_with`/`ends_with`/`contains`, `when_subject: {predicate: …}`, aggregate views with `group_by:`, `alphabet:` and input `example:`, and `outcome_groups:`. `ess verify conform mutate` audits a suite with specification mutants. Older readers refuse each new format; models that use none keep their bytes.
 
 ## 0.33.0 — 2026-09-26
 
