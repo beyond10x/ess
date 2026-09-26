@@ -47,6 +47,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-record
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
 
       # The check reads the remote's tags and GitHub's releases, so it cannot live in the offline
       # gate, and it cannot live in the release run either: at that moment the tag exists and its

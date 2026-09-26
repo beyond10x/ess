@@ -1391,7 +1391,29 @@ mod tests {
                 dependency.as_str().unwrap()
             )));
         }
-        for name in ["wasm", "package", "release"] {
+        // The fallback packaging is `package.yml` called with the resolved commit, and every
+        // checkout there takes that input.
+        assert_eq!(
+            jobs["package"]["with"]["ref"].as_str(),
+            Some("${{ needs.resolve.outputs.commit }}")
+        );
+        let packaging: serde_yaml::Value =
+            serde_yaml::from_str(include_str!("../../../../.github/workflows/package.yml"))
+                .unwrap();
+        for (_, job) in packaging["jobs"].as_mapping().unwrap() {
+            for step in job["steps"].as_sequence().unwrap() {
+                if step["uses"]
+                    .as_str()
+                    .is_some_and(|uses| uses.starts_with("actions/checkout@"))
+                {
+                    assert_eq!(
+                        step["with"]["ref"].as_str(),
+                        Some("${{ inputs.ref || github.sha }}")
+                    );
+                }
+            }
+        }
+        for name in ["wasm", "release"] {
             let steps = jobs[name]["steps"].as_sequence().unwrap();
             let checkout = steps
                 .iter()
