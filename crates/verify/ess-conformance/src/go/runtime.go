@@ -2713,15 +2713,19 @@ func matches(row map[string]Node, want map[string]Node) bool {
 }
 
 // equal compares two specification values structurally.
+//
+// A number is compared by its value, whatever Go type carries it (beyond10x/ess#101): the suite
+// holds `float64` or `json.Number`, and an implementation's `Node` may hold any of them.
 func equal(left, right Node) bool {
+	if leftNumber, ok := numberValue(left); ok {
+		rightNumber, ok := numberValue(right)
+		return ok && leftNumber.Cmp(rightNumber) == 0
+	}
 	switch left := left.(type) {
 	case nil:
 		return right == nil
 	case bool:
 		other, ok := right.(bool)
-		return ok && left == other
-	case float64:
-		other, ok := asNumber(right)
 		return ok && left == other
 	case string:
 		other, ok := right.(string)
@@ -2753,20 +2757,142 @@ func equal(left, right Node) bool {
 	}
 }
 
+// asNumber is a number's binary64 image, for the checks that read one: admission, truthiness and
+// counts. Comparison reads numberValue instead.
 func asNumber(value Node) (float64, bool) {
 	switch value := value.(type) {
 	case float64:
 		return value, true
-	case int:
-		return float64(value), true
-	case int64:
+	case float32:
 		return float64(value), true
 	case json.Number:
 		parsed, err := value.Float64()
 		return parsed, err == nil
-	default:
-		return 0, false
 	}
+	if number, ok := integerValue(value); ok {
+		parsed, _ := new(big.Float).SetInt(number).Float64()
+		return parsed, true
+	}
+	return 0, false
+}
+
+// integerValue is the integer a Go integer type carries.
+func integerValue(value Node) (*big.Int, bool) {
+	switch value := value.(type) {
+	case int:
+		return big.NewInt(int64(value)), true
+	case int8:
+		return big.NewInt(int64(value)), true
+	case int16:
+		return big.NewInt(int64(value)), true
+	case int32:
+		return big.NewInt(int64(value)), true
+	case int64:
+		return big.NewInt(value), true
+	case uint:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint8:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint16:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint32:
+		return new(big.Int).SetUint64(uint64(value)), true
+	case uint64:
+		return new(big.Int).SetUint64(value), true
+	}
+	return nil, false
+}
+
+// numberValue is the value a number means under Rust's `Number` equality and order
+// (`ess-primitives/src/facts.rs`), whatever Go type carries it:
+//
+//   - a Go integer type is its integer;
+//   - a `float64` is its canonical decimal: the integer it is, when integral within 2^63, and its
+//     shortest round-tripping decimal otherwise (`canonical_decimal`);
+//   - a `json.Number` is the token it spells, read as `Number::parse_decimal` reads a literal: an
+//     integer whose digits an i128 holds is that integer, and anything else is the canonical
+//     decimal of the binary64 it rounds to — so `1` and `1.0` are one value, `-0` is `0`, and
+//     `9007199254740993` is not `9007199254740992`;
+//   - a `float32` is its shortest round-tripping decimal, read as a `json.Number` spelling it.
+//
+// The token bounds are responseNumber's, so a spelling it refuses is not a number here either.
+func numberValue(value Node) (*big.Rat, bool) {
+	switch value := value.(type) {
+	case float64:
+		return binaryValue(value)
+	case float32:
+		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+			return nil, false
+		}
+		return decimalValue(strconv.FormatFloat(float64(value), 'g', -1, 32))
+	case json.Number:
+		return decimalValue(value.String())
+	}
+	if number, ok := integerValue(value); ok {
+		return new(big.Rat).SetInt(number), true
+	}
+	return nil, false
+}
+
+// binaryValue is a binary64's canonical decimal, as Rust's `canonical_decimal` draws it.
+func binaryValue(value float64) (*big.Rat, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil, false
+	}
+	if value == math.Trunc(value) && math.Abs(value) <= integerBound {
+		return new(big.Rat).SetFloat64(value), true
+	}
+	return new(big.Rat).SetString(strconv.FormatFloat(value, 'g', -1, 64))
+}
+
+// i128Bound is 2^127: `exact_of_decimal_text` holds a literal's digits in an i128.
+var i128Bound = new(big.Int).Lsh(big.NewInt(1), 127)
+
+// decimalValue reads a decimal token as `Number::parse_decimal` does.
+//
+// The i128 check is on the digits as written, before trailing zeroes are dropped, because that is
+// the integer Rust parses them into; a spelling whose digits overflow it is the binary64 instead.
+func decimalValue(raw string) (*big.Rat, bool) {
+	authored, ok := responseNumber(json.Number(raw))
+	if !ok {
+		return nil, false
+	}
+	if authored.IsInt() && decimalDigitsFit(raw) {
+		return authored, true
+	}
+	binary, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, false
+	}
+	return binaryValue(binary)
+}
+
+// decimalDigitsFit reports whether a token's digits, scaled by a positive exponent, fit an i128 —
+// the `checked_mul` and `parse::<i128>` of `exact_of_decimal_text`. The digits are parsed before
+// the sign is applied, so the bound is 2^127 on either side.
+func decimalDigitsFit(raw string) bool {
+	mantissa := strings.TrimLeft(raw, "+-")
+	exponent := 0
+	if index := strings.IndexAny(mantissa, "eE"); index >= 0 {
+		parsed, err := strconv.Atoi(mantissa[index+1:])
+		if err != nil {
+			return false
+		}
+		mantissa, exponent = mantissa[:index], parsed
+	}
+	places := 0
+	if index := strings.IndexByte(mantissa, '.'); index >= 0 {
+		places = len(mantissa) - index - 1
+		mantissa = mantissa[:index] + mantissa[index+1:]
+	}
+	units, ok := new(big.Int).SetString(mantissa, 10)
+	if !ok {
+		return false
+	}
+	if scale := places - exponent; scale < 0 {
+		units.Mul(units, new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-scale)), nil))
+	}
+	return units.Cmp(i128Bound) < 0
 }
 
 // describe renders a field match for a diagnostic, in a stable order.
@@ -3109,16 +3235,9 @@ func ranked(view string, orderBy []string, rows []Row) (bool, string, bool) {
 
 // compare orders two row values, reporting false where nothing orders them.
 func compare(left, right Node) (int, bool) {
-	if leftNumber, ok := asNumber(left); ok {
-		if rightNumber, ok := asNumber(right); ok {
-			switch {
-			case leftNumber < rightNumber:
-				return -1, true
-			case leftNumber > rightNumber:
-				return 1, true
-			default:
-				return 0, true
-			}
+	if leftNumber, ok := numberValue(left); ok {
+		if rightNumber, ok := numberValue(right); ok {
+			return leftNumber.Cmp(rightNumber), true
 		}
 		return 0, false
 	}

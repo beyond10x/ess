@@ -339,12 +339,11 @@ func responsePrimitiveAdmits(source string, value Node) bool {
 		return false
 	}
 }
+
+// A number falls through to equal, which compares it by value whatever Go type carries either side
+// (beyond10x/ess#101), and never through binary64 for an integer token.
 func responseEqual(left, right Node) bool {
 	switch value := left.(type) {
-	case json.Number:
-		a, ok := responseNumber(value)
-		b, other := responseNumber(right)
-		return ok && other && a.Cmp(b) == 0
 	case []any:
 		other, ok := right.([]any)
 		if !ok || len(value) != len(other) {
