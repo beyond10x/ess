@@ -1763,7 +1763,11 @@ fn an_outcome_that_updates_an_instance_acts_on_one_the_scenario_created() {
             "event",
             "eventually-view",
             "query",
-            "view"
+            "view",
+            // `weight_grams >= 0` is witnessed at its literal as well (beyond10x/ess#111): the
+            // same order amended to `0`, and the branch required again.
+            "execute",
+            "outcome"
         ],
         "place an order, bind it, then amend that one"
     );

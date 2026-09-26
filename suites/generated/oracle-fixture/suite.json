@@ -1938,6 +1938,27 @@
               }
             }
           }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.AmendOrder",
+          "input": {
+            "order_id": {
+              "kind": "instance",
+              "instance": "order"
+            },
+            "weight_grams": {
+              "kind": "literal",
+              "value": 0.0
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.AmendOrder",
+            "outcome": "amended"
+          }
         }
       ],
       "source": [
@@ -4026,6 +4047,82 @@
               }
             }
           }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.PlaceOrder",
+          "input": {
+            "alternate_contact": {
+              "kind": "literal",
+              "value": "alternate_contact-1"
+            },
+            "contact": {
+              "kind": "literal",
+              "value": "contact-1"
+            },
+            "weight_grams": {
+              "kind": "literal",
+              "value": 2.0
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.PlaceOrder",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "order-2",
+          "entity": "oracle.order.Order",
+          "event": "oracle.order.OrderPlaced",
+          "field": "order_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.HoldOrder",
+          "input": {
+            "order_id": {
+              "kind": "instance",
+              "instance": "order-2"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.HoldOrder",
+            "outcome": "held"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.CancelOrder",
+          "input": {
+            "order_id": {
+              "kind": "instance",
+              "instance": "order-2"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.CancelOrder",
+            "outcome": "cancelled"
+          }
+        },
+        {
+          "step": "expect_event",
+          "event": "oracle.order.OrderCancelled",
+          "shape": {
+            "order_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
         }
       ],
       "source": [
@@ -4043,6 +4140,10 @@
         },
         {
           "kind": "command",
+          "name": "oracle.order.HoldOrder"
+        },
+        {
+          "kind": "command",
           "name": "oracle.order.PlaceOrder"
         },
         {
@@ -4050,6 +4151,13 @@
           "name": {
             "command": "oracle.order.CancelOrder",
             "outcome": "cancelled"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "oracle.order.HoldOrder",
+            "outcome": "held"
           }
         },
         {
@@ -4585,6 +4693,31 @@
                 "field": "order_id"
               }
             }
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "oracle.order.PlaceOrder",
+          "input": {
+            "alternate_contact": {
+              "kind": "literal",
+              "value": "alternate_contact"
+            },
+            "contact": {
+              "kind": "literal",
+              "value": "contact"
+            },
+            "weight_grams": {
+              "kind": "literal",
+              "value": 0.0
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "oracle.order.PlaceOrder",
+            "outcome": "accepted"
           }
         }
       ],

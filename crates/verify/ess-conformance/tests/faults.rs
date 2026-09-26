@@ -313,6 +313,12 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             scenario and on the transition scenario. The checks at
     //                             `InvoiceById.total` stay green, which is the point of keying the
     //                             family by position.
+    //   AcceptInvalidAmount    2  the injection rewrites every submitted amount to `1`, not only a
+    //                             refused one. `cancel` runs from `Draft` and `Issued`, and the
+    //                             `Issued` source is arranged on a second invoice (ess#111) whose
+    //                             witness amount is `2` — so the rewritten row no longer holds what
+    //                             was submitted, and the transition scenario says so. The row
+    //                             designates the refusal, which is the branch the fault names.
     //   WrongRefusalError      3  `issue` runs from `Draft` alone, so `IssueInvoice` answers its
     //                             `wrong_state:` branch in the other three declared states, and one
     //                             wrong error name is wrong in all three. Narrower is not available:
@@ -324,6 +330,7 @@ fn a_faults_blast_radius_is_accounted_for() {
         (Fault::ExtraEvent, 4),
         (Fault::StaleReadYourWrites, 9),
         (Fault::WrongRefusalError, 3),
+        (Fault::AcceptInvalidAmount, 2),
         (Fault::AllowIllegalTransition, 2),
         (Fault::IgnoreExternalOutcome, 2),
         (Fault::PartialEventPayload, 2),

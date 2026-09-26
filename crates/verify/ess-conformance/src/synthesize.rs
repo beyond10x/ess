@@ -72,6 +72,18 @@
 //! [`ScenarioStep::CaptureInstance`] — so the value is the target's, and the suite carries a
 //! reference to it rather than a guess at it.
 //!
+//! # What a scenario pins beyond the branch it names
+//!
+//! beyond10x/ess#111 audited a real implementation and found mutants of declared behaviour that
+//! changed no verdict. Four rules close them, each reusing steps the format already has:
+//!
+//! | declared | pinned by |
+//! |---|---|
+//! | a move's `to` | the row is required in that state wherever the view projects `state` (`lifecycle_state`) |
+//! | every state in a move's `from` | one further instance per further source, moved and read back (`other_sources`) |
+//! | a `sets:` entry of an update | a witness off the value the row already holds (`freshened`) |
+//! | an ordered comparison with a literal | the branch at the boundary, its default at the neighbour across it (`boundaries`) |
+//!
 //! # A binding is four claims, and each one fails on its own
 //!
 //! §16 through §18. *When this event occurs, invoke this command, with this mapping, delivered this
@@ -187,6 +199,7 @@ use ess_domain::view::AssertionStyle;
 use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, Quantified, Truth};
+use ess_primitives::time::Rfc3339Instant;
 
 use crate::decision::{when, Decision, Unevaluable};
 use crate::input::{flatten, predicate_projectable, resolve_path, ShapeErrors};
@@ -1436,7 +1449,10 @@ fn outcome_scenario(
     let id = ScenarioId::Outcome {
         outcome: OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()),
     };
-    let (steps, source) = exercise(ir, command, outcome, actors, &id, refusals)?;
+    let (mut steps, mut source, run) = exercise(ir, command, outcome, actors, &id, refusals)?;
+    let (further, depends) = boundaries(ir, command, outcome, actors, &run, &steps);
+    steps.extend(further);
+    source.extend(depends);
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -1456,7 +1472,7 @@ fn exercise(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
-) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>)> {
+) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
     let run = match run(ir, command, outcome, actors) {
         Ok(run) => run,
         Err(cause) => {
@@ -1519,9 +1535,9 @@ fn exercise(
     steps.extend(views.asserted);
 
     let mut source = dependencies(ir, command, outcome, &absent, actor, &views.views);
-    source.extend(run.source);
+    source.extend(run.source.iter().cloned());
     source.extend(views.source);
-    Some((steps, source))
+    Some((steps, source, run))
 }
 
 /// One branch, arranged and run: everything before the assertions that are particular to a family.
@@ -1542,6 +1558,8 @@ struct Run {
     invoke: Vec<ScenarioStep>,
     /// The state the subject is in afterwards, where there is a subject.
     after: Option<StateName>,
+    /// The state the arrangement left the subject in before the branch, where it arranged one.
+    before: Option<StateName>,
     /// What the arrangement bound the instance as, where it arranged one.
     ///
     /// Carried out of the arrangement rather than dropped there, because a view assertion has to
@@ -1603,16 +1621,7 @@ fn run(
         return Err(first.expect("nonempty finite lifecycle"));
     }
     let routed = subject_fact::routes(command, outcome);
-    let (mut setup, input) = if routed {
-        subject_fact::prepare(ir, command, outcome, actors)?
-    } else if has_subject_guards(command) {
-        prepare_state_input(ir, command, outcome, actors)?
-    } else {
-        (
-            prepare(ir, outcome, actors, None)?,
-            reach(ir, command, outcome, Distinction::PLAIN)?,
-        )
-    };
+    let (mut setup, input) = arranged(ir, command, outcome, actors, routed)?;
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -1685,12 +1694,46 @@ fn run(
         setup: setup.steps,
         invoke,
         after: setup.after,
+        before: setup.before,
         instance: setup.instance,
         actor,
         input: supplied,
         source,
         settled,
     })
+}
+
+/// The subject arranged for a branch and the input chosen for it, by whichever of the three
+/// arrangements the branch's condition calls for — with the input moved off what the row already
+/// holds where the branch writes it ([`freshened`]). A branch reading the stored row is arranged
+/// by a search that chose the row and the input together, and is left as that search chose it.
+fn arranged(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    routed: bool,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    if routed {
+        return subject_fact::prepare(ir, command, outcome, actors);
+    }
+    let (setup, input) = if has_subject_guards(command) {
+        prepare_state_input(ir, command, outcome, actors)?
+    } else {
+        (
+            prepare(ir, outcome, actors, None)?,
+            reach(ir, command, outcome, Distinction::PLAIN)?,
+        )
+    };
+    let input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        setup.before.as_ref(),
+        &setup.settled,
+    );
+    Ok((setup, input))
 }
 
 fn is_state_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
@@ -1771,6 +1814,7 @@ fn run_state_refusal(
         setup: steps,
         invoke,
         after: Some(state.clone()),
+        before: Some(state.clone()),
         instance: Some(arranged.instance),
         actor,
         input,
@@ -1916,6 +1960,7 @@ fn run_replay(
         setup,
         invoke,
         instance: Some(instance),
+        before: origin.after.clone(),
         after: origin.after,
         actor: origin.actor,
         input: origin.input,
@@ -2094,6 +2139,10 @@ struct Setup {
     source: BTreeSet<EssSemanticRef>,
     /// The state the subject is in once the branch has been taken, where there is a subject.
     after: Option<StateName>,
+    /// The state the arrangement left the subject in, before the branch runs, where it arranged
+    /// one. For a `moves:` it is the `from` state the scenario exercises, and a transition with
+    /// several is run from the others as well (beyond10x/ess#111).
+    before: Option<StateName>,
     /// What the arrangement left in the subject's fields, where the branches it ran said.
     settled: BTreeMap<String, Determined>,
 }
@@ -2107,6 +2156,7 @@ impl Setup {
             bound: BTreeMap::new(),
             source: BTreeSet::new(),
             after: None,
+            before: None,
             settled: BTreeMap::new(),
         }
     }
@@ -2157,6 +2207,7 @@ fn prepare(
                     // the owner's fields are another row's.
                     settled: BTreeMap::new(),
                     instance: None,
+                    before: None,
                 },
             });
         }
@@ -2201,6 +2252,7 @@ fn prepare(
         bound: BTreeMap::new(),
         source: arrangement.source,
         after: Some(after),
+        before: Some(arrangement.state),
         settled: arrangement.settled,
     })
 }
@@ -2842,42 +2894,7 @@ fn reach_in_state(
     let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
     for input in &inputs {
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        let mut selected = Vec::new();
-        for branch in command
-            .outcomes
-            .iter()
-            .filter(|branch| !state_default(branch))
-        {
-            let predicate = match &branch.condition {
-                ResolvedCondition::When { predicate } => Some(predicate),
-                // Both state-reading conditions compete here, and a branch whose admitted states
-                // exclude `held` is not competing: it is the *uniqueness* below that this feeds, so
-                // dropping a branch that does admit `held` would let another one look uniquely
-                // selected when two of them match the same (state, input) pair.
-                ResolvedCondition::SubjectState { predicate, .. }
-                | ResolvedCondition::StateChange { predicate, .. }
-                    if admits_held_state(&branch.condition, held) =>
-                {
-                    predicate.as_ref()
-                }
-                _ => continue,
-            };
-            if let Some(predicate) = predicate {
-                if !decides(&facts, &[predicate], true)? {
-                    continue;
-                }
-            }
-            selected.push(branch);
-        }
-        if selected.is_empty() {
-            selected.extend(
-                command
-                    .outcomes
-                    .iter()
-                    .filter(|branch| state_default(branch)),
-            );
-        }
-        if selected.len() == 1 && selected[0].name == outcome.name {
+        if selected_in_state(command, outcome, held, &facts)? {
             return Ok(input.clone());
         }
     }
@@ -2886,6 +2903,51 @@ fn reach_in_state(
         format!("{} selected in held state {held}", outcome.name),
         inputs.len().min(MAX_CANDIDATES),
     ))
+}
+
+/// Whether `outcome` is the one branch these input facts select while the subject rests in `held`.
+fn selected_in_state(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    held: &StateName,
+    facts: &crate::InputFacts<'_>,
+) -> Result<bool, RefusalCause> {
+    let mut selected = Vec::new();
+    for branch in command
+        .outcomes
+        .iter()
+        .filter(|branch| !state_default(branch))
+    {
+        let predicate = match &branch.condition {
+            ResolvedCondition::When { predicate } => Some(predicate),
+            // Both state-reading conditions compete here, and a branch whose admitted states
+            // exclude `held` is not competing: it is the *uniqueness* below that this feeds, so
+            // dropping a branch that does admit `held` would let another one look uniquely
+            // selected when two of them match the same (state, input) pair.
+            ResolvedCondition::SubjectState { predicate, .. }
+            | ResolvedCondition::StateChange { predicate, .. }
+                if admits_held_state(&branch.condition, held) =>
+            {
+                predicate.as_ref()
+            }
+            _ => continue,
+        };
+        if let Some(predicate) = predicate {
+            if !decides(facts, &[predicate], true)? {
+                continue;
+            }
+        }
+        selected.push(branch);
+    }
+    if selected.is_empty() {
+        selected.extend(
+            command
+                .outcomes
+                .iter()
+                .filter(|branch| state_default(branch)),
+        );
+    }
+    Ok(selected.len() == 1 && selected[0].name == outcome.name)
 }
 
 /// Choose and establish the state together with the input; neither half proves the other.
@@ -3066,6 +3128,62 @@ fn reach(
             strategy: outcome.test_strategy,
         });
     }
+    let (guards, satisfy) = plain_guards(command, outcome)?;
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    for input in &inputs {
+        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+        if admits_plain(command, outcome, &facts, &guards, satisfy)? {
+            return Ok(input.clone());
+        }
+    }
+    Err(unsatisfied(
+        &guards,
+        rendered(&guards, satisfy),
+        inputs.len().min(MAX_CANDIDATES),
+    ))
+}
+
+/// Whether one input reaches `outcome`, by exactly the reading [`reach`], [`reach_in_state`] and
+/// [`reach_external`] choose their inputs under — so an input changed after it was chosen (an
+/// update's witness moved off the row's value, a guard's boundary) is decided again rather than
+/// assumed to reach the branch still.
+///
+/// `held` is the state the subject rests in, which a command whose branches read it needs.
+fn selects_branch(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    held: Option<&StateName>,
+    input: &BTreeMap<String, Node>,
+) -> Result<bool, RefusalCause> {
+    let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+    if outcome.test_strategy == TestStrategy::InjectFault {
+        return match &outcome.condition {
+            ResolvedCondition::ExternalWhen { predicate, .. } => {
+                decides(&facts, &[predicate], true)
+            }
+            _ => Ok(true),
+        };
+    }
+    if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
+        return selected_in_state(command, outcome, state, &facts);
+    }
+    if has_subject_guards(command) {
+        let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
+            strategy: outcome.test_strategy,
+        })?;
+        return selected_in_state(command, outcome, held, &facts);
+    }
+    let (guards, satisfy) = plain_guards(command, outcome)?;
+    admits_plain(command, outcome, &facts, &guards, satisfy)
+}
+
+/// The guards a stateless branch's input is decided against, and whether it must satisfy them
+/// (its own guard) or refute them (every sibling's, for the default branch).
+fn plain_guards<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> Result<(Vec<&'c Predicate>, bool), RefusalCause> {
     let strategy = outcome.test_strategy;
     let guards: Vec<&Predicate> = match strategy {
         TestStrategy::ConstructInput => match when(outcome) {
@@ -3093,36 +3211,36 @@ fn reach(
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
         }
     };
-    let satisfy = strategy == TestStrategy::ConstructInput;
+    Ok((guards, strategy == TestStrategy::ConstructInput))
+}
 
-    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
-    for input in &inputs {
-        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        if decides(&facts, &guards, satisfy)? {
-            if satisfy
-                && command
-                    .outcomes
-                    .iter()
-                    .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
-            {
-                let others: Vec<_> = command
-                    .outcomes
-                    .iter()
-                    .filter(|other| other.name != outcome.name)
-                    .filter_map(when)
-                    .collect();
-                if !decides(&facts, &others, false)? {
-                    continue;
-                }
-            }
-            return Ok(input.clone());
-        }
+/// Whether these input facts do what a stateless branch's strategy asks of `guards`, and — for a
+/// guarded branch of a command with no default — refute every sibling's guard as well.
+fn admits_plain(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    facts: &crate::InputFacts<'_>,
+    guards: &[&Predicate],
+    satisfy: bool,
+) -> Result<bool, RefusalCause> {
+    if !decides(facts, guards, satisfy)? {
+        return Ok(false);
     }
-    Err(unsatisfied(
-        &guards,
-        rendered(&guards, satisfy),
-        inputs.len().min(MAX_CANDIDATES),
-    ))
+    if satisfy
+        && command
+            .outcomes
+            .iter()
+            .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
+    {
+        let others: Vec<_> = command
+            .outcomes
+            .iter()
+            .filter(|other| other.name != outcome.name)
+            .filter_map(when)
+            .collect();
+        return decides(facts, &others, false);
+    }
+    Ok(true)
 }
 
 /// `true` when this candidate does what the strategy asks of every guard.
@@ -3467,9 +3585,9 @@ fn view_expectations(
             // that reads them. It is sound on a target §8 permits to be shared, where a claim
             // about which row comes *first* would not be: a row this scenario did not make cannot
             // stop one it did from holding what it was given.
-            ViewExpectation::Contains {
-                fields: shown(view, fields.clone(), settled),
-            }
+            let mut row = shown(view, fields.clone(), settled);
+            row.extend(lifecycle_state(ir, &subject.entity, view, state));
+            ViewExpectation::Contains { fields: row }
         } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
@@ -3634,6 +3752,134 @@ fn absorb(
     settled.extend(determined);
 }
 
+/// How many further witnesses an update's `sets:` input is tried at before the plain one is kept.
+///
+/// Three: a further [`Distinction`] moves every leaf inside its own type, and a two-variant enum
+/// or a `Boolean` has its other value at the first. A type with one value has no other, and the
+/// plain witness stands — the row cannot be told apart from an unwritten one, and no value can.
+const FRESH_WITNESSES: usize = 3;
+
+/// The branch's input, with every field its `sets:` writes moved off the value the row already
+/// holds (beyond10x/ess#111).
+///
+/// An update witnessed at the value its arrangement wrote proves nothing about the write: the
+/// setup and the update drew from one witness, so `Relabel` wrote `tier: Low` over `tier: Low`, and
+/// an implementation that dropped the entry from `sets:` still showed the row the view expected.
+/// So for a branch that acts on a row which already exists — `updates:` and `moves:` — each field
+/// a `sets:` entry fills from an input is compared with what the row holds before it runs:
+///
+/// | the row holds | from |
+/// |---|---|
+/// | the literal an arranging act settled | [`Run::settled`], the arrangement's |
+/// | an enum's first variant, where no act wrote the field | the only value nothing declares and every target's default lands on |
+///
+/// Where they are equal, the input takes the value a further witness gives that field, and the
+/// branch is decided again with it by [`selects_branch`]; the first further witness that differs
+/// and still reaches the branch is kept. The model declares no initial value for an entity field,
+/// so the first variant is the one reading of "what an unwritten enum holds" a scenario can make
+/// without inventing one; every other type's plain witness (`1`, `true`, the path's text) is
+/// already away from its zero.
+fn freshened(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    held: Option<&StateName>,
+    settled: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, Node> {
+    let Some(subject) = &outcome.subject else {
+        return input;
+    };
+    if !matches!(
+        subject.effect,
+        ResolvedEffect::Updates | ResolvedEffect::Moves { .. }
+    ) {
+        return input;
+    }
+    for set in &outcome.sets {
+        let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
+            continue;
+        };
+        let already = held_value(ir, settled, &set.target, &set.target_type);
+        if already.is_none() || input.get(field) != already.as_ref() {
+            continue;
+        }
+        for nth in 1..=FRESH_WITNESSES {
+            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|mut further| further.remove(field))
+            else {
+                continue;
+            };
+            if Some(&moved) == already.as_ref() {
+                continue;
+            }
+            let mut next = input.clone();
+            next.insert(field.clone(), moved);
+            if admitted(ir, command, &next)
+                && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+            {
+                input = next;
+                break;
+            }
+        }
+    }
+    input
+}
+
+/// What a row holds in `target` before a branch writes it, where a scenario can know: the literal
+/// an arranging act settled, or — where no act wrote it — an enum's first variant. See
+/// [`freshened`].
+fn held_value(
+    ir: &EssIr,
+    settled: &BTreeMap<String, Determined>,
+    target: &str,
+    type_ref: &ResolvedTypeRef,
+) -> Option<Node> {
+    match settled.get(target) {
+        Some(Determined {
+            value: ScenarioValue::Literal { value },
+            ..
+        }) => Some(value.clone()),
+        Some(_) => None,
+        None => first_variant(ir, type_ref, 0),
+    }
+}
+
+/// The first declared variant of an enum, through newtypes; nothing for any other type, and
+/// nothing for an `Optional`, which an unwritten row holds absent.
+fn first_variant(ir: &EssIr, type_ref: &ResolvedTypeRef, depth: usize) -> Option<Node> {
+    if depth > MAX_TYPE_DEPTH {
+        return None;
+    }
+    match type_ref {
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => first_variant(ir, of, depth + 1),
+            ResolvedBody::Enum { variants } => variants
+                .first()
+                .map(|variant| Node::Text(variant.name().to_owned())),
+            ResolvedBody::Union { .. } | ResolvedBody::Struct { .. } => None,
+        },
+        ResolvedTypeRef::Primitive { .. }
+        | ResolvedTypeRef::Optional { .. }
+        | ResolvedTypeRef::List { .. }
+        | ResolvedTypeRef::Map { .. } => None,
+    }
+}
+
+/// Whether every field of an input holds a value its declared type admits — the check every
+/// candidate passed before it was offered, made again for one changed after.
+fn admitted(ir: &EssIr, command: &ResolvedCommand, input: &BTreeMap<String, Node>) -> bool {
+    command
+        .input
+        .iter()
+        .all(|field| match input.get(&field.name) {
+            Some(value) => crate::input::validate_typed_value(ir, &field.type_ref, value).is_ok(),
+            None => field.type_ref.is_optional(),
+        })
+}
+
 /// The value a literal written in the document leaves in a field of this type, where it is one.
 ///
 /// The one question that decides whether a `sets:` literal is assertable, and it answers with the
@@ -3715,6 +3961,31 @@ fn shown(
         }
     }
     fields
+}
+
+/// The lifecycle state a row of this view is required to carry, where the view projects it.
+///
+/// The one field of the subject every scenario determines whether or not a `sets:` names it: the
+/// run says which state the branch leaves the subject in — the lifecycle's `initial` for a
+/// `creates:`, the transition's `to` for a `moves:`, the arranged state for an `updates:`. Without
+/// it a scenario named "moves an `Order` to `Closed`" read only the identity, and an implementation
+/// that left the order where it was passed (beyond10x/ess#111). Only at the entity's own state type:
+/// a view projecting `state` as something else computed it.
+fn lifecycle_state(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    view: &ResolvedView,
+    state: &StateName,
+) -> Option<(String, ScenarioValue)> {
+    let declared = ir.entity(entity).state_field();
+    view.field(EntitySpec::STATE)
+        .filter(|field| field.type_ref == declared.type_ref)
+        .map(|_| {
+            (
+                EntitySpec::STATE.to_owned(),
+                ScenarioValue::literal(Node::Text(state.to_string())),
+            )
+        })
 }
 
 /// Adds one requirement about one view, in the block that view's consistency decides.
@@ -4097,11 +4368,15 @@ fn lifecycle(
                         driver.outcome.name.clone(),
                     ),
                 };
-                let Some((steps, source)) =
+                let Some((mut steps, mut source, run)) =
                     exercise(ir, driver.command, driver.outcome, actors, &id, refusals)
                 else {
                     continue;
                 };
+                let (further, depends) =
+                    other_sources(ir, driver, transition, actors, &run, &steps, &id, refusals);
+                steps.extend(further);
+                source.extend(depends);
                 let purpose = moving(&entity, transition, driver);
                 insert(
                     suite,
@@ -4382,6 +4657,509 @@ fn moving(
         "`{}` on `{}` moves a `{entity}` to `{}` along `{}`",
         driver.command.name, driver.outcome.name, transition.to, transition.name
     ))
+}
+
+/// The instance names a scenario's steps already bind.
+fn bound_instances(steps: &[ScenarioStep]) -> BTreeSet<InstanceName> {
+    steps
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::CaptureInstance { instance, .. }
+            | ScenarioStep::EstablishEntity { instance, .. } => Some(instance.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// One further instance of `entity`, resting in `state`, under names no step of the scenario has
+/// bound yet — its own and those of whatever it arranged on the way, an owner included.
+///
+/// The ordinal is searched rather than counted from a known offset, because a scenario's other
+/// further instances — a ranked view's companions, a stored-field guard's boundary rows — are
+/// numbered by code that does not know about this one.
+fn arrange_unbound(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+) -> Result<Arrangement, Unreachable> {
+    for nth in 1..=MAX_CANDIDATES {
+        let arrangement = arrange(ir, entity, state, actors, Distinction::further(nth), &[])?;
+        let names = bound_instances(&arrangement.steps);
+        if names.is_disjoint(taken) {
+            taken.extend(names);
+            return Ok(arrangement);
+        }
+    }
+    // Unreachable for any scenario this module builds: it binds far fewer than this many names.
+    Err(Unreachable::NoPath {
+        from: ir.entity(entity).lifecycle.initial.clone(),
+    })
+}
+
+/// The transition run from each of its other `from` states, each on its own instance
+/// (beyond10x/ess#111).
+///
+/// `close: from [Open, Held]` is two promises, and the scenario [`exercise`] builds keeps one of
+/// them: it arranges the cheapest source, so an implementation that dropped `Held` from the move
+/// passed. So after it, for every further source the branch admits, one more order is arranged in
+/// that state, the command is sent for it, the branch and its events are required, and every row
+/// view that shows the result is required to hold it in the state the move arrives at. The id is
+/// the transition's, unchanged: the claim is the move, and the move is every source.
+///
+/// A source no arrangement reaches is recorded as a refusal beside the scenario, never in place of
+/// it — the check it would have been is missing, and that is only visible if it is named. A branch
+/// that reads the subject's stored fields is arranged by a search of its own and is not repeated
+/// here.
+#[allow(clippy::too_many_arguments)]
+fn other_sources(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    transition: &ess_domain::entity::Transition,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    run: &Run,
+    steps: &[ScenarioStep],
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let mut out = (Vec::new(), BTreeSet::new());
+    let (command, outcome) = (driver.command, driver.outcome);
+    let Some(exercised) = &run.before else {
+        return out;
+    };
+    if outcome.replays.is_some() || subject_fact::routes(command, outcome) {
+        return out;
+    }
+    let mut taken = bound_instances(steps);
+    for from in &transition.from {
+        if from == exercised || !admits_held_state(&outcome.condition, from) {
+            continue;
+        }
+        match from_source(ir, driver, from, &transition.to, actors, &mut taken) {
+            Ok((further, depends)) => {
+                out.0.extend(further);
+                out.1.extend(depends);
+            }
+            Err(cause) => refusals.push(Refusal::about(id, cause)),
+        }
+    }
+    out
+}
+
+/// One further source of a transition: arrange an instance in `from`, move it, and require it moved.
+fn from_source(
+    ir: &EssIr,
+    driver: &Driver<'_>,
+    from: &StateName,
+    to: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &mut BTreeSet<InstanceName>,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let (command, outcome) = (driver.command, driver.outcome);
+    let subject = subject(driver);
+    let arrangement =
+        arrange_unbound(ir, &subject.entity, from, actors, taken).map_err(|reason| {
+            RefusalCause::InstanceRequired {
+                entity: EntityRef::from(&subject.entity),
+                need: InstanceNeed::InState {
+                    state: from.clone(),
+                },
+                reason,
+            }
+        })?;
+    let input = if has_subject_guards(command) {
+        reach_in_state(ir, command, outcome, from, Distinction::PLAIN)?
+    } else {
+        reach(ir, command, outcome, Distinction::PLAIN)?
+    };
+    let input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        Some(from),
+        &arrangement.settled,
+    );
+    let mut steps = arrangement.steps;
+    let mut source = arrangement.source;
+    if has_subject_guards(command) {
+        let (observed, view) = observe_subject_state(ir, outcome, &arrangement.instance, from)?;
+        steps.extend(observed);
+        source.insert(view.into());
+    }
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let supplied = supply(
+        &input,
+        Some(subject),
+        Some(&arrangement.instance),
+        &BTreeMap::new(),
+    );
+    if outcome.test_strategy == TestStrategy::InjectFault {
+        steps.push(ScenarioStep::ConfigureExternalOutcome {
+            force: outcome_ref.clone(),
+        });
+    }
+    steps.push(ScenarioStep::ExecuteCommand {
+        command: command_ref.clone(),
+        actor: actors.get(&command.name).cloned(),
+        input: supplied.clone(),
+    });
+    steps.push(ScenarioStep::ExpectOutcome {
+        outcome: outcome_ref.clone(),
+    });
+    for event in outcome.emits.iter().map(EventRef::from) {
+        steps.push(ScenarioStep::ExpectEvent {
+            payload: determined_payload(outcome, &event, &supplied),
+            shape: crate::response::event_shape(ir, &event, outcome),
+            event,
+        });
+    }
+    let mut left = arrangement.settled;
+    absorb(&mut left, outcome, settled(ir, outcome, &supplied));
+    // The reads go after the command in a block of their own: a `QueryView` the arrangement made
+    // is a read of the row before it moved.
+    let mut asserted = Vec::new();
+    for view in row_projections(ir)
+        .get(&subject.entity)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let params = bound(view, &left);
+        if shows(ir, view, to, &left, &params) != Ok(true) {
+            continue;
+        }
+        let mut row = shown(
+            view,
+            identifying(ir, subject, Some(&arrangement.instance), view),
+            &left,
+        );
+        row.extend(lifecycle_state(ir, &subject.entity, view, to));
+        let name = ViewRef::new(view.name.clone());
+        require(
+            view,
+            &name,
+            params,
+            ViewExpectation::Contains { fields: row },
+            &mut asserted,
+        );
+        source.insert(name.into());
+    }
+    steps.extend(asserted);
+    source.insert(command_ref.into());
+    source.insert(outcome_ref.into());
+    Ok((steps, source))
+}
+
+/// One ordered comparison of a guard's conjunct against a literal, read with the fact on the left.
+struct Bound<'p> {
+    /// Which conjunct of the guard it is.
+    conjunct: usize,
+    /// The input fact it reads.
+    path: &'p FactPath,
+    /// The operator, with the fact on the left.
+    op: ess_primitives::predicate::CompareOp,
+    /// The literal it compares against.
+    literal: &'p ess_primitives::facts::FactValue,
+}
+
+impl Bound<'_> {
+    /// The value at the boundary that satisfies the comparison: the literal itself for `>=` and
+    /// `<=`, the neighbour inside it for `>` and `<`.
+    fn accepting(&self) -> Option<Node> {
+        use ess_primitives::predicate::CompareOp;
+        match self.op {
+            CompareOp::Ge | CompareOp::Le => self.stepped(0),
+            CompareOp::Gt => self.stepped(1),
+            CompareOp::Lt => self.stepped(-1),
+            CompareOp::Eq | CompareOp::Ne => None,
+        }
+    }
+
+    /// The neighbour across the boundary that refutes it: the literal itself for `>` and `<`, the
+    /// neighbour outside it for `>=` and `<=`.
+    fn refuting(&self) -> Option<Node> {
+        use ess_primitives::predicate::CompareOp;
+        match self.op {
+            CompareOp::Gt | CompareOp::Lt => self.stepped(0),
+            CompareOp::Ge => self.stepped(-1),
+            CompareOp::Le => self.stepped(1),
+            CompareOp::Eq | CompareOp::Ne => None,
+        }
+    }
+
+    /// The literal moved `by` steps of its own kind: a whole number for a number — the neighbour
+    /// of an `Integer`, and the step the witness ladder already orders a `Decimal` by — and a
+    /// second for an instant. Nothing for any other literal: text orders by its bytes, and the
+    /// "next" text is not a neighbour a mutant moves a boundary to.
+    fn stepped(&self, by: i8) -> Option<Node> {
+        if let Some(number) = self.literal.as_number() {
+            return ess_primitives::facts::Number::new(number.get() + f64::from(by))
+                .ok()
+                .map(Node::Number);
+        }
+        let text = self.literal.as_text()?;
+        let instant = Rfc3339Instant::parse_rfc3339(text)?;
+        if by == 0 {
+            return Some(Node::Text(text.to_owned()));
+        }
+        instant
+            .plus_seconds(i64::from(by))
+            .map(|moved| Node::Text(moved.to_rfc3339()))
+    }
+}
+
+/// A guard's conjuncts: the leaves of its top-level `all`, flattened, or the guard itself.
+fn conjuncts(guard: &Predicate) -> Vec<&Predicate> {
+    match guard {
+        Predicate::All(children) => children.iter().flat_map(conjuncts).collect(),
+        other => vec![other],
+    }
+}
+
+/// Every conjunct of a guard that compares an input fact with a literal by an order.
+fn ordered_bounds<'p>(conjuncts: &[&'p Predicate]) -> Vec<Bound<'p>> {
+    use ess_primitives::predicate::CompareOp;
+    let mut found = Vec::new();
+    for (index, conjunct) in conjuncts.iter().enumerate() {
+        let Predicate::Compare { left, op, right } = conjunct else {
+            continue;
+        };
+        let (path, op, literal) = match (left, right) {
+            (Operand::Fact(path), Operand::Literal(literal)) => (path, *op, literal),
+            (Operand::Literal(literal), Operand::Fact(path)) => (
+                path,
+                match op {
+                    CompareOp::Lt => CompareOp::Gt,
+                    CompareOp::Le => CompareOp::Ge,
+                    CompareOp::Gt => CompareOp::Lt,
+                    CompareOp::Ge => CompareOp::Le,
+                    other => *other,
+                },
+                literal,
+            ),
+            _ => continue,
+        };
+        if matches!(op, CompareOp::Eq | CompareOp::Ne) {
+            continue;
+        }
+        found.push(Bound {
+            conjunct: index,
+            path,
+            op,
+            literal,
+        });
+    }
+    found
+}
+
+/// `input` with the scalar at `path` replaced, or nothing where the path does not land on one.
+fn with_leaf(
+    input: &BTreeMap<String, Node>,
+    path: &FactPath,
+    value: Node,
+) -> Option<BTreeMap<String, Node>> {
+    let (first, rest) = path.segments().split_first()?;
+    let mut out = input.clone();
+    let mut at = out.get_mut(first)?;
+    for segment in rest {
+        at = match at {
+            Node::Map(members) => members.get_mut(segment)?,
+            Node::Seq(elements) => elements.get_mut(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    if !matches!(at, Node::Number(_) | Node::Text(_)) {
+        return None;
+    }
+    *at = value;
+    Some(out)
+}
+
+/// The inputs a branch is further witnessed at so the boundaries of its guards are pinned
+/// (beyond10x/ess#111), each distinct from `primary` and from each other.
+///
+/// `when: items >= 0` was accepted at `1` and refused at `-1`, so a target that moved the boundary
+/// to `> 0` passed; `n >= 1`, one conjunct of two, was refused only through the other conjunct.
+/// For each conjunct comparing an input fact with a literal by an order:
+///
+/// | branch | witnessed at | every other conjunct |
+/// |---|---|---|
+/// | the guarded branch itself | the boundary value that satisfies it — `0` for `>= 0`, `1` for `> 0` | as its plain witness left them |
+/// | the default of a guarded sibling | the neighbour across it that refutes it — `-1` for `>= 0`, `0` for `> 0` | satisfied, so this conjunct is the one refusing |
+///
+/// Every row is decided again by [`selects_branch`] before it is kept, and a row equal to the plain
+/// witness is not sent twice. Numbers step by one, instants by a second; text and equality have no
+/// neighbour a boundary moves to.
+fn boundary_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    primary: &BTreeMap<String, Node>,
+) -> Vec<BTreeMap<String, Node>> {
+    let mut rows: Vec<BTreeMap<String, Node>> = Vec::new();
+    let keep = |candidate: BTreeMap<String, Node>, rows: &mut Vec<_>| {
+        if &candidate != primary
+            && !rows.contains(&candidate)
+            && admitted(ir, command, &candidate)
+            && selects_branch(ir, command, outcome, None, &candidate).unwrap_or(false)
+        {
+            rows.push(candidate);
+        }
+    };
+    match outcome.test_strategy {
+        TestStrategy::ConstructInput => {
+            let Some(guard) = when(outcome) else {
+                return rows;
+            };
+            let conjuncts = conjuncts(guard);
+            for bound in ordered_bounds(&conjuncts) {
+                if let Some(candidate) = bound
+                    .accepting()
+                    .and_then(|value| with_leaf(primary, bound.path, value))
+                {
+                    keep(candidate, &mut rows);
+                }
+            }
+        }
+        TestStrategy::DefaultBranch => {
+            for sibling in command.outcomes.iter().filter(|sibling| {
+                sibling.name != outcome.name
+                    && sibling.test_strategy == TestStrategy::ConstructInput
+            }) {
+                let (Some(guard), Ok(reference)) = (
+                    when(sibling),
+                    reach(ir, command, sibling, Distinction::PLAIN),
+                ) else {
+                    continue;
+                };
+                let conjuncts = conjuncts(guard);
+                for bound in ordered_bounds(&conjuncts) {
+                    let Some(candidate) = bound
+                        .refuting()
+                        .and_then(|value| with_leaf(&reference, bound.path, value))
+                    else {
+                        continue;
+                    };
+                    let Ok(facts) = flatten(ir, command, &candidate) else {
+                        continue;
+                    };
+                    let alone = conjuncts.iter().enumerate().all(|(index, conjunct)| {
+                        let decided = facts.decide(conjunct);
+                        if index == bound.conjunct {
+                            matches!(decided, Decision::Refuted(_))
+                        } else {
+                            matches!(decided, Decision::Satisfied)
+                        }
+                    });
+                    if alone {
+                        keep(candidate, &mut rows);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    rows
+}
+
+/// The branch sent again at each of its [`boundary_inputs`], after everything else it asserts.
+///
+/// Each further invocation requires the branch and, where it declares one, its error — which is
+/// what a moved boundary changes. A `moves:` branch acts on a fresh instance in the state the
+/// scenario's own subject was arranged in, because that one has already moved; an `updates:`
+/// branch acts on the scenario's subject again, which an update leaves where it was. Only for the
+/// branches whose input alone selects them: a guard over the held state or the stored row is
+/// arranged by searches of their own, and an externally decided or replayed branch has no boundary
+/// the input moves.
+fn boundaries(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    run: &Run,
+    steps: &[ScenarioStep],
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let mut out = (Vec::new(), BTreeSet::new());
+    if outcome.replays.is_some()
+        || subject_fact::routes(command, outcome)
+        || has_subject_guards(command)
+        || outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == ResolvedEffect::Preserves)
+    {
+        return out;
+    }
+    let Ok(plain) = reach(ir, command, outcome, Distinction::PLAIN) else {
+        return out;
+    };
+    // The input the scenario actually sent, as values: a reference to an arranged row is a name
+    // for an identity no guard can read, so the plain witness's placeholder stands in for it.
+    let primary: BTreeMap<String, Node> = run
+        .input
+        .iter()
+        .filter_map(|(field, value)| match value {
+            ScenarioValue::Literal { value } => Some((field.clone(), value.clone())),
+            _ => plain
+                .get(field)
+                .map(|placeholder| (field.clone(), placeholder.clone())),
+        })
+        .collect();
+    let rows = boundary_inputs(ir, command, outcome, &primary);
+    if rows.is_empty() {
+        return out;
+    }
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let mut taken = bound_instances(steps);
+    for row in rows {
+        let mut supplied = run.input.clone();
+        for (field, value) in &row {
+            if primary.get(field) != Some(value) {
+                supplied.insert(field.clone(), ScenarioValue::literal(value.clone()));
+            }
+        }
+        if let Some(subject) = outcome
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect.transition().is_some())
+        {
+            let (Some(before), ResolvedInstance::Supplied { field }) =
+                (&run.before, &subject.instance)
+            else {
+                continue;
+            };
+            let Ok(arrangement) = arrange_unbound(ir, &subject.entity, before, actors, &mut taken)
+            else {
+                continue;
+            };
+            out.0.extend(arrangement.steps);
+            out.1.extend(arrangement.source);
+            supplied.insert(
+                field.name.clone(),
+                ScenarioValue::instance(arrangement.instance),
+            );
+        }
+        out.0.push(ScenarioStep::ExecuteCommand {
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supplied,
+        });
+        out.0.push(ScenarioStep::ExpectOutcome {
+            outcome: outcome_ref.clone(),
+        });
+        if let Some(error) = &outcome.error {
+            out.0.push(ScenarioStep::ExpectError {
+                error: ErrorRef::from(error),
+                fields: BTreeMap::new(),
+            });
+        }
+    }
+    out.1.insert(command_ref.into());
+    out.1.insert(outcome_ref.into());
+    out
 }
 
 /// A purpose cut to one line, which is what [`ScenarioPurpose`] accepts.

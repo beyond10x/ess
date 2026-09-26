@@ -1,0 +1,119 @@
+format: ess/9
+system: shop
+version: v1
+domain: shop.orders
+summary: Orders that can be held and closed.
+types:
+  - {name: shop.orders.OrderId, kind: newtype, of: Uuid}
+  - {name: shop.orders.Tier, kind: enum, variants: [Low, High]}
+  - {name: shop.orders.Colour, kind: enum, variants: [Green, Red]}
+entities:
+  - name: shop.orders.Order
+    identity: {name: order_id, type: shop.orders.OrderId}
+    fields:
+      - {name: items, type: Integer}
+      - {name: tier, type: shop.orders.Tier}
+      - {name: colour, type: shop.orders.Colour}
+    invariants: ["items >= 0"]
+    lifecycle:
+      initial: Open
+      states: [Open, Held, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: hold, from: [Open], to: Held}
+        - {name: close, from: [Open, Held], to: Closed}
+actors:
+  - name: shop.orders.Clerk
+    may: [shop.orders.PlaceOrder, shop.orders.HoldOrder, shop.orders.CloseOrder, shop.orders.SetItems, shop.orders.Relabel, shop.orders.Restock]
+errors:
+  - name: shop.orders.OrderStateConflict
+    summary: The order is not in a state this command acts from.
+    fields: [{name: state, type: shop.orders.Order.State}]
+  - {name: shop.orders.InvalidItems, summary: The item count is negative., fields: []}
+commands:
+  - name: shop.orders.PlaceOrder
+    input: [{name: tier, type: shop.orders.Tier}]
+    outcomes:
+      - name: placed
+        creates: shop.orders.Order
+        instance: order_id
+        emits: [shop.orders.OrderPlaced]
+        payload: {shop.orders.OrderPlaced: {order_id: {generated: true}}}
+        sets: {tier: input.tier, items: '0'}
+        summary: An open order exists.
+  - name: shop.orders.HoldOrder
+    input: [{name: order_id, type: shop.orders.OrderId}]
+    outcomes:
+      - name: held
+        moves: shop.orders.Order.hold
+        instance: order_id
+        emits: [shop.orders.OrderHeld]
+        payload: {shop.orders.OrderHeld: {order_id: input.order_id}}
+        summary: The order is held.
+      - {name: wrong-state, wrong_state: true, error: shop.orders.OrderStateConflict, summary: The order is not open.}
+  - name: shop.orders.CloseOrder
+    input: [{name: order_id, type: shop.orders.OrderId}]
+    outcomes:
+      - name: closed
+        moves: shop.orders.Order.close
+        instance: order_id
+        emits: [shop.orders.OrderClosed]
+        payload: {shop.orders.OrderClosed: {order_id: input.order_id}}
+        summary: The order is closed.
+      - {name: wrong-state, wrong_state: true, error: shop.orders.OrderStateConflict, summary: The order is already closed.}
+  - name: shop.orders.SetItems
+    input: [{name: order_id, type: shop.orders.OrderId}, {name: items, type: Integer}]
+    outcomes:
+      - name: set
+        when: items >= 0
+        updates: shop.orders.Order
+        instance: order_id
+        emits: [shop.orders.ItemsSet]
+        payload: {shop.orders.ItemsSet: {order_id: input.order_id, items: input.items}}
+        sets: {items: input.items}
+        summary: The order holds the new count.
+      - {name: refused, error: shop.orders.InvalidItems, summary: A negative count was refused.}
+  - name: shop.orders.Relabel
+    input:
+      - {name: order_id, type: shop.orders.OrderId}
+      - {name: tier, type: shop.orders.Tier}
+      - {name: colour, type: shop.orders.Colour}
+    outcomes:
+      - name: relabelled
+        updates: shop.orders.Order
+        instance: order_id
+        emits: [shop.orders.Relabelled]
+        payload: {shop.orders.Relabelled: {order_id: input.order_id}}
+        sets: {tier: input.tier, colour: input.colour}
+        summary: The order carries the new tier and colour.
+  - name: shop.orders.Restock
+    input: [{name: order_id, type: shop.orders.OrderId}, {name: n, type: Integer}, {name: limit, type: Integer}]
+    outcomes:
+      - name: restocked
+        when:
+          all:
+            - n >= 1
+            - limit > 0
+        updates: shop.orders.Order
+        instance: order_id
+        emits: [shop.orders.Restocked]
+        payload: {shop.orders.Restocked: {order_id: input.order_id}}
+        summary: The order was restocked.
+      - {name: refused, error: shop.orders.InvalidItems, summary: A restock below one was refused.}
+events:
+  - {name: shop.orders.OrderPlaced, fields: [{name: order_id, type: shop.orders.OrderId}]}
+  - {name: shop.orders.OrderHeld, fields: [{name: order_id, type: shop.orders.OrderId}]}
+  - {name: shop.orders.OrderClosed, fields: [{name: order_id, type: shop.orders.OrderId}]}
+  - {name: shop.orders.ItemsSet, fields: [{name: order_id, type: shop.orders.OrderId}, {name: items, type: Integer}]}
+  - {name: shop.orders.Relabelled, fields: [{name: order_id, type: shop.orders.OrderId}]}
+  - {name: shop.orders.Restocked, fields: [{name: order_id, type: shop.orders.OrderId}]}
+views:
+  - name: shop.orders.OrderById
+    source: shop.orders.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: shop.orders.OrderId}
+      - {name: state, type: shop.orders.Order.State}
+      - {name: items, type: Integer}
+      - {name: tier, type: shop.orders.Tier}
+      - {name: colour, type: shop.orders.Colour}
