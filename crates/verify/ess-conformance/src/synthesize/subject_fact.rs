@@ -810,6 +810,7 @@ pub(super) fn prepare(
             bound: BTreeMap::new(),
             source: arrangement.source,
             after: Some(after),
+            before: Some(arrangement.state),
             settled: arrangement.settled,
         },
         input,

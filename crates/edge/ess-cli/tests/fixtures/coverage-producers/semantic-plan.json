@@ -3212,7 +3212,7 @@
         "scenario_invocations": 30,
         "terminal_scenarios": 30,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 89
+        "execute_command": 92
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3298,7 +3298,7 @@
         "terminal_scenarios": 30,
         "target_factory": 31,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 89
+        "execute_command": 92
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3387,7 +3387,7 @@
         "scenario_invocations": 29,
         "terminal_scenarios": 29,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 85
+        "execute_command": 88
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3534,7 +3534,7 @@
         "scenario_invocations": 24,
         "terminal_scenarios": 24,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 83
+        "execute_command": 86
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -3614,7 +3614,7 @@
         "terminal_scenarios": 24,
         "target_factory": 25,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 83
+        "execute_command": 86
       },
       "report_expected": true,
       "construction_state": "fixed",
@@ -4191,7 +4191,7 @@
         "scenario_invocations": 30,
         "terminal_scenarios": 30,
         "other_callbacks": "Pin method-by-method from source scenario steps and target witness behavior; command count fixed by execute_command steps; eventual observation retry count is not inferable from report counts. Log actual callback sequence.",
-        "execute_command": 89
+        "execute_command": 92
       },
       "report_expected": true,
       "construction_state": "fixed",
