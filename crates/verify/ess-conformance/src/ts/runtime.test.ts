@@ -125,6 +125,43 @@ test('retained-result envelopes and mislabeled steps refuse before target callba
   assert.equal(callbacks, 0);
 });
 
+// String operators (beyond10x/ess#95) are not a TypeScript lane: the suites that carry one are
+// refused by their version, and a forged older suite carrying one is refused by the operator.
+test('string-operator suites and forged older ones refuse before target callbacks', async () => {
+  let callbacks = 0;
+  const target = (): Target => {
+    callbacks += 1;
+    throw new Error('target must not be constructed');
+  };
+  const satisfies = {
+    step: 'expect_view',
+    view: 'billing.Invoices',
+    expectation: { expect: 'satisfies', predicate: { not: { customer: { starts_with: '+44' } } } },
+  };
+  for (const major of [14, 15]) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = `ess-conformance/${major}`;
+    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push(satisfies);
+    await assert.rejects(
+      runWith(new Recorder('strings'), target, JSON.stringify(raw)),
+      /unsupported suite version "ess-conformance\/1[45]"/,
+    );
+  }
+  for (const operator of ['starts_with', 'ends_with', 'contains']) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = 'ess-conformance/10';
+    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push({
+      ...satisfies,
+      expectation: { expect: 'satisfies', predicate: { customer: { [operator]: 'x' } } },
+    });
+    await assert.rejects(
+      runWith(new Recorder('strings'), target, JSON.stringify(raw)),
+      new RegExp(`unknown predicate constraint operator "${operator}"`),
+    );
+  }
+  assert.equal(callbacks, 0);
+});
+
 function suiteText(): string {
   return JSON.stringify({
     provenance: {

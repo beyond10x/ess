@@ -1708,4 +1708,72 @@ fn an_input_timestamp_ordering_lowers_to_entity_core_instant_operators() {
         serde_json::to_value(&posted.when).expect("condition serializes"),
         json!({"not": {"after": ["$args.input.requested_at", "2026-01-01T00:00:00Z"]}})
     );
+
+/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) lower to entity-core's conditions
+/// and are decided by its runtime, including a literal that would otherwise read as a reference.
+#[test]
+fn string_operators_lower_to_conditions_the_runtime_decides_byte_for_byte() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4", "format: ess/8"),
+            (
+                "domains/local.yaml",
+                "      - name: memo\n        type: Optional<String>\n    lifecycle:",
+                "      - name: memo\n        type: Optional<String>\n    invariants:\n      - note: {starts_with: \"keep\"}\n      - note: {ends_with: \"exactly\"}\n      - note: {contains: \"p e\"}\n      - not: {note: {contains: \"$args\"}}\n    lifecycle:",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .expect("focused service lowers");
+    let invariants = serde_json::to_value(
+        &lowered.definitions()[&name("contract.local.Child")]
+            .as_definition()
+            .invariants,
+    )
+    .expect("invariants serialise");
+    let written = invariants.to_string();
+    for condition in [
+        r#"{"starts_with":["$fields.note","keep"]}"#,
+        r#"{"ends_with":["$fields.note","exactly"]}"#,
+        r#"{"contains":["$fields.note","p e"]}"#,
+        r#"{"not":{"contains":["$fields.note","$$args"]}}"#,
+    ] {
+        assert!(written.contains(condition), "{condition} in {written}");
+    }
+
+    let registry = registry(&lowered);
+    let runtime = Runtime::new(&registry);
+    let binding = &lowered.bindings().commands()[&name("contract.local.Run")];
+    let logical_id = json!("278f4f3a-c8b8-4e86-9a16-2c385910fc68");
+    let storage_id = identity::address(FieldKind::String, &logical_id).expect("identity address");
+    let decide = |note: &str| {
+        let mut arguments = focused_create_arguments(binding, true);
+        arguments["input"]["note"] = json!(note);
+        runtime.decide_create("contract.local.Child", 1, storage_id.clone(), arguments)
+    };
+    decide("keep exactly")
+        .expect("every string invariant holds")
+        .into_decision()
+        .expect("accepted");
+    for refuted in [
+        "Keep exactly",
+        "keep exactly.",
+        "keepexactly",
+        "keep $args exactly",
+    ] {
+        assert!(
+            matches!(
+                decide(refuted),
+                Err(entity_core::CoreError::InvariantViolation { .. })
+            ),
+            "{refuted}: {:?}",
+            decide(refuted)
+        );
+    }
 }

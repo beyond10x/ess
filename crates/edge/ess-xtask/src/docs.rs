@@ -94,6 +94,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess", 5, Some("0.27.0")),
     ("ess", 6, Some("0.28.0")),
     ("ess", 7, Some("0.29.0")),
+    ("ess", 8, None),
     ("ess", 9, None),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
@@ -114,6 +115,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 11, Some("0.28.0")),
     ("ess-conformance", 12, Some("0.29.0")),
     ("ess-conformance", 13, Some("0.29.0")),
+    ("ess-conformance", 14, None),
+    ("ess-conformance", 15, None),
 ];
 
 /// Checks the published documents against the source and the changelog.

@@ -1743,7 +1743,7 @@ events:
             file(
                 "system.yaml",
                 r"
-format: ess/10
+format: ess/99
 system: shop
 version: v1
 ",

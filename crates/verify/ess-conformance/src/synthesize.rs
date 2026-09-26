@@ -4531,6 +4531,11 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
             path: onto(path),
             values: values.clone(),
         },
+        Predicate::TextMatch { path, op, value } => Predicate::TextMatch {
+            path: onto(path),
+            op: *op,
+            value: value.clone(),
+        },
         // The collection is a model path and moves with the rest. The binder is not: re-rooting
         // `slot.left` at a field position would produce a path naming a field that does not exist,
         // and it would do it silently, which is the failure this whole module refuses elsewhere.

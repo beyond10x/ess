@@ -8,7 +8,7 @@ use std::fmt;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
@@ -97,6 +97,15 @@ pub trait TypeEnvironment {
     /// A `Duration` is carried as ISO 8601 text, and text is ordered by its bytes, which puts
     /// `PT10M` below `PT5M`. So an ordering over one is refused rather than answered wrongly.
     fn is_duration(&self, _reference: &Self::Type) -> bool {
+        false
+    }
+    /// Whether this terminal type is the `String` primitive, the one type a string operator
+    /// (`starts_with`, `ends_with`, `contains`) applies to.
+    ///
+    /// Asked of the resolved terminal, so a newtype of `String` at any depth and an `Optional` of
+    /// one answer `true` too. [`ScalarKind::Text`] cannot say it: it also covers `Timestamp`,
+    /// `Duration`, `Uuid`, `Bytes` and enums.
+    fn is_string(&self, _reference: &Self::Type) -> bool {
         false
     }
     /// One declared struct member, without using wire aliases.
@@ -226,6 +235,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     }
     fn is_duration(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Primitive(Primitive::Duration))
+    }
+    fn is_string(&self, reference: &TypeRef) -> bool {
+        matches!(reference, TypeRef::Primitive(Primitive::String))
     }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
@@ -565,6 +577,8 @@ struct ValueType {
     instant: bool,
     /// Whether the terminal type is `Duration`, which has no ordering.
     duration: bool,
+    /// Whether the terminal type is `String`, which a string operator applies to.
+    string: bool,
 }
 
 impl<E: TypeEnvironment> Checker<'_, E> {
@@ -605,6 +619,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
                 instant: self.environment.is_instant(&resolved.terminal),
                 duration: self.environment.is_duration(&resolved.terminal),
+                string: self.environment.is_string(&resolved.terminal),
                 declaring_variants: resolved
                     .variants
                     .is_some()
@@ -622,6 +637,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                     variants: None,
                     instant: false,
                     duration: false,
+                    string: false,
                 })
             }
         }
@@ -649,7 +665,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         );
         let unreadable = match expression {
             Predicate::Truthy(path) | Predicate::Defined(path) => Some(path),
-            Predicate::AnyOf { path, .. } | Predicate::NoneOf { path, .. }
+            Predicate::AnyOf { path, .. }
+            | Predicate::NoneOf { path, .. }
+            | Predicate::TextMatch { path, .. }
                 if left.scalar.is_none() =>
             {
                 Some(path)
@@ -876,9 +894,73 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// A string operator (beyond10x/ess#95): a `String` fact, or a newtype of one at any depth,
+    /// against a text literal that is not empty and does not name a field.
+    fn text_match(
+        &mut self,
+        predicate: &Predicate,
+        path: &FactPath,
+        op: TextOp,
+        value: &FactValue,
+    ) {
+        if let Some(typed) = self.operand(&Operand::Fact(path.clone())) {
+            if !typed.string {
+                self.mismatch(predicate, op.keyword(), &typed, None);
+            }
+        }
+        let text = match value {
+            FactValue::Text(text) => text,
+            other => {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}`: the operand is a {}, not text; `{op}` compares with a text \
+                         literal. YAML reads an unquoted scalar such as `+44` as a number and \
+                         `true` as a Boolean before ESS sees it, so the spelling it had is gone: \
+                         quote the literal exactly as written",
+                        other.type_name()
+                    ),
+                ));
+                return;
+            }
+        };
+        if text.is_empty() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::EmptyDeclaration,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` holds for every text, and its negation for none; write \
+                     `defined({path})` if presence is meant"
+                ),
+            ));
+            return;
+        }
+        // The #74 refusal, as for `==`: a bare word naming a declared field reads as that text.
+        if self.environment.root(text).is_some() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::TypeMismatch,
+                Some(path),
+                None,
+                format!(
+                    "`{predicate}` reads `{text}` as the text literal \"{text}\", not the field \
+                     `{text}`: a string operator compares with a literal only"
+                ),
+            ));
+        }
+    }
+
     fn predicate(&mut self, predicate: &Predicate) {
         match predicate {
             Predicate::Always | Predicate::Never => {}
+            Predicate::TextMatch { path, op, value } => {
+                self.text_match(predicate, path, *op, value);
+            }
             Predicate::All(children) | Predicate::Any(children) => {
                 for child in children {
                     self.predicate(child);
@@ -925,6 +1007,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                             variants: None,
                             instant: false,
                             duration: false,
+                            string: false,
                         };
                         self.mismatch(predicate, op, &typed, Some(&literal));
                     }

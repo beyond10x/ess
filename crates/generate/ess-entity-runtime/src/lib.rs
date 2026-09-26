@@ -29,14 +29,14 @@ use ess_domain::entity::{Cardinality, RelationKind};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
 use ess_service_contract::ServiceIr;
 use ess_synth::PlannedCapability;
 use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 
 /// The exact Entity Runtime source revision this projector targets.
-pub const ENTITY_RUNTIME_REVISION: &str = "77aac6eac95d0392a00e8dee8d04038ef70e47de";
+pub const ENTITY_RUNTIME_REVISION: &str = "718a7026fb193222036a553eac05c6b4060f8c38";
 
 /// Caller-owned coordinates which ESS does not encode itself.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -3111,6 +3111,22 @@ fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>
                 ],
             }),
         },
+        // Byte-wise and case-sensitive under every semantics key, `Unknown` for an unrecorded or null
+        // operand and `false` for a resolved non-string, which is the ESS table, so no guard wraps
+        // the condition. `fact_value` escapes a `$`-leading literal entity-core would otherwise read
+        // as a reference.
+        Predicate::TextMatch { path, op, value } => {
+            let operands = [rewrite.path(path), fact_value(value)];
+            match op {
+                TextOp::StartsWith => Condition::StartsWith {
+                    starts_with: operands,
+                },
+                TextOp::EndsWith => Condition::EndsWith {
+                    ends_with: operands,
+                },
+                TextOp::Contains => Condition::Contains { contains: operands },
+            }
+        }
         Predicate::Forall(quantified) => lower_quantified(quantified, rewrite, typing, true),
         Predicate::Exists(quantified) => lower_quantified(quantified, rewrite, typing, false),
     }
