@@ -1593,9 +1593,10 @@ fn the_release_builds_intel_macos_on_apple_silicon_and_keeps_its_four_archives()
 /// The one rule every compile cache follows: saved by a `main` or pull-request run, whose scope a
 /// later run can restore, and never by a queue branch or a tag, whose scope nothing restores. The
 /// 0.33.0 queue run saved 1.1 GB under `queue/pr-119` and its release saved four `release-*`
-/// keys under the tag, while the repository sat at 10.77 GB of its 10 GB cache allowance.
-const CACHE_SAVE_IF: &str =
-    "${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}";
+/// keys under the tag, while the repository sat at 10.77 GB of its 10 GB cache allowance. A manual
+/// dispatch saves nothing either: one from `main` runs at `main`'s ref, and a release backfill so
+/// dispatched builds an old tag's source.
+const CACHE_SAVE_IF: &str = "${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}";
 
 #[test]
 fn compile_caches_are_saved_only_where_a_later_run_restores_them() {
@@ -1786,6 +1787,9 @@ fi
 exec jq -r "$4" "$file"
 "#;
 
+/// The canned API answers one `prebuilt` case serves: each API path with the JSON it returns.
+type Answers = Vec<(String, serde_json::Value)>;
+
 /// Runs release.yml's `prebuilt` step the way Actions runs a `shell: bash` step and returns the
 /// `run` value it wrote, then its log.
 fn prebuilt(
@@ -1897,7 +1901,7 @@ fn a_release_publishes_only_a_queue_run_of_the_tagged_commit_that_holds_all_four
     let listing = |list: Vec<serde_json::Value>| json!({ "workflow_runs": list });
     let held = |id: u64| format!("repos/owner/repository/actions/runs/{id}/artifacts");
 
-    let cases: Vec<(&str, Vec<(String, serde_json::Value)>, &str)> = vec![
+    let cases: Vec<(&str, Answers, &str)> = vec![
         (
             "a queue run of the tagged commit holds all four archives",
             vec![
@@ -2268,5 +2272,160 @@ fn the_prune_scan_recognises_a_once_per_process_prune() {
     assert!(
         !prunes_from_a_once_per_process(&format!("static STARTED: {once};\n")),
         "a `Once` that prunes nothing is not the shape"
+    );
+}
+
+/// A pull request can edit `package.yml` to run on `pull_request`, and with fast-forward merges its
+/// head is the commit later tagged, so such a run of the tagged commit is reachable. So is a queue
+/// run that failed or was cancelled after uploading. The prebuilt step refuses all three twice: in
+/// the API query and in its `jq` filter. The stub answers by path alone, so the query half is held
+/// as text and the filter half by these runs.
+#[test]
+fn a_release_publishes_no_pull_request_or_unsuccessful_package_run_of_the_tagged_commit() {
+    let release = yaml(".github/workflows/release.yml");
+    let query = text(&prebuilt_step(&release)["run"]);
+    for pin in ["event=push", "status=success"] {
+        assert!(
+            query.contains(&format!("&{pin}&")),
+            "the package-run query no longer asks for `{pin}`: {query}"
+        );
+    }
+
+    let root = Scratch::new("release-prebuilt-review");
+    let commit = "3ec2deb977bb19c292a611dcf92a3e676352864a";
+    let runs = "repos/owner/repository/actions/workflows/package.yml/runs";
+    let held = "repos/owner/repository/actions/runs/7/artifacts";
+    let four = artifacts(
+        &[
+            "release-x86_64-unknown-linux-gnu",
+            "release-aarch64-unknown-linux-gnu",
+            "release-x86_64-apple-darwin",
+            "release-aarch64-apple-darwin",
+        ],
+        &[],
+    );
+    let run = |field: &str, value: &str| {
+        let mut changed = package_run(
+            7,
+            commit,
+            "queue/pr-119",
+            ".github/workflows/package.yml",
+            "2026-01-01T00:00:05Z",
+        );
+        changed[field] = json!(value);
+        json!({ "workflow_runs": [changed] })
+    };
+    let cases = [
+        (
+            "a pull_request run of package.yml",
+            run("event", "pull_request"),
+        ),
+        ("a failed queue run", run("conclusion", "failure")),
+        ("a cancelled queue run", run("conclusion", "cancelled")),
+    ];
+    let mut wrong = Vec::new();
+    for (index, (name, listing)) in cases.into_iter().enumerate() {
+        let answer = prebuilt(
+            &root.0,
+            index,
+            commit,
+            &[(runs, listing), (held, four.clone())],
+        );
+        let (decision, log) = answer.split_once('\n').unwrap();
+        if !decision.is_empty() {
+            wrong.push(format!("{name}: run={decision}\n{log}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the prebuilt step published these:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// Whether a `save-if` of the shape `${{ <a> == '<x>' && <b> != '<y>' || <c> == '<z>' }}` holds
+/// for a run whose `github.ref` is `reference` and whose `github.event_name` is `event`. `&&` binds
+/// tighter than `||`, as in GitHub's expression language.
+fn save_if_holds(expression: &str, reference: &str, event: &str) -> bool {
+    let inner = expression
+        .strip_prefix("${{")
+        .and_then(|rest| rest.strip_suffix("}}"))
+        .unwrap_or_else(|| panic!("save-if `{expression}` is not one expression"));
+    inner.split("||").any(|conjunction| {
+        conjunction.split("&&").all(|term| {
+            let (name, literal, equal) = term
+                .split_once("!=")
+                .map(|(name, literal)| (name, literal, false))
+                .or_else(|| {
+                    term.split_once("==")
+                        .map(|(name, literal)| (name, literal, true))
+                })
+                .unwrap_or_else(|| panic!("save-if term `{term}` is not a comparison"));
+            let literal = literal.trim().trim_matches('\'');
+            let matches = match name.trim() {
+                "github.ref" => literal == reference,
+                "github.event_name" => literal == event,
+                other => {
+                    panic!("save-if term names `{other}`, which this reader does not evaluate")
+                }
+            };
+            matches == equal
+        })
+    })
+}
+
+/// `release.yml`'s header documents a manual dispatch that backfills an existing tag, and a
+/// dispatch from `main` runs with `github.ref` at `refs/heads/main`. `save-if` keys on that ref, so
+/// the backfill's release job, its `package.yml` call and its `ci.yml` gate save compile caches
+/// built from the old tag's source under `main`'s scope — the one every later run restores, and
+/// the allowance the `save-if` rule was introduced to protect.
+#[test]
+fn a_release_backfill_dispatched_from_main_saves_no_compile_cache() {
+    let root = workspace_root();
+    let mut files: Vec<PathBuf> = fs::read_dir(root.join(".github/workflows"))
+        .expect("the workflow directory is readable")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "yml"))
+        .collect();
+    files.sort();
+    let mut saving = Vec::new();
+    for file in files {
+        let relative = &file.strip_prefix(&root).unwrap().display().to_string();
+        let workflow = yaml(relative);
+        for (id, job) in workflow["jobs"].as_mapping().into_iter().flatten() {
+            for step in job["steps"].as_sequence().into_iter().flatten() {
+                if !text(&step["uses"]).starts_with("Swatinem/rust-cache@") {
+                    continue;
+                }
+                let save_if = text(&step["with"]["save-if"]);
+                if save_if_holds(save_if, "refs/heads/main", "workflow_dispatch") {
+                    saving.push(format!("{relative} `{}`", text(id)));
+                }
+            }
+        }
+    }
+    for (reference, event) in [
+        ("refs/heads/main", "push"),
+        ("refs/heads/main", "schedule"),
+        ("refs/pull/7/merge", "pull_request"),
+    ] {
+        assert!(
+            save_if_holds(CACHE_SAVE_IF, reference, event),
+            "the rule no longer saves the cache of a {event} run on {reference}"
+        );
+    }
+    for (reference, event) in [
+        ("refs/heads/main", "workflow_dispatch"),
+        ("refs/heads/queue/pr-119", "push"),
+        ("refs/tags/0.33.0", "push"),
+    ] {
+        assert!(
+            !save_if_holds(CACHE_SAVE_IF, reference, event),
+            "the rule saves the cache of a {event} run on {reference}"
+        );
+    }
+    assert!(
+        saving.is_empty(),
+        "a release backfill dispatched from main saves these compile caches: {saving:?}"
     );
 }

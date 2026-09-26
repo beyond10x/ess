@@ -94,7 +94,7 @@ jobs:
           workspaces: |
             . -> target
             fuzz -> target
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
       # Gate tasks build offline (`fuzz-check`, `support-check`, and cargo runs spawned by the
       # xtask support tests), so both lockfiles are fetched before the first task.
@@ -168,7 +168,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: test-workspace
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
       - name: Fetch locked dependencies
         run: cargo fetch --locked
@@ -260,7 +260,7 @@ jobs:
         with:
           key: test-run
           cache-targets: "false"
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
       # The generated-project cases run `cargo … --offline`, so the registry is filled first.
       - name: Fetch locked dependencies
@@ -342,7 +342,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch' || github.event_name == 'pull_request' }}
 
       - name: Fetch locked dependencies
         id: ownership_dependencies

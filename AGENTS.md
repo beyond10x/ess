@@ -155,7 +155,8 @@ the tag. `ci_lanes.rs` runs the `prebuilt` step against canned API answers.
 
 Compile caches are saved only by `main` and pull-request runs (`save-if` on every
 `Swatinem/rust-cache` step, held by `ci_lanes.rs`). A queue branch or a tag saves under a scope
-that no later run can restore.
+that no later run can restore. A manual dispatch saves none: a release backfill dispatched from
+`main` builds an old tag's source under `main`'s scope.
 
 The Intel macOS archive is cross-compiled on the Apple Silicon `macos-15` runner and smoke-run
 there under Rosetta; `lipo -archs` names the architecture that was built. Archive names and
