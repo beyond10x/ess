@@ -9,6 +9,7 @@ mod normalize;
 mod observed_bindings;
 mod output_ownership;
 mod release_evidence;
+mod requires;
 mod schema;
 mod schema_bundle;
 mod site;
@@ -29,6 +30,9 @@ use ess_gen::graph::SystemGraph;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Refuse, rather than warn, where `ess-inputs.yaml` `requires` an older `ess` release.
+    #[arg(long, global = true)]
+    strict_requires: bool,
 }
 
 /// The four areas the first level of `ess` is made of.
@@ -193,6 +197,12 @@ struct GenerateArgs {
     out: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = Format::Text)]
     format: Format,
+    /// Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.
+    ///
+    /// Without it the same condition is a note on stderr and the exit stays 0: an empty
+    /// projection is legal, and the note is what tells it apart from a clean one.
+    #[arg(long)]
+    strict: bool,
 }
 
 /// `ess generate`: IR becomes artifacts; explicit executor verbs deliver them — `crates/generate/`.
@@ -710,6 +720,9 @@ enum ProjectAdapter {
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+        /// With `--path`: refuse, writing nothing, where a domain has no owning component.
+        #[arg(long, requires = "path")]
+        strict: bool,
     },
 }
 
@@ -1053,6 +1066,7 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(error) => error.format(&mut parser).exit(),
     };
+    requires::set_strict(cli.strict_requires);
     match run(cli) {
         Ok(code) => code,
         Err(error) => {
@@ -1142,6 +1156,7 @@ fn generate_projections(arguments: &GenerateArgs) -> Result<ExitCode> {
         &arguments.site,
         arguments.out.as_deref(),
         arguments.format,
+        arguments.strict,
     )
 }
 
@@ -2668,6 +2683,24 @@ fn write_preflighted_files<'a>(files: impl IntoIterator<Item = (PathBuf, &'a str
     Ok(())
 }
 
+/// Every declared domain that no component's `owns` names, in the IR's own order.
+fn unowned_domains(ir: &ess_compiler::EssIr) -> Vec<&ess_domain::name::QualifiedName> {
+    let owned: std::collections::BTreeSet<_> = ir
+        .components()
+        .values()
+        .flat_map(|component| {
+            component
+                .owns
+                .iter()
+                .map(ess_compiler::ir::DomainHandle::name)
+        })
+        .collect();
+    ir.domains()
+        .keys()
+        .filter(|domain| !owned.contains(domain))
+        .collect()
+}
+
 /// Resolve once, then render the selected projection and preflight its complete output set.
 fn generate(
     path: &Path,
@@ -2675,6 +2708,7 @@ fn generate(
     site_options: &site::Options,
     out: Option<&Path>,
     format: Format,
+    strict: bool,
 ) -> Result<ExitCode> {
     if !matches!(kind, Some(Projection::Site))
         && (site_options.strict_links
@@ -2687,6 +2721,24 @@ fn generate(
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
+    // `openapi` and `asyncapi` write one document per component, so a domain no component owns
+    // is absent from both, and a specification with no components projects to nothing at all.
+    // That is legal; saying nothing about it is what made it look like a clean run (ess#102).
+    if matches!(
+        kind,
+        None | Some(Projection::OpenApi | Projection::AsyncApi)
+    ) {
+        let unowned = unowned_domains(&ir);
+        for domain in &unowned {
+            eprintln!(
+                "{}: no component owns {domain}; declare it in components.yaml",
+                if strict { "refused" } else { "note" }
+            );
+        }
+        if strict && !unowned.is_empty() {
+            return Ok(ExitCode::from(1));
+        }
+    }
     let mut publications = Vec::new();
     let artifacts = match kind {
         // Not a `Generator`: it writes the document the generators read, so it has no rendering of
@@ -3496,6 +3548,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
             ir,
             out,
             format,
+            strict,
         } => match (path, ir) {
             (Some(path), None) => generate(
                 &path,
@@ -3503,6 +3556,7 @@ fn project(adapter: ProjectAdapter) -> Result<ExitCode> {
                 &site::Options::default(),
                 out.as_deref(),
                 format,
+                strict,
             ),
             (None, Some(ir)) => project_openapi_interface(&ir, out.as_deref(), format),
             _ => bail!("exactly one of --path or --ir is required"),

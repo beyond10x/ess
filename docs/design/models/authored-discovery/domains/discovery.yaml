@@ -3,7 +3,7 @@ domain: discovery.inputs
 types:
   - name: discovery.inputs.ManifestFormat
     kind: enum
-    variants: ["ess-inputs/1"]
+    variants: ["ess-inputs/1", "ess-inputs/2"]
 
   - name: discovery.inputs.RelativeInputPath
     kind: newtype
@@ -20,3 +20,5 @@ types:
         type: List<discovery.inputs.RelativeInputPath>
       - name: scenarios
         type: List<discovery.inputs.RelativeInputPath>
+      - name: requires
+        type: Optional<String>

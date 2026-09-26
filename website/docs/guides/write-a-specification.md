@@ -99,6 +99,24 @@ searches its parent for configuration. A malformed or unsupported `ess-inputs.ya
 falling back: rename a legacy source with that reserved filename or adopt this configuration.
 See the [complete input format](../reference/formats.md#directory-input-configuration).
 
+### Name the `ess` release the specification is maintained with
+
+`format: ess-inputs/2` adds one optional field, `requires`, naming the `ess` release the
+specification is validated and generated with — an exact release, or a minor line:
+
+```yaml
+format: ess-inputs/2
+requires: ess 0.32     # or `ess 0.32.1` for exactly that release
+specification: [model/system.yaml, model/domains/invoice.yaml]
+scenarios: []
+```
+
+An older `ess` refuses with exit `1`, naming the required release and how to get it: `b10x upgrade`,
+or `/ess:upgrade` in an agent session. A newer `ess` prints one warning per command and continues;
+`--strict-requires` refuses instead, which is the spelling for CI. Without `requires` nothing
+changes. Generated output records the release that produced it, and a regeneration by a different
+release that changes the output prints a `note:` naming both.
+
 ## Validate early, read the refusals
 
 The `ess/2` format, introduced in 0.20.0, adds `Binary64` for finite IEEE-754 values. Use it

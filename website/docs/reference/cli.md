@@ -49,8 +49,9 @@ refused with exit 2 rather than run against the current directory.
 
 This optional manifest capability was introduced in 0.21.0.
 An explicitly supplied directory may opt into [the `ess-inputs/1` configuration](formats.md#directory-input-configuration)
-through its immediate `ess-inputs.yaml`. No new flag, ancestor search or implicit scenarios are
-introduced. Model arguments select `specification`; `--scenarios` selects `scenarios`, and `specify validate`
+through its immediate `ess-inputs.yaml`. No ancestor search or implicit scenarios are introduced.
+An `ess-inputs/2` manifest may pin the `ess` release with `requires`; the global
+`--strict-requires`, accepted in any position, refuses a newer release instead of warning. Model arguments select `specification`; `--scenarios` selects `scenarios`, and `specify validate`
 also reads a nonempty `scenarios` list and reports its `ESS-AUTHOR-*` refusals. Both lists are
 structurally checked, and only the active list's files are opened in sorted relative-identity order.
 
@@ -219,7 +220,14 @@ Run `ess generate synthesize --help` and `ess generate <command> --help` for tar
 arguments.
 
 Omitting `--kind` generates every projection. Omitting `--out` lists or serializes artifacts
-without writing them. The repository-only `cargo xtask generate` command reconciles the committed
+without writing them.
+
+`openapi` and `asyncapi` write one document per component, so a domain no component `owns` is in
+neither, and a specification without components projects to `0 artifact(s)`. That is legal, and
+`--kind openapi`, `--kind asyncapi`, no `--kind` and `ess generate project openapi --path …` each
+print `note: no component owns <domain>; declare it in components.yaml` on stderr for every such
+domain, and exit 0. `--strict` makes the same condition a refusal: the line reads `refused:`,
+nothing is written, and the exit is 1. The other kinds do not read components and print no note. The repository-only `cargo xtask generate` command reconciles the committed
 `generated/` projection tree; `cargo xtask generate --check` compares it without writing.
 
 Generated tree outputs use their output root as the ownership root; a standalone generated file

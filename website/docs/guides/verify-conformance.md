@@ -199,6 +199,23 @@ $ ess verify conform run \
 
 ## Opt into explicit outcome counts
 
+### Where passed, failed and skipped live
+
+`ess-conformance-report/1` has no passed or skipped count, and it lists a skip as `skipped <id>`
+inside `failed_scenarios`. The three numbers are in `ess-conformance-report/2`, as `counts.passed`,
+`counts.failed` and `counts.skipped`, and the skipped ids are in `outcomes.skipped`, apart from
+`outcomes.failed`. A baseline that floors `passed + failed` and caps `skipped` reads them from
+there. Select it for each runner:
+
+| runner | selection |
+|---|---|
+| `ess verify conform run` | `--report-format 2 --report-out <file>` |
+| generated Go | `ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=<file> go test ./...` |
+| generated TypeScript | `ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=<file> npm test` |
+
+`/1` stays the default and keeps its meaning. [Why the counts are a separate
+version](https://github.com/beyond10x/ess/blob/main/docs/design/truthful-conformance-counts.md).
+
 ```shell-session
 $ ess verify conform run \
     --suite target/billing-suite.json \

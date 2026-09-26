@@ -1246,6 +1246,57 @@ fn a_filtered_run_publishes_no_report_claiming_the_scenarios_it_skipped_passed()
     );
 }
 
+/// A report/1 that books a skip points once at report/2, where the counts are (ess#110).
+///
+/// `go test` streams the test binary's stderr into its own output, so the count is read over both
+/// streams; the runtime writes the line to `os.Stderr` and nowhere else.
+#[test]
+fn a_report_one_with_a_skip_points_once_at_report_two_for_the_counts() {
+    const NOTICE: &str = "1 scenario(s) skipped; set ESS_REPORT_FORMAT=2 (or --report-format 2) \
+                          for passed, failed and skipped counts";
+    let directory = count_module("skip-notice");
+    let destination = directory.join("notice.json");
+    let out = destination.to_str().unwrap();
+    for (label, env, expected) in [
+        (
+            "skip-v1",
+            vec![("COUNT_MODE", "skip"), ("ESS_REPORT_OUT", out)],
+            1,
+        ),
+        (
+            "failure-v1",
+            vec![("COUNT_MODE", "failure"), ("ESS_REPORT_OUT", out)],
+            0,
+        ),
+        ("pass-v1", vec![("ESS_REPORT_OUT", out)], 0),
+        ("skip-unpublished", vec![("COUNT_MODE", "skip")], 0),
+        (
+            "skip-v2",
+            vec![
+                ("COUNT_MODE", "skip"),
+                ("ESS_REPORT_FORMAT", "2"),
+                ("ESS_CONFORMANCE_ALLOW_INCOMPLETE", "1"),
+                ("ESS_REPORT_OUT", out),
+            ],
+            0,
+        ),
+    ] {
+        let output = invoke_count(&directory, label, &env, "^TestCount$");
+        let log = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(log.matches(NOTICE).count(), expected, "{label}: {log}");
+        // Any count at all, not only this one: a run with no skip says nothing about skips.
+        assert_eq!(
+            log.matches("skipped; set ESS_REPORT_FORMAT=2").count(),
+            expected,
+            "{label}: {log}"
+        );
+    }
+}
+
 #[test]
 fn a_skip_reports_the_reason_the_target_gave() {
     let directory = count_module("skip-reason");

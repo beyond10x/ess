@@ -50,7 +50,15 @@ does not authenticate another writer.
 Recovery follows the recorded staging, prepared, committed or restored decision and retains it
 until cleanup finishes. An unpublished `state.next` is not recovery authority. Preserve unknown
 state and initialization entries for diagnosis. Older ESS versions have no reader or lock
-protocol for this format. See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
+protocol for this format.
+
+`ess-output-state/2` (unreleased) is `/1` plus one required nonempty string, `producer`: the `ess`
+release that last published into the root, as `ess X.Y.Z`. Every publication writes `/2`; the
+reader accepts `/1` without `producer` and `/2` with it, and refuses either shape under the other
+version. A publication that changes the root and finds a different recorded producer prints a
+`note:` naming both releases. Recovery and adoption keep the producer they found. Releases before
+`/2` refuse a `/2` checkpoint as an unsupported output-state version.
+[Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md). See [the generation workflow](../guides/generate-artifacts.md#repeated-generation-and-recovery)
 for the filesystem assumptions and recovery command.
 
 ## Directory input configuration
@@ -92,6 +100,16 @@ The named ESS model describes the closed fields, singleton format enum, lists an
 Its projection does not enforce complete path grammar, cross-list uniqueness, active-role cardinality,
 filesystem facts, deterministic acquisition or exact source-byte custody. The CLI reader owns those
 checks; declaration validation alone is not discovery evidence.
+
+`format: ess-inputs/2` (unreleased) is `/1` plus one optional string, `requires`: `ess X.Y.Z` for
+exactly that release, or `ess X.Y` for any `X.Y.*`. Components are decimal without leading zeros;
+any other spelling refuses. `requires` in a `/1` document refuses, naming `/2`. An `ess` older than
+the requirement refuses before any selected file is read and names `b10x upgrade` and
+`/ess:upgrade`; a newer one warns once per command, and the global `--strict-requires` makes that a
+refusal. `/2` without `requires` behaves exactly as `/1`. Releases before `/2` refuse it as an
+unsupported format. The named model admits the field and both versions; the version grammar and
+the `/1` exclusion are the reader's.
+[Design](https://github.com/beyond10x/ess/blob/main/docs/design/specification-requires-release.md).
 
 ## Specifications and implementation plans
 

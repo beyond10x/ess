@@ -40,6 +40,7 @@ import {
   scenarioIdentity,
   strictJSON,
   unsupported,
+  writeReport,
 } from './runtime.js';
 import type {
   CommandRequest,
@@ -579,6 +580,78 @@ test('report/1 names every scenario that did not pass', async () => {
       'skipped billing.CreateInvoice/outcome/unanswered',
     ]);
     assert.equal(document.implementation, 'example 0.1.0');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** captureStderr runs body and returns what it wrote to process.stderr, which it does not pass on. */
+async function captureStderr(body: () => Promise<void>): Promise<string> {
+  const original = process.stderr.write.bind(process.stderr);
+  let written = '';
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    written += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    await body();
+  } finally {
+    process.stderr.write = original;
+  }
+  return written;
+}
+
+const skipNotice =
+  '1 scenario(s) skipped; set ESS_REPORT_FORMAT=2 (or --report-format 2) for passed, failed and ' +
+  'skipped counts\n';
+
+test('report/1 with a skip points once at report/2 for the counts (ess#110)', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'essconform-'));
+  const path = join(directory, 'report.json');
+  try {
+    const written = await captureStderr(() =>
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '1', ESS_REPORT_OUT: path }, () =>
+        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+      ),
+    );
+    assert.equal(written, skipNotice);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('report/1 without a skip, and report/2, print no notice', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'essconform-'));
+  const path = join(directory, 'report.json');
+  try {
+    const counted = await captureStderr(() =>
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '2', ESS_REPORT_OUT: path }, () =>
+        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+      ),
+    );
+    assert.equal(counted, '');
+    const unpublished = await captureStderr(() =>
+      withEnvironmentAsync({ ESS_REPORT_FORMAT: '1', ESS_REPORT_OUT: undefined }, () =>
+        runWith(new Recorder('conformance'), () => new ExampleTarget(), suiteText()),
+      ),
+    );
+    assert.equal(unpublished, '');
+    const suite = admitSuiteDocument(suiteText(), false);
+    const clean = await captureStderr(async () =>
+      withEnvironmentAsync({ ESS_REPORT_OUT: path }, async () =>
+        writeReport(
+          new Recorder('conformance'),
+          suite,
+          { name: 'example', version: '0.1.0' },
+          [
+            { id: 'a', status: 'passed' },
+            { id: 'b', status: 'failed' },
+          ],
+          Object.keys(suite.scenarios).length,
+        ),
+      ),
+    );
+    assert.equal(clean, '');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

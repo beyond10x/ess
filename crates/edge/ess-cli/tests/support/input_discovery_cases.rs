@@ -914,7 +914,7 @@ fn a24_named_model_projection_and_reader_agree_without_claiming_expression_gaps(
     );
     assert_eq!(
         defs["discovery.inputs.ManifestFormat"]["enum"],
-        json!(["ess-inputs/1"])
+        json!(["ess-inputs/1", "ess-inputs/2"])
     );
     for field in ["specification", "scenarios"] {
         assert_eq!(manifest["properties"][field]["type"], "array");

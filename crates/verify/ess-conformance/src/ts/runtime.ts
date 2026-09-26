@@ -2506,7 +2506,7 @@ export function writeReport(
 
   const failedScenarios: string[] = [];
   let anyFailed = false;
-  let anySkipped = false;
+  let skipped = 0;
   for (const result of results) {
     if (result.status === statusPassed) {
       continue;
@@ -2514,10 +2514,11 @@ export function writeReport(
     if (result.status === statusFailed) {
       anyFailed = true;
     } else if (result.status === statusSkipped) {
-      anySkipped = true;
+      skipped += 1;
     }
     failedScenarios.push(`${result.status} ${result.id}`);
   }
+  const anySkipped = skipped > 0;
   let status = statusPassed;
   if (anyFailed) {
     status = statusFailed;
@@ -2541,6 +2542,13 @@ export function writeReport(
   t.diagnostic(
     `report: ${status}, ${results.length} scenario(s), ${failedScenarios.length} not passed, written to ${path}`,
   );
+  // report/1 books a skip inside failed_scenarios; the three counts are report/2's (ess#110).
+  if (anySkipped) {
+    process.stderr.write(
+      `${skipped} scenario(s) skipped; set ESS_REPORT_FORMAT=2 (or --report-format 2) for passed, ` +
+        'failed and skipped counts\n',
+    );
+  }
 }
 
 // ---- one scenario in flight -----------------------------------------------------------------------

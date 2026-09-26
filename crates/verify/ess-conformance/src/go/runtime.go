@@ -1724,7 +1724,7 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 	}
 
 	failed := make([]string, 0)
-	anyFailed, anySkipped := false, false
+	anyFailed, skipped := false, 0
 	for _, result := range results {
 		switch result.status {
 		case statusPassed:
@@ -1732,10 +1732,11 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 		case statusFailed:
 			anyFailed = true
 		case statusSkipped:
-			anySkipped = true
+			skipped++
 		}
 		failed = append(failed, result.status+" "+result.id)
 	}
+	anySkipped := skipped > 0
 	status := statusPassed
 	switch {
 	case anyFailed:
@@ -1766,6 +1767,10 @@ func writeReport(t *testing.T, suite Suite, identity Identity, results []scenari
 		return
 	}
 	t.Logf("report: %s, %d scenario(s), %d not passed, written to %s", status, len(results), len(failed), path)
+	// report/1 books a skip inside failed_scenarios; the three counts are report/2's (ess#110).
+	if anySkipped {
+		fmt.Fprintf(os.Stderr, "%d scenario(s) skipped; set ESS_REPORT_FORMAT=2 (or --report-format 2) for passed, failed and skipped counts\n", skipped)
+	}
 }
 
 // run is one scenario in flight, and everything it has bound.
