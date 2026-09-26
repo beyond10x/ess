@@ -385,9 +385,42 @@ pub fn install_helm(root: &Path, bytes: &[u8]) -> std::io::Result<(PathBuf, Stri
 /// The bytes are copied rather than linked, so the installed file is a real regular file with its
 /// own digest under the admitted `<prefix><sha256hex>/helm` arrangement, and the probes meet a
 /// real executable rather than a script.
+///
+/// It returns only once the installed file can be executed. `cargo test` runs the cases as threads
+/// of one process, and a child another case forks while the file is open for writing inherits the
+/// write descriptor until it executes; until then the kernel refuses to execute the file with
+/// `ETXTBSY`, which `run` would report as a child that was never launched. The installer's own
+/// descriptor is closed before the first probe, so once one probe executes no descriptor remains
+/// that a later fork could inherit, and every later execution by the case meets the file ready.
 pub fn install_executable(root: &Path, source: &Path) -> std::io::Result<(PathBuf, String)> {
     let bytes = std::fs::read(source)?;
-    install_helm(root, &bytes)
+    let installed = install_helm(root, &bytes)?;
+    await_executable(&installed.0)?;
+    Ok(installed)
+}
+
+/// Executes `path` with the stand-in's read-only `version` probe until the kernel stops refusing
+/// it as busy, and fails with the last refusal if another case's fork holds it for 30 seconds.
+fn await_executable(path: &Path) -> std::io::Result<()> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let probe = std::process::Command::new(path)
+            .arg("version")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        match probe {
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            Err(error) => return Err(error),
+            Ok(_) => return Ok(()),
+        }
+    }
 }
 
 /// Lays out a complete protected arrangement whose authority admits exactly `desired`.
