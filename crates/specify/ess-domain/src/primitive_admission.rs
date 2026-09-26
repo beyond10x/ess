@@ -204,6 +204,20 @@ pub(crate) fn predicates(
                     predicate,
                 ));
             }
+            // The stored-field predicate is the same grammar, so a string operator under
+            // `when_subject:` needs the format that admits it as much as one under `when:`.
+            if let crate::command::OutcomeCondition::SubjectPredicate { predicate, .. } =
+                &outcome.condition
+            {
+                found.push((
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.to_string())
+                        .key("when_subject"),
+                    predicate,
+                ));
+            }
         }
     }
     for view in spec.views().values() {

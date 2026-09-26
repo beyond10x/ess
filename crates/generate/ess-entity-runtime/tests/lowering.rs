@@ -1708,6 +1708,7 @@ fn an_input_timestamp_ordering_lowers_to_entity_core_instant_operators() {
         serde_json::to_value(&posted.when).expect("condition serializes"),
         json!({"not": {"after": ["$args.input.requested_at", "2026-01-01T00:00:00Z"]}})
     );
+}
 
 /// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) lower to entity-core's conditions
 /// and are decided by its runtime, including a literal that would otherwise read as a reference.

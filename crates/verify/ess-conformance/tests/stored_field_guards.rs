@@ -287,8 +287,12 @@ enum Behavior {
     UpsertsAbsentSubject,
 }
 
+/// A refusal rule over the stored row, for a model other than the design example.
+type Rule = fn(&BTreeMap<String, Node>) -> bool;
+
 struct Parcels {
     behavior: Behavior,
+    rule: Option<Rule>,
     rows: RefCell<BTreeMap<String, BTreeMap<String, Node>>>,
     minted: Cell<u64>,
 }
@@ -297,8 +301,18 @@ impl Parcels {
     fn new(behavior: Behavior) -> Self {
         Self {
             behavior,
+            rule: None,
             rows: RefCell::default(),
             minted: Cell::new(0),
+        }
+    }
+}
+
+impl Parcels {
+    fn ruled(rule: Rule) -> Self {
+        Self {
+            rule: Some(rule),
+            ..Self::new(Behavior::Good)
         }
     }
 }
@@ -400,10 +414,11 @@ impl Parcels {
                 }
                 let express = row["service"] == Node::Text("Express".into());
                 let heavy = matches!(&row["weight_kg"], Node::Number(n) if n.get() > 20.0);
-                let refuse = match self.behavior {
-                    Behavior::Good | Behavior::UpsertsAbsentSubject => express && heavy,
-                    Behavior::IgnoresStoredFields => false,
-                    Behavior::IgnoresStoredWeight => express,
+                let refuse = match (self.rule, self.behavior) {
+                    (Some(rule), _) => rule(row),
+                    (None, Behavior::Good | Behavior::UpsertsAbsentSubject) => express && heavy,
+                    (None, Behavior::IgnoresStoredFields) => false,
+                    (None, Behavior::IgnoresStoredWeight) => express,
                 };
                 if refuse {
                     return Ok(SemanticCommandResult::took(outcome(
@@ -603,4 +618,100 @@ fn the_suite_needs_no_new_vocabulary_and_every_lane_admits_it() {
     AdmittedSuite::from_suite(&suite).unwrap();
     ess_conformance::go::emit(&suite).unwrap();
     ess_conformance::ts::emit(&suite).unwrap();
+}
+
+/// The parcels model with `service` stored as text, guarded by a string operator (ess#95) instead
+/// of the conjunction: the grammar under `when_subject:` is the one every predicate position reads.
+fn string_service(guard: &str) -> String {
+    PARCELS
+        .replace("{name: service, type: shipping.parcel.Service}", "{name: service, type: String}")
+        .replace(
+            "        when_subject:\n          predicate:\n            all:\n              - service == Express\n              - weight_kg > 20\n",
+            &format!("        when_subject: {{predicate: {guard}}}\n"),
+        )
+}
+
+#[test]
+fn a_string_operator_over_a_stored_field_validates_under_ess_9_and_synthesizes_both_branches() {
+    let model = string_service("{service: {starts_with: \"Ex\"}}");
+    let result = synthesis(&model);
+    for id in [REFUSAL, SUCCESS] {
+        assert!(
+            refusals_about(&result, id).is_empty(),
+            "{id}: {:?}",
+            refusals_about(&result, id)
+        );
+    }
+    let service =
+        |id| inputs(scenario(&result.suite, id), "shipping.parcel.Create")[0]["service"].clone();
+    let (
+        ScenarioValue::Literal {
+            value: Node::Text(refused),
+        },
+        ScenarioValue::Literal {
+            value: Node::Text(dispatched),
+        },
+    ) = (service(REFUSAL), service(SUCCESS))
+    else {
+        panic!("text witnesses")
+    };
+    assert!(refused.starts_with("Ex"), "{refused}");
+    assert!(!dispatched.starts_with("Ex"), "{dispatched}");
+    assert_eq!(
+        failing_model(
+            &model,
+            |row| matches!(&row["service"], Node::Text(text) if text.starts_with("Ex"))
+        ),
+        Vec::<String>::new(),
+        "the rule as written passes its own suite"
+    );
+    assert!(
+        !failing_model(&model, |_| false).is_empty(),
+        "an implementation that never refuses fails it"
+    );
+}
+
+#[test]
+fn a_string_operator_under_when_subject_needs_ess_8_and_an_enum_field_refuses_it() {
+    let old = string_service("{service: {starts_with: \"Ex\"}}")
+        .replace("format: ess/9", "format: ess/7");
+    let raw = RawSpecFile::parse(&old).unwrap();
+    let errors = Specification::assemble([(Source::new("p.yaml"), raw)]).unwrap_err();
+    assert!(
+        errors.as_slice().iter().any(|error| error
+            .message
+            .contains("string predicate operators require specification format ess/8")
+            && error.location.ends_with("when_subject")),
+        "{errors}"
+    );
+    // The literal form of the request: `service` is the enum `Standard | Express`, and a string
+    // operator is admitted on `String` and its newtypes only (ess#95), so it is refused here.
+    let enum_form = PARCELS.replace(
+        "        when_subject:\n          predicate:\n            all:\n              - service == Express\n              - weight_kg > 20\n",
+        "        when_subject: {predicate: {service: {starts_with: \"Ex\"}}}\n",
+    );
+    let raw = RawSpecFile::parse(&enum_form).unwrap();
+    let errors = Specification::assemble([(Source::new("p.yaml"), raw)]).unwrap_err();
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.location.ends_with("when_subject")),
+        "{errors}"
+    );
+}
+
+/// The in-memory parcels service with an arbitrary refusal rule, for models other than PARCELS.
+fn failing_model(model: &str, refuse: Rule) -> Vec<String> {
+    let suite = synthesis(model).suite;
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &Parcels::ruled(refuse))
+        .into_report();
+    report
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.status != Status::Passed)
+        .map(|scenario| scenario.scenario.to_string())
+        .collect()
 }
