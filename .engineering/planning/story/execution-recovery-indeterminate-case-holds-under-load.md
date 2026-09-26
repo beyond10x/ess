@@ -2,11 +2,11 @@
 format: aep.planning-md/2
 id: story:execution-recovery-indeterminate-case-holds-under-load
 kind: story
-status: draft
+status: implemented
 title: execution_recovery indeterminate-effect case passes under machine load
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 # execution_recovery indeterminate-effect case passes under machine load
 
