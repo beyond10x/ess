@@ -362,6 +362,11 @@
         }
       ]
     },
+    "Empty": {
+      "description": "The empty map `count` takes: no other spelling of \"no argument\" is accepted.",
+      "type": "object",
+      "additionalProperties": false
+    },
     "EnumVariant": {
       "description": "An enum variant: a bare name, or a mapping that also declares its wire spelling.",
       "anyOf": [
@@ -1174,6 +1179,89 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawAggregate": {
+      "description": "An aggregate as written: a map with exactly one key, the function.\n\nThe shape is the reader's to refuse — an unknown function, two keys, or an argument to `count` fails the parse with serde's message naming the six functions, as an unknown key does anywhere a [`Field`] is read.\n\nRead and written by hand as a one-entry map rather than derived: `serde_yaml` reads and writes a derived externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design page fixes and not what a JSON document can carry. The schema is still the derived one — one object per function with exactly that key.",
+      "oneOf": [
+        {
+          "description": "`{count: {}}`.",
+          "type": "object",
+          "required": [
+            "count"
+          ],
+          "properties": {
+            "count": {
+              "$ref": "#/definitions/Empty"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{count_distinct: field}`.",
+          "type": "object",
+          "required": [
+            "count_distinct"
+          ],
+          "properties": {
+            "count_distinct": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{sum: field}`.",
+          "type": "object",
+          "required": [
+            "sum"
+          ],
+          "properties": {
+            "sum": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{min: field}`.",
+          "type": "object",
+          "required": [
+            "min"
+          ],
+          "properties": {
+            "min": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{max: field}`.",
+          "type": "object",
+          "required": [
+            "max"
+          ],
+          "properties": {
+            "max": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "`{avg: field}`.",
+          "type": "object",
+          "required": [
+            "avg"
+          ],
+          "properties": {
+            "avg": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "RawBindingSpec": {
       "description": "A binding, as a document says it.",
@@ -2129,6 +2217,69 @@
       },
       "additionalProperties": false
     },
+    "RawViewField": {
+      "description": "One view field as written: a [`Field`] that may declare `aggregate:`.\n\nA sibling of [`Field`] rather than [`Field`] flattened, so `Field`'s `deny_unknown_fields` keeps refusing `aggregate:` at every other position a field is written.",
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "aggregate": {
+          "description": "What it computes over the group's rows, where it is an aggregate.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawAggregate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "description": "The identifier a code emitter spells this as, when the one it would derive is taken.\n\nA target that has no dotted type names flattens a qualified name to one identifier, so `billing.invoice.Invoice.State` and an authored `billing.invoice.InvoiceState` both want to be `InvoiceState`. One of them has to move, and this says which — because the author knows which name carries meaning and an emitter does not.\n\nIt is deliberately not a per-target map. A name that differs between Rust and Go is two names to keep in step, and nothing in this model has ever needed one: the collision is a property of flattening, which every such target does the same way.\n\nOnly code emitters read it. Wire names, document schemas and the qualified name itself are untouched, so setting it cannot break a deployed consumer — which is the whole reason it is a separate key rather than a rename.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "display": {
+          "description": "What a person is shown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Its name.",
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "summary": {
+          "description": "One line about what it is, for generated documentation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "Its type. For an aggregate field, exactly the function's result type.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TypeRef"
+            }
+          ]
+        },
+        "wire": {
+          "description": "What this is called on the wire — an HTTP path segment, a topic name, a JSON field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawViewSpec": {
       "description": "A view as written in a document, before validation.",
       "type": "object",
@@ -2147,10 +2298,10 @@
           ]
         },
         "fields": {
-          "description": "What it exposes inline.",
+          "description": "What it exposes inline. A field may declare `aggregate:`.",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Field"
+            "$ref": "#/definitions/RawViewField"
           }
         },
         "filter": {
@@ -2163,6 +2314,13 @@
               "type": "null"
             }
           ]
+        },
+        "group_by": {
+          "description": "The view fields the admitted rows are partitioned by. Absent or `[]`: not grouped.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "name": {
           "description": "Its stable identity.",

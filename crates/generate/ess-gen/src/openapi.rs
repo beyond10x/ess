@@ -525,6 +525,10 @@ fn view_description(ir: &EssIr, view: &ResolvedView) -> String {
     } else {
         parts.push("Contains every instance.".to_owned());
     }
+    if let Some(aggregation) = &view.aggregation {
+        parts.push(aggregation.grouping_sentence());
+        parts.push(format!("{}.", aggregation.clauses().join("; ")));
+    }
     parts.push(match view.consistency {
         Consistency::ReadYourWrites => {
             "Read-your-writes: a caller that has just issued a command sees its effect here."

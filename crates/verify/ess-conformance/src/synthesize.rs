@@ -165,6 +165,7 @@
 //! one is a gap in this crate rather than in the model, and it is
 //! [`RefusalCause::NotSynthesisedYet`].
 
+mod aggregate;
 mod subject_fact;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -469,6 +470,28 @@ pub enum RefusalCause {
         /// reach.
         at: Option<(ViewRef, String)>,
     },
+    /// An aggregate view whose rows this scenario cannot keep apart from every other scenario's.
+    ///
+    /// An aggregate is an exact number, and §8 lets a target be shared, so a row another scenario
+    /// made landing in the same group turns `3` into `4`. The scenario scopes its groups by a key
+    /// value no other scenario produces, which needs a `String` or `Uuid` group key, or a parameter
+    /// compared with one, that the creating command sets from its input
+    /// (`docs/design/aggregate-views.md`, "Scoping"). Without one, an exact aggregate would be a
+    /// claim about the target's other users.
+    AggregateUnscoped {
+        /// The aggregate view.
+        view: ViewRef,
+    },
+    /// An aggregate view the arrangement cannot produce rows for as the page's pattern requires.
+    ///
+    /// A parameter read other than by one top-level equality conjunct, more than seven inputs, a
+    /// field the search cannot set, or a filter truth it cannot reach. `reason` names which.
+    AggregateUnwitnessed {
+        /// The aggregate view.
+        view: ViewRef,
+        /// What could not be arranged, naming the field or the row.
+        reason: String,
+    },
     /// Two scenarios claimed one id. A drift alarm: `ess-domain` refuses a duplicated declaration.
     DuplicateScenario,
     /// The outcome's strategy and its condition disagree about how a scenario reaches the branch.
@@ -521,6 +544,8 @@ impl RefusalCause {
                 Self::RefusalUndeclared { .. } => 12,
                 Self::ValueInvariantUnwitnessed { .. } => 13,
                 Self::OrderUnwitnessed { .. } => 14,
+                Self::AggregateUnscoped { .. } => crate::aggregate::UNSCOPED,
+                Self::AggregateUnwitnessed { .. } => crate::aggregate::UNWITNESSED,
             },
         )
     }
@@ -547,6 +572,15 @@ impl RefusalCause {
             Self::OrderUnwitnessed { .. } => {
                 "declare an outcome that can leave a second instance where this view shows one, or \
                  drop `order_by:`; an order over one row is a claim no implementation can fail"
+            }
+            Self::AggregateUnscoped { .. } => {
+                "group by, or filter by a parameter over, a `String` or `Uuid` field the creating \
+                 command sets from its input"
+            }
+            Self::AggregateUnwitnessed { .. } => {
+                "let the creating command set every field the view groups by or aggregates from \
+                 its input, and read a parameter only as `field == param.name` at the top of the \
+                 filter"
             }
             Self::NotSynthesisedYet { .. } => "a later slice of `ess-conformance` synthesises this",
             Self::BindingUnobservable { gap, .. } => gap.hint(),
@@ -641,6 +675,9 @@ impl fmt::Display for RefusalCause {
                  not say how: no `wrong_state:` outcome and no declared error, so the scenario can \
                  only require that nothing happened"
             ),
+            Self::AggregateUnscoped { .. } | Self::AggregateUnwitnessed { .. } => {
+                aggregate_refusal(f, self)
+            }
             Self::DuplicateScenario => f.write_str("a second scenario claimed this id"),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
@@ -681,6 +718,21 @@ impl fmt::Display for RefusalCause {
                 at,
             } => value_unwitnessed(f, value, invariants, at.as_ref()),
         }
+    }
+}
+
+/// Renders the two aggregate view refusals.
+fn aggregate_refusal(f: &mut fmt::Formatter<'_>, cause: &RefusalCause) -> fmt::Result {
+    match cause {
+        RefusalCause::AggregateUnscoped { view } => write!(
+            f,
+            "`{view}` reports exact aggregates, and no group key or parameter lets this scenario \
+             keep its rows apart from every other scenario's on a shared target"
+        ),
+        RefusalCause::AggregateUnwitnessed { view, reason } => {
+            write!(f, "`{view}` cannot be arranged: {reason}")
+        }
+        _ => Ok(()),
     }
 }
 
@@ -1009,6 +1061,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     state_refusals(ir, &actors, &mut suite, &mut refusals);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
+    aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
     suite.select_fresh_format();
 
     Synthesis {
@@ -2109,7 +2162,34 @@ fn arrange(
         from: ir.entity(entity).lifecycle.initial.clone(),
     })?;
 
-    let mut arrangement = created(ir, entity, creator, actors, distinction, arranging, None)?;
+    let arrangement = created(ir, entity, creator, actors, distinction, arranging, None)?;
+    advance(
+        ir,
+        entity,
+        arrangement,
+        route,
+        target,
+        actors,
+        distinction,
+        arranging,
+    )
+}
+
+/// The second half of [`arrange`]: an instance already created, driven along `route` to `target`.
+///
+/// Split out so an arrangement that chose the creating command's input itself — an aggregate row
+/// whose fields are the page's pattern — reaches its state exactly as every other one does.
+#[allow(clippy::too_many_arguments)]
+fn advance(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    mut arrangement: Arrangement,
+    route: Vec<Driver<'_>>,
+    target: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+) -> Result<Arrangement, Unreachable> {
     for driver in route {
         // A move whose command reads the row's stored fields is taken only where the row the
         // arrangement built selects it, so that is checked rather than assumed. Where the plain
@@ -2758,7 +2838,7 @@ fn observe_selection_subject(
 ) -> Result<(Vec<ScenarioStep>, ViewRef), RefusalCause> {
     let entity = ir.entity(&subject.entity);
     let view = ir.views().values().find(|view| {
-        view.source == subject.entity && view.params.is_empty() && view.filter.is_none()
+        !view.is_aggregate() && view.source == subject.entity && view.params.is_empty() && view.filter.is_none()
             && view.assertion_style == AssertionStyle::Expect
             && view.field(&entity.identity.name).is_some_and(|field| field.type_ref == entity.identity.type_ref)
             && view.field(EntitySpec::STATE).is_some_and(|field| field.type_ref == entity.state_field().type_ref)
@@ -3177,7 +3257,7 @@ fn view_expectations(
         return out;
     };
     let (instance, settled) = (run.instance.as_ref(), &run.settled);
-    let projections = ir.projections();
+    let projections = row_projections(ir);
     let Some(views) = projections.get(&subject.entity) else {
         return out;
     };
@@ -3690,7 +3770,17 @@ fn shows(
     let Some(filter) = &view.filter else {
         return Ok(true);
     };
-    let mut facts = crate::input::TypedFacts::new(ir, &view.fields, FactStore::new());
+    // A filter reads the source's rows. A row-level view projects them at the source's types, so
+    // its own fields type the facts; an aggregate view's fields are group keys and results, and
+    // `talk_seconds` in its filter is the row's value and never the sum a field of that name holds.
+    let source_fields;
+    let typed = if view.is_aggregate() {
+        source_fields = ir.entity(&view.source).observable_fields();
+        &source_fields
+    } else {
+        &view.fields
+    };
+    let mut facts = crate::input::TypedFacts::new(ir, typed, FactStore::new());
     let path = FactPath::new(EntitySpec::STATE)
         .unwrap_or_else(|error| panic!("`{}` is a fact path: {error}", EntitySpec::STATE));
     facts.set(path, FactValue::text(state.as_str()));
@@ -4179,7 +4269,7 @@ fn invariants(
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
 ) {
-    let projections = ir.projections();
+    let projections = row_projections(ir);
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
             let Some(subject) = &outcome.subject else {
@@ -4406,7 +4496,7 @@ fn positions_of<'a>(
     invariants: &[Invariant],
 ) -> Vec<(&'a ResolvedView, String)> {
     let mut positions = Vec::new();
-    for view in ir.views().values() {
+    for view in ir.views().values().filter(|view| !view.is_aggregate()) {
         for field in &view.fields {
             let mut found = Vec::new();
             reaches(
@@ -5255,6 +5345,22 @@ fn granted_actors(ir: &EssIr) -> BTreeMap<QualifiedName, ActorRef> {
         .collect()
 }
 
+/// Every view that holds one row per instance of its source, by the entity it projects.
+///
+/// [`EssIr::projections`] without the aggregate views: an aggregate row is a group, not an
+/// instance, so a picker that finds an instance's row there — by its identity, its `state`, or a
+/// field it carries — would be asserting about a row that does not exist. Aggregate views have a
+/// family of their own (`aggregate`), and every row-level picker in this module reads this or
+/// filters on [`ResolvedView::is_aggregate`].
+fn row_projections(ir: &EssIr) -> BTreeMap<&EntityHandle, Vec<&ResolvedView>> {
+    let mut out = ir.projections();
+    for views in out.values_mut() {
+        views.retain(|view| !view.is_aggregate());
+    }
+    out.retain(|_, views| !views.is_empty());
+    out
+}
+
 /// The construct a scenario id is about.
 fn subject_of(id: &ScenarioId) -> EssSemanticRef {
     match id {
@@ -5265,6 +5371,7 @@ fn subject_of(id: &ScenarioId) -> EssSemanticRef {
         }
         ScenarioId::ValueInvariant { value, .. } => value.clone().into(),
         ScenarioId::Binding { binding, .. } => binding.clone().into(),
+        ScenarioId::Aggregate { view } => view.clone().into(),
         // Synthesis mints every id it refuses about and mints no authored one — an authored
         // scenario is a person's claim, compiled and refused by [`crate::authored`] in a vocabulary
         // of its own. The arm is here because the match is total, and it answers with the one
@@ -5330,6 +5437,13 @@ mod tests {
                 invariant: "weight_grams >= 0".to_owned(),
                 unpublished: vec![FactPath::new("weight_grams").expect("a fact path")],
                 state: StateName::new("Placed").expect("valid"),
+            },
+            RefusalCause::AggregateUnscoped {
+                view: ViewRef::new(QualifiedName::new("metrics.session.ByState").expect("valid")),
+            },
+            RefusalCause::AggregateUnwitnessed {
+                view: ViewRef::new(QualifiedName::new("metrics.session.ByState").expect("valid")),
+                reason: "a parameter is read inside a disjunction".to_owned(),
             },
         ];
 

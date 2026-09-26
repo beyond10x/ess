@@ -85,8 +85,31 @@ fn page_script(bridge: &Bridge<'_>) -> String {
          into the host's `cdylib`.\nconst CANDIDATES = \
          [\n  \"target/wasm32-unknown-unknown/release/{module}.wasm\",\n  \
          \"target/wasm32-unknown-unknown/debug/{module}.wasm\",\n  \
-         \"{module}.wasm\",\n];\n{SCRIPT}"
+         \"{module}.wasm\",\n];\n{}",
+        script(bridge)
     )
+}
+
+/// A view card's note, as the fixed script writes it.
+const VIEW_NOTE: &str = r#"`projects ${view.entity} at ${view.consistency} consistency` + (view.filter ? `, where ${view.filter}` : "") }));"#;
+
+/// The same note, saying how an aggregate view's rows are grouped (`docs/design/aggregate-views.md`).
+const AGGREGATE_NOTE: &str = r#"`projects ${view.entity} at ${view.consistency} consistency` + (view.filter ? `, where ${view.filter}` : "") +
+      (view.group_by ? (view.group_by.length ? `, grouped by ${view.group_by.join(", ")}` : ", one row") : "") }));"#;
+
+/// The fixed script, with the aggregate note only where the page presents an aggregate view — so
+/// the page of every model without one keeps its bytes.
+fn script(bridge: &Bridge<'_>) -> String {
+    let aggregate = bridge
+        .ir
+        .views()
+        .values()
+        .any(|view| view.is_aggregate() && bridge.presents_view(&view.name));
+    if aggregate {
+        SCRIPT.replacen(VIEW_NOTE, AGGREGATE_NOTE, 1)
+    } else {
+        SCRIPT.to_owned()
+    }
 }
 
 /// The fixed part of the page's script: everything that renders the catalogue.
@@ -608,3 +631,16 @@ summary { cursor: pointer; opacity: .8; }
 .accepted strong { color: color-mix(in srgb, currentColor 40%, green); }
 .refused { color: color-mix(in srgb, currentColor 35%, crimson); }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_aggregate_note_replaces_exactly_the_view_note_the_script_writes() {
+        // A replacement that found nothing would leave an aggregate page silent about its
+        // grouping and every test of a model without one green.
+        assert_eq!(SCRIPT.matches(VIEW_NOTE).count(), 1);
+        assert!(!SCRIPT.contains("group_by"));
+    }
+}

@@ -179,16 +179,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=15) {
+    if !matches!(version.major(), 1..=17) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–15",
+            "execution readers admit suite majors 1–17",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13 and suite/15",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15 and suite/17",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -461,11 +461,18 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     Ok(())
 }
 
+/// The construct-owned format gates: each refuses an explicitly pinned older suite version that
+/// carries the vocabulary it owns.
+fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::replay::admit_suite(suite)?;
+    crate::aggregate::admit_suite(suite)?;
+    crate::quoted_predicate_format::admit_suite(suite)?;
+    crate::text_match_format::admit_suite(suite)
+}
+
 /// Check directly constructed suites before artifact creation or target effects.
 pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
-    crate::replay::admit_suite(suite)?;
-    crate::quoted_predicate_format::admit_suite(suite)?;
-    crate::text_match_format::admit_suite(suite)?;
+    construct_formats(suite)?;
     response_payloads(suite)?;
     entity_setup(suite)?;
     crate::periodic::admit_suite(suite)?;

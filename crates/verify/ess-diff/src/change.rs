@@ -342,6 +342,11 @@ impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
     pub const fn minimum_format(&self) -> u32 {
         match self {
+            Self::View {
+                changed:
+                    ViewChange::GroupingChanged { .. } | ViewChange::FieldAggregateChanged { .. },
+                ..
+            } => 7,
             Self::Command {
                 changed:
                     CommandChange::OutcomeReplayChanged { .. }
@@ -2450,6 +2455,27 @@ pub enum ViewChange {
         /// The filter it has.
         after: Option<String>,
     },
+    /// The view fields its admitted rows are grouped by differ (`ess-diff/7`).
+    ///
+    /// Empty means ungrouped: one row. A view that stops being an aggregate view reports its grouping
+    /// as empty and every field that was an aggregate as [`FieldAggregateChanged`](Self::FieldAggregateChanged).
+    GroupingChanged {
+        /// The group keys it had, in declaration order.
+        before: Vec<String>,
+        /// The group keys it has.
+        after: Vec<String>,
+    },
+    /// What one field computes over a group differs (`ess-diff/7`), compared over the union of
+    /// field names. Rendered `sum(talk_seconds)` or `count()`; `None` means the field is not an
+    /// aggregate on that side.
+    FieldAggregateChanged {
+        /// The field.
+        field: String,
+        /// What it computed.
+        before: Option<String>,
+        /// What it computes.
+        after: Option<String>,
+    },
     /// How soon the view reflects a command that has returned differs.
     ///
     /// [`Changed`](SemanticRelation::Changed), although `read_your_writes` is strictly the stronger
@@ -2517,6 +2543,8 @@ impl ViewChange {
             Self::FieldSummaryChanged { .. } => "field-summary-changed",
             Self::FieldOrderChanged { .. } => "field-order-changed",
             Self::FilterChanged { .. } => "filter-changed",
+            Self::GroupingChanged { .. } => "grouping-changed",
+            Self::FieldAggregateChanged { .. } => "field-aggregate-changed",
             Self::ConsistencyChanged { .. } => "consistency-changed",
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
@@ -2532,7 +2560,8 @@ impl ViewChange {
             | Self::FieldTypeChanged { field, .. }
             | Self::FieldWireNameChanged { field, .. }
             | Self::FieldDisplayNameChanged { field, .. }
-            | Self::FieldSummaryChanged { field, .. } => Some(field.clone()),
+            | Self::FieldSummaryChanged { field, .. }
+            | Self::FieldAggregateChanged { field, .. } => Some(field.clone()),
             _ => None,
         }
     }
@@ -2593,6 +2622,30 @@ impl ViewChange {
                     .as_ref()
                     .map_or_else(|| "every instance".to_owned(), |it| format!("`{it}`"))
             ),
+            Self::GroupingChanged { before, after } => {
+                let render = |keys: &[String]| {
+                    if keys.is_empty() {
+                        "one row".to_owned()
+                    } else {
+                        format!("grouped by {}", keys.join(", "))
+                    }
+                };
+                format!("{}, was {}", render(after), render(before))
+            }
+            Self::FieldAggregateChanged {
+                field,
+                before,
+                after,
+            } => {
+                let render = |computed: Option<&String>| {
+                    computed.map_or_else(|| "not an aggregate".to_owned(), |it| format!("`{it}`"))
+                };
+                format!(
+                    "field `{field}` computes {}, computed {}",
+                    render(after.as_ref()),
+                    render(before.as_ref())
+                )
+            }
             Self::ConsistencyChanged { before, after } => {
                 format!("consistency `{before}` → `{after}`")
             }

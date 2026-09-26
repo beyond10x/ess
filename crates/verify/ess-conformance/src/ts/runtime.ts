@@ -981,7 +981,7 @@ export function checkedRefusal(
         throw coverageError();
       }
       let number = 0;
-      for (let n = 1; n <= 15; n += 1) {
+      for (let n = 1; n <= 17; n += 1) {
         if (code === `ESS-SYNTH-${String(n).padStart(3, '0')}`) {
           number = n;
         }
@@ -990,7 +990,14 @@ export function checkedRefusal(
         throw coverageError();
       }
       let effect = 'candidate_not_emitted';
-      if (number === 5 || number === 11 || number === 12 || number === 14) {
+      if (
+        number === 5 ||
+        number === 11 ||
+        number === 12 ||
+        number === 14 ||
+        number === 16 ||
+        number === 17
+      ) {
         effect = 'check_not_emitted';
       }
       if (refusal.effect !== effect) {
@@ -4192,6 +4199,10 @@ export function scenarioIdentity(id: string): void {
     valid = q(segment(0)) && q(segment(3)) && k(segment(4));
   } else if (parts.length === 5 && segment(1) === 'invariant' && segment(2) === 'at') {
     valid = q(segment(0)) && q(segment(3)) && segment(4) !== '';
+  } else if (parts.length === 2 && segment(1) === 'aggregate' && q(segment(0))) {
+    // An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17, which this runtime
+    // refuses as whole envelopes; every suite it admits is older, so the id is refused by name.
+    throw new Error('aggregate views require suite/16 or /17');
   }
   if (!valid) {
     throw new Error(`malformed scenario ID ${quoteGo(id)}`);
@@ -4288,6 +4299,13 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       for (const item of coverage.refused as Node[]) {
         if (isObject(item) && item.code === 'ESS-SYNTH-015' && major < 7) {
           throw new Error('accessor refusal requires suite/7');
+        }
+        if (
+          isObject(item) &&
+          (item.code === 'ESS-SYNTH-016' || item.code === 'ESS-SYNTH-017') &&
+          major < 17
+        ) {
+          throw new Error('aggregate view refusals require suite/17');
         }
       }
     }

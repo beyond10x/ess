@@ -35,6 +35,9 @@
 //! | a projected field's type disagrees with the entity's | [`TypeMismatch`](ValidationCode::TypeMismatch) |
 //! | a filter reads something the source does not have | [`UnobservableFact`](ValidationCode::UnobservableFact) |
 //! | a field is projected twice | [`DuplicateDeclaration`](ValidationCode::DuplicateDeclaration) |
+//!
+//! An **aggregate view** — `group_by:` and a field-level `aggregate:` — adds fifteen rules, V1–V15 of
+//! `docs/design/aggregate-views.md`; [`Aggregation`] says which run where.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -43,7 +46,7 @@ use ess_primitives::error::{ParseError, ValidationCode, ValidationError, Validat
 use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
-use crate::types::{Field, TypeBody, TypeRegistry};
+use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
 
 /// How soon a view reflects a command that has already returned.
 ///
@@ -284,6 +287,378 @@ impl<'de> serde::Deserialize<'de> for Ranking {
     }
 }
 
+/// One aggregate function, as written (`docs/design/aggregate-views.md`, "Result types").
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregateFunction {
+    /// How many admitted rows the group holds. Takes no argument.
+    Count,
+    /// How many distinct values of one field the group's rows hold.
+    CountDistinct,
+    /// The exact sum of one numeric field.
+    Sum,
+    /// The least value of one ordered field; absent over no rows.
+    Min,
+    /// The greatest value of one ordered field; absent over no rows.
+    Max,
+    /// The mean of one numeric field, rounded to 6 fractional digits, ties to even; absent over no
+    /// rows.
+    Avg,
+}
+
+impl AggregateFunction {
+    /// Every function, in the order the page's table lists them.
+    pub const ALL: [Self; 6] = [
+        Self::Count,
+        Self::CountDistinct,
+        Self::Sum,
+        Self::Min,
+        Self::Max,
+        Self::Avg,
+    ];
+
+    /// The function as written in a document.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::CountDistinct => "count_distinct",
+            Self::Sum => "sum",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::Avg => "avg",
+        }
+    }
+}
+
+impl fmt::Display for AggregateFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One aggregate field's computation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Aggregate {
+    /// The function.
+    pub function: AggregateFunction,
+    /// The source field it reads: a top-level observable field of the view's source. `None`
+    /// exactly for [`AggregateFunction::Count`].
+    pub input: Option<String>,
+}
+
+impl fmt::Display for Aggregate {
+    /// `sum(talk_seconds)`, or `count()`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.function,
+            self.input.as_deref().unwrap_or_default()
+        )
+    }
+}
+
+impl From<&RawAggregate> for Aggregate {
+    fn from(raw: &RawAggregate) -> Self {
+        let (function, input) = match raw {
+            RawAggregate::Count(_) => (AggregateFunction::Count, None),
+            RawAggregate::CountDistinct(input) => {
+                (AggregateFunction::CountDistinct, Some(input.clone()))
+            }
+            RawAggregate::Sum(input) => (AggregateFunction::Sum, Some(input.clone())),
+            RawAggregate::Min(input) => (AggregateFunction::Min, Some(input.clone())),
+            RawAggregate::Max(input) => (AggregateFunction::Max, Some(input.clone())),
+            RawAggregate::Avg(input) => (AggregateFunction::Avg, Some(input.clone())),
+        };
+        Self { function, input }
+    }
+}
+
+impl From<&Aggregate> for RawAggregate {
+    fn from(aggregate: &Aggregate) -> Self {
+        let input = aggregate.input.clone().unwrap_or_default();
+        match aggregate.function {
+            AggregateFunction::Count => Self::Count(Empty {}),
+            AggregateFunction::CountDistinct => Self::CountDistinct(input),
+            AggregateFunction::Sum => Self::Sum(input),
+            AggregateFunction::Min => Self::Min(input),
+            AggregateFunction::Max => Self::Max(input),
+            AggregateFunction::Avg => Self::Avg(input),
+        }
+    }
+}
+
+/// What makes a view an aggregate view. Present iff at least one field declares `aggregate:`.
+///
+/// # Where each rule runs
+///
+/// V3, V5 and V13 of the design page run where the view is read (`TryFrom<RawViewSpec>`), because
+/// their subject is the written `group_by` list, and a `group_by` with no aggregate has no
+/// [`Aggregation`] to be checked later. Every other rule runs in [`ViewSpec::validate`], and V15 —
+/// the source format — beside the other format gates.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Aggregation {
+    /// Group-key view field names, in declaration order. Empty: the view returns one row.
+    pub group_by: Vec<String>,
+    /// Aggregate view field name → its computation.
+    pub functions: BTreeMap<String, Aggregate>,
+}
+
+impl Aggregation {
+    /// The computation of the aggregate field `name`, where it is one.
+    pub fn function(&self, name: &str) -> Option<&Aggregate> {
+        self.functions.get(name)
+    }
+
+    /// Whether the view returns exactly one row: no group key.
+    pub fn is_ungrouped(&self) -> bool {
+        self.group_by.is_empty()
+    }
+}
+
+/// An aggregate as written: a map with exactly one key, the function.
+///
+/// The shape is the reader's to refuse — an unknown function, two keys, or an argument to `count`
+/// fails the parse with serde's message naming the six functions, as an unknown key does anywhere a
+/// [`Field`] is read.
+///
+/// Read and written by hand as a one-entry map rather than derived: `serde_yaml` reads and writes a
+/// derived externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the
+/// design page fixes and not what a JSON document can carry. The schema is still the derived one —
+/// one object per function with exactly that key.
+#[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RawAggregate {
+    /// `{count: {}}`.
+    Count(Empty),
+    /// `{count_distinct: field}`.
+    CountDistinct(String),
+    /// `{sum: field}`.
+    Sum(String),
+    /// `{min: field}`.
+    Min(String),
+    /// `{max: field}`.
+    Max(String),
+    /// `{avg: field}`.
+    Avg(String),
+}
+
+impl RawAggregate {
+    /// Every function name, as the reader's refusal lists them.
+    const NAMES: &'static [&'static str] = &["count", "count_distinct", "sum", "min", "max", "avg"];
+}
+
+impl serde::Serialize for RawAggregate {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(1))?;
+        match self {
+            Self::Count(empty) => map.serialize_entry("count", empty)?,
+            Self::CountDistinct(input) => map.serialize_entry("count_distinct", input)?,
+            Self::Sum(input) => map.serialize_entry("sum", input)?,
+            Self::Min(input) => map.serialize_entry("min", input)?,
+            Self::Max(input) => map.serialize_entry("max", input)?,
+            Self::Avg(input) => map.serialize_entry("avg", input)?,
+        }
+        map.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawAggregate {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = RawAggregate;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a map with exactly one aggregate function as its key")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                use serde::de::Error;
+                let Some(function) = map.next_key::<String>()? else {
+                    return Err(A::Error::custom(format!(
+                        "an aggregate names one function; expected one of {}",
+                        RawAggregate::NAMES.join(", ")
+                    )));
+                };
+                let aggregate = match function.as_str() {
+                    "count" => RawAggregate::Count(map.next_value()?),
+                    "count_distinct" => RawAggregate::CountDistinct(map.next_value()?),
+                    "sum" => RawAggregate::Sum(map.next_value()?),
+                    "min" => RawAggregate::Min(map.next_value()?),
+                    "max" => RawAggregate::Max(map.next_value()?),
+                    "avg" => RawAggregate::Avg(map.next_value()?),
+                    other => return Err(A::Error::unknown_variant(other, RawAggregate::NAMES)),
+                };
+                if let Some(second) = map.next_key::<String>()? {
+                    return Err(A::Error::custom(format!(
+                        "an aggregate names exactly one function, and this one also names \
+                         `{second}`; expected one of {}",
+                        RawAggregate::NAMES.join(", ")
+                    )));
+                }
+                Ok(aggregate)
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
+}
+
+/// The empty map `count` takes: no other spelling of "no argument" is accepted.
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct Empty {}
+
+/// One view field as written: a [`Field`] that may declare `aggregate:`.
+///
+/// A sibling of [`Field`] rather than [`Field`] flattened, so `Field`'s `deny_unknown_fields` keeps
+/// refusing `aggregate:` at every other position a field is written.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RawViewField {
+    /// Its name.
+    #[serde(deserialize_with = "crate::types::deserialize_field_name")]
+    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    pub name: String,
+    /// Its type. For an aggregate field, exactly the function's result type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// What it is on the wire, and what a person is shown.
+    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
+    /// What it computes over the group's rows, where it is an aggregate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aggregate: Option<RawAggregate>,
+}
+
+impl RawViewField {
+    fn split(self) -> (Field, Option<RawAggregate>) {
+        (
+            Field {
+                name: self.name,
+                type_ref: self.type_ref,
+                naming: self.naming,
+            },
+            self.aggregate,
+        )
+    }
+}
+
+/// A type reference with every newtype followed, and whether an `Optional` was met on the way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Unwrapped {
+    /// An `Optional<…>` appears somewhere in the chain.
+    optional: bool,
+    /// What the chain ends in: a primitive, an enum, a struct, a union, a list or a map.
+    leaf: Leaf,
+}
+
+/// The end of a newtype chain, classified for the aggregate tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Leaf {
+    /// A primitive.
+    Primitive(Primitive),
+    /// A declared enum (including an entity's `state`).
+    Enum,
+    /// A struct, a union, a list, a map, or a type that does not resolve.
+    Other,
+}
+
+fn unwrap_chain(type_ref: &TypeRef, types: &TypeRegistry) -> Unwrapped {
+    let mut optional = false;
+    let mut current = type_ref;
+    for _ in 0..=MAX_TYPE_DEPTH {
+        match current {
+            TypeRef::Primitive(primitive) => {
+                return Unwrapped {
+                    optional,
+                    leaf: Leaf::Primitive(*primitive),
+                }
+            }
+            TypeRef::Optional(inner) => {
+                optional = true;
+                current = inner;
+            }
+            TypeRef::Named(name) => match types.get(name).map(|declared| &declared.body) {
+                Some(TypeBody::Newtype { of, .. }) => current = of,
+                Some(TypeBody::Enum { .. }) => {
+                    return Unwrapped {
+                        optional,
+                        leaf: Leaf::Enum,
+                    }
+                }
+                _ => break,
+            },
+            TypeRef::List(_) | TypeRef::Map(..) => break,
+        }
+    }
+    Unwrapped {
+        optional,
+        leaf: Leaf::Other,
+    }
+}
+
+impl Leaf {
+    fn is(self, primitive: Primitive) -> bool {
+        self == Self::Primitive(primitive)
+    }
+}
+
+/// The result type `function` gives over a source field of type `source` unwrapping to `leaf`, or
+/// `None` where the function does not admit it (V8).
+fn result_type(function: AggregateFunction, leaf: Leaf, source: &TypeRef) -> Option<TypeRef> {
+    use Primitive as P;
+    let integer = TypeRef::Primitive(P::Integer);
+    match function {
+        AggregateFunction::Count => Some(integer),
+        AggregateFunction::CountDistinct => (leaf == Leaf::Enum
+            || [
+                P::String,
+                P::Integer,
+                P::Decimal,
+                P::Boolean,
+                P::Uuid,
+                P::Timestamp,
+            ]
+            .iter()
+            .any(|admitted| leaf.is(*admitted)))
+        .then_some(integer),
+        // A sum drops a newtype: it does not satisfy the invariants its inputs do.
+        AggregateFunction::Sum => match leaf {
+            Leaf::Primitive(P::Integer) => Some(integer),
+            Leaf::Primitive(P::Decimal) => Some(TypeRef::Primitive(P::Decimal)),
+            _ => None,
+        },
+        // A minimum is one of the inputs, so it keeps the source's declared type.
+        AggregateFunction::Min | AggregateFunction::Max => {
+            [P::Integer, P::Decimal, P::String, P::Timestamp]
+                .iter()
+                .any(|admitted| leaf.is(*admitted))
+                .then(|| TypeRef::Optional(Box::new(source.clone())))
+        }
+        AggregateFunction::Avg => (leaf.is(P::Integer) || leaf.is(P::Decimal))
+            .then(|| TypeRef::Optional(Box::new(TypeRef::Primitive(P::Decimal)))),
+    }
+}
+
 /// A declared projection of an entity: the part of it the outside world is promised.
 ///
 /// A view does not require the implementation to use CQRS (§4.6). It says what can be observed, not
@@ -320,6 +695,14 @@ pub struct ViewSpec {
     pub params: Vec<Field>,
     /// Which instances it contains. Absent means all of them.
     pub filter: Option<Predicate>,
+    /// What makes this an aggregate view, where it is one.
+    ///
+    /// Present exactly when at least one field declares `aggregate:`. The filter runs per source
+    /// row first; the admitted rows are then partitioned by [`Aggregation::group_by`] and each
+    /// aggregate is computed per partition (`docs/design/aggregate-views.md`). The aggregate fields
+    /// stay in [`Self::fields`] under their declared result types, so every reader of the row shape
+    /// keeps working unchanged.
+    pub aggregation: Option<Aggregation>,
     /// The order the rows are ranked in, most significant key first. Empty means unordered.
     ///
     /// A view named for a position — `CallPosition`, `TopAgents` — says nothing about position
@@ -334,6 +717,11 @@ pub struct ViewSpec {
 }
 
 impl ViewSpec {
+    /// Whether this view computes aggregates over its source's rows rather than projecting them.
+    pub fn is_aggregate(&self) -> bool {
+        self.aggregation.is_some()
+    }
+
     /// The inline projected field with this name.
     ///
     /// Use [`Self::projected_fields`] when the view may declare a reusable shape.
@@ -501,47 +889,7 @@ impl ViewSpec {
             return errors.into_result(());
         };
 
-        let known = |name: &str| source_fields.iter().find(|field| field.name == name);
-
-        for (index, field) in projected_fields.into_iter().flatten().enumerate() {
-            let field_at = if self.shape.is_some() {
-                format!("shape.fields[{index}]")
-            } else {
-                format!("fields[{index}]")
-            };
-            errors.extend(types.resolve(&field.type_ref, &at(&format!("{field_at}.type"))));
-
-            let Some(source_field) = known(&field.name) else {
-                errors.push(
-                    ValidationError::new(
-                        ValidationCode::UndeclaredReference,
-                        at(&field_at),
-                        format!(
-                            "`{}` has no field `{}`, so `{}` promises an observation nothing \
-                             produces",
-                            self.source, field.name, self.name
-                        ),
-                    )
-                    .with_hint(format!(
-                        "fields of `{}`: {}",
-                        self.source,
-                        join(source_fields.iter().map(|field| field.name.clone()))
-                    )),
-                );
-                continue;
-            };
-
-            if !crate::types::is_assignable(&source_field.type_ref, &field.type_ref) {
-                errors.push(ValidationError::new(
-                    ValidationCode::TypeMismatch,
-                    at(&format!("{field_at}.type")),
-                    format!(
-                        "`{}` projects `{}` as {}, but `{}` declares it as {}",
-                        self.name, field.name, field.type_ref, self.source, source_field.type_ref
-                    ),
-                ));
-            }
-        }
+        errors.extend(self.validate_projected(projected_fields, source_fields, types));
 
         for field in &self.params {
             errors.extend(
@@ -580,8 +928,312 @@ impl ViewSpec {
         }
         errors.extend(self.validate_params(&read_params));
         errors.extend(self.validate_order(projected_fields));
+        errors.extend(self.validate_grouping(types));
 
         errors.into_result(())
+    }
+
+    /// Every projected field against the source: a declared field at a type the source can fill,
+    /// or an aggregate, which its own rules check.
+    fn validate_projected(
+        &self,
+        projected: Option<&[Field]>,
+        source_fields: &[Field],
+        types: &TypeRegistry,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
+        let known = |name: &str| source_fields.iter().find(|field| field.name == name);
+
+        for (index, field) in projected.into_iter().flatten().enumerate() {
+            let field_at = if self.shape.is_some() {
+                format!("shape.fields[{index}]")
+            } else {
+                format!("fields[{index}]")
+            };
+            errors.extend(types.resolve(&field.type_ref, &at(&format!("{field_at}.type"))));
+            if let Some(own) = self.validate_aggregate(&field_at, field, types, source_fields) {
+                errors.extend(own);
+                continue;
+            }
+
+            let Some(source_field) = known(&field.name) else {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UndeclaredReference,
+                        at(&field_at),
+                        format!(
+                            "`{}` has no field `{}`, so `{}` promises an observation nothing \
+                             produces",
+                            self.source, field.name, self.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "fields of `{}`: {}",
+                        self.source,
+                        join(source_fields.iter().map(|field| field.name.clone()))
+                    )),
+                );
+                continue;
+            };
+
+            if !crate::types::is_assignable(&source_field.type_ref, &field.type_ref) {
+                errors.push(ValidationError::new(
+                    ValidationCode::TypeMismatch,
+                    at(&format!("{field_at}.type")),
+                    format!(
+                        "`{}` projects `{}` as {}, but `{}` declares it as {}",
+                        self.name, field.name, field.type_ref, self.source, source_field.type_ref
+                    ),
+                ));
+            }
+        }
+        errors
+    }
+
+    /// V6–V10: one aggregate field's argument and its declared result type, or `None` where the
+    /// field is not an aggregate. An aggregate field is computed, not projected, so these rules
+    /// replace the source-field check [`Self::validate`] makes of every other field.
+    fn validate_aggregate(
+        &self,
+        field_at: &str,
+        field: &Field,
+        types: &TypeRegistry,
+        source_fields: &[Field],
+    ) -> Option<ValidationErrors> {
+        let aggregate = self.aggregation.as_ref()?.function(&field.name)?;
+        let mut errors = ValidationErrors::new();
+        let at = |suffix: &str| format!("view.{}.{field_at}.{suffix}", self.name);
+        let source_type = match &aggregate.input {
+            None => None,
+            Some(input) if input.contains('.') => {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedConstruct,
+                        at("aggregate"),
+                        format!(
+                            "`{}` aggregates `{input}`, a path into a field; an aggregate reads one \
+                             top-level field of `{}`",
+                            self.name, self.source
+                        ),
+                    )
+                    .with_hint("aggregate a top-level field; struct paths are not in this cut"),
+                );
+                return Some(errors);
+            }
+            Some(input) => {
+                let Some(source_field) = source_fields.iter().find(|known| &known.name == input)
+                else {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::UndeclaredReference,
+                            at("aggregate"),
+                            format!(
+                                "`{}` has no field `{input}`, so `{}.{}` aggregates nothing it \
+                                 observes",
+                                self.source, self.name, field.name
+                            ),
+                        )
+                        .with_hint(format!(
+                            "fields of `{}`: {}",
+                            self.source,
+                            join(source_fields.iter().map(|field| field.name.clone()))
+                        )),
+                    );
+                    return Some(errors);
+                };
+                Some(source_field)
+            }
+        };
+
+        let expected = match source_type {
+            None => result_type(aggregate.function, Leaf::Other, &field.type_ref),
+            Some(source_field) => {
+                let unwrapped = unwrap_chain(&source_field.type_ref, types);
+                if unwrapped.optional {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::UnsupportedConstruct,
+                            at("aggregate"),
+                            format!(
+                                "`{}` computes {aggregate} over `{}`, which may be absent ({}); \
+                                 an aggregate over an optional field is not in this cut",
+                                self.name, source_field.name, source_field.type_ref
+                            ),
+                        )
+                        .with_hint(
+                            "aggregate a field every row holds; which rows an absent value is \
+                             skipped in cannot be witnessed yet",
+                        ),
+                    );
+                    return Some(errors);
+                }
+                let Some(expected) =
+                    result_type(aggregate.function, unwrapped.leaf, &source_field.type_ref)
+                else {
+                    errors.push(ValidationError::new(
+                        ValidationCode::TypeMismatch,
+                        at("aggregate"),
+                        format!(
+                            "`{}` computes {aggregate}, and `{}` does not admit `{}` of type {}",
+                            self.name, aggregate.function, source_field.name, source_field.type_ref
+                        ),
+                    ));
+                    return Some(errors);
+                };
+                Some(expected)
+            }
+        };
+        if let Some(expected) = expected {
+            if field.type_ref != expected {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::TypeMismatch,
+                        at("type"),
+                        format!(
+                            "`{}.{}` computes {aggregate}, whose result type is {expected}, and \
+                             declares {}",
+                            self.name, field.name, field.type_ref
+                        ),
+                    )
+                    .with_hint(format!("declare `type: {expected}`")),
+                );
+            }
+        }
+        Some(errors)
+    }
+
+    /// V1, V2, V4, V11, V12 and V14: the group keys, the fields that are neither, and the order.
+    fn validate_grouping(&self, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(aggregation) = &self.aggregation else {
+            return errors;
+        };
+        let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
+
+        errors.extend(self.validate_keys(aggregation, types));
+
+        for (index, field) in self.fields.iter().enumerate() {
+            if aggregation.function(&field.name).is_none()
+                && !aggregation.group_by.contains(&field.name)
+            {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::MissingDeclaration,
+                        at(&format!("fields[{index}]")),
+                        format!(
+                            "`{}` is neither an aggregate nor a group key, so a row has no single \
+                             value for it",
+                            field.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "list `{}` in `group_by:`, give it an `aggregate:`, or drop it",
+                        field.name
+                    )),
+                );
+            }
+        }
+
+        if !self.order_by.is_empty() {
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UnsupportedConstruct,
+                    at("order_by"),
+                    format!(
+                        "`{}` is an aggregate view and declares `order_by:`; ranking aggregate \
+                         rows is a window, which is not in this cut",
+                        self.name
+                    ),
+                )
+                .with_hint("drop `order_by:`; the consumer ranks the rows it reads"),
+            );
+        }
+        errors
+    }
+
+    /// V1, V2, V11 and V12: each group key names a non-aggregate field of an equality type every
+    /// row holds.
+    fn validate_keys(&self, aggregation: &Aggregation, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
+        for (index, key) in aggregation.group_by.iter().enumerate() {
+            let key_at = at(&format!("group_by[{index}]"));
+            let Some(field) = self.field(key) else {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UndeclaredReference,
+                        key_at,
+                        format!(
+                            "`{}` groups by `{key}`, which is not one of its fields",
+                            self.name
+                        ),
+                    )
+                    .with_hint(format!(
+                        "fields of `{}`: {}",
+                        self.name,
+                        join(self.fields.iter().map(|field| field.name.clone()))
+                    )),
+                );
+                continue;
+            };
+            if aggregation.function(key).is_some() {
+                errors.push(ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    key_at,
+                    format!(
+                        "`{}` groups by `{key}`, which it also computes as an aggregate; a group \
+                         key is a value each row of the group shares",
+                        self.name
+                    ),
+                ));
+                continue;
+            }
+            let unwrapped = unwrap_chain(&field.type_ref, types);
+            if unwrapped.optional || unwrapped.leaf.is(Primitive::Timestamp) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnsupportedConstruct,
+                        key_at,
+                        format!(
+                            "`{}` groups by `{key}` of type {}: {}",
+                            self.name,
+                            field.type_ref,
+                            if unwrapped.optional {
+                                "a group key that may be absent is not in this cut"
+                            } else {
+                                "grouping by a timestamp is time bucketing, which is not in this \
+                                 cut"
+                            }
+                        ),
+                    )
+                    .with_hint("group by a field every row holds, of an equality type"),
+                );
+                continue;
+            }
+            let equality = unwrapped.leaf == Leaf::Enum
+                || [
+                    Primitive::String,
+                    Primitive::Integer,
+                    Primitive::Decimal,
+                    Primitive::Boolean,
+                    Primitive::Uuid,
+                ]
+                .iter()
+                .any(|admitted| unwrapped.leaf.is(*admitted));
+            if !equality {
+                errors.push(ValidationError::new(
+                    ValidationCode::TypeMismatch,
+                    key_at,
+                    format!(
+                        "`{}` groups by `{key}` of type {}, which has no value equality a group \
+                         could be keyed on",
+                        self.name, field.type_ref
+                    ),
+                ));
+            }
+        }
+        errors
     }
 
     /// Checks that every ranking key names a field this view projects, once.
@@ -701,15 +1353,18 @@ pub struct RawViewSpec {
     /// A reusable named struct describing what it exposes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<QualifiedName>,
-    /// What it exposes inline.
+    /// What it exposes inline. A field may declare `aggregate:`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub fields: Vec<Field>,
+    pub fields: Vec<RawViewField>,
     /// What the caller must supply to ask for this view.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Field>,
     /// Which instances it contains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// The view fields the admitted rows are partitioned by. Absent or `[]`: not grouped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_by: Vec<String>,
     /// The order the rows are ranked in, most significant key first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_by: Vec<Ranking>,
@@ -725,30 +1380,107 @@ impl TryFrom<RawViewSpec> for ViewSpec {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawViewSpec) -> Result<Self, Self::Error> {
+        let mut fields = Vec::with_capacity(raw.fields.len());
+        let mut functions = BTreeMap::new();
+        for written in raw.fields {
+            let (field, aggregate) = written.split();
+            if let Some(aggregate) = &aggregate {
+                functions
+                    .entry(field.name.clone())
+                    .or_insert_with(|| Aggregate::from(aggregate));
+            }
+            fields.push(field);
+        }
+        let mut grouping = ValidationErrors::new();
+        let at = |suffix: &str| format!("view.{}.{suffix}", raw.name);
+        // V3: a property of the written list, reported before the list is folded into the model.
+        let mut seen = BTreeSet::new();
+        for (index, key) in raw.group_by.iter().enumerate() {
+            if !seen.insert(key.as_str()) {
+                grouping.push(ValidationError::new(
+                    ValidationCode::DuplicateDeclaration,
+                    at(&format!("group_by[{index}]")),
+                    format!("`{}` groups by `{key}` more than once", raw.name),
+                ));
+            }
+        }
+        // V5: a `group_by` with no aggregate has no `Aggregation` to be checked later.
+        if !raw.group_by.is_empty() && functions.is_empty() {
+            grouping.push(
+                ValidationError::new(
+                    ValidationCode::MissingDeclaration,
+                    at("group_by"),
+                    format!(
+                        "`{}` groups by {} and no field declares `aggregate:`, so a group has no \
+                         value to report",
+                        raw.name,
+                        join(raw.group_by.iter())
+                    ),
+                )
+                .with_hint("give at least one field an `aggregate:`, or drop `group_by:`"),
+            );
+        }
+        // V13: a shape's struct fields cannot carry `aggregate:`.
+        if !raw.group_by.is_empty() && raw.shape.is_some() {
+            grouping.push(
+                ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    at("group_by"),
+                    format!(
+                        "`{}` declares `group_by` beside `shape`; a shape's fields cannot declare \
+                         an aggregate",
+                        raw.name
+                    ),
+                )
+                .with_hint("declare an aggregate view's fields inline"),
+            );
+        }
+        let aggregation = (!functions.is_empty()).then_some(Aggregation {
+            group_by: raw.group_by,
+            functions,
+        });
         let spec = Self {
             name: raw.name,
             source: raw.source,
             shape: raw.shape,
-            fields: raw.fields,
+            fields,
             params: raw.params,
             filter: raw.filter,
+            aggregation,
             order_by: raw.order_by,
             consistency: raw.consistency,
             naming: raw.naming,
         };
-        spec.validate_shape().into_result(spec)
+        let mut errors = spec.validate_shape();
+        errors.extend(grouping);
+        errors.into_result(spec)
     }
 }
 
 impl From<ViewSpec> for RawViewSpec {
     fn from(view: ViewSpec) -> Self {
+        let (group_by, functions) = match view.aggregation {
+            Some(aggregation) => (aggregation.group_by, aggregation.functions),
+            None => (Vec::new(), BTreeMap::new()),
+        };
+        let fields = view
+            .fields
+            .into_iter()
+            .map(|field| RawViewField {
+                aggregate: functions.get(&field.name).map(RawAggregate::from),
+                name: field.name,
+                type_ref: field.type_ref,
+                naming: field.naming,
+            })
+            .collect();
         Self {
             name: view.name,
             source: view.source,
             shape: view.shape,
-            fields: view.fields,
+            fields,
             params: view.params,
             filter: view.filter,
+            group_by,
             order_by: view.order_by,
             consistency: view.consistency,
             naming: view.naming,

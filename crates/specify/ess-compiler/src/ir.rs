@@ -84,7 +84,7 @@ use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::refs::Refs;
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
-use ess_domain::view::{AssertionStyle, Consistency, Ranking};
+use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Ranking};
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
@@ -1142,6 +1142,14 @@ pub struct ResolvedView {
     /// Which instances it contains, as a parsed predicate. `None` means all of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<Predicate>,
+    /// What makes this an aggregate view, where it is one (`docs/design/aggregate-views.md`).
+    ///
+    /// Omitted when `None`, so the IR bytes and digest of every model without an aggregate view
+    /// are unchanged. The aggregate fields stay in [`Self::fields`] under their declared result
+    /// types; a consumer that assumes one row per entity row must skip a view for which
+    /// [`Self::is_aggregate`] holds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregation: Option<ResolvedAggregation>,
     /// The order the rows are ranked in, most significant key first. Empty means unordered.
     ///
     /// Every key names a field in [`Self::fields`], checked by `ess-domain`, so a consumer of this
@@ -1163,7 +1171,113 @@ pub struct ResolvedView {
     pub naming: Naming,
 }
 
+/// One aggregate field's computation, with its input resolved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAggregate {
+    /// The function.
+    pub function: AggregateFunction,
+    /// The source field read, resolved against the source entity's observable fields. Absent for
+    /// `count`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<ResolvedField>,
+}
+
+impl std::fmt::Display for ResolvedAggregate {
+    /// `sum(talk_seconds)`, or `count()`: the rendering every projection of the construct uses.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.function,
+            self.input.as_ref().map_or("", |input| input.name.as_str())
+        )
+    }
+}
+
+/// What makes a view an aggregate view.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAggregation {
+    /// Group-key view field names, in declaration order. Empty: exactly one row.
+    pub group_by: Vec<String>,
+    /// Aggregate view field name → its computation.
+    pub functions: BTreeMap<String, ResolvedAggregate>,
+}
+
+impl ResolvedAggregate {
+    /// What the field reports, for a reader: "count of instances", "sum of `talk_seconds`", …
+    ///
+    /// One wording, read by every projection that renders the construct — the `OpenAPI` response
+    /// description, the documentation page, the native plan and the generated row types — so two
+    /// artifacts of one model cannot describe one field two ways.
+    pub fn describe(&self) -> String {
+        let input = self
+            .input
+            .as_ref()
+            .map_or_else(String::new, |input| format!("`{}`", input.name));
+        match self.function {
+            AggregateFunction::Count => "count of instances".to_owned(),
+            AggregateFunction::CountDistinct => format!("count of distinct {input} values"),
+            AggregateFunction::Sum => format!("sum of {input}"),
+            AggregateFunction::Min => format!("least {input}"),
+            AggregateFunction::Max => format!("greatest {input}"),
+            AggregateFunction::Avg => {
+                format!("average of {input}, rounded to 6 places half-even")
+            }
+        }
+    }
+}
+
+impl ResolvedAggregation {
+    /// Whether the view returns exactly one row.
+    pub fn is_ungrouped(&self) -> bool {
+        self.group_by.is_empty()
+    }
+
+    /// "grouped by `agent_id`, `channel`", or "one row": the clause a contract line carries.
+    pub fn grouping_clause(&self) -> String {
+        if self.is_ungrouped() {
+            "one row".to_owned()
+        } else {
+            format!("grouped by {}", self.keys())
+        }
+    }
+
+    /// The sentence a description carries: "Grouped by `agent_id`; one row per group holding at
+    /// least one instance.", or "Always exactly one row."
+    pub fn grouping_sentence(&self) -> String {
+        if self.is_ungrouped() {
+            "Always exactly one row.".to_owned()
+        } else {
+            format!(
+                "Grouped by {}; one row per group holding at least one instance.",
+                self.keys()
+            )
+        }
+    }
+
+    /// One `field` = what it computes clause per aggregate field, in field-name order.
+    pub fn clauses(&self) -> Vec<String> {
+        self.functions
+            .iter()
+            .map(|(field, aggregate)| format!("`{field}` = {}", aggregate.describe()))
+            .collect()
+    }
+
+    fn keys(&self) -> String {
+        self.group_by
+            .iter()
+            .map(|key| format!("`{key}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 impl ResolvedView {
+    /// Whether this view computes aggregates rather than one row per instance.
+    pub fn is_aggregate(&self) -> bool {
+        self.aggregation.is_some()
+    }
+
     /// The projected field with this name.
     pub fn field(&self, name: &str) -> Option<&ResolvedField> {
         self.fields.iter().find(|field| field.name == name)

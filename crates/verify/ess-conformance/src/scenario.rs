@@ -154,7 +154,10 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::text_match_format::used_by(self) {
+        self.provenance.suite_version = if crate::aggregate::used_by(self) {
+            SuiteFormat::parse(&format!("ess-conformance/{}", crate::aggregate::ORDINARY))
+                .expect("constant suite version")
+        } else if crate::text_match_format::used_by(self) {
             SuiteFormat::parse("ess-conformance/14").expect("constant suite version")
         } else if crate::replay::used_by(self) {
             SuiteFormat::parse("ess-conformance/12").expect("constant suite version")
@@ -367,7 +370,8 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] =
+    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -666,6 +670,16 @@ pub enum ScenarioId {
         /// What the author called it.
         name: AuthoredName,
     },
+    /// What an aggregate view reports over rows this scenario made: `metrics.session.ByAgent/aggregate`.
+    ///
+    /// One per aggregate view (`docs/design/aggregate-views.md`, "Arrangement"). The view is the
+    /// subject: which commands arrange its rows is content, chosen by synthesis, and re-keying the
+    /// check when a cheaper arrangement appears would rot every stored result. Carried by suite
+    /// majors [`crate::aggregate::ORDINARY`] and [`crate::aggregate::COVERAGE`] and later.
+    Aggregate {
+        /// The aggregate view.
+        view: ViewRef,
+    },
 }
 
 impl ScenarioId {
@@ -676,6 +690,7 @@ impl ScenarioId {
     const INVARIANT: &'static str = "invariant";
     const BINDING: &'static str = "binding";
     const AUTHORED: &'static str = "authored";
+    const AGGREGATE: &'static str = "aggregate";
 
     /// Reads an id back from its rendered form.
     ///
@@ -734,6 +749,9 @@ impl ScenarioId {
                     field: (*field).to_owned(),
                 })
             }
+            [view, Self::AGGREGATE] => Ok(Self::Aggregate {
+                view: ViewRef::new(name(view)?),
+            }),
             [domain, Self::AUTHORED, authored] => Ok(Self::Authored {
                 domain: DomainRef::new(name(domain)?),
                 name: AuthoredName::new(authored)
@@ -756,8 +774,8 @@ impl ScenarioId {
                  `<entity>/transition/<name>/by/<command>/<outcome>`, \
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
-                 `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>` or \
-                 `<domain>/authored/<name>`",
+                 `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>`, \
+                 `<view>/aggregate` or `<domain>/authored/<name>`",
             )),
         }
     }
@@ -809,6 +827,7 @@ impl fmt::Display for ScenarioId {
             Self::Authored { domain, name } => {
                 write!(f, "{domain}/{}/{name}", Self::AUTHORED)
             }
+            Self::Aggregate { view } => write!(f, "{view}/{}", Self::AGGREGATE),
         }
     }
 }
@@ -2473,6 +2492,11 @@ mod tests {
                 domain: DomainRef::new(QualifiedName::new("billing.invoice").expect("valid")),
                 name: AuthoredName::new("two-issued-invoices-rank-latest-first").expect("valid"),
             },
+            ScenarioId::Aggregate {
+                view: ViewRef::new(
+                    QualifiedName::new("metrics.session.TalkTimeByAgent").expect("valid"),
+                ),
+            },
         ];
         ids.extend(BindingAspect::ALL.map(|(aspect, _)| ScenarioId::Binding {
             binding: BindingRef::new(BindingName::new("notify-on-invoice-created").expect("valid")),
@@ -2480,8 +2504,8 @@ mod tests {
         }));
         assert_eq!(
             ids.len(),
-            9,
-            "five id shapes, and every aspect a binding scenario can be filed under"
+            10,
+            "six id shapes, and every aspect a binding scenario can be filed under"
         );
 
         for id in ids {
@@ -2673,12 +2697,14 @@ mod tests {
             "ess-conformance/13",
             "ess-conformance/14",
             "ess-conformance/15",
+            "ess-conformance/16",
+            "ess-conformance/17",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/16").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/18").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

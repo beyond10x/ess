@@ -343,6 +343,13 @@ pub(super) fn view(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
     if let Some(filter) = &view.filter {
         let _ = write!(out, ", containing instances where `{filter}`");
     }
+    if let Some(aggregation) = &view.aggregation {
+        let _ = write!(
+            out,
+            ".\n///\n/// {}",
+            aggregation.grouping_sentence().trim_end_matches('.')
+        );
+    }
     out.push_str(
         ".\n/// Serving it is an implementation obligation — see the plan — because how a \
          projection is kept\n/// current is a storage decision the specification does not take.\n",

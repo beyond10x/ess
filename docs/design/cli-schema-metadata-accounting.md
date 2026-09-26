@@ -179,3 +179,21 @@ The root dialect, six literal relationships, consumer profiles, guard source,
 baseline and behavioral accounting remain unchanged. The metadata guard and
 fresh-provider qualification still have to execute; this review grants no new
 exemption or runtime conformance claim.
+
+## ess/10 container review — 2026-09-26
+
+The generated schema changes `RawViewSpec.fields` from items of `Field` to items of the new
+`RawViewField` (`Field`'s members plus an optional `aggregate`, a `RawAggregate` one-key map whose
+`count` takes the new `Empty`), and adds `RawViewSpec.group_by` (beyond10x/ess#96, aggregate views).
+`Field` itself is unchanged at every other position. Aggregate views are authored-domain behavior;
+they do not make these CLI pipelines consumers of the generated schema document. Their descendants
+keep their ordinary behavioral obligations.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `ce18e2b8593d657226635ec33a36698ece87fa78309ef47971e04399574a1bdc`
+to `dd6345942de597f9d076b7168bcae88de36332f873ff8c2daf53b6b6794b22c1`.
+Review updates only the three existing RootDefinitionsContainer shape pins.
+The root dialect, six literal relationships, consumer profiles, guard source,
+baseline and behavioral accounting remain unchanged. The metadata guard and
+fresh-provider qualification still have to execute; this review grants no new
+exemption or runtime conformance claim.

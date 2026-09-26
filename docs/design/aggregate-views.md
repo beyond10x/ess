@@ -1,7 +1,8 @@
 # Aggregate views: counts, sums and extremes over one entity's rows
 
-Status: proposed (beyond10x/ess#96, `story:aggregate-views`). No source, IR or format change is
-made by this page. The implementation unit builds exactly what is written here. Every claim about
+Status: implemented (beyond10x/ess#96, `story:aggregate-views`, wave unit D2). The page was written
+before the code and the implementation built what it says; the corrections the implementation had
+to make are listed under "What the implementation corrected" at the end, each with its reason. Every claim about
 current code names `path:line` at base `bb771888907`. Claims not read off the tree are marked
 *inferred*.
 
@@ -36,7 +37,7 @@ does not reopen them:
 ## Syntax
 
 ```yaml
-format: ess/9      # e.g. — `ess/S`, the next free source format (see "Formats and versions")
+format: ess/10     # the source format this construct took (see "Formats and versions")
 system: metrics
 version: v1
 domain: metrics.session
@@ -92,6 +93,9 @@ commands:
         moves: metrics.session.Session.complete
         instance: session_id
         emits: [metrics.session.Completed]
+        payload:
+          metrics.session.Completed:
+            session_id: input.session_id
 
 views:
   - name: metrics.session.TalkTimeByAgent
@@ -245,7 +249,7 @@ non-aggregate view, and is **skipped for aggregate fields**. Codes are `ess-doma
 | V12 | a group key with no `Optional` in its chain whose unwrapped type is not an equality type (`List`, `Map`, struct, union, `Binary64`, `Duration`, `Bytes`) | `TypeMismatch` | `view.<name>.group_by[<i>]` | `ESS-VIEW-002` |
 | V13 | a non-empty `group_by` beside `shape:` | `ConflictingDeclaration` | `view.<name>.group_by` | `ESS-VIEW-004` |
 | V14 | `order_by:` on an aggregate view | `UnsupportedConstruct` | `view.<name>.order_by` | `ESS-VIEW-009` |
-| V15 | a view with an `Aggregation` (any `aggregate:`) in a document below `ess/S`; a `group_by` with no aggregate is V5 at any version. Message: "aggregate views require specification format ess/S", with the number D2 took | `UnsupportedFormatVersion` | `view.<name>.group_by` if non-empty, else `view.<name>.fields` | `ESS-VIEW-009` |
+| V15 | a view with an `Aggregation` (any `aggregate:`) in a document below `ess/10`; a `group_by` with no aggregate is V5 at any version. Message: "aggregate views require specification format ess/10" | `UnsupportedFormatVersion` | `view.<name>.group_by` if non-empty, else `view.<name>.fields` | `ESS-VIEW-009` |
 
 Why each rule is shaped this way:
 
@@ -330,58 +334,58 @@ pub struct ResolvedAggregation {
 
 ## Formats and versions
 
-**This page fixes no absolute version number.** The construct takes the **next free** source format,
-suite format pair, diff format and synthesis refusal codes **at implementation time**, after units
-B1 (`story:string-prefix-suffix-substring-operators`, #95) and C (`story:stored-field-guards`, #75)
-have merged into the integration branch. D2 records the numbers it took in its report and in the
-CHANGELOG entry. The page writes them as placeholders:
+The page first fixed no absolute number: the construct was to take the **next free** source format,
+suite format pair, diff format and synthesis refusal codes at implementation time, after units B1
+(`story:string-prefix-suffix-substring-operators`, #95) and C (`story:stored-field-guards`, #75) had
+merged. B1 took `ess/8` and `ess-conformance/14`–`/15`, and C took `ess/9`. The numbers this
+construct took, and which the rest of the page uses:
 
-| placeholder | meaning | e.g., if B1 and C had taken nothing beyond C's `ess/8` |
+| number | meaning | constant |
 |---|---|---|
-| `ess/S` | source format | `ess/9` |
-| `ess-conformance/Q`, `/Q+1` | ordinary / coverage suite pair | `/14`, `/15` |
-| `ess-diff/D` | semantic diff format | `ess-diff/7` |
-| `ESS-SYNTH-U`, `ESS-SYNTH-W` | `AggregateUnscoped`, `AggregateUnwitnessed` | `016`, `017` |
+| `ess/10` | source format | `FormatVersion::V10` |
+| `ess-conformance/16`, `/17` | ordinary / coverage suite pair | `aggregate::ORDINARY`, `aggregate::COVERAGE` |
+| `ess-diff/7` | semantic diff format | `SUPPORTED_DELTA_FORMATS` |
+| `ESS-SYNTH-016`, `ESS-SYNTH-017` | `AggregateUnscoped`, `AggregateUnwitnessed` | `aggregate::UNSCOPED`, `aggregate::UNWITNESSED` |
 
 | format | at base `bb771888907` | this construct | old reader |
 |---|---|---|---|
-| source | `ess/1`–`ess/7` supported (`crates/specify/ess-domain/src/system.rs:53`); `ess/9` claimed by C (`cross-record-and-stored-field-guards.md:316-318`) | **`ess/S`**: `FormatVersion::V<S>`, `SUPPORTED_FORMATS` gains `S`, V15 gates the construct | refuses the header version; a build that predates `ess/S` reading `aggregate:` under an older header fails `unknown field aggregate`, as today |
+| source | `ess/1`–`ess/7` supported (`crates/specify/ess-domain/src/system.rs:53`); `ess/9` claimed by C (`cross-record-and-stored-field-guards.md:316-318`) | **`ess/10`**: `FormatVersion::V10`, `SUPPORTED_FORMATS` gains `10`, V15 gates the construct | refuses the header version; a build that predates `ess/10` reading `aggregate:` under an older header fails `unknown field aggregate`, as today |
 | document schema | `schemas/generated/ess.schema.json` (`RawViewSpec` at `:2093`) | regenerate with `cargo xtask schema`; `projection-check` is the only thing that sees staleness (`AGENTS.md`, "A change to `RawSpecFile`…") | — |
 | IR | no `ess-ir/2` | additive, omitted when `None` | — |
-| suite | ordinary `ess-conformance/12`, coverage `/13` newest (`crates/verify/ess-conformance/src/scenario.rs:155-168`, `:368`) | **`/Q` and `/Q+1`**: new `ScenarioId` variant and new refusal causes; admission gates below | Rust: closed parse and the admission gate; Go: version switch (`crates/verify/ess-conformance/src/go/runtime.go:3417-3436`); TypeScript admits up to `/11` (`crates/verify/ess-conformance/src/ts/runtime.ts:4205-4215`) and refuses before callbacks |
-| semantic diff | `ess-diff/6` newest (`SUPPORTED_DELTA_FORMATS`, `crates/verify/ess-diff/src/delta.rs:13`) | **`ess-diff/D`** for the two new `ViewChange`s | refuses via `minimum_format` (`crates/verify/ess-diff/src/delta.rs:282`) |
-| synthesis refusal codes | `ESS-SYNTH-001`…`015` (`synthesize.rs:502-525`) | **`ESS-SYNTH-U`, `ESS-SYNTH-W`**, gated in all three coverage lanes (below) | — |
+| suite | ordinary `ess-conformance/12`, coverage `/13` newest (`crates/verify/ess-conformance/src/scenario.rs:155-168`, `:368`) | **`/16` and `/17`**: new `ScenarioId` variant and new refusal causes; admission gates below | Rust: closed parse and the admission gate; Go: version switch (`crates/verify/ess-conformance/src/go/runtime.go:3417-3436`); TypeScript admits up to `/11` (`crates/verify/ess-conformance/src/ts/runtime.ts:4205-4215`) and refuses before callbacks |
+| semantic diff | `ess-diff/6` newest (`SUPPORTED_DELTA_FORMATS`, `crates/verify/ess-diff/src/delta.rs:13`) | **`ess-diff/7`** for the two new `ViewChange`s | refuses via `minimum_format` (`crates/verify/ess-diff/src/delta.rs:282`) |
+| synthesis refusal codes | `ESS-SYNTH-001`…`015` (`synthesize.rs:502-525`) | **`ESS-SYNTH-016`, `ESS-SYNTH-017`**, gated in all three coverage lanes (below) | — |
 
 Tests name the constants, not literals, wherever they can.
 
-**Suite admission gates.** An aggregate scenario, or a `U`/`W` refusal, in a document labelled with
+**Suite admission gates.** An aggregate scenario, or a `016`/`017` refusal, in a document labelled with
 an older suite version is refused, in the shape of the retained-result gate:
 
 - **Rust:** `aggregate::admit_suite`, a copy of `replay::admit_suite` (`crates/verify/ess-conformance/src/replay.rs:517-529`:
   "retained results require suite/12 or /13", code `UnsupportedVocabulary`), refusing any
-  `ScenarioId::Aggregate` when `suite_version.major() < Q`. Called beside it in
+  `ScenarioId::Aggregate` when `suite_version.major() < 16`. Called beside it in
   `crates/verify/ess-conformance/src/admission.rs:464`.
 - **Go:** `scenarioIdentity` (`runtime.go:3357-3378`) admits `<view>/aggregate` syntactically. In
   `admitSuiteDocument` (`runtime.go:3386`), the scenario loop (`runtime.go:3459-3462`) runs after
-  `major` is known (`runtime.go:3417-3436`). It refuses an `…/aggregate` id when `major < Q`.
-- **TypeScript:** refuses `/Q` and `/Q+1` as whole envelopes (its table ends at `/11`), so it needs
+  `major` is known (`runtime.go:3417-3436`). It refuses an `…/aggregate` id when `major < 16`.
+- **TypeScript:** refuses `/16` and `/17` as whole envelopes (its table ends at `/11`), so it needs
   no per-scenario gate.
 
 **Coverage refusal codes.** Coverage admission accepts only `ESS-SYNTH-001`…`015` in every lane,
-so a refusal-only suite carrying `U`/`W` would be rejected, or would be written at an old coverage
+so a refusal-only suite carrying `016`/`017` would be rejected, or would be written at an old coverage
 version. Each lane moves exactly the way `015` did:
 
 | lane | code range and effect | version gate |
 |---|---|---|
-| Rust | `coverage.rs:549-553`: range `1..=15` extends to `W`; `U` and `W` join `5 \| 11 \| 12 \| 14` as `CheckNotEmitted` | `coverage.rs:392-395`: `U`/`W` refusals require `/Q+1`, as `015` requires `/7`. `coverage_build.rs:478-486` (`coverage_version`): an aggregate scenario **or** a `U`/`W` refusal selects `/Q+1` first, as `coverage_build.rs:484` does for `015`. `generated_effect` (`coverage_build.rs:393-398`) maps both causes to `CheckNotEmitted` |
-| Go | `runtime.go:304-313`: loop bound `15` → `W`; `U` and `W` added to the `check_not_emitted` list | `runtime.go:3504-3510`: `Q+1` joins the coverage-major list, and `U`/`W` rows are refused when `major < Q+1`, beside the `015`/`major < 7` rule; the coverage-major lists at `runtime.go:80` and `:3438-3440` gain `Q+1` too |
+| Rust | `coverage.rs:549-553`: range `1..=15` extends to `17`; `016` and `017` join `5 \| 11 \| 12 \| 14` as `CheckNotEmitted` | `coverage.rs:392-395`: `016`/`017` refusals require `/17`, as `015` requires `/7`. `coverage_build.rs:478-486` (`coverage_version`): an aggregate scenario **or** a `016`/`017` refusal selects `/17` first, as `coverage_build.rs:484` does for `015`. `generated_effect` (`coverage_build.rs:393-398`) maps both causes to `CheckNotEmitted` |
+| Go | `runtime.go:304-313`: loop bound `15` → `17`; `016` and `017` added to the `check_not_emitted` list | `runtime.go:3504-3510`: `17` joins the coverage-major list, and `016`/`017` rows are refused when `major < 16+1`, beside the `015`/`major < 7` rule; the coverage-major lists at `runtime.go:80` and `:3438-3440` gain `17` too |
 | TypeScript | `runtime.ts:985-995`: same two changes | `runtime.ts:4289`: same rule as Go |
 
 **Version tables and pages that must list the new versions.** The `ess-xtask` docs lane reads each
 family's `SUPPORTED_*` constant (`crates/edge/ess-xtask/src/docs.rs:47-64`). Growing a constant
 without a row in `FORMAT_RELEASES` (`docs.rs:89`) makes that lane refuse, so D2 adds
-`("ess", S, None)`, `("ess-conformance", Q, None)`, `("ess-conformance", Q+1, None)` and
-`("ess-diff", D, None)`. The published pages gain the same versions:
+`("ess", 10, None)`, `("ess-conformance", 16, None)`, `("ess-conformance", 17, None)` and
+`("ess-diff", 7, None)`. The published pages gain the same versions:
 `website/docs/reference/formats.md` (source row beside `:105`, diff row beside `:257`, suite row
 beside `:269`) and `website/docs/reference/spec-versions.md` (the newest-version examples at
 `:9-10` and `:25`, and the diff table at `:73`).
@@ -389,19 +393,19 @@ beside `:269`) and `website/docs/reference/spec-versions.md` (the newest-version
 **Tests whose version literals become supported.** Each uses a number as "a version this build
 cannot read". When D2's numbers are added, each literal moves to the first number after D2's:
 
-| test | literal at base | family |
-|---|---|---|
-| `crates/specify/ess-domain/src/spec.rs:1746` | `ess/8` (C moves it past its `ess/9` first, per its page) | source |
-| `crates/specify/ess-domain/src/system.rs:1721` (`a_specification_reports_every_problem_in_one_run`) | `ess/9` | source |
-| `crates/specify/ess-domain/src/system.rs:1254` and `:1263-1275` | `ess/8` (C moves them — *inferred*) | source |
-| `crates/verify/ess-conformance/src/scenario.rs:2677` | `ess-conformance/14` | suite |
-| `crates/verify/ess-conformance/tests/count_reports.rs:460` | `ess-conformance/14` | suite |
-| `crates/verify/ess-diff/tests/canonical.rs:1074` | `ess-diff/7` | diff |
+| test | literal at base | family | at implementation |
+|---|---|---|---|
+| `crates/specify/ess-domain/src/spec.rs:1746` | `ess/8` (C moves it past its `ess/9` first, per its page) | source | already `ess/99`: untouched |
+| `crates/specify/ess-domain/src/system.rs:1721` (`a_specification_reports_every_problem_in_one_run`) | `ess/9` | source | C had moved it to `ess/10`; moved to `ess/11` |
+| `crates/specify/ess-domain/src/system.rs:1254` and `:1263-1275` | `ess/8` (C moves them — *inferred*) | source | `ess/99`; `V10` joins the supported list |
+| `crates/verify/ess-conformance/src/scenario.rs:2677` | `ess-conformance/14` | suite | B1 had moved it to `/16`; moved to `/18`, and `/16`, `/17` join the supported list |
+| `crates/verify/ess-conformance/tests/count_reports.rs:460` | `ess-conformance/14` | suite | B1 had moved it to `/16`; replaced by `/17` (a coverage major without coverage) and `/18` |
+| `crates/verify/ess-diff/tests/canonical.rs:1074` | `ess-diff/7` | diff | moved to `ess-diff/8` |
 
 The six rows are the literals known at base `bb771888907`. A literal at a
 number D2 does not take stays untouched. **This class can be checked by machine:** D2 runs
-`grep -rnE '"?(ess/|ess-conformance/|ess-diff/)[0-9]+' crates` for its own `S`, `Q`, `Q+1` and
-`D` and fixes every hit that asserts "unsupported". The table is a starting point, not the bound.
+`grep -rnE '"?(ess/|ess-conformance/|ess-diff/)[0-9]+' crates` for its own `10`, `16`, `17` and
+`7` and fixes every hit that asserts "unsupported". The table is a starting point, not the bound.
 
 ## Projections
 
@@ -467,7 +471,7 @@ values that no other scenario of the suite produces:
   top-level conjunct `f == param.p` with `f` scopable. In the second case the scenario binds `p` to a
   scoped value `"<view>/in"` and gives every row the filter **admits** `f` = that value.
 - **Unscoped** views (for example, grouped only by an enum with no scoping parameter) get no
-  scenario and a new refusal: **`RefusalCause::AggregateUnscoped { view }`, `ESS-SYNTH-U`**. Hint:
+  scenario and a new refusal: **`RefusalCause::AggregateUnscoped { view }`, `ESS-SYNTH-016`**. Hint:
   "group by, or filter by a parameter over, a `String` or `Uuid` field the creating command sets
   from its input". An exact aggregate over rows the scenario did not make is a claim about the
   target's other users, and this crate does not make those (`synthesize.rs:146-160`).
@@ -477,7 +481,7 @@ values that no other scenario of the suite produces:
   not will fail visibly.
 
 A parameter read other than by one top-level equality conjunct gets
-**`RefusalCause::AggregateUnwitnessed { view, reason }`, `ESS-SYNTH-W`**. The same cause covers
+**`RefusalCause::AggregateUnwitnessed { view, reason }`, `ESS-SYNTH-017`**. The same cause covers
 any arrangement below that the model cannot produce. Both causes map to `Effect::CheckNotEmitted`
 (the coverage gates are under "Formats and versions").
 
@@ -499,7 +503,7 @@ state where the view's filter is **admitted** or **refuted**, as the row's colum
 | b | B | admitted | input `i` = ladder `100·i + 85` |
 | x | A | refuted | ladder `100·i + 97` |
 | c | C | refuted | ladder `100·i + 93` |
-| bₖ | Bₖ (below), one per group key after the first | admitted | ladder `100·i + 87` |
+| bₖ | Bₖ (below), one per non-scoped group key and one per scoped key after the first | admitted | ladder `100·i + 87` |
 
 Which rows exist:
 
@@ -515,7 +519,7 @@ Which rows exist:
   roles"). Number them `i = 0 … I−1`.
 - **Group size.** *m* is the smallest integer ≥ max(3, I+2) with a prime factor other than 2 and
   5, so a mean over *m* rows can repeat forever at the 6th decimal. That gives 3 for I ≤ 1, 6 for
-  2 ≤ I ≤ 4, 7 for I = 5, and 9 for I = 6 or 7. For I > 7 the view gets `ESS-SYNTH-W`.
+  2 ≤ I ≤ 4, 7 for I = 5, and 9 for I = 6 or 7. For I > 7 the view gets `ESS-SYNTH-017`.
 - **Values.** Input `i` at A-row `j` (`j = 0 … m−1`) takes ladder ordinal `100·i + 1 + t(t+1)`, with
   `t = max(0, j − i − 1)`. In A, input `i` then has exactly **`dᵢ = m − 1 − i` distinct values**.
   These counts are pairwise different, they are all ≥ 2, and none equals *m*. Every group key and
@@ -523,10 +527,15 @@ Which rows exist:
   `count_distinct` over the wrong input, over a key, over the identity, or "counting rows" each
   gives a different number from the declared one. Each input has its own duplicate pattern: the
   first `i+2` rows share its lowest value.
-- **Non-terminating mean.** If an `avg` input's A mean `sumᵢ / m` would end within 6
-  decimals, the last A-row's value for that input is raised by 1. A mean terminates only if
-  `sumᵢ ≡ 0` modulo every prime factor of *m* other than 2 and 5. Raising the sum by 1 makes it
-  `≡ 1` modulo such a factor, so the mean no longer terminates. The last
+- **A mean that rounding and truncation disagree on.** For every `avg` input, the last A-row's
+  value is raised by the smallest `δ < m` for which `(sumᵢ + δ)·10⁶ mod m > m/2`: the mean's
+  seventh decimal onward is then more than half a unit of the sixth, so `avg` rounded and `avg`
+  truncated are two numbers. Such a `δ` exists for every *m* here (3, 6, 7, 9), because *m* has a
+  prime factor other than 2 and 5. After arranging, the A group's `avg` is checked to separate
+  rounding from truncation over what the rows actually hold; a mean that does not — the mean of a
+  key every row shares, for example — is `ESS-SYNTH-017` rather than an assertion a truncating
+  implementation also passes. Groups of one row (B, bₖ) hold an integer mean and are asserted as
+  the exact values they are; they are not the check. The last
   row's value stays distinct from the others, because `i ≤ I−1 ≤ m−3` means that row has `t ≥ 1`.
   All A values stay below `100·i + 85`, so b, x, c and bₖ never repeat an A value (`t ≤ 7` gives at
   most `57`).
@@ -548,7 +557,9 @@ and each one **must differ from every tuple assigned before it**:
   *n* variants in declaration order; `String`, `Uuid`, `Integer` and `Decimal` are unbounded.
 - **A, B and C** start at `v₀`, `v₁` and `v₂` in every non-scoped key. A value past the end of a
   finite sequence wraps.
-- **Bₖ** is B's tuple with key `k` replaced by **the first value in `k`'s sequence that makes the
+- **Bₖ** exists for every non-scoped key `k`, the first included, and for every scoped key after
+  the first (a scoped first key is what A, B and C already differ in). It is B's tuple with key `k`
+  replaced by **the first value in `k`'s sequence that makes the
   tuple differ from every tuple already assigned**. So Bₖ always differs from B **in `k` itself**,
   whatever `k`'s type:
   - `Boolean`: the negation of B's value;
@@ -578,7 +589,7 @@ A field that is both a group key (or the scoping field `f`) and an aggregate arg
   `{name: agents, type: Integer, aggregate: {count_distinct: agent_id}}` in `TalkTimeByAgent` is
   `1` in every group, and `{count_distinct: queue_id}` in `QueueTotals` is `1` in the one row.
 - If the filter can only be admitted or refuted by changing a key-held value, the goal search uses
-  another conjunct. If none exists, the view gets `ESS-SYNTH-W`, naming the field.
+  another conjunct. If none exists, the view gets `ESS-SYNTH-017`, naming the field.
 
 #### Refuting a parameter-scoped filter
 
@@ -589,7 +600,7 @@ search tries to refute **another conjunct** first. `QueueTotals` leaves x in `Op
 
 In both cases the main read's single row excludes x. An implementation that ignores the filter
 counts x there, either by state or by admitting another parameter's row, and fails `Contains`. The
-common `QueueTotals` shape therefore needs no `ESS-SYNTH-W`. A filter made of nothing but
+common `QueueTotals` shape therefore needs no `ESS-SYNTH-017`. A filter made of nothing but
 `f == param.p` is witnessed through `f = "<view>/out"`.
 
 #### Reaching the values
@@ -605,7 +616,14 @@ This reuses the goal-directed arrangement of `cross-record-and-stored-field-guar
 - **States** are reached as `arrange_beside` reaches an admitted state (`synthesize.rs:3461-3481`),
   generalized to "admitted" or "refuted".
 - **Failure:** a field the search cannot set, or a filter truth it cannot reach, gets
-  `ESS-SYNTH-W`, which names the field or the row.
+  `ESS-SYNTH-017`, which names the field or the row.
+- **A move that rewrites a chosen value.** After a row reaches its state, every group key, scoping
+  field and aggregate input it holds is compared with the value the pattern chose (or the creating
+  branch's literal). A move whose `sets:` overwrote one leaves a group that is no longer the
+  scenario's own, and the view gets `ESS-SYNTH-017` naming the field and the row.
+- **A value the target generates.** The identity is the one field the target chooses. Its
+  `count_distinct` is the row count whatever it holds; `sum`, `min`, `max` or `avg` over it has
+  no expected value anyone can name, and the view gets `ESS-SYNTH-017`.
 
 **Expected values** are computed by one function in `ess-conformance` (a new `aggregate` module)
 over the rows' **determined** values (the `settled` map, `synthesize.rs:3235-3275`), under the
@@ -636,7 +654,7 @@ The runner is unchanged. `Contains` and `Excludes` match by `Node` equality (`ru
 `2291-2305`). `Decimal` values reach the runner as numbers, as `Decimal` input fields already do
 in view assertions (`synthesize.rs:3260-3265`). The schema-string versus node-number disagreement
 is the existing one (`review-primitive-semantics.md:42-45`). `select_fresh_format`
-(`scenario.rs:155-168`) tests `crate::aggregate::used_by` first and selects `/Q`.
+(`scenario.rs:155-168`) tests `crate::aggregate::used_by` first and selects `/16`.
 
 **The example.** `TalkTimeByAgent` has inputs `talk_seconds` (i = 0), `wait_seconds` (1) and
 `caller` (2). So I = 3 and *m* = 6.
@@ -680,7 +698,8 @@ and `:316`.
 | `count_distinct` over another input or a key | A: 5 (`talk_seconds`), 4 (`wait_seconds`) or 1 (`agent_id`) against 3 |
 | `min`/`max` swapped | A: 101 against 113 |
 | `sum`/`max`/`avg` over the wrong input | A: e.g. `sum(wait_seconds)` = 626 against 46 |
-| `avg` truncates instead of rounding | A: `7.666666` against `7.666667` |
+| `avg` truncates instead of rounding | A: `7.666666` against `7.666667`; every asserted A mean separates the two (see "A mean that rounding and truncation disagree on") |
+| ignores a non-scoped first key (`group_by: [channel, agent_id]`) | B₁'s `Contains` (merged with B) |
 | ungrouped view returns no row when empty | `Counts {1, 1}` on the empty read |
 | ungrouped view reports `min` 0 when empty | `min: null` on the empty read |
 
@@ -716,23 +735,23 @@ than `<view>/aggregate` names that view in any step.
 1. **Validation:** one case per V1–V15 (V3, V5 and V13 raised from `TryFrom<RawViewSpec>` together
    with any shape error, proving accumulation), each asserting the `ValidationCode`, the location and, after
    compiling, the `ESS-VIEW-00N` code.
-2. **Format:** a document one below `ess/S` with `group_by` is refused with `ESS-VIEW-009`. Every existing
+2. **Format:** a document one below `ess/10` with `group_by` is refused with `ESS-VIEW-009`. Every existing
    fixture's source, IR and suite bytes are unchanged. `ess.schema.json` is regenerated.
 3. **Semantics:** the `aggregate` module against the table: half-even at 6 places (`0.0000005` →
    `0.000000`, `0.0000015` → `0.000002`), zero-row values, `Decimal` `count_distinct` equality.
 4. **Synthesis:** the example yields `metrics.session.TalkTimeByAgent/aggregate` with the steps
    above and the values in "Observation". `QueueTotals` yields both reads. An enum-only-keyed view
-   yields `ESS-SYNTH-U`.
+   yields `ESS-SYNTH-016`.
 5. **Mutants:** every row of the table, Rust runner. Correct target and one mutant, Go lane.
    Refusal before callbacks, TypeScript lane.
 6. **Class check:** the row-consumer test above.
 7. **Projections:** OpenAPI description, docs, plan contract, Rust and Go doc lines, web and
-   conformance catalogs, and the two diff variants at `ess-diff/D`.
-8. **Admission gates:** a `/Q−1` suite carrying an `…/aggregate` scenario is refused by the Rust
-   admission (`UnsupportedVocabulary`) and by the Go admission; a coverage document with a `U`/`W`
-   refusal below `/Q+1` is refused in Rust, Go and TypeScript; a refusal-only suite with `U`/`W`
-   is written at `/Q+1`.
-9. **Version tables:** `FORMAT_RELEASES` rows for `S`, `Q`, `Q+1`, `D`, and the `formats.md` /
+   conformance catalogs, and the two diff variants at `ess-diff/7`.
+8. **Admission gates:** a `/15` suite carrying an `…/aggregate` scenario is refused by the Rust
+   admission (`UnsupportedVocabulary`) and by the Go admission; a coverage document with a `016`/`017`
+   refusal below `/17` is refused in Rust, Go and TypeScript; a refusal-only suite with `016`/`017`
+   is written at `/17`.
+9. **Version tables:** `FORMAT_RELEASES` rows for `ess/10`, `/16`, `/17`, `ess-diff/7`, and the `formats.md` /
    `spec-versions.md` entries, so the `ess-xtask` docs lane passes; every "unsupported version"
    literal the grep in "Formats and versions" finds is moved.
 10. **Group tuples:** the two-key fixture view yields a B₂ row whose `channel` differs from B's, and
@@ -740,7 +759,7 @@ than `<view>/aggregate` names that view in any step.
     bₖ row.
 11. **Two roles and parameter refutation:** `count_distinct` over the group key is 1 per group;
     a view whose filter is only `f == param.p` arranges x with `f = "<view>/out"` and no
-    `ESS-SYNTH-W`.
+    `ESS-SYNTH-017`.
 
 ## Out of scope
 
@@ -763,3 +782,65 @@ than `<view>/aggregate` names that view in any step.
 - **`avg` as `Binary64`** (the issue's alternative). A float mean differs between summation orders,
   so two correct implementations would disagree, and conformance has no `Binary64` witness to
   arrange one with (`crates/verify/ess-conformance/src/witness.rs:646`).
+
+## What the implementation corrected
+
+Each line is a place the page, read as a specification, was wrong or silent, and what was built
+instead.
+
+- **The example did not validate.** `Complete` emits `Completed`, which declares `session_id`, and
+  gave it no payload source; at `ess/4` and later that is refused (`emitted payload field has no
+  source`). The example, and the fixture `crates/verify/ess-conformance/tests/fixtures/aggregate-views.yaml`
+  built from it, map `session_id: input.session_id`.
+- **`RawAggregate` is read and written by hand**, as a one-entry map. `serde_yaml` reads and writes a
+  derived externally tagged enum as a YAML tag (`!sum talk_seconds`), so the derived form refused the
+  page's own syntax. The JSON Schema is still the derived one: one object per function with exactly
+  that key.
+- **The ordinary predecessor is `/14`, not `/15`.** `/15` is a coverage major, so an ordinary document
+  labelled `/15` is refused for its missing coverage before any aggregate gate runs. The Rust gate is
+  checked on a typed suite pinned at `/15`; the Go gate on the ordinary suite relabelled `/14`; the
+  coverage gate on a refusal-only coverage suite relabelled `/15` (Rust, Go) and `/11` (TypeScript,
+  whose table ends there).
+- **One wording for every projection.** `ResolvedAggregate::describe` (`count of instances`, `sum of
+  `talk_seconds``, `greatest `wait_seconds``, …) is read by the OpenAPI description, the documentation
+  page, the plan and the row-type doc comments. The documentation bullet therefore reads "the count of
+  instances in the group", not the page's "the number of instances in the group".
+- **The web page note changes only where it has something to say.** The page script is shared by
+  every web target, and `complete_committed_valid_artifact_maps_are_unchanged_and_compile` pins the
+  committed billing page's bytes. The grouping clause is spliced into the script only when the page
+  presents an aggregate view.
+- **The empty read is a read of its own.** `require` issues one `query_view` per view and block, so a
+  `read_your_writes` view's second read, with the parameter bound to `<view>/empty`, would have been
+  asserted against the first read's rows. Aggregate reads are written by their own `read`, one query
+  per parameter binding.
+- **A filter reads the source, in synthesis too.** `shows` typed a filter's facts by the view's own
+  fields, which for an aggregate view are group keys and results (`talk_seconds` is the sum). It
+  types them by the source entity's observable fields for an aggregate view.
+- **The identity and `state` as aggregate inputs** are not numbered among the inputs: no arrangement
+  chooses them. Their values are read off what was arranged — each row's own identity, and the state
+  the row was driven to — so `count_distinct(session_id)` is the row count and
+  `count_distinct(state)` is the number of states the admitted rows rest in. A **group key that is the
+  identity** is `ESS-SYNTH-017` (no two rows share it), or `ESS-SYNTH-016` when nothing else scopes
+  the view.
+- **The goal search is narrower than "Reaching the values" allows.** A row's filter truth is reached
+  through the lifecycle state the declared moves reach and, for a parameter-scoped filter, through
+  `<view>/out`. A filter whose truth depends on an input the pattern fixes, and that no reachable
+  state decides as the row needs, is `ESS-SYNTH-017` naming the row. That is a refusal the page
+  permits ("a filter truth it cannot reach"), never a wrong number.
+- **The `Timestamp` ladder** writes `2026-01-DDTHH:MM:00Z`, `n` minutes after midnight on
+  2026-01-01, as the page says; an ordinal of a month or more is outside every arrangement here.
+- **The TypeScript `scenarioIdentity` refuses an `…/aggregate` id by name** rather than admitting it.
+  Every suite that runtime admits is `/11` or older, so an admitted aggregate id could only come from
+  a forged older document, and with no per-scenario gate it would run. It is refused with
+  `aggregate views require suite/16 or /17` before any callback.
+- **The docs lane reads a wrapped `SUPPORTED_*` list.** At `/17`, `SUPPORTED_SUITE_FORMATS` no longer
+  fits on its declaration's line and `rustfmt` moves the list to the next one; the reader in
+  `crates/edge/ess-xtask/src/docs.rs` matched only the one-line form. It now reads either, for every
+  family.
+- **Correction round 1 (adversary).** Four arrangement rules were too weak: the `avg` adjustment
+  only made a mean non-terminating, so a truncating `avg` passed for three of the page's own inputs
+  at *m* = 6 and at *m* = 7; `min`/`max` over a generated identity asserted a placeholder; a move
+  that rewrote a group key left unscoped groups asserted exactly; and a non-scoped first key had no
+  Bₖ, so it could be ignored. The rules above now say what was built: the δ search and the
+  post-arrangement check, the rewrite and generated-value refusals, and a Bₖ for every non-scoped
+  key. The worked example's numbers are unchanged (46 / 6 already separates).

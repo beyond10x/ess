@@ -60,13 +60,13 @@ use ess_primitives::error::{
 use crate::diagnostic::{Code, Detail, Diagnostic, Diagnostics, Severity};
 use crate::ir::{
     ActorHandle, CommandHandle, ComponentHandle, DomainHandle, EntityHandle, ErrorHandle, EssIr,
-    EventHandle, ResolvedActor, ResolvedBinding, ResolvedBody, ResolvedCommand,
-    ResolvedCommandGroup, ResolvedCommandLineSurface, ResolvedComponent, ResolvedComponentSetting,
-    ResolvedCondition, ResolvedConversion, ResolvedDomain, ResolvedEffect, ResolvedEntity,
-    ResolvedError, ResolvedEvent, ResolvedField, ResolvedInstance, ResolvedMapping,
-    ResolvedMappingValue, ResolvedOutcome, ResolvedPayload, ResolvedPayloadField,
-    ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef,
-    ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    EventHandle, ResolvedActor, ResolvedAggregate, ResolvedAggregation, ResolvedBinding,
+    ResolvedBody, ResolvedCommand, ResolvedCommandGroup, ResolvedCommandLineSurface,
+    ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
+    ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
+    ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType,
+    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -2471,6 +2471,10 @@ impl<'a> Resolver<'a> {
             else {
                 continue;
             };
+            let aggregation = view
+                .aggregation
+                .as_ref()
+                .map(|aggregation| self.aggregation(aggregation, entities.get(source.name())));
             resolved.insert(
                 view.name.clone(),
                 ResolvedView {
@@ -2481,6 +2485,7 @@ impl<'a> Resolver<'a> {
                     fields,
                     params,
                     filter: view.filter,
+                    aggregation,
                     order_by: view.order_by,
                     consistency: view.consistency,
                     assertion_style: view.consistency.assertion_style(),
@@ -2489,6 +2494,43 @@ impl<'a> Resolver<'a> {
             );
         }
         resolved
+    }
+
+    /// An aggregate view's computations, each input read off the source's observable fields as
+    /// the projected fields are checked against them.
+    ///
+    /// `ess-domain` refuses an input that is not one, so a miss means an unchecked in-memory
+    /// specification, and compilation stays closed over it.
+    fn aggregation(
+        &mut self,
+        aggregation: &ess_domain::view::Aggregation,
+        entity: Option<&ResolvedEntity>,
+    ) -> ResolvedAggregation {
+        let mut functions = BTreeMap::new();
+        for (field, aggregate) in &aggregation.functions {
+            let input = match &aggregate.input {
+                None => None,
+                Some(input) => {
+                    let Some(resolved) = entity.and_then(|entity| entity.observable_field(input))
+                    else {
+                        self.off_contract = true;
+                        continue;
+                    };
+                    Some(resolved)
+                }
+            };
+            functions.insert(
+                field.clone(),
+                ResolvedAggregate {
+                    function: aggregate.function,
+                    input,
+                },
+            );
+        }
+        ResolvedAggregation {
+            group_by: aggregation.group_by.clone(),
+            functions,
+        }
     }
 
     /// Every actor, with every grant resolved to the command it names.

@@ -77,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -301,7 +301,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		number := 0
-		for n := 1; n <= 15; n++ {
+		for n := 1; n <= 17; n++ {
 			if code == fmt.Sprintf("ESS-SYNTH-%03d", n) {
 				number = n
 			}
@@ -310,7 +310,7 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, coverageError()
 		}
 		effect := "candidate_not_emitted"
-		if number == 5 || number == 11 || number == 12 || number == 14 {
+		if number == 5 || number == 11 || number == 12 || number == 14 || number == 16 || number == 17 {
 			effect = "check_not_emitted"
 		}
 		if r["effect"] != effect {
@@ -1564,8 +1564,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15") && config.version != "2" {
-		t.Fatalf("suite/8 through /15 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17") && config.version != "2" {
+		t.Fatalf("suite/8 through /17 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -3379,6 +3379,8 @@ func scenarioIdentity(id string) error {
 		valid = q(p[0]) && q(p[3]) && k(p[4])
 	case len(p) == 5 && p[1] == "invariant" && p[2] == "at":
 		valid = q(p[0]) && q(p[3]) && p[4] != ""
+	case len(p) == 2 && p[1] == "aggregate":
+		valid = q(p[0])
 	}
 	if !valid {
 		return fmt.Errorf("malformed scenario ID %q", id)
@@ -3441,11 +3443,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 14
 	case "ess-conformance/15":
 		major = 15
+	case "ess-conformance/16":
+		major = 16
+	case "ess-conformance/17":
+		major = 17
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13 and /15")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15 and /17")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3468,6 +3474,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	for id, scenario := range scenarios {
 		if err := scenarioIdentity(id); err != nil {
 			return suite, err
+		}
+		// An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17.
+		if strings.HasSuffix(id, "/aggregate") && major < 16 {
+			return suite, fmt.Errorf("aggregate views require suite/16 or /17")
 		}
 		s, err := closed(scenario, "purpose steps source", "")
 		if err != nil {
@@ -3510,12 +3520,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
 				if row, ok := item.(map[string]any); ok && row["code"] == "ESS-SYNTH-015" && major < 7 {
 					return suite, fmt.Errorf("accessor refusal requires suite/7")
+				}
+				if row, ok := item.(map[string]any); ok && (row["code"] == "ESS-SYNTH-016" || row["code"] == "ESS-SYNTH-017") && major < 17 {
+					return suite, fmt.Errorf("aggregate view refusals require suite/17")
 				}
 			}
 		}
@@ -3536,7 +3549,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3549,7 +3562,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 		return suite, nil
 	}
-	if major == 12 || major == 14 {
+	if major == 12 || major == 14 || major == 16 {
 		decoder := json.NewDecoder(strings.NewReader(raw))
 		decoder.UseNumber()
 		err = decoder.Decode(&suite)
@@ -3567,7 +3580,7 @@ func executionSuite(suite Suite) (Suite, error) {
 			return Suite{}, err
 		}
 		var err error
-		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" {
+		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" {
 			decoder := json.NewDecoder(strings.NewReader(suite.original))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
