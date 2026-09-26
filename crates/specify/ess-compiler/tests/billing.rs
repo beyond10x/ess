@@ -87,6 +87,28 @@ fn name(value: &str) -> QualifiedName {
     QualifiedName::new(value).expect("a valid qualified name")
 }
 
+/// The compact JSON an emitted `ir.json` carries is the bytes the model digest is taken over, so a
+/// reader that checks one against the other depends on nothing but this pair
+/// (`docs/design/mutation-audit-and-model-runner.md`, P2-8).
+#[test]
+fn the_model_digest_is_sha256_over_the_compact_json() {
+    use sha2::{Digest as _, Sha256};
+    use std::fmt::Write as _;
+
+    let ir = compiled();
+    let compact = ir.to_compact_json();
+    assert_eq!(compact, serde_json::to_string(&ir).unwrap());
+    assert!(
+        !compact.ends_with('\n'),
+        "no trailing LF: the file adds one"
+    );
+    let mut hex = String::new();
+    for byte in Sha256::digest(compact.as_bytes()) {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    assert_eq!(ir.source_digest(), hex);
+}
+
 #[test]
 fn the_billing_specification_resolves() {
     let ir = compiled();

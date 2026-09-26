@@ -62,7 +62,7 @@ pub(super) fn generate(
             }
         }
         SuiteTarget::Go => {
-            let files = ess_conformance::go::emit_input(&admitted)?;
+            let files = ess_conformance::go::emit_input_with_model(&admitted, &ir)?;
             if let Some(out) = out {
                 super::write_owned_files(
                     out,
@@ -72,7 +72,7 @@ pub(super) fn generate(
             }
         }
         SuiteTarget::Typescript => {
-            let files = ess_conformance::ts::emit_input(&admitted)?;
+            let files = ess_conformance::ts::emit_input_with_model(&admitted, &ir)?;
             if let Some(out) = out {
                 super::write_owned_files(
                     out,

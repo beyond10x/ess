@@ -23,8 +23,23 @@ pub(crate) enum LoadedSpec {
     },
 }
 
-/// Parses, assembles, validates, and resolves a specification.
-pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
+/// The parsed source documents of a specification, before assembly.
+pub(crate) struct RawLoaded {
+    /// Every document, as parsed, with the source it came from.
+    pub(crate) parsed: Vec<(ess_domain::system::Source, ess_domain::spec::RawSpecFile)>,
+    /// The text of every document, for locating diagnostics.
+    pub(crate) texts: SourceMap,
+    /// How many files were read.
+    pub(crate) files_read: usize,
+    /// Every document that did not parse; empty when all did.
+    pub(crate) problems: Vec<String>,
+}
+
+/// Reads and parses every source document of a specification, and assembles nothing.
+///
+/// The one parse path: [`specification`] is this followed by assembly and compilation, and
+/// `ess verify conform mutate` edits what this returns before doing the same.
+pub(crate) fn raw_specification(path: &Path) -> Result<RawLoaded> {
     let inputs =
         crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?;
     let files_read = inputs.len();
@@ -41,6 +56,22 @@ pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
             Err(error) => problems.push(format!("{}: {error}", source.as_str())),
         }
     }
+    Ok(RawLoaded {
+        parsed,
+        texts,
+        files_read,
+        problems,
+    })
+}
+
+/// Parses, assembles, validates, and resolves a specification.
+pub(crate) fn specification(path: &Path) -> Result<LoadedSpec> {
+    let RawLoaded {
+        parsed,
+        texts,
+        files_read,
+        problems,
+    } = raw_specification(path)?;
 
     if !problems.is_empty() {
         return Ok(LoadedSpec::Refused {

@@ -138,6 +138,7 @@ pub mod faulty;
 pub mod go;
 pub mod input;
 pub mod interpret;
+pub mod mutate;
 pub mod periodic;
 pub mod quoted_predicate_format;
 pub mod reading;
