@@ -179,16 +179,16 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=13) {
+    if !matches!(version.major(), 1..=15) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–13",
+            "execution readers admit suite majors 1–15",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11 | 13) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15) != root.contains_key("coverage") {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11 and suite/13",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13 and suite/15",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -248,6 +248,7 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
                     serde_json::from_str(&fields["selection"].raw)
                         .map_err(|error| v.error("InvalidSelection", error.to_string()))?;
                 crate::quoted_predicate_format::admit_selection(&fields["selection"].raw, major)?;
+                crate::text_match_format::admit_selection(&fields["selection"].raw, major)?;
             }
             "observed_accessor" => {
                 if major < 6 || !accessors {
@@ -313,6 +314,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
             let f = value.closed(&["expect", "predicate"], &[])?;
             f["predicate"].payload()?;
             crate::quoted_predicate_format::admit_predicate(&f["predicate"].raw, major)?;
+            crate::text_match_format::admit_predicate(&f["predicate"].raw, major)?;
         }
         "counts" => {
             value.closed(&["expect"], &["at_least", "at_most"])?;
@@ -463,6 +465,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 pub fn suite(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::replay::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;
+    crate::text_match_format::admit_suite(suite)?;
     response_payloads(suite)?;
     entity_setup(suite)?;
     crate::periodic::admit_suite(suite)?;

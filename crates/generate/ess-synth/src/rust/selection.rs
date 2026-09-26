@@ -137,6 +137,16 @@ fn predicate(predicate: &Predicate, reads: &BTreeMap<String, usize>) -> String {
                 .join(",")
         ),
         Predicate::Not(child) => format!("({}).map(|value| !value)", self::predicate(child, reads)),
+        // Byte-wise, as `str` answers; an absent optional leaf is `None`, which is Unknown.
+        Predicate::TextMatch {
+            path,
+            op,
+            value: ess_primitives::facts::FactValue::Text(literal),
+        } => format!(
+            "read_{}.as_ref().map(|value| value.{}({literal:?}))",
+            reads[&path.to_string()],
+            op.keyword()
+        ),
         _ => unreachable!("admitted finite selector predicate"),
     }
 }

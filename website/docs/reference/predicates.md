@@ -47,7 +47,7 @@ replaces the guard of outcome `placed`. An `invariants:` fragment replaces the i
 `shop.order.Order`. A `filter:` fragment replaces the filter of `shop.order.OpenOrders`.
 
 ```yaml ess-check="model"
-format: ess/1
+format: ess/8
 system: shop
 version: v1
 domain: shop.order
@@ -96,6 +96,9 @@ commands:
         creates: shop.order.Order
         instance: order_id
         emits: [shop.order.OrderPlaced]
+        payload:
+          shop.order.OrderPlaced:
+            order_id: {generated: true}
       - name: refused
         error: shop.order.Refused
   - name: shop.order.CloseOrder
@@ -106,6 +109,9 @@ commands:
         moves: shop.order.Order.close
         instance: order_id
         emits: [shop.order.OrderClosed]
+        payload:
+          shop.order.OrderClosed:
+            order_id: input.order_id
       - name: wrong-state
         wrong_state: true
         error: shop.order.NotOpen
@@ -126,7 +132,7 @@ views:
       - {name: channel, type: shop.order.Channel}
   - name: shop.order.OrderById
     source: shop.order.Order
-    consistency: eventual
+    consistency: read_your_writes
     fields:
       - {name: order_id, type: Uuid}
       - {name: channel, type: shop.order.Channel}
@@ -134,6 +140,8 @@ views:
       - {name: sku, type: shop.order.Sku}
       - {name: note, type: Optional<String>}
       - {name: tags, type: List<String>}
+      - {name: labels, type: "Map<String, String>"}
+      - {name: state, type: shop.order.Order.State}
 ```
 
 ## Compact forms
@@ -502,19 +510,91 @@ when: sku < "m"
 
 ## String operators
 
-*Arriving with [beyond10x/ess#95](https://github.com/beyond10x/ess/issues/95).* Until then the
-parser refuses these operators as unknown.
+`starts_with`, `ends_with` and `contains` test a text fact against a literal. They need
+`format: ess/8`. An older document that uses one is refused as `unsupported_format_version`, in
+every predicate position. They are map-form only: there is no compact form, no alias and no `not_`
+spelling, so negate one with `not:`. Several in one mapping are conjoined.
 
-`starts_with`, `ends_with` and `contains` test a text fact against a literal. They are map-form
-only. They apply to `String` and to newtypes of `String`, and any other type is refused. Matching
-is byte-wise and case-sensitive. Negate one with `not:`.
+They apply to `String` and to newtypes of `String` at any depth, including through `Optional`.
+Any other type is refused, enums, `Uuid`, `Timestamp` and `Duration` included. Matching is
+byte-wise and case-sensitive, with no Unicode normalisation: `ABC` does not begin with `a`, and a
+decomposed `é` does not begin with a composed one. An unobserved fact is unknown, so neither a
+guarded branch nor its negation is taken.
 
-```yaml ess-check="when" ess-expect="synthesizes" ess-pending="beyond10x/ess#95"
+```yaml ess-check="when" ess-expect="synthesizes"
 when:
   all:
     - sku: {starts_with: "SKU-"}
     - not: {sku: {contains: "test"}}
     - sku: {ends_with: "0"}
+```
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when:
+  sku: {starts_with: "A", ends_with: "0"}
+```
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when:
+  all:
+    - sku: {contains: "RE"}
+    - not: {sku: {starts_with: "RE"}}
+```
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when:
+  exists:
+    in: tags
+    as: t
+    that:
+      t: {starts_with: "vip"}
+```
+
+The operand is the text it spells. It is never a number, a Boolean or a fact path, and quote
+characters inside it are part of it: `{starts_with: "+44"}` tests for a leading `+44`, and
+`{starts_with: '"x"'}` for a leading `"`. Unquoted, YAML reads `+44` as the number 44, which is
+refused.
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-002" ess-says="quote the literal exactly as written"
+when:
+  sku: {starts_with: +44}
+```
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-002" ess-says="does not admit"
+when:
+  channel: {starts_with: "W"}
+```
+
+A literal that names a field of the same owner is refused, as for `==`: a string operator compares
+with a literal only. The empty literal is refused too, because it holds for every text and its
+negation for none. Write `defined(x)` if presence is meant.
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-002" ess-says="compares with a literal only"
+when:
+  sku: {contains: gift}
+```
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-007" ess-says="defined(sku)"
+when:
+  sku: {ends_with: ""}
+```
+
+A guard and its negation are still not a complete set of branches. The prover that lets enum
+branches go without a default does not read text, so a command whose outcomes are all guarded by
+string operators needs a default branch.
+
+The same operators work in every predicate position: invariants, view filters and binding
+selections. In a selection the literal is at most 4096 bytes.
+
+```yaml ess-check="filter" ess-expect="valid"
+filter:
+  sku: {starts_with: "SKU-"}
+```
+
+```yaml ess-check="invariants" ess-expect="valid"
+invariants:
+  - quantity >= 1
+  - not: {sku: {contains: " "}}
 ```
 
 ## What synthesis can witness
@@ -533,7 +613,7 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | `.count`, `exists`, `forall` over an input list | yes. The list is built from the guard's own literal: a one-element list satisfies the guard, and `[]` or a list of other text refutes it. |
 | a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |
-| `starts_with`, `ends_with`, `contains` | with [#95](https://github.com/beyond10x/ess/issues/95) |
+| `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
 
 ```yaml ess-check="when" ess-expect="unwitnessed:ESS-SYNTH-003"
 when: sku

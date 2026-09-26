@@ -225,6 +225,59 @@ impl fmt::Display for CompareOp {
     }
 }
 
+/// A string operator: a text fact tested against a text literal (beyond10x/ess#95).
+///
+/// Map form only (`caller: {starts_with: "+44"}`), with one spelling each and no negated one:
+/// `not:` negates. Matching is byte-wise and case-sensitive, with no Unicode normalisation, which is
+/// what every lane's standard library answers. `docs/design/string-predicate-operators.md` is the
+/// design.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextOp {
+    /// `starts_with`: the text begins with the bytes of the literal.
+    StartsWith,
+    /// `ends_with`: the text ends with the bytes of the literal.
+    EndsWith,
+    /// `contains`: the bytes of the literal occur in the text.
+    Contains,
+}
+
+impl TextOp {
+    /// Every string operator, in the order the design names them.
+    pub const ALL: [Self; 3] = [Self::StartsWith, Self::EndsWith, Self::Contains];
+
+    /// The map-form key.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::StartsWith => "starts_with",
+            Self::EndsWith => "ends_with",
+            Self::Contains => "contains",
+        }
+    }
+
+    /// Parses the map-form key. There is exactly one spelling of each.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|op| op.keyword() == keyword)
+    }
+
+    /// Whether `text` begins with, ends with or contains `literal`, byte for byte.
+    ///
+    /// `str::contains(&str)` matches bytes: a valid UTF-8 needle can only match a valid UTF-8
+    /// haystack at a character boundary, so byte and character matching agree.
+    pub fn holds(self, text: &str, literal: &str) -> bool {
+        match self {
+            Self::StartsWith => text.as_bytes().starts_with(literal.as_bytes()),
+            Self::EndsWith => text.as_bytes().ends_with(literal.as_bytes()),
+            Self::Contains => text.contains(literal),
+        }
+    }
+}
+
+impl fmt::Display for TextOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
 /// One side of a comparison: either a fact to look up, or a literal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
@@ -380,6 +433,19 @@ pub enum Predicate {
         path: FactPath,
         /// Rejected values.
         values: Vec<FactValue>,
+    },
+    /// The text fact begins with, ends with or contains a literal (beyond10x/ess#95).
+    ///
+    /// Unobserved is [`Truth::Unknown`]; an observed value that is not text is [`Truth::False`],
+    /// and so is any observed value against a literal that is not text. Validation refuses such a
+    /// literal, so only an unchecked caller reaches that row.
+    TextMatch {
+        /// The fact to read.
+        path: FactPath,
+        /// Which of the three tests.
+        op: TextOp,
+        /// The literal, verbatim as written: never a fact path, never read as a number.
+        value: FactValue,
     },
     /// Every element of a collection satisfies the body.
     ///
@@ -557,6 +623,16 @@ impl Predicate {
             Self::NoneOf { path, values } => facts.fact(path).map_or(Truth::Unknown, |observed| {
                 Truth::from_bool(!values.contains(&observed))
             }),
+            Self::TextMatch { path, op, value } => {
+                facts
+                    .fact(path)
+                    .map_or(Truth::Unknown, |observed| match (&observed, value) {
+                        (FactValue::Text(text), FactValue::Text(literal)) => {
+                            Truth::from_bool(op.holds(text, literal))
+                        }
+                        _ => Truth::False,
+                    })
+            }
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
         }
@@ -793,7 +869,8 @@ impl Predicate {
             Self::Truthy(path)
             | Self::Defined(path)
             | Self::AnyOf { path, .. }
-            | Self::NoneOf { path, .. } => {
+            | Self::NoneOf { path, .. }
+            | Self::TextMatch { path, .. } => {
                 if !bound.contains(&path.namespace()) {
                     visit(path);
                 }
@@ -845,7 +922,30 @@ impl Predicate {
             | Self::Truthy(_)
             | Self::Defined(_)
             | Self::AnyOf { .. }
-            | Self::NoneOf { .. } => {}
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. } => {}
+        }
+    }
+
+    /// Whether any leaf of this predicate, at any depth, is a string operator.
+    ///
+    /// The one question every format gate asks of the construct: `ess/8` for an authored
+    /// specification, the suite pair for a suite, and `infra-spec/1`'s refusal.
+    pub fn uses_text_match(&self) -> bool {
+        match self {
+            Self::TextMatch { .. } => true,
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::uses_text_match),
+            Self::Not(inner) => inner.uses_text_match(),
+            Self::Forall(quantified) | Self::Exists(quantified) => {
+                quantified.body.uses_text_match()
+            }
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. } => false,
         }
     }
 
@@ -1109,14 +1209,35 @@ impl Predicate {
                 })
             }
             "truthy" => Ok(Self::Truthy(path)),
+            "starts_with" | "ends_with" | "contains" => Self::text_match(path, operator, operand),
             unknown => Err(ParseError::predicate(
                 &format!("{path}: {{{unknown}: …}}"),
                 format!(
                     "unknown operator {unknown:?}; expected one of eq, ne, lt, lte, gt, gte, \
-                     any_of, none_of, exists, truthy"
+                     any_of, none_of, exists, truthy, starts_with, ends_with, contains"
                 ),
             )),
         }
+    }
+
+    /// Parses a string operator's operand: a text is the literal byte for byte, never read through
+    /// [`Operand::parse`], so `"+44"` stays text and `"a.b"` is no fact path. A number or a Boolean
+    /// is kept as that value, for validation to refuse with a code and a site; anything else is not
+    /// a scalar.
+    fn text_match(path: FactPath, operator: &str, operand: &Node) -> Result<Self, ParseError> {
+        let op = TextOp::from_keyword(operator).expect("dispatched on a string operator keyword");
+        let value = match operand {
+            Node::Text(text) => FactValue::Text(text.clone()),
+            Node::Number(number) => FactValue::Number(*number),
+            Node::Bool(value) => FactValue::Bool(*value),
+            other => {
+                return Err(ParseError::predicate(
+                    &format!("{path}: {{{operator}: {other}}}"),
+                    "a comparison operand must be a scalar",
+                ))
+            }
+        };
+        Ok(Self::TextMatch { path, op, value })
     }
 
     /// Parses the compact string form of a predicate.
@@ -1328,6 +1449,16 @@ impl Predicate {
             ),
             Self::Forall(quantified) => quantifier_node("forall", quantified),
             Self::Exists(quantified) => quantifier_node("exists", quantified),
+            // Explicit, never the compact fallback below: there is no compact form, so a string
+            // operator rendered as text would be a document no reader parses back. A text operand
+            // is written as the text, with no quotes added, because the reader takes it verbatim.
+            Self::TextMatch { path, op, value } => Node::Map(
+                [(
+                    path.to_string(),
+                    Node::Map([(op.keyword().to_owned(), value_node(value))].into()),
+                )]
+                .into(),
+            ),
             Self::Compare {
                 left: Operand::Fact(path),
                 op,
@@ -1521,6 +1652,14 @@ impl fmt::Display for Predicate {
             Self::Defined(path) => write!(f, "defined({path})"),
             Self::AnyOf { path, values } => write!(f, "{path} in [{}]", join_values(values)),
             Self::NoneOf { path, values } => write!(f, "{path} not in [{}]", join_values(values)),
+            // For a reader and the semantic diff, never read back: a text literal is quoted by
+            // `Debug`, a number or a Boolean is bare.
+            Self::TextMatch {
+                path,
+                op,
+                value: FactValue::Text(text),
+            } => write!(f, "{path} {op} {text:?}"),
+            Self::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
             Self::Forall(quantified) => write_quantified(f, "forall", quantified),
             Self::Exists(quantified) => write_quantified(f, "exists", quantified),
         }
@@ -1602,7 +1741,8 @@ impl schemars::JsonSchema for Predicate {
         schema.metadata().description = Some(
             "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a \
              list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, \
-             `exists` or a fact path with an operator constraint."
+             `exists` or a fact path with an operator constraint. A text fact is tested against a \
+             text literal, map form only, with `starts_with`, `ends_with` or `contains`."
                 .to_owned(),
         );
         schema.into()

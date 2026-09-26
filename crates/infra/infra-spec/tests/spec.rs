@@ -168,6 +168,25 @@ fn every_kind_whose_parameters_can_decide_nothing_is_refused_with_one_code() {
     }
 }
 
+/// The predicate grammar is shared, and `infra-spec/1` does not gain the string operators
+/// (beyond10x/ess#95) by accident: admitting them is that format's own decision.
+#[test]
+fn a_string_operator_is_refused_because_infra_spec_1_does_not_carry_it() {
+    for predicate in [
+        "{workload.name: {starts_with: api}}",
+        "{not: {workload.name: {ends_with: \"-canary\"}}}",
+        "{all: [workload.replicas >= 2, {workload.name: {contains: web}}]}",
+    ] {
+        let refused = refusals(&document(&format!(
+            "  - id: a\n    expect:\n      workload_predicate: {predicate}\n"
+        )));
+        assert!(
+            refused.contains(InfraCode::SpecInvalidExpectation),
+            "{predicate}: {refused}"
+        );
+    }
+}
+
 #[test]
 fn a_predicate_reading_a_fact_the_projection_never_states_is_refused_as_a_typo() {
     let refused = refusals(&document(

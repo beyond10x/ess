@@ -22,7 +22,7 @@ Every family is read by a build that states which versions it implements and ref
 refusal is the point: a reader that accepts a shape it does not understand returns a wrong answer
 about somebody's system, and blames the document for the age of the tool.
 
-A version number is per family. `ess/7` and `ess-conformance/13` count
+A version number is per family. `ess/8` and `ess-conformance/15` count
 separately and always have.
 
 ## `ess/` — the authored specification
@@ -54,6 +54,12 @@ subject-state branches sharing one existing subject. Earlier formats refuse thes
 constructs. A replay response containing Decimal or Binary64, including through
 nested declarations, is outside the exact-result observation profile and refuses
 synthesis. This does not change existing response-to-event comparisons.
+
+`ess/8`, unreleased, admits the string operators `starts_with`, `ends_with` and `contains` in
+every predicate position: command guards, invariants, view filters and binding selections. They
+are map form only and apply to `String` and newtypes of it. Earlier source formats refuse them with
+`unsupported_format_version` at the position that uses one. A model that uses none keeps its bytes
+and its compiled digest. See [string operators](./predicates.md#string-operators).
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
@@ -116,6 +122,14 @@ an absent optional field differs from explicit null. Decimal and Binary64 are no
 admitted in this response profile. This immediate witness cannot distinguish a
 current-head result while it still equals the original; adopters must separately
 test later-head and restart retries through their real handlers.
+
+`ess-conformance/14` and `/15`, unreleased, carry a string operator where a suite carries a
+predicate: a `satisfies` expectation or an observed selection plan. Version 14 is ordinary and 15
+carries declared coverage; each implies every major below it. Rust and Go admit and evaluate them,
+and refuse an operand that is not a JSON string. Older envelopes refuse the operators, and the
+TypeScript and browser readers refuse these envelopes by their version. A string guard over
+command input is decided at synthesis and never reaches the suite, so such a suite keeps its
+earlier format.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

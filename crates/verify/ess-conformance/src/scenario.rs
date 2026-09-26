@@ -154,7 +154,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::replay::used_by(self) {
+        self.provenance.suite_version = if crate::text_match_format::used_by(self) {
+            SuiteFormat::parse("ess-conformance/14").expect("constant suite version")
+        } else if crate::replay::used_by(self) {
             SuiteFormat::parse("ess-conformance/12").expect("constant suite version")
         } else if self.requires_preservation_format() {
             SuiteFormat::parse("ess-conformance/10").expect("constant suite version")
@@ -365,7 +367,7 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -2669,12 +2671,14 @@ mod tests {
             "ess-conformance/11",
             "ess-conformance/12",
             "ess-conformance/13",
+            "ess-conformance/14",
+            "ess-conformance/15",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/14").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/16").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

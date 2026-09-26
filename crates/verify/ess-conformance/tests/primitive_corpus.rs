@@ -260,6 +260,118 @@ fn the_go_runtime_orders_every_text_pair_the_corpus_states_by_its_bytes() {
     );
 }
 
+/// The Go test that asks the runtime's predicate reader and evaluator every `text_matches` vector
+/// (beyond10x/ess#95), with the admission and meaning a suite reaches them through.
+///
+/// A `null` vector is bound, as the Go flattener binds one (`bindFact`'s `default:`), so the lane
+/// that does bind it is the lane that has to answer `Unknown` for it.
+const GO_TEXT_MATCH_TEST: &str = r#"package essconform
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+func TestTextMatchCorpus(t *testing.T) {
+	raw, err := os.ReadFile("vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus struct {
+		TextMatches []map[string]json.RawMessage `json:"text_matches"`
+	}
+	if err := json.Unmarshal(raw, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	if len(corpus.TextMatches) < 20 {
+		t.Fatalf("the corpus selected %d text matches", len(corpus.TextMatches))
+	}
+	for _, vector := range corpus.TextMatches {
+		var name, op, literal, expected string
+		for key, into := range map[string]*string{"name": &name, "op": &op, "literal": &literal, "truth": &expected} {
+			if err := json.Unmarshal(vector[key], into); err != nil {
+				t.Fatalf("%s: %v", key, err)
+			}
+		}
+		node := map[string]any{"caller": map[string]any{op: literal}}
+		if err := admitPredicateVersion(node, 14); err != nil {
+			t.Fatalf("%s: suite/14 refuses %v: %v", name, node, err)
+		}
+		if err := admitPredicateVersion(node, 13); err == nil {
+			t.Errorf("%s: suite/13 admits %v", name, node)
+		}
+		leaf, err := fromNode(node)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		source := factSource{}
+		if value, present := vector["value"]; present {
+			var decoded any
+			if err := json.Unmarshal(value, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			source["caller"] = decoded
+		}
+		want := map[string]truth{"true": truthTrue, "false": truthFalse, "unknown": truthUnknown}[expected]
+		if got := leaf.evaluate(source); got != want {
+			t.Errorf("Go %s: %v over %v: got %v, corpus says %s", name, node, source, got, expected)
+		}
+		if got := (predicate{kind: "not", body: &leaf}).evaluate(source); got != want.not() {
+			t.Errorf("Go %s: not %v: got %v", name, node, got)
+		}
+		if meaning, ok := predicateMeaning(node).([]any); !ok || meaning[0] != op {
+			t.Errorf("%s: meaning of %v is %v, not its own operator", name, node, predicateMeaning(node))
+		}
+	}
+	for _, operand := range []any{44.0, true, nil, []any{"a"}, map[string]any{"a": "b"}} {
+		node := map[string]any{"caller": map[string]any{"starts_with": operand}}
+		if err := admitPredicateVersion(node, 14); err == nil {
+			t.Errorf("suite/14 admits the non-string operand %v", operand)
+		}
+	}
+}
+"#;
+
+#[test]
+fn the_go_runtime_answers_every_text_match_the_corpus_states() {
+    let root = directory("go-text-match");
+    let package = root.join("essconform");
+    std::fs::create_dir_all(&package).unwrap();
+    for artifact in ess_conformance::go::emit(minimal_suite().suite()).expect("the suite emits") {
+        std::fs::write(root.join(&artifact.path), artifact.contents).unwrap();
+    }
+    std::fs::write(root.join("go.mod"), "module textmatchcorpus\n\ngo 1.24\n").unwrap();
+    std::fs::write(package.join("vectors.json"), CORPUS).unwrap();
+    std::fs::write(package.join("text_match_test.go"), GO_TEXT_MATCH_TEST).unwrap();
+
+    let output = Command::new("go")
+        .args([
+            "test",
+            "-count=1",
+            "-v",
+            "./...",
+            "-run",
+            "^TestTextMatchCorpus$",
+        ])
+        .current_dir(&root)
+        .env("GOWORK", "off")
+        .output()
+        .expect("the required Go toolchain executes");
+    let record = format!(
+        "exit: {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::write(root.join("go.log"), &record).unwrap();
+    assert!(output.status.success(), "{record}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("--- PASS: TestTextMatchCorpus"),
+        "the Go case ran rather than selecting nothing: {record}"
+    );
+}
+
 /// The harness that asks the browser adapter's own export about every vector.
 const JS_HARNESS: &str = r"import {readFileSync} from 'node:fs'
 import {primitiveAdmits} from './admission.js'

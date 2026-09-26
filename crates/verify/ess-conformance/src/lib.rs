@@ -151,6 +151,7 @@ pub mod selection;
 pub mod subject;
 pub mod synthesize;
 pub mod target;
+pub mod text_match_format;
 pub mod ts;
 pub mod web;
 pub mod web_replay;
