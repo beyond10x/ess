@@ -1060,10 +1060,17 @@ fn client_failures_missing_output_and_bounded_diagnostics_preserve_admission() {
 #[test]
 fn actual_stalled_client_is_killed_and_reaped_at_the_shared_deadline() {
     // Both acquisitions run concurrently, each retaining its own injected deadline. The Helm
-    // manifest answers after two thirds of it and the blob then stalls: one deadline shared by
-    // the whole acquisition ends it at `DEADLINE`, and a deadline restarted per client call
-    // would end it two thirds later, past the upper bound.
-    let manifest_delay = DEADLINE * 2 / 3;
+    // manifest answers after three quarters of it and the blob then stalls: one deadline shared
+    // by the whole acquisition ends it at `DEADLINE`, and a deadline restarted per client call
+    // cannot end it before the manifest's delay plus a whole `DEADLINE` however fast the runner
+    // is. That instant is the upper bound, so the bound separates the two structurally and a
+    // loaded runner has three quarters of the deadline to spare rather than a fixed 2.5s.
+    let manifest_delay = DEADLINE * 3 / 4;
+    let restarted = DEADLINE + manifest_delay;
+    // The fake clients are compiled on first use. That compile is not the acquisition, and on a
+    // loaded runner it put 3.9s into the measured window (job 108311377497: 9.893s for both
+    // threads, one of which makes a single client call), so it happens before the clock starts.
+    executors();
     std::thread::scope(|s| {
         for bundle in [true, false] {
             s.spawn(move || {
@@ -1089,8 +1096,9 @@ fn actual_stalled_client_is_killed_and_reaped_at_the_shared_deadline() {
                 let elapsed = start.elapsed();
                 assert!(
                     elapsed + std::time::Duration::from_millis(500) >= DEADLINE
-                        && elapsed < DEADLINE + std::time::Duration::from_millis(2500),
-                    "{elapsed:?} is not the {DEADLINE:?} acquisition deadline"
+                        && elapsed < restarted,
+                    "{elapsed:?} is not the {DEADLINE:?} acquisition deadline: a deadline \
+                     restarted per client call ends at {restarted:?} or later"
                 );
                 let pid = std::fs::read_to_string(f.0.join("child-pid")).unwrap();
                 assert!(
