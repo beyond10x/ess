@@ -2,7 +2,9 @@
 
 use crate::system::{FormatVersion, SystemSpec};
 use crate::{Field, Primitive, Specification, TypeBody, TypeRef};
-use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, ValidationCode, ValidationError, ValidationErrors,
+};
 
 pub(crate) fn reference(
     ty: &TypeRef,
@@ -146,8 +148,96 @@ fn held_state_conditions(
     }
 }
 
+/// Every predicate a specification holds, each with the site it is written at.
+///
+/// Command outcome conditions (`when`, and the input predicate beside `when_subject_state`,
+/// `when_state_changes`, `when_subject` and `external`), entity invariants, newtype and struct
+/// invariants, view filters and binding selections. A format gate over predicate vocabulary asks
+/// this one walk, so a position cannot be gated in one construct and forgotten in another; a new
+/// predicate position is added here, not beside the gate that reads it.
+pub(crate) fn predicates(
+    spec: &Specification,
+) -> Vec<(ConstructRef, &ess_primitives::predicate::Predicate)> {
+    let mut found = Vec::new();
+    for declared in spec.system().types.iter() {
+        if let TypeBody::Newtype { invariants, .. } | TypeBody::Struct { invariants, .. } =
+            &declared.body
+        {
+            for (index, invariant) in invariants.iter().enumerate() {
+                found.push((
+                    ConstructRef::new(ConstructKind::Type, declared.name.to_string())
+                        .key("invariants")
+                        .index(index),
+                    &invariant.predicate,
+                ));
+            }
+        }
+    }
+    for entity in spec.entities().values() {
+        for (index, invariant) in entity.invariants.iter().enumerate() {
+            found.push((
+                ConstructRef::new(ConstructKind::Entity, entity.name.to_string())
+                    .key("invariants")
+                    .index(index),
+                &invariant.predicate,
+            ));
+        }
+    }
+    for command in spec.commands().values() {
+        for outcome in &command.outcomes {
+            if let Some(predicate) = outcome.condition.predicate() {
+                found.push((
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.to_string()),
+                    predicate,
+                ));
+            }
+        }
+    }
+    for view in spec.views().values() {
+        if let Some(filter) = &view.filter {
+            found.push((
+                ConstructRef::new(ConstructKind::View, view.name.to_string()).key("filter"),
+                filter,
+            ));
+        }
+    }
+    for binding in spec.bindings().values() {
+        for selection in &binding.selections {
+            if let Some(first) = &selection.first {
+                found.push((
+                    ConstructRef::new(ConstructKind::Binding, binding.name.to_string())
+                        .key("selections")
+                        .named(selection.name.clone()),
+                    &first.predicate,
+                ));
+            }
+        }
+    }
+    found
+}
+
+/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) arrived in `ess/8`.
+fn string_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
+    if format.major() >= FormatVersion::V8.major() {
+        return;
+    }
+    for (site, predicate) in predicates(spec) {
+        if predicate.uses_text_match() {
+            errors.push(ValidationError::at(
+                site,
+                ValidationCode::UnsupportedFormatVersion,
+                "string predicate operators require specification format ess/8",
+            ));
+        }
+    }
+}
+
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
+    string_operators(spec, spec.system().format, &mut errors);
     errors.extend(crate::command::validate_response_contracts(spec));
     let format = spec.system().format;
     for binding in spec.bindings().values() {

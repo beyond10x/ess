@@ -1090,7 +1090,7 @@
       "additionalProperties": false
     },
     "Predicate": {
-      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint.",
+      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`.",
       "anyOf": [
         {
           "type": "string"

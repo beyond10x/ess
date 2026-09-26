@@ -216,11 +216,14 @@ base witness is its own text `b` (`"caller"`, or `"caller-1"` for a further inst
 
 **The composed layouts.** For one guard (or one newtype invariant) and path `p`:
 
-- `P` is the first `starts_with` literal that occurs positively, meaning under an even number of
-  `not`/`none`. A literal that the same guard also negates as a `starts_with` is never taken.
+- `P` is the longest `starts_with` literal that occurs positively, meaning under an even number
+  of `not`/`none`. A literal that the same guard also negates as a `starts_with` is never taken.
+  The longest, not the first (correction round 1): `all: [starts_with A, starts_with AB,
+  ends_with 0]` is met by `AB…0`, and every layout built on `A` misses `AB`.
 - `S` is the same for `ends_with`.
-- `C` is the positive `contains` literals in written order. A literal that the guard also negates
-  as a `contains` is left out.
+- `C` is the positive `contains` literals in written order, leaving out one that `P`, `S` or an
+  earlier member of `C` already contains. A literal that the guard also negates as a `contains`
+  is left out.
 
 The candidates are then:
 
@@ -293,6 +296,14 @@ guards always reach the ladder.
 **Type invariants still filter.** Candidates that a declared newtype invariant refuses are dropped
 by `admitted_inputs` (`witness.rs:266-281`), as today. The rows above show which candidates
 survive.
+
+**An input no guard reads is varied when its own type refuses its base witness** (correction round
+1). `PhoneNumber` with `value: {starts_with: "+"}` refuses the base `number`, so a command
+taking one and guarding on nothing had no admitted candidate, and every branch was refused with
+`ESS-SYNTH-003`. Such a leaf gets a ladder of the invariants' own literals — the rule-3
+alternatives read at `value`, and for text the three layouts above — bounded by rule 4 as every
+ladder is. This also closes the same gap for invariants written before #95: `value: {any_of: [uk,
+us]}` on an unguarded input is now witnessed by `uk`.
 
 **Interaction with A1** (*inferred*: A1 has not merged, and this reads its brief and stories only):
 

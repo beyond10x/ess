@@ -488,6 +488,10 @@ predicate_forms! {
     Not => true,
     Forall => true,
     Exists => true,
+    // It carries a literal, but never against an enum: a string operator over an enum is refused
+    // as a type mismatch whatever its literal, declared variant or not, so the variant rule this
+    // file checks has no case of it. `tests/string_operators.rs` asserts that refusal.
+    TextMatch => false,
 }
 
 /// The form a predicate is, as an exhaustive match.
@@ -508,6 +512,7 @@ fn form_of(predicate: &Predicate) -> Form {
         Predicate::Not(_) => Form::Not,
         Predicate::Forall(_) => Form::Forall,
         Predicate::Exists(_) => Form::Exists,
+        Predicate::TextMatch { .. } => Form::TextMatch,
     }
 }
 
@@ -526,6 +531,7 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
             matches!(left, Operand::Literal(_)) || matches!(right, Operand::Literal(_))
         }
         Predicate::AnyOf { values, .. } | Predicate::NoneOf { values, .. } => !values.is_empty(),
+        Predicate::TextMatch { .. } => true,
         Predicate::All(children) | Predicate::Any(children) => {
             children.iter().any(carries_a_literal)
         }

@@ -86,7 +86,7 @@ anyhow = "1"
 # this layer exists to remove — nothing here re-reads bytes this crate produced.
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 sha2 = "0.11"
-entity-core = { git = "https://github.com/beyond10x/entity-runtime", tag = "0.23.0" }
+entity-core = { git = "https://github.com/beyond10x/entity-runtime", rev = "718a7026fb193222036a553eac05c6b4060f8c38" }
 
 [workspace.lints.rust]
 missing_docs = "warn"

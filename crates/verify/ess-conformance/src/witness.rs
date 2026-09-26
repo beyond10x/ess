@@ -44,6 +44,14 @@
 //!    list's `count` the way an observed collection publishes one. A list a guard reads **by
 //!    position** — `tags.0 == vip` — holds that many elements already in the base, because a read
 //!    that misses is `Unknown` and ends the search; the element is then varied like any leaf.
+//!    **A string operator** (ess#95) is tried at its literal `L`, which satisfies it; at each
+//!    guard's positive literals composed around the path's own text `b` — `P + C + b + S`,
+//!    `P + b + C + S` and `P + C + S`, never with a literal the guard negates — which satisfies
+//!    every positive operator of that guard at once; at the same layouts of a newtype's own
+//!    invariant literals, so a refuting value the type admits is among them; and at `L′`, `L` with
+//!    one character replaced, which refutes it. `caller: {starts_with: "+44"}` over a
+//!    `PhoneNumber` whose invariant is `value: {starts_with: "+"}` is met by `+44` and refuted by
+//!    `+4x` and `+caller`; the base `caller` is refused by the type.
 //! 4. **Bounded.** At most [`MAX_CANDIDATES`] distinct inputs per outcome; a repeat — an element
 //!    varied while its list is empty — is skipped, not counted. Exhausting them is a refusal that
 //!    says how many were tried, never a longer search.
@@ -86,7 +94,7 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate};
+use ess_primitives::predicate::{Operand, Predicate, TextOp};
 use ess_primitives::time::Rfc3339Instant;
 
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
@@ -271,16 +279,26 @@ pub fn candidates(
             // names which of them it is.
             continue;
         };
-        let alternatives = alternatives(
+        let mut alternatives = alternatives(
             leaf,
             at_base,
             &literals_at(&expanded, &path),
             ordered_at(&expanded, &path),
         );
+        if let (Leaf::Text, Node::Text(base)) = (leaf, at_base) {
+            let invariants = builder.invariants.get(&path).map_or(&[][..], Vec::as_slice);
+            for text in text_alternatives(&expanded, invariants, &path, base) {
+                let node = Node::Text(text);
+                if &node != at_base && !alternatives.contains(&node) {
+                    alternatives.push(node);
+                }
+            }
+        }
         if !alternatives.is_empty() {
             ladders.insert(path, alternatives.into_iter().map(Choice::Value).collect());
         }
     }
+    invariant_ladders(&builder, &mut ladders);
     for path in &builder.lists {
         ladders.insert(path.clone(), vec![Choice::OneElement]);
     }
@@ -575,6 +593,15 @@ fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
             path: path(read),
             values: values.clone(),
         },
+        Predicate::TextMatch {
+            path: read,
+            op,
+            value,
+        } => Predicate::TextMatch {
+            path: path(read),
+            op: *op,
+            value: value.clone(),
+        },
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             let inner = ess_primitives::predicate::Quantified {
                 over: path(&quantified.over),
@@ -655,8 +682,227 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             collect_literals(&quantified.body, path, found);
         }
+        // `L` itself satisfies its own operator, so it is tried as any text literal is.
+        Predicate::TextMatch {
+            path: read, value, ..
+        } => {
+            if read == path {
+                found.push(value.clone());
+            }
+        }
         Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
     }
+}
+
+/// One string-operator literal a predicate reads at a path, and whether it is read positively —
+/// under an even number of `not`/`none`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TextRead {
+    op: TextOp,
+    literal: String,
+    positive: bool,
+}
+
+/// The string-operator literals `predicate` reads at `path`, in written order.
+fn text_reads(predicate: &Predicate, path: &FactPath, positive: bool, found: &mut Vec<TextRead>) {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                text_reads(child, path, positive, found);
+            }
+        }
+        Predicate::Not(inner) => text_reads(inner, path, !positive, found),
+        Predicate::TextMatch {
+            path: read,
+            op,
+            value: FactValue::Text(literal),
+        } if read == path => found.push(TextRead {
+            op: *op,
+            literal: literal.clone(),
+            positive,
+        }),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            text_reads(&quantified.body, path, positive, found);
+        }
+        _ => {}
+    }
+}
+
+/// Per guard, the string-operator literals it reads at `path`: `(op, L, positive)`, with a literal
+/// the same guard also negates under the same operator never taken as positive.
+fn text_matches_at(guards: &[&Predicate], path: &FactPath) -> Vec<Vec<TextRead>> {
+    guards
+        .iter()
+        .map(|guard| {
+            let mut reads = Vec::new();
+            text_reads(guard, path, true, &mut reads);
+            reads
+        })
+        .filter(|reads| !reads.is_empty())
+        .collect()
+}
+
+/// The three layouts of one guard's (or one newtype invariant's) positive literals around `base`.
+///
+/// `P` is the longest positive `starts_with` literal, `S` the longest positive `ends_with`, and `C`
+/// the positive `contains` literals in written order that neither of them nor an earlier one
+/// already contains; a literal the same predicate negates under the same operator is never taken. The layouts are `P + C + b + S`, `P + b + C + S` — both keep the
+/// path's own text, so rule 2 still tells two fields apart — and `P + C + S` where that is not
+/// empty. Composing negated literals would build the value the guard refuses.
+fn compositions(reads: &[TextRead], base: &str) -> Vec<String> {
+    let negated = |op: TextOp, literal: &str| {
+        reads
+            .iter()
+            .any(|read| !read.positive && read.op == op && read.literal == literal)
+    };
+    let taken = |read: &&TextRead| read.positive && !negated(read.op, &read.literal);
+    // The longest, not the first: a later positive prefix that extends an earlier one
+    // (`starts_with: A` beside `starts_with: AB`) is met only by a value built on the longer.
+    let longest = |op: TextOp| {
+        reads
+            .iter()
+            .filter(taken)
+            .filter(|read| read.op == op)
+            .map(|read| read.literal.as_str())
+            .fold("", |kept, literal| {
+                if literal.len() > kept.len() {
+                    literal
+                } else {
+                    kept
+                }
+            })
+    };
+    let (prefix, suffix) = (longest(TextOp::StartsWith), longest(TextOp::EndsWith));
+    let mut contained: Vec<&str> = Vec::new();
+    for read in reads.iter().filter(taken) {
+        let covered = prefix.contains(read.literal.as_str())
+            || suffix.contains(read.literal.as_str())
+            || contained
+                .iter()
+                .any(|kept| kept.contains(read.literal.as_str()));
+        if read.op == TextOp::Contains && !covered {
+            contained.push(&read.literal);
+        }
+    }
+    let contained = contained.concat();
+    if prefix.is_empty() && suffix.is_empty() && contained.is_empty() {
+        return Vec::new();
+    }
+    // Not empty here, so the third layout is always tried.
+    vec![
+        format!("{prefix}{contained}{base}{suffix}"),
+        format!("{prefix}{base}{contained}{suffix}"),
+        format!("{prefix}{contained}{suffix}"),
+    ]
+}
+
+/// Ladders for the leaves no guard reads whose own type refuses their base witness.
+///
+/// Without a value the type admits, no candidate survives [`admitted_inputs`] and no branch has a
+/// witness. The values tried are the type's own invariant literals, laid out as a guard's are.
+fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec<Choice>>) {
+    let value = FactPath::new("value").expect("the newtype pseudo-field is a fact path");
+    for (path, invariants) in &builder.invariants {
+        let Some((leaf, at_base)) = builder.leaves.get(path) else {
+            continue;
+        };
+        if ladders.contains_key(path) || admits_base(invariants, at_base) {
+            continue;
+        }
+        let declared: Vec<&Predicate> = invariants.iter().collect();
+        let mut alternatives = alternatives(
+            leaf,
+            at_base,
+            &literals_at(&declared, &value),
+            ordered_at(&declared, &value),
+        );
+        if let (Leaf::Text, Node::Text(base)) = (leaf, at_base) {
+            for invariant in invariants {
+                let mut reads = Vec::new();
+                text_reads(invariant, &value, true, &mut reads);
+                for text in compositions(&reads, base) {
+                    let node = Node::Text(text);
+                    if &node != at_base && !alternatives.contains(&node) {
+                        alternatives.push(node);
+                    }
+                }
+            }
+        }
+        if !alternatives.is_empty() {
+            ladders.insert(
+                path.clone(),
+                alternatives.into_iter().map(Choice::Value).collect(),
+            );
+        }
+    }
+}
+
+/// Whether every newtype invariant recorded at a leaf holds for its base witness, read as `value`.
+///
+/// Only `True` admits: an invariant the base leaves `Unknown` or refutes is one `admitted_inputs`
+/// would refuse the whole input for. A value that is no scalar is left to that check.
+fn admits_base(invariants: &[Predicate], base: &Node) -> bool {
+    let fact = match base {
+        Node::Text(text) => FactValue::Text(text.clone()),
+        Node::Number(number) => FactValue::Number(*number),
+        Node::Bool(value) => FactValue::Bool(*value),
+        _ => return true,
+    };
+    let mut facts = ess_primitives::facts::FactStore::new();
+    facts.set(
+        FactPath::new("value").expect("the newtype pseudo-field is a fact path"),
+        fact,
+    );
+    invariants
+        .iter()
+        .all(|invariant| invariant.evaluate(&facts).is_satisfied())
+}
+
+/// `L′`: `L` with one character replaced by `x` (by `y` where it is `x`) — the last for
+/// `starts_with`, the first for `ends_with`, the middle one (index ⌊n/2⌋) for `contains`.
+///
+/// No longer than `L` in bytes and different from it, so `L` is not a prefix, suffix or substring
+/// of it: it refutes its own operator. The position keeps the rest of `L`, so a newtype invariant
+/// written on the same affix — `starts_with: "+"` under `starts_with: "+44"` — still holds for it.
+fn refuting(op: TextOp, literal: &str) -> Option<String> {
+    let mut characters: Vec<char> = literal.chars().collect();
+    let last = characters.len().checked_sub(1)?;
+    let index = match op {
+        TextOp::StartsWith => last,
+        TextOp::EndsWith => 0,
+        TextOp::Contains => characters.len() / 2,
+    };
+    characters[index] = if characters[index] == 'x' { 'y' } else { 'x' };
+    Some(characters.into_iter().collect())
+}
+
+/// The text candidates rule 3 adds for string operators at `path`, after the literals: each
+/// guard's compositions, then each newtype invariant's, then each literal's `L′`.
+fn text_alternatives(
+    guards: &[&Predicate],
+    invariants: &[Predicate],
+    path: &FactPath,
+    base: &str,
+) -> Vec<String> {
+    let per_guard = text_matches_at(guards, path);
+    let mut found = Vec::new();
+    for reads in &per_guard {
+        found.extend(compositions(reads, base));
+    }
+    let value = FactPath::new("value").expect("the newtype pseudo-field is a fact path");
+    for invariant in invariants {
+        let mut reads = Vec::new();
+        text_reads(invariant, &value, true, &mut reads);
+        found.extend(compositions(&reads, base));
+    }
+    let mut seen: Vec<(TextOp, &str)> = Vec::new();
+    for read in per_guard.iter().flatten() {
+        if !seen.contains(&(read.op, read.literal.as_str())) {
+            seen.push((read.op, &read.literal));
+            found.extend(refuting(read.op, &read.literal));
+        }
+    }
+    found
 }
 
 /// The values one leaf is tried at, beside the base value it already carries, in the order they are
@@ -809,6 +1055,10 @@ struct Builder<'ir> {
     /// Every path that holds an `Optional` member of an input or of a struct, which a
     /// [`Choice::Omit`] can leave out.
     optionals: BTreeSet<FactPath>,
+    /// The invariants of every newtype a recorded leaf is declared through, at any depth, by the
+    /// leaf's fact path and read against `value`: what the invariant-composed text candidates are
+    /// built from, so a refuting candidate survives [`admitted_inputs`].
+    invariants: BTreeMap<FactPath, Vec<Predicate>>,
 }
 
 impl<'ir> Builder<'ir> {
@@ -826,6 +1076,7 @@ impl<'ir> Builder<'ir> {
             leaves: BTreeMap::new(),
             lists: BTreeSet::new(),
             optionals: BTreeSet::new(),
+            invariants: BTreeMap::new(),
         }
     }
 
@@ -952,7 +1203,15 @@ impl<'ir> Builder<'ir> {
                 // lives as long as the IR and the recursive calls below can still borrow `self`.
                 let ir = self.ir;
                 match &ir.named_type(name).body {
-                    ResolvedBody::Newtype { of, .. } => {
+                    ResolvedBody::Newtype { of, invariants } => {
+                        if record {
+                            let recorded = self.invariants.entry(path.clone()).or_default();
+                            for invariant in invariants {
+                                if !recorded.contains(&invariant.predicate) {
+                                    recorded.push(invariant.predicate.clone());
+                                }
+                            }
+                        }
                         self.value(of, path, overrides, depth + 1, record)
                     }
                     ResolvedBody::Enum { variants } => {
