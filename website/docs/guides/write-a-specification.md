@@ -449,11 +449,12 @@ published. A command that acts on an input-named instance and declares no `wrong
 declared answer. `ess verify conform synthesize` prints a `note:` for it, not a refusal.
 
 An error field that describes the current state, such as `InvoiceStateConflict.state`, has no value
-for an instance that does not exist. The generated Rust and Go behaviour seams require that field on
-their `wrong-state` variant, so a realization written against them cannot give this answer through
-the seam. `examples/gatepass-realization` answers `501` with an unmet obligation instead, which is
-not the declared branch. The billing realization's conformance adapter answers the rule itself,
-before the seam.
+for an instance that does not exist. Where the `wrong_state` error declares fields, the generated
+Rust and Go behaviour seams add a second variant for this answer that carries none of them:
+`IssueInvoiceOutcome::WrongStateUnknownInstance` in Rust, `IssueInvoiceOutcomeWrongStateUnknownInstance`
+in Go. The served surface answers it with the branch's `409`, the outcome and the error, and no
+`payload`. The `WrongState` variant still requires every field, so a realization cannot leave out
+the state of an instance it holds.
 
 ### An event's values need a declared source
 

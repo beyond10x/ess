@@ -784,9 +784,40 @@ fn command_handler(
         }
         let _ = writeln!(out, "            {}\n        }}", http::status(outcome));
     }
+    unknown_instance_arm(out, ir, command, &outcome_type);
     out.push_str(
         "    };\n    body.push('}');\n    http::Response::new(status, http::JSON, body)\n}\n",
     );
+}
+
+/// The served answer for an instance no record carries, where the command has that spelling: the
+/// declared branch, status and error, and no payload — an instance that does not exist has nothing
+/// for the error's fields to describe (`docs/design/unknown-instance-seams.md`).
+fn unknown_instance_arm(
+    out: &mut String,
+    ir: &ess_compiler::EssIr,
+    command: &ess_compiler::ir::ResolvedCommand,
+    outcome_type: &str,
+) {
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(ir, command) {
+        let error = ir.error(
+            declared
+                .error
+                .as_ref()
+                .expect("an unknown-instance answer reports its declared error"),
+        );
+        let _ = writeln!(
+            out,
+            "        {outcome_type}::{} => {{\n            json::member(&mut body, \
+             \"outcome\");\n            json::push_text(&mut body, {:?});\n            \
+             json::member(&mut body, \"error\");\n            json::push_text(&mut body, \
+             {:?});\n            {}\n        }}",
+            super::items::unknown_instance_variant(declared),
+            declared.name.as_str(),
+            error.wire_code(),
+            http::status(declared)
+        );
+    }
 }
 
 /// `true` when an outcome's variant carries anything at all, so its pattern needs `{ .. }`.

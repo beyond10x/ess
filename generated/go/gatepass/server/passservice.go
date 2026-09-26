@@ -179,6 +179,10 @@ func answerGatepassVisitAdmitVisitor(outcome visit.AdmitVisitorOutcome) response
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		body["payload"] = encodeErrorGatepassVisitVisitStateConflict(taken.Error)
 		return rendered(409, body)
+	case visit.AdmitVisitorOutcomeWrongStateUnknownInstance:
+		body["outcome"] = "wrong-state"
+		body["error"] = "gatepass.visit.VisitStateConflict"
+		return rendered(409, body)
 	}
 	// Go cannot check that a switch over a sealed interface is total, which is this target's
 	// standing weakening (see TARGET.md). An outcome no branch above named is a value no
@@ -262,6 +266,10 @@ func answerGatepassVisitSignOutVisitor(outcome visit.SignOutVisitorOutcome) resp
 		body["outcome"] = "wrong-state"
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		body["payload"] = encodeErrorGatepassVisitVisitStateConflict(taken.Error)
+		return rendered(409, body)
+	case visit.SignOutVisitorOutcomeWrongStateUnknownInstance:
+		body["outcome"] = "wrong-state"
+		body["error"] = "gatepass.visit.VisitStateConflict"
 		return rendered(409, body)
 	}
 	// Go cannot check that a switch over a sealed interface is total, which is this target's

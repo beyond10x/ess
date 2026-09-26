@@ -588,7 +588,7 @@ fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
             },
             disposition: SynthesisDisposition::Obligation(ImplementationObligation {
                 reason: behavior_reason(command),
-                contract: behavior_contract(command),
+                contract: behavior_contract(ir, command),
             }),
         });
     }
@@ -610,7 +610,8 @@ fn behavior_reason(command: &ResolvedCommand) -> ObligationReason {
 
 /// The behaviour's contract, phrased against the model: the input, and every declared outcome with
 /// what taking it entails.
-fn behavior_contract(command: &ResolvedCommand) -> String {
+fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String {
+    let unknown = ess_gen::unknown_instance::unknown_instance_answer(ir, command);
     let mut branches = Vec::new();
     for outcome in &command.outcomes {
         let mut branch = format!(
@@ -634,6 +635,9 @@ fn behavior_contract(command: &ResolvedCommand) -> String {
         }
         if let Some(error) = &outcome.error {
             let _ = write!(branch, ", error `{error}`");
+        }
+        if unknown.is_some_and(|declared| declared.name == outcome.name) {
+            branch.push_str(", and for an instance no record carries, without the error's fields");
         }
         branches.push(branch);
     }

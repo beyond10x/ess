@@ -1121,6 +1121,25 @@ fn command_handler(
         }
         let _ = writeln!(out, "\t\treturn rendered({}, body)", http::status(outcome));
     }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        // The declared branch, status and error, and no payload: an instance that does not exist
+        // has nothing for the error's fields to describe (`docs/design/unknown-instance-seams.md`).
+        let error = emit.ir.error(
+            declared
+                .error
+                .as_ref()
+                .expect("an unknown-instance answer reports its declared error"),
+        );
+        let _ = writeln!(
+            out,
+            "\tcase {}:\n\t\tbody[\"outcome\"] = {:?}\n\t\tbody[\"error\"] = {}\n\t\treturn \
+             rendered({}, body)",
+            emit.reference_unknown_instance_variant(&command.name),
+            declared.name.as_str(),
+            serde_json::to_string(&error.wire_code()).expect("a string always serializes"),
+            http::status(declared)
+        );
+    }
     out.push_str(
         "\t}\n\t// Go cannot check that a switch over a sealed interface is total, which is this \
          target's\n\t// standing weakening (see TARGET.md). An outcome no branch above named is a \

@@ -108,10 +108,7 @@ and the oracle's moving commands answer their `wrong-state` branch for an unknow
 the input guards they already decide first. The error carries no `state` field, because an
 instance that does not exist is in none; the scenario requires the error by name and no field.
 
-The generated Rust and Go behaviour seams cannot spell that answer where the `wrong_state` error
-has a required field describing the state (`InvoiceStateConflict.state`,
-`VisitStateConflict.state`): the seam's `wrong-state` variant demands it. `gatepass-realization`
-and `gatepass-go-realization` answer an unmet obligation (HTTP `501`), which is not the declared
-branch; the billing realization's conformance adapter answers the rule before the seam, as it
-answered `undeclared` there before. Giving the seams a spelling is a generator change and is not
-part of this rule.
+The generated Rust and Go behaviour seams spell that answer with a second variant of the
+`wrong_state` outcome that carries none of the error's fields, generated exactly where the
+declared variant demands one (`unknown-instance-seams.md`). `gatepass-realization`,
+`gatepass-go-realization` and `billing-realization` answer the rule through it.

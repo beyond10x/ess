@@ -204,6 +204,13 @@ fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVis
             wire::encode_error_gatepass_visit_visit_state_conflict(error, &mut body);
             409
         }
+        gatepass_types::visit::AdmitVisitorOutcome::WrongStateUnknownInstance => {
+            json::member(&mut body, "outcome");
+            json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "error");
+            json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
+            409
+        }
     };
     body.push('}');
     http::Response::new(status, http::JSON, body)
@@ -312,6 +319,13 @@ fn answer_gatepass_visit_sign_out_visitor(outcome: &gatepass_types::visit::SignO
             json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
             json::member(&mut body, "payload");
             wire::encode_error_gatepass_visit_visit_state_conflict(error, &mut body);
+            409
+        }
+        gatepass_types::visit::SignOutVisitorOutcome::WrongStateUnknownInstance => {
+            json::member(&mut body, "outcome");
+            json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "error");
+            json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
             409
         }
     };

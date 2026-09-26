@@ -386,6 +386,18 @@ pub fn encode_outcome_gatepass_visit_admit_visitor(value: &gatepass_types::visit
             encode_error_gatepass_visit_visit_state_conflict(error, out);
             out.push('}');
         }
+        gatepass_types::visit::AdmitVisitorOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "gatepass.visit.VisitStateConflict");
+            out.push('}');
+        }
     }
     out.push('}');
 }
@@ -588,6 +600,18 @@ pub fn encode_outcome_gatepass_visit_sign_out_visitor(value: &gatepass_types::vi
             json::push_text(out, "gatepass.visit.VisitStateConflict");
             json::member(out, "payload");
             encode_error_gatepass_visit_visit_state_conflict(error, out);
+            out.push('}');
+        }
+        gatepass_types::visit::SignOutVisitorOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "gatepass.visit.VisitStateConflict");
             out.push('}');
         }
     }

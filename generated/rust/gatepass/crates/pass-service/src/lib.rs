@@ -70,6 +70,7 @@ where
                 self.outbox.push(PublishedEvent::VisitorAdmitted(visitor_admitted.clone()));
             }
             gatepass_types::visit::AdmitVisitorOutcome::WrongState { .. } => {}
+            gatepass_types::visit::AdmitVisitorOutcome::WrongStateUnknownInstance => {}
         }
         Ok(outcome)
     }
@@ -102,6 +103,7 @@ where
                 self.outbox.push(PublishedEvent::VisitorDeparted(visitor_departed.clone()));
             }
             gatepass_types::visit::SignOutVisitorOutcome::WrongState { .. } => {}
+            gatepass_types::visit::SignOutVisitorOutcome::WrongStateUnknownInstance => {}
         }
         Ok(outcome)
     }

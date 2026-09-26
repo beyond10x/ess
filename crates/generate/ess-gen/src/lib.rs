@@ -38,6 +38,7 @@ pub mod markdown;
 pub mod openapi;
 pub mod provenance;
 pub mod schema;
+pub mod unknown_instance;
 
 pub use artifact::{Artifact, Generator};
 pub use graph::SystemGraph;

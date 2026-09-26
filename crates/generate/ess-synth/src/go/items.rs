@@ -338,6 +338,21 @@ fn command_contract(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand
     for outcome in &command.outcomes {
         outcome_variant(out, emit, command, outcome);
     }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        let variant_name = emit.layout.unknown_instance_variant(&command.name);
+        let _ = writeln!(
+            out,
+            "\n// {variant_name} is `{}` — for an instance no record carries.\n//\n// The same \
+             declared branch and error as [{}], without the error's fields: an\n// instance that \
+             does not exist has nothing for them to describe\n// \
+             (docs/design/unknown-instance-seams.md).\ntype {variant_name} struct{{}}\n\nfunc \
+             ({variant_name}) {}() {{}}",
+            declared.name,
+            emit.layout
+                .outcome_variant(&command.name, declared.name.as_str()),
+            name::marker(emit.layout.outcome(&command.name))
+        );
+    }
     response_checks(out, emit, command);
 }
 

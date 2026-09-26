@@ -1,6 +1,6 @@
 // generated from billing v3
-// model digest 8b52fe739078f96a006d7bee5e9b9530c3a30221f7bc003f291dcfe17cdcfea3
-// contract digest 0c2f2067136aea0bc0a45ca5b01bf70f551fc6199956699c5d5b939c350688f8
+// model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+// contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
 // do not edit: regenerate with `ess synthesize`
 
 // Package invoice is Invoicing — `billing.invoice`.
@@ -305,6 +305,7 @@ func (v AccountSnapshot) Refine() (AnyAccount, bool) {
 // it is carried by the type ([InvoiceDraft] and its siblings), and at a boundary by [InvoiceSnapshot].
 //
 // Every value satisfies `total.amount >= 0` — declared here, enforced by whatever behaviour constructs one.
+// Every value satisfies `reminder_count >= 0` — declared here, enforced by whatever behaviour constructs one.
 type InvoiceData struct {
 	// InvoiceId is the identity: `invoice_id` — `billing.invoice.InvoiceId`.
 	InvoiceId InvoiceId
@@ -330,6 +331,8 @@ type InvoiceData struct {
 	IsRecurring bool
 	// Signature is `signature` — `Bytes`.
 	Signature []byte
+	// ReminderCount is `reminder_count` — `Integer`.
+	ReminderCount int64
 }
 
 // InvoiceInCancelled is `billing.invoice.Invoice` resting in `Cancelled`. Terminal: an instance may rest here forever.
@@ -552,6 +555,15 @@ type CancelInvoiceOutcomeWrongState struct {
 
 func (CancelInvoiceOutcomeWrongState) isCancelInvoiceOutcome() {}
 
+// CancelInvoiceOutcomeWrongStateUnknownInstance is `wrong-state` — for an instance no record carries.
+//
+// The same declared branch and error as [CancelInvoiceOutcomeWrongState], without the error's fields: an
+// instance that does not exist has nothing for them to describe
+// (docs/design/unknown-instance-seams.md).
+type CancelInvoiceOutcomeWrongStateUnknownInstance struct{}
+
+func (CancelInvoiceOutcomeWrongStateUnknownInstance) isCancelInvoiceOutcome() {}
+
 // CreateInvoice is Create invoice — the input of `billing.invoice.CreateInvoice`.
 //
 // Everything it can result in is [CreateInvoiceOutcome].
@@ -638,6 +650,15 @@ type IssueInvoiceOutcomeWrongState struct {
 
 func (IssueInvoiceOutcomeWrongState) isIssueInvoiceOutcome() {}
 
+// IssueInvoiceOutcomeWrongStateUnknownInstance is `wrong-state` — for an instance no record carries.
+//
+// The same declared branch and error as [IssueInvoiceOutcomeWrongState], without the error's fields: an
+// instance that does not exist has nothing for them to describe
+// (docs/design/unknown-instance-seams.md).
+type IssueInvoiceOutcomeWrongStateUnknownInstance struct{}
+
+func (IssueInvoiceOutcomeWrongStateUnknownInstance) isIssueInvoiceOutcome() {}
+
 // PayInvoice is Pay invoice — the input of `billing.invoice.PayInvoice`.
 //
 // Everything it can result in is [PayInvoiceOutcome].
@@ -690,6 +711,15 @@ type PayInvoiceOutcomeWrongState struct {
 }
 
 func (PayInvoiceOutcomeWrongState) isPayInvoiceOutcome() {}
+
+// PayInvoiceOutcomeWrongStateUnknownInstance is `wrong-state` — for an instance no record carries.
+//
+// The same declared branch and error as [PayInvoiceOutcomeWrongState], without the error's fields: an
+// instance that does not exist has nothing for them to describe
+// (docs/design/unknown-instance-seams.md).
+type PayInvoiceOutcomeWrongStateUnknownInstance struct{}
+
+func (PayInvoiceOutcomeWrongStateUnknownInstance) isPayInvoiceOutcome() {}
 
 // InvoiceCancelled is InvoiceCancelled — the event `billing.invoice.InvoiceCancelled`.
 type InvoiceCancelled struct {
@@ -749,6 +779,8 @@ type InvoiceById struct {
 	InvoiceId InvoiceId
 	// Total is `total` — `billing.invoice.Money`.
 	Total Money
+	// ReminderCount is `reminder_count` — `Integer`.
+	ReminderCount int64
 }
 
 // OutstandingInvoices is Outstanding invoices — one row of the view `billing.invoice.OutstandingInvoices`.
@@ -769,7 +801,7 @@ type OutstandingInvoices struct {
 //
 // Why it is not generated: the contract is declared; the algorithm is not.
 //
-// Contract: given `billing.invoice.CancelInvoice` input, decide and enact exactly one outcome — `cancelled` otherwise, takes `cancel` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCancelled`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`.
+// Contract: given `billing.invoice.CancelInvoice` input, decide and enact exactly one outcome — `cancelled` otherwise, takes `cancel` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCancelled`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
 type CancelInvoiceBehavior interface {
 	// CancelInvoice decides and enacts exactly one declared outcome of `billing.invoice.CancelInvoice`.
 	//
@@ -795,7 +827,7 @@ type CreateInvoiceBehavior interface {
 //
 // Why it is not generated: the contract is declared; the algorithm is not.
 //
-// Contract: given `billing.invoice.IssueInvoice` input, decide and enact exactly one outcome — `issued` otherwise, takes `issue` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceIssued`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`.
+// Contract: given `billing.invoice.IssueInvoice` input, decide and enact exactly one outcome — `issued` otherwise, takes `issue` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceIssued`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
 type IssueInvoiceBehavior interface {
 	// IssueInvoice decides and enacts exactly one declared outcome of `billing.invoice.IssueInvoice`.
 	//
@@ -808,7 +840,7 @@ type IssueInvoiceBehavior interface {
 //
 // Why it is not generated: the contract is declared; the algorithm is not.
 //
-// Contract: given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`.
+// Contract: given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields.
 type PayInvoiceBehavior interface {
 	// PayInvoice decides and enacts exactly one declared outcome of `billing.invoice.PayInvoice`.
 	//

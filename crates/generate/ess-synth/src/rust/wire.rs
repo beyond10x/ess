@@ -465,6 +465,28 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         }
         out.push_str("        }\n");
     }
+    if let Some(declared) =
+        ess_gen::unknown_instance::unknown_instance_answer(surface.ir(), command)
+    {
+        // The declared branch and error, published nothing, and no payload: the instance does not
+        // exist, so nothing describes it (`docs/design/unknown-instance-seams.md`).
+        let error = declared
+            .error
+            .as_ref()
+            .expect("an unknown-instance answer reports its declared error");
+        let _ = writeln!(
+            out,
+            "        {path}Outcome::{} => {{\n            json::member(out, \"outcome\");\n            \
+             json::push_text(out, {:?});\n            json::member(out, \"published\");\n            \
+             out.push('[');\n            out.push(']');\n            json::member(out, \
+             \"refusal\");\n            out.push('{{');\n            json::member(out, \
+             \"error\");\n            json::push_text(out, {:?});\n            out.push('}}');\n        \
+             }}",
+            super::items::unknown_instance_variant(declared),
+            declared.name.as_str(),
+            error.name().to_string()
+        );
+    }
     out.push_str("    }\n    out.push('}');\n}\n");
 }
 

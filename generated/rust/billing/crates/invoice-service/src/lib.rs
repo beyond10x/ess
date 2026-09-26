@@ -72,6 +72,7 @@ where
                 self.outbox.push(PublishedEvent::InvoiceCancelled(invoice_cancelled.clone()));
             }
             billing_types::invoice::CancelInvoiceOutcome::WrongState { .. } => {}
+            billing_types::invoice::CancelInvoiceOutcome::WrongStateUnknownInstance => {}
         }
         Ok(outcome)
     }
@@ -104,6 +105,7 @@ where
                 self.outbox.push(PublishedEvent::InvoiceIssued(invoice_issued.clone()));
             }
             billing_types::invoice::IssueInvoiceOutcome::WrongState { .. } => {}
+            billing_types::invoice::IssueInvoiceOutcome::WrongStateUnknownInstance => {}
         }
         Ok(outcome)
     }
@@ -121,6 +123,7 @@ where
             }
             billing_types::invoice::PayInvoiceOutcome::Rejected { .. } => {}
             billing_types::invoice::PayInvoiceOutcome::WrongState { .. } => {}
+            billing_types::invoice::PayInvoiceOutcome::WrongStateUnknownInstance => {}
         }
         Ok(outcome)
     }

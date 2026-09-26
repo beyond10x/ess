@@ -71,17 +71,9 @@ func Over(store *Store) *Realization {
 	return &Realization{store: store}
 }
 
-// unknownSubject is the one answer the generated seam cannot spell, refused loudly rather than
-// guessed.
-//
-// A command naming a visit that was never registered is answered, by the unknown-instance rule
-// (docs/design/typed-literals-and-unknown-instances.md), with its `wrong-state` branch — which this
-// seam cannot spell: `wrong-state` demands the VisitStateConflict state the visit is really in, and
-// a visit that does not exist does not have one. Fabricating a state would be manufacturing an
-// observation, so the honest total answer is the typed refusal — which the served surface reports
-// as 501, naming the obligation, and which the suite's unknown-instance scenario fails. That it has
-// to is a gap in the generated seam, and the Rust half of this realization records the same finding.
-func unknownSubject(source string) *obligation.UnmetObligation {
+// unrefinable is the answer for a stored snapshot whose state names no declared state — only Go's
+// zero value can be one (see the generated TARGET.md) — refused loudly rather than guessed.
+func unrefinable(source string) *obligation.UnmetObligation {
 	return &obligation.UnmetObligation{Capability: "command behaviour", Source: source}
 }
 
@@ -125,11 +117,14 @@ func (r *Realization) AdmitVisitor(input visit.AdmitVisitor) (visit.AdmitVisitor
 	key := input.VisitId.Value().Value()
 	snapshot, held := r.store.visits[key]
 	if !held {
-		return nil, unknownSubject("gatepass.visit.AdmitVisitor")
+		// A visit never registered is answered by the unknown-instance rule: the declared
+		// `wrong-state` branch, with nothing about a visit that does not exist
+		// (docs/design/unknown-instance-seams.md).
+		return visit.AdmitVisitorOutcomeWrongStateUnknownInstance{}, nil
 	}
 	resting, ok := snapshot.Refine()
 	if !ok {
-		return nil, unknownSubject("gatepass.visit.AdmitVisitor")
+		return nil, unrefinable("gatepass.visit.AdmitVisitor")
 	}
 	// `arrive` runs from `Expected` and from nowhere else — the typed lifecycle carries that, so
 	// the legal move is a method call and every other state is the declared `wrong-state`.
@@ -154,11 +149,11 @@ func (r *Realization) SignOutVisitor(input visit.SignOutVisitor) (visit.SignOutV
 	key := input.VisitId.Value().Value()
 	snapshot, held := r.store.visits[key]
 	if !held {
-		return nil, unknownSubject("gatepass.visit.SignOutVisitor")
+		return visit.SignOutVisitorOutcomeWrongStateUnknownInstance{}, nil
 	}
 	resting, ok := snapshot.Refine()
 	if !ok {
-		return nil, unknownSubject("gatepass.visit.SignOutVisitor")
+		return nil, unrefinable("gatepass.visit.SignOutVisitor")
 	}
 	onSite, ok := resting.(visit.VisitInOnSite)
 	if !ok {
