@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-09-26
+
 ### Added
 
 - Typed pre-execution fixture values: a command's `fixture_inputs:` (source format `ess/13`) and

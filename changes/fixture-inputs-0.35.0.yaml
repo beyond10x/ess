@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/fixture-inputs-0.35.0
+repository: ess
+publishedAt: 2026-09-26T15:00:00Z
+title: Typed fixture values resolved before a scenario starts
+summary: >-
+  Source format `ess/13` adds `fixture_inputs:` and `ess-scenario/3` adds `fixtures:` with `{$fixture: name}` references, compiled to `ess-conformance/18`/`19`. Rust, Go and TypeScript resolve and type-check the values from an independent provider before the scenario starts. Older readers refuse the new formats; fixture-free models and suites keep their bytes.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.35.0
+  version: 0.35.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
