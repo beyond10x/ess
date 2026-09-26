@@ -844,15 +844,44 @@ fn outcome_reference_payload_set_and_metadata_types_have_exact_reader_boundaries
         ("refs: [9]", "string"),
         ("payload: 9", "mapping"),
         ("payload: {pilot.app.Done: 9}", "mapping"),
-        ("payload: {pilot.app.Done: {value: 9}}", "string"),
         ("sets: 9", "mapping"),
-        ("sets: {value: 9}", "string"),
     ] {
         let source = APP.replace(
             "      - name: done\n",
             &format!("      - name: done\n        {line}\n"),
         );
         refused(&source, "{}", "read:app", expected);
+    }
+    // An unquoted integer in a payload or `sets:` source is read as a typed scalar (ess#113,
+    // `docs/design/typed-literals-and-unknown-instances.md`), so the reader admits it and the
+    // specification's assembly refuses it: against its text target with the repair in the hint,
+    // or — for `sets:` on an outcome that acts on no entity — exactly as the quoted form is.
+    for (line, code, expected) in [
+        (
+            "payload: {pilot.app.Done: {value: 9}}",
+            "type_mismatch",
+            "quote it: `value: '9'`",
+        ),
+        ("sets: {value: 9}", "unobservable_fact", "acts on no entity"),
+    ] {
+        let source = APP.replace(
+            "      - name: done\n",
+            &format!("      - name: done\n        {line}\n"),
+        );
+        let error = refused(&source, "{}", "assemble", expected);
+        assert_eq!(error.details[0]["code"], code, "{line}");
+        let quoted = APP.replace(
+            "      - name: done\n",
+            &format!("      - name: done\n        {}\n", line.replace('9', "'9'")),
+        );
+        if code == "unobservable_fact" {
+            assert_eq!(
+                refused(&quoted, "{}", "assemble", expected).details,
+                error.details
+            );
+        } else {
+            admitted(&quoted, "{}");
+        }
     }
     same_selected_cli(&control, &admitted(APP, "{}"));
 }

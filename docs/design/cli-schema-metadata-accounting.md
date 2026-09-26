@@ -197,3 +197,35 @@ The root dialect, six literal relationships, consumer profiles, guard source,
 baseline and behavioral accounting remain unchanged. The metadata guard and
 fresh-provider qualification still have to execute; this review grants no new
 exemption or runtime conformance claim.
+
+## Wave 2 container review (ess/11, ess/12, typed literals) — 2026-09-26
+
+Three changes merged together move the generated schema, and none of them re-reviewed the
+container on its own. ess/11 (beyond10x/ess#103, beyond10x/ess#104) adds `alphabet` to a
+`String` newtype and the new `InputField` (`Field` plus `example`) for command inputs. ess/12
+(beyond10x/ess#105) adds the root `outcome_groups` list of the new `RawOutcomeGroup`,
+`RawGroupOutcome` and `OutcomeGroupName`. The typed literals of beyond10x/ess#113 widen
+`RawPayloadSource` with boolean, integer and number alternatives beside the string. All three are
+authored-domain behavior; they do not make these CLI pipelines consumers of the generated schema
+document. Their descendants keep their ordinary behavioral obligations.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `dd6345942de597f9d076b7168bcae88de36332f873ff8c2daf53b6b6794b22c1`
+to `ff756782d8262e4ad1a77fda6cc355fa12f7323652a069c0c0f92bbba3f75d92` on the merged tree
+(the unit branches had pinned `593740573912b57d912b08faad77c72d88fc8659d9ede47b8840493236cae68b`
+after ess/11 and `41ad2644870036b36151f12d657c1c860b0dc6293e92eecc9a3c81ab9b5cd1ca` after
+ess/12, without a review here). Review updates only the three existing RootDefinitionsContainer
+shape pins. The root dialect, six literal relationships, consumer profiles, guard source, baseline
+and behavioral accounting remain unchanged. The metadata guard and fresh-provider qualification
+still have to execute; this review grants no new exemption or runtime conformance claim.
+
+The same merge moves two invocation guards in `macro-guards.json`, and only their invocation
+digests; both definition digests are unchanged. Each invocation gains exactly one code for the
+unset-at-creation refusal of beyond10x/ess#112, and no existing code changes:
+
+- `ess_compiler::resolve::codes::codes` gains `CREATION_LEAVES_INVARIANT_FIELD_UNSET`, from
+  `95e1f6bb7c382d3c9d17b0f1ef6a00e18894c74d7191aeedfbd3219f28a829ad`
+  to `325198be42e23426e0ba7fecbd06aba639ca261feb12ad92fe0b6b3711a31b04`;
+- `ess_primitives::error::validation_codes` gains `InvariantReadsUnsetField`, from
+  `0e7a4d5e372e92fbefc48c99d57d3dad876e21b5e9ca522358d2ee46d933c365`
+  to `d466e6623ca525b125419a2811f566b71b2dc092a9e0d6fd4900757203191577`.

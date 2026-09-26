@@ -793,7 +793,7 @@ fn the_first_input_format_still_reads_unchanged_and_acknowledges_nothing() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(
         report["binding_digest"],
-        "sha256:f35e7ee642fe6a4f424ffbdfd52cd1d3465af3b9cf158e10ef57ccaaf347bafd"
+        "sha256:17c4f8a190fb793281ae76ad5fa803b725e06196c39c5243c16095124735e28f"
     );
     with_foreign_sidecars(&mut fixture);
     let (output, report) = fixture.run();
