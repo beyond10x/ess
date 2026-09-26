@@ -15,16 +15,14 @@
 //! Every observation it reports is read off the system — the log, the invocation record, the view
 //! ports; nothing is computed here that the system did not do.
 //!
-//! One boundary decision lives here and is argued at [`Synthesized::subject_is_unknown`]: a
-//! command against a subject the system has never seen answers its `wrong-state` branch (the
-//! unknown-instance rule), which the generated behaviour seam cannot spell — a recorded finding
-//! about the generator.
+//! A command against a subject the system has never seen answers its `wrong-state` branch (the
+//! unknown-instance rule): the realization answers it through the seam's unknown-instance variant,
+//! and this adapter only represents it (`docs/design/unknown-instance-seams.md`).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use billing_realization::corrupted::{CAUGHT_BY, FAULT};
-use billing_realization::invoice::positive;
 use billing_realization::linker::{self, Assembled};
 use billing_system::{BindingInvocation, SystemEvent};
 use billing_types::invoice::{
@@ -368,9 +366,6 @@ fn issue_invoice(
     request: &SemanticCommandRequest,
 ) -> Result<SemanticCommandResult, TargetError> {
     let invoice_id = invoice_id_input(request)?;
-    if subject_is_unknown(live, &invoice_id) {
-        return Ok(unknown_invoice(ISSUE_INVOICE));
-    }
     let outcome = live
         .assembled
         .system
@@ -392,6 +387,7 @@ fn issue_invoice(
                 .emitting(published)
         }
         IssueInvoiceOutcome::WrongState { error } => wrong_state(ISSUE_INVOICE, error.state),
+        IssueInvoiceOutcome::WrongStateUnknownInstance => unknown_invoice(ISSUE_INVOICE),
     })
 }
 
@@ -401,9 +397,6 @@ fn cancel_invoice(
     request: &SemanticCommandRequest,
 ) -> Result<SemanticCommandResult, TargetError> {
     let invoice_id = invoice_id_input(request)?;
-    if subject_is_unknown(live, &invoice_id) {
-        return Ok(unknown_invoice(CANCEL_INVOICE));
-    }
     let outcome = live
         .assembled
         .system
@@ -425,23 +418,21 @@ fn cancel_invoice(
                 .emitting(published)
         }
         CancelInvoiceOutcome::WrongState { error } => wrong_state(CANCEL_INVOICE, error.state),
+        CancelInvoiceOutcome::WrongStateUnknownInstance => unknown_invoice(CANCEL_INVOICE),
     })
 }
 
 /// `billing.invoice.PayInvoice`, through the generated port.
 ///
-/// The one command where the boundary check has an order to respect: `rejected` is decided by the
-/// guard alone, so the port answers a non-positive amount whatever the subject is — including one
-/// that does not exist — and only a payment the guard admits asks whether the subject does.
+/// `rejected` is decided by the guard alone, so the port answers a non-positive amount whatever the
+/// subject is — including one that does not exist; the realization decides that order, not this
+/// adapter.
 fn pay_invoice(
     live: &mut Live,
     request: &SemanticCommandRequest,
 ) -> Result<SemanticCommandResult, TargetError> {
     let invoice_id = invoice_id_input(request)?;
     let amount = money_input(request, "amount")?;
-    if positive(&amount) && subject_is_unknown(live, &invoice_id) {
-        return Ok(unknown_invoice(PAY_INVOICE));
-    }
     let outcome = live
         .assembled
         .system
@@ -471,6 +462,7 @@ fn pay_invoice(
             )
         }
         PayInvoiceOutcome::WrongState { error } => wrong_state(PAY_INVOICE, error.state),
+        PayInvoiceOutcome::WrongStateUnknownInstance => unknown_invoice(PAY_INVOICE),
     })
 }
 
@@ -506,22 +498,9 @@ fn send_email(
     })
 }
 
-/// Whether the system has never seen this invoice — the boundary where the unknown-instance rule
-/// is answered (`docs/design/typed-literals-and-unknown-instances.md`).
-///
-/// It has to be answered *here*, before the port, because the generated behaviour seam cannot
-/// spell it: the seam's `Ok` is the outcome enum, whose `wrong-state` variant demands the state
-/// the invoice is really in, and an invoice that does not exist has none. The store handle the
-/// linkage exposes answers existence and nothing else. That the adapter needs this pre-check at
-/// all is a recorded W6.3 finding about the generator, argued in full at
-/// `billing_realization::invoice`.
-fn subject_is_unknown(live: &Live, invoice_id: &InvoiceId) -> bool {
-    !live.assembled.invoices.knows(invoice_id)
-}
-
-/// The rule's answer for an invoice the system has never seen: the command's `wrong-state` branch
-/// and its declared error, with no `state`, because such an invoice is in none. Decided at this
-/// boundary for the reason [`subject_is_unknown`] gives, as the `undeclared` it replaces was.
+/// The rule's answer for an invoice the system has never seen, as the seam reported it: the
+/// command's `wrong-state` branch and its declared error, with no `state`, because such an invoice
+/// is in none.
 fn unknown_invoice(command: &str) -> SemanticCommandResult {
     SemanticCommandResult::took(outcome_ref(command, "wrong-state"))
         .with_error(DeclaredErrorValue::new(error_ref(INVOICE_STATE_CONFLICT)))

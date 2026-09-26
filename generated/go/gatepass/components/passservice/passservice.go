@@ -104,6 +104,7 @@ func (c *PassService) AdmitVisitor(input visit.AdmitVisitor) (visit.AdmitVisitor
 	case visit.AdmitVisitorOutcomeAdmitted:
 		c.outbox = append(c.outbox, PublishedEventVisitorAdmitted{Event: value.VisitorAdmitted})
 	case visit.AdmitVisitorOutcomeWrongState:
+	case visit.AdmitVisitorOutcomeWrongStateUnknownInstance:
 	}
 	return outcome, nil
 }
@@ -140,6 +141,7 @@ func (c *PassService) SignOutVisitor(input visit.SignOutVisitor) (visit.SignOutV
 	case visit.SignOutVisitorOutcomeSignedOut:
 		c.outbox = append(c.outbox, PublishedEventVisitorDeparted{Event: value.VisitorDeparted})
 	case visit.SignOutVisitorOutcomeWrongState:
+	case visit.SignOutVisitorOutcomeWrongStateUnknownInstance:
 	}
 	return outcome, nil
 }

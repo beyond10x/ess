@@ -207,8 +207,26 @@ pub(super) fn command_contract(out: &mut String, emit: &Emit<'_>, command: &Reso
     for outcome in &command.outcomes {
         outcome_variant(out, emit, command, outcome);
     }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        let _ = writeln!(
+            out,
+            "    /// `{}` — for an instance no record carries.\n    ///\n    /// The same declared \
+             branch and error as [`Self::{}`], without the error's fields: an instance\n    /// \
+             that does not exist has nothing for them to describe \
+             (`docs/design/unknown-instance-seams.md`).\n    {},",
+            declared.name,
+            name::pascal(declared.name.as_str()),
+            unknown_instance_variant(declared)
+        );
+    }
     out.push_str("}\n");
     response_checks(out, emit, command);
+}
+
+/// The Rust variant answering a command's `wrong_state` branch for an instance no record carries:
+/// that branch's own variant name, followed by `UnknownInstance`.
+pub(crate) fn unknown_instance_variant(declared: &ResolvedOutcome) -> String {
+    format!("{}UnknownInstance", name::pascal(declared.name.as_str()))
 }
 
 /// One emitted event's field on an outcome's enum variant: the field identifier and the event it
@@ -503,6 +521,13 @@ fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
             "            Self::{variant} {{ {}, .. }} => {},",
             names.join(", "),
             checks.join(" && ")
+        );
+    }
+    if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
+        let _ = writeln!(
+            out,
+            "            Self::{} => true,",
+            unknown_instance_variant(declared)
         );
     }
     out.push_str("        }\n    }\n}\n");

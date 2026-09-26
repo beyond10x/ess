@@ -408,6 +408,15 @@ type AdmitVisitorOutcomeWrongState struct {
 
 func (AdmitVisitorOutcomeWrongState) isAdmitVisitorOutcome() {}
 
+// AdmitVisitorOutcomeWrongStateUnknownInstance is `wrong-state` — for an instance no record carries.
+//
+// The same declared branch and error as [AdmitVisitorOutcomeWrongState], without the error's fields: an
+// instance that does not exist has nothing for them to describe
+// (docs/design/unknown-instance-seams.md).
+type AdmitVisitorOutcomeWrongStateUnknownInstance struct{}
+
+func (AdmitVisitorOutcomeWrongStateUnknownInstance) isAdmitVisitorOutcome() {}
+
 // RegisterVisit is Register a visit — the input of `gatepass.visit.RegisterVisit`.
 //
 // Everything it can result in is [RegisterVisitOutcome].
@@ -506,6 +515,15 @@ type SignOutVisitorOutcomeWrongState struct {
 
 func (SignOutVisitorOutcomeWrongState) isSignOutVisitorOutcome() {}
 
+// SignOutVisitorOutcomeWrongStateUnknownInstance is `wrong-state` — for an instance no record carries.
+//
+// The same declared branch and error as [SignOutVisitorOutcomeWrongState], without the error's fields: an
+// instance that does not exist has nothing for them to describe
+// (docs/design/unknown-instance-seams.md).
+type SignOutVisitorOutcomeWrongStateUnknownInstance struct{}
+
+func (SignOutVisitorOutcomeWrongStateUnknownInstance) isSignOutVisitorOutcome() {}
+
 // VisitRegistered is VisitRegistered — the event `gatepass.visit.VisitRegistered`.
 type VisitRegistered struct {
 	// VisitId is `visit_id` — `gatepass.visit.VisitId`.
@@ -586,7 +604,7 @@ type VisitById struct {
 //
 // Why it is not generated: the contract is declared; the algorithm is not.
 //
-// Contract: given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`.
+// Contract: given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
 type AdmitVisitorBehavior interface {
 	// AdmitVisitor decides and enacts exactly one declared outcome of `gatepass.visit.AdmitVisitor`.
 	//
@@ -612,7 +630,7 @@ type RegisterVisitBehavior interface {
 //
 // Why it is not generated: the contract is declared; the algorithm is not.
 //
-// Contract: given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`.
+// Contract: given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
 type SignOutVisitorBehavior interface {
 	// SignOutVisitor decides and enacts exactly one declared outcome of `gatepass.visit.SignOutVisitor`.
 	//

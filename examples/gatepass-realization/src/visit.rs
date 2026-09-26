@@ -80,23 +80,6 @@ impl VisitRealization {
     }
 }
 
-/// The one answer the generated seam cannot spell, refused loudly rather than guessed.
-///
-/// A command naming a visit that was never registered is answered, by the unknown-instance rule
-/// (`docs/design/typed-literals-and-unknown-instances.md`), with its `wrong-state` branch — which
-/// this seam cannot spell: `wrong-state` demands the `VisitStateConflict` state the visit is
-/// really in, and a visit that does not exist does not have one. Fabricating a state would be
-/// manufacturing an observation, so the honest total answer is the typed refusal — which the served
-/// surface reports as `501`, naming the obligation, and which the suite's unknown-instance scenario
-/// fails. That it has to is a gap in the generated seam, not in this file, and the same finding is
-/// recorded against the billing realization.
-fn unknown_subject(source: &'static str) -> UnmetObligation {
-    UnmetObligation {
-        capability: "command behaviour",
-        source,
-    }
-}
-
 impl RegisterVisitBehavior for VisitRealization {
     fn register_visit(
         &mut self,
@@ -150,8 +133,11 @@ impl AdmitVisitorBehavior for VisitRealization {
     ) -> Result<AdmitVisitorOutcome, UnmetObligation> {
         let key = input.visit_id.0 .0.clone();
         let mut store = self.visits.store.borrow_mut();
+        // A visit never registered is answered by the unknown-instance rule: the declared
+        // `wrong-state` branch, with nothing about a visit that does not exist
+        // (`docs/design/unknown-instance-seams.md`).
         let Some(snapshot) = store.visits.get(&key).cloned() else {
-            return Err(unknown_subject("gatepass.visit.AdmitVisitor"));
+            return Ok(AdmitVisitorOutcome::WrongStateUnknownInstance);
         };
         // `arrive` runs from `Expected` and from nowhere else — the typed lifecycle carries that,
         // so the legal move is a method call and every other state is the declared `wrong-state`.
@@ -190,7 +176,7 @@ impl SignOutVisitorBehavior for VisitRealization {
         let key = input.visit_id.0 .0.clone();
         let mut store = self.visits.store.borrow_mut();
         let Some(snapshot) = store.visits.get(&key).cloned() else {
-            return Err(unknown_subject("gatepass.visit.SignOutVisitor"));
+            return Ok(SignOutVisitorOutcome::WrongStateUnknownInstance);
         };
         match snapshot.refine() {
             AnyVisit::OnSite(visit) => {

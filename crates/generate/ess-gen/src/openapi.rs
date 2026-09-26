@@ -852,6 +852,11 @@ fn view_key(view: &ResolvedView) -> String {
 
 /// The response body for one outcome.
 fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutcome) -> Value {
+    // The unknown-instance rule answers this same branch for an instance no record carries, and
+    // that answer has no payload: nothing describes an instance that does not exist
+    // (`docs/design/unknown-instance-seams.md`).
+    let unknown = crate::unknown_instance::unknown_instance_answer(ir, command)
+        .is_some_and(|declared| declared.name == outcome.name);
     let mut required = vec![Value::String(OUTCOME.to_owned())];
     let mut properties = Map::new();
     properties.insert(
@@ -875,7 +880,9 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         properties.insert("error".to_owned(), identity);
 
         if !declared.fields.is_empty() {
-            required.push(Value::String("payload".to_owned()));
+            if !unknown {
+                required.push(Value::String("payload".to_owned()));
+            }
             properties.insert(
                 "payload".to_owned(),
                 json!({"$ref": reference(&error_key(declared))}),
@@ -893,7 +900,15 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
     let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
-        "description": outcome_description(ir, outcome),
+        "description": if unknown {
+            format!(
+                "{} For an instance no record carries, `payload` is absent, because an \
+                 instance that does not exist has nothing for the error to describe.",
+                outcome_description(ir, outcome)
+            )
+        } else {
+            outcome_description(ir, outcome)
+        },
         "required": required,
         "properties": properties,
     });

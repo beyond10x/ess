@@ -236,6 +236,15 @@ fn handler(
             );
         }
     }
+    if ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command).is_some() {
+        // Publishes nothing, as its declared branch publishes nothing — named anyway, so every
+        // variant of the outcome has its arm.
+        let variant = emit.qualify(
+            emit.layout.package_of(&command.name),
+            emit.layout.unknown_instance_variant(&command.name),
+        );
+        let _ = writeln!(&mut arms, "\tcase {variant}:");
+    }
 
     let _ = writeln!(
         out,

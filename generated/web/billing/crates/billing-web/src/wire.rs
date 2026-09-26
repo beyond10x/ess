@@ -517,6 +517,18 @@ pub fn encode_outcome_billing_invoice_cancel_invoice(value: &billing_types::invo
             encode_error_billing_invoice_invoice_state_conflict(error, out);
             out.push('}');
         }
+        billing_types::invoice::CancelInvoiceOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "billing.invoice.InvoiceStateConflict");
+            out.push('}');
+        }
     }
     out.push('}');
 }
@@ -649,6 +661,18 @@ pub fn encode_outcome_billing_invoice_issue_invoice(value: &billing_types::invoi
             encode_error_billing_invoice_invoice_state_conflict(error, out);
             out.push('}');
         }
+        billing_types::invoice::IssueInvoiceOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "billing.invoice.InvoiceStateConflict");
+            out.push('}');
+        }
     }
     out.push('}');
 }
@@ -727,6 +751,18 @@ pub fn encode_outcome_billing_invoice_pay_invoice(value: &billing_types::invoice
             json::push_text(out, "billing.invoice.InvoiceStateConflict");
             json::member(out, "payload");
             encode_error_billing_invoice_invoice_state_conflict(error, out);
+            out.push('}');
+        }
+        billing_types::invoice::PayInvoiceOutcome::WrongStateUnknownInstance => {
+            json::member(out, "outcome");
+            json::push_text(out, "wrong-state");
+            json::member(out, "published");
+            out.push('[');
+            out.push(']');
+            json::member(out, "refusal");
+            out.push('{');
+            json::member(out, "error");
+            json::push_text(out, "billing.invoice.InvoiceStateConflict");
             out.push('}');
         }
     }

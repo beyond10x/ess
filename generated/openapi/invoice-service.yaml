@@ -164,7 +164,7 @@ components:
       type: object
     billing.invoice.CancelInvoice.wrong-state.Response:
       additionalProperties: false
-      description: The invoice is already Paid or already Cancelled, so nothing was cancelled. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's.
+      description: The invoice is already Paid or already Cancelled, so nothing was cancelled. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's. For an instance no record carries, `payload` is absent, because an instance that does not exist has nothing for the error to describe.
       properties:
         error:
           const: billing.invoice.InvoiceStateConflict
@@ -178,7 +178,6 @@ components:
       required:
       - outcome
       - error
-      - payload
       type: object
     billing.invoice.CreateInvoice.Input:
       title: Create invoice input
@@ -294,7 +293,7 @@ components:
       type: object
     billing.invoice.IssueInvoice.wrong-state.Response:
       additionalProperties: false
-      description: The invoice is not in Draft, so it was not issued. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's.
+      description: The invoice is not in Draft, so it was not issued. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's. For an instance no record carries, `payload` is absent, because an instance that does not exist has nothing for the error to describe.
       properties:
         error:
           const: billing.invoice.InvoiceStateConflict
@@ -308,7 +307,6 @@ components:
       required:
       - outcome
       - error
-      - payload
       type: object
     billing.invoice.Money:
       title: Money
@@ -372,7 +370,7 @@ components:
       type: object
     billing.invoice.PayInvoice.wrong-state.Response:
       additionalProperties: false
-      description: The invoice is not Issued, so the payment did not settle it. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's.
+      description: The invoice is not Issued, so the payment did not settle it. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's. For an instance no record carries, `payload` is absent, because an instance that does not exist has nothing for the error to describe.
       properties:
         error:
           const: billing.invoice.InvoiceStateConflict
@@ -386,7 +384,6 @@ components:
       required:
       - outcome
       - error
-      - payload
       type: object
 x-ess-entities:
   billing.invoice.Account:

@@ -937,17 +937,12 @@ fn pump(
 /// A method rather than an inline arm because Go declares a variable once per block: two bindings
 /// reacting to one event would redeclare `input` in the same `case`, which Rust's `let` shadowing
 /// makes a non-question.
-fn delivery_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
-    let binding = delivery.binding;
-    let source = binding.name.to_string();
-    let system = emit.layout.system_name("System");
-    let unmet = transport_failure(emit);
-    let method = delivery_name(delivery);
-    let acceptor = name::exported(&delivery.acceptor.name.to_string());
-    let handler = emit.layout.declared(binding.command.name());
-    let invocation = emit.layout.invocation(&source);
-    let command = emit.ir.command(&binding.command);
-    let refusals: Vec<String> = command
+/// Every outcome variant of `command` that carries a declared refusal, qualified.
+///
+/// An unknown instance is refused with the same declared error as `wrong_state`, so its variant is
+/// one of them where the command has it (`docs/design/unknown-instance-seams.md`).
+fn refusal_variants(emit: &Emit<'_>, command: &ess_compiler::ir::ResolvedCommand) -> Vec<String> {
+    let mut refusals: Vec<String> = command
         .outcomes
         .iter()
         .filter(|outcome| outcome.error.is_some())
@@ -959,6 +954,23 @@ fn delivery_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
             )
         })
         .collect();
+    if ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command).is_some() {
+        refusals.push(emit.reference_unknown_instance_variant(&command.name));
+    }
+    refusals
+}
+
+fn delivery_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
+    let binding = delivery.binding;
+    let source = binding.name.to_string();
+    let system = emit.layout.system_name("System");
+    let unmet = transport_failure(emit);
+    let method = delivery_name(delivery);
+    let acceptor = name::exported(&delivery.acceptor.name.to_string());
+    let handler = emit.layout.declared(binding.command.name());
+    let invocation = emit.layout.invocation(&source);
+    let command = emit.ir.command(&binding.command);
+    let refusals = refusal_variants(emit, command);
     let successes: Vec<String> = command
         .outcomes
         .iter()
