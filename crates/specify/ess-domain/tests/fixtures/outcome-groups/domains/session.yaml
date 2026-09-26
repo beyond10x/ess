@@ -1,0 +1,14 @@
+domain: tel.session
+summary: The session a remote service acts under.
+errors:
+  - name: tel.session.Unauthenticated
+    summary: The remote service rejected the session credential.
+  - name: tel.session.Expired
+    summary: The session expired before the service acted.
+outcome_groups:
+  - name: audited
+    commands: [tel.calls.Hold, tel.calls.Dial]
+    outcomes:
+      - name: session-expired
+        external: the audit service reports the session expired
+        error: tel.session.Expired

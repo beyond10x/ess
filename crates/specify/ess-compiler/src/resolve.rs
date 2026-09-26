@@ -797,7 +797,8 @@ fn family_of(location: &str) -> &'static str {
     {
         "type" | "conversion" => codes::family::TYPE,
         "entitie" | "entity" => codes::family::ENTITY,
-        "command" => codes::family::COMMAND,
+        // An outcome group declares command outcomes, so its refusals file beside theirs.
+        "command" | "outcome_group" => codes::family::COMMAND,
         "event" => codes::family::EVENT,
         "error" => codes::family::ERROR,
         "view" => codes::family::VIEW,
@@ -918,6 +919,8 @@ const STRUCTURAL: &[&str] = &[
     "components",
     "bindings",
     "topology",
+    // An outcome group's exceptions: `outcome_groups.<group>.except` names the group.
+    "except",
 ];
 
 /// Needles for a document path, most specific first.
@@ -3817,6 +3820,10 @@ mod tests {
             ("entity shop.Order", codes::family::ENTITY),
             ("view.shop.Orders.filter", codes::family::VIEW),
             ("system.domains", codes::family::SPEC),
+            (
+                "outcome_groups.remote-backed.except",
+                codes::family::COMMAND,
+            ),
         ] {
             assert_eq!(family_of(location), expected, "{location}");
         }

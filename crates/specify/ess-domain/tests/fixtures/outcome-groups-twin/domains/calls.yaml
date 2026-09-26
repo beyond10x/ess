@@ -1,0 +1,68 @@
+domain: tel.calls
+summary: Calls, placed and held by a remote service.
+events:
+  - name: tel.calls.CallHeld
+    fields: [{name: call_id, type: Uuid}]
+  - name: tel.calls.CallResumed
+    fields: [{name: call_id, type: Uuid}]
+  - name: tel.calls.CallParked
+    fields: [{name: call_id, type: Uuid}]
+  - name: tel.calls.CallDialled
+    fields: [{name: call_id, type: Uuid}]
+commands:
+  - name: tel.calls.Hold
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: held
+        emits: [tel.calls.CallHeld]
+        payload:
+          tel.calls.CallHeld:
+            call_id: input.call_id
+      - name: session-expired
+        external: the audit service reports the session expired
+        error: tel.session.Expired
+      - name: credential-rejected
+        external: the service rejects the session credential
+        error: tel.session.Unauthenticated
+        summary: The remote service refused the session.
+        refs: [issue:beyond10x/ess#105]
+  - name: tel.calls.Resume
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: resumed
+        emits: [tel.calls.CallResumed]
+        payload:
+          tel.calls.CallResumed:
+            call_id: input.call_id
+      - name: credential-rejected
+        external: the service rejects the session credential
+        error: tel.session.Unauthenticated
+        summary: The remote service refused the session.
+        refs: [issue:beyond10x/ess#105]
+  - name: tel.calls.Park
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: parked
+        emits: [tel.calls.CallParked]
+        payload:
+          tel.calls.CallParked:
+            call_id: input.call_id
+      - name: credential-rejected
+        external: the parking service reports the session expired
+        error: tel.session.Expired
+  - name: tel.calls.Dial
+    input: [{name: call_id, type: Uuid}]
+    outcomes:
+      - name: dialled
+        emits: [tel.calls.CallDialled]
+        payload:
+          tel.calls.CallDialled:
+            call_id: input.call_id
+      - name: session-expired
+        external: the audit service reports the session expired
+        error: tel.session.Expired
+actors:
+  - name: tel.calls.Agent
+    may: [tel.calls.Hold, tel.calls.Resume, tel.calls.Park]
+  - name: tel.calls.Supervisor
+    may: [tel.calls.Dial]

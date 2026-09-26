@@ -105,6 +105,13 @@
         }
       ]
     },
+    "outcome_groups": {
+      "description": "Outcome groups declared here: one outcome written once for many commands (ess/12).\n\nAbove the domains, like `bindings:`, so any file may carry them. Expanded into their member commands before anything is converted, and never seen by the rest of assembly.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/RawOutcomeGroup"
+      }
+    },
     "summary": {
       "description": "What the system is, in one paragraph.",
       "default": null,
@@ -981,6 +988,11 @@
         }
       ]
     },
+    "OutcomeGroupName": {
+      "description": "An outcome group's identifier, such as `remote-backed`.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
     "OutcomeName": {
       "description": "The lower-kebab name of one outcome, such as `accepted`.",
       "type": "string",
@@ -1830,6 +1842,54 @@
       },
       "additionalProperties": false
     },
+    "RawGroupOutcome": {
+      "description": "One outcome of a group: always an external refusal.",
+      "type": "object",
+      "required": [
+        "error",
+        "external",
+        "name"
+      ],
+      "properties": {
+        "error": {
+          "description": "The error it reports.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "external": {
+          "description": "What outside the input decides this branch.",
+          "type": "string"
+        },
+        "name": {
+          "description": "What the outcome is called in every member.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OutcomeName"
+            }
+          ]
+        },
+        "refs": {
+          "description": "The records outside this model that explain it.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ExternalRef"
+          }
+        },
+        "summary": {
+          "description": "One line for generated documentation.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawInvocation": {
       "description": "What a binding does.",
       "type": "object",
@@ -2031,6 +2091,76 @@
         "wrong_state": {
           "description": "`true` when this is the branch taken because the subject is in a state no move starts from.\n\nA flag and not a list of states: the states are already declared, once, as the `from` sets of this command's transitions. `wrong_state: false` is the same document as leaving the key out, because that is what the word means; what makes the branch a declaration is the `error:` beside it, which is required.",
           "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawOutcomeGroup": {
+      "description": "One outcome group as written: which commands, and the outcomes each of them gains.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "actor": {
+          "description": "Every command this actor `may:` invoke.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commands": {
+          "description": "Explicit membership, by fully qualified command name.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          },
+          "uniqueItems": true
+        },
+        "domain": {
+          "description": "Every command declared in a file whose `domain:` is this name.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "except": {
+          "description": "Commands the `actor:` or `domain:` selector would include and the group skips.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QualifiedName"
+          },
+          "uniqueItems": true
+        },
+        "name": {
+          "description": "Its identity, unique across the specification.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OutcomeGroupName"
+            }
+          ]
+        },
+        "outcomes": {
+          "description": "The outcomes each member gains, after its own.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RawGroupOutcome"
+          }
         }
       },
       "additionalProperties": false

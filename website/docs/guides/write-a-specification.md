@@ -342,6 +342,41 @@ Whether a mail provider accepts an address is not a function of the request. Fro
 Writing `when: false` would claim the branch is unreachable — a different statement, and a false
 one. A generator reads `external` and injects a fault instead of trying to construct an input.
 
+### One outcome for many commands
+
+When a remote service carries out every command on the caller's behalf, every command can end the
+same way: the service rejects the session credential. `ess/12` (not yet released) declares that
+outcome once, in a top-level `outcome_groups:` list that any file may carry:
+
+```yaml
+format: ess/12
+outcome_groups:
+  - name: remote-backed
+    actor: calls.Agent              # or  commands: [calls.Hold, calls.Resume]
+    except: [calls.Park]            # only beside actor: or domain:
+    outcomes:
+      - name: credential-rejected
+        external: the service rejects the session credential
+        error: session.Unauthenticated
+        summary: The remote service refused the session.
+        refs: [issue:beyond10x/ess#105]
+```
+
+A group names its members in exactly one way: an explicit `commands:` list, `actor:` for every
+command that actor `may:` invoke, or `domain:` for every command that domain's files declare. Each
+member gains the group's outcomes after its own, in ascending group-name order when several groups
+select it. That happens before validation, so validation, conformance and every generator see
+ordinary outcomes, and a group compiles to exactly what copying the outcome into each command by
+hand would. A group of 28 commands therefore still adds 28 scenarios. A group's outcome is always an
+external refusal: `external:` and `error:`, with an optional `summary:` and `refs:`, and nothing that
+depends on the command it lands in.
+
+`except:` is only for `actor:` and `domain:`; with an explicit list, leave the command out of
+`commands:` instead. A member that already declares an outcome of the same name is refused at the
+group, never silently overridden: rename one of the two, drop the command's own, or list the command
+under `except:`. Two groups that would give one command outcomes of the same name are refused too,
+and neither group expands into that command.
+
 ### Illegal lifecycle moves are illegal by absence
 
 `Paid` cannot become `Cancelled` because no transition says it can. There is no forbidding rule,

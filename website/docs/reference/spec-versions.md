@@ -6,7 +6,7 @@ description: What each ESS format version number means, which release introduced
 
 # Format version history
 
-An ESS document declares its own format in its bytes — `ess/10`, `ess-diff/7`,
+An ESS document declares its own format in its bytes — `ess/12`, `ess-diff/7`,
 `ess-conformance/17`. That number is the format's major version and nothing else. It is not the
 release that produced the document, and not the specification version the document describes;
 [Formats and digests](./formats.md) separates those three. This page says what each number changed,
@@ -22,7 +22,7 @@ Every family is read by a build that states which versions it implements and ref
 refusal is the point: a reader that accepts a shape it does not understand returns a wrong answer
 about somebody's system, and blames the document for the age of the tool.
 
-A version number is per family. `ess/10` and `ess-conformance/17` count
+A version number is per family. `ess/12` and `ess-conformance/17` count
 separately and always have.
 
 ## `ess/` — the authored specification
@@ -80,6 +80,18 @@ for `min` and `max`, and `Optional<Decimal>` for `avg`, rounded to 6 places half
 refuses the header, and this build refuses the construct under an earlier header with
 `unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
 [aggregate views](../guides/write-a-specification.md#aggregate-views).
+
+`ess/12`, not yet released, admits `outcome_groups:`, a top-level list that declares one external
+refusal once for many commands. A group selects its members by an explicit `commands:` list, by
+`actor:` (every command that actor `may:` invoke) or by `domain:` (every command that domain's
+files declare), with `except:` beside a selector. Each member gains the group's outcomes after its
+own, in ascending group-name order, before anything is validated, so a group and the same outcomes
+copied by hand compile to the same IR and synthesize the same suite. An outcome of a group is
+`external:` plus `error:` and nothing else. A member that already declares an outcome of the same
+name, and two groups giving one command outcomes of the same name, are refused rather than
+overridden. An older build refuses the header, and this build refuses a group under an earlier
+header with `unsupported_format_version`. A model without groups keeps its bytes and its compiled
+digest. See [one outcome for many commands](../guides/write-a-specification.md#one-outcome-for-many-commands).
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.

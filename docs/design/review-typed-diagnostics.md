@@ -259,6 +259,7 @@ component.rs 15 9
 domain.rs 5 0
 entity.rs 16 4
 expression.rs 1 0
+outcome_group.rs 17 0
 primitive_admission.rs 8 6
 selection.rs 2 0
 spec.rs 7 0
@@ -309,6 +310,7 @@ event command.rs 3
 event component.rs 1
 event primitive_admission.rs 1
 event wire.rs 1
+outcome_groups outcome_group.rs 17
 topology topology.rs 6
 types primitive_admission.rs 1
 types system.rs 3
