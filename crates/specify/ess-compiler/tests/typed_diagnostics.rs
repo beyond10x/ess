@@ -482,6 +482,35 @@ fn page_block(page: &str, marker: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
+/// Every head `ess-compiler`'s `family_of` names in a match arm, read from its source.
+fn family_of_heads() -> Vec<String> {
+    let resolve = std::fs::read_to_string(
+        repository_root().join("crates/specify/ess-compiler/src/resolve.rs"),
+    )
+    .expect("resolve.rs is readable");
+    let body = resolve
+        .split_once("fn family_of(location: &str)")
+        .expect("resolve.rs declares `family_of`")
+        .1
+        .split_once(
+            "
+}
+",
+        )
+        .expect("`family_of` ends")
+        .0;
+    let mut heads = Vec::new();
+    for line in body.lines().filter(|line| line.contains("=>")) {
+        let arm = line.split("=>").next().unwrap_or_default();
+        heads.extend(arm.split('"').skip(1).step_by(2).map(str::to_owned));
+    }
+    assert!(
+        heads.len() > 10,
+        "`family_of` arms were not found: {heads:?}"
+    );
+    heads
+}
+
 /// A family is the location head a refusal writes, not the file the rule lives in.
 ///
 /// The class adversary pass 2 found (F1, F2): the page's per-file inventory booked four `command.…`
@@ -512,6 +541,8 @@ fn the_head_census_on_the_design_page_is_the_count_in_the_tree() {
         "errors",
         "event",
         "events",
+        "outcome_group",
+        "outcome_groups",
         "spec",
         "topology",
         "type",
@@ -519,6 +550,15 @@ fn the_head_census_on_the_design_page_is_the_count_in_the_tree() {
         "view",
         "views",
     ];
+
+    // The list is the class, not a copy of it: a head `family_of` files under a family and this
+    // census does not count is a producer nobody accounts for.
+    for arm in family_of_heads() {
+        assert!(
+            HEADS.contains(&arm.as_str()) || HEADS.contains(&format!("{arm}s").as_str()),
+            "`family_of` matches the head `{arm}`, which this census does not count"
+        );
+    }
 
     let mut measured: Vec<(String, String, usize)> = Vec::new();
     for (file, text) in domain_sources() {

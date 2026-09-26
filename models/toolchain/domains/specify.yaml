@@ -39,7 +39,7 @@ types:
   # support for it — so the closed set here is what validation admits, not what the syntax accepts.
   - name: toolchain.specify.SpecificationFormat
     kind: enum
-    variants: ["ess/1", "ess/2", "ess/3", "ess/4", "ess/5", "ess/6", "ess/7", "ess/8", "ess/9", "ess/10", "ess/11"]
+    variants: ["ess/1", "ess/2", "ess/3", "ess/4", "ess/5", "ess/6", "ess/7", "ess/8", "ess/9", "ess/10", "ess/11", "ess/12"]
 
   # The twelve families of `ESS-<FAMILY>-<NNN>`, in the order a specification is read —
   # `crates/specify/ess-compiler/src/resolve.rs:186`.

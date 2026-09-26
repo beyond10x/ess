@@ -109,6 +109,12 @@ pub struct RawSpecFile {
     /// The system's runtime shape.
     #[serde(default)]
     pub topology: Option<crate::topology::RawTopology>,
+    /// Outcome groups declared here: one outcome written once for many commands (ess/12).
+    ///
+    /// Above the domains, like `bindings:`, so any file may carry them. Expanded into their member
+    /// commands before anything is converted, and never seen by the rest of assembly.
+    #[serde(default)]
+    pub outcome_groups: Vec<crate::outcome_group::RawOutcomeGroup>,
 }
 
 /// Everything a specification declares, indexed by identity.
@@ -222,6 +228,11 @@ impl Specification {
         let mut errors = ValidationErrors::new();
         let mut parts: Vec<SpecPart> = Vec::new();
         let mut collected = Collected::default();
+
+        // Before any command is converted, so an expanded outcome meets every check a hand-written
+        // copy would (docs/design/outcome-groups.md, "Where before validation is in this tree").
+        let mut files: Vec<(Source, RawSpecFile)> = files.into_iter().collect();
+        crate::outcome_group::expand(&mut files, &mut errors);
 
         for (source, file) in files {
             parts.push(collected.absorb(&source, file, &mut errors));

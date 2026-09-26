@@ -98,6 +98,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess", 9, None),
     ("ess", 10, None),
     ("ess", 11, None),
+    ("ess", 12, None),
     ("ess-diff", 1, Some("0.1.0")),
     ("ess-diff", 2, Some("0.19.0")),
     ("ess-diff", 3, Some("0.23.0")),

@@ -65,7 +65,7 @@ would get. No other production caller of `assemble` exists: a search for
 `domain:` key.
 
 ```yaml
-format: ess/11
+format: ess/12
 outcome_groups:
   - name: remote-backed
     actor: calls.Agent              # or  commands: [calls.Hold, calls.Resume]
@@ -229,7 +229,7 @@ Every location below then ends at the group or at a structural key, so the needl
 | G13 | `error:` names no declared error | `UndeclaredReference` | `outcome_groups.<g>.outcomes.<o>.error` | `ESS-COMMAND-001` |
 | G14 | a member command already declares an outcome named `<o>`. One refusal per (group, outcome, command). The message names the command. The hint says "rename one of the two, drop the command's own, or list `<command>` under `except:`". Under `commands:` the last option reads "leave `<command>` out of `commands:`" | `DuplicateDeclaration` | `outcome_groups.<g>.outcomes.<o>` | `ESS-COMMAND-006` |
 | G15 | two groups would give one command outcomes of the same name. Reported once, at the group later in name order, naming the earlier group and the command. Neither group expands into that command | `DuplicateDeclaration` | `outcome_groups.<later>.outcomes.<o>` | `ESS-COMMAND-006` |
-| G16 | any group in a specification whose header format is below `ess/11`. Message: "outcome groups require specification format ess/11". One refusal per group | `UnsupportedFormatVersion` | `outcome_groups.<g>` | `ESS-COMMAND-009` |
+| G16 | any group in a specification whose header format is below `ess/12`. Message: "outcome groups require specification format ess/12". One refusal per group | `UnsupportedFormatVersion` | `outcome_groups.<g>` | `ESS-COMMAND-009` |
 
 Why each rule is shaped this way:
 
@@ -260,28 +260,28 @@ changes. The census is the machine check for the class. No hand list is kept her
 
 | family | moves? | why |
 |---|---|---|
-| `ess/` (authored) | **yes, to `ess/11`**: `FormatVersion::V11` beside `V10` (`crates/specify/ess-domain/src/system.rs:89`), `SUPPORTED_FORMATS` gains `11` (`system.rs:53`), gate G16 | a new top-level key. A build older than `ess/11` refuses the header version. The same build reading `outcome_groups:` under an older header fails with `unknown field outcome_groups` |
+| `ess/` (authored) | **yes, to `ess/12`**: `FormatVersion::V12` beside `V11` (`crates/specify/ess-domain/src/system.rs:89`), `SUPPORTED_FORMATS` gains `12` (`system.rs:53`), gate G16 | a new top-level key. A build older than `ess/12` refuses the header version. The same build reading `outcome_groups:` under an older header fails with `unknown field outcome_groups` |
 | document schema | regenerated: `schemas/generated/ess.schema.json` gains `outcome_groups`, `RawOutcomeGroup` and `RawGroupOutcome`. Run `cargo xtask schema`; `projection-check` is the only thing that notices a stale schema (`AGENTS.md`, "A change to `RawSpecFile`…") | — |
 | compiled IR | no number exists, no change | expansion leaves nothing behind. A model without groups keeps its bytes and `source_digest` |
 | `ess-conformance/` (suite) | **no** | the suite sees ordinary external outcomes, `ScenarioId::Outcome` (`crates/verify/ess-conformance/src/scenario.rs:537-546`) |
 | `ess-diff/` | **no** | the diff compares IR. Adding a group reads as `outcome-added` on each member (`crates/verify/ess-diff/src/change.rs:2068`, `:2209`). A group and its hand copy diff empty |
 | `infra-spec/1` | no | does not read `RawSpecFile` |
 
-**Numbers taken:** `ess/11` only. At base, the maxima are `ess/10` (`system.rs:53`),
+**Numbers taken:** `ess/12` only. At base, the maxima are `ess/10` (`system.rs:53`),
 `ess-conformance/17` (`scenario.rs:373-374`) and `ess-diff/7` (`crates/verify/ess-diff/src/delta.rs:13`).
-If another wave-2 unit takes `ess/11` first, this construct takes the next free source number and
-nothing else moves.
+Unit E6 took `ess/11` (string alphabets, input examples and `.count` on text) in the same wave, so
+this construct took the next free source number, `ess/12`, and nothing else moved.
 
 **Version tables and literals that move:**
 
-- `FORMAT_RELEASES` gains `("ess", 11, None)` (`crates/edge/ess-xtask/src/docs.rs:89-99`).
+- `FORMAT_RELEASES` gains `("ess", 12, None)` (`crates/edge/ess-xtask/src/docs.rs:89-99`).
   Otherwise the docs lane refuses the grown constant.
 - `website/docs/reference/formats.md` gains a row after `:108`, and
   `website/docs/reference/spec-versions.md` gains a paragraph after `:74`. The newest-version
-  examples at `:9` and `:25` move to `ess/11`.
+  examples at `:9` and `:25` move to `ess/12`.
 - `system.rs:1730` (`a_specification_reports_every_problem_in_one_run`) uses `ess/11` as "a version
   this build cannot read". It moves to `ess/99`, so the next bump does not touch it again.
-  `system.rs:1978` gains `ess/11` among the accepted ones.
+  `system.rs:1978` gains `ess/12` among the accepted ones.
 - The unit runs `rg -n --pcre2 'ess/1[1-9]\b' crates website` and reads each hit before moving it.
   The two lines above are the only hits at base.
 
@@ -355,13 +355,13 @@ the construct itself, and the ones a reader might expect to.
 | `Specification::assemble` (`spec.rs:219-224`) | absorbs files | calls `outcome_group::expand` first |
 | `crates/specify/ess-domain/src/outcome_group.rs` | — | new: the raw types, `OutcomeGroupName`, `expand`, G1–G16 |
 | `crates/specify/ess-domain/src/lib.rs:58-76` | module list | `pub mod outcome_group` (the raw types are public, as `RawActorSpec` is) |
-| `system.rs:53`, `:89` | `ess/10` newest | `V11`, `SUPPORTED_FORMATS` |
+| `system.rs:53`, `:89` | `ess/10` newest | `V12`, `SUPPORTED_FORMATS` |
 | `resolve.rs:778-798` `family_of`, `:854-907` `STRUCTURAL` | — | `outcome_group` → `COMMAND`; `except` |
 | `schemas/generated/ess.schema.json` | projection of `RawSpecFile` | regenerated |
 | `docs/design/review-typed-diagnostics.md:252-322` | census | two lines (see *Validation*) |
 | `ess specify inspect <name>` (`crates/edge/ess-cli/src/main.rs:2243-2266`) | looks names up in IR families | **refuses** a group name with its existing "`<name>` is not a resolved declaration". A group is not a resolved declaration. No change |
 | OpenAPI, docs, native plan, Rust/Go/web synthesis, Entity Runtime lowering, service contract, conformance catalog, `ess verify diff` (`diff.rs:1860-1880` residual families) | read resolved commands | unchanged: they see the expanded outcomes, which is the page's decision 3 |
-| `website/docs/guides/write-a-specification.md` | "An outcome the input cannot decide says that too" (`:277`) | a new section after it, "One outcome for many commands", with the syntax example above and one sentence per rule G7, G14 and G15. The example is written at `format: ess/11` |
+| `website/docs/guides/write-a-specification.md` | "An outcome the input cannot decide says that too" (`:277`) | a new section after it, "One outcome for many commands", with the syntax example above and one sentence per rule G7, G14 and G15. The example is written at `format: ess/12` |
 | `website/docs/reference/formats.md`, `spec-versions.md` | version rows | see *Formats* |
 | `crates/edge/ess-xtask/src/consumer_coverage/*` | parked (`AGENTS.md`, "Consumer coverage is opt-in"); `metadata.rs:23` names `assemble` | untouched |
 | agent plugin grammar (`beyond10x/agentplugins`) | — | after the release, not in this repository |

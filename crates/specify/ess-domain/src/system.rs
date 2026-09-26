@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -89,6 +89,8 @@ impl FormatVersion {
     pub const V10: Self = Self(10);
     /// Declared `String` alphabets, input examples and `.count` on text.
     pub const V11: Self = Self(11);
+    /// Outcome groups: one outcome declared once for many commands.
+    pub const V12: Self = Self(12);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1979,7 +1981,7 @@ mod format_version_tests {
                 })
         };
 
-        for accepted in ["ess/1", "ess/2", "ess/10", "ess/11"] {
+        for accepted in ["ess/1", "ess/2", "ess/10", "ess/11", "ess/12"] {
             assert!(
                 FormatVersion::parse(accepted).is_ok(),
                 "{accepted} should parse"
