@@ -16,12 +16,14 @@
 #[allow(dead_code)]
 #[path = "support/browser.rs"]
 mod browser;
+#[allow(dead_code)]
+#[path = "support/executable.rs"]
+mod executable;
 
 use std::{
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -34,16 +36,16 @@ use std::{
 /// the shape the fixture's own scraper requires, and then stays alive.
 fn announcing_stand_in(dir: &Path, port: u16) -> PathBuf {
     let script = dir.join("stand-in-firefox.sh");
-    fs::write(
+    executable::install_bytes(
         &script,
         format!(
             "#!/bin/sh\n\
              echo \"WebDriver BiDi listening on ws://127.0.0.1:{port}\" >&2\n\
              exec sleep 45\n"
-        ),
+        )
+        .as_bytes(),
     )
     .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     script
 }
 

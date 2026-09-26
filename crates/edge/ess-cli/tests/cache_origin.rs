@@ -85,6 +85,28 @@ impl Fixture {
         driver.output().unwrap()
     }
 }
+/// A program copied into place as an executor runs at once, even while other cases fork children.
+///
+/// `executors` copies the compiled fixture into place as `oras` and `helm`, and the driver then
+/// executes them. A child another case forks while the copy is open for writing inherits that
+/// descriptor until it executes, and until then the kernel refuses to execute the copy
+/// (`ETXTBSY`). This copies a program forty times and runs each copy once while three threads
+/// spawn.
+#[test]
+fn a_freshly_copied_executor_runs_while_other_cases_spawn() {
+    let f = Fixture::new();
+    let unlaunched = executable::unlaunched_rounds(40, |round| {
+        let copy = f.0.join(format!("executor-{round}"));
+        executable::install_copy(Path::new("/bin/true"), &copy).unwrap();
+        Command::new(copy)
+    });
+    assert!(
+        unlaunched.is_empty(),
+        "{} of 40 freshly copied executors never ran: {unlaunched:#?}",
+        unlaunched.len()
+    );
+}
+
 fn executors() -> &'static Path {
     static VALUE: OnceLock<PathBuf> = OnceLock::new();
     VALUE
@@ -95,8 +117,8 @@ fn executors() -> &'static Path {
                 &"rustc".into(),
                 &["--edition=2021"],
             );
-            std::fs::copy(&program, f.0.join("oras")).unwrap();
-            std::fs::copy(&program, f.0.join("helm")).unwrap();
+            executable::install_copy(&program, &f.0.join("oras")).unwrap();
+            executable::install_copy(&program, &f.0.join("helm")).unwrap();
             f.0
         })
         .as_path()
@@ -140,6 +162,9 @@ fn legacy_self_consistent_helm_cache_cannot_claim_requested_origin() {
 mod bundle_fixture;
 #[path = "support/compiled_fixture.rs"]
 mod compiled_fixture;
+#[allow(dead_code)]
+#[path = "support/executable.rs"]
+mod executable;
 const OCI: &str = "application/vnd.oci.image.manifest.v1+json";
 const HELM: &str = "application/vnd.cncf.helm.config.v1+json";
 const CHART: &str = "application/vnd.cncf.helm.chart.content.v1.tar+gzip";

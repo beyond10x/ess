@@ -18,6 +18,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[allow(dead_code)]
+#[path = "../../ess-cli/tests/support/executable.rs"]
+mod executable;
+
 use serde_json::json;
 use serde_yaml::Value;
 
@@ -1191,6 +1195,31 @@ fi
 exec jq -r "$4" "$file"
 "#;
 
+/// A `gh` stub this suite installs runs at once, even while other cases fork children.
+///
+/// `prior_gate` and `prebuilt` install a `gh` stub and the step they run executes it through
+/// `PATH`, as threads of one process with every other case here. A child another thread forks
+/// while the stub is open for writing inherits that descriptor until it executes, and until then
+/// the kernel refuses to execute the stub (`ETXTBSY`). This installs forty and runs each once
+/// while three threads spawn.
+#[test]
+fn a_freshly_installed_gh_stub_runs_while_other_cases_spawn() {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("ci-lanes-fresh-stub-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let unlaunched = executable::unlaunched_rounds(40, |round| {
+        let stub = root.join(format!("gh-{round}"));
+        executable::install_bytes(&stub, b"#!/bin/sh\nexit 0\n").unwrap();
+        Command::new(stub)
+    });
+    let _ = fs::remove_dir_all(&root);
+    assert!(
+        unlaunched.is_empty(),
+        "{} of 40 freshly installed stubs never ran: {unlaunched:#?}",
+        unlaunched.len()
+    );
+}
+
 /// Runs release.yml's `prior-gate` step the way Actions runs a `shell: bash` step, in a fresh
 /// clone of `main`, and returns the `passed` value it wrote.
 fn prior_gate(
@@ -1214,11 +1243,7 @@ fn prior_gate(
     fs::create_dir_all(&bin).unwrap();
     fs::create_dir_all(&answers).unwrap();
     let stub = bin.join("gh");
-    fs::write(&stub, GH_STUB).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    executable::install_bytes(&stub, GH_STUB.as_bytes()).unwrap();
     for (sha, endpoint, body) in responses {
         fs::write(
             answers.join(format!("{sha}.{endpoint}.json")),
@@ -1812,11 +1837,7 @@ fn prebuilt(
     fs::create_dir_all(&bin).unwrap();
     fs::create_dir_all(&answers).unwrap();
     let stub = bin.join("gh");
-    fs::write(&stub, GH_PATH_STUB).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    executable::install_bytes(&stub, GH_PATH_STUB.as_bytes()).unwrap();
     for (path, body) in responses {
         fs::write(
             answers.join(format!("{}.json", path.replace('/', "_"))),

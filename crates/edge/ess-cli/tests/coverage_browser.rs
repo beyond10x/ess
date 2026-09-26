@@ -3,9 +3,11 @@
 mod browser;
 #[path = "support/coverage_cases.rs"]
 mod coverage_cases;
+#[allow(dead_code)]
+#[path = "support/executable.rs"]
+mod executable;
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
@@ -661,16 +663,39 @@ fn a_browser_that_exits_during_startup_refuses_with_its_own_stderr_too() {
     );
 }
 
+/// A stand-in script this binary installs runs at once, even while other cases fork children.
+///
+/// Every browser case here installs a stand-in script and executes it, as threads of one process.
+/// A child another thread forks while the installer holds the script open for writing inherits
+/// that descriptor until it executes, and until then the kernel refuses to execute the script
+/// (`ETXTBSY`), so the startup under test would fail at launch for a reason that is not the
+/// fixture's. This installs forty and runs each once while three threads spawn.
+#[test]
+fn a_freshly_installed_stand_in_script_runs_while_other_cases_spawn() {
+    let root = std::env::temp_dir().join(format!("ess-browser-installed-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let unlaunched = executable::unlaunched_rounds(40, |round| {
+        let script = root.join(format!("stand-in-{round}.sh"));
+        executable::install_bytes(&script, b"#!/bin/sh\nexit 0\n").unwrap();
+        Command::new(script)
+    });
+    let _ = fs::remove_dir_all(&root);
+    assert!(
+        unlaunched.is_empty(),
+        "{} of 40 freshly installed stand-ins never ran: {unlaunched:#?}",
+        unlaunched.len()
+    );
+}
+
 /// A stand-in for Firefox that occupies a startup for a window it cannot
 /// shorten and then exits, having never announced `BiDi`.
 fn stand_in_firefox(dir: &Path, window: Duration) -> PathBuf {
     let script = dir.join("stand-in-firefox.sh");
-    fs::write(
+    executable::install_bytes(
         &script,
-        format!("#!/bin/sh\nsleep {:.3}\n", window.as_secs_f64()),
+        format!("#!/bin/sh\nsleep {:.3}\n", window.as_secs_f64()).as_bytes(),
     )
     .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     script
 }
 

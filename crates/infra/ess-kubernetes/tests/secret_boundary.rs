@@ -9,6 +9,9 @@ use serde_json::{json, Value};
 
 #[path = "../../../edge/ess-cli/tests/support/compiled_fixture.rs"]
 mod compiled_fixture;
+#[allow(dead_code)]
+#[path = "../../../edge/ess-cli/tests/support/executable.rs"]
+mod executable;
 
 const SENTINEL: &str = "SYNTHETIC-MALFORMED-SECRET-SENTINEL";
 const PREVIOUS: &[u8] = b"previous sanitized observation";
@@ -162,14 +165,42 @@ fn fixture_root() -> &'static Path {
             &"rustc".into(),
             &["--edition=2021", "-Dwarnings"],
         );
-        std::fs::copy(&program, &helper).expect("kubectl fixture");
-        std::fs::copy(
+        executable::install_copy(&program, &helper).expect("kubectl fixture");
+        executable::install_copy(
             &helper,
-            bin.join(format!("date{}", std::env::consts::EXE_SUFFIX)),
+            &bin.join(format!("date{}", std::env::consts::EXE_SUFFIX)),
         )
         .expect("fixed clock fixture");
         root
     })
+}
+
+/// The fixed clock this suite copies into place runs at once, even while other cases fork children.
+///
+/// `fixture_root` copies the compiled fixture into place as `kubectl` and `date`, and the scan
+/// executes them. A child another case forks while a copy is open for writing inherits that
+/// descriptor until it executes, and until then the kernel refuses to execute the copy
+/// (`ETXTBSY`). This copies the fixture forty times and runs each copy once, as `date` exactly as
+/// the scan calls it, while three threads spawn.
+#[test]
+fn a_freshly_copied_fixture_runs_while_other_cases_spawn() {
+    let program = fixture_root()
+        .join("bin")
+        .join(format!("kubectl{}", std::env::consts::EXE_SUFFIX));
+    let unlaunched = executable::unlaunched_rounds(40, |round| {
+        let bin = fixture_root().join(format!("fresh-{round}"));
+        std::fs::create_dir_all(&bin).unwrap();
+        let date = bin.join(format!("date{}", std::env::consts::EXE_SUFFIX));
+        executable::install_copy(&program, &date).unwrap();
+        let mut command = Command::new(date);
+        command.args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]);
+        command
+    });
+    assert!(
+        unlaunched.is_empty(),
+        "{} of 40 freshly copied fixtures never ran: {unlaunched:#?}",
+        unlaunched.len()
+    );
 }
 
 fn scan(response: &str, preserve_existing: bool) -> (Output, PathBuf) {

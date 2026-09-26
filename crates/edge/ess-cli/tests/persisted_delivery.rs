@@ -4,6 +4,9 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 #[path = "support/compiled_fixture.rs"]
 mod compiled_fixture;
+#[allow(dead_code)]
+#[path = "support/executable.rs"]
+mod executable;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -102,8 +105,8 @@ fn executors() -> &'static Path {
                 &"rustc".into(),
                 &["--edition=2021"],
             );
-            std::fs::copy(&program, root.0.join("oras")).unwrap();
-            std::fs::copy(&program, root.0.join("helm")).unwrap();
+            executable::install_copy(&program, &root.0.join("oras")).unwrap();
+            executable::install_copy(&program, &root.0.join("helm")).unwrap();
             let path = root.0.clone();
             // Shared process fixtures remain under TMPDIR for the duration of this test binary.
             std::mem::forget(root);
