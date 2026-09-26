@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.35.0](#typed-fixture-values-resolved-before-a-scenario-starts) | Typed fixture values resolved before a scenario starts | capability | significant |
 | [0.34.0](#string-operators-subject-guards-aggregate-views-and-outcome-groups-and-a-mutation-audit) | String operators, subject guards, aggregate views and outcome groups, and a mutation audit | capability | significant |
 | [0.33.0](#a-scan-records-only-that-a-secret-value-exists-and-a-bound-workload-can-acknowledge-foreign-containers) | A scan records only that a Secret value exists, and a bound workload can acknowledge foreign containers | capability | significant |
 | [0.32.0](#openapi-30-imports-and-a-bound-workloads-unbound-sidecars-are-violations) | OpenAPI 3.0 imports, and a bound workload's unbound sidecars are violations | capability | significant |
@@ -28,6 +29,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.35.0 — 2026-09-26
+
+### Typed fixture values resolved before a scenario starts
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.35.0)
+
+Source format `ess/13` adds `fixture_inputs:` and `ess-scenario/3` adds `fixtures:` with `{$fixture: name}` references, compiled to `ess-conformance/18`/`19`. Rust, Go and TypeScript resolve and type-check the values from an independent provider before the scenario starts. Older readers refuse the new formats; fixture-free models and suites keep their bytes.
 
 ## 0.34.0 — 2026-09-26
 

@@ -100,7 +100,7 @@ overridden. An older build refuses the header, and this build refuses a group un
 header with `unsupported_format_version`. A model without groups keeps its bytes and its compiled
 digest. See [one outcome for many commands](../guides/write-a-specification.md#one-outcome-for-many-commands).
 
-`ess/13`, not yet released, admits `fixture_inputs:` on a command: a map from a declared input
+`ess/13`, introduced in [0.35.0][r35], admits `fixture_inputs:` on a command: a map from a declared input
 field to a lower-kebab fixture name, typed by that input. A deployed resource's identity or
 canonical input, which a deterministic generator cannot invent, is then resolved from an
 independent provider before the scenario starts, and the command request and its event-value
@@ -191,7 +191,7 @@ view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust and Go admi
 older envelopes refuse an aggregate scenario or refusal, and the TypeScript and browser readers
 refuse these envelopes by their version.
 
-`ess-conformance/18` and `/19`, unreleased, carry fixture values: a leading `resolve_fixtures`
+`ess-conformance/18` and `/19`, introduced in [0.35.0][r35], carry fixture values: a leading `resolve_fixtures`
 prelude naming each fixture and its source-owned type declarations, `{kind: fixture}` scenario
 values, and `expect_event_values`, which compares the first direct occurrence of an event, chosen by
 name, with literal and fixture values, so a later correct occurrence cannot hide an earlier wrong
@@ -246,7 +246,7 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-impact/` | [0.19.0][r19] | `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
-| `ess-scenario/` | [0.23.0][r23] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, unreleased, adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. |
+| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
 | `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
@@ -303,3 +303,5 @@ for a release and promises none.
 [r33]: https://github.com/beyond10x/ess/releases/tag/0.33.0
 
 [r34]: https://github.com/beyond10x/ess/releases/tag/0.34.0
+
+[r35]: https://github.com/beyond10x/ess/releases/tag/0.35.0
