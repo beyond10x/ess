@@ -570,6 +570,67 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Audit the suite with specification mutants, each replayed against a reference target.
+    ///
+    /// Derives mutants from the specification — one altering edit each — synthesizes a fresh
+    /// ordinary suite for the specification and for every mutant, and runs each on a fresh
+    /// target that implements the unchanged specification. A mutant is killed when its suite
+    /// fails there; a survivor is a declared rule no synthesized scenario pins down. It is
+    /// answered by declaring what makes the rule observable, or by filing a synthesis gap — not
+    /// by authoring a scenario, which runs identically in every mutant's suite and so can never
+    /// kill one. No authored scenario is run.
+    ///
+    /// Exit 0: the baseline passed, at least one mutant ran, and every mutant that ran was
+    /// killed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
+    /// the baseline suite did not pass (ESS-MUTATE-001), the classes found no site
+    /// (ESS-MUTATE-003), or no mutant survived and at least one was inconclusive or none ran.
+    Mutate {
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The reference implementation every suite runs against.
+        #[arg(long, value_enum)]
+        target: ReferenceTarget,
+        /// Only these classes; every class when absent.
+        #[arg(long, value_enum)]
+        class: Vec<MutateClass>,
+        /// Where to write the `ess-mutation-report/1` document.
+        #[arg(long)]
+        report_out: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
+}
+
+/// The mutant classes `mutate --class` takes, one per `ess_conformance::mutate::MutantClass`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum MutateClass {
+    // No doc comment on any variant, for the reason `ReferenceTarget` gives: one would switch clap
+    // from the inline `[possible values: …]` list to a described block.
+    FromDrop,
+    TransitionTo,
+    GuardBoundary,
+    SetsRetarget,
+    GuardNegate,
+    GuardConnective,
+    ErrorSwap,
+    EmitDrop,
+    OrderFlip,
+}
+
+impl From<MutateClass> for ess_conformance::mutate::MutantClass {
+    fn from(class: MutateClass) -> Self {
+        match class {
+            MutateClass::FromDrop => Self::FromDrop,
+            MutateClass::TransitionTo => Self::TransitionTo,
+            MutateClass::GuardBoundary => Self::GuardBoundary,
+            MutateClass::SetsRetarget => Self::SetsRetarget,
+            MutateClass::GuardNegate => Self::GuardNegate,
+            MutateClass::GuardConnective => Self::GuardConnective,
+            MutateClass::ErrorSwap => Self::ErrorSwap,
+            MutateClass::EmitDrop => Self::EmitDrop,
+            MutateClass::OrderFlip => Self::OrderFlip,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -2949,7 +3010,88 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                 format,
             )
         }
+        ConformCommand::Mutate {
+            path,
+            target,
+            class,
+            report_out,
+            format,
+        } => conform_mutate(&path, target, &class, report_out.as_deref(), format),
     }
+}
+
+/// `ess verify conform mutate`: the specification's mutants, each run against `target`.
+fn conform_mutate(
+    path: &Path,
+    target: ReferenceTarget,
+    classes: &[MutateClass],
+    report_out: Option<&Path>,
+    format: Format,
+) -> Result<ExitCode> {
+    use ess_conformance::mutate::{self, MutantClass, Verdict};
+
+    // The loader's own refusal path first, so a specification that does not compile is reported
+    // exactly as `run` reports it, and exits 1.
+    let Ok(_) = resolved(path, format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let raw = load::raw_specification(path)?;
+    let classes: Vec<MutantClass> = if classes.is_empty() {
+        MutantClass::ALL.to_vec()
+    } else {
+        classes.iter().copied().map(MutantClass::from).collect()
+    };
+    let audited = match target {
+        ReferenceTarget::Billing => mutate::audit(
+            &raw.parsed,
+            &raw.texts,
+            &classes,
+            ess_conformance::reference::Billing::new,
+        ),
+        ReferenceTarget::OracleFixture => mutate::audit(
+            &raw.parsed,
+            &raw.texts,
+            &classes,
+            ess_conformance::reference::Oracle::new,
+        ),
+        ReferenceTarget::Interpreted => mutate::audit(
+            &raw.parsed,
+            &raw.texts,
+            &classes,
+            ess_conformance::interpret::Interpreted::new,
+        ),
+    };
+    let report = match audited {
+        Ok(report) => report,
+        Err(refusal) if refusal.code().is_some() => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(3));
+        }
+        Err(refusal) => return Err(refusal.into()),
+    };
+
+    let json = report.to_canonical_json();
+    if let Some(out) = report_out {
+        fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+    }
+    match format {
+        Format::Text => print!("{}", report.render_text()),
+        Format::Json => print!("{json}"),
+        Format::Yaml => render(&report, format)?,
+    }
+    let counts = &report.counts;
+    let ran = report
+        .mutants
+        .iter()
+        .filter(|entry| entry.verdict != Verdict::Stillborn)
+        .count();
+    Ok(if counts.survived > 0 {
+        ExitCode::from(1)
+    } else if counts.inconclusive > 0 || ran == 0 {
+        ExitCode::from(3)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn fresh_legacy_run_suite(
@@ -3027,6 +3169,7 @@ fn render_conformance_report(
 /// join without touching the verb around it.
 fn write_suite(
     suite: &ess_conformance::ConformanceSuite,
+    ir: &EssIr,
     target: SuiteTarget,
     json: &str,
     out: &Path,
@@ -3038,14 +3181,14 @@ fn write_suite(
     let (files, family) = match target {
         SuiteTarget::Ir => unreachable!("answered above"),
         SuiteTarget::Go => (
-            ess_conformance::go::emit(suite)?
+            ess_conformance::go::emit_with_model(suite, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
             "conformance-go",
         ),
         SuiteTarget::Typescript => (
-            ess_conformance::ts::emit(suite)?
+            ess_conformance::ts::emit_with_model(suite, ir)?
                 .into_iter()
                 .map(|file| (file.path, file.contents))
                 .collect::<Vec<_>>(),
@@ -3124,7 +3267,7 @@ fn synthesize_suite(
     // tries twice.
     let written = match &out {
         None => None,
-        Some(out) => Some(write_suite(&synthesis.suite, target, &json, out)?),
+        Some(out) => Some(write_suite(&synthesis.suite, &ir, target, &json, out)?),
     };
 
     match input.format {
@@ -3791,6 +3934,24 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
+    /// `--class` offers exactly the library's classes, in its order, under its names.
+    #[test]
+    fn every_mutant_class_is_offered_by_its_own_name() {
+        let offered: Vec<ess_conformance::mutate::MutantClass> = MutateClass::value_variants()
+            .iter()
+            .copied()
+            .map(Into::into)
+            .collect();
+        assert_eq!(offered, ess_conformance::mutate::MutantClass::ALL);
+        for class in MutateClass::value_variants() {
+            let library: ess_conformance::mutate::MutantClass = (*class).into();
+            assert_eq!(
+                class.to_possible_value().expect("visible").get_name(),
+                library.as_str()
+            );
+        }
+    }
+
     #[test]
     fn every_artifact_destination_is_checked_before_the_first_write() {
         for invalid in [
@@ -4008,7 +4169,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 59;
+    const AREA_LEAVES: usize = 60;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in

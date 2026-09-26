@@ -2093,6 +2093,16 @@ impl EssIr {
         json
     }
 
+    /// The compact JSON of this model, with no trailing newline: exactly the bytes
+    /// [`source_digest`](Self::source_digest) hashes.
+    ///
+    /// One function for both, so an emitted `ir.json` and the digest a suite carries cannot drift:
+    /// a reader holding the file checks it against the digest and then depends on nothing else.
+    pub fn to_compact_json(&self) -> String {
+        serde_json::to_string(self)
+            .unwrap_or_else(|error| panic!("cannot digest an IR that does not serialize: {error}"))
+    }
+
     /// The full SHA-256 digest of this resolved model's canonical semantic bytes.
     ///
     /// The digest ignores source-file layout and comments: two source trees that compile to the
@@ -2103,9 +2113,7 @@ impl EssIr {
         use sha2::{Digest as _, Sha256};
         use std::fmt::Write as _;
 
-        let json = serde_json::to_vec(self)
-            .unwrap_or_else(|error| panic!("cannot digest an IR that does not serialize: {error}"));
-        let hash = Sha256::digest(&json);
+        let hash = Sha256::digest(self.to_compact_json().as_bytes());
         let mut out = String::with_capacity(64);
         for byte in &hash {
             let _ = write!(out, "{byte:02x}");

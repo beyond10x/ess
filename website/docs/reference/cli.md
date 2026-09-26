@@ -313,6 +313,7 @@ These operations are offline. Schema identity comes from `$id`; filenames only l
 |---|---|
 | `ess verify conform synthesize …` | Generate the semantic suite required by a specification. |
 | `ess verify conform run …` | Execute a suite against a supported target and emit a standalone report. |
+| `ess verify conform mutate [--path SPEC] --target billing\|oracle-fixture\|interpreted [--class CLASS]… [--report-out FILE] [--format text\|json\|yaml]` | Audit the synthesized suite with specification mutants run against a reference target; exit 0 every mutant that ran killed, 1 a survivor, 3 refused, inconclusive or nothing ran. |
 | `ess verify diff --from PATH --to PATH [--format text\|json]` | Compare two revisions semantically. |
 | `ess verify impact --from PATH --to PATH [--suite PATH] [--format …]` | Name invalidated scenarios and generated artifacts. |
 | `ess verify bindings --spec PATH --realization FILE --bindings FILE (--infra FILE \| --live --observation-out FILE) [--format text\|json] [--markdown-out FILE]` | Compare an exact implementation selection with scoped workload templates; exit 0 satisfied, 1 violated/refused, 2 unknown. |

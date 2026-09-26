@@ -1,0 +1,250 @@
+# The explorer's fixture (docs/design/mutation-audit-and-model-runner.md, Part 2).
+#
+# One entity with three states and a way back from `Held`, a create that sets an integer, moves
+# with `wrong_state` refusals, an update guarded `items >= 0` with an `otherwise` refusal, one
+# `read_your_writes` view and one `eventual` view ranked `items desc`, the invariant `items >= 0`,
+# and a `Grade` command whose two integer guards overlap from 50 to 60. The targets beside it are
+# `explore-target.mjs` and `explore_target.go`, each switched by `ESS_EXPLORE_MUTANT`.
+
+format: ess/1
+system: explore
+version: v1
+domains:
+  - explore.desk
+
+domain: explore.desk
+
+summary: Tickets that are opened, held, released, restocked and closed, and a grader.
+
+types:
+  - name: explore.desk.TicketId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: explore.desk.Ticket
+    identity:
+      name: ticket_id
+      type: explore.desk.TicketId
+    fields:
+      - name: items
+        type: Integer
+      - name: priority
+        type: Integer
+    invariants:
+      - items >= 0
+    lifecycle:
+      initial: Open
+      states: [Open, Held, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: hold
+          from: [Open]
+          to: Held
+        - name: release
+          from: [Held]
+          to: Open
+        - name: close
+          from: [Open, Held]
+          to: Closed
+
+actors:
+  - name: explore.desk.Clerk
+    may:
+      - explore.desk.OpenTicket
+      - explore.desk.HoldTicket
+      - explore.desk.ReleaseTicket
+      - explore.desk.CloseTicket
+      - explore.desk.Restock
+      - explore.desk.Grade
+
+errors:
+  - name: explore.desk.InvalidItems
+    summary: The item count was negative.
+  - name: explore.desk.TicketStateConflict
+    summary: The ticket is not in a state this command acts from.
+  - name: explore.desk.Ungradable
+    summary: The score was below every grade.
+
+commands:
+  - name: explore.desk.OpenTicket
+    input:
+      - name: items
+        type: Integer
+    outcomes:
+      - name: opened
+        when: items >= 0
+        creates: explore.desk.Ticket
+        instance: ticket_id
+        emits:
+          - explore.desk.TicketOpened
+        payload:
+          explore.desk.TicketOpened:
+            items: input.items
+        sets:
+          items: input.items
+          priority: "0"
+      - name: rejected
+        error: explore.desk.InvalidItems
+
+  - name: explore.desk.HoldTicket
+    input:
+      - name: ticket_id
+        type: explore.desk.TicketId
+      - name: priority
+        type: Integer
+    outcomes:
+      - name: held
+        moves: explore.desk.Ticket.hold
+        instance: ticket_id
+        emits:
+          - explore.desk.TicketHeld
+        payload:
+          explore.desk.TicketHeld:
+            ticket_id: input.ticket_id
+        sets:
+          priority: input.priority
+      - name: wrong-state
+        wrong_state: true
+        error: explore.desk.TicketStateConflict
+
+  - name: explore.desk.ReleaseTicket
+    input:
+      - name: ticket_id
+        type: explore.desk.TicketId
+    outcomes:
+      - name: released
+        moves: explore.desk.Ticket.release
+        instance: ticket_id
+        emits:
+          - explore.desk.TicketReleased
+        payload:
+          explore.desk.TicketReleased:
+            ticket_id: input.ticket_id
+      - name: wrong-state
+        wrong_state: true
+        error: explore.desk.TicketStateConflict
+
+  - name: explore.desk.CloseTicket
+    input:
+      - name: ticket_id
+        type: explore.desk.TicketId
+    outcomes:
+      - name: closed
+        moves: explore.desk.Ticket.close
+        instance: ticket_id
+        emits:
+          - explore.desk.TicketClosed
+        payload:
+          explore.desk.TicketClosed:
+            ticket_id: input.ticket_id
+      - name: wrong-state
+        wrong_state: true
+        error: explore.desk.TicketStateConflict
+
+  - name: explore.desk.Restock
+    input:
+      - name: ticket_id
+        type: explore.desk.TicketId
+      - name: items
+        type: Integer
+    outcomes:
+      - name: restocked
+        when: items >= 0
+        updates: explore.desk.Ticket
+        instance: ticket_id
+        emits:
+          - explore.desk.TicketRestocked
+        payload:
+          explore.desk.TicketRestocked:
+            ticket_id: input.ticket_id
+            items: input.items
+        sets:
+          items: input.items
+      - name: refused
+        error: explore.desk.InvalidItems
+
+  - name: explore.desk.Grade
+    input:
+      - name: score
+        type: Integer
+    outcomes:
+      - name: high
+        when: score >= 50
+        emits:
+          - explore.desk.GradedHigh
+        payload:
+          explore.desk.GradedHigh:
+            score: input.score
+      - name: low
+        when:
+          all:
+            - score >= 10
+            - score <= 60
+        emits:
+          - explore.desk.GradedLow
+        payload:
+          explore.desk.GradedLow:
+            score: input.score
+      - name: ungraded
+        error: explore.desk.Ungradable
+
+events:
+  - name: explore.desk.TicketOpened
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+      - name: items
+        type: Integer
+  - name: explore.desk.TicketHeld
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+  - name: explore.desk.TicketReleased
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+  - name: explore.desk.TicketClosed
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+  - name: explore.desk.TicketRestocked
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+      - name: items
+        type: Integer
+  - name: explore.desk.GradedHigh
+    fields:
+      - name: score
+        type: Integer
+  - name: explore.desk.GradedLow
+    fields:
+      - name: score
+        type: Integer
+
+views:
+  - name: explore.desk.OpenTickets
+    source: explore.desk.Ticket
+    consistency: read_your_writes
+    filter: state == Open
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+      - name: items
+        type: Integer
+      - name: priority
+        type: Integer
+
+  - name: explore.desk.TicketsByItems
+    source: explore.desk.Ticket
+    consistency: eventual
+    order_by:
+      - items desc
+    fields:
+      - name: ticket_id
+        type: explore.desk.TicketId
+      - name: items
+        type: Integer
+      - name: priority
+        type: Integer

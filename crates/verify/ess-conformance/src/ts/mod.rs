@@ -77,6 +77,95 @@ pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admissio
     Ok(files)
 }
 
+/// [`emit`], plus the model-based explorer: `src/explore.ts`, the compact model it interprets as
+/// `ir.json`, and the entry point and README that name it.
+///
+/// `ir` must be the model `suite` was synthesized from. The explorer refuses a package whose
+/// `ir.json` does not hash to the suite's `spec_digest`, so a mismatch here is an unusable
+/// package rather than a wrong one.
+pub fn emit_with_model(
+    suite: &ConformanceSuite,
+    ir: &ess_compiler::EssIr,
+) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
+    Ok(with_model(emit(suite)?, ir))
+}
+
+/// [`emit_input`], plus the model-based explorer, as [`emit_with_model`] adds it.
+pub fn emit_input_with_model(
+    input: &crate::coverage::AdmittedInput,
+    ir: &ess_compiler::EssIr,
+) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
+    Ok(with_model(emit_input(input)?, ir))
+}
+
+/// Adds the explorer to an emitted package: its source after the other sources, `ir.json` after
+/// `suite.json`, one more export in `src/index.ts` and one more section in `README.md`.
+fn with_model(files: Vec<TsArtifact>, ir: &ess_compiler::EssIr) -> Vec<TsArtifact> {
+    let mut out = Vec::with_capacity(files.len() + 2);
+    for mut artifact in files {
+        let name = artifact
+            .path
+            .strip_prefix(&format!("{PACKAGE}/"))
+            .unwrap_or_default()
+            .to_owned();
+        match name.as_str() {
+            "src/index.ts" => {
+                artifact.contents.push_str(EXPLORE_EXPORT);
+                out.push(artifact);
+            }
+            "README.md" => {
+                artifact.contents.push_str(EXPLORE_README);
+                out.push(artifact);
+            }
+            "src/coordinate.ts" => {
+                out.push(artifact);
+                out.push(file("src/explore.ts", EXPLORE_TS.to_owned()));
+            }
+            "suite.json" => {
+                out.push(artifact);
+                out.push(file("ir.json", format!("{}\n", ir.to_compact_json())));
+            }
+            _ => out.push(artifact),
+        }
+    }
+    out
+}
+
+/// The explorer, as written.
+const EXPLORE_TS: &str = include_str!("explore.ts");
+
+/// The line `src/index.ts` gains in a package that carries the explorer.
+const EXPLORE_EXPORT: &str = "export * from './explore.js';\n";
+
+/// The README section a package that carries the explorer gains.
+const EXPLORE_README: &str = r#"
+## Random command sequences
+
+`explore` runs seeded random sequences of commands against fresh targets built by the same
+factory `run` takes, and checks every step against a reference model interpreted from `ir.json`:
+the outcome, the error, the direct events and their determined payload fields, every view without
+parameters (polling an `eventual` one), identity uniqueness and every invariant. A disagreement is
+shrunk to a shorter trace that still fails the same way.
+
+```ts
+// src/explore.test.ts
+import { test } from "node:test";
+import { assertExplored, explore } from "./index.js";
+import { newTarget } from "./my-implementation.js";
+
+await test("random command sequences", async () => {
+  const result = await explore(() => newTarget(), { seeds: 200, steps: 60 });
+  assertExplored(result);
+});
+```
+
+`seeds` sequences are seeded `1…seeds`; `seed` runs exactly one of them, which is how a reported
+failure is replayed. `assertExplored` fails on a disagreement, on a declared outcome no sequence
+reached, and on the outcomes of a command the explorer left out (`excluded` says why) unless
+`{ allowExcluded: true }` accepts them. A view field is compared with the entity field of the same
+name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
+"#;
+
 /// Emit an immutable suite/5 input with all exact original ancestors.
 pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
