@@ -6,8 +6,8 @@ description: What each ESS format version number means, which release introduced
 
 # Format version history
 
-An ESS document declares its own format in its bytes — `ess/12`, `ess-diff/7`,
-`ess-conformance/17`. That number is the format's major version and nothing else. It is not the
+An ESS document declares its own format in its bytes — `ess/13`, `ess-diff/7`,
+`ess-conformance/19`. That number is the format's major version and nothing else. It is not the
 release that produced the document, and not the specification version the document describes;
 [Formats and digests](./formats.md) separates those three. This page says what each number changed,
 which release introduced it, and what happens when an older reader meets a newer document.
@@ -22,7 +22,7 @@ Every family is read by a build that states which versions it implements and ref
 refusal is the point: a reader that accepts a shape it does not understand returns a wrong answer
 about somebody's system, and blames the document for the age of the tool.
 
-A version number is per family. `ess/12` and `ess-conformance/17` count
+A version number is per family. `ess/13` and `ess-conformance/19` count
 separately and always have.
 
 ## `ess/` — the authored specification
@@ -99,6 +99,16 @@ name, and two groups giving one command outcomes of the same name, are refused r
 overridden. An older build refuses the header, and this build refuses a group under an earlier
 header with `unsupported_format_version`. A model without groups keeps its bytes and its compiled
 digest. See [one outcome for many commands](../guides/write-a-specification.md#one-outcome-for-many-commands).
+
+`ess/13`, not yet released, admits `fixture_inputs:` on a command: a map from a declared input
+field to a lower-kebab fixture name, typed by that input. A deployed resource's identity or
+canonical input, which a deterministic generator cannot invent, is then resolved from an
+independent provider before the scenario starts, and the command request and its event-value
+assertions use the same copied value. A fixture input that an outcome predicate reads, that
+names an undeclared input or a scenario-owned subject, or that reuses one fixture name under a
+different type is refused. An older build refuses the header, and this build refuses the key
+under an earlier header with `unsupported_format_version`. A model without it keeps its bytes and
+its compiled digest.
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
@@ -181,6 +191,18 @@ view's rows) and `ESS-SYNTH-017` (the rows cannot be arranged). Rust and Go admi
 older envelopes refuse an aggregate scenario or refusal, and the TypeScript and browser readers
 refuse these envelopes by their version.
 
+`ess-conformance/18` and `/19`, unreleased, carry fixture values: a leading `resolve_fixtures`
+prelude naming each fixture and its source-owned type declarations, `{kind: fixture}` scenario
+values, and `expect_event_values`, which compares the first direct occurrence of an event, chosen by
+name, with literal and fixture values, so a later correct occurrence cannot hide an earlier wrong
+one. Version 18 is ordinary and 19 carries declared coverage; each implies every major below it.
+Rust, Go and TypeScript resolve and validate the values before `BeginScenario` with report/2: a
+malformed, incomplete or wrongly typed value stops before any target activity, and a missing
+provider is an explicit skip. TypeScript admits these envelopes and still refuses the
+retained-result steps, string operators and aggregate scenarios of 12–17 by name. Browser replay
+refuses fixtures. A suite without fixtures keeps its earlier format, and older envelopes refuse
+the new steps.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
@@ -224,7 +246,7 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-impact/` | [0.19.0][r19] | `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
-| `ess-scenario/` | [0.23.0][r23] | `/2` authored setup establishes typed, isolated backend entity rows. |
+| `ess-scenario/` | [0.23.0][r23] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, unreleased, adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
 | `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |

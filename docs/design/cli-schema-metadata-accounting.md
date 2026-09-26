@@ -229,3 +229,17 @@ unset-at-creation refusal of beyond10x/ess#112, and no existing code changes:
 - `ess_primitives::error::validation_codes` gains `InvariantReadsUnsetField`, from
   `0e7a4d5e372e92fbefc48c99d57d3dad876e21b5e9ca522358d2ee46d933c365`
   to `d466e6623ca525b125419a2811f566b71b2dc092a9e0d6fd4900757203191577`.
+
+## ess/13 container review (fixture inputs) — 2026-09-26
+
+The schema gains `RawCommandSpec.fixture_inputs` and its `FixtureName` declaration
+(beyond10x/ess#58). These are authored-domain semantics with their own descendant obligations;
+they do not make the three CLI pipelines consumers of the generated schema document.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `ff756782d8262e4ad1a77fda6cc355fa12f7323652a069c0c0f92bbba3f75d92`
+to `fb292f6d49799efe775923c52a35307cedc8266d25a68c4ee3eb6b5e0a764ce5`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
+This review grants no new exemption or runtime conformance claim.

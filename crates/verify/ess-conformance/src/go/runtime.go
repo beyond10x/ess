@@ -77,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17" && r["version"] != "ess-conformance/19") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -1434,6 +1434,7 @@ type Scenario struct {
 
 // Step is one step of a scenario. Which fields are set depends on Step.
 type Step struct {
+	Fixtures      *FixtureContract     `json:"fixtures,omitempty"`
 	CompleteShape *subjectShape        `json:"-"`
 	Capture       *replayObservation   `json:"capture,omitempty"`
 	Response      *responseObservation `json:"response,omitempty"`
@@ -1514,6 +1515,7 @@ type OutcomeRef struct {
 
 // Value is one value a step carries: written down, captured earlier, or read from an event.
 type Value struct {
+	Fixture   string                `json:"fixture,omitempty"`
 	Selection *selectionObservation `json:"selection,omitempty"`
 	Accessor  *accessorObservation  `json:"accessor,omitempty"`
 	Kind      string                `json:"kind"`
@@ -1564,8 +1566,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17") && config.version != "2" {
-		t.Fatalf("suite/8 through /17 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/18" || suite.Provenance.SuiteVersion == "ess-conformance/19") && config.version != "2" {
+		t.Fatalf("suite/8 through /19 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1782,6 +1784,7 @@ type subjectSnapshot struct {
 }
 
 type run struct {
+	fixtures    map[string]Node
 	t           *testing.T
 	target      Target
 	harness     *Harness
@@ -1832,6 +1835,17 @@ func (r *run) execute(id string, scenario Scenario) {
 		}
 	}
 	context := ScenarioContext{Scenario: id, Correlation: r.correlation}
+	prelude := len(scenario.Steps) > 0 && scenario.Steps[0].Step == "resolve_fixtures"
+	if prelude {
+		if err := r.resolveFixtures(context, scenario.Steps[0].Fixtures); err != nil {
+			r.callbacksComplete = true
+			if errors.Is(err, ErrUnsupported) {
+				r.skip("fixture values: %v", err)
+			}
+			r.status = statusFailed
+			r.t.Fatalf("fixture values: %v", err)
+		}
+	}
 	if err := r.target.BeginScenario(context); err != nil {
 		r.callbacksComplete = true // begin returned; no teardown is required
 		if errors.Is(err, ErrUnsupported) {
@@ -1853,6 +1867,9 @@ func (r *run) execute(id string, scenario Scenario) {
 		r.t.Log(scenario.Purpose)
 	}
 	for index, step := range scenario.Steps {
+		if prelude && index == 0 {
+			continue
+		}
 		if !r.step(index, step) {
 			return
 		}
@@ -1865,6 +1882,10 @@ func (r *run) execute(id string, scenario Scenario) {
 // and running them produces a second failure about the first one's cause.
 func (r *run) step(index int, step Step) bool {
 	switch step.Step {
+	case "resolve_fixtures":
+		return r.fail(index, "fixture resolution must precede scenario activity")
+	case "expect_event_values":
+		return r.expectEventValues(index, step)
 	case "capture_command_result", "expect_replay_result":
 		return r.retainedResult(index, step)
 	case "expect_no_events":
@@ -2675,6 +2696,12 @@ func (r *run) resolveAll(index int, values map[string]Value) (map[string]Node, b
 
 func (r *run) resolve(value Value) (Node, error) {
 	switch value.Kind {
+	case "fixture":
+		resolved, ok := r.fixtures[value.Fixture]
+		if !ok {
+			return nil, fmt.Errorf("fixture was not resolved")
+		}
+		return copyFixtureValue(resolved)
 	case "literal":
 		return value.Value, nil
 	case "instance":
@@ -3571,11 +3598,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 16
 	case "ess-conformance/17":
 		major = 17
+	case "ess-conformance/18":
+		major = 18
+	case "ess-conformance/19":
+		major = 19
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15 and /17")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15, /17 and /19")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3631,6 +3662,9 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		if err := admitEntitySetups(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
+		if err := admitFixtureSteps(steps); err != nil {
+			return suite, fmt.Errorf("%s: %w", id, err)
+		}
 		if err := admitReplaySteps(steps); err != nil {
 			return suite, fmt.Errorf("%s: %w", id, err)
 		}
@@ -3644,7 +3678,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
@@ -3673,7 +3707,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3686,7 +3720,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 		return suite, nil
 	}
-	if major == 12 || major == 14 || major == 16 {
+	if major == 12 || major == 14 || major == 16 || major == 18 {
 		decoder := json.NewDecoder(strings.NewReader(raw))
 		decoder.UseNumber()
 		err = decoder.Decode(&suite)
@@ -3704,7 +3738,7 @@ func executionSuite(suite Suite) (Suite, error) {
 			return Suite{}, err
 		}
 		var err error
-		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" {
+		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/19" {
 			decoder := json.NewDecoder(strings.NewReader(suite.original))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
@@ -3814,6 +3848,16 @@ func admitValues(value any, major int, accessors bool) error {
 			return err
 		}
 		switch kind {
+		case "fixture":
+			if major < 18 {
+				return fmt.Errorf("fixture references require suite/18 or /19")
+			}
+			if _, err := closed(v, "kind fixture", ""); err != nil {
+				return err
+			}
+			if err := fixtureName(f["fixture"]); err != nil {
+				return err
+			}
 		case "literal":
 			if _, err := closed(v, "kind value", ""); err != nil {
 				return err
@@ -4192,6 +4236,17 @@ func admitStep(value any, major int) error {
 	}
 	required, optional := "step", ""
 	switch tag {
+	case "resolve_fixtures":
+		if major < 18 {
+			return fmt.Errorf("fixture resolution requires suite/18 or /19")
+		}
+		required += " fixtures"
+	case "expect_event_values":
+		if major < 18 {
+			return fmt.Errorf("resolved event values require suite/18 or /19")
+		}
+		required += " event payload"
+		optional = "shape"
 	case "capture_command_result", "expect_replay_result":
 		if major < 12 {
 			return fmt.Errorf("retained results require suite/12 or /13")
@@ -4304,6 +4359,8 @@ func admitStep(value any, major int) error {
 		switch key {
 		case "capture":
 			err = admitReplay(v)
+		case "fixtures":
+			err = admitFixtures(v)
 		case "response":
 			err = admitResponse(v)
 		case "check":
@@ -4339,6 +4396,10 @@ func admitStep(value any, major int) error {
 		case "input", "params", "subject":
 			err = admitValues(v, major, tag == "expect_invocation")
 		case "payload", "fields":
+			if tag == "expect_event_values" {
+				err = admitValues(v, major, false)
+				break
+			}
 			if _, ok := v.(map[string]any); !ok {
 				return fmt.Errorf("payload must be object")
 			}

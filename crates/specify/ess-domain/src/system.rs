@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -91,6 +91,8 @@ impl FormatVersion {
     pub const V11: Self = Self(11);
     /// Outcome groups: one outcome declared once for many commands.
     pub const V12: Self = Self(12);
+    /// Typed conformance inputs resolved from independently provisioned fixtures.
+    pub const V13: Self = Self(13);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -1266,6 +1268,8 @@ domains:
         assert!(FormatVersion::V9.is_supported());
         assert!(FormatVersion::V10.is_supported());
         assert!(FormatVersion::V11.is_supported());
+        assert!(FormatVersion::V12.is_supported());
+        assert!(FormatVersion::V13.is_supported());
         assert!(!FormatVersion::parse("ess/99")
             .expect("parses")
             .is_supported());
@@ -1981,7 +1985,7 @@ mod format_version_tests {
                 })
         };
 
-        for accepted in ["ess/1", "ess/2", "ess/10", "ess/11", "ess/12"] {
+        for accepted in ["ess/1", "ess/2", "ess/10", "ess/11", "ess/12", "ess/13"] {
             assert!(
                 FormatVersion::parse(accepted).is_ok(),
                 "{accepted} should parse"

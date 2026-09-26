@@ -124,6 +124,8 @@ impl AdmittedSuite {
         self::suite(&suite)?;
         payload_agrees_with_its_shape(&suite)?;
         entity_setup(&suite)?;
+        crate::fixtures::admit(&suite)
+            .map_err(|reason| AdmissionError::new("InvalidFixtures", "$suite.scenarios", reason))?;
         let coverage = value
             .object()?
             .get("coverage")
@@ -179,16 +181,18 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=17) {
+    if !matches!(version.major(), 1..=19) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–17",
+            "execution readers admit suite majors 1–19",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17) != root.contains_key("coverage") {
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19)
+        != root.contains_key("coverage")
+    {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15 and suite/17",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17 and suite/19",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -223,6 +227,11 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
             .ok_or_else(|| v.error("MissingField", "kind"))?
             .text()?;
         match tag {
+            "fixture" if major >= crate::fixtures::ORDINARY => {
+                let fields = v.closed(&["kind", "fixture"], &[])?;
+                ess_domain::command::fixture_inputs::FixtureName::new(fields["fixture"].text()?)
+                    .map_err(|error| v.error("InvalidFixtureName", error.to_string()))?;
+            }
             "literal" => {
                 let f = v.closed(&["kind", "value"], &[])?;
                 f["value"].payload()?;
@@ -359,10 +368,14 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < 4 && matches!(tag, "expect_halt" | "eventually_halt"))
         || (major < 6 && matches!(tag, "establish_entity" | "expect_reading_order"))
         || (major < 8 && tag == "expect_response_payload")
+        || (major < crate::fixtures::ORDINARY
+            && matches!(tag, "resolve_fixtures" | "expect_event_values"))
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
     let (required, optional): (&[&str], &[&str]) = match tag {
+        "resolve_fixtures" => (&["step", "fixtures"], &[]),
+        "expect_event_values" => (&["step", "event", "payload"], &["shape"]),
         "establish_entity" => (
             &["step", "instance", "entity", "identity", "fields", "state"],
             &[],
@@ -398,6 +411,11 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     };
     for (key, field) in value.closed(required, optional)? {
         match key.as_str() {
+            "fixtures" if tag == "resolve_fixtures" => {
+                let _: crate::fixtures::Contract = serde_json::from_str(&field.raw)
+                    .map_err(|error| field.error("InvalidFixtures", error.to_string()))?;
+            }
+            "payload" if tag == "expect_event_values" => values(field, major, false)?,
             "capture" if matches!(tag, "capture_command_result" | "expect_replay_result") => {
                 let _: crate::replay::Observation = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
@@ -464,6 +482,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::fixtures::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;
     crate::aggregate::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;

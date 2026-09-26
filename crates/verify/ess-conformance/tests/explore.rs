@@ -541,6 +541,7 @@ fn the_packages_with_a_model_add_the_explorer_and_nothing_else_moves() {
             "essconform/src/runtime.ts",
             "essconform/src/predicate.ts",
             "essconform/src/response.ts",
+            "essconform/src/fixtures.ts",
             "essconform/src/reading.ts",
             "essconform/src/coordinate.ts",
             "essconform/src/explore.ts",

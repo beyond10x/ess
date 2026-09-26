@@ -1642,6 +1642,7 @@ impl<'a> Resolver<'a> {
                         domain,
                         input,
                         examples: command.examples,
+                        fixture_inputs: command.fixture_inputs,
                         response,
                         outcomes,
                         naming: command.naming,

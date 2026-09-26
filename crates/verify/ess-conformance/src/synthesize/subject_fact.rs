@@ -1013,7 +1013,7 @@ pub(super) fn absent(
     let mut steps = vec![ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
-        input: supply(&input, None, None, &BTreeMap::new()),
+        input: supply(command, &input, None, None, &BTreeMap::new()),
     }];
     let forbidden = not_emitted(ir, &[]);
     for event in &forbidden {
@@ -1219,6 +1219,7 @@ pub(super) fn boundaries(
         source.append(&mut arrangement.source);
         source.insert(view.into());
         let supplied = supply(
+            command,
             &input,
             Some(own),
             Some(&arrangement.instance),

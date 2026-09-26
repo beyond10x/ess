@@ -23,11 +23,12 @@ fn go_shape_leaves_honour_optional_without_going_unchecked() {
     std::fs::write(
         directory.join("runtime.go"),
         format!(
-            "{}\n{}\n{}\n{}\n{}",
+            "{}\n{}\n{}\n{}\n{}\n{}",
             include_str!("../src/go/runtime.go"),
             include_str!("../src/go/reading.go"),
             include_str!("../src/go/response.go"),
             include_str!("../src/go/replay.go"),
+            include_str!("../src/go/fixtures.go"),
             include_str!("../../../specify/ess-domain/src/reading/coordinate.go")
         ),
     )

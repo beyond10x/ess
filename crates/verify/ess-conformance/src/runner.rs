@@ -391,14 +391,25 @@ impl<C: Clock> Runner<C> {
         let context = ScenarioContext::new(id.clone(), self.ids.correlation());
         let mut run = Run::new(id.clone(), context);
 
-        if let Err(error) = target.begin_scenario(&run.context) {
+        let fixture_ready = match scenario.steps.first() {
+            Some(ScenarioStep::ResolveFixtures { fixtures }) => {
+                resolve_fixtures(fixtures, &mut run, target)
+            }
+            _ => Flow::Continue,
+        };
+        if fixture_ready == Flow::Stop {
+            // Invalid fixture data must not reach BeginScenario, which may open a real session.
+        } else if let Err(error) = target.begin_scenario(&run.context) {
             run.record(target_failure(
                 &run.id,
                 "opening an isolated execution context",
                 &error,
             ));
         } else {
-            for step in &scenario.steps {
+            for step in scenario.steps.iter().skip(usize::from(matches!(
+                scenario.steps.first(),
+                Some(ScenarioStep::ResolveFixtures { .. })
+            ))) {
                 if self.step(step, &mut run, target) == Flow::Stop {
                     break;
                 }
@@ -449,6 +460,9 @@ impl<C: Clock> Runner<C> {
         target: &T,
     ) -> Flow {
         match step {
+            ScenarioStep::ResolveFixtures { .. } | ScenarioStep::ExpectEventValues { .. } => {
+                fixture_step(step, run)
+            }
             ScenarioStep::ExpectNoEvents => expect_no_events(run),
             ScenarioStep::CaptureCommandResult { capture } => retained_result(capture, true, run),
             ScenarioStep::ExpectReplayResult { capture } => retained_result(capture, false, run),
@@ -1349,6 +1363,50 @@ fn retained_result(capture: &crate::replay::Observation, original: bool, run: &m
     Flow::Continue
 }
 
+/// The two fixture steps: a prelude met inside the scenario is a suite error, and an event-value
+/// assertion resolves its references before comparing.
+fn fixture_step(step: &ScenarioStep, run: &mut Run) -> Flow {
+    if let ScenarioStep::ExpectEventValues {
+        event,
+        payload,
+        shape,
+    } = step
+    {
+        return expect_event_values(event, payload, shape, run);
+    }
+    run.record(CheckResult::errored(
+        "fixture prelude",
+        Diagnostic::new(CheckCode::Suite, run.id.clone())
+            .expected("fixture resolution only before BeginScenario".to_owned())
+            .observed("fixture resolution inside the scenario".to_owned()),
+    ));
+    Flow::Stop
+}
+
+fn expect_event_values(
+    event: &EventRef,
+    payload: &BTreeMap<String, ScenarioValue>,
+    shape: &PayloadShape,
+    run: &mut Run,
+) -> Flow {
+    let resolved: Result<BTreeMap<_, _>, _> = payload
+        .iter()
+        .map(|(field, value)| run.resolve(value).map(|value| (field.clone(), value)))
+        .collect();
+    match resolved {
+        Ok(values) => expect_event(event, &values, shape, run),
+        Err(reason) => {
+            run.record(CheckResult::errored(
+                "event value equality",
+                Diagnostic::new(CheckCode::Suite, run.id.clone())
+                    .expected("values resolved before this event assertion".to_owned())
+                    .observed(reason),
+            ));
+            Flow::Stop
+        }
+    }
+}
+
 /// Requires that the last command published an event it declares it emits (§13).
 fn expect_event(
     event: &EventRef,
@@ -2096,6 +2154,40 @@ impl Executed {
     }
 }
 
+fn resolve_fixtures<T: ConformanceTarget>(
+    contract: &crate::fixtures::Contract,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    match target.fixture_values(&run.context, contract) {
+        Ok(values) => match contract.validate_values(&values) {
+            Ok(()) => {
+                run.fixtures = values;
+                Flow::Continue
+            }
+            Err(reason) => {
+                run.record(CheckResult::errored(
+                    "fixture values",
+                    Diagnostic::new(CheckCode::Target, run.id.clone())
+                        .expected(
+                            "complete fixture values matching the source-declared types".to_owned(),
+                        )
+                        .observed(reason),
+                ));
+                Flow::Stop
+            }
+        },
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                "resolving fixture values before execution",
+                &error,
+            ));
+            Flow::Stop
+        }
+    }
+}
+
 /// What one scenario has established so far.
 struct Run {
     id: ScenarioId,
@@ -2105,6 +2197,7 @@ struct Run {
     /// The view a read-your-writes read could not be made of, and the command that owes the token.
     unreadable: Option<(ViewRef, String)>,
     instances: BTreeMap<InstanceName, Node>,
+    fixtures: BTreeMap<String, Node>,
     snapshots: BTreeMap<ViewRef, (ViewRow, ViewRow)>,
     complete_shapes: BTreeMap<ViewRef, crate::subject::SubjectShape>,
     retained: BTreeMap<InstanceName, RetainedResult>,
@@ -2125,6 +2218,7 @@ impl Run {
             last_view: None,
             unreadable: None,
             instances: BTreeMap::new(),
+            fixtures: BTreeMap::new(),
             snapshots: BTreeMap::new(),
             complete_shapes: BTreeMap::new(),
             retained: BTreeMap::new(),
@@ -2151,6 +2245,11 @@ impl Run {
     /// Turns a suite's reference into the value this run bound for it.
     fn resolve(&self, value: &ScenarioValue) -> Result<Node, String> {
         match value {
+            ScenarioValue::Fixture { fixture } => self
+                .fixtures
+                .get(fixture.as_str())
+                .cloned()
+                .ok_or_else(|| format!("fixture `{fixture}` was not resolved before execution")),
             ScenarioValue::ObservedAccessor { .. } | ScenarioValue::ObservedSelection { .. } => {
                 match self.resolve_expected(value)? {
                     crate::accessor::Expected::Present(node) => Ok(node),

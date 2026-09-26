@@ -154,7 +154,10 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::aggregate::used_by(self) {
+        self.provenance.suite_version = if crate::fixtures::used_by(self) {
+            SuiteFormat::parse(&format!("ess-conformance/{}", crate::fixtures::ORDINARY))
+                .expect("constant suite version")
+        } else if crate::aggregate::used_by(self) {
             SuiteFormat::parse(&format!("ess-conformance/{}", crate::aggregate::ORDINARY))
                 .expect("constant suite version")
         } else if crate::text_match_format::used_by(self) {
@@ -370,8 +373,9 @@ impl SuiteProvenance {
 /// All four, because a `1` suite means in `4` exactly what it meant in `1` — the vocabulary grew
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
-pub const SUPPORTED_SUITE_FORMATS: &[u32] =
-    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
 ///
@@ -1395,6 +1399,11 @@ impl<'de> serde::Deserialize<'de> for AuthoredName {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScenarioValue {
+    /// An independently provisioned value resolved and frozen before target activity.
+    Fixture {
+        /// The source-declared fixture name.
+        fixture: ess_domain::command::fixture_inputs::FixtureName,
+    },
     /// Bounded selection from the exact previously observed event occurrence.
     ObservedSelection {
         /// The event observed by an earlier step.
@@ -1461,7 +1470,8 @@ impl ScenarioValue {
     pub fn as_literal(&self) -> Option<&Node> {
         match self {
             Self::Literal { value } => Some(value),
-            Self::Instance { .. }
+            Self::Fixture { .. }
+            | Self::Instance { .. }
             | Self::Observed { .. }
             | Self::ObservedAccessor { .. }
             | Self::ObservedSelection { .. } => None,
@@ -1729,6 +1739,22 @@ impl fmt::Display for Holds {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
 pub enum ScenarioStep {
+    /// A scenario prelude, resolved once before `BeginScenario` rather than during execution
+    /// (suite/18).
+    ResolveFixtures {
+        /// Finite source-owned names and type authority.
+        fixtures: crate::fixtures::Contract,
+    },
+    /// Compare an invocation's actual event with independently resolved scenario values.
+    ExpectEventValues {
+        /// The event emitted by the preceding invocation.
+        event: EventRef,
+        /// Explicit equality assertions; a fixture reference is not a post-state observation.
+        payload: BTreeMap<String, ScenarioValue>,
+        /// Type assertions on the same occurrence that satisfies every value comparison.
+        #[serde(default, skip_serializing_if = "PayloadShape::is_empty")]
+        shape: PayloadShape,
+    },
     /// Capture one actual subject row using complete declared type authority (suite12).
     SnapshotCompleteSubject {
         /// The immediate view just queried.
@@ -2699,12 +2725,14 @@ mod tests {
             "ess-conformance/15",
             "ess-conformance/16",
             "ess-conformance/17",
+            "ess-conformance/18",
+            "ess-conformance/19",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/18").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/20").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

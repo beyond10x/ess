@@ -323,6 +323,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::ExpectNoEvents => "no events",
             ScenarioStep::CaptureCommandResult { .. } => "capture result",
             ScenarioStep::ExpectReplayResult { .. } => "replay result",
+            ScenarioStep::ResolveFixtures { .. } => "resolve fixtures",
+            ScenarioStep::ExpectEventValues { .. } => "event values",
             ScenarioStep::ExpectResponsePayload { .. } => "response payload",
             ScenarioStep::EstablishEntity { .. } => "establish entity",
             ScenarioStep::ConfigureExternalOutcome { .. } => "inject",

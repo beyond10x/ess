@@ -44,6 +44,13 @@
   built-in targets, writing `ess-mutation-report/1` (`ESS-MUTATE-001`/`003`). The TypeScript and Go
   conformance packages carry a seeded random-walk explorer over the IR model, bound to `spec_digest`
   through `ir.json`, with shrinking and a hard failure on unreached outcomes. (#114)
+- Typed pre-execution fixture values: a command's `fixture_inputs:` (source format `ess/13`) and
+  authored `fixtures:` with `{$fixture: name}` references (`ess-scenario/3`) compile to suites
+  `ess-conformance/18`/`19`. Rust, Go and TypeScript resolve and type-check the values from an
+  independent provider before `BeginScenario`, copy them per scenario, and compare the first direct
+  event occurrence with them. Invalid values stop before target activity; a missing provider is an
+  explicit skip; browser replay refuses fixtures. Fixture-free models and suites keep their bytes.
+  (#58)
 
 ### Changed
 

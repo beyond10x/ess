@@ -547,6 +547,11 @@
       },
       "additionalProperties": false
     },
+    "FixtureName": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+    },
     "FormatVersion": {
       "description": "The specification language version, such as `ess/1`.",
       "type": "string",
@@ -1526,6 +1531,13 @@
         "name"
       ],
       "properties": {
+        "fixture_inputs": {
+          "description": "Independently provisioned conformance inputs, keyed by declared input field.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/FixtureName"
+          }
+        },
         "input": {
           "description": "What the caller supplies.",
           "type": "array",

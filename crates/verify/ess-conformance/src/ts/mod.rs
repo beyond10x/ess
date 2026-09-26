@@ -209,6 +209,7 @@ fn sources(runtime: String) -> Vec<TsArtifact> {
         file("src/runtime.ts", runtime),
         file("src/predicate.ts", include_str!("predicate.ts").to_owned()),
         file("src/response.ts", include_str!("response.ts").to_owned()),
+        file("src/fixtures.ts", include_str!("fixtures.ts").to_owned()),
         file("src/reading.ts", include_str!("reading.ts").to_owned()),
         file(
             "src/coordinate.ts",
@@ -258,6 +259,7 @@ export * from './runtime.js';
 export * from './coordinate.js';
 export * from './reading.js';
 export * from './response.js';
+export type { FixtureContract } from './fixtures.js';
 ";
 
 /// A JSON document written the way the other emitted manifests in this workspace are written.
@@ -499,6 +501,7 @@ mod tests {
                 "essconform/src/runtime.ts",
                 "essconform/src/predicate.ts",
                 "essconform/src/response.ts",
+                "essconform/src/fixtures.ts",
                 "essconform/src/reading.ts",
                 "essconform/src/coordinate.ts",
                 "essconform/src/index.ts",

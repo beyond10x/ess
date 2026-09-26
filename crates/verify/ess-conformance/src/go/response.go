@@ -29,25 +29,12 @@ func (r responseObservation) validate() error {
 			return err
 		}
 	}
-	used := map[string]bool{}
-	roots := map[string]string{}
-	for _, fields := range [][]accessorField{r.Fields, r.Targets} {
-		seen := map[string]bool{}
-		for _, field := range fields {
-			if field.Name == "" || seen[field.Name] {
-				return fmt.Errorf("duplicate/empty response field")
-			}
-			seen[field.Name] = true
-			if err := r.checkType(field.Type, used, map[string]bool{}, 0); err != nil {
-				return err
-			}
-		}
+	if err := validateTypedFields([][]accessorField{r.Fields, r.Targets}, r.Declarations); err != nil {
+		return err
 	}
+	roots := map[string]string{}
 	for _, field := range r.Fields {
 		roots[field.Name] = field.Type
-	}
-	if len(used) != len(r.Declarations) {
-		return fmt.Errorf("unrelated response declarations")
 	}
 	for _, target := range r.Targets {
 		source, ok := r.Mappings[target.Name]
@@ -65,6 +52,25 @@ func (r responseObservation) validate() error {
 	}
 	return nil
 }
+func validateTypedFields(groups [][]accessorField, declarations map[string]selectionDeclaration) error {
+	used := map[string]bool{}
+	for _, fields := range groups {
+		seen := map[string]bool{}
+		for _, field := range fields {
+			if field.Name == "" || seen[field.Name] {
+				return fmt.Errorf("duplicate/empty response field")
+			}
+			seen[field.Name] = true
+			if err := checkResponseType(declarations, field.Type, used, map[string]bool{}, 0); err != nil {
+				return err
+			}
+		}
+	}
+	if len(used) != len(declarations) {
+		return fmt.Errorf("unrelated response declarations")
+	}
+	return nil
+}
 func responseAssignable(from, to string) bool {
 	if from == to {
 		return true
@@ -74,12 +80,12 @@ func responseAssignable(from, to string) bool {
 	}
 	return false
 }
-func (r responseObservation) checkType(source string, used, stack map[string]bool, depth int) error {
+func checkResponseType(declarations map[string]selectionDeclaration, source string, used, stack map[string]bool, depth int) error {
 	if depth > 128 {
 		return fmt.Errorf("response type depth limit")
 	}
 	if inner, ok := accessorOptional(source); ok {
-		return r.checkType(inner, used, stack, depth+1)
+		return checkResponseType(declarations, inner, used, stack, depth+1)
 	}
 	if strings.HasPrefix(source, "Map<") && !strings.HasPrefix(source, "Map<String, ") {
 		return fmt.Errorf("response map key must be String")
@@ -88,12 +94,12 @@ func (r responseObservation) checkType(source string, used, stack map[string]boo
 		if err != nil {
 			return err
 		}
-		return r.checkType(inner, used, stack, depth+1)
+		return checkResponseType(declarations, inner, used, stack, depth+1)
 	}
 	if accessorPrimitive(source) && source != "Binary64" {
 		return nil
 	}
-	body, ok := r.Declarations[source]
+	body, ok := declarations[source]
 	if !ok || stack[source] {
 		return fmt.Errorf("missing/recursive response type")
 	}
@@ -140,7 +146,7 @@ func (r responseObservation) checkType(source string, used, stack map[string]boo
 		return fmt.Errorf("unknown response declaration")
 	}
 	for _, child := range children {
-		if err := r.checkType(child, used, stack, depth+1); err != nil {
+		if err := checkResponseType(declarations, child, used, stack, depth+1); err != nil {
 			return err
 		}
 	}
@@ -218,7 +224,31 @@ func admitResponse(value any) error {
 	if err = admitOutcome(root["outcome"]); err != nil {
 		return err
 	}
-	declarations, ok := root["declarations"].(map[string]any)
+	if err := admitTypedDeclarations(root["declarations"]); err != nil {
+		return err
+	}
+	for _, key := range []string{"fields", "targets"} {
+		fields, e := array(root[key])
+		if e != nil {
+			return e
+		}
+		for _, field := range fields {
+			if e = admitAccessorField(field); e != nil {
+				return e
+			}
+		}
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var response responseObservation
+	return json.Unmarshal(encoded, &response)
+}
+
+func admitTypedDeclarations(value any) error {
+	var err error
+	declarations, ok := value.(map[string]any)
 	if !ok {
 		return fmt.Errorf("response declarations must be object")
 	}
@@ -255,23 +285,7 @@ func admitResponse(value any) error {
 			}
 		}
 	}
-	for _, key := range []string{"fields", "targets"} {
-		fields, e := array(root[key])
-		if e != nil {
-			return e
-		}
-		for _, field := range fields {
-			if e = admitAccessorField(field); e != nil {
-				return e
-			}
-		}
-	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	var response responseObservation
-	return json.Unmarshal(encoded, &response)
+	return nil
 }
 
 // Snapshot response-bearing results before any subsequent target callback can mutate their maps.

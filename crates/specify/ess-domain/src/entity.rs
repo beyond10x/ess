@@ -2284,6 +2284,7 @@ lifecycle:
     ) -> crate::command::CommandSpec {
         crate::command::CommandSpec {
             examples: BTreeMap::new(),
+            fixture_inputs: BTreeMap::new(),
             name: name(command),
             // Every subject below names its instance by `invoice_id`, so the input has to carry one
             // typed as the entity's identity: without it these fixtures would fail the *instance*

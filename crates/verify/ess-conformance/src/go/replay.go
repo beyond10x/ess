@@ -54,7 +54,7 @@ func decodeExactSteps(raw []json.RawMessage) ([]Step, error) {
 }
 
 func decodeExactSuiteSteps(suite *Suite) error {
-	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" && suite.Provenance.SuiteVersion != "ess-conformance/16" && suite.Provenance.SuiteVersion != "ess-conformance/17" {
+	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" && suite.Provenance.SuiteVersion != "ess-conformance/16" && suite.Provenance.SuiteVersion != "ess-conformance/17" && suite.Provenance.SuiteVersion != "ess-conformance/18" && suite.Provenance.SuiteVersion != "ess-conformance/19" {
 		return nil
 	}
 	var raw struct {
@@ -407,7 +407,7 @@ func (r replayObservation) validateSchema() error {
 			return fmt.Errorf("duplicate/empty replay field")
 		}
 		fields[field.Name] = true
-		if err := check.checkType(field.Type, used, map[string]bool{}, 0); err != nil {
+		if err := checkResponseType(check.Declarations, field.Type, used, map[string]bool{}, 0); err != nil {
 			return err
 		}
 		if err := r.exactType(field.Type, 0, exact); err != nil {
