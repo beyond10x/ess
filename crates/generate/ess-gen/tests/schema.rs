@@ -1128,3 +1128,56 @@ fn every_message_accepts_an_instance_of_itself_and_refuses_one_that_is_wrong() {
         refuses(&validator, &refused, why);
     }
 }
+
+/// The keypad of beyond10x/ess#103: an alphabet on the newtype, and an example on the input.
+const KEYPAD: &str = include_str!("../../../verify/ess-conformance/tests/fixtures/keypad.yaml");
+
+/// `x-ess-alphabet` is an annotation beside `x-ess-invariants`, and no `pattern` is invented: an
+/// ECMA-262 character class is not certainly right for supplementary-plane characters without the
+/// `u` flag (`docs/design/string-alphabet-and-length.md`, section 1). An input's example is the JSON
+/// Schema `examples` of its property, which every validator ignores.
+#[test]
+fn an_alphabet_is_an_annotation_on_its_type_and_an_example_on_its_input_property() {
+    let model = KEYPAD.replacen(
+        "      - {name: keys, type: keypad.dial.KeySequence}\n    outcomes:",
+        "      - {name: keys, type: keypad.dial.KeySequence, example: \"12#\"}\n    outcomes:",
+        1,
+    );
+    let published = artifacts(&compiled(&model));
+    let sequence = document(
+        &published,
+        "schema/types/keypad.dial.KeySequence.schema.json",
+    );
+    let definition = &sequence["$defs"]["keypad.dial.KeySequence"];
+    assert_eq!(
+        definition["x-ess-alphabet"].as_str(),
+        Some("0123456789*#ABCD")
+    );
+    assert!(
+        definition.get("pattern").is_none(),
+        "an invented pattern: {definition}"
+    );
+
+    let input = document(
+        &published,
+        "schema/commands/keypad.dial.SendKeys.schema.json",
+    );
+    assert_eq!(
+        input["properties"]["keys"]["examples"],
+        serde_json::json!(["12#"])
+    );
+    assert!(input["properties"]["session_id"].get("examples").is_none());
+    let validator = validator_for(&input);
+    accepts(
+        &validator,
+        &serde_json::json!({"session_id": "00000000-0000-4000-8000-000000000001", "keys": "999"}),
+        "an example is not a constraint",
+    );
+
+    let bytes = serde_json::to_string(&document(
+        &artifacts(&compiled(KEYPAD)),
+        "schema/commands/keypad.dial.SendKeys.schema.json",
+    ))
+    .unwrap();
+    assert!(!bytes.contains("examples"), "no example, no key: {bytes}");
+}

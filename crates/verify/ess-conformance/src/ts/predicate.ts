@@ -82,6 +82,21 @@ export function truthOf(value: boolean): Truth {
 export type FactSource = Map<string, Node>;
 
 /** Flattens one row into the paths a predicate reads. */
+/**
+ * One leaf read, the Go runtime's `readLeaf` (beyond10x/ess#104): a bound fact wins; otherwise, when
+ * the last segment is `count` and the parent is bound to text, the value is the text's number of
+ * code points — `[...text].length`, which is Go's rune count for any text a JSON reader hands
+ * either runtime. A quantifier's cardinality is read raw, so a quantifier over a text is Unknown.
+ */
+export function readLeaf(source: FactSource, path: string): [Node, boolean] {
+  if (source.has(path)) return [source.get(path) ?? null, true];
+  const at = path.lastIndexOf('.');
+  if (at <= 0 || path.slice(at + 1) !== 'count') return [null, false];
+  const parent = source.get(path.slice(0, at));
+  if (typeof parent === 'string') return [[...parent].length, true];
+  return [null, false];
+}
+
 export function facts(row: Row): FactSource {
   const flattened: FactSource = new Map();
   for (const [field, value] of Object.entries(row)) {
@@ -129,7 +144,7 @@ export class Operand {
 
   resolve(source: FactSource): [Node, boolean] {
     if (!this.isFact) return [this.literal, true];
-    return [source.get(this.path) ?? null, source.has(this.path)];
+    return readLeaf(source, this.path);
   }
 }
 
@@ -232,15 +247,16 @@ export class Predicate {
       case 'compare':
         return this.compare(source);
       case 'truthy': {
-        if (!source.has(this.path)) return TruthUnknown;
-        return truthOf(isTruthy(source.get(this.path) ?? null));
+        const [value, ok] = readLeaf(source, this.path);
+        if (!ok) return TruthUnknown;
+        return truthOf(isTruthy(value));
       }
       case 'defined':
-        return truthOf(source.has(this.path));
+        return truthOf(readLeaf(source, this.path)[1]);
       case 'any_of':
       case 'none_of': {
-        if (!source.has(this.path)) return TruthUnknown;
-        const value = source.get(this.path) ?? null;
+        const [value, ok] = readLeaf(source, this.path);
+        if (!ok) return TruthUnknown;
         const found = this.values.some((candidate) => equal(value, candidate));
         return truthOf(found === (this.kind === 'any_of'));
       }

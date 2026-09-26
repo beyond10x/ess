@@ -440,6 +440,7 @@ mod tests {
             reading: None,
             name: name("billing.invoice.Money"),
             body: TypeBody::Newtype {
+                alphabet: None,
                 of: TypeRef::Primitive(Primitive::Decimal),
                 invariants: vec![
                     crate::entity::Invariant::parse("value >= 0").expect("a predicate")

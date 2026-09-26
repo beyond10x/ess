@@ -411,6 +411,13 @@ pub enum LoweringCode {
     /// A typed guard orders text (`<`, `<=`, `>`, `>=` over a string), which ESS orders by its UTF-8
     /// bytes and entity-core has no operator for.
     TextOrderingUnsupported,
+    /// A newtype declares an alphabet (ess/11), and entity-core has no condition that iterates the
+    /// characters of a text.
+    AlphabetUnsupported,
+    /// A predicate reads the length of a text (`keys.count` over a `String`, ess/11), and
+    /// entity-core resolves `count` on arrays and maps only, so the lowered rule would be
+    /// `Unknown` for every row.
+    TextLengthUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -457,6 +464,7 @@ fn lower_once(
         diagnostics: Vec::new(),
     };
     projector.check_options();
+    projector.check_text_lengths();
     projector.build_definitions();
     projector.build_commands();
     projector.finish()
@@ -508,6 +516,52 @@ impl Projector<'_> {
             path: path.into(),
             message: message.into(),
         });
+    }
+
+    /// Refuse every text length `predicate` reads over `fields`: entity-core resolves `count` on
+    /// arrays and maps only, so a lowered `keys.count` would be `Unknown` for every row. Lifting
+    /// it needs an entity-core length address (`docs/design/string-alphabet-and-length.md`,
+    /// section 8).
+    fn refuse_text_lengths(&mut self, fields: &[ResolvedField], predicate: &Predicate, at: &str) {
+        let checked =
+            ess_compiler::expression::check_predicate(self.service.source(), fields, predicate, at);
+        for read in checked.reads {
+            if read.resolution.access.text_length {
+                self.diagnostic(
+                    LoweringCode::TextLengthUnsupported,
+                    at,
+                    format!(
+                        "`{}` reads the length of a text, which Entity Runtime has no address \
+                         for; a lowered rule would be Unknown for every row",
+                        read.path
+                    ),
+                );
+            }
+        }
+    }
+
+    /// The same refusal, before lowering, for every predicate the IR holds on what this service
+    /// lowers: its owned entities' invariants, its operations' guards and `when_subject:`
+    /// predicates, and its views' filters. One walk — `predicate_sites` — so a position cannot be
+    /// refused here and forgotten there; a type's invariants are refused where the nominal rule is
+    /// lowered, because only a reached type is.
+    fn check_text_lengths(&mut self) {
+        let service = self.service;
+        for site in ess_compiler::expression::predicate_sites(service.source()) {
+            let owner = site.site.name().parse::<QualifiedName>().ok();
+            let lowered = owner.is_some_and(|owner| match site.site.kind() {
+                ess_primitives::error::ConstructKind::Entity => self.closure.contains(&owner),
+                ess_primitives::error::ConstructKind::Command => {
+                    service.operations().contains_key(&owner)
+                }
+                ess_primitives::error::ConstructKind::View => service.views().contains_key(&owner),
+                _ => false,
+            });
+            if lowered {
+                let at = site.site.render();
+                self.refuse_text_lengths(&site.fields, site.predicate, &at);
+            }
+        }
     }
 
     fn check_options(&mut self) {
@@ -919,7 +973,30 @@ impl Projector<'_> {
                 active.push(qualified);
                 let resolved = self.service.source().named_type(name);
                 match &resolved.body {
-                    ResolvedBody::Newtype { of, invariants } => {
+                    ResolvedBody::Newtype {
+                        of,
+                        alphabet,
+                        invariants,
+                    } => {
+                        if alphabet.is_some() {
+                            self.diagnostic(
+                                LoweringCode::AlphabetUnsupported,
+                                semantic_path,
+                                format!(
+                                    "`{}` declares an alphabet, and Entity Runtime has no condition \
+                                     that iterates the characters of a text",
+                                    resolved.name
+                                ),
+                            );
+                        }
+                        let value = [ResolvedField {
+                            name: ess_domain::NamedType::VALUE.to_owned(),
+                            type_ref: of.clone(),
+                            naming: ess_domain::name::Naming::default(),
+                        }];
+                        for invariant in invariants {
+                            self.refuse_text_lengths(&value, &invariant.predicate, semantic_path);
+                        }
                         for (index, invariant) in invariants.iter().enumerate() {
                             let mut condition = lower_predicate(
                                 &invariant.predicate,
@@ -950,6 +1027,9 @@ impl Projector<'_> {
                         );
                     }
                     ResolvedBody::Struct { fields, invariants } => {
+                        for invariant in invariants {
+                            self.refuse_text_lengths(fields, &invariant.predicate, semantic_path);
+                        }
                         for (index, invariant) in invariants.iter().enumerate() {
                             let mut condition = lower_predicate(
                                 &invariant.predicate,

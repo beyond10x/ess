@@ -81,6 +81,13 @@ refuses the header, and this build refuses the construct under an earlier header
 `unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
 [aggregate views](../guides/write-a-specification.md#aggregate-views).
 
+`ess/11`, not yet released, admits three things. A newtype of `String` may declare `alphabet:`, the
+characters every value is drawn from. A command input may declare `example:`, the value synthesis
+builds it from. And `.count` on a `String` is its length in Unicode scalar values, in every
+predicate position. An older build refuses the header, and this build refuses each construct under
+an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its
+compiled digest.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -98,6 +105,7 @@ back as a bare name, so a specification written before `ess/5` keeps its exact b
 | `ess-diff/5` | [0.27.0][r27] | `VariantWireNameChanged`, `VariantDisplayNameChanged` and `VariantSummaryChanged` on `TypeChange`. | Refuses a delta carrying any of the three. |
 | `ess-diff/6` | [0.29.0][r29] | Typed deltas retain the before/after originating replay relation and complete refusal-observation requirement. | Refuses the new vocabulary; existing changes retain their earlier format. |
 | `ess-diff/7` | unreleased | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
+| `ess-diff/8` | unreleased | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty

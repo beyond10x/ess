@@ -420,8 +420,15 @@ pub enum RefusalCause {
         /// The paths it reads that no view of the entity publishes.
         ///
         /// Empty when every path *is* published and the problem is the other one: no view holds an
-        /// instance in the state the scenario reaches, so there would be no row to read.
+        /// instance in the state the scenario reaches, so there would be no row to read. A path in
+        /// [`unassertable`](Self::InvariantUnobservable::unassertable) is not here: a view does
+        /// publish its field.
         unpublished: Vec<FactPath>,
+        /// The `.count` reads — of a list or of a text — whose field some view does publish, and
+        /// which no view-row assertion in this suite format can carry
+        /// (`docs/design/string-alphabet-and-length.md`, section 3). Before this field they were
+        /// reported as published by no view, which blamed the view for the suite format.
+        unassertable: Vec<FactPath>,
         /// The state the entity is in when the assertion would run.
         state: StateName,
     },
@@ -506,12 +513,70 @@ pub enum RefusalCause {
         /// What the strategy said.
         strategy: TestStrategy,
     },
+    /// A guard compares a `.count` with a number whose boundary lies past what this synthesizer
+    /// builds (`docs/design/string-alphabet-and-length.md`, section 4).
+    ///
+    /// In place of [`GuardUnsatisfiable`](Self::GuardUnsatisfiable) exactly when an outcome has no
+    /// witness and one of its guards compares some `.count` with a literal whose `⌊v⌋ + 1` exceeds
+    /// [`MAX_COUNT_WITNESS`](crate::witness::MAX_COUNT_WITNESS): the bound is stated rather than
+    /// searched past, and the repair is an authored scenario, not a change to the input.
+    CountUnwitnessed {
+        /// The `.count` the guard reads.
+        path: FactPath,
+        /// The literal it is compared with, as written.
+        literal: String,
+        /// The most characters or elements a witness is built with.
+        bound: usize,
+    },
     /// A witness this synthesizer built is not a value of the input's declared type.
     ///
     /// A drift alarm, and the one that matters most: it means the witness walk and the flattener's
     /// walk have come to disagree about what a type accepts, which would otherwise surface as a
     /// guard that mysteriously cannot be decided.
     WitnessRejected(ShapeErrors),
+}
+
+/// `RefusalCause::CountUnwitnessed`'s number in the `SYNTH` family, the next after
+/// [`crate::aggregate::UNWITNESSED`].
+pub const COUNT_UNWITNESSED: u16 = 18;
+
+/// The refusal for an outcome no candidate reaches: `ESS-SYNTH-018` when one of its guards
+/// compares a `.count` with a literal past [`MAX_COUNT_WITNESS`](crate::witness::MAX_COUNT_WITNESS),
+/// which no candidate was built to decide, and otherwise `ESS-SYNTH-003`.
+pub(crate) fn unsatisfied(guards: &[&Predicate], predicate: String, tried: usize) -> RefusalCause {
+    fn past_the_cap(predicate: &Predicate) -> Option<(FactPath, String)> {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                children.iter().find_map(past_the_cap)
+            }
+            Predicate::Not(inner) => past_the_cap(inner),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                past_the_cap(&quantified.body)
+            }
+            Predicate::Compare { left, right, .. } => [(left, right), (right, left)]
+                .into_iter()
+                .find_map(|(fact, literal)| match (fact, literal) {
+                    (Operand::Fact(path), Operand::Literal(value))
+                        if path.segments().last().is_some_and(|last| last == "count") =>
+                    {
+                        let number = value.as_number()?.get();
+                        #[allow(clippy::cast_precision_loss)]
+                        let cap = crate::witness::MAX_COUNT_WITNESS as f64;
+                        (number.floor() + 1.0 > cap).then(|| (path.clone(), value.to_string()))
+                    }
+                    _ => None,
+                }),
+            _ => None,
+        }
+    }
+    match guards.iter().find_map(|guard| past_the_cap(guard)) {
+        Some((path, literal)) => RefusalCause::CountUnwitnessed {
+            path,
+            literal,
+            bound: crate::witness::MAX_COUNT_WITNESS,
+        },
+        None => RefusalCause::GuardUnsatisfiable { predicate, tried },
+    }
 }
 
 impl RefusalCause {
@@ -546,6 +611,7 @@ impl RefusalCause {
                 Self::OrderUnwitnessed { .. } => 14,
                 Self::AggregateUnscoped { .. } => crate::aggregate::UNSCOPED,
                 Self::AggregateUnwitnessed { .. } => crate::aggregate::UNWITNESSED,
+                Self::CountUnwitnessed { .. } => COUNT_UNWITNESSED,
             },
         )
     }
@@ -584,8 +650,15 @@ impl RefusalCause {
             }
             Self::NotSynthesisedYet { .. } => "a later slice of `ess-conformance` synthesises this",
             Self::BindingUnobservable { gap, .. } => gap.hint(),
-            Self::InvariantUnobservable { unpublished, .. } => {
-                if unpublished.is_empty() {
+            Self::InvariantUnobservable {
+                unpublished,
+                unassertable,
+                ..
+            } => {
+                if !unassertable.is_empty() {
+                    "a `.count` is not asserted on a view row in this suite format; the value is \
+                     held to it where it is built, on command input and setup"
+                } else if unpublished.is_empty() {
                     "declare a view that holds an instance in this state, or the invariant cannot \
                      be read after this branch"
                 } else {
@@ -611,6 +684,10 @@ impl RefusalCause {
             }
             Self::StrategyWithoutGuard { .. } => {
                 "`TestStrategy` and `OutcomeCondition` have drifted apart in `ess-domain`"
+            }
+            Self::CountUnwitnessed { .. } => {
+                "the guard compares `.count` with a value above the 1024 this synthesizer builds; \
+                 cover the branch with an authored scenario (ess-scenario/1), or lower the bound"
             }
             Self::WitnessRejected(_) => {
                 "the witness walk and the flattener disagree about this type; they read one table"
@@ -678,6 +755,15 @@ impl fmt::Display for RefusalCause {
             Self::AggregateUnscoped { .. } | Self::AggregateUnwitnessed { .. } => {
                 aggregate_refusal(f, self)
             }
+            Self::CountUnwitnessed {
+                path,
+                literal,
+                bound,
+            } => write!(
+                f,
+                "`{path}` is compared with {literal}, and deciding that needs a text or a list \
+                 longer than the {bound} characters or elements this synthesizer builds"
+            ),
             Self::DuplicateScenario => f.write_str("a second scenario claimed this id"),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
@@ -689,29 +775,7 @@ impl fmt::Display for RefusalCause {
                 )
             }
             Self::BindingUnobservable { binding, gap } => write!(f, "`{binding}` {gap}"),
-            Self::InvariantUnobservable {
-                entity,
-                invariant,
-                unpublished,
-                state,
-            } => {
-                if unpublished.is_empty() {
-                    write!(
-                        f,
-                        "`{invariant}` cannot be read after this branch: no view of `{entity}` \
-                         holds an instance in `{state}`"
-                    )
-                } else {
-                    write!(
-                        f,
-                        "`{invariant}` reads what no view of `{entity}` publishes"
-                    )?;
-                    for path in unpublished {
-                        write!(f, "\n  - `{path}` is published by no view of the entity")?;
-                    }
-                    Ok(())
-                }
-            }
+            Self::InvariantUnobservable { .. } => invariant_unobservable(f, self),
             Self::ValueInvariantUnwitnessed {
                 value,
                 invariants,
@@ -719,6 +783,49 @@ impl fmt::Display for RefusalCause {
             } => value_unwitnessed(f, value, invariants, at.as_ref()),
         }
     }
+}
+
+/// Renders [`RefusalCause::InvariantUnobservable`]: no row in the state, or the paths no view row
+/// can be held to — a `.count` first, then what no view publishes.
+fn invariant_unobservable(f: &mut fmt::Formatter<'_>, cause: &RefusalCause) -> fmt::Result {
+    let RefusalCause::InvariantUnobservable {
+        entity,
+        invariant,
+        unpublished,
+        unassertable,
+        state,
+    } = cause
+    else {
+        unreachable!("called for InvariantUnobservable only")
+    };
+    if unpublished.is_empty() && unassertable.is_empty() {
+        return write!(
+            f,
+            "`{invariant}` cannot be read after this branch: no view of `{entity}` holds an \
+             instance in `{state}`"
+        );
+    }
+    if unassertable.is_empty() {
+        write!(
+            f,
+            "`{invariant}` reads what no view of `{entity}` publishes"
+        )?;
+    } else {
+        write!(
+            f,
+            "`{invariant}` reads what no view row of `{entity}` can be held to"
+        )?;
+    }
+    for path in unassertable {
+        write!(
+            f,
+            "\n  - `{path}` is a `.count`, which a view row does not assert in this suite format"
+        )?;
+    }
+    for path in unpublished {
+        write!(f, "\n  - `{path}` is published by no view of the entity")?;
+    }
+    Ok(())
 }
 
 /// Renders the two aggregate view refusals.
@@ -744,11 +851,34 @@ fn value_unwitnessed(
     at: Option<&(ViewRef, String)>,
 ) -> fmt::Result {
     match at {
-        None => write!(
-            f,
-            "no view publishes a field position that can answer what `{value}` declares of every \
-             value"
-        )?,
+        None => {
+            write!(
+                f,
+                "no view publishes a field position that can answer what `{value}` declares of \
+                 every value"
+            )?;
+            // A `.count` is never projectable onto a row, so an invariant reading one has no
+            // position whatever the views publish; saying so names the real limit.
+            let counts: BTreeSet<String> = invariants
+                .iter()
+                .filter_map(|statement| Predicate::parse_expression(statement).ok())
+                .flat_map(|predicate| {
+                    predicate
+                        .fact_paths()
+                        .into_iter()
+                        .filter(|path| path.segments().last().is_some_and(|last| last == "count"))
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            if !counts.is_empty() {
+                write!(
+                    f,
+                    "; `{}` is a `.count`, which a view row does not assert in this suite format",
+                    counts.into_iter().collect::<Vec<_>>().join("`, `")
+                )?;
+            }
+        }
         Some((view, field)) => write!(
             f,
             "`{view}.{field}` holds a `{value}` and no declared outcome leaves a row there for \
@@ -1693,7 +1823,12 @@ fn state_refusals(
                             refusals,
                         );
                     }
-                    Err(RefusalCause::GuardUnsatisfiable { .. }) => {}
+                    // No input reaches the refusal in this state: not a refusal of its own, as
+                    // before a count guard past the cap was named.
+                    Err(
+                        RefusalCause::GuardUnsatisfiable { .. }
+                        | RefusalCause::CountUnwitnessed { .. },
+                    ) => {}
                     Err(cause) => refusals.push(Refusal::about(&id, cause)),
                 }
             }
@@ -2746,10 +2881,11 @@ fn reach_in_state(
             return Ok(input.clone());
         }
     }
-    Err(RefusalCause::GuardUnsatisfiable {
-        predicate: format!("{} selected in held state {held}", outcome.name),
-        tried: inputs.len().min(MAX_CANDIDATES),
-    })
+    Err(unsatisfied(
+        &guards,
+        format!("{} selected in held state {held}", outcome.name),
+        inputs.len().min(MAX_CANDIDATES),
+    ))
 }
 
 /// Choose and establish the state together with the input; neither half proves the other.
@@ -2888,10 +3024,11 @@ fn reach_external(
             return Ok(input.clone());
         }
     }
-    Err(RefusalCause::GuardUnsatisfiable {
-        predicate: rendered(&guards, true),
-        tried: inputs.len().min(MAX_CANDIDATES),
-    })
+    Err(unsatisfied(
+        &guards,
+        rendered(&guards, true),
+        inputs.len().min(MAX_CANDIDATES),
+    ))
 }
 
 /// The input that reaches this branch, decided rather than assumed.
@@ -2981,10 +3118,11 @@ fn reach(
             return Ok(input.clone());
         }
     }
-    Err(RefusalCause::GuardUnsatisfiable {
-        predicate: rendered(&guards, satisfy),
-        tried: inputs.len().min(MAX_CANDIDATES),
-    })
+    Err(unsatisfied(
+        &guards,
+        rendered(&guards, satisfy),
+        inputs.len().min(MAX_CANDIDATES),
+    ))
 }
 
 /// `true` when this candidate does what the strategy asks of every guard.
@@ -4332,12 +4470,15 @@ fn holds_after(
     for invariant in &entity.invariants {
         let witnesses = witnesses_for(ir, invariant, views, &state, &run.settled);
         if witnesses.is_empty() {
+            let (unpublished, unassertable) =
+                unobserved(ir, invariant, &entity.observable_fields(), views);
             refusals.push(Refusal::about(
                 id,
                 RefusalCause::InvariantUnobservable {
                     entity: entity_ref.clone(),
                     invariant: invariant.statement.clone(),
-                    unpublished: unpublished(ir, invariant, &entity.observable_fields(), views),
+                    unpublished,
+                    unassertable,
                     state: state.clone(),
                 },
             ));
@@ -4776,29 +4917,44 @@ fn witnesses_for<'a>(
         .collect()
 }
 
-/// Every path an invariant reads that no view of the entity publishes.
+/// Every path an invariant reads that no view of the entity resolves to a scalar, split in two:
+/// those no view declares at all, and those some view declares as a collection or a text length —
+/// a `.count` no view-row assertion in this suite format carries.
 ///
 /// The difference between "no view holds a row here" and "no view could ever answer this", which is
-/// the difference between a filter an author might widen and a field an author has to publish.
-fn unpublished(
+/// the difference between a filter an author might widen and a field an author has to publish —
+/// and, for the second list, neither: the field is published and the suite format is the limit
+/// (`docs/design/string-alphabet-and-length.md`, section 3).
+fn unobserved(
     ir: &EssIr,
     invariant: &Invariant,
     fields: &[ess_compiler::ir::ResolvedField],
     views: &[&ResolvedView],
-) -> Vec<FactPath> {
-    ess_compiler::expression::check_predicate(ir, fields, &invariant.predicate, "entity invariant")
-        .reads
-        .into_iter()
-        .filter(|read| read.free)
-        .map(|read| read.path)
-        .filter(|path| {
-            !views
-                .iter()
-                .any(|view| resolve_path(ir, &view.fields, path).is_scalar())
+) -> (Vec<FactPath>, Vec<FactPath>) {
+    let reads: BTreeSet<FactPath> = ess_compiler::expression::check_predicate(
+        ir,
+        fields,
+        &invariant.predicate,
+        "entity invariant",
+    )
+    .reads
+    .into_iter()
+    .filter(|read| read.free)
+    .map(|read| read.path)
+    .filter(|path| {
+        !views
+            .iter()
+            .any(|view| resolve_path(ir, &view.fields, path).is_scalar())
+    })
+    .collect();
+    reads.into_iter().partition(|path| {
+        !views.iter().any(|view| {
+            matches!(
+                resolve_path(ir, &view.fields, path),
+                crate::input::Target::Aggregate("a collection" | "a text length")
+            )
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+    })
 }
 
 /// Every declared type a command's input reaches.
@@ -5436,6 +5592,7 @@ mod tests {
                 entity: EntityRef::new(QualifiedName::new("oracle.order.Order").expect("valid")),
                 invariant: "weight_grams >= 0".to_owned(),
                 unpublished: vec![FactPath::new("weight_grams").expect("a fact path")],
+                unassertable: Vec::new(),
                 state: StateName::new("Placed").expect("valid"),
             },
             RefusalCause::AggregateUnscoped {
@@ -5444,6 +5601,11 @@ mod tests {
             RefusalCause::AggregateUnwitnessed {
                 view: ViewRef::new(QualifiedName::new("metrics.session.ByState").expect("valid")),
                 reason: "a parameter is read inside a disjunction".to_owned(),
+            },
+            RefusalCause::CountUnwitnessed {
+                path: FactPath::new("keys.count").expect("a fact path"),
+                literal: "5000".to_owned(),
+                bound: crate::witness::MAX_COUNT_WITNESS,
             },
         ];
 

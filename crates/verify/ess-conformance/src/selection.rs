@@ -44,6 +44,7 @@ impl Declaration {
     pub(crate) fn body(&self) -> ess_domain::types::RawTypeBody {
         match self {
             Self::Newtype { of } => ess_domain::types::RawTypeBody::Newtype {
+                alphabet: None,
                 of: of.clone(),
                 invariants: Vec::new(),
             },
@@ -154,9 +155,7 @@ impl Observation {
                 .types()
                 .get(&name)
                 .ok_or("missing selection nominal declaration")?;
-            if ty.reading.is_some()
-                || matches!(&ty.body, ResolvedBody::Newtype { invariants, .. } | ResolvedBody::Struct { invariants, .. } if !invariants.is_empty())
-            {
+            if ty.reading.is_some() || ty.body.is_constrained() {
                 return Err(format!("selection-constraint: invariant or clock-reading validation is not executable observation authority for {name}"));
             }
             let declaration = match &ty.body {

@@ -154,6 +154,7 @@ fn binary64_directly_constructed_types_cannot_bypass_version_or_map_key_admissio
     ] {
         let mut raw = RawSpecFile::parse(source).unwrap();
         raw.types[0].body = RawTypeBody::Newtype {
+            alphabet: None,
             of: ty,
             invariants: vec![],
         };

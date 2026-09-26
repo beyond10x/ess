@@ -456,7 +456,7 @@ impl Specification {
 
     /// Build the registry shared by every member validation, retaining duplicate-type errors.
     fn types_with_lifecycles(&self, errors: &mut ValidationErrors) -> crate::types::TypeRegistry {
-        let mut registry = self.system.types.clone();
+        let mut registry = self.system.types.clone().with_format(self.system.format);
         for entity in self.entities.values() {
             if let Err(error) = registry.insert(entity.state_type()) {
                 errors.push(error);

@@ -148,7 +148,11 @@ pub(super) fn conversions(
 /// A named type: newtype, struct, enum or tagged union.
 fn named_type(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
     match &declared.body {
-        ResolvedBody::Newtype { of, invariants } => newtype(out, emit, declared, of, invariants),
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => newtype(out, emit, declared, of, alphabet.as_deref(), invariants),
         ResolvedBody::Struct { fields, invariants } => {
             structure(out, emit, declared, fields, invariants);
         }
@@ -168,6 +172,7 @@ fn newtype(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     of: &ResolvedTypeRef,
+    alphabet: Option<&str>,
     invariants: &[Invariant],
 ) {
     let type_name = emit.layout.declared(&declared.name);
@@ -180,6 +185,7 @@ fn newtype(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
+    alphabet_doc(out, alphabet);
     invariant_doc(out, invariants);
     let _ = writeln!(
         out,
@@ -549,6 +555,14 @@ pub(super) fn sealed(out: &mut String, type_name: &str) {
 pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
     if let Some(summary) = summary {
         let _ = writeln!(out, "//\n// {}", summary.trim());
+    }
+}
+
+/// A declared alphabet, documented as an invariant is and for the same reason: checking is
+/// behaviour, and behaviour is an obligation in this scope.
+fn alphabet_doc(out: &mut String, alphabet: Option<&str>) {
+    if let Some(alphabet) = alphabet {
+        let _ = writeln!(out, "//\n// Every character is one of `{alphabet}`.");
     }
 }
 

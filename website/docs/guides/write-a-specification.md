@@ -198,6 +198,36 @@ A `Timestamp` is ordered by the RFC 3339 instant it names, so `+01:00` and `Z` s
 correctly. Against a literal, write an instant: `when: ends_at > "2020-01-01T00:00:00Z"`. Ordering
 a `Timestamp` against text that is not an instant is refused. `Duration` has no ordering yet.
 
+### Say which characters a text may hold, and how long it may be
+
+A `String` the implementation restricts to a character set says so with `alphabet:` on its newtype,
+and a length limit is `.count`, the number of Unicode scalar values. Both need `format: ess/11`.
+
+```yaml
+types:
+  - name: keypad.dial.KeySequence
+    kind: newtype
+    of: String
+    alphabet: "0123456789*#ABCD"
+commands:
+  - name: keypad.dial.SendKeys
+    input:
+      - {name: keys, type: keypad.dial.KeySequence, example: "12#"}
+    outcomes:
+      - name: too-long
+        when: keys.count > 64
+        error: keypad.dial.UnsupportedKey
+      - name: sent
+        emits: [keypad.dial.KeysSent]
+```
+
+Every character of a value is one of the alphabet's, compared exactly, with no normalization or case
+folding. Synthesis builds the input's witness from those characters, and a guard such as
+`keys.count > 64` from texts of 65 and 64 characters. An `example:` on a command input is the value
+the first witness starts from. It is not a constraint, it has to be a value of the input's type, and
+only a scalar input takes one. Generated code documents an alphabet and does not enforce it, and
+Entity Runtime refuses both an alphabet and a text length by name.
+
 ### Select an outcome from the held subject state
 
 `ess/3`, introduced in 0.23.0, allows `when_subject_state` beside an ordinary input predicate:

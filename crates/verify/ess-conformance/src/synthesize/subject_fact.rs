@@ -695,14 +695,18 @@ fn search<T>(
     }
     // Every field the guards read can be set (`unarrangeable` checked that first), so what failed
     // is the search for values that decide the guard: a guard the candidate values cannot
-    // satisfy, not a type without a value — `ESS-SYNTH-003`, with its repair.
-    Err(first.unwrap_or_else(|| RefusalCause::GuardUnsatisfiable {
-        predicate: format!(
-            "`{entity}` stored {field} selecting this branch, over the rows {} bounded arrangements \
-             left",
-            seen.len()
-        ),
-        tried: seen.len(),
+    // satisfy, not a type without a value — `ESS-SYNTH-003`, with its repair, or `ESS-SYNTH-018`
+    // where the guard's `.count` boundary lies past what a witness is built with.
+    Err(first.unwrap_or_else(|| {
+        super::unsatisfied(
+            &hints.iter().collect::<Vec<_>>(),
+            format!(
+                "`{entity}` stored {field} selecting this branch, over the rows {} bounded \
+                 arrangements left",
+                seen.len()
+            ),
+            seen.len(),
+        )
     }))
 }
 

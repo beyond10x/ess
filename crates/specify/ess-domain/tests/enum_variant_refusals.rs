@@ -31,6 +31,7 @@ fn registry() -> TypeRegistry {
         (
             "sample.WrappedChannel",
             TypeBody::Newtype {
+                alphabet: None,
                 of: TypeRef::parse("sample.Channel").unwrap(),
                 invariants: vec![],
             },

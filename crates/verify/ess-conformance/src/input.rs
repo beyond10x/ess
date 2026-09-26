@@ -53,9 +53,7 @@ use std::fmt;
 
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
-use ess_primitives::facts::{
-    is_canonical_uuid, is_padded_base64, FactPath, FactSource, FactStore, FactValue, Scales,
-};
+use ess_primitives::facts::{FactPath, FactSource, FactStore, FactValue, Scales};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, Truth};
 
@@ -345,15 +343,38 @@ fn setup_value(
             Ok(())
         }
         ResolvedTypeRef::Declared { name } => {
-            setup_body(ir, &ir.named_type(name).body, value, depth + 1)
+            let declared = ir.named_type(name);
+            setup_body(ir, &declared.name, &declared.body, value, depth + 1)
         }
     }
 }
 
-fn setup_body(ir: &EssIr, body: &ResolvedBody, value: &Node, depth: usize) -> Result<(), String> {
+fn setup_body(
+    ir: &EssIr,
+    name: &ess_domain::QualifiedName,
+    body: &ResolvedBody,
+    value: &Node,
+    depth: usize,
+) -> Result<(), String> {
     match body {
-        ResolvedBody::Newtype { of, invariants } => {
+        ResolvedBody::Newtype {
+            of,
+            alphabet,
+            invariants,
+        } => {
             setup_value(ir, of, value, depth)?;
+            // Before the invariants: every character of a text is one of the declared alphabet's
+            // (`docs/design/string-alphabet-and-length.md`, section 1).
+            if let (Some(alphabet), Some(text)) = (alphabet, value.as_text()) {
+                if let Some(outside) = text
+                    .chars()
+                    .find(|character| !alphabet.contains(*character))
+                {
+                    return Err(format!(
+                        "{outside:?} in {text:?} is not in the alphabet of {name}"
+                    ));
+                }
+            }
             let mut facts = FactStore::new();
             let mut errors = Vec::new();
             project(
@@ -597,7 +618,7 @@ impl<'ir> InputFacts<'ir> {
                 let mut unresolved = false;
                 for operand in [left, right] {
                     if let Operand::Fact(path) = operand {
-                        if self.fact(path).is_none() {
+                        if self.observe(path).is_none() {
                             unresolved = true;
                             push(self.explain_path(path));
                         }
@@ -656,7 +677,7 @@ impl<'ir> InputFacts<'ir> {
     /// One operand's value, or `None` when it reads a path nothing bound.
     fn resolve(&self, operand: &Operand) -> Option<FactValue> {
         match operand {
-            Operand::Fact(path) => self.fact(path),
+            Operand::Fact(path) => self.observe(path),
             Operand::Literal(value) => Some(value.clone()),
         }
     }
@@ -770,6 +791,11 @@ pub(crate) fn projection_target(
     }
     if resolved.access.collection {
         return Target::Aggregate("a collection");
+    }
+    // A text length is a leaf the evaluator derives, and no suite format carries one to a view
+    // row: it is asserted where values are built, on command input and setup.
+    if resolved.access.text_length {
+        return Target::Aggregate("a text length");
     }
     if resolved.scalar.is_some() {
         return Target::Scalar;
@@ -966,30 +992,7 @@ fn project_list(
 /// question of an event's payload. One table, so that a payload and a command input cannot come to
 /// different conclusions about whether `1.5` is an `Integer`.
 pub(crate) fn primitive_value(primitive: Primitive, value: &Node) -> Option<FactValue> {
-    match (primitive, value) {
-        (Primitive::Boolean, Node::Bool(flag)) => Some(FactValue::Bool(*flag)),
-        (Primitive::Decimal, Node::Number(number)) => Some(FactValue::Number(*number)),
-        // An integer that is not integral is refused rather than rounded: a candidate binding `1.5`
-        // to an `Integer` would decide `quantity == 1` differently from the system it is testing.
-        (Primitive::Integer, Node::Number(number)) if number.is_integral() => {
-            Some(FactValue::Number(*number))
-        }
-        // A grammar, not merely a shape. `Uuid` bound any text at all, so a candidate spelling an
-        // identifier `x` was admitted by a runner and refused by every schema this repository
-        // publishes for the same field (`ess-gen`'s `UUID_PATTERN`) — review finding F08. The two
-        // constrained primitives now ask the one grammar `ess-primitives` holds, which the Go
-        // runtime and the browser adapter ask in their own words against the same corpus.
-        (Primitive::Uuid, Node::Text(text)) if is_canonical_uuid(text) => {
-            Some(FactValue::text(text))
-        }
-        (Primitive::Bytes, Node::Text(text)) if is_padded_base64(text) => {
-            Some(FactValue::text(text))
-        }
-        (Primitive::String | Primitive::Timestamp | Primitive::Duration, Node::Text(text)) => {
-            Some(FactValue::text(text))
-        }
-        _ => None,
-    }
+    primitive.admits(value)
 }
 
 /// A candidate that is not a value of the command's declared input type.

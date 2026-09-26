@@ -28,7 +28,10 @@
 //! 2. **A text witness is its own fact path.** `contact` carries `"contact"` and
 //!    `alternate_contact` carries `"alternate_contact"`, so two same-typed fields are never
 //!    interchangeable — which is the only way a swapped binding mapping is a detectable fault rather
-//!    than an invisible one (`examples/oracle-fixture/README.md`).
+//!    than an invisible one (`examples/oracle-fixture/README.md`). **Under a declared `alphabet:`**
+//!    (ess/11) each character of that text the alphabet does not hold becomes
+//!    `alphabet[c mod |alphabet|]`, so the witness is a value the type admits. **An input's
+//!    `example:`** is its base at the plain instance, for every leaf kind.
 //! 3. **Alternatives come from the guard, not from imagination.** The values a candidate varies are
 //!    the fact paths the guard actually reads, and the values it tries are the literals the guard
 //!    itself writes, one either side. `amount.amount > 0` is met by `1` and refuted by `0`, and
@@ -44,6 +47,9 @@
 //!    list's `count` the way an observed collection publishes one. A list a guard reads **by
 //!    position** — `tags.0 == vip` — holds that many elements already in the base, because a read
 //!    that misses is `Unknown` and ends the search; the element is then varied like any leaf.
+//!    **A `.count` compared with `v`** (ess#104) is tried at lengths `⌊v⌋`, `⌊v⌋ + 1` and
+//!    `⌊v⌋ − 1`, up to [`MAX_COUNT_WITNESS`]: a `String` resized from its base and its other
+//!    alternatives, and a list of that many copies of its element 0.
 //!    **A string operator** (ess#95) is tried at its literal `L`, which satisfies it; at each
 //!    guard's positive literals composed around the path's own text `b` — `P + C + b + S`,
 //!    `P + b + C + S` and `P + C + S`, never with a literal the guard negates — which satisfies
@@ -298,10 +304,7 @@ pub fn candidates(
             ladders.insert(path, alternatives.into_iter().map(Choice::Value).collect());
         }
     }
-    invariant_ladders(&builder, &mut ladders);
-    for path in &builder.lists {
-        ladders.insert(path.clone(), vec![Choice::OneElement]);
-    }
+    count_ladders(&builder, &expanded, &mut ladders);
     let mut ladders: Vec<(FactPath, Vec<Choice>)> = ladders.into_iter().collect();
 
     // Omissions vary slowest, so every candidate that fills the optionals is tried before any
@@ -386,9 +389,10 @@ enum Choice {
     /// Nothing: the `Optional` member at this path is left out of the input — absent from its
     /// mapping, never present as `null`.
     Omit,
-    /// A list of one element, built at `<path>.0` from the declared element type like any other
-    /// value, and varied there by the same ladders.
-    OneElement,
+    /// A list of this many elements: element 0 built at `<path>.0` from the declared element type
+    /// like any other value and varied there by the same ladders, and every further element a
+    /// copy of it, so a quantifier is decided by element 0 alone, as it was with one element.
+    Elements(usize),
 }
 
 /// Filter only after building all bounded alternatives: an invalid base does not rule out later
@@ -796,6 +800,216 @@ fn compositions(reads: &[TextRead], base: &str) -> Vec<String> {
     ]
 }
 
+/// The most characters, or list elements, a count witness is built with.
+///
+/// It covers the 64 keys of beyond10x/ess#104 and a column limit of 255; a scenario carrying a
+/// 1025-character text costs about a kilobyte. A guard whose boundary lies above it is refused as
+/// `ESS-SYNTH-018`, with the repair, rather than searched for
+/// (`docs/design/string-alphabet-and-length.md`, section 4).
+pub const MAX_COUNT_WITNESS: usize = 1024;
+
+/// [`MAX_COUNT_WITNESS`], in the width a number witness compares at exactly.
+const MAX_COUNT_WITNESS_U32: u32 = 1024;
+
+/// The count ladders, the newtype-invariant ladders, and each list's element ladder.
+///
+/// A `.count` compared with a number is tried at the lengths either side of it (ess#104,
+/// `story:count-guards-above-one-are-synthesized`): a text resized to each, a list of that many
+/// elements. Invariant ladders come after the text ladders, so a leaf a guard already varies is
+/// left to the guard.
+fn count_ladders(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+    ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
+) {
+    let mut list_lengths: BTreeMap<FactPath, Vec<usize>> = BTreeMap::new();
+    for path in read_paths(guards) {
+        let Some(parent) = counted(&path) else {
+            continue;
+        };
+        if builder.strings.contains(&parent) {
+            let lengths = count_lengths(guards, &path, true);
+            text_length_ladder(builder, &parent, &lengths, ladders);
+        } else if builder.lists.contains(&parent) {
+            list_lengths
+                .entry(parent)
+                .or_default()
+                .extend(count_lengths(guards, &path, false));
+        }
+    }
+    invariant_ladders(builder, ladders);
+    for path in &builder.lists {
+        // One element first, as unit A1 built it; length 0 is the base `[]`.
+        let mut ladder = vec![Choice::Elements(1)];
+        for &held in list_lengths.get(path).map_or(&[][..], Vec::as_slice) {
+            let choice = Choice::Elements(held);
+            if held > 1 && !ladder.contains(&choice) {
+                ladder.push(choice);
+            }
+        }
+        ladders.insert(path.clone(), ladder);
+    }
+}
+
+/// The path `path` counts, when it reads `<parent>.count`.
+fn counted(path: &FactPath) -> Option<FactPath> {
+    let (last, parent) = path.segments().split_last()?;
+    (last == "count" && !parent.is_empty()).then(|| FactPath::from_segments(parent))
+}
+
+/// The lengths a `.count` read at `path` is tried at: `⌊v⌋`, `⌊v⌋ + 1` and `⌊v⌋ − 1` for each
+/// numeric literal `v` it is compared with, the number rule clipped to lengths — negatives and
+/// repeats dropped, nothing above [`MAX_COUNT_WITNESS`].
+///
+/// A text count compared only with another fact is tried either side of [`BASE_NUMBER`], the value
+/// every number witness starts at, so the other fact's own ladder decides the rest. A list keeps
+/// the literal-only rule unit A1's suites were built under.
+fn count_lengths(guards: &[&Predicate], path: &FactPath, against_facts: bool) -> Vec<usize> {
+    let mut values: Vec<f64> = literals_at(guards, path)
+        .iter()
+        .filter_map(FactValue::as_number)
+        .map(Number::get)
+        .collect();
+    if values.is_empty() && against_facts && compared_with_a_fact(guards, path) {
+        values.push(BASE_NUMBER);
+    }
+    let mut lengths = Vec::new();
+    for value in values {
+        let floor = value.floor();
+        for candidate in [floor, floor + 1.0, floor - 1.0] {
+            if !(0.0..=f64::from(MAX_COUNT_WITNESS_U32)).contains(&candidate) {
+                continue;
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let length = candidate as usize;
+            if !lengths.contains(&length) {
+                lengths.push(length);
+            }
+        }
+    }
+    lengths
+}
+
+/// Whether some guard compares `path` with another fact.
+fn compared_with_a_fact(guards: &[&Predicate], path: &FactPath) -> bool {
+    fn walk(predicate: &Predicate, path: &FactPath) -> bool {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                children.iter().any(|child| walk(child, path))
+            }
+            Predicate::Not(inner) => walk(inner, path),
+            Predicate::Compare { left, right, .. } => matches!(
+                (left, right),
+                (Operand::Fact(read), Operand::Fact(_)) | (Operand::Fact(_), Operand::Fact(read))
+                    if read == path
+            ),
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                walk(&quantified.body, path)
+            }
+            _ => false,
+        }
+    }
+    guards.iter().any(|guard| walk(guard, path))
+}
+
+/// The text at `path` resized to each of `lengths`, appended to the ladder already there.
+///
+/// Each resize is taken from the base and then from every alternative already on the ladder, in
+/// ladder order, so a length guard and a prefix guard on one path can be met by one value.
+fn text_length_ladder(
+    builder: &Builder<'_>,
+    path: &FactPath,
+    lengths: &[usize],
+    ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
+) {
+    let Some((Leaf::Text, Node::Text(base))) = builder.leaves.get(path) else {
+        return;
+    };
+    let plain = builder
+        .plain_texts
+        .get(path)
+        .map_or(base.as_str(), String::as_str);
+    let ladder = ladders.entry(path.clone()).or_default();
+    let mut sources = vec![base.clone()];
+    sources.extend(ladder.iter().filter_map(|choice| match choice {
+        Choice::Value(Node::Text(text)) => Some(text.clone()),
+        _ => None,
+    }));
+    for source in &sources {
+        for &length in lengths {
+            let node = Node::Text(resize(source, length, plain));
+            if node != Node::Text(base.clone()) && !ladder.contains(&Choice::Value(node.clone())) {
+                ladder.push(Choice::Value(node));
+            }
+        }
+    }
+    if ladder.is_empty() {
+        ladders.remove(path);
+    }
+}
+
+/// `text` at exactly `length` Unicode scalar values: its first `length` when it has that many,
+/// otherwise its own characters cycled from its start, and `plain` cycled when it is empty.
+///
+/// Every character of the result is one of `text`'s, or of `plain`'s, so a text inside an alphabet
+/// stays inside it and one outside it stays outside it, to be dropped by [`admitted_inputs`].
+fn resize(text: &str, length: usize, plain: &str) -> String {
+    let own: Vec<char> = text.chars().collect();
+    let cycled: Vec<char> = if own.is_empty() {
+        plain.chars().collect()
+    } else {
+        own
+    };
+    if cycled.is_empty() {
+        return String::new();
+    }
+    cycled.iter().copied().cycle().take(length).collect()
+}
+
+/// `text` mapped into `alphabet` (rule 2 under an alphabet): a character the alphabet holds is
+/// kept, and every other character `c` becomes `alphabet[c mod |alphabet|]`.
+///
+/// Keeps the path's own characters wherever the alphabet allows, so an alphabet that admits the
+/// path text leaves the witness unchanged.
+fn into_alphabet(text: &str, alphabet: &str) -> String {
+    let characters: Vec<char> = alphabet.chars().collect();
+    if characters.is_empty() {
+        return text.to_owned();
+    }
+    text.chars()
+        .map(|character| {
+            if characters.contains(&character) {
+                character
+            } else {
+                characters[u32::from(character) as usize % characters.len()]
+            }
+        })
+        .collect()
+}
+
+/// The effective alphabet of the newtype chain `type_ref` is declared through, if any layer
+/// declares one — `ess-domain`'s intersection, so the witness and validation agree.
+fn chain_alphabet(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<String> {
+    let mut alphabets = Vec::new();
+    let mut current = type_ref;
+    for _ in 0..=MAX_TYPE_DEPTH {
+        match current {
+            ResolvedTypeRef::Optional { of } => current = of,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, alphabet, .. } => {
+                    if let Some(alphabet) = alphabet {
+                        alphabets.push(alphabet.as_str());
+                    }
+                    current = of;
+                }
+                _ => break,
+            },
+            _ => break,
+        }
+    }
+    ess_domain::types::effective_alphabet(alphabets)
+}
+
 /// Ladders for the leaves no guard reads whose own type refuses their base witness.
 ///
 /// Without a value the type admits, no candidate survives [`admitted_inputs`] and no branch has a
@@ -806,7 +1020,9 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
         let Some((leaf, at_base)) = builder.leaves.get(path) else {
             continue;
         };
-        if ladders.contains_key(path) || admits_base(invariants, at_base) {
+        if ladders.contains_key(path)
+            || admits_base(invariants, builder.alphabets.get(path), at_base)
+        {
             continue;
         }
         let declared: Vec<&Predicate> = invariants.iter().collect();
@@ -834,14 +1050,25 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
                 alternatives.into_iter().map(Choice::Value).collect(),
             );
         }
+        // The same length rule as a guard's, for an invariant over `value.count`.
+        if builder.strings.contains(path) {
+            let lengths = count_lengths(&declared, &value.child("count"), true);
+            text_length_ladder(builder, path, &lengths, ladders);
+        }
     }
 }
 
-/// Whether every newtype invariant recorded at a leaf holds for its base witness, read as `value`.
+/// Whether every newtype invariant recorded at a leaf, and its alphabet, hold for its base
+/// witness, read as `value`.
 ///
 /// Only `True` admits: an invariant the base leaves `Unknown` or refutes is one `admitted_inputs`
 /// would refuse the whole input for. A value that is no scalar is left to that check.
-fn admits_base(invariants: &[Predicate], base: &Node) -> bool {
+fn admits_base(invariants: &[Predicate], alphabet: Option<&String>, base: &Node) -> bool {
+    if let (Some(alphabet), Node::Text(text)) = (alphabet, base) {
+        if !text.chars().all(|character| alphabet.contains(character)) {
+            return false;
+        }
+    }
     let fact = match base {
         Node::Text(text) => FactValue::Text(text.clone()),
         Node::Number(number) => FactValue::Number(*number),
@@ -1035,7 +1262,7 @@ struct Builder<'ir> {
     /// Which instance the input is for.
     distinction: Distinction,
     /// Every path at which a declared list is built with its element as well, so the element's
-    /// leaves are recorded and a [`Choice::OneElement`] has something to put there.
+    /// leaves are recorded and a [`Choice::Elements`] has something to put there.
     ///
     /// Only the lists a guard reads. Expanding every list would walk into every element type, and
     /// a type that refers to itself through a list — finite today because its list is empty —
@@ -1059,6 +1286,19 @@ struct Builder<'ir> {
     /// leaf's fact path and read against `value`: what the invariant-composed text candidates are
     /// built from, so a refuting candidate survives [`admitted_inputs`].
     invariants: BTreeMap<FactPath, Vec<Predicate>>,
+    /// The effective alphabet of every text a declared newtype chain constrains, by path: the
+    /// outermost alphabet's characters every inner one also holds. Recorded inside a union as
+    /// well, because a value there must be legal even where no guard can vary it.
+    alphabets: BTreeMap<FactPath, String>,
+    /// Every recorded leaf declared `String`, the one text that has a length. [`Leaf::Text`] also
+    /// covers `Uuid`, `Duration` and `Bytes`.
+    strings: BTreeSet<FactPath>,
+    /// Each `String` leaf's base from rules 2 and 3 — its own path, mapped into its alphabet —
+    /// which is never empty and is what a resize of an empty text cycles.
+    plain_texts: BTreeMap<FactPath, String>,
+    /// The authored `example:` of each command input, used as that input's base at
+    /// [`Distinction::PLAIN`] only.
+    examples: BTreeMap<FactPath, Node>,
 }
 
 impl<'ir> Builder<'ir> {
@@ -1077,6 +1317,10 @@ impl<'ir> Builder<'ir> {
             lists: BTreeSet::new(),
             optionals: BTreeSet::new(),
             invariants: BTreeMap::new(),
+            alphabets: BTreeMap::new(),
+            strings: BTreeSet::new(),
+            plain_texts: BTreeMap::new(),
+            examples: BTreeMap::new(),
         }
     }
 
@@ -1086,6 +1330,17 @@ impl<'ir> Builder<'ir> {
         command: &ResolvedCommand,
         overrides: &BTreeMap<FactPath, Choice>,
     ) -> Result<BTreeMap<String, Node>, WitnessGap> {
+        // Examples are the base at the plain instance only: an example is one value, and rule 5
+        // needs instances that differ.
+        if self.distinction == Distinction::PLAIN {
+            self.examples = command
+                .examples
+                .iter()
+                .filter_map(|(name, example)| {
+                    FactPath::new(name).ok().map(|path| (path, example.clone()))
+                })
+                .collect();
+        }
         let mut input = BTreeMap::new();
         for field in &command.input {
             let path = FactPath::new(&field.name).map_err(|_| WitnessGap {
@@ -1122,6 +1377,31 @@ impl<'ir> Builder<'ir> {
             .map(Some)
     }
 
+    /// The base of one primitive leaf, recorded: its path mapped into its alphabet (rule 2), or
+    /// the input's example at the plain instance.
+    fn primitive(&mut self, name: Primitive, path: &FactPath, record: bool) -> Node {
+        let mut base = primitive_value(name, path, self.distinction);
+        if let (Node::Text(text), Some(alphabet)) = (&base, self.alphabets.get(path)) {
+            base = Node::Text(into_alphabet(text, alphabet));
+        }
+        if name == Primitive::String {
+            if let Node::Text(plain) = &base {
+                self.plain_texts.insert(path.clone(), plain.clone());
+            }
+            if record {
+                self.strings.insert(path.clone());
+            }
+        }
+        if let Some(example) = self.examples.get(path) {
+            base = example.clone();
+        }
+        if record {
+            self.leaves
+                .insert(path.clone(), (Leaf::of_primitive(name), base.clone()));
+        }
+        base
+    }
+
     /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3).
     fn list(
         &mut self,
@@ -1150,10 +1430,9 @@ impl<'ir> Builder<'ir> {
         // Built even where the base keeps the list empty, so its leaves are recorded
         // before any ladder is drawn.
         let element = self.value(of, &path.child("0"), overrides, depth + 1, record)?;
-        Ok(if overrides.get(path) == Some(&Choice::OneElement) {
-            Node::Seq(vec![element])
-        } else {
-            Node::Seq(Vec::new())
+        Ok(match overrides.get(path) {
+            Some(Choice::Elements(held)) => Node::Seq(vec![element; *held]),
+            _ => Node::Seq(Vec::new()),
         })
     }
 
@@ -1191,19 +1470,21 @@ impl<'ir> Builder<'ir> {
                 if *name == Primitive::Binary64 {
                     return Err(WitnessGap { path: path.to_string(), type_ref: name.to_string(), reason: "requires a finite Binary64 conformance codec that this suite format does not admit" });
                 }
-                let base = primitive_value(*name, path, self.distinction);
-                if record {
-                    self.leaves
-                        .insert(path.clone(), (Leaf::of_primitive(*name), base.clone()));
-                }
-                Ok(chosen(base))
+                Ok(chosen(self.primitive(*name, path, record)))
             }
             ResolvedTypeRef::Declared { name } => {
                 // Read through the IR reference rather than through `self`, so what comes back
                 // lives as long as the IR and the recursive calls below can still borrow `self`.
                 let ir = self.ir;
                 match &ir.named_type(name).body {
-                    ResolvedBody::Newtype { of, invariants } => {
+                    ResolvedBody::Newtype { of, invariants, .. } => {
+                        // The outermost newtype of a chain sees every layer below it, so its
+                        // answer is the effective one and an inner layer never replaces it.
+                        if !self.alphabets.contains_key(path) {
+                            if let Some(alphabet) = chain_alphabet(ir, type_ref) {
+                                self.alphabets.insert(path.clone(), alphabet);
+                            }
+                        }
                         if record {
                             let recorded = self.invariants.entry(path.clone()).or_default();
                             for invariant in invariants {
@@ -1224,7 +1505,11 @@ impl<'ir> Builder<'ir> {
                                 .name()
                                 .to_owned()
                         };
-                        let base = Node::Text(variant);
+                        let base = self
+                            .examples
+                            .get(path)
+                            .cloned()
+                            .unwrap_or(Node::Text(variant));
                         if record {
                             self.leaves.insert(
                                 path.clone(),
@@ -1521,6 +1806,14 @@ mod tests {
                 Node::Text("Portal".to_owned())
             ],
             "`Email` is the base value, so the ladder holds the other two"
+        );
+    }
+
+    #[test]
+    fn the_count_cap_is_one_number_in_both_widths() {
+        assert_eq!(
+            MAX_COUNT_WITNESS,
+            usize::try_from(MAX_COUNT_WITNESS_U32).expect("fits")
         );
     }
 

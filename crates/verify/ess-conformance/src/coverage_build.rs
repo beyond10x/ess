@@ -401,6 +401,7 @@ fn generated_effect(cause: &crate::RefusalCause) -> Effect {
         RefusalCause::NoWitness(_)
         | RefusalCause::GuardUnevaluable(_)
         | RefusalCause::GuardUnsatisfiable { .. }
+        | RefusalCause::CountUnwitnessed { .. }
         | RefusalCause::InstanceRequired { .. }
         | RefusalCause::NotSynthesisedYet { .. }
         | RefusalCause::DuplicateScenario

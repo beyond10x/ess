@@ -210,11 +210,13 @@ use std::str::FromStr;
 use ess_primitives::error::{
     ConstructKind, ConstructRef, ParseError, ValidationCode, ValidationError, ValidationErrors,
 };
+use ess_primitives::facts::FactValue;
+use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 
 use crate::name::{Naming, QualifiedName};
 use crate::refs::Refs;
-use crate::types::{EnumVariant, Field, Primitive, TypeRegistry};
+use crate::types::{EnumVariant, Field, Primitive, TypeRef, TypeRegistry};
 
 /// The name of one outcome of a command, such as `accepted`, `rejected` or `not-found`.
 ///
@@ -1319,6 +1321,11 @@ pub struct CommandSpec {
     pub name: QualifiedName,
     /// What the caller supplies, in declaration order.
     pub input: Vec<Field>,
+    /// The authored `example:` of each input that declares one, by input name (ess/11).
+    ///
+    /// Kept beside [`Self::input`] rather than on it, so every predicate environment built over
+    /// the input is the one it was before examples existed.
+    pub examples: BTreeMap<String, Node>,
     /// Closed fields of the response returned by this command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
@@ -2106,6 +2113,7 @@ impl CommandSpec {
                 &self.site().key("input").index(index).key("type"),
             ));
         }
+        found.extend(self.validate_examples(types));
 
         for outcome in &self.outcomes {
             let location = self.site().key("outcomes").named(outcome.name.as_str());
@@ -2860,6 +2868,195 @@ fn field_shape(fields: &[Field], location: &str) -> ValidationErrors {
     errors
 }
 
+impl CommandSpec {
+    /// Each authored `example:` held to the input it sits on (ess/11): a scalar input, a value of
+    /// its type, inside every alphabet and true of every invariant of every newtype layer.
+    ///
+    /// `docs/design/string-alphabet-and-length.md`, section 2. The example is what synthesis builds
+    /// the input from, so an example its own type refuses would be a witness no correct
+    /// implementation accepts.
+    fn validate_examples(&self, types: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        for (name, example) in &self.examples {
+            let Some(field) = self.input_field(name) else {
+                continue;
+            };
+            if let Err((code, message, hint)) = example_admitted(types, &field.type_ref, example) {
+                errors.push(
+                    ValidationError::at(
+                        self.site().key("input").named(name.clone()).key("example"),
+                        code,
+                        message,
+                    )
+                    .with_hint(hint),
+                );
+            }
+        }
+        errors
+    }
+}
+
+/// Why an example is not admitted: its class, the message, and the repair.
+type ExampleRefusal = (ValidationCode, String, &'static str);
+
+/// Whether `example` is a value `declared` accepts, answered as validation reports it.
+fn example_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    example: &Node,
+) -> Result<(), ExampleRefusal> {
+    const SCALAR: &str =
+        "an example sits on a scalar input: a primitive other than Binary64, or an \
+                          enum, through any newtype or Optional";
+    let mismatch =
+        |message: String, hint: &'static str| Err((ValidationCode::TypeMismatch, message, hint));
+    if matches!(example, Node::Null) {
+        return mismatch(
+            format!("`null` is not a value of `{declared}`, so it cannot be an example of one"),
+            "leave `example:` out where no example is meant",
+        );
+    }
+    let layers = types.newtype_layers(declared);
+    let (value, instant) = match &layers.terminal {
+        TypeRef::Primitive(Primitive::Binary64) => {
+            return mismatch(
+                format!("`{declared}` is a Binary64, which a conformance witness cannot carry"),
+                SCALAR,
+            )
+        }
+        TypeRef::Primitive(primitive) => {
+            let Some(value) = primitive.admits(example) else {
+                let quoted = if matches!(example, Node::Number(_) | Node::Bool(_))
+                    && *primitive == Primitive::String
+                {
+                    "; YAML reads an unquoted `0123` as the number 123, so quote a text example"
+                } else {
+                    ""
+                };
+                return mismatch(
+                    format!("`{example}` is not a value of `{declared}` ({primitive}){quoted}"),
+                    "write a value of the input's type",
+                );
+            };
+            if *primitive == Primitive::Timestamp
+                && ess_primitives::time::Rfc3339Instant::parse_rfc3339(
+                    example.as_text().unwrap_or_default(),
+                )
+                .is_none()
+            {
+                return mismatch(
+                    format!("`{example}` is not an RFC 3339 instant, so it is not a Timestamp"),
+                    "write one such as \"2020-01-01T00:00:00Z\"",
+                );
+            }
+            (value, *primitive == Primitive::Timestamp)
+        }
+        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+            Some(crate::types::TypeBody::Enum { variants }) => match example.as_text() {
+                Some(text) if variants.iter().any(|variant| variant.name() == text) => {
+                    (FactValue::text(text), false)
+                }
+                _ => {
+                    return mismatch(
+                        format!(
+                            "`{example}` is not a variant of `{name}`; it declares {}",
+                            join(variants.iter().map(EnumVariant::name))
+                        ),
+                        "write one of the declared variants",
+                    )
+                }
+            },
+            Some(_) => {
+                return mismatch(
+                    format!("`{declared}` reaches `{name}`, which is not a scalar"),
+                    SCALAR,
+                )
+            }
+            // An unresolved name is refused where input types are resolved.
+            None => return Ok(()),
+        },
+        TypeRef::List(_) | TypeRef::Map(..) | TypeRef::Optional(_) => {
+            return mismatch(format!("`{declared}` is not a scalar"), SCALAR)
+        }
+    };
+    example_layers(&layers.newtypes, example, &value, instant)
+}
+
+/// Every newtype layer's alphabet and invariants, held against one example read as `value`.
+fn example_layers(
+    newtypes: &[&crate::types::NamedType],
+    example: &Node,
+    value: &FactValue,
+    instant: bool,
+) -> Result<(), ExampleRefusal> {
+    for layer in newtypes {
+        let crate::types::TypeBody::Newtype {
+            alphabet,
+            invariants,
+            ..
+        } = &layer.body
+        else {
+            continue;
+        };
+        if let (Some(alphabet), Some(text)) = (alphabet, example.as_text()) {
+            if let Some(outside) = text
+                .chars()
+                .find(|character| !alphabet.contains(*character))
+            {
+                return Err((
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{example}` holds {outside:?}, which is not in the alphabet of `{}` \
+                         (\"{alphabet}\")",
+                        layer.name
+                    ),
+                    "write an example from the characters the type declares",
+                ));
+            }
+        }
+        let facts = ExampleFacts {
+            value: value.clone(),
+            instant,
+        };
+        for invariant in invariants {
+            if !invariant.predicate.evaluate(&facts).is_satisfied() {
+                return Err((
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{example}` is not a value of `{}`: its invariant `{invariant}` does not \
+                         hold for it",
+                        layer.name
+                    ),
+                    "write an example every invariant of the type holds for",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One example, read as `value`: what a newtype's invariants read.
+struct ExampleFacts {
+    value: FactValue,
+    /// Whether the value is a `Timestamp`, ordered by the instant it names.
+    instant: bool,
+}
+
+impl ess_primitives::facts::FactSource for ExampleFacts {
+    fn fact(&self, path: &ess_primitives::facts::FactPath) -> Option<FactValue> {
+        (path.segments().len() == 1 && path.namespace() == crate::types::NamedType::VALUE)
+            .then(|| self.value.clone())
+    }
+
+    fn orders_as_instant(&self, _path: &ess_primitives::facts::FactPath) -> bool {
+        self.instant
+    }
+
+    fn orders_text_by_bytes(&self, _path: &ess_primitives::facts::FactPath) -> bool {
+        !self.instant
+    }
+}
+
 /// Renders a list of names for a diagnostic, saying so when the list is empty.
 fn join<T: fmt::Display>(items: impl Iterator<Item = T>) -> String {
     let rendered: Vec<String> = items.map(|item| format!("`{item}`")).collect();
@@ -2878,7 +3075,7 @@ pub struct RawCommandSpec {
     pub name: QualifiedName,
     /// What the caller supplies.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub input: Vec<Field>,
+    pub input: Vec<InputField>,
     /// Closed fields of the response returned by this command.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub response: Vec<Field>,
@@ -2893,6 +3090,80 @@ pub struct RawCommandSpec {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// One field of a command's input, as written: a [`Field`] that may also carry an `example:`.
+///
+/// Its own type rather than a key on [`Field`], which struct, event, error, entity, view,
+/// parameter and response fields share: an `example:` there would parse in every one of those
+/// positions, and each would have to refuse it by hand — one missed position would be an example
+/// silently ignored. Here every other position refuses it as an unknown field by construction.
+/// The attributes are [`Field`]'s exactly, and `the_published_input_field_is_a_field_plus_exactly_example`
+/// holds the two published schemas to differing by that one property
+/// (`docs/design/string-alphabet-and-length.md`, section 2).
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct InputField {
+    /// Its name.
+    #[serde(deserialize_with = "crate::types::deserialize_field_name")]
+    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    pub name: String,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// What it is on the wire, and what a person is shown.
+    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
+    /// The value synthesis builds this input from (ess/11). Not a constraint: the input still
+    /// accepts every value of its type.
+    ///
+    /// An authored `example: null` is kept as `Some(Node::Null)` rather than read as no example,
+    /// so validation can refuse it: an example is a value, and `null` is none.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_example",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub example: Option<Node>,
+}
+
+/// Reads a present `example:` as written, `null` included.
+fn deserialize_example<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Node>, D::Error> {
+    <Node as serde::Deserialize>::deserialize(deserializer).map(Some)
+}
+
+impl InputField {
+    /// The field and its example, apart.
+    pub fn split(self) -> (Field, Option<Node>) {
+        (
+            Field {
+                name: self.name,
+                type_ref: self.type_ref,
+                naming: self.naming,
+            },
+            self.example,
+        )
+    }
+
+    /// A field with an example beside it, or none.
+    pub fn joined(field: Field, example: Option<Node>) -> Self {
+        Self {
+            name: field.name,
+            type_ref: field.type_ref,
+            naming: field.naming,
+            example,
+        }
+    }
+}
+
+impl From<Field> for InputField {
+    fn from(field: Field) -> Self {
+        Self::joined(field, None)
+    }
 }
 
 /// A bounded fact on an existing subject, not the command input or lifecycle state.
@@ -3612,9 +3883,19 @@ impl TryFrom<RawCommandSpec> for CommandSpec {
             }
         }
 
+        let mut input = Vec::with_capacity(raw.input.len());
+        let mut examples = BTreeMap::new();
+        for field in raw.input {
+            let (field, example) = field.split();
+            if let Some(example) = example {
+                examples.insert(field.name.clone(), example);
+            }
+            input.push(field);
+        }
         let spec = Self {
             name: raw.name,
-            input: raw.input,
+            input,
+            examples,
             response: raw.response,
             outcomes,
             naming: raw.naming,
@@ -3756,10 +4037,18 @@ impl From<Outcome> for RawOutcome {
 }
 
 impl From<CommandSpec> for RawCommandSpec {
-    fn from(command: CommandSpec) -> Self {
+    fn from(mut command: CommandSpec) -> Self {
+        let input = command
+            .input
+            .into_iter()
+            .map(|field| {
+                let example = command.examples.remove(&field.name);
+                InputField::joined(field, example)
+            })
+            .collect();
         Self {
             name: command.name,
-            input: command.input,
+            input,
             response: command.response,
             outcomes: command.outcomes.into_iter().map(RawOutcome::from).collect(),
             naming: command.naming,
@@ -3811,6 +4100,7 @@ mod tests {
                 reading: None,
                 name: name("billing.invoice.Email"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },
@@ -3869,6 +4159,7 @@ outcomes:
 
     fn command_with(outcomes: Vec<Outcome>) -> CommandSpec {
         CommandSpec {
+            examples: BTreeMap::new(),
             name: name("billing.invoice.CreateInvoice"),
             input: vec![Field::new(
                 "amount",
@@ -5047,6 +5338,7 @@ outcomes:
         // The fixture reaches the state where the rule bites: the guard is well formed, `invoice_id`
         // *is* a declared input field, and the only thing wrong with reading it is this rule.
         let command = CommandSpec {
+            examples: BTreeMap::new(),
             name: name("billing.invoice.PayInvoice"),
             input: vec![
                 Field::new("invoice_id", TypeRef::Named(name("billing.invoice.Email"))),
@@ -5480,6 +5772,7 @@ payload:
                     reading: None,
                     name: name(&format!("billing.chain.Link{index}")),
                     body: TypeBody::Newtype {
+                        alphabet: None,
                         of: TypeRef::Named(name(&of)),
                         invariants: Vec::new(),
                     },
@@ -5498,6 +5791,7 @@ payload:
                 reading: None,
                 name: name("billing.chain.Cycle"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Optional(Box::new(TypeRef::Named(name("billing.chain.Cycle")))),
                     invariants: Vec::new(),
                 },
@@ -5599,6 +5893,7 @@ payload:
                 reading: None,
                 name: name("billing.chain.Ring"),
                 body: TypeBody::Newtype {
+                    alphabet: None,
                     of: TypeRef::Named(name("billing.chain.Ring")),
                     invariants: Vec::new(),
                 },

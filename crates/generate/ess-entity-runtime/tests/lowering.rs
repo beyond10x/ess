@@ -1778,3 +1778,73 @@ fn string_operators_lower_to_conditions_the_runtime_decides_byte_for_byte() {
         );
     }
 }
+
+/// Entity Runtime has no condition that iterates a text's characters, and entity-core resolves
+/// `count` on arrays and maps only, so an alphabet and a text length are each refused by name
+/// rather than lowered to a rule that is `Unknown` for every row
+/// (`docs/design/string-alphabet-and-length.md`, section 6).
+#[test]
+fn an_alphabet_and_a_text_length_are_refused_by_name_by_the_lowering() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let lowered = |shared: &str| {
+        let ir = compile_changes(
+            &fixture,
+            &[
+                ("system.yaml", "format: ess/4\n", "format: ess/11\n"),
+                (
+                    "domains/local.yaml",
+                    "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+                    shared,
+                ),
+            ],
+        );
+        let plan = SynthesisPlan::of(&ir);
+        lower(
+            &selected(&ir, &plan, "local-service"),
+            &options(&["contract.foreign.Owner", "contract.local.Child"]),
+        )
+        .map(|_| ())
+    };
+    let alphabet = lowered(
+        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    alphabet: \"abc\"\n",
+    )
+    .expect_err("an alphabet has no entity-core condition");
+    assert!(codes(alphabet).contains(&LoweringCode::AlphabetUnsupported));
+    let length = lowered(
+        "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    invariants: [value.count <= 8]\n",
+    )
+    .expect_err("a text length has no entity-core address");
+    assert!(codes(length).contains(&LoweringCode::TextLengthUnsupported));
+
+    let guard = compile_changes(
+        &example("billing"),
+        &[
+            ("system.yaml", "format: ess/1\n", "format: ess/11\n"),
+            (
+                "domains/email.yaml",
+                "            recipient: input.recipient\n",
+                "            recipient: input.recipient\n            message_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                "          billing.invoice.InvoiceCreated:\n",
+                "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                KEPT_INPUT,
+                "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: posted\n        when_subject: {predicate: 'note.count > 3'}\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n",
+            ),
+        ],
+    );
+    let diagnostics = lower_billing_changes(&guard)
+        .expect_err("a stored text length has no entity-core address")
+        .into_vec();
+    assert!(
+        diagnostics.iter().any(
+            |diagnostic| diagnostic.code == LoweringCode::TextLengthUnsupported
+                && diagnostic.message.contains("note.count")
+        ),
+        "{diagnostics:?}"
+    );
+}

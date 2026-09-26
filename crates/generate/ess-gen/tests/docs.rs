@@ -1712,3 +1712,25 @@ fn anchors(text: &str) -> BTreeSet<String> {
         })
         .collect()
 }
+
+/// A declared alphabet is one clause of the type's sentence.
+#[test]
+fn a_newtype_with_an_alphabet_says_which_characters_it_is_drawn_from() {
+    let ir = compiled(&[(
+        "keypad.yaml",
+        include_str!("../../../verify/ess-conformance/tests/fixtures/keypad.yaml"),
+    )]);
+    let docs = pages(&ir);
+    let page = docs
+        .iter()
+        .find(|(path, _)| path.ends_with("keypad-dial.md"))
+        .map_or_else(
+            || panic!("no keypad page in {:?}", docs.keys()),
+            |(_, artifact)| artifact.contents.clone(),
+        );
+    assert_says(
+        &page,
+        "Its characters are drawn from `0123456789*#ABCD`",
+        "the alphabet is part of what the type is",
+    );
+}
