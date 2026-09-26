@@ -105,7 +105,11 @@ pub struct Browser {
     evidence: PathBuf,
 }
 /// The startup deadline every fixture in this process is judged against.
-pub const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
+///
+/// Two minutes, because a slow runner is not a defect in the page under test: `main` a1cf7233f
+/// lost a real start at 30.010s of the 30s this used to be (job 108296632588, stage `announce`).
+/// A healthy start takes seconds, so the size costs nothing unless a start is being lost anyway.
+pub const STARTUP_DEADLINE: Duration = Duration::from_secs(120);
 
 /// What one `BiDi` call may take once the browser is up, and why it is not the startup budget.
 ///
@@ -122,9 +126,10 @@ pub const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
 /// same call in 0.85s. The harm scales with slowness, which is the one condition a loaded CI runner
 /// guarantees.
 ///
-/// 20s is what this transport had before the clamp was introduced, restored here as a property of
-/// the SESSION rather than of the start.
-pub const SESSION_TIMEOUT: Duration = Duration::from_secs(20);
+/// It is a property of the SESSION rather than of the start. It was the 20s this transport had
+/// before the clamp, and a `BiDi` read on a loaded runner overran that (a `read_exact` in
+/// `receive`, 2026-09-26), so it is two minutes, like the startup budget.
+pub const SESSION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// RFC 6455 section 1.3's worked example `Sec-WebSocket-Key`, base64 of the ASCII text
 /// `the sample nonce`. A WebSocket key is a handshake nonce and not a credential — the protocol
