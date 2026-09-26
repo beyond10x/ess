@@ -23,8 +23,38 @@
   are synthesized. (#93, #94)
 - `website/docs/reference/predicates.md` lists every predicate form, where it is accepted and what
   synthesis can witness; a test runs every example on it. (#92)
+- A `String` newtype may declare `alphabet:`, a command input `example:`, and `.count` on a `String`
+  is its length in Unicode scalar values in every predicate position (source format `ess/11`).
+  Synthesis draws text from the alphabet, starts from the example and tries lengths either side of a
+  `.count` literal up to 1024, for text and lists; beyond that `ESS-SYNTH-018`. `ess-diff/8` reports
+  `alphabet-changed` and `input-example-changed`. (#103, #104)
+- `outcome_groups:` declares one external refusal once for a command list or an `actor:`/`domain:`
+  selector (with `except:`), source format `ess/12`; it expands before validation and compiles to the
+  same IR as copying the outcome by hand. A same-named outcome is refused as `ESS-COMMAND-006`. (#105)
+- `ess-inputs/2` adds optional `requires: ess X.Y[.Z]`: an older `ess` refuses naming the release and
+  `b10x upgrade`, a newer one warns once, `--strict-requires` refuses. `ess-output-state/2` records the
+  producer, and a regeneration by another release prints a note. (#106)
+- A literal in `sets:` or `payload:` may be an unquoted YAML boolean or integer, compiling to the
+  quoted form's bytes; over text or an enum it is refused with `quote it`. (#113)
+- An unknown instance has a declared answer: a `moves:`/`updates:` command whose `instance:` names no
+  record answers its `wrong_state` outcome, witnessed once per such command with a fresh identity. (#113)
+- `ess verify conform mutate`: a mutation audit over nine specification mutant classes against the
+  built-in targets, writing `ess-mutation-report/1` (`ESS-MUTATE-001`/`003`). The TypeScript and Go
+  conformance packages carry a seeded random-walk explorer over the IR model, bound to `spec_digest`
+  through `ir.json`, with shrinking and a hard failure on unreached outcomes. (#114)
 
 ### Changed
+
+- `ess specify validate` compiles the authored scenarios `ess-inputs.yaml` lists and fails on their
+  `ESS-AUTHOR-*` refusals, counting them in its summary; `ESS-COMMAND-018` refuses an invariant that
+  reads a required field a `creates:` outcome leaves unset. The bundled examples set such fields. (#112)
+- Synthesized suites assert the target state of every transition whose view projects `state`, run a
+  multi-source transition from every source, give updates a value different from what the row holds,
+  and probe numeric and timestamp guard boundaries on both sides. Committed suites gain scenarios;
+  no format change. (#111)
+- `ess generate --kind openapi|asyncapi` names every domain no component owns; `--strict` refuses. (#102)
+- Go and TypeScript runners that write `ess-conformance-report/1` with a skipped scenario point once
+  at report/2, which carries passed, failed and skipped counts; the guide says where they live. (#110)
 
 - An unquoted `x == null` / `!= null` (and `~`, `Null`, `NULL`) is refused with `ESS-SPEC-017`,
   naming `defined(x)`; a quoted `"null"` is text. Ordering a `Duration` and an unquoted compact
@@ -33,6 +63,11 @@
 - Text orders byte-wise in every evaluator; Timestamps order as instants wherever declared types are
   known. (#94)
 - A create's omitted `Optional` input leaves its mapped field null in generated suites.
+
+### Fixed
+
+- The Go conformance runtime compares numbers by value whatever Go type carries them (`int`…`uint64`,
+  `float32`, `float64`, `json.Number`), with Rust's exact semantics. (#101)
 
 ## [0.33.0] — 2026-09-26
 
