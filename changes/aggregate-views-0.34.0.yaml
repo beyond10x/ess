@@ -10,5 +10,5 @@ impact: significant
 source:
   url: https://github.com/beyond10x/ess/releases/tag/0.34.0
   version: 0.34.0
-journeys: [specify, verify-conformance]
+journeys: [specify]
 affectedSurfaces: [ess/docs]
