@@ -2,11 +2,11 @@
 format: aep.planning-md/2
 id: story:schema-describes-serialized-strings
 kind: story
-status: draft
+status: implemented
 title: The generated schema describes ExternalRef and Period as the strings they serialize to
 relations:
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 # The generated schema describes ExternalRef and Period as the strings they serialize to
 
