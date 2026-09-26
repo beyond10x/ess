@@ -93,6 +93,17 @@ impl ConformanceTarget for Backend {
                 )
             }
             "calls.core.Bridge" | "calls.core.Report" => {
+                // The unknown-instance rule: `Bridge` declares `wrong_state` and answers it for an
+                // identity no record carries; `Report` declares none and answers nothing.
+                let known = row
+                    .as_ref()
+                    .is_some_and(|row| request.input.get("call_id") == row.get("call_id"));
+                if !known && command == "calls.core.Bridge" {
+                    return Ok(SemanticCommandResult::took(OutcomeRef::new(
+                        request.command,
+                        OutcomeName::new("already-bridged").unwrap(),
+                    )));
+                }
                 let Some(row) = row.as_mut() else {
                     return Ok(SemanticCommandResult::undeclared());
                 };

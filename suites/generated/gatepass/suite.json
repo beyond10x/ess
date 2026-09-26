@@ -229,6 +229,90 @@
         }
       ]
     },
+    "gatepass.visit.AdmitVisitor/outcome/wrong-state": {
+      "purpose": "`gatepass.visit.AdmitVisitor` for an identity no record carries takes `wrong-state` and reports `gatepass.visit.VisitStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.AdmitVisitor",
+          "actor": "gatepass.visit.Receptionist",
+          "input": {
+            "badge": {
+              "kind": "literal",
+              "value": {
+                "printed_at": "2020-01-01T00:00:00Z",
+                "serial": "badge.serial",
+                "signature": "AA=="
+              }
+            },
+            "visit_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-530454b533ca"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "gatepass.visit.AdmitVisitor",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "gatepass.visit.VisitStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "gatepass.visit.VisitorDeparted"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "gatepass.visit.Visit"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.AdmitVisitor"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.AdmitVisitor",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorDeparted"
+        },
+        {
+          "kind": "error",
+          "name": "gatepass.visit.VisitStateConflict"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.Receptionist"
+        }
+      ]
+    },
     "gatepass.visit.Deposit/invariant/at/gatepass.visit.ExpectedVisits/deposit": {
       "purpose": "every `gatepass.visit.Deposit` that `gatepass.visit.ExpectedVisits` publishes at `deposit` satisfies what the type declares",
       "steps": [
@@ -908,6 +992,82 @@
         {
           "kind": "view",
           "name": "gatepass.visit.VisitById"
+        },
+        {
+          "kind": "actor",
+          "name": "gatepass.visit.Receptionist"
+        }
+      ]
+    },
+    "gatepass.visit.SignOutVisitor/outcome/wrong-state": {
+      "purpose": "`gatepass.visit.SignOutVisitor` for an identity no record carries takes `wrong-state` and reports `gatepass.visit.VisitStateConflict`",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "gatepass.visit.SignOutVisitor",
+          "actor": "gatepass.visit.Receptionist",
+          "input": {
+            "visit_id": {
+              "kind": "literal",
+              "value": "00000000-0000-4000-8000-530454b533ca"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "gatepass.visit.SignOutVisitor",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "gatepass.visit.VisitStateConflict"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "gatepass.visit.VisitorDeparted"
+        }
+      ],
+      "source": [
+        {
+          "kind": "entity",
+          "name": "gatepass.visit.Visit"
+        },
+        {
+          "kind": "command",
+          "name": "gatepass.visit.SignOutVisitor"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "gatepass.visit.SignOutVisitor",
+            "outcome": "wrong-state"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitRegistered"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorAdmitted"
+        },
+        {
+          "kind": "event",
+          "name": "gatepass.visit.VisitorDeparted"
+        },
+        {
+          "kind": "error",
+          "name": "gatepass.visit.VisitStateConflict"
         },
         {
           "kind": "actor",

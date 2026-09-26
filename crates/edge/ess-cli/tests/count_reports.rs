@@ -98,7 +98,7 @@ fn count_cli_preserves_default_bytes_and_standalone_detailed_pairing() {
         )
         .unwrap();
         let report = ess_conformance::CountReport::from_json(&text, &suite).unwrap();
-        assert_eq!(report.counts().passed, 29);
+        assert_eq!(report.counts().passed, 32);
         assert_eq!(
             report.conformance_status(),
             ess_conformance::CountStatus::Inconclusive

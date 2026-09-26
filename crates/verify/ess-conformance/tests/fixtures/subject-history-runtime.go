@@ -15,6 +15,11 @@ func (*historyBackend) ConfigureExternalOutcome(ExternalOutcomeControl) error { 
 func (b *historyBackend) ExecuteCommand(r CommandRequest) (CommandResult,error) {
  result:=CommandResult{Consistency:"1"}
  emit:=func(name string,payload map[string]Node) { result.DirectEvents=[]ObservedEvent{{Event:"calls.core."+name,Payload:payload}} }
+ // The unknown-instance rule: every command here declares `wrong_state` (`gone`), so one no
+ // record carries is answered with it.
+ if r.Command!="calls.core.Open" && (b.row==nil || r.Input["call_id"]!=b.row["call_id"]) {
+  result.Outcome="gone";result.Error="calls.core.Gone";return result,nil
+ }
  switch r.Command {
  case "calls.core.Open":
   b.row=map[string]Node{"call_id":"00000000-0000-4000-8000-000000000001","state":"Init","answer_history":"Unanswered","note":r.Input["note"],"server_stamp":json.Number("9007199254740992")}

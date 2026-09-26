@@ -28,6 +28,12 @@ func (b *subjectBackend) ExecuteCommand(r CommandRequest) (CommandResult, error)
 		branch, event, payload = "opened", "calls.core.Opened", map[string]Node{"call_id": subjectID}
 	case "calls.core.Bridge", "calls.core.Report":
 		if b.row == nil || r.Input["call_id"] != b.row["call_id"] {
+			// The unknown-instance rule: a command declaring `wrong_state` answers it for an
+			// identity no record carries. Report declares none, so it answers nothing.
+			if r.Command == "calls.core.Bridge" {
+				b.sequence++
+				return CommandResult{Outcome: "already-bridged", Consistency: fmt.Sprintf("seq:%d", b.sequence)}, nil
+			}
 			return CommandResult{}, nil
 		}
 		held := b.row["state"]

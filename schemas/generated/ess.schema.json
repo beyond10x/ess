@@ -2243,6 +2243,22 @@
           "type": "string"
         },
         {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
           "$ref": "#/definitions/ExplicitPayloadSource"
         }
       ]

@@ -13,6 +13,9 @@ class Backend {
     if (command === 'calls.core.Open') {
       this.row = {call_id:'00000000-0000-4000-8000-000000000001',state:'Init',answer_history:'Unanswered',note:input.note,server_stamp:new JsonNumber("9007199254740992")};
       result.outcome='opened';emit('Opened',{call_id:this.row.call_id});
+    } else if (!this.row || input.call_id !== this.row.call_id) {
+      // The unknown-instance rule: every command here declares `wrong_state` (`gone`).
+      result.outcome='gone';result.error='calls.core.Gone';
     } else if (this.row.state === 'Ended') {
       result.outcome='gone';result.error='calls.core.Gone';
     } else if (command === 'calls.core.Answer') {

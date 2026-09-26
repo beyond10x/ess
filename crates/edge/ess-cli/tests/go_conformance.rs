@@ -172,7 +172,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     assert!(passed, "a correct implementation did not pass:\n{printed}");
     assert_eq!(
         scenarios(&printed, "PASS").len(),
-        30,
+        33,
         "every scenario must run, and a suite that skipped them all would also pass:\n{printed}"
     );
 
@@ -181,7 +181,7 @@ fn the_emitted_package_holds_a_correct_go_implementation_to_the_whole_suite() {
     // rather than against a constant.
     let written = report(&directory);
     assert_eq!(written.status, VerificationStatus::Passed);
-    assert_eq!(written.scenarios_total, 30);
+    assert_eq!(written.scenarios_total, 33);
     assert_eq!(written.scenarios_failed, 0);
     assert!(written.failed_scenarios.is_empty());
     assert_eq!(written.spec_digest.as_str(), suite_digest(&directory));
@@ -227,7 +227,7 @@ fn one_deliberate_defect_fails_the_scenarios_responsible_for_it_and_no_others() 
     // The report names the same thirteen, as failures, and calls the run failed.
     let written = report(&directory);
     assert_eq!(written.status, VerificationStatus::Failed);
-    assert_eq!(written.scenarios_total, 30);
+    assert_eq!(written.scenarios_total, 33);
     assert_eq!(written.scenarios_failed, 13);
     let named: Vec<String> = scenarios(&printed, "FAIL")
         .into_iter()
@@ -727,12 +727,12 @@ func TestConformance(t *testing.T) { essconform.Run(t, func() essconform.Target 
         "{raw}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(scenarios(&raw, "SKIP").len(), 30, "{raw}");
+    assert_eq!(scenarios(&raw, "SKIP").len(), 33, "{raw}");
     let text = std::fs::read_to_string(report_path(&directory)).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["format"], "ess-conformance-report/2", "{text}");
     assert_eq!(value["counts"]["failed"], 0);
-    assert_eq!(value["counts"]["skipped"], 30);
+    assert_eq!(value["counts"]["skipped"], 33);
     assert_eq!(value["execution_status"], "inconclusive");
     assert_eq!(value["conformance_status"], "inconclusive");
 }

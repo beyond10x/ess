@@ -231,6 +231,37 @@ pub struct Synthesis {
     /// rather than dropped for the reason refusals are listed: a suite that quietly holds fewer
     /// checks than the specification demands is the one failure a passing run cannot show.
     pub outside: Vec<Outside>,
+    /// What the specification leaves undeclared that no scenario can therefore hold an
+    /// implementation to, in the order the model declares the constructs.
+    ///
+    /// Not a refusal either: a refusal is a construct the specification states and this suite
+    /// cannot check, and a note is a question the specification does not answer at all. Listed
+    /// for the reason both of the others are — a silence is invisible in a passing run.
+    pub notes: Vec<Note>,
+}
+
+/// A question the specification leaves unanswered, so that no scenario is owed for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Note {
+    /// A command acting on an input-named instance declares no `wrong_state` outcome, so what it
+    /// answers when that identity names no record is undeclared
+    /// (`docs/design/typed-literals-and-unknown-instances.md`, section 2).
+    UnknownInstanceUnanswered {
+        /// The command.
+        command: CommandRef,
+    },
+}
+
+impl fmt::Display for Note {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownInstanceUnanswered { command } => write!(
+                f,
+                "`{command}` declares no `wrong_state` outcome, so what it answers when its \
+                 `instance:` names no record is undeclared and not checked"
+            ),
+        }
+    }
 }
 
 impl Synthesis {
@@ -1175,20 +1206,20 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
             suite,
             refusals,
             outside: Vec::new(),
+            notes: Vec::new(),
         };
     }
     let actors = granted_actors(ir);
 
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
-            // A wrong-state branch gets no scenario of its own, and this is the one place in the
-            // file where "no scenario" is neither a refusal nor a defect. §10 asks for one scenario
-            // per *reachable* outcome, and the states this branch is reachable in are exactly the
-            // ones the illegal-move family below already enumerates — one scenario each, against an
-            // instance the arrangement really drove there. A ninth `/outcome/` scenario would have
-            // had to pick one of those states arbitrarily and would assert a strict subset of what
-            // the eight already assert. `wrong_state_is_covered_by_the_illegal_move_family` in
-            // `tests/synthesis.rs` is what keeps that a claim rather than a hope.
+            // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
+            // *reachable* outcome, and the states this branch is reachable in are exactly the ones
+            // the illegal-move family below already enumerates — one scenario each, against an
+            // instance the arrangement really drove there; one more picking one of those states
+            // would assert a strict subset of what they assert. Its own `/outcome/` id is filed
+            // by `unknown_instances` instead, for the one case that family cannot arrange: an
+            // identity naming no record (beyond10x/ess#113).
             if outcome.condition == ResolvedCondition::WrongState {
                 continue;
             }
@@ -1202,6 +1233,8 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     }
     lifecycle(ir, &actors, &mut suite, &mut refusals);
     state_refusals(ir, &actors, &mut suite, &mut refusals);
+    let mut notes = Vec::new();
+    unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
@@ -1211,6 +1244,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
         suite,
         refusals,
         outside: Vec::new(),
+        notes,
     }
 }
 
@@ -1274,6 +1308,7 @@ pub fn synthesize_for(ir: &EssIr, component: &str) -> Result<Synthesis, UnknownC
         suite,
         refusals: whole.refusals,
         outside,
+        notes: whole.notes,
     })
 }
 
@@ -4600,6 +4635,203 @@ fn refused_here(
         (None, false) => format!("`{command}` does not move a `{entity}` that is in `{state}`"),
     };
     Some(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// The input field naming the existing instance a branch acts on, where it acts on one.
+///
+/// A `moves:` or `updates:` branch whose `instance:` is read from input: the only branches an
+/// identity naming no record can reach. A creating branch makes its record, a refusal names none,
+/// and an observed identity is not chosen by the caller.
+fn names_existing(outcome: &ResolvedOutcome) -> Option<&str> {
+    let subject = outcome.subject.as_ref()?;
+    if !matches!(
+        subject.effect,
+        ResolvedEffect::Moves { .. } | ResolvedEffect::Updates
+    ) {
+        return None;
+    }
+    match &subject.instance {
+        ResolvedInstance::Supplied { field } => Some(field.name.as_str()),
+        ResolvedInstance::Observed { .. } => None,
+    }
+}
+
+/// The unknown-instance rule, witnessed once per command that declares `wrong_state`
+/// (`docs/design/typed-literals-and-unknown-instances.md`, section 2).
+///
+/// A command whose input selects a branch acting on an existing instance, and whose `instance:`
+/// names no record, answers its `wrong_state` branch. The scenario is filed under that branch's own
+/// outcome id, which no scenario held before: the states the branch answers in are the
+/// illegal-move family's, one scenario each, and this is the one case that family cannot arrange.
+///
+/// A command acting on an input-named instance and declaring no `wrong_state` has no declared
+/// answer, and gets a [`Note`] — not a refusal, because the specification states nothing here
+/// that is left unwitnessed.
+fn unknown_instances(
+    ir: &EssIr,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
+) {
+    for command in ir.commands().values() {
+        let acting: Vec<&ResolvedOutcome> = command
+            .outcomes
+            .iter()
+            .filter(|outcome| names_existing(outcome).is_some())
+            .collect();
+        if acting.is_empty() {
+            continue;
+        }
+        let command_ref = CommandRef::new(command.name.clone());
+        let Some(declared) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.condition == ResolvedCondition::WrongState)
+        else {
+            notes.push(Note::UnknownInstanceUnanswered {
+                command: command_ref,
+            });
+            continue;
+        };
+        let id = ScenarioId::Outcome {
+            outcome: OutcomeRef::new(command_ref, declared.name.clone()),
+        };
+        match unknown_instance(ir, command, &acting, declared, actors) {
+            Ok(scenario) => insert(suite, id, scenario, refusals),
+            Err(cause) => refusals.push(Refusal::about(&id, cause)),
+        }
+    }
+}
+
+/// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
+///
+/// The input is the one that reaches a branch acting on an existing instance, for the reason
+/// [`refused_here`] gives: a branch decided by input first (`PayInvoice/rejected`) answers its
+/// own error whatever the instance names, and sending that input would prove nothing about the
+/// rule. The identity in it is then replaced by one no other scenario sends.
+fn unknown_instance(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    acting: &[&ResolvedOutcome],
+    declared: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<ConformanceScenario, RefusalCause> {
+    let mut last = None;
+    let mut reached = None;
+    for outcome in acting {
+        match reach(ir, command, outcome, Distinction::PLAIN) {
+            Ok(input) => {
+                reached = Some((*outcome, input));
+                break;
+            }
+            Err(cause) => last = Some(cause),
+        }
+    }
+    let Some((attempt, mut input)) = reached else {
+        return Err(last.unwrap_or(RefusalCause::StrategyWithoutGuard {
+            strategy: declared.test_strategy,
+        }));
+    };
+    let field = names_existing(attempt).unwrap_or_default();
+    input.insert(field.to_owned(), fresh_identity(ir, command, field)?);
+
+    let command_ref = CommandRef::new(command.name.clone());
+    let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
+    let mut steps = vec![
+        ScenarioStep::ExecuteCommand {
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: supply(&input, None, None, &BTreeMap::new()),
+        },
+        ScenarioStep::ExpectOutcome {
+            outcome: branch.clone(),
+        },
+    ];
+    let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
+    source.insert(command_ref.into());
+    source.insert(branch.into());
+    if let Some(subject) = &attempt.subject {
+        source.insert(EntityRef::from(&subject.entity).into());
+    }
+    if let Some(actor) = actors.get(&command.name) {
+        source.insert(actor.clone().into());
+    }
+    let reported = declared
+        .error
+        .as_ref()
+        .filter(|_| declared.refuses)
+        .map(|error| {
+            let named = ErrorRef::from(error);
+            steps.push(ScenarioStep::ExpectError {
+                error: named.clone(),
+                fields: BTreeMap::new(),
+            });
+            source.insert(named.clone().into());
+            named
+        });
+    let forbidden = not_emitted(ir, &[]);
+    for event in &forbidden {
+        steps.push(ScenarioStep::ExpectNoEvent {
+            event: event.clone(),
+        });
+    }
+    source.extend(forbidden.into_iter().map(EssSemanticRef::from));
+
+    let text = match &reported {
+        Some(error) => format!(
+            "`{}` for an identity no record carries takes `{}` and reports `{error}`",
+            command.name, declared.name
+        ),
+        None => format!(
+            "`{}` for an identity no record carries takes `{}`",
+            command.name, declared.name
+        ),
+    };
+    Ok(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// A value of the identity field that no other scenario sends.
+///
+/// The witness at [`Distinction::UNKNOWN`], checked against the witness at every distinction an
+/// arrangement numbers. Where the type has too few values to keep it apart — a `Boolean`, a
+/// `Timestamp` a month wide — no identity is known to name no record on a target the scenarios
+/// share, and the scenario is refused rather than asserted on a record another scenario made.
+fn fresh_identity(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+) -> Result<Node, RefusalCause> {
+    let at = |distinction: Distinction| {
+        candidates(ir, command, &[], distinction)
+            .map_err(RefusalCause::NoWitness)
+            .map(|inputs| {
+                inputs
+                    .into_iter()
+                    .next()
+                    .and_then(|input| input.get(field).cloned())
+            })
+    };
+    let unfresh = || {
+        RefusalCause::NoWitness(WitnessGap {
+            path: field.to_owned(),
+            type_ref: command
+                .input
+                .iter()
+                .find(|input| input.name == field)
+                .map(|input| input.type_ref.to_string())
+                .unwrap_or_default(),
+            reason: "has too few values to name an identity no other scenario sends, so no \
+                     instance is known to be unknown",
+        })
+    };
+    let fresh = at(Distinction::UNKNOWN)?.ok_or_else(unfresh)?;
+    for nth in 0..=MAX_CANDIDATES {
+        if at(Distinction::further(nth))?.as_ref() == Some(&fresh) {
+            return Err(unfresh());
+        }
+    }
+    Ok(fresh)
 }
 
 /// One line saying which move a transition scenario proves, and by which verb.

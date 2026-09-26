@@ -3654,9 +3654,14 @@ fn payload_constant_source(
     source: &PayloadSource,
 ) -> Option<ResolvedPayloadField> {
     let value = match source {
-        PayloadSource::Literal { value } => ResolvedPayloadValue::Literal {
-            value: value.clone(),
-        },
+        // An unquoted scalar compiles to its quoted form's bytes: which of the two an author wrote
+        // is a reading of the document, not a fact of the model
+        // (`docs/design/typed-literals-and-unknown-instances.md`).
+        PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. } => {
+            ResolvedPayloadValue::Literal {
+                value: value.clone(),
+            }
+        }
         PayloadSource::Generated => ResolvedPayloadValue::Generated,
         PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
         PayloadSource::InputField { .. } | PayloadSource::ResponseField { .. } => return None,

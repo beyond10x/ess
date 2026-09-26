@@ -140,7 +140,7 @@ fn coverage_all_missing_invariants_keep_null_survivors_and_component_proofs_stay
         .unwrap();
     let inventory = input.selected().coverage().unwrap();
     assert_eq!(inventory.counts.refused, 4);
-    assert_eq!(inventory.counts.generated, 25);
+    assert_eq!(inventory.counts.generated, 28);
     for refusal in &inventory.refused {
         assert_eq!(refusal.code, "ESS-SYNTH-011");
         assert_eq!(refusal.effect, Effect::CheckNotEmitted);
@@ -163,7 +163,7 @@ fn coverage_all_missing_invariants_keep_null_survivors_and_component_proofs_stay
     .unwrap();
     let inventory = input.selected().coverage().unwrap();
     assert_eq!(inventory.counts.generated, 2);
-    assert_eq!(inventory.counts.outside, 27);
+    assert_eq!(inventory.counts.outside, 30);
     assert_eq!(inventory.counts.refused, 4);
     assert!(inventory
         .refused
@@ -205,7 +205,7 @@ fn coverage_builder_records_the_complete_generated_inventory_and_component_omiss
         old.suite.scenarios.keys().cloned().collect::<Vec<_>>()
     );
     assert_eq!(inventory.refused.len(), old.refusals.len());
-    assert_eq!(inventory.generated.len(), 29);
+    assert_eq!(inventory.generated.len(), 32);
     assert!(inventory.is_complete());
     let old_component = synthesize_for(&ir, "invoice-service").unwrap();
     let component = build(
@@ -540,12 +540,19 @@ fn every_declared_outcome_is_either_a_scenario_or_a_named_refusal_or_asserted_by
         "an outcome that is neither in the suite, nor in a refusal, nor asserted by the \
          illegal-move family has disappeared"
     );
+    // Since beyond10x/ess#113 a wrong-state branch has an `/outcome/` scenario of its own too: the
+    // unknown-instance witness, which the illegal-move family cannot arrange. So every declared
+    // outcome is now a scenario, the three wrong-state ones included.
+    assert!(
+        wrong_state.is_subset(&ids(&synthesis).into_iter().collect()),
+        "each wrong-state branch is witnessed on an unknown instance: {wrong_state:?}"
+    );
     assert_eq!(
         ids(&synthesis)
             .iter()
             .filter(|id| id.contains("/outcome/"))
             .count(),
-        declared.len() - wrong_state.len(),
+        declared.len(),
         "and every outcome an input can reach is a scenario rather than a refusal: {:?}",
         refused(&synthesis)
     );
@@ -639,10 +646,14 @@ fn a_declared_error_is_asserted_by_name_and_never_by_an_invented_payload() {
         named,
         vec![
             "billing.email.Undeliverable",
+            // `CancelInvoice` for an invoice no record carries (beyond10x/ess#113).
+            "billing.invoice.InvoiceStateConflict",
             "billing.invoice.InvalidAmount",
             // Eight of these, one per illegal-move scenario: `InvoiceStateConflict` is what the
             // three lifecycle commands declare they answer with when the invoice is somewhere they
-            // do not act from, and asserting it is the whole point of `wrong_state:`.
+            // do not act from, and asserting it is the whole point of `wrong_state:`. The ninth
+            // is `IssueInvoice` for an invoice no record carries.
+            "billing.invoice.InvoiceStateConflict",
             "billing.invoice.InvoiceStateConflict",
             "billing.invoice.InvoiceStateConflict",
             "billing.invoice.InvoiceStateConflict",
@@ -652,6 +663,8 @@ fn a_declared_error_is_asserted_by_name_and_never_by_an_invented_payload() {
             "billing.invoice.InvoiceStateConflict",
             "billing.invoice.InvoiceStateConflict",
             "billing.invoice.InvalidAmount",
+            // `PayInvoice` for an invoice no record carries.
+            "billing.invoice.InvoiceStateConflict",
         ],
         "every refusal branch names its declared error"
     );
@@ -2648,7 +2661,8 @@ fn each_example_synthesises_the_families_its_specification_declares() {
         (
             "billing",
             [
-                ("/outcome/", 8),
+                // Eight branches and the three wrong-state ones, each on an unknown instance.
+                ("/outcome/", 11),
                 ("/transition/", 3),
                 ("/state/", 8),
                 ("/invariant/", 6),
@@ -2659,7 +2673,8 @@ fn each_example_synthesises_the_families_its_specification_declares() {
         (
             "oracle-fixture",
             [
-                ("/outcome/", 9),
+                // Nine branches and the three wrong-state ones, each on an unknown instance.
+                ("/outcome/", 12),
                 ("/transition/", 3),
                 ("/state/", 8),
                 ("/invariant/", 0),

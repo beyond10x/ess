@@ -816,6 +816,19 @@ pub enum PayloadSource {
         /// The value, as written.
         value: String,
     },
+    /// A literal written as an unquoted YAML boolean, integer or decimal: `items: 0`.
+    ///
+    /// Kept apart from [`Literal`](Self::Literal) only until it is checked, because the rule that
+    /// types it needs the YAML type: `0` over a `String` is refused with the quoted spelling as its
+    /// repair, where `'0'` over a `String` is the text `0`. Once admitted it compiles to exactly
+    /// what its quoted form does — `value` is that form's text — so no IR byte depends on which of
+    /// the two an author wrote (`docs/design/typed-literals-and-unknown-instances.md`).
+    Scalar {
+        /// The canonical text of the scalar: `false`, `0`, `-3`, `1.5`.
+        value: String,
+        /// Which YAML scalar it was written as.
+        scalar: ScalarKind,
+    },
     /// The branch leaves this field holding NOTHING: `{cleared: true}`.
     ///
     /// An entity source only, and refused on an event payload — an event field the emitter has no
@@ -856,11 +869,33 @@ impl fmt::Display for PayloadSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InputField { field } => write!(f, "{}{field}", Self::INPUT_PREFIX),
-            Self::Literal { value } => f.write_str(value),
+            Self::Literal { value } | Self::Scalar { value, .. } => f.write_str(value),
             Self::ResponseField { field } => write!(f, "response field `{field}`"),
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
         }
+    }
+}
+
+/// The YAML scalar a [`PayloadSource::Scalar`] was written as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScalarKind {
+    /// `true` or `false`.
+    Boolean,
+    /// A whole number: `0`, `-3`.
+    Integer,
+    /// A number with a fraction or an exponent: `1.5`, `3.0`.
+    Decimal,
+}
+
+impl fmt::Display for ScalarKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Decimal => "decimal",
+        })
     }
 }
 
@@ -878,6 +913,10 @@ pub struct PayloadField {
 #[serde(untagged)]
 enum RawPayloadSource {
     Text(String),
+    Boolean(bool),
+    Integer(i64),
+    Unsigned(u64),
+    Decimal(f64),
     Explicit(ExplicitPayloadSource),
 }
 
@@ -892,12 +931,31 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(
-                    "a string, `{response: <field>}`, `{generated: true}`, or `{cleared: true}`",
+                    "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
+                     or `{cleared: true}`",
                 )
             }
 
             fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
                 Ok(RawPayloadSource::Text(value.to_owned()))
+            }
+
+            // The scalars are read rather than refused so the rule that types a literal can say
+            // what to write instead — `quote it: items: '0'` — which a reader error cannot.
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Boolean(value))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Integer(value))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Unsigned(value))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                Ok(RawPayloadSource::Decimal(value))
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
@@ -929,6 +987,26 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
     fn try_from(raw: RawPayloadSource) -> Result<Self, Self::Error> {
         match raw {
             RawPayloadSource::Text(value) => Ok(Self::parse(&value)),
+            RawPayloadSource::Boolean(value) => Ok(Self::Scalar {
+                value: value.to_string(),
+                scalar: ScalarKind::Boolean,
+            }),
+            RawPayloadSource::Integer(value) => Ok(Self::Scalar {
+                value: value.to_string(),
+                scalar: ScalarKind::Integer,
+            }),
+            RawPayloadSource::Unsigned(value) => Ok(Self::Scalar {
+                value: value.to_string(),
+                scalar: ScalarKind::Integer,
+            }),
+            // Written by `serde_json`'s shortest round-trip form, so `3.0` stays `3.0` rather than
+            // becoming the `3` an `Integer` would accept.
+            RawPayloadSource::Decimal(value) => serde_json::Number::from_f64(value)
+                .map(|number| Self::Scalar {
+                    value: number.to_string(),
+                    scalar: ScalarKind::Decimal,
+                })
+                .ok_or("a decimal literal must be a finite number"),
             RawPayloadSource::Explicit(ExplicitPayloadSource {
                 response: Some(field),
                 generated: None,
@@ -969,6 +1047,19 @@ impl From<&PayloadSource> for RawPayloadSource {
                 generated: None,
                 cleared: Some(true),
             }),
+            // Written back as the scalar it was read as, so a document round-trips to its own
+            // YAML type. The text is this type's own rendering, so each parse succeeds.
+            PayloadSource::Scalar { value, scalar } => match scalar {
+                ScalarKind::Boolean => Self::Boolean(value == "true"),
+                ScalarKind::Integer => value
+                    .parse()
+                    .map(Self::Integer)
+                    .or_else(|_| value.parse().map(Self::Unsigned))
+                    .unwrap_or_else(|_| Self::Text(value.clone())),
+                ScalarKind::Decimal => value
+                    .parse()
+                    .map_or_else(|_| Self::Text(value.clone()), Self::Decimal),
+            },
             _ => Self::Text(source.to_string()),
         }
     }
@@ -2286,7 +2377,19 @@ fn check_payload_entry(
         }
         PayloadSource::Literal { value } => {
             errors.extend(check_payload_literal(
-                at, command, event, target, filled, value, resolved,
+                at, command, event, target, filled, value, None, resolved,
+            ));
+        }
+        PayloadSource::Scalar { value, scalar } => {
+            errors.extend(check_payload_literal(
+                at,
+                command,
+                event,
+                target,
+                filled,
+                value,
+                Some(*scalar),
+                resolved,
             ));
         }
         PayloadSource::Cleared => {
@@ -2440,25 +2543,23 @@ pub fn validate_sets(
                     errors.extend(check_cleared_target(at, &entity.name, target, held));
                     continue;
                 }
-                if let PayloadSource::Literal { value } = source {
-                    // The same rule a payload literal is held to, against the entity's field
-                    // instead of the event's. It used to say it was checked "where a payload
-                    // literal is", and it was not: `literal_representation` was reachable from the
-                    // payload path alone, so a literal set on a `Boolean` or a struct compiled
-                    // clean and the synthesizer abstained on it in silence.
-                    if let Some(refusal) = literal_representation(
-                        &entity.name,
-                        target,
-                        held,
-                        value,
-                        "`sets:` entry",
-                        command,
-                        Resolved {
-                            types,
-                            conversions,
-                            inhabitation: &inhabitation,
-                        },
-                    ) {
+                // The same rule a payload literal is held to, against the entity's field instead of
+                // the event's. It used to say it was checked "where a payload literal is", and it
+                // was not: `literal_representation` was reachable from the payload path alone, so a
+                // literal set on a `Boolean` or a struct compiled clean and the synthesizer
+                // abstained on it in silence.
+                if matches!(
+                    source,
+                    PayloadSource::Literal { .. } | PayloadSource::Scalar { .. }
+                ) {
+                    let resolved = Resolved {
+                        types,
+                        conversions,
+                        inhabitation: &inhabitation,
+                    };
+                    if let Some(refusal) =
+                        sets_literal(&entity.name, target, held, source, command, resolved)
+                    {
                         errors.push(
                             ValidationError::new(ValidationCode::TypeMismatch, at, refusal.reason)
                                 .with_hint(refusal.hint),
@@ -2502,6 +2603,29 @@ pub fn validate_sets(
 
 /// Checks that every required field an entity invariant reads is set by every branch creating it.
 ///
+/// The literal rule for one `sets:` entry, and `None` for a source that is no literal. An unquoted
+/// scalar is typed by the same rule as quoted text, with the YAML type it was written as
+/// (beyond10x/ess#113).
+fn sets_literal(
+    entity: &QualifiedName,
+    target: &str,
+    held: &Field,
+    source: &PayloadSource,
+    command: &CommandSpec,
+    resolved: Resolved<'_>,
+) -> Option<LiteralRefusal> {
+    let place = "`sets:` entry";
+    match source {
+        PayloadSource::Literal { value } => {
+            literal_representation(entity, target, held, value, place, command, resolved)
+        }
+        PayloadSource::Scalar { value, scalar } => scalar_representation(
+            entity, target, held, value, *scalar, place, command, resolved,
+        ),
+        _ => None,
+    }
+}
+
 /// A `creates:` branch that does not name a field in `sets:` leaves it with no specified value, so
 /// an invariant reading it holds only if the implementation happens to choose a value satisfying it
 /// — and the generated "still satisfies what it declares" scenario then passes or fails on that
@@ -2595,6 +2719,9 @@ pub fn validate_created_invariant_fields(
 /// other prefix: a reference meant and text written. `amount: amount` names the input without its
 /// prefix; `amount: inptu.amount` misspells the prefix; and a well-meant literal still has to be
 /// spellable as the field's representation, which only text and an enum variant are.
+/// `scalar` is the YAML type an unquoted literal was written as, and `None` for quoted text. An
+/// unquoted number or boolean cannot be a misspelled `input.<field>`, so only text is read for one.
+#[allow(clippy::too_many_arguments)]
 fn check_payload_literal(
     at: &ConstructRef,
     command: &CommandSpec,
@@ -2602,6 +2729,7 @@ fn check_payload_literal(
     target: &str,
     filled: &Field,
     value: &str,
+    scalar: Option<ScalarKind>,
     resolved: Resolved<'_>,
 ) -> ValidationErrors {
     use crate::binding::{is_field_name, near_miss};
@@ -2609,7 +2737,7 @@ fn check_payload_literal(
     let mut errors = ValidationErrors::new();
     let prefix = PayloadSource::INPUT_PREFIX;
 
-    if command.input_field(value).is_some() {
+    if scalar.is_none() && command.input_field(value).is_some() {
         errors.push(
             ValidationError::at(
                 at.clone(),
@@ -2627,7 +2755,7 @@ fn check_payload_literal(
         return errors;
     }
 
-    if let Some((written, rest)) = value.split_once('.') {
+    if let Some((written, rest)) = value.split_once('.').filter(|_| scalar.is_none()) {
         let meant_input = near_miss(written, "input") && is_field_name(rest);
         // `event.amount` in a payload is the binding's prefix carried over: it reads nothing here,
         // because the event is what is being *filled*.
@@ -2651,15 +2779,28 @@ fn check_payload_literal(
         }
     }
 
-    if let Some(refusal) = literal_representation(
-        &event.name,
-        target,
-        filled,
-        value,
-        "payload",
-        command,
-        resolved,
-    ) {
+    let refusal = match scalar {
+        Some(scalar) => scalar_representation(
+            &event.name,
+            target,
+            filled,
+            value,
+            scalar,
+            "payload",
+            command,
+            resolved,
+        ),
+        None => literal_representation(
+            &event.name,
+            target,
+            filled,
+            value,
+            "payload",
+            command,
+            resolved,
+        ),
+    };
+    if let Some(refusal) = refusal {
         errors.push(
             ValidationError::at(at.clone(), ValidationCode::TypeMismatch, refusal.reason)
                 .with_hint(refusal.hint),
@@ -2752,6 +2893,49 @@ fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'s
         | Primitive::Bytes => return Err(None),
     };
     Err(Some(spelling))
+}
+
+/// Whether an unquoted YAML scalar can be the value of `held`, a field of `owner`.
+///
+/// Decided by the quoted form, and the only thing the YAML type changes is the repair. Over a
+/// primitive the quoted form's own rule is the whole answer: `paused: false` over a `Boolean` is
+/// admitted as `"false"` is, and `paused: 1` is refused as `"1"` is, with the hint that says what
+/// the field takes — quoting it would not help. Over text or an enum the quoted form may well be
+/// admitted — `items: 0` over a `String` is the text `0` once quoted — so the author meant the
+/// text and one pair of quotes is the fix, and the refusal spells it
+/// (`docs/design/typed-literals-and-unknown-instances.md`).
+///
+/// A decimal is never admitted: [`primitive_literal`] claims no spelling for `Decimal`, for the
+/// reason it gives, and a scalar compiling where its quoted form does not would put a second rule
+/// into the model.
+#[allow(clippy::too_many_arguments)]
+fn scalar_representation(
+    owner: &QualifiedName,
+    target: &str,
+    held: &Field,
+    value: &str,
+    scalar: ScalarKind,
+    place: &str,
+    command: &CommandSpec,
+    resolved: Resolved<'_>,
+) -> Option<LiteralRefusal> {
+    use crate::binding::{representation, Representation, Resolution};
+
+    let quoted = literal_representation(owner, target, held, value, place, command, resolved);
+    match representation(&held.type_ref, resolved.types, resolved.inhabitation) {
+        Resolution::Established(Representation::Primitive(_)) => quoted,
+        // Deferred exactly as the quoted form defers: another pass reports the type itself.
+        Resolution::Undeclared | Resolution::Uninhabited => None,
+        _ => quoted.or_else(|| {
+            Some(LiteralRefusal {
+                reason: format!(
+                    "`{owner}.{target}` is `{}`, and `{value}` is written as a YAML {scalar}",
+                    held.type_ref
+                ),
+                hint: format!("quote it: `{target}: '{value}'`"),
+            })
+        }),
+    }
 }
 
 /// Whether `value` can be written as the literal value of `held`, a field of `owner`.

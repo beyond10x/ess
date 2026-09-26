@@ -219,6 +219,12 @@ Or declare the field `Optional<…>` if an instance may lack it. The identity, t
 and `Optional` fields are never asked for. A field an invariant reads anywhere counts, including
 inside `any:`.
 
+A literal in `sets:` or `payload:` may also be written as the YAML value it means:
+`reminder_count: 0` over an `Integer` and `paused: false` over a `Boolean` compile to exactly what
+`"0"` and `"false"` do. An unquoted number or boolean over a text field or an enum is refused with
+the repair, `quote it: label: '0'`. Over any other type it gets the same refusal as its quoted form.
+A decimal such as `1.5` is never a literal, quoted or not; read it from an input.
+
 ### Cover every declared enum value
 
 Since 0.23.0 a command may omit its default when its input guards
@@ -432,6 +438,22 @@ One key and one error name — everything else is derived:
 `wrong_state:` names no state: `issue` already declares it runs from `Draft`, so the refused states
 are derived. The `error:` is required — without it a generated scenario could only assert that
 *nothing happened*, which also passes against an implementation refusing for the wrong reason.
+
+The same branch answers an **unknown instance**. When the input selects a `moves:` or `updates:`
+branch and its `instance:` names no record, the command answers its `wrong_state` outcome. Input
+guards are decided first, so `PayInvoice` with a non-positive amount still answers `rejected`
+whatever invoice it names. The suite checks this once per command that declares `wrong_state`, with
+an identity no other scenario sends, under the branch's own id (`…IssueInvoice/outcome/wrong-state`).
+It requires the branch, its error by name and no error field, and that no declared event is
+published. A command that acts on an input-named instance and declares no `wrong_state` has no
+declared answer. `ess verify conform synthesize` prints a `note:` for it, not a refusal.
+
+An error field that describes the current state, such as `InvoiceStateConflict.state`, has no value
+for an instance that does not exist. The generated Rust and Go behaviour seams require that field on
+their `wrong-state` variant, so a realization written against them cannot give this answer through
+the seam. `examples/gatepass-realization` answers `501` with an unmet obligation instead, which is
+not the declared branch. The billing realization's conformance adapter answers the rule itself,
+before the seam.
 
 ### An event's values need a declared source
 
