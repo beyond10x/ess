@@ -255,7 +255,10 @@
             "instance": "parent_id",
             "emits": [
               "model.data.Created"
-            ]
+            ],
+            "sets": {
+              "amount": "0"
+            }
           }
         ]
       },

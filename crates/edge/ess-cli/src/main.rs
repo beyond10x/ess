@@ -2009,27 +2009,72 @@ fn validate(path: &Path, format: Format) -> Result<ExitCode> {
     let Ok((ir, files_read)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
+    // The scenarios an `ess-inputs.yaml` lists, compiled against the model exactly as
+    // `synthesize --scenarios` compiles them before it runs, so a scenario that step would refuse
+    // is not validated green here (ess#112). Nothing is read when nothing is listed.
+    let authored = match input_discovery::listed_scenarios(path)? {
+        None => None,
+        Some(inputs) => {
+            let sources: Vec<_> = inputs.into_iter().map(authored_source).collect();
+            let refusals = ess_conformance::authored::compile(&ir, &sources).refusals;
+            Some((sources.len(), refusals))
+        }
+    };
+    let refusals = authored
+        .as_ref()
+        .map_or(&[][..], |(_, refusals)| refusals.as_slice());
+    let scenario_refusals: Vec<ScenarioRefusal> = refusals
+        .iter()
+        .map(|refusal| ScenarioRefusal {
+            code: refusal.code().to_string(),
+            origin: &refusal.origin,
+            scenario: refusal.scenario.as_ref().map(ToString::to_string),
+            message: refusal.to_string(),
+        })
+        .collect();
+    let valid = refusals.is_empty();
     let report = ValidationSummary {
-        valid: true,
+        valid,
         system: ir.system().to_string(),
         version: ir.version().to_string(),
         files_read,
+        scenarios: authored.as_ref().map(|(count, _)| *count),
         domains: ir.domains().len(),
         commands: ir.commands().len(),
         events: ir.events().len(),
         components: ir.components().len(),
         unresolved_references: &[],
+        scenario_refusals,
     };
     if matches!(format, Format::Text) {
-        println!(
-            "{} {} — {files_read} file(s), valid",
-            ir.system(),
-            ir.version()
-        );
+        let scenarios = report
+            .scenarios
+            .map_or_else(String::new, |count| format!(", {count} scenario(s)"));
+        if valid {
+            println!(
+                "{} {} — {files_read} file(s){scenarios}, valid",
+                ir.system(),
+                ir.version()
+            );
+        } else {
+            for refusal in refusals {
+                eprintln!("{refusal}");
+            }
+            eprintln!(
+                "{} {} — {files_read} file(s){scenarios}, {} scenario refusal(s)",
+                ir.system(),
+                ir.version(),
+                refusals.len()
+            );
+        }
     } else {
         render(&report, format)?;
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(if valid {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
 }
 
 fn compile(path: &Path, out: Option<&Path>, format: Format) -> Result<ExitCode> {
@@ -3188,10 +3233,12 @@ fn author_suite(
 fn authored_sources(scenarios: Option<&Path>) -> Result<Vec<ess_conformance::authored::Source>> {
     Ok(input_discovery::authored(scenarios, false)?
         .into_iter()
-        .map(|input| {
-            ess_conformance::authored::Source::new(input.origin.display().to_string(), input.text)
-        })
+        .map(authored_source)
         .collect())
+}
+
+fn authored_source(input: input_discovery::Input) -> ess_conformance::authored::Source {
+    ess_conformance::authored::Source::new(input.origin.display().to_string(), input.text)
 }
 
 #[derive(serde::Serialize)]
@@ -3220,11 +3267,27 @@ struct ValidationSummary<'a> {
     system: String,
     version: String,
     files_read: usize,
+    /// How many authored scenarios `ess-inputs.yaml` listed; absent when it listed none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenarios: Option<usize>,
     domains: usize,
     commands: usize,
     events: usize,
     components: usize,
     unresolved_references: &'a [&'a str],
+    /// Every listed scenario `synthesize --scenarios` would refuse, and why.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    scenario_refusals: Vec<ScenarioRefusal<'a>>,
+}
+
+/// One `ESS-AUTHOR-*` refusal of a listed scenario, as `validate --format json|yaml` reports it.
+#[derive(serde::Serialize)]
+struct ScenarioRefusal<'a> {
+    code: String,
+    origin: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenario: Option<String>,
+    message: String,
 }
 
 fn import(adapter: ImportAdapter) -> Result<ExitCode> {

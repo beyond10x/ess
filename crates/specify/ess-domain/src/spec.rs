@@ -357,6 +357,12 @@ impl Specification {
             &self.conversions,
         ));
 
+        // And what a creating branch leaves unset, against the invariants that read it.
+        errors.extend(crate::command::validate_created_invariant_fields(
+            &self.commands,
+            &self.entities,
+        ));
+
         errors.extend(crate::binding::validate_bindings_after(
             &self.bindings,
             &self.events,

@@ -98,12 +98,15 @@ entities:
     fields:
       - name: spec_digest
         type: toolchain.verify.SpecDigest
+      # The two counts are Optional because the synthesizer computes them and no input of
+      # `SynthesizeSuite` carries them, so no branch can set them, and an invariant over a required
+      # field nothing sets holds only by the implementation's choice (ess#112).
       - name: scenario_count
-        type: Integer
+        type: Optional<Integer>
       # What the synthesizer could not build a scenario for, reported beside the suite rather than
       # withheld. A suite with refusals is still written and still exits 0.
       - name: refusal_count
-        type: Integer
+        type: Optional<Integer>
 
     invariants:
       - scenario_count >= 0
@@ -168,8 +171,9 @@ entities:
         type: toolchain.verify.ModelRef
       - name: to_model
         type: toolchain.verify.ModelRef
+      # Optional for the reason `Suite`'s counts are: computed by the comparison, set by no branch.
       - name: breaking_count
-        type: Integer
+        type: Optional<Integer>
 
     invariants:
       - breaking_count >= 0
@@ -397,9 +401,9 @@ views:
       - name: suite
         type: toolchain.verify.SuiteRef
       - name: scenario_count
-        type: Integer
+        type: Optional<Integer>
       - name: refusal_count
-        type: Integer
+        type: Optional<Integer>
 
   # The rows an implementer works down. Read-your-writes, because a caller that has just concluded a
   # run and cannot see it here has been told a lie about what it did.
@@ -431,4 +435,4 @@ views:
       - name: to_model
         type: toolchain.verify.ModelRef
       - name: breaking_count
-        type: Integer
+        type: Optional<Integer>

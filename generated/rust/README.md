@@ -57,4 +57,4 @@ gains tomorrow is compared without anyone editing the comparison.
 | workspace | generated from | generated | obligations | refused | plan |
 | --- | --- | --- | --- | --- | --- |
 | [`billing/`](billing) | billing v3 (model digest aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3, contract digest 6ba34a27496cc918b55c749b45599c03b3016fed36487b1763268b95e0c6ffc6) | 33 | 8 | 4 | [`billing/PLAN.md`](billing/PLAN.md) |
-| [`gatepass/`](gatepass) | gatepass v1 (model digest f2e0f8ff51c077fa1c713d8151544379bafac36a5a927e71c685042d53ab6e61, contract digest e6e58e055d24f8f494dcff274f55e723d967f9d1f9aea16641bb8dacbb71171e) | 22 | 5 | 2 | [`gatepass/PLAN.md`](gatepass/PLAN.md) |
+| [`gatepass/`](gatepass) | gatepass v1 (model digest f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba, contract digest a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c) | 22 | 5 | 2 | [`gatepass/PLAN.md`](gatepass/PLAN.md) |

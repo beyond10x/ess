@@ -98,6 +98,8 @@ commands:
         instance: order_id
         emits:
           - oracle.order.OrderPlaced
+        sets:
+          weight_grams: input.weight_grams
         summary: The order is recorded, in Placed.
 
       - name: rejected

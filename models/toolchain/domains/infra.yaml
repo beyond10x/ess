@@ -245,6 +245,7 @@ commands:
             bundle: input.bundle
         sets:
           bundle: input.bundle
+          checked_count: "0"
         summary: The declared selection is compared with the observed workload templates.
 
   - name: toolchain.infra.ConcludeBindingCheck

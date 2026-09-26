@@ -2492,6 +2492,95 @@ pub fn validate_sets(
     errors
 }
 
+/// Checks that every required field an entity invariant reads is set by every branch creating it.
+///
+/// A `creates:` branch that does not name a field in `sets:` leaves it with no specified value, so
+/// an invariant reading it holds only if the implementation happens to choose a value satisfying it
+/// — and the generated "still satisfies what it declares" scenario then passes or fails on that
+/// undeclared choice (ess#112). The identity and `state` are always determined by the creation
+/// itself, and an `Optional<…>` field may be absent, so neither is asked for. Any read counts,
+/// including one under a disjunction: which side an unset value would take is again the
+/// implementation's choice.
+pub fn validate_created_invariant_fields(
+    commands: &BTreeMap<QualifiedName, CommandSpec>,
+    entities: &BTreeMap<QualifiedName, crate::entity::EntitySpec>,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    for command in commands.values() {
+        for outcome in &command.outcomes {
+            let Some(subject) = &outcome.subject else {
+                continue;
+            };
+            if subject.effect != Effect::Creates {
+                continue;
+            }
+            let Some(entity) = entities.get(&subject.entity) else {
+                continue;
+            };
+            for field in &entity.fields {
+                if field.type_ref.is_optional() || outcome.sets.contains_key(&field.name) {
+                    continue;
+                }
+                // Statements, not invariants: two copies of one statement are one reason.
+                let readers: BTreeSet<&str> = entity
+                    .invariants
+                    .iter()
+                    .filter(|invariant| {
+                        invariant
+                            .predicate
+                            .fact_paths()
+                            .iter()
+                            .any(|path| path.namespace() == field.name)
+                    })
+                    .map(|invariant| invariant.statement.as_str())
+                    .collect();
+                if readers.is_empty() {
+                    continue;
+                }
+                errors.push(
+                    ValidationError::at(
+                        command
+                            .site()
+                            .key("outcomes")
+                            .named(outcome.name.as_str())
+                            .key("creates"),
+                        ValidationCode::InvariantReadsUnsetField,
+                        format!(
+                            "outcome `{}` of `{}` creates `{}` without setting `{}`, which {} {} \
+                             reads; after this branch `{}` has no specified value, so the \
+                             invariant holds only if the implementation happens to pick one that \
+                             satisfies it",
+                            outcome.name,
+                            command.name,
+                            entity.name,
+                            field.name,
+                            if readers.len() == 1 {
+                                "the invariant"
+                            } else {
+                                "the invariants"
+                            },
+                            readers
+                                .iter()
+                                .map(|statement| format!("`{statement}`"))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            field.name,
+                        ),
+                    )
+                    .with_hint(format!(
+                        "set it on the outcome, with a literal (`sets: {{{name}: '0'}}` for a \
+                         number) or an input (`sets: {{{name}: input.<field>}}`); or declare the \
+                         field `Optional<{required}>` if an instance may lack it",
+                        name = field.name,
+                        required = field.type_ref.required(),
+                    )),
+                );
+            }
+        }
+    }
+    errors
+}
+
 /// A payload literal, against the representation of the event field it fills.
 ///
 /// The same three guards a binding's literal gets, because the mistake is the same one wearing the

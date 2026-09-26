@@ -66,10 +66,25 @@ generated/asyncapi/     unlisted generated YAML
 output/                 unlisted compiler and runner output
 ```
 
-`ess specify validate --path .` reads only the `specification` entries. Nested or renamed
+`ess specify validate --path .` assembles the `specification` entries. Nested or renamed
 headers work, and headerless fragments retain their existing meaning. The selected files must
 still assemble into one valid specification. Unlisted generated files, including malformed YAML
 or copies of model fragments, are never scanned. List order does not affect selection.
+
+When the `scenarios` list is nonempty, `validate` also compiles each listed scenario against the
+model with the checks `ess verify conform synthesize --scenarios .` applies before it runs. A
+scenario that step would refuse fails `validate` too, with the same `ESS-AUTHOR-*` refusal on
+stderr and exit code `1`. The summary counts what it checked:
+
+```shell-session
+$ ess specify validate --path .
+billing v3 — 5 file(s), 2 scenario(s), valid
+```
+
+With an empty `scenarios` list, or without a manifest, `validate` reads no scenarios and the
+summary does not mention them. `--format json` adds `scenarios`, the number listed, and
+`scenario_refusals`, one entry per refusal with its `code`, `origin`, `scenario` and `message`.
+Each key is present only when it has something to report.
 
 Both lists are required and checked for valid, distinct relative paths, even when one role is
 inactive. Only files in the active role must exist. An empty active list refuses. Paths are literal,
@@ -164,6 +179,27 @@ outcomes:
 
 A command with a precondition has at least two results. A specification recording only the happy one
 generates a suite that never checks the branch where the money does not move.
+
+### An invariant reads only what every creation sets
+
+An entity invariant that reads a required field needs every `creates:` branch of that entity to set
+the field. Without a value, `reminder_count >= 0` would hold only if the implementation happened to
+pick a value that satisfies it. `validate` refuses the gap with `ESS-COMMAND-018` at the creating
+outcome. The fix is to set the field there:
+
+```yaml
+- name: accepted
+  creates: billing.invoice.Invoice
+  instance: invoice_id
+  sets:
+    account_id: input.account_id
+    total: input.amount
+    reminder_count: "0"
+```
+
+Or declare the field `Optional<…>` if an instance may lack it. The identity, the lifecycle `state`
+and `Optional` fields are never asked for. A field an invariant reads anywhere counts, including
+inside `any:`.
 
 ### Cover every declared enum value
 

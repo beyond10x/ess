@@ -1,6 +1,6 @@
 # generated from billing v3
-# model digest 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
-# contract digest slice-sha256/2:c8fefbb1c7bb7c761f120e779652a3febf75e3f89339f148f30c39c72717c897
+# model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+# contract digest slice-sha256/2:64e7105b7e93a0ab9b65959baf9e6c05993197426973f2df23bea308ccd9bd64
 # do not edit: regenerate with `ess generate`
 openapi: 3.1.0
 info:
@@ -14,8 +14,8 @@ info:
   x-ess-provenance:
     system: billing
     specification_version: v3
-    source_digest: 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942
-    contract_digest: slice-sha256/2:c8fefbb1c7bb7c761f120e779652a3febf75e3f89339f148f30c39c72717c897
+    source_digest: 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+    contract_digest: slice-sha256/2:64e7105b7e93a0ab9b65959baf9e6c05993197426973f2df23bea308ccd9bd64
 tags:
 - name: invoices
   description: Issuing invoices and tracking whether they are paid.

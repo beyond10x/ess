@@ -238,6 +238,8 @@ commands:
         payload:
           shop.order.OrderPlaced:
             order_id: {generated: true}
+        sets:
+          sku: input.sku
       - name: refused
         error: shop.order.Refused
   - name: shop.order.CloseOrder

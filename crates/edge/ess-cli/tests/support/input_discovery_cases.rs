@@ -195,6 +195,37 @@ fn same(a: &Output, b: &Output) {
     assert_eq!(a.stdout, b.stdout);
     assert_eq!(a.stderr, b.stderr);
 }
+/// `validate` on a manifest root also compiles the two scenarios it lists (ess#112), so its report
+/// differs from the legacy directory's by exactly that count and nothing else.
+fn same_validation_but_listed_scenarios(legacy: &Output, selected: &Output, format: &str) {
+    assert_eq!(legacy.status, selected.status);
+    assert_eq!(legacy.stderr, selected.stderr);
+    let (legacy, selected) = (
+        String::from_utf8(legacy.stdout.clone()).unwrap(),
+        String::from_utf8(selected.stdout.clone()).unwrap(),
+    );
+    match format {
+        "text" => assert_eq!(
+            selected,
+            legacy.replace(" file(s), valid", " file(s), 2 scenario(s), valid")
+        ),
+        "json" => {
+            let mut report: Value = serde_json::from_str(&selected).unwrap();
+            let count = report.as_object_mut().unwrap().remove("scenarios");
+            assert_eq!(count, Some(json!(2)), "{selected}");
+            assert_eq!(report, serde_json::from_str::<Value>(&legacy).unwrap());
+        }
+        _ => {
+            let mut report: serde_yaml::Value = serde_yaml::from_str(&selected).unwrap();
+            let count = report.as_mapping_mut().unwrap().remove("scenarios");
+            assert_eq!(count, Some(serde_yaml::Value::from(2)), "{selected}");
+            assert_eq!(
+                report,
+                serde_yaml::from_str::<serde_yaml::Value>(&legacy).unwrap()
+            );
+        }
+    }
+}
 fn refused(out: &Output, words: &[&str]) {
     assert!(!out.status.success(), "{out:?}");
     let text = format!(
@@ -940,7 +971,11 @@ fn a21_model_routes_preserve_selected_semantics_across_aliases_and_presentations
                         .args(["--format", format]);
                     outputs.push(t.good(&mut c));
                 }
-                same(&outputs[0], &outputs[1]);
+                if verb == "validate" {
+                    same_validation_but_listed_scenarios(&outputs[0], &outputs[1], format);
+                } else {
+                    same(&outputs[0], &outputs[1]);
+                }
             }
         }
     }

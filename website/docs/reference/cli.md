@@ -50,7 +50,8 @@ refused with exit 2 rather than run against the current directory.
 This optional manifest capability was introduced in 0.21.0.
 An explicitly supplied directory may opt into [the `ess-inputs/1` configuration](formats.md#directory-input-configuration)
 through its immediate `ess-inputs.yaml`. No new flag, ancestor search or implicit scenarios are
-introduced. Model arguments select `specification`; `--scenarios` selects `scenarios`. Both lists are
+introduced. Model arguments select `specification`; `--scenarios` selects `scenarios`, and `specify validate`
+also reads a nonempty `scenarios` list and reports its `ESS-AUTHOR-*` refusals. Both lists are
 structurally checked, and only the active list's files are opened in sorted relative-identity order.
 
 This model loader is shared by validate/compile/inspect/graph, composition service paths,
@@ -74,7 +75,7 @@ readers; they do not acquire authored specifications through this configuration.
 | Command | Purpose |
 |---|---|
 | `ess specify cli --path MODEL --binding FILE [--format text\|yaml\|json]` | Resolve a closed `ess-cli/1` presentation binding against the selected ESS model. |
-| `ess specify validate [--path PATH] [--format text\|yaml\|json]` | Load, resolve, and validate one specification. |
+| `ess specify validate [--path PATH] [--format text\|yaml\|json]` | Load, resolve, and validate one specification, and compile the authored scenarios its `ess-inputs.yaml` lists. |
 | `ess specify compile [--path PATH] [--out FILE] [--format …]` | Produce canonical typed IR. |
 | `ess specify compose --path PATH --service KEY=PATH… [--out FILE] [--client-plan-out FILE] [--client-rust-out DIR]` | Compile selected component surfaces into composition IR, a client plan and a Rust client with byte-buffer transport. |
 | `ess specify inspect --path PATH NAME [--format …]` | Resolve and render one declaration. |

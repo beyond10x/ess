@@ -244,9 +244,14 @@ commands:
         # implementation's to assign. `issued_at` has none because `CreateInvoice` is not what
         # sets it and `IssueInvoice` does not take it — a clock is not an input, and the model says
         # so by staying quiet rather than by naming a source that does not exist.
+        #
+        # `reminder_count` starts at zero, and says so, because the invariant `reminder_count >= 0`
+        # reads it: a required field no creating branch sets holds whatever the implementation
+        # picked, and the invariant would then hold or fail on that choice (ess#112).
         sets:
           account_id: input.account_id
           total: input.amount
+          reminder_count: "0"
         summary: The invoice is created in Draft.
 
       - name: rejected
