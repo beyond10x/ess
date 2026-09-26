@@ -23,6 +23,21 @@
   are synthesized. (#93, #94)
 - `website/docs/reference/predicates.md` lists every predicate form, where it is accepted and what
   synthesis can witness; a test runs every example on it. (#92)
+
+### Changed
+
+- An unquoted `x == null` / `!= null` (and `~`, `Null`, `NULL`) is refused with `ESS-SPEC-017`,
+  naming `defined(x)`; a quoted `"null"` is text. Ordering a `Duration` and an unquoted compact
+  operand containing `&&` or `||` are refused. Artifacts written by 0.32.x that carry such literals
+  must be regenerated. (#93)
+- Text orders byte-wise in every evaluator; Timestamps order as instants wherever declared types are
+  known. (#94)
+- A create's omitted `Optional` input leaves its mapped field null in generated suites.
+
+## [0.33.0] — 2026-09-26
+
+### Added
+
 - `ess verify bindings` reads `ess-observed-bindings/2`, whose optional `foreign_containers`
   acknowledges, per bound workload, a container or native sidecar the service does not build (a
   mesh proxy, a vendor agent) by `name` and nonempty `reason`. `OBS-BIND-008` counts it as
@@ -38,25 +53,6 @@
   acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even as
   `[]`, is refused, and older readers refuse `/2`. The report is now `ess-observed-bindings-report/3`: it adds `acknowledged`, and a
   satisfied `OBS-BIND-008` no longer means every entry is bound.
-
-### Changed
-
-- An unquoted `x == null` / `!= null` (and `~`, `Null`, `NULL`) is refused with `ESS-SPEC-017`,
-  naming `defined(x)`; a quoted `"null"` is text. Ordering a `Duration` and an unquoted compact
-  operand containing `&&` or `||` are refused. Artifacts written by 0.32.x that carry such literals
-  must be regenerated. (#93)
-- Text orders byte-wise in every evaluator; Timestamps order as instants wherever declared types are
-  known. (#94)
-- A create's omitted `Optional` input leaves its mapped field null in generated suites.
-
-- `ess infra diff` writes `infra-drift/3` for full scans and no longer detects a rotated Secret
-  value. For a Secret, `config_content_changed` names added and removed keys, and `changed_keys`
-  is always empty, including between two legacy `infra-ir/1` documents, whose digests are
-  dropped when they are read. An empty list therefore means "not known"
-  where `infra-drift/1` meant "not rotated", hence the new version; `/2` stays the namespace
-  topology profile. Detecting a rotation needs a record derived from the value, and an unsalted
-  digest of a low-entropy secret is a guess oracle. Configmap content changes are detected as
-  before.
 
 ### Security
 
@@ -82,6 +78,20 @@
   the parser's message, which quotes the value it could not read, such as
   `invalid type: string "…"`.
 
+### Changed
+
+- `ess infra diff` writes `infra-drift/3` for full scans and no longer detects a rotated Secret
+  value. For a Secret, `config_content_changed` names added and removed keys, and `changed_keys`
+  is always empty, including between two legacy `infra-ir/1` documents, whose digests are
+  dropped when they are read. An empty list therefore means "not known"
+  where `infra-drift/1` meant "not rotated", hence the new version; `/2` stays the namespace
+  topology profile. Detecting a rotation needs a record derived from the value, and an unsalted
+  digest of a low-entropy secret is a guess oracle. Configmap content changes are detected as
+  before.
+- A lowering targets Entity Runtime `0.24.1`: `entity-core` moves from `0.23.0` and
+  `ENTITY_RUNTIME_REVISION` names `4746bd7c`, the locked commit. The new `starts_with` and
+  `ends_with` conditions are not emitted, so lowered definitions are unchanged apart from the
+  target revision they name.
 
 ## [0.32.1] — 2026-09-25
 

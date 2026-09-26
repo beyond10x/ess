@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.33.0](#a-scan-records-only-that-a-secret-value-exists-and-a-bound-workload-can-acknowledge-foreign-containers) | A scan records only that a Secret value exists, and a bound workload can acknowledge foreign containers | capability | significant |
 | [0.32.0](#openapi-30-imports-and-a-bound-workloads-unbound-sidecars-are-violations) | OpenAPI 3.0 imports, and a bound workload's unbound sidecars are violations | capability | significant |
 | [0.31.0](#a-service-contract-lowers-to-entity-runtime-definitions) | A service contract lowers to Entity Runtime definitions | capability | significant |
 | [0.30.0](#ess-ships-its-own-agent-plugin-and-the-binary-prints-its-skills) | ESS ships its own agent plugin, and the binary prints its skills | capability | significant |
@@ -26,6 +27,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.33.0 — 2026-09-26
+
+### A scan records only that a Secret value exists, and a bound workload can acknowledge foreign containers
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.33.0)
+
+A Kubernetes scan writes `infra-observation/3` and `infra-ir/3`, recording each Secret key as `{"present": true}` instead of a digest that confirms a guessed value; `infra-drift/3` no longer reports a rotated Secret. `ess-observed-bindings/2` acknowledges a mesh proxy or vendor agent by name and reason. Breaking: older readers refuse each new version.
 
 ## 0.32.0 — 2026-09-25
 
