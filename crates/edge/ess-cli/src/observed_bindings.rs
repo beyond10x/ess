@@ -840,18 +840,12 @@ fn new_output(path: &Path, outside_git: bool) -> Result<()> {
     let parent = parent
         .canonicalize()
         .context("output parent must already exist")?;
-    if outside_git {
-        for ancestor in parent.ancestors() {
-            let marker = ancestor.join(".git");
-            match fs::symlink_metadata(&marker) {
-                // An empty directory is not a repository marker. Refuse files, symlinks,
-                // nonempty directories and unreadable markers conservatively.
-                Ok(metadata) if metadata.is_dir() && fs::read_dir(&marker)?.next().is_none() => {}
-                Ok(_) => bail!("live observation output must be outside Git checkouts"),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error).context("cannot establish observation placement"),
-            }
-        }
+    if outside_git
+        && super::git_checkout::enclosing_checkout(&parent)
+            .context("cannot establish observation placement")?
+            .is_some()
+    {
+        bail!("live observation output must be outside Git checkouts");
     }
     Ok(())
 }

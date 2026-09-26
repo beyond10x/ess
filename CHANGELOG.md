@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ess verify bindings --live --observation-out` and `cargo xtask infra-acceptance --scratch` no
+  longer take a `.git` directory Git cannot open (one holding only `info/exclude`, as a harness
+  leaves in a directory that is no repository) for a checkout. A `.git` directory holding `HEAD`,
+  `objects`, `refs` or `commondir`, a `.git` file, a `.git` symlink and an unreadable marker are
+  still refused. Both guards share one rule; the xtask check previously also refused an empty
+  `.git` directory and admitted an unreadable one.
+
 ## [0.35.0] — 2026-09-26
 
 ### Added

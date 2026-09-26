@@ -2,6 +2,7 @@
 
 mod cli_binding;
 mod coverage;
+mod git_checkout;
 mod input_discovery;
 mod load;
 mod model_types;
