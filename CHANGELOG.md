@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-09-27
+
+### Added
+
+- Value expressions in `payload:` and `sets:`, source format `ess/14`: `{subject: <field>}` reads
+  the addressed entity before the outcome (#133), `{increment: <number>}` adds to a stored
+  `Integer` or `Decimal` and `{generated: true}` is admitted in `sets:` (#134), `{input: <field>,
+  else: {generated: true}}` takes an optional input or a minted value (#137), and a nested mapping
+  gives each field of a struct-typed target its own source (#136). Synthesis asserts each value
+  where the arrangement determined what it reads. Entity Runtime lowering refuses them
+  (`ValueExpressionUnsupported`). Models without them keep their IR bytes.
+  (`docs/design/value-expressions.md`)
+- A literal over a `Decimal` target, quoted or unquoted, in every format (#135).
+
+### Fixed
+
+- The text `subject.<field>` in `payload:` or `sets:` is refused as `misspelled_reference`,
+  naming `{subject: <field>}`; it compiled as the literal text (#133).
+- A synthesized suite compares a payload literal over an `Integer`, `Boolean` or `Decimal` field
+  with the value it spells, where it compared the text: `retries: 0` required the string `"0"`.
+
 ## [0.35.1] — 2026-09-27
 
 ### Fixed

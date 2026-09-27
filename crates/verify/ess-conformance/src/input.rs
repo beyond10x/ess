@@ -433,7 +433,8 @@ fn setup_body(
 }
 
 fn setup_map_key(kind: Primitive, spelling: &str) -> Result<(), String> {
-    if primitive_literal(kind, spelling).is_some() {
+    // A `sets:` literal gained a `Decimal` spelling (#135); a map key did not.
+    if !matches!(kind, Primitive::Decimal) && primitive_literal(kind, spelling).is_some() {
         return Ok(());
     }
     Err(match kind {
@@ -461,7 +462,8 @@ fn setup_map_key(kind: Primitive, spelling: &str) -> Result<(), String> {
 ///
 /// `true`/`false`, and a decimal that round-trips through `i64` — so `007`, `+7` and ` 7` answer
 /// `None` rather than being normalised, because normalising puts a spelling into the suite that
-/// nothing else writes. `Decimal` and `Binary64` have no admitted literal spelling. Every other
+/// nothing else writes. `Decimal` reads by `Number::decimal_literal`, the function `ess-domain` admits
+/// one by; `Binary64` has no admitted literal spelling. Every other
 /// primitive is carried as the text itself and then held to that primitive's own grammar by
 /// [`primitive_value`], so a literal that is not a legal `Uuid` answers `None` rather than becoming
 /// an assertion no implementation can satisfy.
@@ -479,7 +481,11 @@ pub(crate) fn primitive_literal(kind: Primitive, spelling: &str) -> Option<Node>
             }
             Node::Number(number.into())
         }
-        Primitive::Decimal | Primitive::Binary64 => return None,
+        // The grammar `ess-domain` admits a `Decimal` literal by, and the same function (#135).
+        Primitive::Decimal => {
+            Node::Number(ess_primitives::facts::Number::decimal_literal(spelling)?)
+        }
+        Primitive::Binary64 => return None,
         Primitive::String
         | Primitive::Timestamp
         | Primitive::Duration

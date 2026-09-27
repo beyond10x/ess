@@ -1725,7 +1725,7 @@ impl<'a> Resolver<'a> {
                     complete = false;
                 }
             }
-            let payload = self.payload(command, outcome, input, &emits, events);
+            let payload = self.payload(command, outcome, input, &emits, events, entities);
             if payload.is_none() {
                 complete = false;
             }
@@ -1837,6 +1837,7 @@ impl<'a> Resolver<'a> {
                 target,
                 source,
                 input,
+                Some(entity),
             ) {
                 Some(field) => determined.push(field),
                 None => complete = false,
@@ -1888,7 +1889,12 @@ impl<'a> Resolver<'a> {
         input: Option<&[ResolvedField]>,
         emits: &[EventHandle],
         events: &BTreeMap<QualifiedName, ResolvedEvent>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
     ) -> Option<Vec<ResolvedPayload>> {
+        let subject = outcome
+            .subject
+            .as_ref()
+            .and_then(|declared| entities.get(&declared.entity));
         let mut complete = true;
         let mut resolved = Vec::new();
         for (event_name, fields) in &outcome.payload {
@@ -1931,6 +1937,7 @@ impl<'a> Resolver<'a> {
                     target,
                     source,
                     input,
+                    subject,
                 ) {
                     Some(field) => determined.push(field),
                     None => complete = false,
@@ -1966,6 +1973,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// One determined field: the source resolved, and the two types checked against each other.
+    #[allow(clippy::too_many_arguments)]
     fn payload_field(
         &mut self,
         command: &CommandSpec,
@@ -1974,9 +1982,13 @@ impl<'a> Resolver<'a> {
         target: &ResolvedField,
         source: &PayloadSource,
         input: Option<&[ResolvedField]>,
+        subject: Option<&ResolvedEntity>,
     ) -> Option<ResolvedPayloadField> {
         if let Some(constant) = payload_constant_source(target, source) {
             return Some(constant);
+        }
+        if source.needs_value_expressions() {
+            return self.expression_field(command, outcome, block, target, source, input, subject);
         }
         let (PayloadSource::InputField { field: value }
         | PayloadSource::ResponseField { field: value }) = source
@@ -2071,6 +2083,216 @@ impl<'a> Resolver<'a> {
             value: payload_read(read, response_source),
             conversion,
         })
+    }
+
+    /// An `ess/14` source that reads something: the subject, an optional input, or a struct's
+    /// fields. `ess-domain::command::value_expression` has refused an assembled specification that
+    /// breaks these rules; the refusals here are backstops for one built field by field.
+    #[allow(clippy::too_many_arguments)]
+    fn expression_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        target: &ResolvedField,
+        source: &PayloadSource,
+        input: Option<&[ResolvedField]>,
+        subject: Option<&ResolvedEntity>,
+    ) -> Option<ResolvedPayloadField> {
+        let (value, from) = match source {
+            PayloadSource::SubjectField { field } => {
+                let read = subject.and_then(|entity| {
+                    std::iter::once(&entity.identity)
+                        .chain(&entity.fields)
+                        .find(|held| &held.name == field)
+                });
+                let Some(read) = read else {
+                    self.refuse_payload(
+                        command,
+                        outcome,
+                        block,
+                        Some((&target.name, source)),
+                        codes::COMMAND_UNDECLARED_REFERENCE,
+                        format!(
+                            "outcome `{}` of `{}` reads `{{subject: {field}}}`, which its subject \
+                             does not hold",
+                            outcome.name, command.name
+                        ),
+                        Vec::new(),
+                    );
+                    return None;
+                };
+                (
+                    ResolvedPayloadValue::SubjectField {
+                        field: read.name.clone(),
+                        type_ref: read.type_ref.clone(),
+                    },
+                    read.type_ref.clone(),
+                )
+            }
+            PayloadSource::InputOrGenerated { field } => {
+                let read = input.and_then(|fields| fields.iter().find(|it| &it.name == field));
+                let Some(read) = read else {
+                    if input.is_some() {
+                        self.refuse_payload(
+                            command,
+                            outcome,
+                            block,
+                            Some((&target.name, source)),
+                            codes::COMMAND_UNDECLARED_REFERENCE,
+                            format!(
+                                "outcome `{}` of `{}` reads `input.{field}`, which the command \
+                                 does not take",
+                                outcome.name, command.name
+                            ),
+                            Vec::new(),
+                        );
+                    }
+                    return None;
+                };
+                let present = match &read.type_ref {
+                    ResolvedTypeRef::Optional { of } => of.as_ref().clone(),
+                    other => other.clone(),
+                };
+                (
+                    ResolvedPayloadValue::InputOrGenerated {
+                        field: read.name.clone(),
+                        type_ref: read.type_ref.clone(),
+                    },
+                    present,
+                )
+            }
+            PayloadSource::Struct { fields } => {
+                return self.struct_field(command, outcome, block, target, fields, input, subject);
+            }
+            _ => unreachable!("every other source is resolved by `payload_field`"),
+        };
+        let conversion = self.crossing(command, outcome, block, target, source, &from)?;
+        Some(ResolvedPayloadField {
+            target: target.name.clone(),
+            target_type: target.type_ref.clone(),
+            value,
+            conversion,
+        })
+    }
+
+    /// A nested mapping, resolved against the fields of the struct its target resolves to.
+    #[allow(clippy::too_many_arguments)]
+    fn struct_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        target: &ResolvedField,
+        fields: &[ess_domain::command::PayloadField],
+        input: Option<&[ResolvedField]>,
+        subject: Option<&ResolvedEntity>,
+    ) -> Option<ResolvedPayloadField> {
+        let declared_type = spec_type_ref(&target.type_ref);
+        let declared = self
+            .spec
+            .system()
+            .types
+            .struct_fields(&declared_type)
+            .map(<[_]>::to_vec);
+        let resolved = declared.and_then(|declared| {
+            self.fields(
+                codes::COMMAND_TYPE_MISMATCH,
+                &declared,
+                &command.name,
+                &format!("commands.{}.outcomes.{}", command.name, outcome.name),
+                &[format!("name: {}", command.name)],
+            )
+        });
+        let Some(resolved) = resolved else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                None,
+                codes::COMMAND_TYPE_MISMATCH,
+                format!(
+                    "outcome `{}` of `{}` fills `{}` with a nested mapping, and `{}` is not a \
+                     struct",
+                    outcome.name, command.name, target.name, target.type_ref
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let mut complete = true;
+        let mut determined = Vec::new();
+        // The struct's declaration order, as `payload` takes the event's.
+        for inner in &resolved {
+            let Some(field) = fields.iter().find(|field| field.target == inner.name) else {
+                complete = false;
+                continue;
+            };
+            match self.payload_field(
+                command,
+                outcome,
+                block,
+                inner,
+                &field.source,
+                input,
+                subject,
+            ) {
+                Some(field) => determined.push(field),
+                None => complete = false,
+            }
+        }
+        if fields
+            .iter()
+            .any(|field| !resolved.iter().any(|inner| inner.name == field.target))
+        {
+            complete = false;
+        }
+        complete.then(|| ResolvedPayloadField {
+            target: target.name.clone(),
+            target_type: target.type_ref.clone(),
+            value: ResolvedPayloadValue::Struct { fields: determined },
+            conversion: None,
+        })
+    }
+
+    /// Why a value of type `from` may fill `target`: `Some(None)` when it is assignable,
+    /// `Some(Some(because))` through a declared conversion, `None` (refused) otherwise.
+    #[allow(clippy::option_option)]
+    fn crossing(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        target: &ResolvedField,
+        source: &PayloadSource,
+        from: &ResolvedTypeRef,
+    ) -> Option<Option<String>> {
+        let (source_type, target_type) = (spec_type_ref(from), spec_type_ref(&target.type_ref));
+        if is_assignable(&source_type, &target_type) {
+            return Some(None);
+        }
+        if let Some(crossing) = self
+            .spec
+            .conversions()
+            .iter()
+            .find(|crossing| crossing.from == source_type && crossing.to == target_type)
+        {
+            return Some(Some(crossing.because.clone()));
+        }
+        self.refuse_payload(
+            command,
+            outcome,
+            block,
+            Some((&target.name, source)),
+            codes::COMMAND_TYPE_MISMATCH,
+            format!(
+                "outcome `{}` of `{}` fills `{}` from a value of type `{from}`, and `{}` requires \
+                 `{}`; no conversion is declared",
+                outcome.name, command.name, target.name, target.name, target.type_ref
+            ),
+            Vec::new(),
+        );
+        None
     }
 
     /// Refuses one payload entry, pointing at the line the entry is written on.
@@ -3665,7 +3887,12 @@ fn payload_constant_source(
         }
         PayloadSource::Generated => ResolvedPayloadValue::Generated,
         PayloadSource::Cleared => ResolvedPayloadValue::Cleared,
-        PayloadSource::InputField { .. } | PayloadSource::ResponseField { .. } => return None,
+        PayloadSource::InputField { .. }
+        | PayloadSource::ResponseField { .. }
+        | PayloadSource::SubjectField { .. }
+        | PayloadSource::InputOrGenerated { .. }
+        | PayloadSource::Struct { .. } => return None,
+        PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
     };
     Some(payload_constant(target, value))
 }

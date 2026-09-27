@@ -261,6 +261,22 @@ literal relationships, consumer profiles, guard source, baseline and behavioral 
 unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
 This review grants no new exemption or runtime conformance claim.
 
+## Value-expression container review — 2026-09-27
+
+`ess/14` adds the payload source keys `subject`, `increment`, `input` and `else`, the
+`RawIncrement` amount and the `RawNestedSources` nested mapping to the schema's definitions
+(`docs/design/value-expressions.md`). Documents that validated before keep their meaning; the
+schema gains the new source shapes. Neither change makes the three CLI pipelines consumers of the
+generated schema document.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `aea620213fc71de3aa8a89cb1afb0af0d265f86f9c75137cac8267ee3c517475`
+to `52f0dd709d8b277ccfd07255a3ddc987c5b9198c4565a152fbef7fa9c0abf83e`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
+This review grants no new exemption or runtime conformance claim.
+
 ## Measured-authority guard source review — 2026-09-27
 
 `Authority` in `metadata.rs` now decides over a `Measured` value — the build script's recorded

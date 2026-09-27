@@ -1095,7 +1095,11 @@ fn around_row(
     };
     let mut left = setup.settled.clone();
     if changes {
-        absorb(&mut left, outcome, super::settled(ir, outcome, supplied));
+        absorb(
+            &mut left,
+            outcome,
+            super::settled(ir, outcome, supplied, &setup.settled),
+        );
     }
     let fields = guarded_fields(ir, command, &subject.entity)
         .into_iter()
@@ -1235,7 +1239,11 @@ pub(super) fn boundaries(
         });
         steps.push(ScenarioStep::ExpectNoError);
         let mut left = arrangement.settled.clone();
-        absorb(&mut left, outcome, super::settled(ir, outcome, &supplied));
+        absorb(
+            &mut left,
+            outcome,
+            super::settled(ir, outcome, &supplied, &arrangement.settled),
+        );
         if let Some(transition) = own.effect.transition() {
             arrangement.state = transition.to.clone();
         }

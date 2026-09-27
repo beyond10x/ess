@@ -491,6 +491,51 @@ retains its historical literal meaning. Input mappings keep their existing spell
 Missing fields, unknown response members and incompatible types are refused. Conformance
 checks compare mapped values with the actual response from the same command invocation.
 
+### Value expressions
+
+Source `ess/14`, introduced in 0.36.0, lets a `payload:` or `sets:` value come from more than
+the input or a literal:
+
+```yaml
+- name: retried
+  updates: demo.orders.Order
+  instance: order_id
+  emits: [demo.orders.Retried]
+  payload:
+    demo.orders.Retried:
+      order_id: input.order_id
+      previous: {subject: retries}          # the stored value before this outcome
+      seq: {input: seq, else: {generated: true}}
+      ref:                                  # a struct, one source per field
+        id: input.order_id
+        label: {generated: true}
+  sets:
+    retries: {increment: 1}                 # previous value plus one
+    stamp: {generated: true}                # the implementation decides
+    discount: 0.0                           # a Decimal literal
+```
+
+| Source | Where | Admitted when |
+|---|---|---|
+| `{subject: <field>}` | `payload:`, `sets:` | the outcome `moves:` or `updates:` an existing subject; `creates:` has no row before it |
+| `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
+| `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
+| a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
+| `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
+
+A mapping is a source when every key is one of `response`, `generated`, `cleared`, `subject`,
+`increment`, `input` and `else`; any other key makes it a nested mapping. The text
+`subject.note` is refused in every format: it used to compile as the literal text
+`"subject.note"`.
+
+Synthesis asserts each value where the arrangement determined what it reads: the row the
+arrangement wrote, the input the scenario sent. Where it did not, a payload field is checked for
+presence and type only, and a `sets:` target is not asserted on the row. Entity Runtime lowering
+refuses these sources.
+
+A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
+(`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
+
 ### A view declares its consistency
 
 `consistency: eventual` on a view is what decides that a generated assertion is `eventually` rather

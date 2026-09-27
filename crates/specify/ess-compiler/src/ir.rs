@@ -890,6 +890,56 @@ pub enum ResolvedPayloadValue {
     /// `ess-domain` refuses it on an event payload and on a required field, so one that reaches
     /// this IR was checked.
     Cleared,
+    /// A field of the addressed entity as it was immediately before this outcome (ess/14).
+    SubjectField {
+        /// The entity field read.
+        field: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// The subject's value of the target field before this outcome, plus `by` (ess/14, `sets:`).
+    Increment {
+        /// The amount, as canonical text.
+        by: String,
+    },
+    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14).
+    InputOrGenerated {
+        /// The input field read.
+        field: String,
+        /// Its resolved type, `Optional<…>`.
+        type_ref: ResolvedTypeRef,
+    },
+    /// One source per field of a struct-typed target, in the struct's declaration order (ess/14).
+    Struct {
+        /// The struct's fields.
+        fields: Vec<ResolvedPayloadField>,
+    },
+}
+
+impl ResolvedPayloadValue {
+    /// The source as a reader of generated documentation or a delta sees it.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::InputField { field, .. } => format!("input.{field}"),
+            Self::Literal { value } => format!("\"{value}\""),
+            Self::ResponseField { field, .. } => format!("response field `{field}`"),
+            Self::Generated => "implementation-generated".to_owned(),
+            Self::Cleared => "cleared".to_owned(),
+            Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
+            Self::Increment { by } => format!("its previous value plus {by}"),
+            Self::InputOrGenerated { field, .. } => {
+                format!("input.{field}, else implementation-generated")
+            }
+            Self::Struct { fields } => format!(
+                "{{{}}}",
+                fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.target, field.value.describe()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
 }
 
 /// One event field an outcome determines, with both ends resolved.

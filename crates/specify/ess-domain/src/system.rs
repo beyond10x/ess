@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -93,6 +93,9 @@ impl FormatVersion {
     pub const V12: Self = Self(12);
     /// Typed conformance inputs resolved from independently provisioned fixtures.
     pub const V13: Self = Self(13);
+    /// Value expressions: `{subject}`, `{increment}`, `{input, else}`, nested struct sources,
+    /// `input.` operands in subject predicates and case-insensitive text operators.
+    pub const V14: Self = Self(14);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

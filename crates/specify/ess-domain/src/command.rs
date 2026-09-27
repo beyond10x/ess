@@ -202,6 +202,7 @@ pub mod finite;
 pub mod fixture_inputs;
 pub mod subject_fact;
 pub mod subject_state;
+pub(crate) mod value_expression;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -846,6 +847,38 @@ pub enum PayloadSource {
     /// because a required field cannot hold nothing and a specification that says it can is wrong
     /// rather than surprising.
     Cleared,
+    /// A field of the addressed entity as it was immediately before this outcome:
+    /// `{subject: note}` (ess/14, beyond10x/ess#133).
+    ///
+    /// Only an outcome acting on an existing subject has one, so `creates:` and a branch with no
+    /// subject are refused. Before it the natural guess, `subject.note`, compiled as the text
+    /// `"subject.note"`; that spelling is now refused where it is written.
+    SubjectField {
+        /// The entity field read, the identity included.
+        field: String,
+    },
+    /// The subject's value before this outcome plus `by`: `{increment: 1}` (ess/14, #134).
+    ///
+    /// A `sets:` source over a required `Integer` or `Decimal` target of an existing subject; a
+    /// negative amount decrements.
+    Increment {
+        /// The amount, as canonical text: a whole number, or a decimal in `Number::decimal_literal`'s
+        /// grammar.
+        by: String,
+        /// Which YAML scalar the amount was written as; quoted text reads as a decimal.
+        scalar: ScalarKind,
+    },
+    /// The optional input's value when the caller sent one, otherwise a value the implementation
+    /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137).
+    InputOrGenerated {
+        /// The optional input field read.
+        field: String,
+    },
+    /// One source per field of a struct-typed target (ess/14, #136), in the order written.
+    Struct {
+        /// The struct's fields and where each comes from.
+        fields: Vec<PayloadField>,
+    },
 }
 
 impl PayloadSource {
@@ -874,6 +907,42 @@ impl fmt::Display for PayloadSource {
             Self::ResponseField { field } => write!(f, "response field `{field}`"),
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
+            Self::SubjectField { field } => write!(f, "subject field `{field}`"),
+            Self::Increment { by, .. } => write!(f, "increment by {by}"),
+            Self::InputOrGenerated { field } => {
+                write!(
+                    f,
+                    "{}{field}, else implementation-generated",
+                    Self::INPUT_PREFIX
+                )
+            }
+            Self::Struct { fields } => write!(
+                f,
+                "{{{}}}",
+                fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.target, field.source))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
+impl PayloadSource {
+    /// `true` for the sources `ess/14` introduced, which an older format refuses.
+    pub fn needs_value_expressions(&self) -> bool {
+        match self {
+            Self::SubjectField { .. }
+            | Self::Increment { .. }
+            | Self::InputOrGenerated { .. }
+            | Self::Struct { .. } => true,
+            Self::ResponseField { .. }
+            | Self::Generated
+            | Self::InputField { .. }
+            | Self::Literal { .. }
+            | Self::Scalar { .. }
+            | Self::Cleared => false,
         }
     }
 }
@@ -901,7 +970,7 @@ impl fmt::Display for ScalarKind {
 }
 
 /// One filled field of an emitted event's payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PayloadField {
     /// The event field being filled.
     pub target: String,
@@ -919,7 +988,23 @@ enum RawPayloadSource {
     Unsigned(u64),
     Decimal(f64),
     Explicit(ExplicitPayloadSource),
+    Nested(RawNestedSources),
 }
+
+/// The keys that make a mapping a source rather than a nested mapping (ess/14, #136).
+///
+/// A mapping is a source when every key is one of these. A struct whose fields all carry one of
+/// these names cannot be filled by a nested mapping, and is filled by `{generated: true}` or an
+/// input instead; `docs/design/value-expressions.md` records the trade.
+const SOURCE_KEYWORDS: &[&str] = &[
+    "response",
+    "generated",
+    "cleared",
+    "subject",
+    "increment",
+    "input",
+    "else",
+];
 
 /// Read by shape rather than by `#[serde(untagged)]`, which reports only that no variant matched
 /// and loses the reader boundary a wrong scalar crosses — the one thing a document author needs.
@@ -933,7 +1018,8 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(
                     "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
-                     or `{cleared: true}`",
+                     `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
+                     `{input: <field>, else: {generated: true}}`, or a mapping of struct fields",
                 )
             }
 
@@ -959,21 +1045,45 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                 Ok(RawPayloadSource::Decimal(value))
             }
 
+            // Every keyword's value is itself a source-shaped YAML value (`true`, a field name, a
+            // number, `{generated: true}`), so the entries are read one way and classified after:
+            // all keywords is a source, anything else a nested mapping.
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
-                map: A,
+                mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                <ExplicitPayloadSource as serde::Deserialize>::deserialize(
-                    serde::de::value::MapAccessDeserializer::new(map),
-                )
-                .map(RawPayloadSource::Explicit)
+                let mut entries: Vec<(String, RawPayloadSource)> = Vec::new();
+                while let Some((key, value)) = map.next_entry::<String, RawPayloadSource>()? {
+                    if entries.iter().any(|(seen, _)| seen == &key) {
+                        return Err(serde::de::Error::custom(format!(
+                            "`{key}` is written twice in one mapping"
+                        )));
+                    }
+                    entries.push((key, value));
+                }
+                if !entries.is_empty()
+                    && entries
+                        .iter()
+                        .all(|(key, _)| SOURCE_KEYWORDS.contains(&key.as_str()))
+                {
+                    return ExplicitPayloadSource::from_entries(entries)
+                        .map(RawPayloadSource::Explicit)
+                        .map_err(serde::de::Error::custom);
+                }
+                if entries.is_empty() {
+                    return Err(serde::de::Error::custom(
+                        "an empty mapping is not a payload source",
+                    ));
+                }
+                Ok(RawPayloadSource::Nested(RawNestedSources(entries)))
             }
         }
 
         deserializer.deserialize_any(Source)
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+
+#[derive(serde::Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ExplicitPayloadSource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -982,7 +1092,104 @@ struct ExplicitPayloadSource {
     generated: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cleared: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    increment: Option<RawIncrement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input: Option<String>,
+    #[serde(default, rename = "else", skip_serializing_if = "Option::is_none")]
+    otherwise: Option<Box<RawPayloadSource>>,
 }
+
+/// The amount of an `{increment: …}`: a whole number, an unquoted decimal, or quoted decimal text.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum RawIncrement {
+    Integer(i64),
+    Decimal(f64),
+    Text(String),
+}
+
+impl ExplicitPayloadSource {
+    fn empty() -> Self {
+        Self {
+            response: None,
+            generated: None,
+            cleared: None,
+            subject: None,
+            increment: None,
+            input: None,
+            otherwise: None,
+        }
+    }
+
+    /// The keyword entries of one mapping, each read as the type its keyword takes.
+    fn from_entries(entries: Vec<(String, RawPayloadSource)>) -> Result<Self, String> {
+        let mut explicit = Self::empty();
+        for (key, value) in entries {
+            let wrong = |expected: &str| format!("`{key}` takes {expected}");
+            match (key.as_str(), value) {
+                ("response", RawPayloadSource::Text(field)) => explicit.response = Some(field),
+                ("subject", RawPayloadSource::Text(field)) => explicit.subject = Some(field),
+                ("input", RawPayloadSource::Text(field)) => explicit.input = Some(field),
+                ("generated", RawPayloadSource::Boolean(flag)) => explicit.generated = Some(flag),
+                ("cleared", RawPayloadSource::Boolean(flag)) => explicit.cleared = Some(flag),
+                ("increment", RawPayloadSource::Integer(by)) => {
+                    explicit.increment = Some(RawIncrement::Integer(by));
+                }
+                ("increment", RawPayloadSource::Unsigned(by)) => {
+                    explicit.increment = Some(match i64::try_from(by) {
+                        Ok(by) => RawIncrement::Integer(by),
+                        Err(_) => RawIncrement::Text(by.to_string()),
+                    });
+                }
+                ("increment", RawPayloadSource::Decimal(by)) => {
+                    explicit.increment = Some(RawIncrement::Decimal(by));
+                }
+                ("increment", RawPayloadSource::Text(by)) => {
+                    explicit.increment = Some(RawIncrement::Text(by));
+                }
+                ("else", value) => explicit.otherwise = Some(Box::new(value)),
+                ("response" | "subject" | "input", _) => return Err(wrong("a field name")),
+                ("generated" | "cleared", _) => return Err(wrong("`true`")),
+                ("increment", _) => return Err(wrong("a number")),
+                _ => return Err(format!("`{key}` is not a payload source keyword")),
+            }
+        }
+        Ok(explicit)
+    }
+}
+
+/// A nested mapping, one source per field of a struct-typed target, in the order written.
+struct RawNestedSources(Vec<(String, RawPayloadSource)>);
+
+impl serde::Serialize for RawNestedSources {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in &self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+impl schemars::JsonSchema for RawNestedSources {
+    fn schema_name() -> String {
+        "RawNestedSources".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <BTreeMap<String, RawPayloadSource> as schemars::JsonSchema>::json_schema(generator)
+    }
+}
+
+/// A field name as a keyword source reads it: present, and one segment.
+fn source_field(field: String) -> Option<String> {
+    (!field.is_empty() && !field.contains('.')).then_some(field)
+}
+
 impl TryFrom<RawPayloadSource> for PayloadSource {
     type Error = &'static str;
     fn try_from(raw: RawPayloadSource) -> Result<Self, Self::Error> {
@@ -1002,52 +1209,161 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
             }),
             // Written by `serde_json`'s shortest round-trip form, so `3.0` stays `3.0` rather than
             // becoming the `3` an `Integer` would accept.
-            RawPayloadSource::Decimal(value) => serde_json::Number::from_f64(value)
-                .map(|number| Self::Scalar {
-                    value: number.to_string(),
+            RawPayloadSource::Decimal(value) => decimal_text(value)
+                .map(|value| Self::Scalar {
+                    value,
                     scalar: ScalarKind::Decimal,
                 })
                 .ok_or("a decimal literal must be a finite number"),
-            RawPayloadSource::Explicit(ExplicitPayloadSource {
-                response: Some(field),
-                generated: None,
-                cleared: None,
-            }) if !field.is_empty() && !field.contains('.') => Ok(Self::ResponseField { field }),
-            RawPayloadSource::Explicit(ExplicitPayloadSource {
-                response: None,
-                generated: Some(true),
-                cleared: None,
-            }) => Ok(Self::Generated),
-            RawPayloadSource::Explicit(ExplicitPayloadSource {
-                response: None,
-                generated: None,
-                cleared: Some(true),
-            }) => Ok(Self::Cleared),
-            RawPayloadSource::Explicit(_) => Err(
-                "payload source requires exactly one of {response: field}, {generated: true} or \
-                 {cleared: true}",
-            ),
+            RawPayloadSource::Explicit(explicit) => Self::from_explicit(explicit),
+            RawPayloadSource::Nested(RawNestedSources(entries)) => entries
+                .into_iter()
+                .map(|(target, source)| {
+                    Ok(PayloadField {
+                        target,
+                        source: Self::try_from(source)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|fields| Self::Struct { fields }),
         }
     }
 }
-impl From<&PayloadSource> for RawPayloadSource {
-    fn from(source: &PayloadSource) -> Self {
-        match source {
-            PayloadSource::ResponseField { field } => Self::Explicit(ExplicitPayloadSource {
-                response: Some(field.clone()),
+
+/// `serde_json`'s shortest round-trip spelling of a finite binary64.
+fn decimal_text(value: f64) -> Option<String> {
+    serde_json::Number::from_f64(value).map(|number| number.to_string())
+}
+
+impl PayloadSource {
+    fn from_explicit(explicit: ExplicitPayloadSource) -> Result<Self, &'static str> {
+        const ONE_OF: &str = "payload source requires exactly one of {response: field}, \
+                              {generated: true}, {cleared: true}, {subject: field}, \
+                              {increment: number} or {input: field, else: {generated: true}}";
+        match explicit {
+            ExplicitPayloadSource {
+                response: Some(field),
                 generated: None,
                 cleared: None,
-            }),
-            PayloadSource::Generated => Self::Explicit(ExplicitPayloadSource {
+                subject: None,
+                increment: None,
+                input: None,
+                otherwise: None,
+            } => source_field(field)
+                .map(|field| Self::ResponseField { field })
+                .ok_or(ONE_OF),
+            ExplicitPayloadSource {
                 response: None,
                 generated: Some(true),
                 cleared: None,
-            }),
-            PayloadSource::Cleared => Self::Explicit(ExplicitPayloadSource {
+                subject: None,
+                increment: None,
+                input: None,
+                otherwise: None,
+            } => Ok(Self::Generated),
+            ExplicitPayloadSource {
                 response: None,
                 generated: None,
                 cleared: Some(true),
+                subject: None,
+                increment: None,
+                input: None,
+                otherwise: None,
+            } => Ok(Self::Cleared),
+            ExplicitPayloadSource {
+                response: None,
+                generated: None,
+                cleared: None,
+                subject: Some(field),
+                increment: None,
+                input: None,
+                otherwise: None,
+            } => source_field(field)
+                .map(|field| Self::SubjectField { field })
+                .ok_or("`{subject: <field>}` names one field of the addressed entity"),
+            ExplicitPayloadSource {
+                response: None,
+                generated: None,
+                cleared: None,
+                subject: None,
+                increment: Some(by),
+                input: None,
+                otherwise: None,
+            } => match by {
+                RawIncrement::Integer(by) => Ok(Self::Increment {
+                    by: by.to_string(),
+                    scalar: ScalarKind::Integer,
+                }),
+                RawIncrement::Decimal(by) => decimal_text(by)
+                    .map(|by| Self::Increment {
+                        by,
+                        scalar: ScalarKind::Decimal,
+                    })
+                    .ok_or("an increment must be a finite number"),
+                RawIncrement::Text(by) => Ok(Self::Increment {
+                    by,
+                    scalar: ScalarKind::Decimal,
+                }),
+            },
+            ExplicitPayloadSource {
+                response: None,
+                generated: None,
+                cleared: None,
+                subject: None,
+                increment: None,
+                input: Some(field),
+                otherwise: Some(otherwise),
+            } => match Self::try_from(*otherwise)? {
+                Self::Generated => source_field(field)
+                    .map(|field| Self::InputOrGenerated { field })
+                    .ok_or("`{input: <field>, else: …}` names one field of the command's input"),
+                _ => Err("`else:` admits `{generated: true}` only"),
+            },
+            ExplicitPayloadSource {
+                input: Some(_),
+                otherwise: None,
+                ..
+            } => Err(
+                "`{input: <field>}` needs `else: {generated: true}`; a plain input is \
+                      written `input.<field>`",
+            ),
+            _ => Err(ONE_OF),
+        }
+    }
+}
+
+impl From<&PayloadSource> for RawPayloadSource {
+    fn from(source: &PayloadSource) -> Self {
+        let explicit = |fill: &dyn Fn(&mut ExplicitPayloadSource)| {
+            let mut explicit = ExplicitPayloadSource::empty();
+            fill(&mut explicit);
+            Self::Explicit(explicit)
+        };
+        match source {
+            PayloadSource::ResponseField { field } => {
+                explicit(&|e| e.response = Some(field.clone()))
+            }
+            PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
+            PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
+            PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
+            PayloadSource::Increment { by, scalar } => explicit(&|e| {
+                e.increment = Some(match scalar {
+                    ScalarKind::Integer => by
+                        .parse()
+                        .map_or_else(|_| RawIncrement::Text(by.clone()), RawIncrement::Integer),
+                    ScalarKind::Boolean | ScalarKind::Decimal => RawIncrement::Text(by.clone()),
+                });
             }),
+            PayloadSource::InputOrGenerated { field } => explicit(&|e| {
+                e.input = Some(field.clone());
+                e.otherwise = Some(Box::new(Self::from(&PayloadSource::Generated)));
+            }),
+            PayloadSource::Struct { fields } => Self::Nested(RawNestedSources(
+                fields
+                    .iter()
+                    .map(|field| (field.target.clone(), Self::from(&field.source)))
+                    .collect(),
+            )),
             // Written back as the scalar it was read as, so a document round-trips to its own
             // YAML type. The text is this type's own rendering, so each parse succeeds.
             PayloadSource::Scalar { value, scalar } => match scalar {
@@ -1061,7 +1377,9 @@ impl From<&PayloadSource> for RawPayloadSource {
                     .parse()
                     .map_or_else(|_| Self::Text(value.clone()), Self::Decimal),
             },
-            _ => Self::Text(source.to_string()),
+            PayloadSource::InputField { .. } | PayloadSource::Literal { .. } => {
+                Self::Text(source.to_string())
+            }
         }
     }
 }
@@ -2338,7 +2656,12 @@ fn check_payload_entry(
     };
 
     match source {
-        PayloadSource::Generated => {}
+        // Checked with the entity, input and struct in hand by `value_expression::validate`.
+        PayloadSource::Generated
+        | PayloadSource::SubjectField { .. }
+        | PayloadSource::Increment { .. }
+        | PayloadSource::InputOrGenerated { .. }
+        | PayloadSource::Struct { .. } => {}
         PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => {
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.
@@ -2459,10 +2782,16 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
             for (field, source) in &outcome.sets {
-                if matches!(
-                    source,
-                    PayloadSource::ResponseField { .. } | PayloadSource::Generated
-                ) {
+                // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
+                let generated_admitted = spec.system().format.major()
+                    >= crate::system::FormatVersion::V14.major()
+                    && matches!(source, PayloadSource::Generated);
+                if !generated_admitted
+                    && matches!(
+                        source,
+                        PayloadSource::ResponseField { .. } | PayloadSource::Generated
+                    )
+                {
                     errors.push(ValidationError::at(
                         at.clone().key("sets").named(field),
                         ValidationCode::ConflictingDeclaration,
@@ -2884,16 +3213,17 @@ struct LiteralRefusal {
 /// text is not it — `paused: "perhaps"` over a `Boolean`. `Err(None)` means the primitive has no
 /// literal spelling at all, and the value has to come from an input.
 ///
-/// Two primitives, and the spellings are the ones `ess-conformance`'s own setup reader admits for
-/// the same two: exactly `true` and `false`, and a decimal whose text round-trips through `i64`, so
-/// `007`, `+7` and ` 7` are refused rather than normalised. Normalising would put a second spelling
+/// Three primitives, and the spellings are the ones `ess-conformance`'s own setup reader admits for
+/// the same three: exactly `true` and `false`, a decimal whose text round-trips through `i64`, and
+/// for `Decimal` the one grammar `Number::decimal_literal` reads, so `007`, `+7` and ` 7` are
+/// refused rather than normalised. Normalising would put a second spelling
 /// into the model that nothing downstream writes, and the reader that has to send the value would
 /// be the place it was discovered.
 ///
 /// The other primitives have canonical text forms too, and none of them is claimed here. A
 /// `Timestamp` or a `Uuid` admitted in this function and not in the reader that sends it is exactly
-/// how the two come apart, and the adopter's 52 refusals were 50 `Boolean` and 2 `Integer` — there
-/// is no third case waiting behind them.
+/// how the two come apart. `Decimal` joined in beyond10x/ess#135, with its reader in
+/// `ess-primitives` so that both sides call one function.
 fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'static str>> {
     let spelling = match primitive {
         Primitive::Boolean => {
@@ -2911,8 +3241,16 @@ fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'s
             }
             "a whole number written in decimal, without a sign or leading zeroes"
         }
+        // beyond10x/ess#135: a creating branch that starts a score at `0.0` had no spelling, and
+        // taking the default from an input changed what the command accepts.
+        Primitive::Decimal => {
+            if ess_primitives::facts::Number::decimal_literal(value).is_some() {
+                return Ok(());
+            }
+            "a decimal such as `0.0` or `-2.5`, without a `+`, leading zeroes, an exponent or \
+             more places than the value keeps"
+        }
         Primitive::String
-        | Primitive::Decimal
         | Primitive::Binary64
         | Primitive::Timestamp
         | Primitive::Duration
@@ -2932,9 +3270,8 @@ fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'s
 /// text and one pair of quotes is the fix, and the refusal spells it
 /// (`docs/design/typed-literals-and-unknown-instances.md`).
 ///
-/// A decimal is never admitted: [`primitive_literal`] claims no spelling for `Decimal`, for the
-/// reason it gives, and a scalar compiling where its quoted form does not would put a second rule
-/// into the model.
+/// An unquoted decimal (`score: 0.5`) is admitted exactly where its quoted form is: over a
+/// `Decimal` target, by [`primitive_literal`]'s one grammar (beyond10x/ess#135).
 #[allow(clippy::too_many_arguments)]
 fn scalar_representation(
     owner: &QualifiedName,
@@ -2988,8 +3325,8 @@ fn literal_representation(
         Some(LiteralRefusal {
             reason,
             hint: format!(
-                "a literal may be text, a variant of an enum, `true` or `false`, or a whole \
-                 number in decimal; anything else has to come from an input of `{}`",
+                "a literal may be text, a variant of an enum, `true` or `false`, a whole number \
+                 or a decimal; anything else has to come from an input of `{}`",
                 command.name
             ),
         })
@@ -3050,7 +3387,7 @@ fn literal_representation(
                 }),
                 Err(None) => refuse(format!(
                     "`{owner}.{target}` is `{primitive}` underneath, and a literal in a {place} \
-                     is text, `true` or `false`, or a whole number"
+                     is text, `true` or `false`, a whole number or a decimal"
                 )),
             }
         }
