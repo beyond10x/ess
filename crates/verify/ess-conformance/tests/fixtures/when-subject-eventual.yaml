@@ -1,0 +1,68 @@
+format: ess/14
+system: demo
+version: v1
+domain: demo.jobs
+summary: Jobs that leave the queue by a stored flag, read only through an eventual view.
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: fast, type: Boolean}
+    lifecycle:
+      initial: Queued
+      states: [Queued, Running, Direct]
+      terminal: [Running, Direct]
+      transitions:
+        - {name: start, from: [Queued], to: Running}
+        - {name: go-direct, from: [Queued], to: Direct}
+actors:
+  - {name: demo.jobs.Clerk, may: [demo.jobs.SubmitJob, demo.jobs.AdvanceJob]}
+commands:
+  - name: demo.jobs.SubmitJob
+    input:
+      - {name: fast, type: Boolean}
+    outcomes:
+      - name: submitted
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {fast: input.fast}
+        emits: [demo.jobs.JobSubmitted]
+        payload:
+          demo.jobs.JobSubmitted: {job_id: {generated: true}, fast: input.fast}
+  - name: demo.jobs.AdvanceJob
+    input:
+      - {name: job_id, type: demo.jobs.JobId}
+    outcomes:
+      - name: started
+        when_subject:
+          predicate: fast == true
+        moves: demo.jobs.Job.start
+        instance: job_id
+        emits: [demo.jobs.JobMoved]
+        payload:
+          demo.jobs.JobMoved: {job_id: input.job_id, state: Running}
+      - name: direct
+        moves: demo.jobs.Job.go-direct
+        instance: job_id
+        emits: [demo.jobs.JobMoved]
+        payload:
+          demo.jobs.JobMoved: {job_id: input.job_id, state: Direct}
+events:
+  - name: demo.jobs.JobSubmitted
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: fast, type: Boolean}
+  - name: demo.jobs.JobMoved
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: state, type: demo.jobs.Job.State}
+views:
+  - name: demo.jobs.JobDetails
+    source: demo.jobs.Job
+    consistency: eventual
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: fast, type: Boolean}
+      - {name: state, type: demo.jobs.Job.State}

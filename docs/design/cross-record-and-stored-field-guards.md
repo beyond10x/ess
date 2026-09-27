@@ -116,8 +116,13 @@ views:
       - {name: weight_kg, type: Integer}
 ```
 
-The view is part of the rule: it is the immediate, unfiltered view through which the guarded
-fields are observed, and without one the witness is refused.
+The view is part of the rule: it is the unfiltered view through which the guarded fields are
+observed, and without one the witness is refused. An immediate view is read once; where every such
+view is `eventual`, the observation waits in an `eventually` block until the view shows the arranged
+row (beyond10x/ess#172). That proves the implementation applied the values the arrangement's last
+step left, and no step writes the row between that observation and the command. It proves nothing
+about a row that did not move, so a refusal's unchanged row is asserted only through an immediate
+view, and omitted where there is none.
 
 `weight_kg` is an `Integer` and not a `Decimal` on purpose: `sets:` admits no literal spelling for
 `Decimal` or `Binary64` (`crates/verify/ess-conformance/src/input.rs`, `primitive_literal`), so a
@@ -252,7 +257,23 @@ parts, and the `{field, equals}` form runs on it as a one-leaf predicate:
 **Observation.** `observe` in `subject_fact.rs` already requires an immediate, unfiltered,
 parameterless view exposing the identity, `state` and the one guarded field, and asserts them
 before the command runs. That requirement widens to every guarded field; a specification without
-such a view gets the existing typed refusal.
+such a view gets the existing typed refusal. Since beyond10x/ess#172 an `eventual` view with the
+same projection stands in where no immediate one qualifies, asserted in an `eventually` block. The
+absent-subject witness still needs an immediate view: an `eventual` read that shows no row proves
+nothing about a row the projection has not caught up with. For the same reason the row after a
+command is awaited through an `eventual` view only where the command changed its state or a field
+the observation asserts, both in the stored-field observation and in the generic view assertion
+such a command's changing branches get (`view_expectations`; other commands keep theirs). A
+refusal's row, or one a branch left as it was, is asserted unchanged through an immediate view,
+and that check is omitted where no immediate view projects it. The scenario still asserts the
+outcome, the error and that no event was published. `unknown_instance:` does not compete for
+selection beside the guarded branches.
+
+**Wrong state.** In a state no move of the command starts from, the stored fields select nothing.
+The `state/<S>/refuses/<command>` scenario sends an input the moving branch's own input guard
+admits and the `when:` of every other non-default branch refutes, chosen in
+`subject_fact::refusal_input` (beyond10x/ess#173), so an input-guarded refusal cannot
+answer in the state's place.
 
 **The witness for `refused-overweight`**, in the suite's own step vocabulary:
 
