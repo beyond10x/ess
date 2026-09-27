@@ -439,14 +439,18 @@ One key and one error name — everything else is derived:
 are derived. The `error:` is required — without it a generated scenario could only assert that
 *nothing happened*, which also passes against an implementation refusing for the wrong reason.
 
-The same branch answers an **unknown instance**. When the input selects a `moves:` or `updates:`
-branch and its `instance:` names no record, the command answers its `wrong_state` outcome. Input
-guards are decided first, so `PayInvoice` with a non-positive amount still answers `rejected`
-whatever invoice it names. The suite checks this once per command that declares `wrong_state`, with
-an identity no other scenario sends, under the branch's own id (`…IssueInvoice/outcome/wrong-state`).
-It requires the branch, its error by name and no error field, and that no declared event is
-published. A command that acts on an input-named instance and declares no `wrong_state` has no
-declared answer. `ess verify conform synthesize` prints a `note:` for it, not a refusal.
+An **unknown instance** — the input selects a `moves:` or `updates:` branch and its `instance:`
+names no record — is answered by the command's **not-found outcome** when it declares one: an
+`external:` refusal whose `error:` carries a field of the identity's type, such as
+`not-found` reporting `DoorNotFound { door_id }`. The suite checks it
+under that outcome's id with an identity no other scenario sends, in place of injecting the
+external cause. Only a command declaring no not-found outcome falls back to its `wrong_state`
+branch, checked under the branch's own id (`…IssueInvoice/outcome/wrong-state`). Input guards are
+decided first, so `PayInvoice` with a non-positive amount still answers `rejected` whatever invoice
+it names. Either scenario requires the outcome, its error by name and no error field, and that no
+declared event is published. A command that acts on an input-named instance and declares neither
+has no declared answer, and one declaring two not-found candidates has an ambiguous one.
+`ess verify conform synthesize` prints a `note:` for each, not a refusal.
 
 An error field that describes the current state, such as `InvoiceStateConflict.state`, has no value
 for an instance that does not exist. Where the `wrong_state` error declares fields, the generated

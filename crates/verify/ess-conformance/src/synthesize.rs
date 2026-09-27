@@ -243,12 +243,21 @@ pub struct Synthesis {
 /// A question the specification leaves unanswered, so that no scenario is owed for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Note {
-    /// A command acting on an input-named instance declares no `wrong_state` outcome, so what it
-    /// answers when that identity names no record is undeclared
+    /// A command acting on an input-named instance declares neither a not-found outcome nor a
+    /// `wrong_state` outcome, so what it answers when that identity names no record is undeclared
     /// (`docs/design/typed-literals-and-unknown-instances.md`, section 2).
     UnknownInstanceUnanswered {
         /// The command.
         command: CommandRef,
+    },
+    /// A command acting on an input-named instance declares more than one outcome that could be
+    /// its not-found answer, so which one an unknown identity takes is undeclared
+    /// (`docs/design/typed-literals-and-unknown-instances.md`, section 2a).
+    UnknownInstanceAmbiguous {
+        /// The command.
+        command: CommandRef,
+        /// The candidate outcomes, in declaration order.
+        outcomes: Vec<OutcomeName>,
     },
 }
 
@@ -257,9 +266,19 @@ impl fmt::Display for Note {
         match self {
             Self::UnknownInstanceUnanswered { command } => write!(
                 f,
-                "`{command}` declares no `wrong_state` outcome, so what it answers when its \
-                 `instance:` names no record is undeclared and not checked"
+                "`{command}` declares no not-found and no `wrong_state` outcome, so what it \
+                 answers when its `instance:` names no record is undeclared and not checked"
             ),
+            Self::UnknownInstanceAmbiguous { command, outcomes } => {
+                let names: Vec<String> = outcomes.iter().map(|name| format!("`{name}`")).collect();
+                write!(
+                    f,
+                    "`{command}` declares {} as externally decided refusals reporting its \
+                     `instance:` identity, so which one it answers when that identity names no \
+                     record is undeclared and not checked",
+                    names.join(" and ")
+                )
+            }
         }
     }
 }
@@ -4705,17 +4724,25 @@ fn names_existing(outcome: &ResolvedOutcome) -> Option<&str> {
     }
 }
 
-/// The unknown-instance rule, witnessed once per command that declares `wrong_state`
-/// (`docs/design/typed-literals-and-unknown-instances.md`, section 2).
+/// The unknown-instance rule, witnessed once per command acting on an input-named instance that
+/// declares an answer for it (`docs/design/typed-literals-and-unknown-instances.md`, sections 2
+/// and 2a).
 ///
 /// A command whose input selects a branch acting on an existing instance, and whose `instance:`
-/// names no record, answers its `wrong_state` branch. The scenario is filed under that branch's own
-/// outcome id, which no scenario held before: the states the branch answers in are the
-/// illegal-move family's, one scenario each, and this is the one case that family cannot arrange.
+/// names no record, answers its declared not-found outcome ([`not_found`]) when it declares one.
+/// That scenario is filed under the not-found outcome's own id, replacing the scenario that
+/// injected its external cause: sending an identity no record carries *is* that cause, witnessed
+/// rather than forced. Where no identity is known to be fresh, the injected scenario stays.
 ///
-/// A command acting on an input-named instance and declaring no `wrong_state` has no declared
-/// answer, and gets a [`Note`] — not a refusal, because the specification states nothing here
-/// that is left unwitnessed.
+/// Only a command declaring no not-found outcome falls back to its `wrong_state` branch. That
+/// scenario is filed under the `wrong_state` branch's own outcome id, which no scenario held
+/// before: the states the branch answers in are the illegal-move family's, one scenario each, and
+/// this is the one case that family cannot arrange.
+///
+/// A command declaring neither has no declared answer, and gets a [`Note`] — not a refusal, because
+/// the specification states nothing here that is left unwitnessed. So does a command declaring two
+/// or more not-found candidates: which one an unknown identity takes is not stated, and neither is
+/// assumed.
 fn unknown_instances(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -4733,6 +4760,26 @@ fn unknown_instances(
             continue;
         }
         let command_ref = CommandRef::new(command.name.clone());
+        match not_found(ir, command, &acting).as_slice() {
+            [] => {}
+            [answer] => {
+                let id = ScenarioId::Outcome {
+                    outcome: OutcomeRef::new(command_ref, answer.name.clone()),
+                };
+                if let Ok(scenario) = unknown_instance(ir, command, &acting, answer, actors) {
+                    suite.scenarios.remove(&id);
+                    insert(suite, id, scenario, refusals);
+                }
+                continue;
+            }
+            several => {
+                notes.push(Note::UnknownInstanceAmbiguous {
+                    command: command_ref,
+                    outcomes: several.iter().map(|outcome| outcome.name.clone()).collect(),
+                });
+                continue;
+            }
+        }
         let Some(declared) = command
             .outcomes
             .iter()
@@ -4751,6 +4798,48 @@ fn unknown_instances(
             Err(cause) => refusals.push(Refusal::about(&id, cause)),
         }
     }
+}
+
+/// The outcomes a command declares as its answer for an identity naming no record.
+///
+/// An outcome qualifies when it is an externally decided refusal (`external:` with no input guard,
+/// acting on no instance, replaying nothing) whose declared error carries a field of the type of an
+/// identity the command's acting branches read from input — `not-found`, reporting
+/// `DoorNotFound { door_id }` for a command whose moves take `instance: door_id`. Such an error
+/// reports the identity it could not find; a sibling external refusal reporting something else
+/// (`Jammed { force }`) is about another input and does not qualify.
+///
+/// The declaration is read, not guessed: no outcome or error name is consulted. More than one
+/// qualifying outcome is returned as it is, and the caller treats it as undeclared.
+fn not_found<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+    acting: &[&ResolvedOutcome],
+) -> Vec<&'a ResolvedOutcome> {
+    let identities: BTreeSet<&ResolvedTypeRef> = acting
+        .iter()
+        .filter_map(|outcome| names_existing(outcome))
+        .filter_map(|field| command.input.iter().find(|input| input.name == field))
+        .map(|input| input.type_ref.required())
+        .collect();
+    command
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            outcome.subject.is_none()
+                && outcome.replays.is_none()
+                && outcome.refuses
+                && matches!(outcome.condition, ResolvedCondition::External { .. })
+        })
+        .filter(|outcome| {
+            outcome.error.as_ref().is_some_and(|error| {
+                ir.error(error)
+                    .fields
+                    .iter()
+                    .any(|field| identities.contains(field.type_ref.required()))
+            })
+        })
+        .collect()
 }
 
 /// The scenario itself: the command, sent for an identity no record carries, answering `declared`.
