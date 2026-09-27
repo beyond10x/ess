@@ -259,6 +259,15 @@ pub enum Note {
         /// The candidate outcomes, in declaration order.
         outcomes: Vec<OutcomeName>,
     },
+    /// A wrong-state refusal whose subject the declared views publish only in part, so its scenario
+    /// observes what they publish and nothing more (beyond10x/ess#132). No view says how the rest
+    /// of the row reads, so a refusal that changed it is not checked.
+    PartialObservation {
+        /// The refusal scenario.
+        scenario: ScenarioId,
+        /// The subject fields no view lets it observe, in name order.
+        unobserved: Vec<String>,
+    },
 }
 
 impl fmt::Display for Note {
@@ -277,6 +286,23 @@ impl fmt::Display for Note {
                      `instance:` identity, so which one it answers when that identity names no \
                      record is undeclared and not checked",
                     names.join(" and ")
+                )
+            }
+            Self::PartialObservation {
+                scenario,
+                unobserved,
+            } => {
+                let names: Vec<String> =
+                    unobserved.iter().map(|name| format!("`{name}`")).collect();
+                write!(
+                    f,
+                    "`{scenario}` observes the refused subject through what its views publish; no \
+                     view publishes {}, so a refusal that changed {} is not checked, and a field \
+                     published only by an `eventual` view is checked against an eventually \
+                     consistent read, which a projection that has not yet caught up with a wrong \
+                     change still passes",
+                    names.join(", "),
+                    if names.len() == 1 { "it" } else { "them" }
                 )
             }
         }
@@ -682,6 +708,20 @@ impl RefusalCause {
     /// What would have to change for the construct to be testable.
     pub fn hint(&self) -> &'static str {
         match self {
+            // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
+            // changing a value type (beyond10x/ess#132). Every such reason names the view it needs,
+            // and says `immediate` where only a `read_your_writes` one will do.
+            Self::NoWitness(gap)
+                if gap.reason.contains(" view") && gap.reason.contains("immediate") =>
+            {
+                "declare a `read_your_writes` view of the entity that projects its identity, its \
+                 state and the fields named; an `eventual` view cannot be read at the moment this \
+                 observation is made"
+            }
+            Self::NoWitness(gap) if gap.reason.contains(" view") => {
+                "declare a view of the entity that projects its identity and its state; a \
+                 wrong-state refusal is observed through any identity view, `eventual` included"
+            }
             Self::NoWitness(_) => {
                 "give the field a type that has a finite value, or drop it from the command's input"
             }
@@ -1250,10 +1290,12 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
             insert(&mut suite, id, scenario, &mut refusals);
         }
     }
-    lifecycle(ir, &actors, &mut suite, &mut refusals);
+    let mut partial = Vec::new();
+    lifecycle(ir, &actors, &mut suite, &mut refusals, &mut partial);
     state_refusals(ir, &actors, &mut suite, &mut refusals);
     let mut notes = Vec::new();
     unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
+    notes.extend(partial);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
@@ -1809,6 +1851,8 @@ fn arranged(
     routed: bool,
 ) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
     if routed {
+        // The stored-row search chose the row and the input together; it is asked for a row the
+        // branch's writes change first, and only then for any row (beyond10x/ess#161).
         return subject_fact::prepare(ir, command, outcome, actors);
     }
     let (setup, input) = if has_subject_guards(command) {
@@ -1819,15 +1863,88 @@ fn arranged(
             reach(ir, command, outcome, Distinction::PLAIN)?,
         )
     };
-    let input = freshened(
+    let fresh = freshened(
         ir,
         command,
         outcome,
-        input,
+        input.clone(),
         setup.before.as_ref(),
         &setup.settled,
     );
-    Ok((setup, input))
+    // A write the plain arrangement already holds proves nothing about the write (beyond10x/ess#161):
+    // a literal `sets:` cannot be moved by the input, so the row is arranged again under a further
+    // witness until it held something else, where one does — in the same held state, so a branch
+    // selected by that state is still selected.
+    let unchanged = unchanged_writes(ir, outcome, &fresh, &setup.settled);
+    if unchanged > 0 {
+        let held = has_subject_guards(command)
+            .then(|| setup.before.clone())
+            .flatten();
+        for nth in 1..=FRESH_WITNESSES {
+            let Ok(mut further) = prepare_in(
+                ir,
+                outcome,
+                actors,
+                held.as_ref(),
+                Distinction::further(nth),
+            ) else {
+                continue;
+            };
+            if let (Some(state), Some(instance)) = (&held, &further.instance) {
+                let Ok((observed, view)) = observe_subject_state(ir, outcome, instance, state)
+                else {
+                    continue;
+                };
+                further.steps.extend(observed);
+                further.source.insert(view.into());
+            }
+            let moved = freshened(
+                ir,
+                command,
+                outcome,
+                input.clone(),
+                further.before.as_ref(),
+                &further.settled,
+            );
+            if unchanged_writes(ir, outcome, &moved, &further.settled) < unchanged {
+                return Ok((further, moved));
+            }
+        }
+    }
+    Ok((setup, fresh))
+}
+
+/// How many of a branch's `sets:` entries write the value the existing row already holds, where the
+/// scenario can know both: a literal, or the input's own value, against [`held_value`]. Nothing for
+/// a branch that acts on no existing row.
+fn unchanged_writes(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    settled: &BTreeMap<String, Determined>,
+) -> usize {
+    if !outcome.subject.as_ref().is_some_and(|subject| {
+        matches!(
+            subject.effect,
+            ResolvedEffect::Updates | ResolvedEffect::Moves { .. }
+        )
+    }) {
+        return 0;
+    }
+    outcome
+        .sets
+        .iter()
+        .filter(|set| {
+            let written = match &set.value {
+                ResolvedPayloadValue::Literal { value } => {
+                    literal_value(ir, &set.target_type, value, 0)
+                }
+                ResolvedPayloadValue::InputField { field, .. } => input.get(field).cloned(),
+                _ => None,
+            };
+            written.is_some() && written == held_value(ir, settled, &set.target, &set.target_type)
+        })
+        .count()
 }
 
 fn is_state_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
@@ -2272,6 +2389,19 @@ fn prepare(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     held: Option<&StateName>,
 ) -> Result<Setup, RefusalCause> {
+    prepare_in(ir, outcome, actors, held, Distinction::PLAIN)
+}
+
+/// [`prepare`], with the existing subject arranged under `distinction`: a further witness for every
+/// act that arranges it, which [`arranged`] asks for where the plain arrangement already holds the
+/// value the branch writes (beyond10x/ess#161).
+fn prepare_in(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    held: Option<&StateName>,
+    distinction: Distinction,
+) -> Result<Setup, RefusalCause> {
     let Some(subject) = &outcome.subject else {
         return Ok(Setup::none());
     };
@@ -2328,19 +2458,12 @@ fn prepare(
         }
     };
 
-    let arrangement = arrange_first(
-        ir,
-        &subject.entity,
-        &targets,
-        actors,
-        Distinction::PLAIN,
-        &[],
-    )
-    .map_err(|reason| RefusalCause::InstanceRequired {
-        entity: EntityRef::from(&subject.entity),
-        need,
-        reason,
-    })?;
+    let arrangement = arrange_first(ir, &subject.entity, &targets, actors, distinction, &[])
+        .map_err(|reason| RefusalCause::InstanceRequired {
+            entity: EntityRef::from(&subject.entity),
+            need,
+            reason,
+        })?;
     Ok(Setup {
         steps: arrangement.steps,
         instance: Some(arrangement.instance),
@@ -3999,13 +4122,14 @@ fn freshened(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    mut input: BTreeMap<String, Node>,
+    input: BTreeMap<String, Node>,
     held: Option<&StateName>,
     settled: &BTreeMap<String, Determined>,
 ) -> BTreeMap<String, Node> {
     let Some(subject) = &outcome.subject else {
         return input;
     };
+    let mut input = distinguished(ir, command, outcome, input, held);
     if !matches!(
         subject.effect,
         ResolvedEffect::Updates | ResolvedEffect::Moves { .. }
@@ -4028,7 +4152,8 @@ fn freshened(
             else {
                 continue;
             };
-            if Some(&moved) == already.as_ref() {
+            if Some(&moved) == already.as_ref() || equals_a_sibling(command, &input, field, &moved)
+            {
                 continue;
             }
             let mut next = input.clone();
@@ -4038,6 +4163,85 @@ fn freshened(
             {
                 input = next;
                 break;
+            }
+        }
+    }
+    input
+}
+
+/// Whether `value` at `field` would equal what a same-typed sibling input already carries.
+fn equals_a_sibling(
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    field: &str,
+    value: &Node,
+) -> bool {
+    let Some(written) = command.input.iter().find(|input| input.name == field) else {
+        return false;
+    };
+    command
+        .input
+        .iter()
+        .filter(|sibling| sibling.name != field && sibling.type_ref == written.type_ref)
+        .any(|sibling| input.get(&sibling.name) == Some(value))
+}
+
+/// The branch's input, with every field a `sets:` entry reads moved apart from its same-typed
+/// siblings (beyond10x/ess#161).
+///
+/// `sets: {anonymous: input.anonymous}` beside a second `Boolean` input `recording`, both sent
+/// `true`: the row reads `true` whichever input the implementation wrote from, so an implementation
+/// — or a `sets-retarget` mutant — that read the sibling passed. So where a source and a sibling of
+/// its declared type carry one value, the sibling is moved first, because it is not what this entry
+/// writes, and the source only where the sibling cannot move without losing the branch. A further
+/// witness gives the moved field its value, as [`freshened`] takes one, and the branch is decided
+/// again by [`selects_branch`]; where neither can move the input stands, because no input tells the
+/// two apart.
+fn distinguished(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    held: Option<&StateName>,
+) -> BTreeMap<String, Node> {
+    for set in &outcome.sets {
+        let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
+            continue;
+        };
+        let Some(written) = command.input.iter().find(|input| input.name == *field) else {
+            continue;
+        };
+        let siblings: Vec<&String> = command
+            .input
+            .iter()
+            .filter(|sibling| sibling.name != *field && sibling.type_ref == written.type_ref)
+            .map(|sibling| &sibling.name)
+            .collect();
+        for sibling in siblings {
+            if !input.contains_key(field) || input.get(field) != input.get(sibling) {
+                continue;
+            }
+            'moved: for moving in [sibling, field] {
+                for nth in 1..=FRESH_WITNESSES {
+                    let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                        .ok()
+                        .and_then(|inputs| inputs.into_iter().next())
+                        .and_then(|mut further| further.remove(moving))
+                    else {
+                        continue;
+                    };
+                    if input.get(moving) == Some(&moved) {
+                        continue;
+                    }
+                    let mut next = input.clone();
+                    next.insert(moving.clone(), moved);
+                    if admitted(ir, command, &next)
+                        && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
+                    {
+                        input = next;
+                        break 'moved;
+                    }
+                }
             }
         }
     }
@@ -4564,6 +4768,7 @@ fn lifecycle(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     suite: &mut ConformanceSuite,
     refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
 ) {
     for (handle, drivers) in ir.drivers() {
         let entity = EntityRef::from(handle);
@@ -4651,11 +4856,17 @@ fn lifecycle(
                     command: CommandRef::new((*command).clone()),
                     refuses,
                 };
-                let Some(scenario) =
+                let Some((scenario, unobserved)) =
                     refused_here(ir, handle, &drivers, command, state, actors, &id, refusals)
                 else {
                     continue;
                 };
+                if !unobserved.is_empty() {
+                    notes.push(Note::PartialObservation {
+                        scenario: id.clone(),
+                        unobserved,
+                    });
+                }
                 insert(suite, id, scenario, refusals);
             }
         }
@@ -4704,7 +4915,7 @@ fn refused_here(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
-) -> Option<ConformanceScenario> {
+) -> Option<(ConformanceScenario, Vec<String>)> {
     let entity = EntityRef::from(handle);
     let movers: Vec<&Driver<'_>> = drivers
         .iter()
@@ -4801,10 +5012,12 @@ fn refused_here(
     }
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
 
+    let mut unobserved = Vec::new();
     if let Some(preservation) = preservation {
         steps.push(ScenarioStep::ExpectNoEvents);
         steps.extend(preservation.after);
         source.extend(preservation.source);
+        unobserved = preservation.unobserved;
     }
 
     let text = match (&reported, accepted) {
@@ -4816,7 +5029,10 @@ fn refused_here(
         ),
         (None, false) => format!("`{command}` does not move a `{entity}` that is in `{state}`"),
     };
-    Some(ConformanceScenario::new(clipped(&text), steps, source))
+    Some((
+        ConformanceScenario::new(clipped(&text), steps, source),
+        unobserved,
+    ))
 }
 
 /// The input field naming the existing instance a branch acts on, where it acts on one.
@@ -5128,7 +5344,7 @@ fn complete_wrong_state(
         settled: arrangement.settled.clone(),
         ..Setup::none()
     };
-    subject_fact::preserve_complete_subject(ir, subject(attempt), &setup).map(Some)
+    subject_fact::preserve_refused_subject(ir, subject(attempt), &setup).map(Some)
 }
 
 /// One line saying which move a transition scenario proves, and by which verb.
@@ -5446,6 +5662,9 @@ fn with_leaf(
     path: &FactPath,
     value: Node,
 ) -> Option<BTreeMap<String, Node>> {
+    if let Some(resized) = with_count(input, path, &value) {
+        return Some(resized);
+    }
     let (first, rest) = path.segments().split_first()?;
     let mut out = input.clone();
     let mut at = out.get_mut(first)?;
@@ -5461,6 +5680,140 @@ fn with_leaf(
     }
     *at = value;
     Some(out)
+}
+
+/// `input` with the text or list that `<parent>.count` reads resized to `length`, or nothing where
+/// the path reads no count or the parent is neither (beyond10x/ess#160).
+///
+/// `digits.count > 64` reads a length, not a leaf, so a boundary on it is moved by resizing what it
+/// counts: a text keeps its own characters, cycled or cut, so an alphabet or pattern that admitted
+/// it still admits the prefix; a list repeats or drops its last elements. Lengths above
+/// [`MAX_COUNT_WITNESS`](crate::witness::MAX_COUNT_WITNESS) are not built, for the reason the
+/// witness ladder does not build them.
+fn with_count(
+    input: &BTreeMap<String, Node>,
+    path: &FactPath,
+    length: &Node,
+) -> Option<BTreeMap<String, Node>> {
+    let (last, parent) = path.segments().split_last()?;
+    if last != "count" || parent.is_empty() {
+        return None;
+    }
+    let Node::Number(number) = length else {
+        return None;
+    };
+    let wanted = number.get();
+    if wanted.fract() != 0.0
+        || !(0.0..=f64::from(u32::try_from(crate::witness::MAX_COUNT_WITNESS).ok()?))
+            .contains(&wanted)
+    {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let wanted = wanted as usize;
+    let (first, rest) = parent.split_first()?;
+    let mut out = input.clone();
+    let mut at = out.get_mut(first)?;
+    for segment in rest {
+        at = match at {
+            Node::Map(members) => members.get_mut(segment)?,
+            Node::Seq(elements) => elements.get_mut(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    match at {
+        Node::Text(text) => {
+            let own: Vec<char> = text.chars().collect();
+            if own.is_empty() && wanted > 0 {
+                return None;
+            }
+            *text = own.iter().copied().cycle().take(wanted).collect();
+        }
+        Node::Seq(elements) => {
+            let last = elements.last().cloned();
+            if elements.len() > wanted {
+                elements.truncate(wanted);
+            } else {
+                let filler = last?;
+                elements.resize(wanted, filler);
+            }
+        }
+        _ => return None,
+    }
+    Some(out)
+}
+
+/// The first candidate for `guard` whose facts `holds` accepts, among the inputs the witness search
+/// builds from the guard's own literals (beyond10x/ess#155).
+fn first_where(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guard: &Predicate,
+    holds: impl Fn(&crate::InputFacts<'_>) -> bool,
+) -> Vec<BTreeMap<String, Node>> {
+    let Ok(inputs) = candidates(ir, command, &[guard], Distinction::PLAIN) else {
+        return Vec::new();
+    };
+    inputs
+        .into_iter()
+        .filter(|input| flatten(ir, command, input).is_ok_and(|facts| holds(&facts)))
+        .collect()
+}
+
+/// Whether exactly the child at `index` decides `alone` and every other child the opposite.
+fn exactly_one(
+    facts: &crate::InputFacts<'_>,
+    children: &[Predicate],
+    index: usize,
+    alone: bool,
+) -> bool {
+    children.iter().enumerate().all(|(other, child)| {
+        let satisfied = match facts.decide(child) {
+            Decision::Satisfied => true,
+            Decision::Refuted(_) => false,
+            Decision::Unevaluable(_) => return false,
+        };
+        satisfied == ((other == index) == alone)
+    })
+}
+
+/// One candidate input, by field.
+type Row = BTreeMap<String, Node>;
+
+/// One further row per child of a connective with two or more children, where the child decides
+/// `alone` and every other child the opposite (beyond10x/ess#155) — skipping a child the plain
+/// witness or an earlier row already isolates, and one no candidate isolates.
+#[allow(clippy::too_many_arguments)]
+fn one_per_child(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guard: &Predicate,
+    children: &[Predicate],
+    alone: bool,
+    primary: &Row,
+    rows: &mut Vec<Row>,
+    keep: &dyn Fn(Row, &mut Vec<Row>),
+) {
+    if children.len() < 2 {
+        return;
+    }
+    for index in 0..children.len() {
+        let isolates = |facts: &crate::InputFacts<'_>| exactly_one(facts, children, index, alone);
+        if flatten(ir, command, primary).is_ok_and(|facts| isolates(&facts))
+            || rows
+                .iter()
+                .any(|row| flatten(ir, command, row).is_ok_and(|facts| isolates(&facts)))
+        {
+            continue;
+        }
+        let before = rows.len();
+        for candidate in first_where(ir, command, guard, isolates) {
+            keep(candidate, rows);
+            if rows.len() > before {
+                break;
+            }
+        }
+    }
 }
 
 /// The inputs a branch is further witnessed at so the boundaries of its guards are pinned
@@ -5508,24 +5861,38 @@ fn boundary_inputs(
                     keep(candidate, &mut rows);
                 }
             }
+            // Each disjunct of an `any` holding alone (beyond10x/ess#155): a witness satisfying
+            // every disjunct at once is also a witness of the `all` a connective mutant writes.
+            for conjunct in &conjuncts {
+                let Predicate::Any(children) = conjunct else {
+                    continue;
+                };
+                one_per_child(
+                    ir, command, guard, children, true, primary, &mut rows, &keep,
+                );
+            }
         }
         TestStrategy::DefaultBranch => {
             for sibling in command.outcomes.iter().filter(|sibling| {
                 sibling.name != outcome.name
                     && sibling.test_strategy == TestStrategy::ConstructInput
             }) {
-                let (Some(guard), Ok(reference)) = (
-                    when(sibling),
-                    reach(ir, command, sibling, Distinction::PLAIN),
-                ) else {
+                let Some(guard) = when(sibling) else {
                     continue;
                 };
+                // The sibling's own witness is the base a boundary is moved from, so every other
+                // conjunct stays satisfied. Where the sibling has none (a guard nothing satisfies,
+                // such as `digits.count < 0`), or its witness cannot be resized (an empty text
+                // grown to a length), the default's own witness is the base (beyond10x/ess#160).
+                let reference = reach(ir, command, sibling, Distinction::PLAIN).ok();
                 let conjuncts = conjuncts(guard);
                 for bound in ordered_bounds(&conjuncts) {
-                    let Some(candidate) = bound
-                        .refuting()
-                        .and_then(|value| with_leaf(&reference, bound.path, value))
-                    else {
+                    let Some(candidate) = bound.refuting().and_then(|value| {
+                        reference
+                            .as_ref()
+                            .and_then(|base| with_leaf(base, bound.path, value.clone()))
+                            .or_else(|| with_leaf(primary, bound.path, value))
+                    }) else {
                         continue;
                     };
                     let Ok(facts) = flatten(ir, command, &candidate) else {
@@ -5543,6 +5910,13 @@ fn boundary_inputs(
                         keep(candidate, &mut rows);
                     }
                 }
+                // Each conjunct of an `all` failing alone, whatever it compares (beyond10x/ess#155):
+                // a default witnessed only where every conjunct fails is also the default of the
+                // `any` a connective mutant writes. The ordered bounds above already cover the
+                // conjuncts they reach at their neighbours; a conjunct already refuted alone by the
+                // plain witness or an earlier row adds nothing.
+                let owned: Vec<Predicate> = conjuncts.iter().map(|it| (*it).clone()).collect();
+                one_per_child(ir, command, guard, &owned, false, primary, &mut rows, &keep);
             }
         }
         _ => {}
