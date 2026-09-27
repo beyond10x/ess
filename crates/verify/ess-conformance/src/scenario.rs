@@ -196,6 +196,25 @@ impl ConformanceSuite {
         };
     }
 
+    /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
+    /// recognise: a view predicate reading `defined()` or `missing()` over an `Optional` aggregate
+    /// selects suite/[`ORDINARY`](crate::defined_aggregates::ORDINARY) (beyond10x/ess#176).
+    ///
+    /// Every caller that assembles a fresh suite from a model calls this one, so that a later
+    /// selection over the same suite cannot lower the number again.
+    pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
+        self.select_fresh_format();
+        if self.provenance.suite_version.major() < crate::defined_aggregates::ORDINARY
+            && crate::defined_aggregates::used_by(ir, self)
+        {
+            self.provenance.suite_version = SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::defined_aggregates::ORDINARY
+            ))
+            .expect("constant suite version");
+        }
+    }
+
     pub(crate) fn requires_preservation_format(&self) -> bool {
         self.scenarios.values().any(|scenario| {
             scenario.steps.iter().any(|step| {

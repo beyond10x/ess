@@ -2244,8 +2244,15 @@ impl Compiler<'_> {
                 }
                 return None;
             }
+            // A `defined()` or `missing()` of an `Optional` aggregate reads its presence, which a
+            // row publishes as synthesis reads it (beyond10x/ess#176); such a suite takes
+            // suite/26 when its format is selected against the model.
+            let mut presence = BTreeSet::new();
+            crate::input::presence_reads(predicate, &mut presence);
             for read in &checked.reads {
-                if !projection_target(self.ir, &read.resolution).is_scalar() {
+                if !projection_target(self.ir, &read.resolution).is_scalar()
+                    && !crate::input::aggregate_presence(self.ir, read, &presence)
+                {
                     self.refuse(Cause::UnreadablePredicate {
                         view: view.clone(),
                         path: read.path.to_string(),

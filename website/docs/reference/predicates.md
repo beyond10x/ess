@@ -782,13 +782,21 @@ invariants:
 ```
 
 A view `filter` decides which rows a scenario expects to read. After a command, a scenario always
-knows the entity's lifecycle state. A filter over a value no scenario binds, such as an entity list,
-is undecided, and synthesis refuses every scenario that reads the view with `ESS-SYNTH-005`. The
-list filters above validate but are refused this way. Filter on `state` wherever the rule allows
-it.
+knows the entity's lifecycle state, and every field the command set from values it sent, read at
+the field's declared type. A list set from the input is one of them: `tags: input.tags` sends a
+list, so `tags.count` and a quantifier over `tags` are decided, and the scenario asserts that the
+view shows the row or leaves it out.
 
-```yaml ess-check="filter" ess-expect="unwitnessed:ESS-SYNTH-005" ess-says="tags.count"
+```yaml ess-check="filter" ess-expect="synthesizes"
 filter: tags.count > 0
+```
+
+A filter that compares a value no scenario binds, such as `note`, which no command sets, is
+undecided, and synthesis refuses every scenario that reads the view with `ESS-SYNTH-005`. Filter on
+`state` wherever the rule allows it.
+
+```yaml ess-check="filter" ess-expect="unwitnessed:ESS-SYNTH-005" ess-says="note == hello"
+filter: note == hello
 ```
 
 ## Limits

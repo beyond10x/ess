@@ -1343,7 +1343,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
             }),
         ));
     }
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(ir);
 
     Synthesis {
         suite,
@@ -1408,7 +1408,7 @@ pub fn synthesize_for(ir: &EssIr, component: &str) -> Result<Synthesis, UnknownC
             });
         }
     }
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(ir);
     Ok(Synthesis {
         suite,
         refusals: whole.refusals,
@@ -4224,8 +4224,8 @@ fn no_literal_fallback_run(command: &ResolvedCommand) -> RefusalCause {
 ///
 /// A witness sends every optional input it can, so without this no scenario reached the fallback
 /// and an implementation storing any other default passed. A field is kept when anything else in
-/// the outcome reads it — a plain `input.f`, a `{generated: true}` fallback, the subject's
-/// identity, a fixture, an owner the arrangement bound — or when
+/// the outcome needs it sent — a plain `input.f` into a required target or through a conversion,
+/// a `{generated: true}` fallback, the subject's identity, a fixture, an owner the arrangement bound — or when
 /// the input no longer selects the branch without it, so a guard that reads the field still
 /// decides it. Each field is decided on its own, so one a guard needs does not keep the rest.
 fn without_literal_fallbacks(
@@ -4235,15 +4235,44 @@ fn without_literal_fallbacks(
     setup: &Setup,
     input: BTreeMap<String, Node>,
 ) -> BTreeMap<String, Node> {
-    fn reads<'a>(value: &'a ResolvedPayloadValue, out: &mut Vec<(&'a str, bool)>) {
-        match value {
+    /// How one value of the outcome reads an input field.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Read {
+        /// `{input: f, else: <literal>}`: the literal stands in for an omitted input.
+        Fallback,
+        /// A plain `input.f` copied, unconverted, into an `Optional` target: an omitted input
+        /// leaves that target absent, which the omission run then asserts.
+        Nullable,
+        /// Anything that needs the value sent: a required target, a conversion, a
+        /// `{generated: true}` fallback.
+        Needed,
+    }
+    fn reads<'a>(
+        target: &'a ess_compiler::ir::ResolvedPayloadField,
+        out: &mut Vec<(&'a str, Read)>,
+    ) {
+        match &target.value {
             ResolvedPayloadValue::InputOrGenerated {
                 field, otherwise, ..
-            } => out.push((field, otherwise.is_some())),
-            ResolvedPayloadValue::InputField { field, .. } => out.push((field, false)),
+            } => out.push((
+                field,
+                if otherwise.is_some() {
+                    Read::Fallback
+                } else {
+                    Read::Needed
+                },
+            )),
+            ResolvedPayloadValue::InputField { field, .. } => out.push((
+                field,
+                if target.target_type.is_optional() && target.conversion.is_none() {
+                    Read::Nullable
+                } else {
+                    Read::Needed
+                },
+            )),
             ResolvedPayloadValue::Struct { fields } => {
                 for leaf in fields {
-                    reads(&leaf.value, out);
+                    reads(leaf, out);
                 }
             }
             ResolvedPayloadValue::Literal { .. }
@@ -4262,7 +4291,7 @@ fn without_literal_fallbacks(
         .flat_map(|payload| &payload.fields)
         .chain(&outcome.sets)
     {
-        reads(&field.value, &mut read);
+        reads(field, &mut read);
     }
     let identity = outcome
         .subject
@@ -4273,11 +4302,11 @@ fn without_literal_fallbacks(
         });
     let omitted: BTreeSet<&str> = read
         .iter()
-        .filter(|(_, literal)| *literal)
+        .filter(|(_, how)| *how == Read::Fallback)
         .map(|(field, _)| *field)
         .filter(|field| {
             read.iter()
-                .all(|(other, literal)| other != field || *literal)
+                .all(|(other, how)| other != field || *how != Read::Needed)
                 && identity != Some(*field)
                 && !command.fixture_inputs.contains_key(*field)
                 && !bound.contains_key(*field)

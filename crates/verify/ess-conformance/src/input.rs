@@ -854,24 +854,35 @@ pub(crate) fn predicate_projectable(
     presence_reads(predicate, &mut presence);
     checked.errors.is_empty()
         && checked.reads.iter().all(|read| {
-            let target = projection_target(ir, &read.resolution);
-            target.is_scalar()
-                || (read.resolution.optional
-                    && presence.contains(&read.path)
-                    && matches!(
-                        target,
-                        Target::Aggregate(
-                            "a struct" | "a union" | "a list" | "a map" | "an aggregate"
-                        )
-                    ))
+            projection_target(ir, &read.resolution).is_scalar()
+                || aggregate_presence(ir, read, &presence)
         })
+}
+
+/// Whether `read` is a `defined()` (or `missing()`) of an `Optional` struct, union, list, map or
+/// `Json`, which a surface publishes as its presence (beyond10x/ess#176). `presence` is what
+/// [`presence_reads`] found in the same predicate.
+///
+/// The one answer to that question: synthesis projects such a read, an authored `satisfies`
+/// admits it, and a suite carrying it takes suite/26 ([`crate::defined_aggregates`]).
+pub(crate) fn aggregate_presence(
+    ir: &EssIr,
+    read: &ess_domain::expression::Read<ResolvedTypeRef>,
+    presence: &BTreeSet<FactPath>,
+) -> bool {
+    read.resolution.optional
+        && presence.contains(&read.path)
+        && matches!(
+            projection_target(ir, &read.resolution),
+            Target::Aggregate("a struct" | "a union" | "a list" | "a map" | "an aggregate")
+        )
 }
 
 /// Every path a `defined()` under `predicate` reads, binder names kept as written.
 ///
 /// An `Optional` aggregate is projected as its presence and nothing else (beyond10x/ess#176), so a
 /// surface publishing one publishes what `defined()` asks of it, and no other read.
-fn presence_reads(predicate: &Predicate, found: &mut BTreeSet<FactPath>) {
+pub(crate) fn presence_reads(predicate: &Predicate, found: &mut BTreeSet<FactPath>) {
     match predicate {
         Predicate::Defined(path) => {
             found.insert(path.clone());

@@ -16,7 +16,9 @@
 //! number first refuses the suite instead. The Go and TypeScript runtimes refuse these majors by
 //! version.
 //!
-//! These two majors are the round-3 pair: every later round-3 suite construct shares them.
+//! These two majors are the round-3 pair: every later round-3 suite construct shares them. The
+//! second is presence of an `Optional` aggregate ([`defined_aggregates`](crate::defined_aggregates)),
+//! which only the model can recognise, so format selection over a model asks both.
 
 use std::collections::BTreeMap;
 

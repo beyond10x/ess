@@ -3253,7 +3253,7 @@ fn fresh_legacy_run_suite(
             bail!("`{id}` is already in the suite");
         }
     }
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(ir);
     Ok(Some(ess_conformance::AdmittedSuite::from_suite(&suite)?))
 }
 
@@ -3397,7 +3397,7 @@ fn synthesize_suite(
         }
         return Ok(ExitCode::from(1));
     }
-    synthesis.suite.select_fresh_format();
+    synthesis.suite.select_fresh_format_for(&ir);
     let json = if compact {
         synthesis.suite.to_compact_json()?
     } else {
@@ -3494,7 +3494,7 @@ fn conform_web(
         println!("{refusal}");
     }
 
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(&ir);
     let artifacts = ess_conformance::web::emit(&ir, &suite)?;
     write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     println!(
@@ -3536,7 +3536,7 @@ fn author_suite(
             bail!("`{id}` is already in the suite");
         }
     }
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(&ir);
     let json = suite.to_canonical_json()?;
     let written = match out {
         Some(out) => {
@@ -3554,14 +3554,25 @@ fn author_suite(
                 println!("{refusal}");
             }
             println!(
-                "{} authored scenario(s) from {} file(s), {} refusal(s), {written}",
+                "{} authored scenario(s) from {} file(s), {} refusal(s), suite {}, {written}",
                 suite.len(),
                 sources.len(),
                 authoring.refusals.len(),
+                suite.provenance.suite_version,
             );
         }
-        Format::Json => print!("{json}"),
-        Format::Yaml => render(&suite, Format::Yaml)?,
+        // Standard output is the document; a refused scenario is named on standard error, so an
+        // exit of 1 never arrives without saying which scenario did not compile or why.
+        Format::Json | Format::Yaml => {
+            for refusal in &authoring.refusals {
+                eprintln!("{refusal}");
+            }
+            if matches!(input.format, Format::Json) {
+                print!("{json}");
+            } else {
+                render(&suite, Format::Yaml)?;
+            }
+        }
     }
     Ok(if complete {
         ExitCode::SUCCESS
