@@ -733,6 +733,7 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
+| `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. A value none of the literals leads to, such as `amount > 0.1 and amount < 0.2`, is refused too. |
 
 ```yaml ess-check="when" ess-expect="unwitnessed:ESS-SYNTH-003"
 when: sku

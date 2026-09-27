@@ -288,6 +288,19 @@ count. The mixed-radix walk (`witness.rs:247-260`) visits combinations in index 
 the cap. In a command that varies several paths, a later alternative of one path — an `L′` or a
 composition — can therefore fall outside the 64 tried. This case is constructed, not observed, and
 it is rule 4's bound. The outcome is the existing refusal naming the count, never a wrong witness.
+Where the walk is cut short, it is no longer the whole search
+(`story:witness-search-beyond-64-candidates`, `witness::Directed`). The walk keeps its 64
+candidates in its order. After them come at most 64 candidates solved for each guard: the guard
+satisfied and refuted, and each connective child deciding alone. Each goal is reduced to truth values
+of atoms, and each group of ladders that atoms read together is searched on its own, base first.
+A conjunction of comparisons that each read one field is solved whatever the fields are named and
+however many there are, as long as each field's ladder holds a value that satisfies it. Two limits
+remain, and a guard past either is refused with `ESS-SYNTH-003`
+(`tests/adversary_search_pass2.rs`). A goal is broken down at most 64 times, and each `any` is
+tried first child first: eight disjunctions whose first children contradict another conjunct are
+refused. A field compared only with other fields writes no literal, so its alternatives are its base,
+0 and -1: a strict chain over four such fields needs four distinct values and is refused. A group of
+fields compared with each other is searched over at most 1024 combinations.
 
 **The finite fast path.** `candidates` first tries `finite::analyze` when no outcome is a default
 branch (`witness.rs:191-222`). A guard using a string operator makes it decline (above), so these
