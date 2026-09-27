@@ -1353,11 +1353,20 @@ impl Projector<'_> {
         for (_, outcome) in &mut compiled {
             remap_outcome_slots(outcome, &remap, &slots.references);
         }
+        // Entity Runtime takes the first branch whose guard holds. An input-guarded refusal is
+        // taken before any accepting branch whose guard it overlaps
+        // (`docs/design/input-guard-overlap-precedence.md`), so every one of them comes first,
+        // then the other guarded branches, the default, and the wrong-state branch.
         compiled.sort_by_key(|(index, outcome)| {
+            let source = &command.outcomes[*index];
             let category = if outcome.wrong_state {
-                2
+                3
+            } else if source.error.is_some()
+                && matches!(source.condition, ResolvedCondition::When { .. })
+            {
+                0
             } else {
-                usize::from(outcome.is_default_branch())
+                1 + usize::from(outcome.is_default_branch())
             };
             (category, *index)
         });

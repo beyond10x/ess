@@ -734,6 +734,16 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | text ordering | yes, byte-wise |
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
 
+A refusal with a `when:` over the input is taken before any accepting branch whose guard it
+overlaps. Synthesis holds a target to that twice. An accepting branch's witness refutes every such
+refusal, with or without a default. And each such refusal is sent again at every overlap point, and
+the refusal is required there. For `closed: open == false` and `id-required: ticket_id == ""`,
+the `id-required` scenario also sends `{ticket_id: "", open: false}`. This holds for the `when:`
+beside a `when_subject:`, sent for a ticket the stored guard admits (or for no ticket, where the
+refusal reads the identity itself), and for an external branch's
+`when:`, sent without asking the provider. A branch every input of which such a refusal claims is
+refused with `ESS-SYNTH-003`, naming that refusal.
+
 ```yaml ess-check="when" ess-expect="unwitnessed:ESS-SYNTH-003"
 when: sku
 ```

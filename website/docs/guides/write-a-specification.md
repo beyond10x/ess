@@ -198,6 +198,12 @@ outcomes:
 A command with a precondition has at least two results. A specification recording only the happy one
 generates a suite that never checks the branch where the money does not move.
 
+Two guards may both hold of one input. A refusal with a `when:` over the input is taken before any
+accepting branch whose guard it overlaps, whatever order they are written in. With `closed: open ==
+false` and `id-required: ticket_id == ""`, the input `{ticket_id: "", open: false}` is refused as
+`id-required`, and the generated suite sends it and requires that. An accepting branch cannot read
+the identity to step aside, so this precedence is how such a command is written.
+
 ### An invariant reads only what every creation sets
 
 An entity invariant that reads a required field needs every `creates:` branch of that entity to set

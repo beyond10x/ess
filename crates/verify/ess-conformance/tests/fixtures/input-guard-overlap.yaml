@@ -1,0 +1,69 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.tickets
+summary: A ticket that is closed or reopened, and refused before either when its id is empty.
+types:
+  - {name: demo.tickets.TicketId, kind: newtype, of: String}
+entities:
+  - name: demo.tickets.Ticket
+    identity: {name: ticket_id, type: demo.tickets.TicketId}
+    fields: []
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      transitions:
+        - {name: close, from: [Open, Closed], to: Closed}
+        - {name: reopen, from: [Open, Closed], to: Open}
+actors:
+  - name: demo.tickets.Agent
+    may: [demo.tickets.OpenTicket, demo.tickets.SetTicketOpen]
+errors:
+  - name: demo.tickets.TicketIdRequired
+    summary: The ticket id is empty.
+    fields: []
+events:
+  - name: demo.tickets.TicketOpened
+    fields:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+  - name: demo.tickets.TicketClosed
+    fields:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+  - name: demo.tickets.TicketReopened
+    fields:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+commands:
+  - name: demo.tickets.OpenTicket
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.tickets.Ticket
+        instance: ticket_id
+        emits: [demo.tickets.TicketOpened]
+        payload: {demo.tickets.TicketOpened: {ticket_id: {generated: true}}}
+  - name: demo.tickets.SetTicketOpen
+    input:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: open, type: Boolean}
+    outcomes:
+      - name: closed
+        when: open == false
+        moves: demo.tickets.Ticket.close
+        instance: ticket_id
+        emits: [demo.tickets.TicketClosed]
+        payload: {demo.tickets.TicketClosed: {ticket_id: input.ticket_id}}
+      - name: reopened
+        moves: demo.tickets.Ticket.reopen
+        instance: ticket_id
+        emits: [demo.tickets.TicketReopened]
+        payload: {demo.tickets.TicketReopened: {ticket_id: input.ticket_id}}
+      - name: id-required
+        when: ticket_id == ""
+        error: demo.tickets.TicketIdRequired
+views:
+  - name: demo.tickets.Tickets
+    source: demo.tickets.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: demo.tickets.TicketId}
+      - {name: state, type: demo.tickets.Ticket.State}

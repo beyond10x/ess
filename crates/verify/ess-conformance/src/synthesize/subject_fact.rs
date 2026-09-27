@@ -115,6 +115,31 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
                 | ResolvedCondition::WrongState
         )
         && (outcome.subject.is_some() || common(command).is_some())
+        && !reads_identity(command, outcome)
+}
+
+/// Whether `outcome` is an input-guarded refusal whose guard reads the identity field that names
+/// the subject (beyond10x/ess#178): `id-required: ticket_id == ""`.
+///
+/// No arranged row can be sent for it, because sending the row replaces the value its own guard
+/// admits with the row's identity. It is sent as a plain invocation, with the input its guard
+/// admits, and is taken before any row would be read.
+fn reads_identity(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    let Some(guard) = super::is_input_guarded_refusal(outcome)
+        .then(|| when(outcome))
+        .flatten()
+    else {
+        return false;
+    };
+    let Some(ResolvedInstance::Supplied { field }) =
+        common(command).map(|subject| &subject.instance)
+    else {
+        return false;
+    };
+    guard
+        .fact_paths()
+        .iter()
+        .any(|path| path.namespace() == field.name)
 }
 
 /// The subject this outcome's scenario arranges: its own, or the one its siblings name.
@@ -468,6 +493,14 @@ fn selects<'a>(
         }
         selected.push(branch);
     }
+    // An input-guarded refusal is taken before any accepting branch it overlaps (beyond10x/ess
+    // #178), so where one is selected the accepting branches beside it are not.
+    if selected
+        .iter()
+        .any(|branch| super::is_input_guarded_refusal(branch))
+    {
+        selected.retain(|branch| super::is_input_guarded_refusal(branch));
+    }
     let pick = match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
         [only] => Some(*only),
@@ -498,6 +531,12 @@ pub(super) fn input_selects(
         if decides(&facts, &[guard], true)? {
             selected.push(branch);
         }
+    }
+    if selected
+        .iter()
+        .any(|branch| super::is_input_guarded_refusal(branch))
+    {
+        selected.retain(|branch| super::is_input_guarded_refusal(branch));
     }
     let pick = match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
@@ -1027,6 +1066,70 @@ fn unarrangeable(
     None
 }
 
+/// Records, for a row no input selects `outcome` on, every input whose own stored and input guards
+/// hold of that row, and which sibling input-guarded refusal claimed it (beyond10x/ess#178). A row
+/// whose state no move of the command starts from is the wrong-state family's and is skipped.
+fn shadowed_at(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    shadow: &mut super::Shadow,
+) -> Result<(), RefusalCause> {
+    if outcome.error.is_some()
+        || ir
+            .wrong_states(command)
+            .get(&entity)
+            .is_some_and(|states| states.contains(&arrangement.state))
+    {
+        return Ok(());
+    }
+    let row_guard = stored(&outcome.condition);
+    let own_input: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    for input in inputs_for(ir, command, entity, arrangement)? {
+        if let Some(predicate) = &row_guard {
+            if row_truth_with(
+                ir,
+                entity,
+                &arrangement.settled,
+                predicate,
+                Some((command, &input)),
+            ) != Truth::True
+            {
+                continue;
+            }
+        }
+        let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+        if decides(&facts, &own_input, true)? {
+            shadow.record(command, outcome, &facts)?;
+        }
+    }
+    Ok(())
+}
+
+/// The stored-row search's refusal, restated as the shadow it is where every input the branch's
+/// own guards admit on the rows searched was claimed by a sibling input-guarded refusal.
+fn shadowed(
+    outcome: &ResolvedOutcome,
+    shadow: &super::Shadow,
+    cause: RefusalCause,
+) -> RefusalCause {
+    let RefusalCause::GuardUnsatisfiable { tried, .. } = &cause else {
+        return cause;
+    };
+    let row_guard = stored(&outcome.condition);
+    let mut guards: Vec<&Predicate> = row_guard.iter().collect();
+    guards.extend(input_guard(&outcome.condition));
+    match shadow.rendered(&guards) {
+        Some(predicate) => RefusalCause::GuardUnsatisfiable {
+            predicate,
+            tried: *tried,
+        },
+        None => cause,
+    }
+}
+
 /// Arrange the row the branch under test is selected for, and the input that selects it.
 pub(super) fn prepare(
     ir: &EssIr,
@@ -1044,6 +1147,7 @@ pub(super) fn prepare(
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
     }
+    let mut shadow = super::Shadow::default();
     let (arrangement, input) = search(
         ir,
         entity,
@@ -1051,8 +1155,15 @@ pub(super) fn prepare(
         &hints,
         Distinction::PLAIN,
         &label,
-        |node| reach_at(ir, command, outcome, entity, node),
-    )?;
+        |node| {
+            let found = reach_at(ir, command, outcome, entity, node)?;
+            if found.is_none() {
+                shadowed_at(ir, command, outcome, entity, node, &mut shadow)?;
+            }
+            Ok(found)
+        },
+    )
+    .map_err(|cause| shadowed(outcome, &shadow, cause))?;
     // A row the branch's writes would leave unchanged proves nothing about them (beyond10x/ess#161).
     // So where the plain row leaves some write unchanged, the search is asked again — under the
     // plain witness and then further ones — for a row that leaves fewer unchanged, and keeps the
@@ -1427,9 +1538,12 @@ pub(super) fn around(
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<ScenarioStep>, RefusalCause> {
     let (further, source) = boundaries(ir, command, outcome, actors, &setup.settled)?;
+    let (overlapping, overlap_source) = overlaps(ir, command, outcome, actors)?;
     let mut steps = around_row(ir, command, outcome, actors, setup, supplied)?;
     steps.extend(further);
+    steps.extend(overlapping);
     setup.source.extend(source);
+    setup.source.extend(overlap_source);
     Ok(steps)
 }
 
@@ -1687,67 +1801,190 @@ pub(super) fn boundaries(
                 reach_at(ir, command, outcome, entity, node)
             },
         );
-        let Ok((mut arrangement, input)) = found else {
+        let Ok((arrangement, input)) = found else {
             continue;
         };
         rows += 1;
-        let (observed, view) = observe_fields(ir, entity, &fields, &arrangement)?;
-        arrangement.steps.extend(observed);
-        steps.append(&mut arrangement.steps);
-        source.append(&mut arrangement.source);
-        source.insert(view.into());
-        let supplied = supply(
+        send_for_row(
+            ir,
             command,
-            &input,
-            Some(read),
-            Some(&arrangement.instance),
-            &BTreeMap::new(),
-        );
-        steps.push(ScenarioStep::ExecuteCommand {
-            command: command_ref.clone(),
-            actor: actors.get(&command.name).cloned(),
-            input: supplied.clone(),
-        });
-        steps.push(ScenarioStep::ExpectOutcome {
-            outcome: outcome_ref.clone(),
-        });
-        match &outcome.error {
-            Some(error) => steps.push(ScenarioStep::ExpectError {
-                error: super::ErrorRef::from(error),
-                fields: BTreeMap::new(),
-            }),
-            None => steps.push(ScenarioStep::ExpectNoError),
-        }
-        let held = (arrangement.state.clone(), arrangement.settled.clone());
-        let mut left = arrangement.settled.clone();
-        absorb(
-            &mut left,
             outcome,
-            super::settled(ir, outcome, &supplied, &arrangement.settled),
-        );
-        if let Some(transition) = outcome
-            .subject
-            .as_ref()
-            .and_then(|own| own.effect.transition())
-        {
-            arrangement.state = transition.to.clone();
-        }
-        arrangement.settled = left;
-        let kept = fields
-            .iter()
-            .filter(|field| arrangement.settled.contains_key(*field))
-            .cloned()
-            .collect();
-        if leaves_changed(Some(&held.0), &held.1, &arrangement, &kept) {
-            let (after, _) = observe_fields(ir, entity, &kept, &arrangement)?;
-            steps.extend(after);
-        } else if let Some((after, _)) = observe_unchanged(ir, entity, &kept, &arrangement)? {
-            steps.extend(after);
-        }
+            actors,
+            read,
+            &fields,
+            arrangement,
+            &input,
+            (&mut steps, &mut source),
+        )?;
     }
     if rows > 0 {
         source.insert(command_ref.into());
         source.insert(outcome_ref.into());
+    }
+    Ok((steps, source))
+}
+
+/// The branch sent once more for a further arranged row, with what it requires, and the row
+/// observed again afterwards: as the branch left it, or unchanged.
+#[allow(clippy::too_many_arguments)]
+fn send_for_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    read: &ResolvedSubject,
+    fields: &BTreeSet<String>,
+    mut arrangement: Arrangement,
+    input: &BTreeMap<String, Node>,
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) -> Result<(), RefusalCause> {
+    let entity = &read.entity;
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let (observed, view) = observe_fields(ir, entity, fields, &arrangement)?;
+    arrangement.steps.extend(observed);
+    steps.append(&mut arrangement.steps);
+    source.append(&mut arrangement.source);
+    source.insert(view.into());
+    let supplied = supply(
+        command,
+        input,
+        Some(read),
+        Some(&arrangement.instance),
+        &BTreeMap::new(),
+    );
+    steps.push(ScenarioStep::ExecuteCommand {
+        command: command_ref,
+        actor: actors.get(&command.name).cloned(),
+        input: supplied.clone(),
+    });
+    steps.push(ScenarioStep::ExpectOutcome {
+        outcome: outcome_ref,
+    });
+    match &outcome.error {
+        Some(error) => steps.push(ScenarioStep::ExpectError {
+            error: super::ErrorRef::from(error),
+            fields: BTreeMap::new(),
+        }),
+        None => steps.push(ScenarioStep::ExpectNoError),
+    }
+    let held = (arrangement.state.clone(), arrangement.settled.clone());
+    let mut left = arrangement.settled.clone();
+    absorb(
+        &mut left,
+        outcome,
+        super::settled(ir, outcome, &supplied, &arrangement.settled),
+    );
+    if let Some(transition) = outcome
+        .subject
+        .as_ref()
+        .and_then(|own| own.effect.transition())
+    {
+        arrangement.state = transition.to.clone();
+    }
+    arrangement.settled = left;
+    let kept = fields
+        .iter()
+        .filter(|field| arrangement.settled.contains_key(*field))
+        .cloned()
+        .collect();
+    if leaves_changed(Some(&held.0), &held.1, &arrangement, &kept) {
+        let (after, _) = observe_fields(ir, entity, &kept, &arrangement)?;
+        steps.extend(after);
+    } else if let Some((after, _)) = observe_unchanged(ir, entity, &kept, &arrangement)? {
+        steps.extend(after);
+    }
+    Ok(())
+}
+
+/// Further rows an input-guarded refusal sent for an arranged row is witnessed on where it
+/// overlaps an accepting branch (beyond10x/ess#178): one per accepting sibling with an input half,
+/// on a row that sibling's stored guard admits, with an input both input guards admit and every
+/// other input-guarded refusal refutes. The refusal is required there, and the row is observed
+/// unchanged, so a target that reads the accepting branch's guards first fails.
+///
+/// The row-free half of the rule — a refusal over the identity, and every command reading no
+/// stored field — is `overlap_inputs` in the parent module.
+fn overlaps(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    let Some(own) = super::is_input_guarded_refusal(outcome)
+        .then(|| when(outcome))
+        .flatten()
+    else {
+        return Ok((steps, source));
+    };
+    let Some(read) = reading(command, outcome) else {
+        return Ok((steps, source));
+    };
+    let entity = &read.entity;
+    let hints = hints(command);
+    let fields = read_fields(ir, entity, &hints);
+    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    let mut rows = 0;
+    for accepting in &command.outcomes {
+        let Some(guard) = super::accepting_input_half(accepting) else {
+            continue;
+        };
+        if rows >= MAX_BOUNDARIES {
+            break;
+        }
+        let row_guard = stored(&accepting.condition);
+        // Numbered past every row `boundaries` can arrange, so no instance name is bound twice.
+        let distinction = Distinction::further(MAX_BOUNDARIES + rows + 1);
+        let found = search(ir, entity, actors, &hints, distinction, "overlap", |node| {
+            for input in inputs_for(ir, command, entity, node)? {
+                let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+                if !decides(&facts, &[own, guard], true)? || !decides(&facts, &refusals, false)? {
+                    continue;
+                }
+                if let Some(predicate) = &row_guard {
+                    if row_truth_with(
+                        ir,
+                        entity,
+                        &node.settled,
+                        predicate,
+                        Some((command, &input)),
+                    ) != Truth::True
+                    {
+                        continue;
+                    }
+                }
+                if selects(ir, command, entity, node, &input)?
+                    .is_some_and(|branch| branch.name == outcome.name)
+                {
+                    return Ok(Some(input));
+                }
+            }
+            Ok(None)
+        });
+        let Ok((arrangement, input)) = found else {
+            continue;
+        };
+        rows += 1;
+        send_for_row(
+            ir,
+            command,
+            outcome,
+            actors,
+            read,
+            &fields,
+            arrangement,
+            &input,
+            (&mut steps, &mut source),
+        )?;
+    }
+    if rows > 0 {
+        let command_ref = CommandRef::new(command.name.clone());
+        source.insert(OutcomeRef::new(command_ref.clone(), outcome.name.clone()).into());
+        source.insert(command_ref.into());
     }
     Ok((steps, source))
 }
