@@ -164,11 +164,118 @@ pub(crate) fn acquire(path: &Path, kind: Kind) -> Result<Vec<Input>> {
     }
 }
 
+/// The `ess-inputs.yaml` nearest to a directory, for choosing the `ess` release (`toolchain.rs`).
+pub(crate) struct Pin {
+    /// The manifest found.
+    pub(crate) manifest: PathBuf,
+    /// Its `requires`: `Err` when the manifest does not parse or is a symlink, which every command
+    /// refuses and reports itself. No pin is read through a symlink.
+    pub(crate) requires: Result<Option<String>>,
+    /// The manifest is a symlink: it still ends the search, and `--pin` refuses to write it.
+    pub(crate) symlink: bool,
+}
+
+/// The first `ess-inputs.yaml` — regular file or symlink — in `start` or a directory above it.
+///
+/// Only the release pin is read this way. Input selection keeps reading the immediate manifest
+/// of an explicitly supplied directory and nothing else.
+pub(crate) fn nearest_pin(start: &Path) -> Option<Pin> {
+    start.ancestors().find_map(|directory| {
+        let manifest = directory.join(MANIFEST);
+        let metadata = fs::symlink_metadata(&manifest).ok()?;
+        let symlink = metadata.file_type().is_symlink();
+        (metadata.is_file() || symlink).then(|| Pin {
+            requires: if symlink {
+                Err(anyhow::anyhow!(
+                    "{MANIFEST} must be a regular non-symlink file"
+                ))
+            } else {
+                manifest_lists(&manifest).map(|configuration| configuration.requires)
+            },
+            manifest,
+            symlink,
+        })
+    })
+}
+
+/// Set `requires: ess <release>` in `manifest`, moving an `ess-inputs/1` document to `/2`.
+///
+/// The document is edited line by line so everything else in it keeps its bytes: a line that
+/// already says what it must is left alone, a written line ends as the file's lines do, and the
+/// result is parsed before it is written. A layout this cannot edit is refused, never half-written.
+pub(crate) fn write_pin(manifest: &Path, release: &str) -> Result<()> {
+    let metadata = fs::symlink_metadata(manifest)
+        .with_context(|| format!("reading {}", manifest.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        bail!(
+            "{} is a symlink or not a regular file, which every command refuses; replace it with \
+             the real file, then pin again",
+            manifest.display()
+        );
+    }
+    let text =
+        fs::read_to_string(manifest).with_context(|| format!("reading {}", manifest.display()))?;
+    let current = parse_manifest(&text)
+        .with_context(|| format!("{}: repair it first", manifest.display()))?;
+    let wanted = format!("ess {release}");
+    let eol = if text
+        .split_inclusive('\n')
+        .next()
+        .is_some_and(|line| line.ends_with("\r\n"))
+    {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let mut lines: Vec<String> = text.split_inclusive('\n').map(str::to_owned).collect();
+    let format = lines
+        .iter()
+        .position(|line| line.starts_with("format:"))
+        .with_context(|| {
+            format!(
+                "{}: no top-level `format:` line to pin beside",
+                manifest.display()
+            )
+        })?;
+    // A replaced line keeps having, or not having, a line ending: the last line may lack one.
+    let ending = |line: &str| if line.ends_with('\n') { eol } else { "" };
+    if current.format != FORMAT_REQUIRES {
+        lines[format] = format!("format: {FORMAT_REQUIRES}{}", ending(&lines[format]));
+    }
+    if current.requires.as_deref() != Some(wanted.as_str()) {
+        if let Some(existing) = lines.iter().position(|line| line.starts_with("requires:")) {
+            lines[existing] = format!("requires: {wanted}{}", ending(&lines[existing]));
+        } else {
+            if !lines[format].ends_with('\n') {
+                lines[format].push_str(eol);
+            }
+            lines.insert(format + 1, format!("requires: {wanted}{eol}"));
+        }
+    }
+    let pinned = lines.concat();
+    if pinned == text {
+        return Ok(());
+    }
+    let written = parse_manifest(&pinned).ok();
+    if written.as_ref().and_then(|m| m.requires.as_deref()) != Some(&format!("ess {release}")) {
+        bail!(
+            "{}: cannot place `requires: ess {release}` in this layout; write it by hand under \
+             `format: {FORMAT_REQUIRES}`",
+            manifest.display()
+        );
+    }
+    fs::write(manifest, pinned).with_context(|| format!("writing {}", manifest.display()))
+}
+
 fn manifest_lists(manifest: &Path) -> Result<Manifest> {
     let text =
         fs::read_to_string(manifest).with_context(|| format!("reading {}", manifest.display()))?;
+    parse_manifest(&text)
+}
+
+fn parse_manifest(text: &str) -> Result<Manifest> {
     // Struct deserialization rejects duplicate top-level keys and multiple YAML documents.
-    let configuration: Manifest = serde_yaml::from_str(&text).context("invalid input manifest")?;
+    let configuration: Manifest = serde_yaml::from_str(text).context("invalid input manifest")?;
     if configuration.format == FORMAT {
         if configuration.requires.is_some() {
             bail!("`requires` needs format {FORMAT_REQUIRES}; {FORMAT} has no such field");

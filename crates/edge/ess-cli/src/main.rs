@@ -14,6 +14,7 @@ mod requires;
 mod schema;
 mod schema_bundle;
 mod site;
+mod toolchain;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -161,6 +162,11 @@ enum SpecifyCommand {
     Runtime {
         #[command(subcommand)]
         command: RuntimeCommand,
+    },
+    /// Install, list and choose the `ess` release a project pins with `requires: ess X.Y.Z`.
+    Toolchain {
+        #[command(subcommand)]
+        command: toolchain::Command,
     },
 }
 
@@ -1122,6 +1128,10 @@ fn hide_infra_flat_spellings(area: clap::Command) -> clap::Command {
 }
 
 fn main() -> ExitCode {
+    // Before any parsing: a pinned release may have a command surface this one does not.
+    if let Some(code) = toolchain::delegate() {
+        return code;
+    }
     let mut parser = command();
     let matches = parser.clone().get_matches();
     let cli = match Cli::from_arg_matches(&matches) {
@@ -1186,6 +1196,7 @@ fn specify_area(command: SpecifyCommand) -> Result<ExitCode> {
         SpecifyCommand::Graph { input, format } => graph(&input.path, format),
         SpecifyCommand::Realization { command } => realization(&command),
         SpecifyCommand::Runtime { command } => runtime(command),
+        SpecifyCommand::Toolchain { command } => toolchain::run_command(&command),
     }
 }
 
@@ -4170,7 +4181,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 60;
+    const AREA_LEAVES: usize = 63;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in
