@@ -5,7 +5,8 @@ E1 (#135) needs no format version; E2–E5 are refused below `ess/14` with
 `unsupported_format_version`. E6 (#157) and E7 (#140) are implemented in source format `ess/15` and
 refused below it with `unsupported_format_version`; E7 carries suite formats `ess-conformance/20`
 and `/21`. E4's literal fallback (#163) is implemented in source format `ess/16` and refused below
-it with `unsupported_format_version`.
+it with `unsupported_format_version`. E5's per-leaf comparison (#179) carries suite formats
+`ess-conformance/26` and `/27`.
 
 ## Behavior and authority
 
@@ -118,9 +119,35 @@ A mapping is read as a source when every key is a source keyword (`response`, `g
 `cleared`, `subject`, `increment`, `input`, `else`), and as a nested mapping otherwise. The
 target must be a struct (through newtypes and `Optional`); every declared struct field must be
 given a source, as `ess/4` requires of every emitted field. Nesting depth is bounded by the type.
-Synthesis asserts the whole struct where every leaf is determined; otherwise the field is covered
-by the shape. Per-leaf comparison would change the suite's payload key semantics in three runners
-and is left for a later suite format.
+Synthesis asserts the whole struct where every leaf is determined, as one value under the field's
+name. Where one leaf is not — `rank: {generated: true}` beside four `input.` leaves
+(beyond10x/ess#179) — each determined leaf is asserted on its own, and the undetermined one stays
+covered by the shape for presence and type.
+
+**Representation: dotted keys.** A determined leaf is written as its own entry under its dotted
+path, `lead.number`, in the event payload and in the view row expectation — not as a partial nested
+map. The Rust runner already walks dotted paths for the payload shape (`reach_into`), whose leaves
+are keyed by the same paths, so the comparison is that walk applied to value keys; a field name
+cannot contain a dot, so an older suite's keys read exactly as before. A partial map would instead
+have turned map equality into a subset test, which a `Json` value (compared structurally) must not
+get. A dotted payload key must name a leaf of the step's own shape, or the suite is refused.
+
+A leaf of a nested struct is walked to its scalar leaves, and so is a struct value a leaf reads whole (`place: input.place`), by its declared fields; a part the value does not carry (an absent `Optional` struct) is left unasserted. The row entries come from the branch's
+own `sets:` where the view projects the field at the entity's type; the fields the arrangement
+settled are not given dotted entries, so a later act's claims about the row stay by field name.
+
+A view row carries no shape, so the undetermined leaves a nested `sets:` mapping writes are claimed
+separately: for each one whose declared type is never absent (not `Optional`, not `Json`), the row
+expectation is followed by an `excludes` of the subject's identity with that dotted path `null`. The
+runner reads a dotted path that finds nothing as `null`, so a row that never writes `lead.rank`
+fails. Nothing is claimed when the view does not project the identity. **The row type of a
+generated leaf is not asserted; the payload shape is**: no view expectation can say "holds an
+`Integer`", and adding one would be a new step kind.
+
+Suites carrying such a leaf take `ess-conformance/26` (ordinary) and `/27` (coverage), the round-3
+pair: an older reader would look for a top-level field named `lead.number` and fail a conforming
+implementation. The Go and TypeScript runtimes refuse both by version. A suite without a partly
+determined struct keeps its earlier format and bytes.
 
 ### E6 — `input.<field>` in a `when_subject` predicate (#157, `ess/15`)
 
