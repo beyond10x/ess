@@ -3,7 +3,7 @@ use crate::{Binding, CompiledBinding, Error};
 use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedTypeRef};
 use ess_compiler::EssIr;
 use ess_domain::name::QualifiedName;
-use ess_domain::types::{Primitive, TypeRef};
+use ess_domain::types::{MapKeyNewtypes, Primitive, TypeRef};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn refuse(message: impl Into<String>) -> Error {
@@ -136,8 +136,32 @@ fn type_shape(model: &EssIr, reference: &TypeRef) -> Result<Shape, Error> {
     }
 }
 
+/// The model's newtypes that may key a map, so a contract spelled like the specification reads
+/// like it (beyond10x/ess#143): `Map<demo.Label, String>` with `Label` a newtype of `String` is a
+/// `String`-keyed map on the wire.
+fn map_key_newtypes(model: &EssIr) -> MapKeyNewtypes {
+    MapKeyNewtypes::from_declarations(model.types().values().filter_map(|declared| {
+        match &declared.body {
+            ResolvedBody::Newtype {
+                of: ResolvedTypeRef::Primitive { name },
+                ..
+            } => Some((declared.name.clone(), name.as_str().to_owned())),
+            ResolvedBody::Newtype {
+                of: ResolvedTypeRef::Declared { name },
+                ..
+            } => Some((
+                declared.name.clone(),
+                model.named_type(name).name.to_string(),
+            )),
+            _ => None,
+        }
+    }))
+}
+
 fn contract(model: &EssIr, text: &str) -> Result<ValueContract, Error> {
-    let reference = TypeRef::parse(text).map_err(|e| refuse(e.to_string()))?;
+    let reference = map_key_newtypes(model)
+        .scope(|| TypeRef::parse(text))
+        .map_err(|e| refuse(e.to_string()))?;
     Ok(ValueContract {
         type_ref: reference.to_string(),
         shape: type_shape(model, &reference)?,

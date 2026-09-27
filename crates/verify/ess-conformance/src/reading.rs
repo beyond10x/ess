@@ -74,11 +74,7 @@ impl ReadingReference {
         if self.occurrence > 65_535
             || self.field.is_empty()
             || self.field.len() > 128
-            || !self.field.starts_with(|c: char| c.is_ascii_alphabetic())
-            || !self
-                .field
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || !ess_domain::types::is_field_name(&self.field)
             || self.occurrence_key().len() > 512
         {
             return Err("invalid bounded reading occurrence/member".into());

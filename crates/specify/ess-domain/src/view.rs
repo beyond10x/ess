@@ -536,7 +536,7 @@ pub struct Empty {}
 pub struct RawViewField {
     /// Its name.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Its type. For an aggregate field, exactly the function's result type.
     #[serde(rename = "type")]

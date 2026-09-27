@@ -378,7 +378,10 @@ fn mapping_expression(
         ),
         DeterminedInput::Copy { field } => (
             format!("copied from the event's `{field}`"),
-            format!("event.{}", name::exported(field)),
+            format!(
+                "event.{}",
+                super::accessor::root_identifier(emit, binding, field)
+            ),
         ),
         DeterminedInput::Convert { field, to } => (
             format!("read from the event's `{field}` through the declared crossing"),
@@ -388,7 +391,7 @@ fn mapping_expression(
                     emit.layout.package_of(to.name()),
                     emit.layout.convert(&crossing(binding, field))
                 ),
-                name::exported(field)
+                super::accessor::root_identifier(emit, binding, field)
             ),
         ),
         DeterminedInput::Literal { value, wraps } => {

@@ -75,7 +75,7 @@ export interface ClockReadingTarget {
   observeClockReading(request: ReadingObservationRequest): ClockReadingEvidence;
 }
 
-const READING_MEMBER = /^[A-Za-z][A-Za-z0-9_]*$/;
+const READING_MEMBER = /^_*[A-Za-z][A-Za-z0-9_]*$/;
 const CLOCK_INTEGER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
 /** The key one occurrence of one member is known by, in every message and every request. */

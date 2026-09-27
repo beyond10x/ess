@@ -47,11 +47,16 @@ pub(crate) fn raw_specification(path: &Path) -> Result<RawLoaded> {
     let mut parsed = Vec::new();
     let mut texts = SourceMap::new();
     let mut problems = Vec::new();
-    for input in inputs {
-        let source = ess_domain::system::Source::new(input.identity);
-        let text = input.text;
-        texts.insert(source.as_str(), text.as_str());
-        match ess_domain::spec::RawSpecFile::parse(&text) {
+    // Read together, so a newtype declared in one file may key a map in another.
+    let every = inputs
+        .iter()
+        .map(|input| input.text.as_str())
+        .collect::<Vec<_>>();
+    let results = ess_domain::spec::RawSpecFile::parse_all(&every);
+    for (input, result) in inputs.iter().zip(results) {
+        let source = ess_domain::system::Source::new(input.identity.clone());
+        texts.insert(source.as_str(), input.text.as_str());
+        match result {
             Ok(raw) => parsed.push((source, raw)),
             Err(error) => problems.push(format!("{}: {error}", source.as_str())),
         }

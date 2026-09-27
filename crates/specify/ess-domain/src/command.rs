@@ -3748,7 +3748,7 @@ pub struct RawCommandSpec {
 pub struct InputField {
     /// Its name.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Its type.
     #[serde(rename = "type")]

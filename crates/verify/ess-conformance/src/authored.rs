@@ -173,7 +173,7 @@
 //! `{$observed: {event: …, field: …}}` rather than a bare mapping, because a declared struct may
 //! perfectly well have a field called `instance` — the argument [`ScenarioValue`] already makes
 //! about the suite's own encoding. A `$` cannot begin an ESS field name (`Field::PATTERN` is
-//! `^[A-Za-z][A-Za-z0-9_]*$`), so the two can never be confused, and a plain value is written
+//! `^_*[A-Za-z][A-Za-z0-9_]*$`), so the two can never be confused, and a plain value is written
 //! exactly as the model's own documents write one.
 //!
 //! # What is deliberately not here
@@ -1517,6 +1517,27 @@ pub fn compile(ir: &EssIr, sources: &[Source]) -> Authoring {
     authoring
 }
 
+/// The newtypes of a compiled model that may key a map, for reading type spellings against it.
+///
+/// The same declarations the specification was read with: each newtype with what it wraps,
+/// spelled as a primitive or as the declared type's name.
+fn map_key_newtypes(ir: &EssIr) -> ess_domain::types::MapKeyNewtypes {
+    use ess_compiler::ir::ResolvedBody;
+    ess_domain::types::MapKeyNewtypes::from_declarations(ir.types().values().filter_map(
+        |declared| match &declared.body {
+            ResolvedBody::Newtype {
+                of: ResolvedTypeRef::Primitive { name },
+                ..
+            } => Some((declared.name.clone(), name.as_str().to_owned())),
+            ResolvedBody::Newtype {
+                of: ResolvedTypeRef::Declared { name },
+                ..
+            } => Some((declared.name.clone(), ir.named_type(name).name.to_string())),
+            _ => None,
+        },
+    ))
+}
+
 /// One file, or every reason it produced nothing.
 pub(crate) fn compile_one(
     ir: &EssIr,
@@ -1531,11 +1552,15 @@ pub(crate) fn compile_one(
         }]
     };
 
-    let document: Document = serde_yaml::from_str(&source.text).map_err(|error| {
-        bare(Cause::Unreadable {
-            detail: error.to_string(),
-        })
-    })?;
+    // A fixture is declared in the specification's own type spellings, so a map keyed by one of
+    // the model's newtypes (beyond10x/ess#143) reads here exactly as it did there.
+    let document: Document = map_key_newtypes(ir)
+        .scope(|| serde_yaml::from_str(&source.text))
+        .map_err(|error| {
+            bare(Cause::Unreadable {
+                detail: error.to_string(),
+            })
+        })?;
     if document.format != FORMAT
         && document.format != "ess-scenario/2"
         && document.format != "ess-scenario/3"

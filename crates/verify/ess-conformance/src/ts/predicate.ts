@@ -698,7 +698,7 @@ export function splitPredicateComparison(trimmed: string): [string, string, stri
 
 export const meaningDecimal = /^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$/;
 
-export const factPath = /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$/;
+export const factPath = /^_*[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$/;
 
 // ---- the four places the two languages do not agree by themselves ------------------------------
 
