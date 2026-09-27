@@ -300,7 +300,7 @@ impl Number {
     /// `self + other`, exactly, where both are exact and the sum survives its own write.
     ///
     /// What an `{increment: …}` leaves in a row (beyond10x/ess#134). `None` for a
-    /// [`Binary64`](Repr::Binary64) operand, an overflow, or a sum with more places than binary64
+    /// binary64-only operand, an overflow, or a sum with more places than binary64
     /// keeps: a synthesized suite then makes no claim about the field rather than a rounded one.
     pub fn checked_add(self, other: Self) -> Option<Self> {
         let (a, a_scale) = self.exact()?;
