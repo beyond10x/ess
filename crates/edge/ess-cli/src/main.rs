@@ -544,8 +544,12 @@ enum ConformCommand {
     },
     /// Run a generated or committed suite against a built-in reference implementation.
     Run {
-        #[arg(long, default_value = ".")]
-        path: PathBuf,
+        /// The specification: synthesized when no suite is named, and executed by `interpreted`.
+        ///
+        /// Defaults to `.` for the other targets. `--target interpreted` requires it, because the
+        /// interpreter executes this model and refuses one the suite was not synthesized from.
+        #[arg(long)]
+        path: Option<PathBuf>,
         #[arg(long)]
         suite: Option<PathBuf>,
         /// Original coverage suite/5, /7 or /9 and its complete original parent chain.
@@ -2983,64 +2987,114 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             ids,
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
-        ConformCommand::Run {
-            path,
-            suite,
-            suite_input,
-            suite_format,
-            scenarios,
-            target,
-            report_out,
-            report_format,
-            strict,
-            allow_incomplete: _,
-            format,
-        } => {
-            if strict && report_format != "2" {
-                bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
-            }
-            let admitted = if let Some(file) = suite_input {
-                ess_conformance::coverage::AdmittedInput::from_json(&fs::read_to_string(file)?)?
-                    .selected()
-                    .clone()
-            } else if let Some(file) = suite {
-                ess_conformance::AdmittedSuite::from_json(&fs::read_to_string(&file)?)?
-            } else {
-                let Ok((ir, _)) = resolved(&path, format)? else {
-                    return Ok(ExitCode::from(1));
-                };
-                ess_conformance::admission::model(&ir)?;
-                if suite_format.as_deref() == Some("5") {
-                    coverage::fresh(&ir, scenarios.as_deref(), None, false)?
-                        .selected()
-                        .clone()
-                } else {
-                    let Some(suite) = fresh_legacy_run_suite(&ir, scenarios.as_deref())? else {
-                        return Ok(ExitCode::from(1));
-                    };
-                    suite
-                }
-            };
-            let suite = admitted.suite();
-            let report = coverage::execute(&admitted, &report_format, || match target {
-                ReferenceTarget::Billing => ess_conformance::Runner::for_suite(suite)
-                    .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
-                ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
-                    .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-                ReferenceTarget::Interpreted => ess_conformance::Runner::for_suite(suite)
-                    .run_admitted(&admitted, &ess_conformance::interpret::Interpreted::new()),
-            })?;
-            render_conformance_report(
-                &report,
-                &admitted,
-                &report_format,
-                strict,
-                report_out.as_deref(),
-                format,
-            )
-        }
+        command @ ConformCommand::Run { .. } => conform_run(command),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
     }
+}
+
+/// `ess verify conform run`: one suite against one built-in target.
+fn conform_run(command: ConformCommand) -> Result<ExitCode> {
+    let ConformCommand::Run {
+        path,
+        suite,
+        suite_input,
+        suite_format,
+        scenarios,
+        target,
+        report_out,
+        report_format,
+        strict,
+        allow_incomplete: _,
+        format,
+    } = command
+    else {
+        unreachable!("dispatched on `Run` only");
+    };
+    if strict && report_format != "2" {
+        bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
+    }
+    if matches!(target, ReferenceTarget::Interpreted) && path.is_none() {
+        bail!(
+            "`--target interpreted` requires `--path`: the interpreter executes the \
+             specification the suite was synthesized from, and names no default for it"
+        );
+    }
+    let path = path.unwrap_or_else(|| PathBuf::from("."));
+    let admitted = if let Some(file) = suite_input {
+        ess_conformance::coverage::AdmittedInput::from_json(&fs::read_to_string(file)?)?
+            .selected()
+            .clone()
+    } else if let Some(file) = suite {
+        ess_conformance::AdmittedSuite::from_json(&fs::read_to_string(&file)?)?
+    } else {
+        let Ok((ir, _)) = resolved(&path, format)? else {
+            return Ok(ExitCode::from(1));
+        };
+        ess_conformance::admission::model(&ir)?;
+        if suite_format.as_deref() == Some("5") {
+            coverage::fresh(&ir, scenarios.as_deref(), None, false)?
+                .selected()
+                .clone()
+        } else {
+            let Some(suite) = fresh_legacy_run_suite(&ir, scenarios.as_deref())? else {
+                return Ok(ExitCode::from(1));
+            };
+            suite
+        }
+    };
+    let suite = admitted.suite();
+    let interpreted = match target {
+        ReferenceTarget::Interpreted => match interpreter_for(&path, suite, format)? {
+            Ok(interpreter) => Some(interpreter),
+            Err(code) => return Ok(code),
+        },
+        ReferenceTarget::Billing | ReferenceTarget::OracleFixture => None,
+    };
+    let report = coverage::execute(&admitted, &report_format, || match target {
+        ReferenceTarget::Billing => ess_conformance::Runner::for_suite(suite)
+            .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
+        ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
+            .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
+        ReferenceTarget::Interpreted => ess_conformance::Runner::for_suite(suite).run_admitted(
+            &admitted,
+            interpreted
+                .as_ref()
+                .expect("the interpreted target was built from `--path` above"),
+        ),
+    })?;
+    render_conformance_report(
+        &report,
+        &admitted,
+        &report_format,
+        strict,
+        report_out.as_deref(),
+        format,
+    )
+}
+
+/// The interpreter over the specification at `path`, refused unless the suite was synthesized from it.
+///
+/// `Err` carries the loader's own exit code for a specification that does not compile.
+fn interpreter_for(
+    path: &Path,
+    suite: &ess_conformance::ConformanceSuite,
+    format: Format,
+) -> Result<Result<ess_conformance::interpret::Interpreted, ExitCode>> {
+    let (ir, _) = match resolved(path, format)? {
+        Ok(loaded) => loaded,
+        Err(code) => return Ok(Err(code)),
+    };
+    let model = ess_conformance::SuiteProvenance::of(&ir).spec_digest;
+    if model != suite.provenance.spec_digest {
+        bail!(
+            "`--target interpreted` refuses the specification at {}: its spec_digest {model} is \
+             not the suite's spec_digest {}, so the model interpreted is not the one the suite was \
+             synthesized from",
+            path.display(),
+            suite.provenance.spec_digest
+        );
+    }
+    Ok(Ok(ess_conformance::interpret::Interpreted::for_model(*ir)))
 }
 
 /// `ess verify conform mutate`, by the one of `--target`, `--emit` and `--collect` clap admitted.
@@ -3081,7 +3135,7 @@ fn conform_mutate(
 
     // The loader's own refusal path first, so a specification that does not compile is reported
     // exactly as `run` reports it, and exits 1.
-    let Ok(_) = resolved(path, format)? else {
+    let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
     let raw = load::raw_specification(path)?;
@@ -3103,7 +3157,8 @@ fn conform_mutate(
             &raw.parsed,
             &raw.texts,
             &classes,
-            ess_conformance::interpret::Interpreted::new,
+            // The unchanged specification, as every mutant's target implements it.
+            || ess_conformance::interpret::Interpreted::for_model((*ir).clone()),
         ),
     };
     finish_mutation_audit(audited, report_out, format)

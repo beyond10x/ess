@@ -194,9 +194,11 @@ $ ess verify conform run \
 The command executes the generated or committed scenarios against the selected reference target.
 The built-in choices are `billing`, `oracle-fixture` and `interpreted`; a production adapter must
 establish its own execution boundary. `billing` and `oracle-fixture` are hand-written reference
-implementations of their examples. `interpreted` selects the specification itself and derives no
-behaviour yet: it executes nothing, so every scenario comes back as an unsatisfied obligation, and
-a run over a suite holding at least one scenario fails.
+implementations of their examples. `interpreted` selects the specification itself, named by
+`--path`, and refuses one whose `spec_digest` is not the suite's. It executes commands from the
+model — outcomes, transitions, `sets:` writes, emitted events and declared refusals — and does not
+yet interpret views or bindings, so a scenario that reads one comes back as an unsatisfied
+obligation, and a run over a suite holding at least one such scenario fails.
 The default standalone report is `ess-conformance-report/1`. Its historical `scenarios_failed`
 count includes every non-pass, including Go skips and Rust errors or unsupported results. Those
 legacy bytes and meanings remain unchanged.

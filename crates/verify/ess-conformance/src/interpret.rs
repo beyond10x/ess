@@ -6,55 +6,59 @@
 //! falsifiable before anybody has implemented it — see
 //! `docs/design/ess-model-driven-interpretation-design-v0.1.md`.
 //!
-//! # What is here now: the seam, and nothing behind it
+//! # Two ways to hold one
 //!
-//! [`Interpreted`] is the target an operator can select. It derives **no** behaviour: it executes no
-//! command, projects no view, publishes no event and holds no state. Every scenario run against it
-//! comes back [`Status::Unsupported`](crate::report::Status::Unsupported) — §28's fourth word, and
-//! the only honest answer for a target that has been selected and has decided nothing.
+//! [`Interpreted::for_model`] holds a compiled model and executes its commands through
+//! [`execute`]: which outcome the input selects, the transition it takes and from which states, the
+//! `sets:` writes, the events it emits with their payload mappings, whether a `wrong_state:` branch
+//! refuses or accepts, and what `invariants:` require of an instance at rest. What it does not
+//! derive yet — views, bindings, time, redelivery, established entities — it refuses as
+//! [`Status::Unsupported`](crate::report::Status::Unsupported), so a scenario that needs one reports
+//! an unsatisfied obligation and never a failure the interpreter caused by guessing.
 //!
-//! **`Unsupported` rather than `Error`, and that distinction is the whole of what this module
-//! claims.** `report.rs` writes it down: `Failed` says the implementation contradicted the
-//! specification, `Error` says nobody found out. Nothing here went wrong — no run failed, no adapter
-//! broke, no observation was lost — so an `Error` would misreport a capability this target does not
-//! yet have as an execution that did not happen, and an implementer reading the report would go
-//! looking for a fault that is not there. `Unsupported` says exactly what is true: the obligation
-//! stands, unsatisfied, and the target cannot expose what would satisfy it.
+//! [`Interpreted::new`] holds no model. It is the seam `--target interpreted` was introduced as, and
+//! it still derives nothing: every scenario comes back `unsupported`, refused at
+//! [`begin_scenario`](ConformanceTarget::begin_scenario) because with no model there is no state to
+//! open.
 //!
-//! It is equally not a skip. §28 makes an unsupported scenario fail conformance, so selecting this
-//! target cannot turn a scenario green: a run over a suite holding **at least one** scenario comes
-//! back `failed` and exits non-zero, and will keep doing so until interpretation actually decides
-//! something.
+//! **`Unsupported` rather than `Error`, and that distinction is what this module claims wherever it
+//! refuses.** `report.rs` writes it down: `Failed` says the implementation contradicted the
+//! specification, `Error` says nobody found out. A construct this interpreter does not execute yet
+//! is a capability it does not have, not an execution that went wrong. It is equally not a skip: §28
+//! makes an unsupported scenario fail conformance, so a refusal here never turns a scenario green.
 //!
-//! A suite holding **no** scenarios is the one exception, and it is not this target's.
-//! [`ConformanceReport::verdict`](crate::report::ConformanceReport::verdict) reads a run's verdict
-//! off its scenarios, and the verdict of none of them is
-//! [`Passed`](crate::report::ConformanceStatus::Passed) — so an empty admitted suite reports
-//! `passed` and exits 0 against `billing` and `oracle-fixture` exactly as it does here. That is a
-//! property of the runner and of what a vacuous suite means, not a capability this target has, and
-//! `ess verify conform select --ids` documents `[]` as a selection somebody can actually ask for.
+//! # Nothing is chosen here
 //!
-//! # Why the refusal is at [`begin_scenario`](ConformanceTarget::begin_scenario)
+//! [`execute`] returns every outcome the model allows. The target answers only when that is exactly
+//! one; where the model leaves the outcome open it refuses rather than picking, and a refusal the
+//! model does not declare is answered as
+//! [`SemanticCommandResult::undeclared`], never as a declared branch. An `external:` branch is taken
+//! only when a scenario forced it with
+//! [`configure_external_outcome`](ConformanceTarget::configure_external_outcome), and it lapses after
+//! the next invocation of that command, which is what the step says.
 //!
-//! Because that is where the claim is true rather than convenient. An interpreter's isolated context
-//! (§8) is the model state it would interpret against; with no interpretation there is no such
-//! state, and there is nothing to open. Refusing there also makes the report's shape a property of
-//! the target rather than of the suite: the runner records one unsupported check and runs no step,
-//! so **every scenario of every suite** — not only the two committed ones — comes back as an
-//! unsatisfied obligation and never as an error, whatever steps it happens to hold. It says nothing
-//! about a suite holding no scenarios, which reaches no method of this target at all.
+//! # Where the identifiers come from
 //!
-//! The six methods after it refuse in the same terms anyway. They are unreachable while
-//! `begin_scenario` refuses, and they are written out rather than left to a default body so that no
-//! method of this target can be read as agreeing with a claim it never checked — which is the rule
-//! the whole of [`target`](crate::target) is built on. [`identity`](ConformanceTarget::identity) is
-//! the one that answers: §30 requires a report to name the implementation that answered.
+//! A created instance's identity and every value the model leaves to the implementation are minted
+//! from a counter the scenario's [`Store`] carries, reset by
+//! [`begin_scenario`](ConformanceTarget::begin_scenario) — so two runs of one suite produce the
+//! same ones, and the runner never compares one against an expected value.
 
+pub mod execute;
+
+use std::cell::RefCell;
+
+use ess_compiler::ir::{EssIr, ResolvedCondition};
+use ess_primitives::consistency::ConsistencyToken;
+
+use crate::scenario::OutcomeRef;
 use crate::target::{
     ConformanceTarget, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
-    ObservedEvent, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
-    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError,
+    InvocationObservationRequest, ObservedEvent, ObservedInvocation, RedeliveryRequest,
+    ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
+    SemanticViewResult, TargetError,
 };
+use execute::{Externals, Store, Undetermined};
 
 /// How a report names this target, and the value `--target` selects it by.
 ///
@@ -64,28 +68,71 @@ use crate::target::{
 /// hand-written implementation while this one names nothing but the selection itself.
 const IDENTITY: &str = "interpreted";
 
-/// Why every observation this target is asked for is refused, in one sentence.
+/// Why every observation is refused by the target that holds no model, in one sentence.
 const NOTHING_DERIVED: &str =
     "the interpreted target derives no behaviour yet: it executes no part of the model";
 
-/// The model, run as the implementation under test — a seam, with nothing behind it yet.
+/// The model, run as the implementation under test.
 ///
-/// See the [module documentation](self) for what it refuses and why that is `unsupported` rather
-/// than `error`.
+/// See the [module documentation](self) for what it derives, what it refuses and why a refusal is
+/// `unsupported` rather than `error`.
 #[derive(Debug, Default)]
-pub struct Interpreted;
+pub struct Interpreted {
+    model: Option<EssIr>,
+    scenario: RefCell<Scenario>,
+}
+
+/// One scenario's isolated execution context (§8).
+#[derive(Debug, Default)]
+struct Scenario {
+    store: Store,
+    published: Vec<ObservedEvent>,
+    sequence: u64,
+    forced: Option<OutcomeRef>,
+}
+
+impl Scenario {
+    fn tick(&mut self) -> u64 {
+        self.sequence += 1;
+        self.sequence
+    }
+}
 
 impl Interpreted {
-    /// The target an operator selects with `--target interpreted`.
+    /// The target `--target interpreted` selects with no model in hand: it derives nothing.
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// The target that executes `model`'s commands.
+    pub fn for_model(model: EssIr) -> Self {
+        Self {
+            model: Some(model),
+            scenario: RefCell::default(),
+        }
+    }
+
+    /// The model, or the refusal the seam has always answered with.
+    fn model(&self, observation: impl Into<String>) -> Result<&EssIr, TargetError> {
+        self.model
+            .as_ref()
+            .ok_or_else(|| TargetError::unsupported(observation, NOTHING_DERIVED))
+    }
+}
+
+/// How the target reports what [`execute`] could not determine.
+fn refusal(observation: String, why: &Undetermined) -> TargetError {
+    if why.is_capability_gap() {
+        TargetError::unsupported(observation, why.to_string())
+    } else {
+        TargetError::unavailable(observation, why.to_string())
     }
 }
 
 impl ConformanceTarget for Interpreted {
     fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
         // Answered rather than refused: §30 requires a report to name the implementation that
-        // answered, and this one did answer — with nothing, which the scenarios then say.
+        // answered, whether or not it holds a model.
         Ok(ImplementationIdentity::new(
             IDENTITY,
             env!("CARGO_PKG_VERSION"),
@@ -93,26 +140,91 @@ impl ConformanceTarget for Interpreted {
     }
 
     fn begin_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
-        Err(TargetError::unsupported(
-            format!("an isolated execution context for `{}`", scenario.scenario),
-            NOTHING_DERIVED,
-        ))
+        self.model(format!(
+            "an isolated execution context for `{}`",
+            scenario.scenario
+        ))?;
+        *self.scenario.borrow_mut() = Scenario::default();
+        Ok(())
     }
 
     fn execute_command(
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
-        Err(TargetError::unsupported(
-            format!("invoking `{}`", request.command),
-            NOTHING_DERIVED,
-        ))
+        let observation = format!("invoking `{}`", request.command);
+        let model = self.model(observation.clone())?;
+        let mut scenario = self.scenario.borrow_mut();
+        let externals = match scenario.forced.take() {
+            Some(forced) if forced.command == request.command => {
+                Externals::Forced(forced.outcome.clone())
+            }
+            other => {
+                scenario.forced = other;
+                Externals::Withheld
+            }
+        };
+        let mut steps = execute::execute(
+            model,
+            &scenario.store,
+            request.command.name(),
+            &request.input,
+            &externals,
+        )
+        .map_err(|why| refusal(observation.clone(), &why))?;
+        if steps.len() != 1 {
+            let open: Vec<String> = steps
+                .iter()
+                .map(|step| {
+                    step.outcome
+                        .as_ref()
+                        .map_or_else(|| "no declared outcome".to_owned(), ToString::to_string)
+                })
+                .collect();
+            return Err(TargetError::unsupported(
+                observation,
+                format!(
+                    "the model leaves the outcome open between {} and the interpreter does not \
+                     choose",
+                    open.join(", ")
+                ),
+            ));
+        }
+        let step = steps.remove(0);
+        scenario.store = step.next;
+        let mut direct_events = Vec::with_capacity(step.events.len());
+        for event in step.events {
+            let sequence = scenario.tick();
+            let event = event.in_activity(request.correlation.clone()).at(sequence);
+            scenario.published.push(event.clone());
+            direct_events.push(event);
+        }
+        let consistency = match (&step.outcome, &step.error) {
+            (Some(_), None) => {
+                let sequence = scenario.tick();
+                Some(
+                    ConsistencyToken::new(format!("seq:{sequence}")).map_err(|error| {
+                        TargetError::unavailable(observation.clone(), error.to_string())
+                    })?,
+                )
+            }
+            _ => None,
+        };
+        Ok(SemanticCommandResult {
+            outcome: step.outcome,
+            error: step.error,
+            consistency,
+            direct_events,
+            response: None,
+        })
     }
 
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        let observation = format!("reading `{}`", request.view);
+        self.model(observation.clone())?;
         Err(TargetError::unsupported(
-            format!("reading `{}`", request.view),
-            NOTHING_DERIVED,
+            observation,
+            "views are not interpreted yet",
         ))
     }
 
@@ -120,33 +232,92 @@ impl ConformanceTarget for Interpreted {
         &self,
         request: EventObservationRequest,
     ) -> Result<Vec<ObservedEvent>, TargetError> {
-        Err(TargetError::unsupported(
-            format!("the occurrences of `{}`", request.event),
-            NOTHING_DERIVED,
-        ))
+        let observation = format!("the occurrences of `{}`", request.event);
+        let model = self.model(observation.clone())?;
+        // Every occurrence a command published directly is here. What a binding would publish is
+        // not, because bindings are not interpreted yet — so where the model declares one, a
+        // complete answer is not available and an incomplete one would read as "never happened".
+        if !model.bindings().is_empty() {
+            return Err(TargetError::unsupported(
+                observation,
+                "the model declares bindings, which are not interpreted yet, so the occurrences \
+                 they would publish cannot be observed",
+            ));
+        }
+        Ok(self
+            .scenario
+            .borrow()
+            .published
+            .iter()
+            .filter(|event| event.event == request.event)
+            .cloned()
+            .collect())
     }
 
     fn configure_external_outcome(
         &self,
         request: ExternalOutcomeControl,
     ) -> Result<(), TargetError> {
-        Err(TargetError::unsupported(
-            format!("forcing `{}`", request.force),
-            NOTHING_DERIVED,
-        ))
+        let observation = format!("forcing `{}`", request.force);
+        let model = self.model(observation.clone())?;
+        let external = model
+            .commands()
+            .get(request.force.command.name())
+            .and_then(|command| {
+                command
+                    .outcomes
+                    .iter()
+                    .find(|outcome| outcome.name == request.force.outcome)
+            })
+            .is_some_and(|outcome| {
+                matches!(
+                    outcome.condition,
+                    ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+                )
+            });
+        if !external {
+            return Err(TargetError::unavailable(
+                observation,
+                format!(
+                    "`{}` is not an outcome the model declares external",
+                    request.force
+                ),
+            ));
+        }
+        self.scenario.borrow_mut().forced = Some(request.force);
+        Ok(())
     }
 
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        let observation = format!("delivering `{}` again", request.event);
+        self.model(observation.clone())?;
         Err(TargetError::unsupported(
-            format!("delivering `{}` again", request.event),
-            NOTHING_DERIVED,
+            observation,
+            "bindings are not interpreted yet, so there is nothing to deliver to",
+        ))
+    }
+
+    fn observe_invocations(
+        &self,
+        request: InvocationObservationRequest,
+    ) -> Result<Vec<ObservedInvocation>, TargetError> {
+        let observation = format!(
+            "the invocations `{}` made of `{}`",
+            request.binding, request.command
+        );
+        self.model(observation.clone())?;
+        Err(TargetError::unsupported(
+            observation,
+            "bindings are not interpreted yet, so no binding has invoked anything",
         ))
     }
 
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
-        Err(TargetError::unsupported(
-            format!("closing the execution context of `{}`", scenario.scenario),
-            NOTHING_DERIVED,
-        ))
+        self.model(format!(
+            "closing the execution context of `{}`",
+            scenario.scenario
+        ))?;
+        *self.scenario.borrow_mut() = Scenario::default();
+        Ok(())
     }
 }
