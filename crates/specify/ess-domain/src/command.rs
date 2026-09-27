@@ -203,6 +203,8 @@ pub mod finite;
 pub mod fixture_inputs;
 mod narrowing;
 pub(crate) mod outcome_shapes;
+pub mod related_value;
+pub use related_value::RelatedVia;
 pub mod subject_fact;
 pub mod subject_state;
 pub use outcome_shapes::{fixture_of as precondition_fixture, precondition_branch, Accepts};
@@ -959,6 +961,18 @@ pub enum PayloadSource {
         /// The struct's fields and where each comes from.
         fields: Vec<PayloadField>,
     },
+    /// A field of the row another row references: `{related: {via: customer_id, field: region}}`
+    /// (ess/16, beyond10x/ess#166).
+    ///
+    /// `via` holds the other row's identity — a field of the subject as it was before the outcome,
+    /// or `input.<field>` — and `field` is read from that row. Which entity `via` names is
+    /// [`related_value::referenced_entity`]'s answer.
+    RelatedField {
+        /// Where the other row's identity is read.
+        via: RelatedVia,
+        /// The field of the referenced row.
+        field: String,
+    },
 }
 
 impl PayloadSource {
@@ -988,6 +1002,9 @@ impl fmt::Display for PayloadSource {
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
+            Self::RelatedField { via, field } => {
+                write!(f, "field `{field}` of the row `{via}` names")
+            }
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1023,7 +1040,8 @@ impl PayloadSource {
             Self::SubjectField { .. }
             | Self::Increment { .. }
             | Self::InputOrGenerated { .. }
-            | Self::Struct { .. } => true,
+            | Self::Struct { .. }
+            | Self::RelatedField { .. } => true,
             Self::ResponseField { .. }
             | Self::Generated
             | Self::InputField { .. }
@@ -1075,7 +1093,56 @@ enum RawPayloadSource {
     Unsigned(u64),
     Decimal(f64),
     Explicit(ExplicitPayloadSource),
+    Related(RawRelatedSource),
     Nested(RawNestedSources),
+}
+
+/// `{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is
+/// a mapping of its own rather than one more keyword beside the others.
+///
+/// Recognised by its exact shape — one key, `related`, holding exactly `via` and `field` as text —
+/// and by nothing else, so `related` is no source keyword: any other mapping under a `related` key
+/// is a nested mapping, as it was before `ess/16`. A document below `ess/16` whose struct happens to
+/// have this shape is read back as that nested mapping by
+/// [`related_value::read_below_ess_16`], so no earlier document changes meaning.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRelatedSource {
+    related: RawRelated,
+}
+
+/// What `related:` holds: the field holding the other row's identity, and the field read there.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRelated {
+    /// A field of the subject, or `input.<field>`.
+    via: String,
+    /// A field of the entity `via` names.
+    field: String,
+}
+
+impl RawRelatedSource {
+    /// The mapping `{related: {via: <text>, field: <text>}}`, and nothing else.
+    fn recognise(entries: &[(String, RawPayloadSource)]) -> Option<Self> {
+        let [(key, RawPayloadSource::Nested(RawNestedSources(inner)))] = entries else {
+            return None;
+        };
+        let (mut via, mut field) = (None, None);
+        for (name, value) in inner {
+            match (name.as_str(), value) {
+                ("via", RawPayloadSource::Text(text)) => via = Some(text.clone()),
+                ("field", RawPayloadSource::Text(text)) => field = Some(text.clone()),
+                _ => return None,
+            }
+        }
+        (key == "related" && inner.len() == 2).then_some(())?;
+        Some(Self {
+            related: RawRelated {
+                via: via?,
+                field: field?,
+            },
+        })
+    }
 }
 
 /// The keys that make a mapping a source rather than a nested mapping (ess/14, #136).
@@ -1107,7 +1174,8 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                     "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
                      `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
                      `{input: <field>, else: {generated: true}}`, \
-                     `{input: <field>, else: <literal>}`, or a mapping of struct fields",
+                     `{input: <field>, else: <literal>}`, \
+                     `{related: {via: <field>, field: <field>}}`, or a mapping of struct fields",
                 )
             }
 
@@ -1148,6 +1216,9 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                         )));
                     }
                     entries.push((key, value));
+                }
+                if let Some(related) = RawRelatedSource::recognise(&entries) {
+                    return Ok(RawPayloadSource::Related(related));
                 }
                 if !entries.is_empty()
                     && entries
@@ -1304,6 +1375,15 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 })
                 .ok_or("a decimal literal must be a finite number"),
             RawPayloadSource::Explicit(explicit) => Self::from_explicit(explicit),
+            RawPayloadSource::Related(RawRelatedSource {
+                related: RawRelated { via, field },
+            }) => Ok(Self::RelatedField {
+                // Kept as written. Each name is checked where the format is known
+                // (`value_expression`): below `ess/16` this is a nested mapping, and its texts are
+                // whatever the struct's leaves were given.
+                via: RelatedVia::parse(&via),
+                field,
+            }),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -1447,6 +1527,12 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
+            PayloadSource::RelatedField { via, field } => Self::Related(RawRelatedSource {
+                related: RawRelated {
+                    via: via.to_string(),
+                    field: field.clone(),
+                },
+            }),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
                     ScalarKind::Integer => by
@@ -2790,7 +2876,8 @@ fn check_payload_entry(
         | PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::InputOrGenerated { .. }
-        | PayloadSource::Struct { .. } => {}
+        | PayloadSource::Struct { .. }
+        | PayloadSource::RelatedField { .. } => {}
         PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => {
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.

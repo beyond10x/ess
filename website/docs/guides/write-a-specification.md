@@ -691,6 +691,7 @@ the input or a literal:
 | `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
+| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 
@@ -719,6 +720,35 @@ fallback is refused with `unsupported_format_version`. The outcome's synthesized
 both halves: it first sends the input and asserts the sent value, then invokes the branch again
 without the input and asserts the literal. An implementation that ignores the input fails the
 first check, and one that stores another default fails the second.
+
+From source `ess/16` a value can come from a field of the row the subject references:
+
+```yaml
+- name: dispatched
+  updates: demo.shipping.Shipment
+  instance: shipment_id
+  emits: [demo.shipping.ShipmentDispatched]
+  payload:
+    demo.shipping.ShipmentDispatched:
+      shipment_id: input.shipment_id
+      region: {related: {via: customer_id, field: region}}   # the region of the shipment's customer
+```
+
+`via` is a field of the subject as it was before the outcome (on `creates:`, a field the
+branch sets from its input), or `input.<field>`, and its type is the identity of the entity it
+names — exactly, not `Optional<…>` or a list. Where several entities share that identity type, the
+relation on the subject field says which one: a `references` relation of cardinality `one` that
+the subject declares on it, or the `owns` relation of the subject's owner; an input is settled by
+the relation on the field the branch sets from it. `field` is a field of that entity, typed as the
+target admits. One hop only. `{related: …}` is written alone and holds exactly `via` and `field`;
+any other mapping under `related` is a nested mapping, and below `ess/16` so is this one.
+
+The scenario creates the referenced row between two others of its entity, points the subject at
+it, and asserts that row's value, so an implementation that reads another row, the first or the
+last, fails. Where the specification has an `updates:` branch that changes the field read, the
+scenario runs it on the referenced row just before the branch and asserts the new value, so an
+implementation that copied the value earlier fails too. Below `ess/16` the source is refused with
+`unsupported_format_version`, and Entity Runtime lowering refuses it.
 
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
