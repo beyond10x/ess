@@ -1653,6 +1653,7 @@ invariants:
                     name: name(newtype),
                     body: TypeBody::Newtype {
                         alphabet: None,
+                        prefix: None,
                         of: TypeRef::Primitive(Primitive::Uuid),
                         invariants: Vec::new(),
                     },
@@ -2172,6 +2173,7 @@ lifecycle:
                 name: name("billing.CustomerId"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::Uuid),
                     invariants: Vec::new(),
                 },

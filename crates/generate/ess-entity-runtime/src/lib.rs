@@ -921,7 +921,8 @@ impl Projector<'_> {
             Primitive::Bytes => BindingRequirement::BytesSpelling { at },
             Primitive::Decimal => BindingRequirement::DecimalSpelling { at },
             Primitive::Binary64 => BindingRequirement::Binary64Spelling { at },
-            Primitive::String | Primitive::Boolean | Primitive::Integer => return,
+            // A JSON value is carried as JSON, so it needs no spelling (beyond10x/ess#138).
+            Primitive::String | Primitive::Boolean | Primitive::Integer | Primitive::Json => return,
         };
         self.requirements.push(requirement);
     }
@@ -979,8 +980,37 @@ impl Projector<'_> {
                     ResolvedBody::Newtype {
                         of,
                         alphabet,
+                        prefix,
                         invariants,
                     } => {
+                        // A declared prefix is `value starts_with <prefix>`, which entity-core
+                        // has an operator for (beyond10x/ess#146).
+                        if let Some(prefix) = prefix {
+                            let mut condition = lower_predicate(
+                                &Predicate::TextMatch {
+                                    path: FactPath::new(ess_domain::NamedType::VALUE)
+                                        .expect("the newtype pseudo-field is a fact path"),
+                                    op: TextOp::StartsWith,
+                                    value: FactValue::text(prefix.clone()),
+                                },
+                                &PathRewrite::Nominal {
+                                    base: base.to_owned(),
+                                    value_root: true,
+                                },
+                            );
+                            if optional {
+                                condition = optional_guard(base, condition);
+                            }
+                            out.push(RuleDefinition {
+                                name: Some(unique_rule_name(
+                                    out,
+                                    format!("nominal_{}_prefix", sanitize(semantic_path)),
+                                    &resolved.name,
+                                )),
+                                condition,
+                                message: Some(format!("value starts with {prefix:?}")),
+                            });
+                        }
                         if alphabet.is_some() {
                             self.diagnostic(
                                 LoweringCode::AlphabetUnsupported,
@@ -1012,9 +1042,10 @@ impl Projector<'_> {
                                 condition = optional_guard(base, condition);
                             }
                             out.push(RuleDefinition {
-                                name: Some(format!(
-                                    "nominal_{}_{index:04}",
-                                    sanitize(semantic_path)
+                                name: Some(unique_rule_name(
+                                    out,
+                                    format!("nominal_{}_{index:04}", sanitize(semantic_path)),
+                                    &resolved.name,
                                 )),
                                 condition,
                                 message: Some(invariant.statement.clone()),
@@ -1045,9 +1076,10 @@ impl Projector<'_> {
                                 condition = optional_guard(base, condition);
                             }
                             out.push(RuleDefinition {
-                                name: Some(format!(
-                                    "nominal_{}_{index:04}",
-                                    sanitize(semantic_path)
+                                name: Some(unique_rule_name(
+                                    out,
+                                    format!("nominal_{}_{index:04}", sanitize(semantic_path)),
+                                    &resolved.name,
                                 )),
                                 condition,
                                 message: Some(invariant.statement.clone()),
@@ -2896,6 +2928,8 @@ fn primitive_kind(primitive: Primitive) -> FieldKind {
         Primitive::Integer => FieldKind::Integer,
         Primitive::Decimal => FieldKind::Number,
         Primitive::Binary64 => FieldKind::Binary64,
+        // entity-core's own kind for any JSON value, which it checks nothing about.
+        Primitive::Json => FieldKind::Json,
     }
 }
 
@@ -2909,6 +2943,9 @@ fn map_key(primitive: Primitive) -> MapKey {
         Primitive::Duration => MapKey::Duration,
         Primitive::Uuid => MapKey::Uuid,
         Primitive::Bytes => MapKey::Bytes,
+        Primitive::Json => {
+            unreachable!("a Json value is refused as a map key while the document is read")
+        }
     }
 }
 
@@ -2922,6 +2959,38 @@ fn optional_guard(path: &str, condition: Condition) -> Condition {
             },
             condition,
         ],
+    }
+}
+
+/// `name`, or `name` followed by the declaring type when a rule of that name is already lowered.
+///
+/// A field whose type is a chain of newtypes lowers each layer's rules under the field's one
+/// semantic path, so two layers — a prefix narrowed by the newtype that wraps it, invariants at
+/// two depths, a newtype's invariants over a struct's own — want the same name. The outermost
+/// layer is lowered first and keeps the name it always had; each inner layer's rule is told apart
+/// by the type that declares it, and by a counter after that when the name is still taken
+/// (beyond10x/ess#146).
+fn unique_rule_name(out: &[RuleDefinition], name: String, layer: &QualifiedName) -> String {
+    let taken = |candidate: &str| {
+        out.iter()
+            .any(|rule| rule.name.as_deref() == Some(candidate))
+    };
+    if !taken(&name) {
+        return name;
+    }
+    // Two semantic paths can sanitize to one text (`x.y` and `x_y`), so the layer suffix alone is
+    // not enough: a counter follows it until the name is unused.
+    let layered = format!("{name}_{}", sanitize(&layer.to_string()));
+    if !taken(&layered) {
+        return layered;
+    }
+    let mut count = 2_usize;
+    loop {
+        let candidate = format!("{layered}_{count}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+        count += 1;
     }
 }
 
@@ -3040,6 +3109,8 @@ fn scalar_primitive(
             Primitive::Integer => Scalar::Integer,
             Primitive::Decimal => Scalar::Number,
             Primitive::Binary64 => Scalar::Binary64,
+            // No literal spells a JSON value, so it has no scalar.
+            Primitive::Json => return None,
             Primitive::String
             | Primitive::Timestamp
             | Primitive::Duration

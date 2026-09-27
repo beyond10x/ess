@@ -1508,6 +1508,7 @@ mod tests {
                 "billing.invoice.InvoiceId",
                 TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::Uuid),
                     invariants: Vec::new(),
                 },
@@ -1516,6 +1517,7 @@ mod tests {
                 "billing.invoice.Email",
                 TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },

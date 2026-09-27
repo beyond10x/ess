@@ -39,6 +39,7 @@ fn registry() -> TypeRegistry {
             "sample.Email",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("String").unwrap(),
                 invariants: vec![],
             },
@@ -47,6 +48,7 @@ fn registry() -> TypeRegistry {
             "sample.Wrapped",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("Optional<sample.Money>").unwrap(),
                 invariants: vec![],
             },
@@ -55,6 +57,7 @@ fn registry() -> TypeRegistry {
             "sample.WrappedState",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("sample.State").unwrap(),
                 invariants: vec![],
             },
@@ -73,6 +76,7 @@ fn registry() -> TypeRegistry {
             "sample.Loop",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("Optional<sample.Loop>").unwrap(),
                 invariants: vec![],
             },
@@ -410,6 +414,7 @@ fn clock_reading_provenance_cannot_be_erased_by_generic_comparison_or_wrappers()
             naming: Naming::default(),
             body: TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("String").unwrap(),
                 invariants: vec![],
             },
@@ -428,6 +433,7 @@ fn clock_reading_provenance_cannot_be_erased_by_generic_comparison_or_wrappers()
             naming: Naming::default(),
             body: TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("sample.Clock").unwrap(),
                 invariants: vec![],
             },

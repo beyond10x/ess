@@ -45,6 +45,7 @@ impl Declaration {
         match self {
             Self::Newtype { of } => ess_domain::types::RawTypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: of.clone(),
                 invariants: Vec::new(),
             },

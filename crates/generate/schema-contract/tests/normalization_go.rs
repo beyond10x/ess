@@ -303,8 +303,8 @@ fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
     use schema_contract::realize::normalize::Root;
 
     for key in Primitive::ALL {
-        if *key == Primitive::Binary64 {
-            assert!(ess_domain::TypeRef::parse("Map<Binary64, Bytes>").is_err());
+        if matches!(key, Primitive::Binary64 | Primitive::Json) {
+            assert!(ess_domain::TypeRef::parse(&format!("Map<{key}, Bytes>")).is_err());
             assert!(!ess_domain::TypeRegistry::new()
                 .resolve(
                     &ess_domain::TypeRef::Map(
@@ -325,7 +325,7 @@ fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
             .pointer(map_pointer)
             .unwrap();
         let expected_key_keywords: &[&str] = match key {
-            Primitive::Binary64 => unreachable!("map-key refusal checked above"),
+            Primitive::Binary64 | Primitive::Json => unreachable!("map-key refusal checked above"),
             Primitive::String => &[],
             Primitive::Boolean => &["enum", "type"],
             Primitive::Integer => &["pattern", "type"],
@@ -377,7 +377,7 @@ fn every_primitive_map_key_pattern_is_qualified_at_its_nested_source_pointer() {
             .unwrap();
         let result = plan.go("adapter", "example.invalid/adapter");
         match key {
-            Primitive::Binary64 => unreachable!("map-key refusal checked above"),
+            Primitive::Binary64 | Primitive::Json => unreachable!("map-key refusal checked above"),
             Primitive::Integer | Primitive::Decimal | Primitive::Uuid => {
                 let refused = result.expect_err("unqualified key pattern must refuse");
                 assert_eq!(refused.0.len(), 1, "{key}");

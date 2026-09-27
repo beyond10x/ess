@@ -61,6 +61,7 @@ pub struct Emission {
 /// rather than inventing a surface nobody declared.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Clap)?;
+    crate::failure::json(ir, plan, crate::Target::Clap)?;
     let layout = Layout::of(ir);
     let surfaces = tree::surfaces(ir);
     let provenance = &plan.provenance;

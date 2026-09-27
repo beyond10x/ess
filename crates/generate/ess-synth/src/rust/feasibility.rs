@@ -79,6 +79,7 @@ impl Inventory {
         match reference {
             ResolvedTypeRef::Primitive { name } => match name {
                 Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+                Primitive::Json => unreachable!("Json is refused before target rendering"),
                 Primitive::String => self.helper(scope, "String", source),
                 Primitive::Bytes => self.helper(scope, "Vec", source),
                 Primitive::Boolean

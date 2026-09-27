@@ -320,6 +320,7 @@ fn setup_value(
                 setup_value(ir, of, value, depth + 1)
             }
         }
+        ResolvedTypeRef::Primitive { name } if *name == Primitive::Json => Ok(()),
         ResolvedTypeRef::Primitive { name } => primitive_value(*name, value)
             .map(|_| ())
             .ok_or_else(|| format!("value does not hold {name}")),
@@ -360,9 +361,17 @@ fn setup_body(
         ResolvedBody::Newtype {
             of,
             alphabet,
+            prefix,
             invariants,
         } => {
             setup_value(ir, of, value, depth)?;
+            if let (Some(prefix), Some(text)) = (prefix, value.as_text()) {
+                if !text.starts_with(prefix.as_str()) {
+                    return Err(format!(
+                        "{text:?} does not start with {prefix:?}, the prefix of {name}"
+                    ));
+                }
+            }
             // Before the invariants: every character of a text is one of the declared alphabet's
             // (`docs/design/string-alphabet-and-length.md`, section 1).
             if let (Some(alphabet), Some(text)) = (alphabet, value.as_text()) {
@@ -485,7 +494,8 @@ pub(crate) fn primitive_literal(kind: Primitive, spelling: &str) -> Option<Node>
         Primitive::Decimal => {
             Node::Number(ess_primitives::facts::Number::decimal_literal(spelling)?)
         }
-        Primitive::Binary64 => return None,
+        // No literal is a JSON value here: a literal is one piece of text (beyond10x/ess#138).
+        Primitive::Binary64 | Primitive::Json => return None,
         Primitive::String
         | Primitive::Timestamp
         | Primitive::Duration
@@ -877,6 +887,10 @@ fn project(
                 project(ir, of, value, path, depth + 1, facts, errors);
             }
         }
+        // Any JSON value, and no fact: a predicate reads nothing from one (beyond10x/ess#138).
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Json,
+        } => {}
         ResolvedTypeRef::Primitive { name } => match primitive_value(*name, value) {
             Some(fact) => facts.set(path.clone(), fact),
             None => wrong(errors, name.to_string()),
@@ -999,6 +1013,12 @@ fn project_list(
 /// different conclusions about whether `1.5` is an `Integer`.
 pub(crate) fn primitive_value(primitive: Primitive, value: &Node) -> Option<FactValue> {
     primitive.admits(value)
+}
+
+/// Whether `value` is a value of `primitive`: [`primitive_value`], and any value at all for `Json`,
+/// which admits every JSON value and projects to no fact (beyond10x/ess#138).
+pub(crate) fn primitive_admits(primitive: Primitive, value: &Node) -> bool {
+    primitive == Primitive::Json || primitive_value(primitive, value).is_some()
 }
 
 /// A candidate that is not a value of the command's declared input type.

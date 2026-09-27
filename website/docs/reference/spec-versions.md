@@ -207,6 +207,8 @@ retained-result steps, string operators and aggregate scenarios of 12–17 by na
 refuses fixtures. A suite without fixtures keeps its earlier format, and older envelopes refuse
 the new steps.
 
+`ess-conformance/24` and `/25` are unreleased. They carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

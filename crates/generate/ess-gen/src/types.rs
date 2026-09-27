@@ -150,7 +150,7 @@ use ess_compiler::ir::{
 use ess_compiler::EssIr;
 use ess_domain::entity::{Invariant, RelationKind};
 use ess_domain::name::QualifiedName;
-use ess_domain::types::Primitive;
+use ess_domain::types::{Presence, Primitive};
 
 use crate::provenance::Provenance;
 
@@ -239,7 +239,7 @@ pub(crate) struct Node {
     pub(crate) format: Option<&'static str>,
     /// The grammar, where it is small enough to be certainly right.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) pattern: Option<&'static str>,
+    pub(crate) pattern: Option<std::borrow::Cow<'static, str>>,
     /// How bytes are carried.
     #[serde(rename = "contentEncoding", skip_serializing_if = "Option::is_none")]
     pub(crate) content_encoding: Option<&'static str>,
@@ -491,12 +491,15 @@ pub(crate) fn primitive(primitive: Primitive) -> Node {
     let string = |format: Option<&'static str>, pattern: Option<&'static str>| Node {
         kind: Some("string"),
         format,
-        pattern,
+        pattern: pattern.map(std::borrow::Cow::Borrowed),
         ..Node::default()
     };
 
     match primitive {
         Primitive::String => string(None, None),
+        // Any JSON value (beyond10x/ess#138): the empty schema, which every value satisfies. No
+        // `type`, because a JSON value is not one of them.
+        Primitive::Json => Node::default(),
         Primitive::Boolean => Node {
             kind: Some("boolean"),
             ..Node::default()
@@ -526,7 +529,7 @@ pub(crate) fn primitive(primitive: Primitive) -> Node {
         // checking it. The pattern is what makes a non-base64 string a rejection.
         Primitive::Bytes => Node {
             kind: Some("string"),
-            pattern: Some(BASE64_PATTERN),
+            pattern: Some(std::borrow::Cow::Borrowed(BASE64_PATTERN)),
             content_encoding: Some("base64"),
             ..Node::default()
         },
@@ -549,7 +552,7 @@ pub(crate) fn key(primitive_key: Primitive) -> Option<Node> {
         }),
         Primitive::Integer => Some(Node {
             kind: Some("string"),
-            pattern: Some(INTEGER_TEXT_PATTERN),
+            pattern: Some(std::borrow::Cow::Borrowed(INTEGER_TEXT_PATTERN)),
             ..Node::default()
         }),
         other => Some(primitive(other)),
@@ -616,6 +619,19 @@ pub(crate) fn field(declared: &ResolvedField) -> Node {
     node
 }
 
+/// A field declared `presence: null_when_absent`: its `Optional` projected whole, as the
+/// `anyOf [T, null]` an `Optional` outside a field already is, with the field's annotations.
+fn nullable_field(declared: &ResolvedField) -> Node {
+    let mut node = type_ref(&declared.type_ref).annotated(
+        declared.naming.display.as_deref(),
+        declared.naming.summary.clone(),
+    );
+    if wire_name(declared) != declared.name {
+        node.ess_field = Some(declared.name.clone());
+    }
+    node
+}
+
 /// What a field is called on the wire.
 ///
 /// From the IR, so that no projection re-reads the source for it: a schema keyed on the model's field
@@ -655,10 +671,18 @@ pub(crate) fn object_annotated(
 
     for declared in fields {
         let wire = wire_name(declared);
-        if !declared.type_ref.is_optional() {
+        // `null_when_absent` (ess/15): the key is always sent, and `null` is how an absent value
+        // is spelled, so the property is required and nullable. `omitted_when_absent` is the
+        // projection an `Optional` field always had: optional, and not nullable.
+        let null_when_absent = declared.naming.presence == Some(Presence::NullWhenAbsent);
+        if !declared.type_ref.is_optional() || null_when_absent {
             required.push(wire.to_owned());
         }
-        let mut property = field(declared);
+        let mut property = if null_when_absent {
+            nullable_field(declared)
+        } else {
+            field(declared)
+        };
         property.relation = relations.get(declared.name.as_str()).cloned();
         if let Some(example) = examples.and_then(|examples| examples.get(&declared.name)) {
             property.examples = vec![example.clone()];
@@ -675,6 +699,24 @@ pub(crate) fn object_annotated(
     }
 }
 
+/// The ECMA-262 pattern a value starting with `prefix` matches: anchored at the start, open at the
+/// end, every syntax character escaped so the prefix is read literally.
+///
+/// A character outside the Basic Multilingual Plane is written as itself: outside a character
+/// class a surrogate pair matches the same code units with or without the `u` flag, which is the
+/// reason a class is refused for alphabets and a literal is not.
+pub(crate) fn prefix_pattern(prefix: &str) -> String {
+    let mut pattern = String::with_capacity(prefix.len() + 1);
+    pattern.push('^');
+    for character in prefix.chars() {
+        if "\\^$.|?*+()[]{}".contains(character) {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern
+}
+
 /// The schema for one named type, as it appears in a document's definitions.
 pub(crate) fn body(declared: &ResolvedType) -> Node {
     let mut node = match &declared.body {
@@ -684,12 +726,23 @@ pub(crate) fn body(declared: &ResolvedType) -> Node {
         ResolvedBody::Newtype {
             of,
             alphabet,
+            prefix,
             invariants,
-        } => Node {
-            invariants: statements(invariants),
-            alphabet: alphabet.clone(),
-            ..type_ref(of)
-        },
+        } => {
+            let wrapped = type_ref(of);
+            Node {
+                invariants: statements(invariants),
+                alphabet: alphabet.clone(),
+                // A literal prefix is a grammar small enough to be certainly right: `^` and the
+                // prefix with every metacharacter escaped (beyond10x/ess#146). Only a newtype of
+                // `String` takes one, and `String` publishes no pattern of its own to collide with.
+                pattern: prefix
+                    .as_deref()
+                    .map(|prefix| std::borrow::Cow::Owned(prefix_pattern(prefix)))
+                    .or(wrapped.pattern.clone()),
+                ..wrapped
+            }
+        }
         ResolvedBody::Struct { fields, invariants } => Node {
             invariants: statements(invariants),
             ..object(fields)
@@ -1067,34 +1120,40 @@ mod tests {
         /// `contentEncoding`.
         type Published = (
             Primitive,
-            &'static str,
+            Option<&'static str>,
             Option<&'static str>,
             Option<&'static str>,
             Option<&'static str>,
         );
-        let expected: [Published; 9] = [
-            (Primitive::String, "string", None, None, None),
-            (Primitive::Boolean, "boolean", None, None, None),
-            (Primitive::Integer, "integer", None, None, None),
+        let expected: [Published; 10] = [
+            (Primitive::String, Some("string"), None, None, None),
+            (Primitive::Boolean, Some("boolean"), None, None, None),
+            (Primitive::Integer, Some("integer"), None, None, None),
             (
                 Primitive::Decimal,
-                "string",
+                Some("string"),
                 Some("decimal"),
                 Some(r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?$"),
                 None,
             ),
-            (Primitive::Binary64, "number", None, None, None),
+            (Primitive::Binary64, Some("number"), None, None, None),
             (
                 Primitive::Timestamp,
-                "string",
+                Some("string"),
                 Some("date-time"),
                 None,
                 None,
             ),
-            (Primitive::Duration, "string", Some("duration"), None, None),
+            (
+                Primitive::Duration,
+                Some("string"),
+                Some("duration"),
+                None,
+                None,
+            ),
             (
                 Primitive::Uuid,
-                "string",
+                Some("string"),
                 Some("uuid"),
                 Some(
                     "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -1103,11 +1162,13 @@ mod tests {
             ),
             (
                 Primitive::Bytes,
-                "string",
+                Some("string"),
                 None,
                 Some("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"),
                 Some("base64"),
             ),
+            // Any JSON value: the empty schema, no keyword at all (beyond10x/ess#138).
+            (Primitive::Json, None, None, None, None),
         ];
         assert_eq!(
             expected.len(),
@@ -1116,9 +1177,9 @@ mod tests {
         );
         for (which, kind, format, pattern, encoding) in expected {
             let node = primitive(which);
-            assert_eq!(node.kind, Some(kind), "{which}: type");
+            assert_eq!(node.kind, kind, "{which}: type");
             assert_eq!(node.format, format, "{which}: format");
-            assert_eq!(node.pattern, pattern, "{which}: pattern");
+            assert_eq!(node.pattern.as_deref(), pattern, "{which}: pattern");
             assert_eq!(node.content_encoding, encoding, "{which}: contentEncoding");
         }
     }
@@ -1178,7 +1239,7 @@ mod tests {
             "a decimal published as a JSON number is read back as a float"
         );
         assert_eq!(
-            node.pattern,
+            node.pattern.as_deref(),
             Some(DECIMAL_PATTERN),
             "without the pattern, `\"abc\"` is a valid amount in every projection at once"
         );
@@ -1193,7 +1254,8 @@ mod tests {
             let node = primitive(which);
             assert_eq!(node.format, Some(format));
             assert_eq!(
-                node.pattern, None,
+                node.pattern.as_deref(),
+                None,
                 "a hand-written RFC 3339 or ISO 8601 regex refuses values the model permits"
             );
         }
@@ -1203,7 +1265,7 @@ mod tests {
     fn an_integer_key_is_constrained_to_the_text_an_integer_is_spelt_with() {
         let node = key(Primitive::Integer).expect("an integer key is constrained");
         assert_eq!(node.kind, Some("string"));
-        assert_eq!(node.pattern, Some(INTEGER_TEXT_PATTERN));
+        assert_eq!(node.pattern.as_deref(), Some(INTEGER_TEXT_PATTERN));
     }
 
     #[test]

@@ -181,18 +181,18 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=19) {
+    if !matches!(version.major(), 1..=19 | 24 | 25) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–19",
+            "execution readers admit suite majors 1–19, 24 and 25",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19)
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 25)
         != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17 and suite/19",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19 and suite/25",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -285,7 +285,7 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
     }
     Ok(())
 }
-fn shape(value: &Json) -> Result<(), AdmissionError> {
+fn shape(value: &Json, major: u32) -> Result<(), AdmissionError> {
     for v in value.object()?.values() {
         let object = v.object()?;
         let tag = object
@@ -298,9 +298,21 @@ fn shape(value: &Json) -> Result<(), AdmissionError> {
             "list" | "map" | "union" => &["holds"],
             _ => return Err(v.error("UnsupportedHolds", tag)),
         };
-        let fields = v.closed(required, &["optional"])?;
+        let fields = v.closed(required, &["optional", "presence"])?;
         if let Some(optional) = fields.get("optional") {
             optional.boolean()?;
+        }
+        // A presence policy (beyond10x/ess#139) is suite/24 and /25 vocabulary.
+        if let Some(presence) = fields.get("presence") {
+            if major < crate::presence::ORDINARY {
+                return Err(presence.error(
+                    "UnsupportedVocabulary",
+                    "field presence policies require suite/24 or /25",
+                ));
+            }
+            if !matches!(presence.text()?, "null_when_absent" | "omitted_when_absent") {
+                return Err(presence.error("InvalidPresence", presence.text()?));
+            }
         }
     }
     Ok(())
@@ -444,7 +456,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 let _: crate::subject::SubjectShape = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidSubjectShape", error.to_string()))?;
             }
-            "shape" => shape(field)?,
+            "shape" => shape(field, major)?,
             "expectation" => expectation(field, major)?,
             _ => {}
         }
@@ -483,6 +495,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
+    crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;
     crate::aggregate::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;

@@ -312,6 +312,10 @@ pub enum ResolvedBody {
         /// `spec_digest`.
         #[serde(skip_serializing_if = "Option::is_none")]
         alphabet: Option<String>,
+        /// The text every value starts with, when declared (ess/15). Skipped when absent, for the
+        /// same reason.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prefix: Option<String>,
         /// Conditions every value satisfies, as predicates over `value`.
         invariants: Vec<Invariant>,
     },
@@ -341,7 +345,7 @@ pub enum ResolvedBody {
 
 impl ResolvedBody {
     /// Whether a value of this type is held to more than its representation: a newtype or a struct
-    /// with any invariant, or a newtype with a declared alphabet.
+    /// with any invariant, or a newtype with a declared alphabet or prefix.
     ///
     /// The one question every site that refuses a constrained type asks. Matching on `invariants`
     /// alone, as those sites did before ess/11, would let an alphabet-only newtype through where
@@ -351,9 +355,10 @@ impl ResolvedBody {
         match self {
             Self::Newtype {
                 alphabet,
+                prefix,
                 invariants,
                 ..
-            } => alphabet.is_some() || !invariants.is_empty(),
+            } => alphabet.is_some() || prefix.is_some() || !invariants.is_empty(),
             Self::Struct { invariants, .. } => !invariants.is_empty(),
             Self::Enum { .. } | Self::Union { .. } => false,
         }

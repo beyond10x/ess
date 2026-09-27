@@ -404,6 +404,7 @@ fn types(bridge: &Bridge<'_>) -> Value {
             ess_compiler::ir::ResolvedBody::Newtype {
                 of,
                 alphabet,
+                prefix,
                 invariants,
             } => {
                 entry.insert("kind".to_owned(), json!("newtype"));
@@ -411,6 +412,9 @@ fn types(bridge: &Bridge<'_>) -> Value {
                 // input rather than contract, so it is not catalogued.
                 if let Some(alphabet) = alphabet {
                     entry.insert("alphabet".to_owned(), json!(alphabet));
+                }
+                if let Some(prefix) = prefix {
+                    entry.insert("prefix".to_owned(), json!(prefix));
                 }
                 entry.insert(
                     "of".to_owned(),

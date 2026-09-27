@@ -24,16 +24,18 @@ pub enum ScalarKind {
 }
 
 impl ScalarKind {
-    /// The existing evaluator representation of a declared primitive.
-    pub fn of(primitive: Primitive) -> Self {
+    /// The existing evaluator representation of a declared primitive, or `None` for `Json`, which
+    /// is no scalar: a predicate reads nothing from a JSON value (beyond10x/ess#138).
+    pub fn of(primitive: Primitive) -> Option<Self> {
         match primitive {
-            Primitive::Boolean => Self::Bool,
-            Primitive::Integer | Primitive::Decimal | Primitive::Binary64 => Self::Number,
+            Primitive::Boolean => Some(Self::Bool),
+            Primitive::Integer | Primitive::Decimal | Primitive::Binary64 => Some(Self::Number),
             Primitive::String
             | Primitive::Timestamp
             | Primitive::Duration
             | Primitive::Uuid
-            | Primitive::Bytes => Self::Text,
+            | Primitive::Bytes => Some(Self::Text),
+            Primitive::Json => None,
         }
     }
 
@@ -69,6 +71,8 @@ pub enum Shape<T> {
     List(T),
     /// A map, quantified over its values.
     Map(T),
+    /// Any JSON value (beyond10x/ess#138): no selectors, and no scalar a predicate could compare.
+    Json,
     /// A tagged union with no predicate selectors.
     Union,
 }
@@ -273,7 +277,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     }
     fn shape(&self, reference: &TypeRef) -> Result<Shape<TypeRef>, String> {
         Ok(match reference {
-            TypeRef::Primitive(primitive) => Shape::Scalar(ScalarKind::of(*primitive)),
+            TypeRef::Primitive(primitive) => {
+                ScalarKind::of(*primitive).map_or(Shape::Json, Shape::Scalar)
+            }
             TypeRef::Optional(of) => Shape::Optional((**of).clone()),
             TypeRef::List(of) => Shape::List((**of).clone()),
             TypeRef::Map(_, value) => Shape::Map((**value).clone()),
@@ -503,6 +509,7 @@ fn resolve<E: TypeEnvironment>(
                     Shape::List(_) => Some("a list"),
                     Shape::Map(_) => Some("a map"),
                     Shape::Union => Some("a union"),
+                    Shape::Json => Some("a JSON value"),
                     _ => None,
                 };
                 let next = match shape {

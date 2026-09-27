@@ -552,9 +552,7 @@ fn accepts(ty: &ess_domain::TypeRef, value: &Node, depth: usize) -> bool {
         return false;
     }
     match ty {
-        ess_domain::TypeRef::Primitive(kind) => {
-            crate::input::primitive_value(*kind, value).is_some()
-        }
+        ess_domain::TypeRef::Primitive(kind) => crate::input::primitive_admits(*kind, value),
         ess_domain::TypeRef::Optional(of) => {
             matches!(value, Node::Null) || accepts(of, value, depth + 1)
         }

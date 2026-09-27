@@ -3632,8 +3632,33 @@ pub(crate) fn payload_shape(ir: &EssIr, event: &EventRef) -> PayloadShape {
         .unwrap_or_else(|| panic!("`{event}` is an event this specification declares"));
     for field in &declared.fields {
         describe(ir, &field.type_ref, &field.name, false, 0, &mut shape);
+        mark_presence(field, &field.name, false, &mut shape);
     }
     shape
+}
+
+/// Carries a field's declared presence policy (beyond10x/ess#139) onto the leaf that is the field.
+///
+/// Only where the leaf is the field itself and no enclosing `Optional` was walked: under an absent
+/// parent every leaf is absent, and a runner cannot tell that absence from the field's own. A
+/// struct-valued field has no leaf of its own, so its policy is not carried; both omissions are a
+/// weaker assertion, never a wrong one.
+fn mark_presence(
+    field: &ess_compiler::ir::ResolvedField,
+    path: &str,
+    enclosed: bool,
+    shape: &mut PayloadShape,
+) {
+    let (Some(presence), false, true) = (
+        field.naming.presence,
+        enclosed,
+        field.type_ref.is_optional(),
+    ) else {
+        return;
+    };
+    if let Some(leaf) = shape.leaves().get(path).cloned() {
+        shape.insert(path, leaf.with_presence(Some(presence)));
+    }
 }
 
 /// One leaf per scalar the declared type reaches, under the dotted path that names it.
@@ -3683,14 +3708,9 @@ fn describe(
             ResolvedBody::Union { .. } => leaf(Holds::Union),
             ResolvedBody::Struct { fields, .. } => {
                 for field in fields {
-                    describe(
-                        ir,
-                        &field.type_ref,
-                        &format!("{path}.{}", field.name),
-                        optional,
-                        depth + 1,
-                        shape,
-                    );
+                    let nested = format!("{path}.{}", field.name);
+                    describe(ir, &field.type_ref, &nested, optional, depth + 1, shape);
+                    mark_presence(field, &nested, optional, shape);
                 }
             }
         },

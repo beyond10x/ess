@@ -381,6 +381,7 @@ fn component_packages(ir: &EssIr, reserved: &[&str]) -> BTreeMap<ComponentName, 
 pub fn primitive(name: Primitive) -> &'static str {
     match name {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Json => unreachable!("Json is refused before target rendering"),
         Primitive::String => "String",
         Primitive::Boolean => "bool",
         Primitive::Integer => "i64",

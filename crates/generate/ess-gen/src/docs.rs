@@ -1310,6 +1310,7 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
         ResolvedBody::Newtype {
             of,
             alphabet,
+            prefix,
             invariants,
         } => {
             let mut text = vec![
@@ -1324,6 +1325,11 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
             if let Some(alphabet) = alphabet {
                 text.push(Inline::text(" Its characters are drawn from "));
                 text.push(Inline::code(alphabet.clone()));
+                text.push(Inline::text("."));
+            }
+            if let Some(prefix) = prefix {
+                text.push(Inline::text(" Every value starts with "));
+                text.push(Inline::code(prefix.clone()));
                 text.push(Inline::text("."));
             }
             let clause = invariants_clause(invariants);

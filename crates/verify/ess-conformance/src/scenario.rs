@@ -66,7 +66,7 @@ use ess_domain::binding::BindingName;
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::{QualifiedName, Version};
-use ess_domain::types::Primitive;
+use ess_domain::types::{Presence, Primitive};
 use ess_domain::view::Ranking;
 use ess_primitives::error::ParseError;
 use ess_primitives::evidence::SpecDigest;
@@ -154,7 +154,10 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::fixtures::used_by(self) {
+        self.provenance.suite_version = if crate::presence::used_by(self) {
+            SuiteFormat::parse(&format!("ess-conformance/{}", crate::presence::ORDINARY))
+                .expect("constant suite version")
+        } else if crate::fixtures::used_by(self) {
             SuiteFormat::parse(&format!("ess-conformance/{}", crate::fixtures::ORDINARY))
                 .expect("constant suite version")
         } else if crate::aggregate::used_by(self) {
@@ -374,7 +377,7 @@ impl SuiteProvenance {
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 24, 25,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -1552,6 +1555,15 @@ pub struct LeafShape {
     /// struct this leaf is a field of: if the whole value is absent, so is every leaf under it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
+    /// How an absent value is spelled, where the field this leaf is declares it (ess/15,
+    /// beyond10x/ess#139; suite/[`ORDINARY`](crate::presence::ORDINARY) and later).
+    ///
+    /// Carried only on a leaf that is itself the declaring field and sits under no other
+    /// `Optional`: under an absent parent every leaf is absent, and a runner walking the payload
+    /// cannot tell that absence from the field's own, so a policy there would fail a conforming
+    /// implementation. Left out, the leaf admits both spellings, which is weaker and never wrong.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence: Option<Presence>,
 }
 
 impl LeafShape {
@@ -1560,6 +1572,7 @@ impl LeafShape {
         Self {
             holds,
             optional: false,
+            presence: None,
         }
     }
 
@@ -1570,13 +1583,22 @@ impl LeafShape {
         self
     }
 
+    /// The same leaf, holding an absent value to one spelling.
+    #[must_use]
+    pub fn with_presence(mut self, presence: Option<Presence>) -> Self {
+        self.presence = presence;
+        self
+    }
+
     /// Whether `value` is one the declaration admits there.
     ///
     /// `None` means nothing was published at that path, which conforms only where the declaration
-    /// said it might be absent.
+    /// said it might be absent — and, under `null_when_absent`, not even there. An explicit `null`
+    /// is refused under `omitted_when_absent`.
     pub fn admits(&self, value: Option<&Node>) -> bool {
         match value {
-            None | Some(Node::Null) => self.optional,
+            None => self.optional && self.presence != Some(Presence::NullWhenAbsent),
+            Some(Node::Null) => self.optional && self.presence != Some(Presence::OmittedWhenAbsent),
             Some(value) => self.holds.admits(value),
         }
     }
@@ -1623,7 +1645,7 @@ impl Holds {
     /// rule, and the second one is wrong eventually.
     pub fn admits(&self, value: &Node) -> bool {
         match self {
-            Self::Primitive { kind } => crate::input::primitive_value(*kind, value).is_some(),
+            Self::Primitive { kind } => crate::input::primitive_admits(*kind, value),
             Self::Enum { variants } => value
                 .as_text()
                 .is_some_and(|text| variants.iter().any(|variant| variant == text)),

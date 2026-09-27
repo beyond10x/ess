@@ -64,7 +64,9 @@ impl TypeEnvironment for Environment<'_> {
     }
     fn shape(&self, reference: &Self::Type) -> Result<Shape<Self::Type>, String> {
         Ok(match reference {
-            ResolvedTypeRef::Primitive { name } => Shape::Scalar(ScalarKind::of(*name)),
+            ResolvedTypeRef::Primitive { name } => {
+                ScalarKind::of(*name).map_or(Shape::Json, Shape::Scalar)
+            }
             ResolvedTypeRef::Optional { of } => Shape::Optional((**of).clone()),
             ResolvedTypeRef::List { of } => Shape::List((**of).clone()),
             ResolvedTypeRef::Map { value, .. } => Shape::Map((**value).clone()),

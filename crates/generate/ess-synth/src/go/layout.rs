@@ -967,6 +967,7 @@ impl Layout {
     ) -> String {
         let wrapper = match primitive {
             Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+            Primitive::Json => unreachable!("Json is refused before target rendering"),
             Primitive::String => return "string".to_owned(),
             Primitive::Boolean => return "bool".to_owned(),
             Primitive::Integer => return "int64".to_owned(),
