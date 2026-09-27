@@ -198,7 +198,7 @@ use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
 use crate::artifact::{Artifact, Generator};
-use crate::http::{self, status, CONFLICT, READ, REFUSED, UPSTREAM};
+use crate::http::{self, status, CONFLICT, NO_INPUT, READ, REFUSED, UPSTREAM};
 use ess_compiler::refs::{ActorRef, BindingRef, ComponentRef, EssSemanticRef};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
@@ -614,10 +614,16 @@ fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
     }
     Some(RequestBody {
         description: format!("The input `{}` declares.", command.name),
+        // An `input_absent:` branch (ess/16) declares the answer for a request with no body, so the
+        // body is not required even where its fields are.
         required: command
             .input
             .iter()
-            .any(|field| !field.type_ref.is_optional()),
+            .any(|field| !field.type_ref.is_optional())
+            && !command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition == ResolvedCondition::InputAbsent),
         content: content(json!({"$ref": reference(&format!("{}.Input", command.name))})),
     })
 }
@@ -692,6 +698,10 @@ fn meaning(status: &str) -> &'static str {
         CONFLICT => {
             "the input was acceptable and the subject is in a state this command does not act \
              from. Resending the same request changes nothing until something else moves it."
+        }
+        NO_INPUT => {
+            "the request carried no input at all. The body names the declared error the command \
+             reports for a request without its body."
         }
         _ => {
             "the branch the specification declares for this input. Events this branch emits are \
@@ -974,6 +984,11 @@ fn condition_description(condition: &ResolvedCondition) -> String {
         }
         ResolvedCondition::UnknownInstance => {
             "Taken when the request names an identity no record carries.".to_owned()
+        }
+        ResolvedCondition::InputAbsent => {
+            "Taken when the request carries no input at all — an absent body, not `{}` — before \
+             any input field is read."
+                .to_owned()
         }
     }
 }

@@ -1503,6 +1503,13 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         self.0.execute_command(request)
     }
 
+    fn execute_command_without_input(
+        &self,
+        request: crate::target::AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.0.execute_command_without_input(request)
+    }
+
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         self.0.query_view(request)
     }

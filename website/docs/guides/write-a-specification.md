@@ -527,6 +527,30 @@ scenario sends and arranging nothing; the `wrong_state` branch keeps its scenari
 answers. The generated seams carry its variant like any other outcome's, and the served surface
 answers a refusing one with `404`.
 
+### A request with no input can have its own outcome
+
+From `format: ess/16`, a command whose implementation answers a request that arrives with no body at
+all, before any field is validated, says so without making its fields `Optional`:
+
+```yaml
+- {name: body-missing, input_absent: true, error: demo.notes.BodyMissing}
+```
+
+`input_absent:` sits beside `wrong_state:` and `unknown_instance:`, at most once per command, on a
+command that takes input. It names an `error:` and takes no other condition, no effect and no
+`refuses:`. The command's fields keep their types, so every other branch keeps its contract. The
+suite checks it under its own outcome id with an `execute_command_without_input` step, which sends
+no input document at all and is not `execute_command` with `input: {}`; it requires the outcome,
+the error and that no declared event is published. A target that cannot send a request without a
+body reports that scenario `unsupported`. The `OpenAPI` projection marks the request body not
+required and documents the answer as `400`. Every generated code target (Rust, Go, Web, Clap) and
+Entity Runtime lowering refuse the branch by name.
+
+From `format: ess/16`, a guard that cannot hold because it needs a required input to be absent —
+`not defined(text)` or `missing(text)` where `text` is not `Optional`, or a conjunction with one —
+is refused as a type mismatch, with a hint naming `input_absent:`. A guard that can still hold
+another way, such as `any: [text == "x", missing(text)]`, is admitted.
+
 ### An outcome can delete its subject
 
 From `format: ess/15`, a record the implementation removes at the end of its lifecycle is declared

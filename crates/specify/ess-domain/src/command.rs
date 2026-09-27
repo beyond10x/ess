@@ -198,6 +198,7 @@
 //! for [`UnknownState`](ValidationCode::UnknownState), which an AEP workflow and an ESS lifecycle
 //! have shared since wave 1.
 
+pub(crate) mod absent_input;
 pub mod finite;
 pub mod fixture_inputs;
 mod narrowing;
@@ -470,6 +471,13 @@ pub enum OutcomeCondition {
     /// (`docs/design/outcome-shapes.md`, beyond10x/ess#145). It carries nothing: the branch names
     /// the error it reports, or `refuses: false` for an accepted no-op.
     UnknownInstance,
+    /// Taken when the request carries no input at all — an absent request body, not `{}` (ess/16,
+    /// beyond10x/ess#170, `docs/design/outcome-shapes.md`).
+    ///
+    /// A marker beside [`UnknownInstance`](Self::UnknownInstance), at most one per command, and
+    /// answered before any input field is read. It carries nothing and names the error it reports;
+    /// the command's fields keep their types, so no other branch changes its contract.
+    InputAbsent,
 }
 
 impl OutcomeCondition {
@@ -481,9 +489,11 @@ impl OutcomeCondition {
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
             Self::SubjectPredicate { input, .. } => input.as_ref(),
-            Self::Otherwise | Self::External { .. } | Self::WrongState | Self::UnknownInstance => {
-                None
-            }
+            Self::Otherwise
+            | Self::External { .. }
+            | Self::WrongState
+            | Self::UnknownInstance
+            | Self::InputAbsent => None,
         }
     }
 
@@ -498,7 +508,8 @@ impl OutcomeCondition {
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState
-            | Self::UnknownInstance => None,
+            | Self::UnknownInstance
+            | Self::InputAbsent => None,
         }
     }
 
@@ -516,6 +527,7 @@ impl OutcomeCondition {
             Self::External { .. } | Self::ExternalWhen { .. } => TestStrategy::InjectFault,
             Self::WrongState => TestStrategy::ArrangeState,
             Self::UnknownInstance => TestStrategy::SendUnknownIdentity,
+            Self::InputAbsent => TestStrategy::SendNoInput,
         }
     }
 
@@ -564,7 +576,8 @@ impl OutcomeCondition {
             | Self::ExternalWhen { .. }
             | Self::External { .. }
             | Self::WrongState
-            | Self::UnknownInstance => None,
+            | Self::UnknownInstance
+            | Self::InputAbsent => None,
         }
     }
 }
@@ -604,6 +617,11 @@ pub enum TestStrategy {
     /// Neither an input the caller could choose to select the branch nor an arranged world: the
     /// scenario arranges nothing, and the identity it sends is one no other scenario sends.
     SendUnknownIdentity,
+    /// Send the command with no input at all (ess/16, `input_absent:`).
+    ///
+    /// Not an empty input: the request carries no document, which an implementation may answer
+    /// differently from `{}`, and the scenario says which it sends.
+    SendNoInput,
 }
 
 impl TestStrategy {
@@ -618,6 +636,7 @@ impl TestStrategy {
             Self::InjectFault => "inject_fault",
             Self::ArrangeState => "arrange_state",
             Self::SendUnknownIdentity => "send_unknown_identity",
+            Self::SendNoInput => "send_no_input",
         }
     }
 }
@@ -1781,7 +1800,8 @@ impl Outcome {
             | OutcomeCondition::WrongState
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
-            | OutcomeCondition::UnknownInstance => false,
+            | OutcomeCondition::UnknownInstance
+            | OutcomeCondition::InputAbsent => false,
         }
     }
 
@@ -2029,6 +2049,7 @@ impl CommandSpec {
 
         errors.extend(self.validate_branch_coverage(types));
         errors.extend(outcome_shapes::validate_command(self));
+        errors.extend(absent_input::validate_command(self));
         errors
     }
 
@@ -2074,6 +2095,7 @@ impl CommandSpec {
             .as_ref()
             .is_some_and(|subject| subject.effect == Effect::Deletes);
         errors.extend(outcome_shapes::validate_outcome(outcome, &location));
+        errors.extend(absent_input::validate_outcome(outcome, &location));
         if preserves
             && (!outcome.sets.is_empty() || !outcome.emits.is_empty() || outcome.error.is_some())
         {
@@ -4145,6 +4167,12 @@ pub struct RawOutcome {
     /// `wrong_state:` it names an `error:`, or declares `refuses: false` for an accepted no-op.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unknown_instance: bool,
+    /// `true` when this is the branch taken for a request that carries no input at all (ess/16).
+    ///
+    /// An absent request body, as distinct from `{}` and from a body lacking a field
+    /// (beyond10x/ess#170). Beside `unknown_instance:`, alone, naming its `error:`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub input_absent: bool,
     /// Whether the command *refuses* in those states, or accepts and changes nothing.
     ///
     /// Absent means it refuses, which is what every wrong-state branch written before this key
@@ -4426,6 +4454,9 @@ impl TryFrom<RawOutcome> for Outcome {
         let conflict = |key: &str, message: String, hint: &str| {
             outcome_conflict(&raw.name, key, message, hint)
         };
+        if raw.input_absent {
+            absent_input::alone(&raw)?;
+        }
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
         let subject_fact = raw.when_subject;
         let input_predicate = raw.when.clone();
@@ -4462,7 +4493,9 @@ impl TryFrom<RawOutcome> for Outcome {
                 "keep `unknown_instance: true` alone, naming its `error:` or `refuses: false`",
             ));
         }
-        let condition = if raw.unknown_instance {
+        let condition = if raw.input_absent {
+            OutcomeCondition::InputAbsent
+        } else if raw.unknown_instance {
             OutcomeCondition::UnknownInstance
         } else {
             outcome_condition(
@@ -4851,6 +4884,7 @@ impl From<Outcome> for RawOutcome {
             .as_ref()
             .and_then(|subject| subject.into.clone());
         let unknown_instance = outcome.condition == OutcomeCondition::UnknownInstance;
+        let input_absent = outcome.condition == OutcomeCondition::InputAbsent;
         let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
             .condition
         {
@@ -4865,9 +4899,9 @@ impl From<Outcome> for RawOutcome {
             OutcomeCondition::StateChange { changes, predicate } => {
                 (predicate, None, Some(changes), None, false)
             }
-            OutcomeCondition::Otherwise | OutcomeCondition::UnknownInstance => {
-                (None, None, None, None, false)
-            }
+            OutcomeCondition::Otherwise
+            | OutcomeCondition::UnknownInstance
+            | OutcomeCondition::InputAbsent => (None, None, None, None, false),
             OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
             OutcomeCondition::ExternalWhen { cause, predicate } => {
                 (Some(predicate), None, None, Some(cause), false)
@@ -4930,6 +4964,7 @@ impl From<Outcome> for RawOutcome {
             // outcome would change every document that has ever been read and re-emitted.
             refuses: ((wrong_state || unknown_instance) && !outcome.refuses).then_some(false),
             unknown_instance,
+            input_absent,
             deletes,
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),

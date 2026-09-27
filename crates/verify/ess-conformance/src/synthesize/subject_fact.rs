@@ -77,7 +77,8 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState
-        | ResolvedCondition::UnknownInstance => None,
+        | ResolvedCondition::UnknownInstance
+        | ResolvedCondition::InputAbsent => None,
     }
 }
 
@@ -169,6 +170,7 @@ fn guarded(command: &ResolvedCommand) -> impl Iterator<Item = &ResolvedOutcome> 
                     | ResolvedCondition::ExternalWhen { .. }
                     | ResolvedCondition::WrongState
                     | ResolvedCondition::UnknownInstance
+                    | ResolvedCondition::InputAbsent
             )
     })
 }

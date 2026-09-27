@@ -202,3 +202,44 @@ pub(crate) fn json(
         Err(TargetFailure::new(ir, target, plan, causes))
     }
 }
+
+/// A model that declares an `input_absent:` branch (ess/16, beyond10x/ess#170) is refused by every
+/// code target, as `Json` is.
+///
+/// The generated seams decode a request into the command's input before any branch is selected,
+/// so a request with no body never reaches a branch the generated code could select, and a seam
+/// that treated it as `{}` would answer the other request. Each branch is named rather than
+/// emitted with a meaning nobody chose.
+pub(crate) fn input_absent(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    let causes = ir
+        .commands()
+        .values()
+        .flat_map(|command| {
+            command
+                .outcomes
+                .iter()
+                .filter(|outcome| {
+                    outcome.condition == ess_compiler::ir::ResolvedCondition::InputAbsent
+                })
+                .map(move |outcome| {
+                    TargetFailureCause::new(
+                        TargetFailureCode::MissingRepresentation,
+                        vec![format!(
+                            "commands.{}.outcomes.{}.input_absent",
+                            command.name, outcome.name
+                        )],
+                        "this target has no seam for a request with no input at all".to_owned(),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}

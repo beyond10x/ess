@@ -385,6 +385,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < crate::fixtures::ORDINARY
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
         || crate::outcome_shapes::needs_newer(tag, major)
+        || crate::absent_input::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
@@ -405,6 +406,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "expect_complete_subject_unchanged" if major >= 12 => (&["step", "view"], &[]),
         "configure_external_outcome" => (&["step", "force"], &[]),
         "execute_command" => (&["step", "command"], &["actor", "input"]),
+        "execute_command_without_input" => (&["step", "command"], &["actor"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
@@ -500,6 +502,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
+    crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;

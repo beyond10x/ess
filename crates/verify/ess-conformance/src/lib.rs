@@ -123,6 +123,7 @@
 //! * **A constraint solver, still.** §11 names one as a later extension, and nothing in the fault
 //!   matrix needed it.
 
+pub mod absent_input;
 pub mod accessor;
 mod accessor_types;
 pub mod admission;

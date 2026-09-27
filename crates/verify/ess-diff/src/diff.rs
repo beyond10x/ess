@@ -986,6 +986,7 @@ fn written_condition(condition: &ResolvedCondition) -> String {
         ResolvedCondition::External { cause } => format!("external: {cause}"),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
         ResolvedCondition::UnknownInstance => "unknown-instance".to_owned(),
+        ResolvedCondition::InputAbsent => "input-absent".to_owned(),
     }
 }
 

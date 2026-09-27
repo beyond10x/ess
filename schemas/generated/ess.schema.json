@@ -2255,6 +2255,10 @@
             "null"
           ]
         },
+        "input_absent": {
+          "description": "`true` when this is the branch taken for a request that carries no input at all (ess/16).\n\nAn absent request body, as distinct from `{}` and from a body lacking a field (beyond10x/ess#170). Beside `unknown_instance:`, alone, naming its `error:`.",
+          "type": "boolean"
+        },
         "instance": {
           "description": "Which field carries the identity of the instance this outcome acts on.\n\nRequired beside `creates`, `moves` and `updates`, and meaningless without one. The verb decides which surface the name is read from — see [`Subject::surface`].",
           "type": [

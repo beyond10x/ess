@@ -80,6 +80,11 @@ pub const CONFLICT: &str = "409";
 /// (`unknown_instance:`, ess/15).
 pub const NOT_FOUND: &str = "404";
 
+/// The request carried no input at all, and the command declares that answer (`input_absent:`,
+/// ess/16). A `400` and not a `422`: nothing was there to understand, which is the request the
+/// server could not read rather than one it refused on domain grounds.
+pub const NO_INPUT: &str = "400";
+
 /// Which status one declared outcome is.
 ///
 /// The whole mapping, in one place, so that "which HTTP status does this refusal get" has exactly
@@ -102,6 +107,7 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             true,
         ) => CONFLICT,
         (ResolvedCondition::UnknownInstance, true) => NOT_FOUND,
+        (ResolvedCondition::InputAbsent, true) => NO_INPUT,
         (ResolvedCondition::When { .. } | ResolvedCondition::Otherwise, true) => REFUSED,
         // An external branch that emits rather than errors is still a branch that was taken; what
         // decided it does not change what happened.

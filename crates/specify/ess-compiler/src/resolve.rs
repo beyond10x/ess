@@ -3983,6 +3983,7 @@ fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> Resolve
         },
         OutcomeCondition::WrongState => ResolvedCondition::WrongState,
         OutcomeCondition::UnknownInstance => ResolvedCondition::UnknownInstance,
+        OutcomeCondition::InputAbsent => ResolvedCondition::InputAbsent,
     }
 }
 

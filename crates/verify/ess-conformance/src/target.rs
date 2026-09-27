@@ -183,6 +183,23 @@ pub trait ConformanceTarget {
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError>;
 
+    /// Invokes a command with no input at all — an absent request body, not `{}` — and reports
+    /// what is observable of it (suite/26, `input_absent:`; beyond10x/ess#170).
+    ///
+    /// A method of its own rather than [`execute_command`](Self::execute_command) with an empty
+    /// input, because an implementation may answer the two differently and the scenario says which
+    /// it sends. Its default body answers [`TargetError::Unsupported`]: a target that cannot send a
+    /// request without input reports the one scenario that needs it `unsupported`, never passed.
+    fn execute_command_without_input(
+        &self,
+        request: AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        Err(TargetError::unsupported(
+            format!("invoking `{}` with no input", request.command),
+            "this target cannot send a command without an input document",
+        ))
+    }
+
     /// Reads a view, no fresher than the request demands (§14).
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError>;
 
@@ -471,6 +488,20 @@ pub struct SemanticCommandRequest {
     pub actor: Option<crate::scenario::ActorRef>,
     /// The input, by declared field name, with every reference already resolved by the runner.
     pub input: BTreeMap<String, Node>,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// A command to invoke with no input document at all (suite/26, `input_absent:`).
+///
+/// [`SemanticCommandRequest`] without its `input`, rather than that type with an empty map: an
+/// empty map is `{}`, which is the other request.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AbsentInputRequest {
+    /// Which command.
+    pub command: CommandRef,
+    /// As whom, where the specification grants commands to actors.
+    pub actor: Option<crate::scenario::ActorRef>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
 }
