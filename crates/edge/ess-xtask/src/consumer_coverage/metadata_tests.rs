@@ -1,3 +1,4 @@
+use super::super::Measured;
 use super::*;
 
 fn fixture() -> (Value, Value, Value, Value, Value) {
@@ -242,15 +243,17 @@ fn current_compiled_provider_executes_one_guard_and_binds_its_opaque_proof_to_th
         "/consumer-source.json"
     )))
     .unwrap();
-    let build: Value = serde_json::from_str(include_str!(concat!(
-        env!("OUT_DIR"),
-        "/consumer-build.json"
-    )))
-    .unwrap();
-    let invocation = super::super::invocation(root, &build).unwrap();
-    let profile = json!({"source":source,"compiled_provider_source":source,"compiled_build":build,"current_invocation":invocation,
-        "provider_executable_sha256":super::super::hash_bytes(&fs::read(std::env::current_exe().unwrap()).unwrap())});
-    let authority = Authority::capture(root, &profile).unwrap();
+    // The qualification is decided over controlled build and process facts, so this proves the
+    // guard and its binding under any caller's target directory, job count, profile or wrapper.
+    let measured = Measured::qualified();
+    let profile_over = |measured: &Measured| {
+        let build = measured.compiled_build().clone();
+        let invocation = super::super::invocation_in(root, &build, measured).unwrap_or(Value::Null);
+        json!({"source":source,"compiled_provider_source":source,"compiled_build":build,"current_invocation":invocation,
+            "provider_executable_sha256":super::super::hash_bytes(&fs::read(std::env::current_exe().unwrap()).unwrap())})
+    };
+    let profile = profile_over(&measured);
+    let authority = Authority::capture_in(root, &profile, measured.clone()).unwrap();
     let proof = execute(&authority, &schema, &wire, &wire["obligations"], &profiles).unwrap();
     let candidate = candidates(&wire["obligations"], &profiles).unwrap();
     proof
@@ -258,14 +261,40 @@ fn current_compiled_provider_executes_one_guard_and_binds_its_opaque_proof_to_th
         .unwrap();
     assert_eq!(proof.receipt()["executed_guards"], 1);
     assert_eq!(proof.receipt()["metadata_cells"], 6);
-    let other = Authority::capture(root, &profile).unwrap();
+    let other = Authority::capture_in(root, &profile, measured.clone()).unwrap();
     assert!(proof
         .check(&other, candidate.rows(), candidate.digest())
         .is_err());
     let mut forged = profile;
     forged["source"][SOURCE] = json!("0".repeat(64));
     forged["compiled_provider_source"] = forged["source"].clone();
-    assert!(Authority::capture(root, &forged).is_err());
+    assert!(Authority::capture_in(root, &forged, measured.clone()).is_err());
+    // The same authority refuses each unreviewed selection a caller's build or run can carry.
+    for (unreviewed, refusal) in [
+        (
+            measured.clone().with_var("CARGO_TARGET_DIR", "elsewhere"),
+            "unreviewed current target/output selection CARGO_TARGET_DIR",
+        ),
+        (
+            measured.clone().with_build("NUM_JOBS", "4"),
+            "unsupported measured compiled profile NUM_JOBS: Some(String(\"4\"))",
+        ),
+        (
+            measured.clone().with_build("DEBUG", "true"),
+            "unsupported measured compiled profile DEBUG: Some(String(\"true\"))",
+        ),
+        (
+            measured
+                .clone()
+                .with_var("RUSTC_WRAPPER", "unreviewed-wrapper"),
+            "compiled/current wrapper profile mismatch RUSTC_WRAPPER",
+        ),
+    ] {
+        let refused = Authority::capture_in(root, &profile_over(&unreviewed), unreviewed)
+            .err()
+            .map(|error| error.to_string());
+        assert_eq!(refused.as_deref(), Some(refusal));
+    }
 }
 #[test]
 fn opaque_proof_checks_reject_different_runs_pairs_guard_sources_and_manifests() {
@@ -274,10 +303,12 @@ fn opaque_proof_checks_reject_different_runs_pairs_guard_sources_and_manifests()
     let authority = Authority {
         root: PathBuf::from("unmeasured-test-root"),
         profile: json!({"source":"fixture"}),
+        measured: Measured::qualified(),
     };
     let other = Authority {
         root: authority.root.clone(),
         profile: authority.profile.clone(),
+        measured: authority.measured.clone(),
     };
     // Internal proof fixture exercises equality checks; it is not provider execution evidence.
     let proof = Verified {

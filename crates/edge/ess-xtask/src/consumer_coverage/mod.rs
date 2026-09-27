@@ -151,6 +151,118 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     file.flush()?;
     Ok(())
 }
+/// The build-script facts the measured compiled profile admits, each with its one value.
+const MEASURED_PROFILE: &[(&str, &str)] = &[
+    ("TARGET", "x86_64-unknown-linux-gnu"),
+    ("HOST", "x86_64-unknown-linux-gnu"),
+    ("CARGO_CFG_TARGET_ARCH", "x86_64"),
+    ("CARGO_CFG_TARGET_OS", "linux"),
+    ("CARGO_CFG_TARGET_FAMILY", "unix"),
+    ("CARGO_CFG_FEATURE", ""),
+    ("CARGO_ENCODED_RUSTFLAGS", "-C\u{1f}link-arg=-fuse-ld=lld"),
+    ("PROFILE", "debug"),
+    ("OPT_LEVEL", "0"),
+    ("DEBUG", "false"),
+    ("NUM_JOBS", "2"),
+];
+/// The wrapper selections the measured profile admits only as explicitly empty.
+const WRAPPERS: &[&str] = &[
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_BUILD_RUSTC_WRAPPER",
+    "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+];
+/// The one toolchain release the measured profile admits.
+const MEASURED_TOOLCHAIN: &str = "1.98.1";
+
+/// What a measured qualification is decided over: the facts the build script recorded for this
+/// provider, and the environment of the process being qualified.
+///
+/// Production reads both from this build and this process ([`Measured::current`]) and refuses
+/// every unreviewed one. A test of the qualification logic supplies its own, so what it proves
+/// does not depend on how its caller built or ran it: a `CARGO_TARGET_DIR`, a job count, a debug
+/// profile or a wrapper is refused in production, and is not what such a test is about.
+#[derive(Clone)]
+pub(super) struct Measured {
+    compiled_build: Value,
+    environment: BTreeMap<String, String>,
+}
+impl Measured {
+    /// This build's recorded facts and this process's environment.
+    pub(super) fn current() -> Result<Self> {
+        Ok(Self {
+            compiled_build: serde_json::from_str(include_str!(concat!(
+                env!("OUT_DIR"),
+                "/consumer-build.json"
+            )))?,
+            environment: std::env::vars().collect(),
+        })
+    }
+    pub(super) fn compiled_build(&self) -> &Value {
+        &self.compiled_build
+    }
+    pub(super) fn var(&self, key: &str) -> Option<String> {
+        self.environment.get(key).cloned()
+    }
+}
+#[cfg(test)]
+impl Measured {
+    /// This build's recorded facts and this process's environment, with every fact the measured
+    /// profile fixes set to the one value it admits and every caller selection it refuses
+    /// removed. Tool, linker and configuration bytes stay this machine's own.
+    pub(super) fn qualified() -> Self {
+        let mut measured = Self::current().expect("this build's recorded facts");
+        let build = measured.compiled_build["environment"]
+            .as_object_mut()
+            .expect("recorded build environment");
+        build.retain(|key, _| !key.starts_with("CARGO_FEATURE_"));
+        for &(key, value) in MEASURED_PROFILE {
+            build.insert(key.to_owned(), json!(value));
+        }
+        for &key in WRAPPERS {
+            build.insert(key.to_owned(), json!(""));
+        }
+        let mut tools = BTreeMap::new();
+        for key in ["CARGO", "RUSTC"] {
+            let tool = &mut measured.compiled_build["tools"][key];
+            tool["version"] = json!(format!("{} {MEASURED_TOOLCHAIN}", key.to_lowercase()));
+            let path = tool["path"]
+                .as_str()
+                .expect("recorded tool path")
+                .to_owned();
+            tools.insert(key, path);
+        }
+        measured.environment.retain(|key, _| {
+            let selects = matches!(
+                key.as_str(),
+                "CARGO_TARGET_DIR"
+                    | "CARGO_BUILD_TARGET"
+                    | "RUSTFLAGS"
+                    | "CARGO_ENCODED_RUSTFLAGS"
+                    | "CARGO_BUILD_RUSTFLAGS"
+            ) || (key.starts_with("CARGO_TARGET_") && key.ends_with("_RUSTFLAGS"));
+            !selects
+        });
+        for &key in WRAPPERS {
+            measured.environment.insert(key.to_owned(), String::new());
+        }
+        for (key, path) in tools {
+            measured.environment.insert(key.to_owned(), path);
+        }
+        measured
+    }
+    /// The same facts with one recorded build fact changed.
+    pub(super) fn with_build(mut self, key: &str, value: &str) -> Self {
+        self.compiled_build["environment"][key] = json!(value);
+        self
+    }
+    /// The same facts with one process variable set.
+    pub(super) fn with_var(mut self, key: &str, value: &str) -> Self {
+        self.environment.insert(key.to_owned(), value.to_owned());
+        self
+    }
+}
+
 fn validate_build(
     profile: &Value,
     wrapper: impl Fn(&str) -> Option<String>,
@@ -159,19 +271,7 @@ fn validate_build(
     let environment = profile["environment"]
         .as_object()
         .context("measured compiled environment")?;
-    for (key, expected) in [
-        ("TARGET", "x86_64-unknown-linux-gnu"),
-        ("HOST", "x86_64-unknown-linux-gnu"),
-        ("CARGO_CFG_TARGET_ARCH", "x86_64"),
-        ("CARGO_CFG_TARGET_OS", "linux"),
-        ("CARGO_CFG_TARGET_FAMILY", "unix"),
-        ("CARGO_CFG_FEATURE", ""),
-        ("CARGO_ENCODED_RUSTFLAGS", "-C\u{1f}link-arg=-fuse-ld=lld"),
-        ("PROFILE", "debug"),
-        ("OPT_LEVEL", "0"),
-        ("DEBUG", "false"),
-        ("NUM_JOBS", "2"),
-    ] {
+    for &(key, expected) in MEASURED_PROFILE {
         if environment.get(key) != Some(&json!(expected)) {
             bail!(
                 "unsupported measured compiled profile {key}: {:?}",
@@ -182,12 +282,7 @@ fn validate_build(
     if environment.keys().any(|k| k.starts_with("CARGO_FEATURE_")) {
         bail!("unreviewed compiled package features");
     }
-    for key in [
-        "RUSTC_WRAPPER",
-        "RUSTC_WORKSPACE_WRAPPER",
-        "CARGO_BUILD_RUSTC_WRAPPER",
-        "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
-    ] {
+    for &key in WRAPPERS {
         if environment.get(key) != Some(&json!("")) || wrapper(key).as_deref() != Some("") {
             bail!("compiled/current wrapper profile mismatch {key}");
         }
@@ -201,7 +296,7 @@ fn validate_build(
                 .context("compiled tool version")?
                 .split_whitespace()
                 .nth(1)
-                != Some("1.98.1")
+                != Some(MEASURED_TOOLCHAIN)
         {
             bail!("compiled tool identity changed or unsupported: {key} {path}");
         }
@@ -290,7 +385,13 @@ fn validate_invocation(build: &Value, invocation: &Value) -> Result<()> {
     Ok(())
 }
 fn invocation(root: &Path, build: &Value) -> Result<Value> {
-    let environment = std::env::vars()
+    invocation_in(root, build, &Measured::current()?)
+}
+fn invocation_in(root: &Path, build: &Value, measured: &Measured) -> Result<Value> {
+    let environment = measured
+        .environment
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
         .filter(|(key, _)| {
             key.starts_with("CARGO_")
                 || key.starts_with("RUST")
@@ -306,7 +407,7 @@ fn invocation(root: &Path, build: &Value) -> Result<Value> {
     for key in ["CARGO", "RUSTC"] {
         // The provider's exact tools are the default. An explicit caller override must
         // select those same bytes; owner builds never guess another tool from PATH.
-        let path = std::env::var(key).ok().unwrap_or_else(|| {
+        let path = measured.var(key).unwrap_or_else(|| {
             build["tools"][key]["path"]
                 .as_str()
                 .unwrap_or_default()
@@ -314,7 +415,7 @@ fn invocation(root: &Path, build: &Value) -> Result<Value> {
         });
         let path = std::path::PathBuf::from(path);
         let path = if path.components().count() == 1 {
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            std::env::split_paths(&measured.var("PATH").unwrap_or_default())
                 .map(|p| p.join(&path))
                 .find(|p| p.is_file())
                 .context("selected current tool not found")?
@@ -324,8 +425,8 @@ fn invocation(root: &Path, build: &Value) -> Result<Value> {
         tool_sha256.insert(key, hash_bytes(&fs::read(&path)?));
         tool_paths.insert(key, path);
     }
-    let cargo_home = std::env::var_os("CARGO_HOME").map_or_else(
-        || std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cargo"),
+    let cargo_home = measured.var("CARGO_HOME").map_or_else(
+        || std::path::PathBuf::from(measured.var("HOME").unwrap_or_default()).join(".cargo"),
         std::path::PathBuf::from,
     );
     let mut configuration = BTreeMap::new();

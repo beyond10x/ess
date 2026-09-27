@@ -372,25 +372,21 @@ fn v3_plan_reader_consumes_model_claims_once_and_keeps_case_sets_disjoint() {
     assert!(super::enforce::test_read_plan_v3(&overlapping).is_err());
 }
 
-fn current_source_profile(root: &Path) -> Value {
+fn current_source_profile(root: &Path, measured: &super::Measured) -> Value {
     let source = serde_json::to_value(super::source_files(root).unwrap()).unwrap();
     let compiled_source: Value = serde_json::from_str(include_str!(concat!(
         env!("OUT_DIR"),
         "/consumer-source.json"
     )))
     .unwrap();
-    let compiled_build: Value = serde_json::from_str(include_str!(concat!(
-        env!("OUT_DIR"),
-        "/consumer-build.json"
-    )))
-    .unwrap();
+    let compiled_build = measured.compiled_build().clone();
     assert_eq!(source, compiled_source);
     json!({
         "source":source,
         "compiled_provider_source":compiled_source,
         "provider_executable_sha256":super::hash_bytes(&std::fs::read(std::env::current_exe().unwrap()).unwrap()),
+        "current_invocation":super::invocation_in(root, &compiled_build, measured).unwrap(),
         "compiled_build":compiled_build,
-        "current_invocation":super::invocation(root, &compiled_build).unwrap(),
     })
 }
 
@@ -405,8 +401,12 @@ fn v3_qualification_consumes_exact_model_and_retained_v2_proofs() {
         .ancestors()
         .nth(3)
         .unwrap();
-    let source_profile = current_source_profile(root);
-    let authority = super::metadata::Authority::capture(root, &source_profile).unwrap();
+    // Controlled build and process facts: what is qualified here is the v3 consumption of each
+    // retained proof, not the caller's target directory, job count, profile or wrapper.
+    let measured = super::Measured::qualified();
+    let source_profile = current_source_profile(root, &measured);
+    let authority =
+        super::metadata::Authority::capture_in(root, &source_profile, measured).unwrap();
     let schema =
         serde_json::to_value(schemars::schema_for!(ess_domain::spec::RawSpecFile)).unwrap();
     let wire = super::wire::extract(&schema).unwrap();

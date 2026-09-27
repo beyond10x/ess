@@ -260,3 +260,23 @@ Review updates only the three existing RootDefinitionsContainer shape pins. The 
 literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
 unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
 This review grants no new exemption or runtime conformance claim.
+
+## Measured-authority guard source review — 2026-09-27
+
+`Authority` in `metadata.rs` now decides over a `Measured` value — the build script's recorded
+profile and the process environment — instead of reading both itself. `Authority::capture`, the
+only production path, passes `Measured::current()`, which reads the same `consumer-build.json` and
+the same process environment as before, and every refusal of `validate_build` and
+`validate_invocation` is unchanged. `Authority::capture_in` lets a test supply controlled facts,
+so the two regressions that execute this guard (`current_compiled_provider_executes_one_guard…`
+and `v3_qualification_consumes_exact_model…`) no longer fail when their caller sets
+`CARGO_TARGET_DIR`, a job count, a debug profile or a wrapper; the first now also asserts that the
+same authority refuses each of those four.
+
+The guard source digest moves from
+`07b8f86dcb78b2e98df93cae493b47218600c1242d8a0718dbd245ae20fb8dc4`
+to `c43b868f91fe8c1a210e640aa1d5c0034517d360a813e9868b5c36ce27681497`.
+Review updates only the six `guard_source_sha256` pins. The root dialect, six literal
+relationships, shapes, consumer profiles, baseline and behavioral accounting remain unchanged, and
+no invocation guard in `macro-guards.json` moves. This review grants no new exemption or runtime
+conformance claim.
