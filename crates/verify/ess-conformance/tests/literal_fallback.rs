@@ -198,9 +198,12 @@ fn a_mutant_storing_a_different_default_is_killed() {
 }
 
 #[test]
-fn an_input_read_elsewhere_is_still_sent_and_the_fallback_asserts_what_was_sent() {
-    // `requested: input.tier` reads the input plainly, so leaving it out would change what that
-    // field asserts: the input stays sent, and `tier` is asserted as the value sent, not the literal.
+fn an_input_also_copied_into_an_optional_field_is_left_out_and_the_fallback_asserts_the_literal() {
+    // `requested: input.tier` copies the input plainly into an `Optional` field. Leaving `tier`
+    // out leaves `requested` absent, which is a run of its own, so the omission run still leaves it
+    // out and asserts the literal. The full run sends it, and both fields assert the value sent.
+    // (Correction round 1 of the-5-waves w1fix: this used to keep `tier` sent in every run, and the
+    // literal was then asserted nowhere.)
     let model = MODEL
         .replacen(
             "      - {name: rank, type: Integer}\nactors:",
@@ -214,35 +217,93 @@ fn an_input_read_elsewhere_is_still_sent_and_the_fallback_asserts_what_was_sent(
         );
     assert_eq!(model.matches("requested").count(), 2, "{model}");
     let suite = suite(&model);
-    let mut seen = 0;
+    let (mut full, mut omitted) = (0, 0);
     for (id, scenario) in &suite.scenarios {
         let steps = &scenario.steps;
-        let Some(at) = steps.iter().rposition(|step| {
-            matches!(step, ScenarioStep::ExecuteCommand { command, .. }
-                if command.to_string() == "demo.orders.Open")
-        }) else {
-            continue;
-        };
-        let ScenarioStep::ExecuteCommand { input, .. } = &steps[at] else {
-            unreachable!()
-        };
-        let Some(ScenarioValue::Literal { value: sent }) = input.get("tier") else {
-            panic!("{id}: `tier` is read by `requested` and must be sent: {input:?}");
-        };
-        let event = steps[at..].iter().find_map(|step| match step {
-            ScenarioStep::ExpectEvent { event, payload, .. }
-                if event.to_string() == "demo.orders.Opened" =>
-            {
-                Some(payload.clone())
+        for (at, step) in steps.iter().enumerate() {
+            let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+                continue;
+            };
+            if command.to_string() != "demo.orders.Open" {
+                continue;
             }
-            _ => None,
-        });
-        let event = event.unwrap_or_else(|| panic!("{id}: no `Opened` expectation"));
-        assert_eq!(event.get("tier"), Some(sent), "{id}");
-        // `rank` is read only by its fallback, so it is still left out and asserted as the literal.
-        assert_eq!(input.get("rank"), None, "{id}");
-        assert_eq!(event.get("rank"), Some(&Node::Number(3_i64.into())), "{id}");
-        seen += 1;
+            let event = steps[at + 1..]
+                .iter()
+                .take_while(|step| !matches!(step, ScenarioStep::ExecuteCommand { .. }))
+                .find_map(|step| match step {
+                    ScenarioStep::ExpectEvent { event, payload, .. }
+                        if event.to_string() == "demo.orders.Opened" =>
+                    {
+                        Some(payload.clone())
+                    }
+                    _ => None,
+                });
+            let Some(event) = event else {
+                continue;
+            };
+            match input.get("tier") {
+                Some(ScenarioValue::Literal { value: sent }) if sent != &Node::Null => {
+                    assert_eq!(event.get("tier"), Some(sent), "{id}");
+                    assert_eq!(event.get("requested"), Some(sent), "{id}");
+                    full += 1;
+                }
+                None => {
+                    assert_eq!(event.get("tier"), Some(&text("Express")), "{id}");
+                    assert!(
+                        event
+                            .get("requested")
+                            .is_none_or(|value| value == &Node::Null),
+                        "{id}: `requested` holds nothing when `tier` is left out: {event:?}"
+                    );
+                    // `rank` is read only by its fallback, so it is left out too.
+                    assert_eq!(input.get("rank"), None, "{id}");
+                    assert_eq!(event.get("rank"), Some(&Node::Number(3_i64.into())), "{id}");
+                    omitted += 1;
+                }
+                other => panic!("{id}: `tier` is a literal or left out: {other:?}"),
+            }
+        }
+    }
+    assert!(full > 0, "no run sends `tier`");
+    assert!(omitted > 0, "no run leaves `tier` out");
+}
+
+#[test]
+fn an_input_copied_through_a_conversion_is_still_sent_and_the_fallback_asserts_what_was_sent() {
+    // `requested: input.tier` crosses a declared conversion into a required field, so the value
+    // has to be sent: no run leaves `tier` out, and `tier` asserts the value sent, not the literal.
+    let model = MODEL
+        .replacen(
+            "      - {name: rank, type: Integer}\nactors:",
+            "      - {name: rank, type: Integer}\n      - {name: requested, type: demo.orders.Tier}\nactors:",
+            1,
+        )
+        .replacen(
+            "            rank: {input: rank, else: 3}\n        sets:",
+            "            rank: {input: rank, else: 3}\n            requested: input.tier\n        sets:",
+            1,
+        )
+        .replacen(
+            "views:\n",
+            "conversions:\n  - {from: Optional<demo.orders.Tier>, to: demo.orders.Tier, because: the clerk always states a tier}\nviews:\n",
+            1,
+        );
+    let suite = suite(&model);
+    let mut seen = 0;
+    for (id, scenario) in &suite.scenarios {
+        for step in &scenario.steps {
+            let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+                continue;
+            };
+            if command.to_string() != "demo.orders.Open" {
+                continue;
+            }
+            assert!(
+                matches!(input.get("tier"), Some(ScenarioValue::Literal { value }) if value != &Node::Null),
+                "{id}: `tier` is read through a conversion and must be sent: {input:?}"
+            );
+            seen += 1;
+        }
     }
     assert!(seen > 0, "no scenario invokes `Open`");
 }

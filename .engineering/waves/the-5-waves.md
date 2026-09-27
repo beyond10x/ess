@@ -97,3 +97,9 @@ Prune a unit build dir (`debug/deps` executables) only when no agent of that uni
 2026-09-27 the coordinator pruned `ess-5w-w1fix` while its adversary ran the ess-cli suite, and 47
 targets reported "never executed". Delete a unit build dir as soon as the unit merges; delete
 `ess-5w-int` between merges; the disk floor is 10G.
+
+Keeping only the newest build of each test executable older than 60 minutes (older hashes of the
+same test name) is safe while its agent runs, and recovered 28G on 2026-09-28 (absent 28G → 14G).
+A background loop does it every 10 minutes during the waves.
+Names repeat across crates (`current_time_guard` in four crates), so a 5-minute threshold deleted
+current binaries of other crates and 44 targets reported "never executed" on 2026-09-28.
