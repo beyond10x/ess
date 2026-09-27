@@ -1680,6 +1680,10 @@ fn condition_sentence(
             "Taken when the identity the command names is one no record carries, before any other \
              answer for it.",
         )],
+        ResolvedCondition::InputAbsent => vec![Inline::text(
+            "Taken when the request carries no input at all — an absent body, not an empty one — \
+             before any input field is read.",
+        )],
     }
 }
 
@@ -1709,6 +1713,9 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         }
         TestStrategy::SendUnknownIdentity => {
             "A test reaches it by sending an identity no record carries, arranging nothing."
+        }
+        TestStrategy::SendNoInput => {
+            "A test reaches it by sending the command with no input at all, arranging nothing."
         }
     }
 }

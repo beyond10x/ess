@@ -73,7 +73,7 @@ use crate::scenario::{
     ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::target::{
-    ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
+    AbsentInputRequest, ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
     EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
     InvocationObservationRequest, ObservedEvent, OrderedScanRequest, RedeliveryRequest,
     ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
@@ -489,6 +489,9 @@ impl<C: Clock> Runner<C> {
                 actor,
                 input,
             } => execute_command(command, actor.as_ref(), input, run, target),
+            ScenarioStep::ExecuteCommandWithoutInput { command, actor } => {
+                execute_command_without_input(command, actor.as_ref(), run, target)
+            }
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
@@ -1147,6 +1150,43 @@ fn execute_command<T: ConformanceTarget>(
             run.record(target_failure(
                 &run.id,
                 &format!("invoking `{command}`"),
+                &error,
+            ));
+            Flow::Stop
+        }
+    }
+}
+
+/// Invokes a command with no input document at all (suite/26, `input_absent:`).
+///
+/// Everything after it reads its result exactly as after [`execute_command`]; the recorded input
+/// is empty, and quoted as `Command()`.
+fn execute_command_without_input<T: ConformanceTarget>(
+    command: &CommandRef,
+    actor: Option<&ActorRef>,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    let request = AbsentInputRequest {
+        command: command.clone(),
+        actor: actor.cloned(),
+        correlation: run.context.correlation.clone(),
+    };
+    match target.execute_command_without_input(request) {
+        Ok(result) => {
+            run.remember(&result.direct_events);
+            run.last_command = Some(Executed {
+                command: command.to_string(),
+                actor: actor.cloned(),
+                input: BTreeMap::new(),
+                result,
+            });
+            Flow::Continue
+        }
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                &format!("invoking `{command}` with no input"),
                 &error,
             ));
             Flow::Stop

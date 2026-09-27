@@ -177,6 +177,7 @@
 //! one is a gap in this crate rather than in the model, and it is
 //! [`RefusalCause::NotSynthesisedYet`].
 
+mod absent_input;
 mod aggregate;
 mod subject_fact;
 
@@ -1308,9 +1309,13 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
             // identity naming no record (beyond10x/ess#113).
             // An `unknown_instance:` branch (ess/15) likewise: `unknown_instances` files it, sent
             // for an identity no record carries.
+            // An `input_absent:` branch (ess/16) is filed by `absent_input::absent_inputs`, sent with
+            // no input at all.
             if matches!(
                 outcome.condition,
-                ResolvedCondition::WrongState | ResolvedCondition::UnknownInstance
+                ResolvedCondition::WrongState
+                    | ResolvedCondition::UnknownInstance
+                    | ResolvedCondition::InputAbsent
             ) {
                 continue;
             }
@@ -1327,6 +1332,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     state_refusals(ir, &actors, &mut suite, &mut refusals);
     let mut notes = Vec::new();
     unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
+    absent_input::absent_inputs(ir, &actors, &mut suite, &mut refusals);
     notes.extend(partial);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
@@ -1491,7 +1497,8 @@ pub(crate) fn needs_of(
                 }
             }
             ScenarioStep::ExecuteCommand { command, .. }
-            | ScenarioStep::ExpectInvocation { command, .. } => {
+            | ScenarioStep::ExpectInvocation { command, .. }
+            | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
                 }
@@ -2425,7 +2432,8 @@ fn replay_condition(
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
-            | ResolvedCondition::UnknownInstance => return Ok(false),
+            | ResolvedCondition::UnknownInstance
+            | ResolvedCondition::InputAbsent => return Ok(false),
         };
     decides(facts, &predicate.into_iter().collect::<Vec<_>>(), true)
 }
@@ -3250,7 +3258,8 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::WrongState
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
-        | ResolvedCondition::UnknownInstance => None,
+        | ResolvedCondition::UnknownInstance
+        | ResolvedCondition::InputAbsent => None,
     }
 }
 
@@ -3740,6 +3749,7 @@ fn plain_guards<'c>(
         TestStrategy::ArrangeState
         | TestStrategy::ReplayResult
         | TestStrategy::SendUnknownIdentity
+        | TestStrategy::SendNoInput
         | TestStrategy::ConstructInputInState
         | TestStrategy::ObserveSubjectFact => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
@@ -5887,6 +5897,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
         TestStrategy::InjectFault => "the cause it declares as external, injected",
         TestStrategy::ArrangeState => "a subject in a state its moves do not start from",
         TestStrategy::SendUnknownIdentity => "an identity no record carries",
+        TestStrategy::SendNoInput => "a request with no input at all",
     };
     let text = format!(
         "`{}` answers `{}` for {reached}",

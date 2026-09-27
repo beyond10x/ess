@@ -146,3 +146,81 @@ preconditions are still synthesized as commands.
 `unknown_instance:` (#145) first, since `deletes:` reuses its resolution; then `deletes:` (#151),
 `into:` (#150), `accepts: nothing` (#144), `preconditions:` (#152). The story may split along that
 line.
+
+## `ess/16`: an absent input as a whole — `input_absent: true`
+
+Status: implemented (beyond10x/ess#170, `story:absent-command-input-outcome`).
+
+### Behaviour and authority
+
+A retrofit onto 0.36.0 found a command whose implementation answers a request that arrives with
+**no body at all** with a declared error (400, "body is null") before any field is validated. That
+is a different request from `{}` and from a body lacking a field. The specification had no way to
+say it: the closest form, `when: not defined(text)` over a required `text`, validated and could
+never be witnessed (`ESS-SYNTH-003`), and the only witnessed form made every field `Optional`,
+changing the contract of every other branch.
+
+### Construct
+
+```yaml
+- {name: body-missing, input_absent: true, error: demo.notes.BodyMissing}
+```
+
+A marker beside `wrong_state:` and `unknown_instance:`, following the same pattern
+(`crates/specify/ess-domain/src/command/absent_input.rs`, beside `outcome_shapes.rs`). Admitted
+under `ess/16`; below it refused with `unsupported_format_version` at `input_absent`. The branch is
+decided before any input field is read, so the command's fields keep their types.
+
+| Code | Refused |
+|---|---|
+| `conflicting_declaration` | `input_absent:` beside another condition (`when:`, `when_subject*:`, `when_state_changes:`, `external:`, `wrong_state:`, `unknown_instance:`), twice on one command, with an effect (`creates:`…`deletes:`, `sets:`, `emits:`, `payload:`, `replays:`, `accepts:`), or with `refuses:` |
+| `missing_declaration` | an `input_absent:` branch with no `error:` |
+| `unreachable_branch` | `input_absent:` on a command that declares no input |
+| `type_mismatch` | under `ess/16`, a guard that as a whole cannot hold because every way it could hold needs a required path to be absent (`not defined(f)`, `missing(f)`): an input that is not `Optional`, or a field reached from one through struct fields none of which is `Optional` (`body.text`); the hint names `input_absent:` |
+
+The last row closes the validate/synthesize disagreement #170 reports (the class of #74, #94,
+#112). Negation is pushed inward by De Morgan (under `not`, `all` reads as `any` and `any` as
+`all`); a conjunction cannot hold when one conjunct cannot, and a disjunction only when every
+disjunct cannot. Quantifier bodies are not entered. So `missing(text)` and `all: [text == "x",
+missing(text)]` are refused, while `any: [text == "x", missing(text)]` holds whenever `text ==
+"x"` and is admitted with its dead disjunct, and `not: {all: [defined(text), text == "x"]}` reads
+`text != "x"` and is admitted. The refusal applies from `ess/16`; below it such a guard keeps the
+meaning it had and validates, as before. A positive `defined(f)` over a required input is always
+true and stays admitted.
+
+The IR carries `condition: {kind: input_absent}` and `test_strategy: send_no_input`.
+
+### Conformance
+
+Synthesis files one scenario under the branch's own outcome id: an
+`execute_command_without_input` step (the command and its actor, no `input` key), then
+`expect_outcome`, `expect_error` for the declared error, and `expect_no_event` for every declared
+event. It arranges nothing. The step is a step of its own rather than an `input_absent: true` field
+on `execute_command`, for two reasons: a reader that does not know it refuses the step tag instead
+of ignoring an unknown field and sending `{}`, and adding a field to `execute_command` would have
+touched every construction site of that step in synthesis. A suite carrying it takes the round-3
+pair, `ess-conformance/26` (ordinary) and `/27` (coverage)
+(`crates/verify/ess-conformance/src/absent_input.rs`); a suite without it keeps its format and
+bytes. The Go and TypeScript runtimes refuse `/26` and `/27` by version, so they need no execution
+support for the step, and their explorers already exclude a command whose condition kind they do
+not know.
+
+A target answers the step through `ConformanceTarget::execute_command_without_input`, which takes
+an `AbsentInputRequest` (command, actor, correlation; no input). Its default body answers
+`Unsupported`, so a target that cannot send a request without a body reports that one scenario
+`unsupported`, never passed. Retained-replay admission counts the step as an invocation: it ends the
+previous invocation's command, outcome and input binding, and it is refused while a capture is
+active or a subject comparison is open, so it can stand in for neither the original nor the retry.
+
+### Projections
+
+- `OpenAPI`: the request body of a command declaring the marker is `required: false`; the branch
+  answers `400` (`http::NO_INPUT`), described as the request with no input. Other commands keep
+  their body required.
+- Every generated code target (`ess-synth` Rust, Go, Web and Clap, through `synthesize_for` and
+  each target's own `workspace`): refused by name with `MissingRepresentation` at
+  `commands.<command>.outcomes.<branch>.input_absent`, as `Json` is — the seams decode a request
+  into the command's input before any branch is selected, so they have no place to answer it.
+- Entity Runtime lowering: refused with `InputAbsentUnsupported`; an absent body never reaches
+  entity-core.
+- `ess-diff` reports the condition as `input-absent`.

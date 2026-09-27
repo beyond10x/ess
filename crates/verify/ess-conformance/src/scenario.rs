@@ -154,7 +154,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::leaf_payloads::used_by(self) {
+        self.provenance.suite_version = if crate::leaf_payloads::used_by(self)
+            || crate::absent_input::used_by(self)
+        {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
                 crate::leaf_payloads::ORDINARY
@@ -1884,6 +1886,20 @@ pub enum ScenarioStep {
         /// it is a second case rather than a special [`Node`].
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         input: BTreeMap<String, ScenarioValue>,
+    },
+    /// Invoke a command with no input at all (suite/26, `input_absent:`).
+    ///
+    /// Not [`ExecuteCommand`](Self::ExecuteCommand) with an empty input: that step sends `{}`, and
+    /// an implementation may answer an absent request body differently from an empty one
+    /// (beyond10x/ess#170). A step of its own, so a reader older than suite/26 refuses it rather
+    /// than sending `{}` in its place. Every assertion after it reads its result, as after
+    /// [`ExecuteCommand`](Self::ExecuteCommand).
+    ExecuteCommandWithoutInput {
+        /// Which command.
+        command: CommandRef,
+        /// As whom, where the specification grants commands to actors.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<ActorRef>,
     },
     /// Require that the command took this declared branch (§10).
     ///

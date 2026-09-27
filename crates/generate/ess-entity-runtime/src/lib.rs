@@ -428,6 +428,9 @@ pub enum LoweringCode {
     /// An outcome shape of ess/15 — an `unknown_instance:` branch, a `deletes:` effect, a creation
     /// `into:` a declared state, or `accepts: nothing` — which entity-core has no definition for.
     OutcomeShapeUnsupported,
+    /// An `input_absent:` branch (ess/16): the answer for a request with no input at all. An absent
+    /// request body is a transport fact entity-core never sees, so it has no definition for it.
+    InputAbsentUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1844,6 +1847,13 @@ impl Projector<'_> {
                 &path,
                 "an `unknown_instance:` branch (ess/15) has no Entity Runtime definition; a missing \
                  row is the runtime's own answer"
+                    .to_owned(),
+            ),
+            ResolvedCondition::InputAbsent => self.diagnostic(
+                LoweringCode::InputAbsentUnsupported,
+                &path,
+                "an `input_absent:` branch (ess/16) has no Entity Runtime definition; a request with \
+                 no input never reaches entity-core"
                     .to_owned(),
             ),
         }

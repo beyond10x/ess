@@ -109,6 +109,16 @@ impl ConformanceTarget for Interpreted {
         ))
     }
 
+    fn execute_command_without_input(
+        &self,
+        request: crate::target::AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        Err(TargetError::unsupported(
+            format!("invoking `{}` with no input", request.command),
+            NOTHING_DERIVED,
+        ))
+    }
+
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         Err(TargetError::unsupported(
             format!("reading `{}`", request.view),

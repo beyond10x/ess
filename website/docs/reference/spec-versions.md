@@ -116,6 +116,8 @@ its compiled digest.
 
 `ess/16` is unreleased. It collects the constructs of the retrofit issues filed against 0.36.0 (beyond10x/ess#162-#179) that change what a document may say. This build admits the header; each construct states its own refusal under an earlier header.
 
+Under `ess/16` a command may declare `input_absent: true` with an `error:`: the answer for a request that carries no input at all (beyond10x/ess#170). It is refused below `ess/16` with `unsupported_format_version`. Under `ess/16`, a guard that cannot hold because every way it could hold needs an input `f` that is not `Optional` to be absent (`not defined(f)`, `missing(f)`) is refused as a type mismatch; below `ess/16` it validates as before.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -227,6 +229,8 @@ TypeScript refuse these envelopes by their version.
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
 
 `ess-conformance/26` and `/27` are unreleased. They are the round-3 pair, first carrying per-leaf struct values (beyond10x/ess#179): a nested mapping whose struct has an undetermined leaf, such as `rank: {generated: true}`, is asserted leaf by leaf, each determined leaf under its dotted path (`lead.number`) in the event payload or the view row, and the undetermined leaf by the payload shape for presence and type. Version 26 is ordinary and 27 carries declared coverage; each implies every major below it. The Rust runner compares them; the Go and TypeScript runtimes refuse both by version. A suite without such a leaf keeps its earlier format and bytes.
+
+The `execute_command_without_input` step (beyond10x/ess#170) is round-3 vocabulary: it invokes a command with no input document, which is not `execute_command` with `input: {}`, and a suite carrying it takes `/26` or `/27`. A target that cannot send a request without input reports the scenario `unsupported`.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

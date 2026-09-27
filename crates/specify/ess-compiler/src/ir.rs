@@ -645,6 +645,9 @@ pub enum ResolvedCondition {
     /// `unknown_instance:`). Answered before a declared external not-found refusal and before
     /// [`WrongState`](Self::WrongState).
     UnknownInstance,
+    /// Taken when the request carries no input at all (ess/16, `input_absent:`): an absent
+    /// request body, not `{}`. Answered before any input field is read.
+    InputAbsent,
 }
 
 /// What one outcome does to the entity it acts on, resolved.

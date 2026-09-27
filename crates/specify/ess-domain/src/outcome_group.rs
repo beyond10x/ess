@@ -132,6 +132,7 @@ impl RawGroupOutcome {
             external: Some(self.external.clone()),
             wrong_state: false,
             unknown_instance: false,
+            input_absent: false,
             refuses: None,
             creates: None,
             moves: None,

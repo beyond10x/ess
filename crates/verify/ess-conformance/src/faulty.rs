@@ -491,6 +491,14 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         Ok(result)
     }
 
+    /// Forwarded unchanged: no fault this wrapper carries is about a request with no input.
+    fn execute_command_without_input(
+        &self,
+        request: crate::target::AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.inner.execute_command_without_input(request)
+    }
+
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let view = request.view.clone();
         // Only a read that *demanded* the write is perturbed: an eventual read asks at `Current` and

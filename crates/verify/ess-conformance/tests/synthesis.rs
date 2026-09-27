@@ -329,6 +329,7 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::EstablishEntity { .. } => "establish entity",
             ScenarioStep::ConfigureExternalOutcome { .. } => "inject",
             ScenarioStep::ExecuteCommand { .. } => "execute",
+            ScenarioStep::ExecuteCommandWithoutInput { .. } => "execute without input",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
             ScenarioStep::ExpectError { .. } => "error",
             ScenarioStep::ExpectEvent { .. } => "event",

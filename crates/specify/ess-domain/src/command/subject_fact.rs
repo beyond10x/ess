@@ -334,6 +334,7 @@ fn validate_partition(
                         | OutcomeCondition::ExternalWhen { .. }
                         | OutcomeCondition::WrongState
                         | OutcomeCondition::UnknownInstance
+                        | OutcomeCondition::InputAbsent
                 )
         })
         .collect();
