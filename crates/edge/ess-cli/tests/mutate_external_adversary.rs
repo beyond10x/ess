@@ -125,7 +125,10 @@ fn adversary_collect_exits_three_when_no_mutant_report_was_written() {
     let output = mutate(&["--collect", emitted.to_str().unwrap(), "--format", "json"]);
     assert_eq!(output.status.code(), Some(3), "{}", text(&output.stderr));
     let report: Value = serde_json::from_slice(&output.stdout).expect("a report on stdout");
-    assert_eq!(report["counts"]["inconclusive"], report["counts"]["mutants"]);
+    assert_eq!(
+        report["counts"]["inconclusive"],
+        report["counts"]["mutants"]
+    );
 }
 
 #[test]
