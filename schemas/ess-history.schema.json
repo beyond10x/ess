@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "id": "https://github.com/beyond10x/ess/schemas/ess-history.schema.json",
+  "title": "ess-history/1",
+  "description": "One recorded concurrent run, as declared by models/concurrent-history/. A Returned operation carries returned_at and outcome; an Indeterminate operation carries neither and is read as returning after every other operation. Draft 04 is used because it is the draft in which a number written with a decimal point or an exponent (7.0, 7e0, 1e1) is not an integer, which is what the reader admits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "history_id", "spec_digest", "seed", "clients", "operations"],
+  "properties": {
+    "format": { "$ref": "#/definitions/HistoryFormat" },
+    "history_id": { "$ref": "#/definitions/Uuid" },
+    "spec_digest": { "$ref": "#/definitions/SpecDigest" },
+    "seed": {
+      "description": "The seed the run was drawn from. A plain non-negative integer, at most 2^53-1 (9007199254740991), the largest a writer holding numbers as doubles writes exactly. Only the plain integer spelling is admitted: 7.0, 7e0 and 1e1 are refused.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "clients": {
+      "description": "A plain positive integer, at most 2^53-1 (9007199254740991). Only the plain integer spelling is admitted: 2.0 and 2e0 are refused.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Operation" }
+    }
+  },
+  "definitions": {
+    "HistoryFormat": {
+      "type": "string",
+      "enum": ["ess-history/1"]
+    },
+    "SpecDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16,64}$"
+    },
+    "QualifiedName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Uuid": {
+      "description": "A UUID in lower-case canonical hyphenated form; one identity has one spelling.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "Completion": {
+      "type": "string",
+      "enum": ["Returned", "Indeterminate"]
+    },
+    "Verdict": {
+      "type": "string",
+      "enum": ["Linearizable", "Violation", "Unknown"]
+    },
+    "Operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "client", "command", "subject_key", "invoked_at", "completion"],
+      "properties": {
+        "operation_id": { "$ref": "#/definitions/Uuid" },
+        "client": {
+          "description": "A plain non-negative integer below the history's clients, at most 2^53-1 (9007199254740991). Only the plain integer spelling is admitted.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "command": { "$ref": "#/definitions/QualifiedName" },
+        "subject_key": { "type": "string" },
+        "invoked_at": {
+          "description": "The invoke instant: a reading of a monotonic integer clock the writer chooses. The unit is not fixed; the checker compares instants only by order, so one history uses one clock. A plain non-negative integer, at most 2^53-1 (9007199254740991). Only the plain integer spelling is admitted: 1e1 and 10.0 are refused.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "returned_at": {
+          "description": "The return instant, on the same monotonic integer clock as invoked_at and no earlier than it, or null. A plain non-negative integer, at most 2^53-1 (9007199254740991). Only the plain integer spelling is admitted.",
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "completion": { "$ref": "#/definitions/Completion" },
+        "outcome": {
+          "anyOf": [{ "$ref": "#/definitions/QualifiedName" }, { "type": "null" }]
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["returned_at", "outcome"],
+          "properties": {
+            "completion": { "enum": ["Returned"] },
+            "returned_at": { "type": "integer" },
+            "outcome": { "type": "string" }
+          }
+        },
+        {
+          "properties": {
+            "completion": { "enum": ["Indeterminate"] },
+            "returned_at": { "type": "null" },
+            "outcome": { "type": "null" }
+          }
+        }
+      ]
+    }
+  }
+}
