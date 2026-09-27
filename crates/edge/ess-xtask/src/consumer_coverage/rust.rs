@@ -199,6 +199,7 @@ fn representation(a: &Attribute, owner: &str) -> Result<()> {
                         | "try_from"
                 ) && matches!(&n.value,syn::Expr::Lit(x) if matches!(x.lit,syn::Lit::Str(_)))
             }
+            ("schemars", Meta::Path(_)) => key == "skip",
             ("schemars", Meta::NameValue(n)) => {
                 matches!(key.as_str(), "with" | "schema_with" | "rename")
                     && matches!(&n.value,syn::Expr::Lit(x) if matches!(x.lit,syn::Lit::Str(_)))
@@ -352,6 +353,11 @@ impl Graph {
             return Ok(());
         }
         let name = tokens(&m.mac.path);
+        // `thread_local!` declares statics and no type, and a `static` item is skipped below
+        // (`Item::Static`); the key-newtype scope of beyond10x/ess#143 is one.
+        if matches!(name.as_str(), "thread_local" | "std :: thread_local") {
+            return Ok(());
+        }
         let key = format!("{module}::{name}");
         if !self.macros.contains_key(&key) {
             bail!("{key}: unknown production item macro");

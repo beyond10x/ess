@@ -296,3 +296,19 @@ Review updates only the six `guard_source_sha256` pins. The root dialect, six li
 relationships, shapes, consumer profiles, baseline and behavioral accounting remain unchanged, and
 no invocation guard in `macro-guards.json` moves. This review grants no new exemption or runtime
 conformance claim.
+
+## Source format ess/15 schema review — 2026-09-27
+
+Source format `ess/15` adds outcome shapes (`deletes:`, `into:`, `unknown_instance:`,
+`accepts: nothing`, `preconditions:`), subject guards over `input.`, case folds, `skip_absent:`,
+`prefix:`, the `Json` type and field `presence:`, so the generated source schema gains those
+shapes. None of the changes makes the three CLI pipelines consumers of the generated schema
+document.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `52f0dd709d8b277ccfd07255a3ddc987c5b9198c4565a152fbef7fa9c0abf83e`
+to `5c5f37373baa61bfe7985de37eba59e46c20aa2347bac81c0da1294a50c6cdbc`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged, and no invocation guard in `macro-guards.json` moves. This review grants no new
+exemption or runtime conformance claim.
