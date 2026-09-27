@@ -333,6 +333,7 @@ fn validate_partition(
                     OutcomeCondition::External { .. }
                         | OutcomeCondition::ExternalWhen { .. }
                         | OutcomeCondition::WrongState
+                        | OutcomeCondition::UnknownInstance
                 )
         })
         .collect();

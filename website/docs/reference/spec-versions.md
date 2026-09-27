@@ -216,6 +216,12 @@ refuse the operators, and browser replay refuses these envelopes by their versio
 case-insensitive guard over command input is decided at synthesis and never reaches the suite, so a
 suite without one in a view expectation keeps its earlier format.
 
+`ess-conformance/22` and `ess-conformance/23` are unreleased. They add three steps for the outcome
+shapes of `ess/15`: `expect_subject_absent` after a `deletes:` outcome, and `snapshot_view` /
+`expect_view_unchanged` around an `accepts: nothing` outcome. Version 22 is ordinary and 23
+carries declared coverage; each implies every major below it. The Rust runner evaluates them; Go and
+TypeScript refuse these envelopes by their version.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

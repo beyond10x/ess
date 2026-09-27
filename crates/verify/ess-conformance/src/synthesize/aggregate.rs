@@ -32,8 +32,8 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{
-    advance, clipped, created, has_subject_guards, insert, literal_value, reach, reachable_types,
-    route, shows, subject_fact, Arrangement, Refusal, RefusalCause,
+    advance, clipped, created, has_subject_guards, identity_inputs, insert, literal_value, reach,
+    reachable_types, route_from, shows, subject_fact, Arrangement, Refusal, RefusalCause,
 };
 use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
@@ -341,7 +341,8 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                 }
                 ResolvedCondition::Otherwise
                 | ResolvedCondition::External { .. }
-                | ResolvedCondition::WrongState => {}
+                | ResolvedCondition::WrongState
+                | ResolvedCondition::UnknownInstance => {}
             }
             let written = outcome
                 .sets
@@ -480,9 +481,18 @@ fn scenario(
     let entity = ir.entity(handle);
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(handle).map_or(&[], Vec::as_slice);
+    // A creation into `initial` first: every declared state is reachable from there, where one
+    // `into:` (ess/15) a later state may never lead back to an earlier one.
     let creator = drivers
         .iter()
-        .find(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .min_by_key(|driver| {
+            driver
+                .outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.into.is_some())
+        })
         .ok_or_else(|| unwitnessed(view, format!("nothing creates `{}`", entity.name)))?;
     if has_subject_guards(creator.command)
         || creator.outcome.test_strategy == ess_domain::command::TestStrategy::InjectFault
@@ -1091,6 +1101,15 @@ fn arrange_row(
 ) -> Result<(Arrangement, bool), RefusalCause> {
     let ir = plan.ir;
     let mut input = base.clone();
+    // An identity the scenario supplies (`instance:` published from `input.<field>`) is its own in
+    // every row: the witness at this row's distinction, never the base row's again.
+    if let Ok(distinct) = reach(ir, creator.command, creator.outcome, distinction) {
+        for field in identity_inputs(creator.command) {
+            if let Some(value) = distinct.get(&field) {
+                input.insert(field, value.clone());
+            }
+        }
+    }
     for (field, value) in &row.values {
         let Some(read) = mapped.get(field.as_str()) else {
             return Err(plan.unwitnessed(format!(
@@ -1139,7 +1158,8 @@ fn arrange_row(
     };
     let mut best: Option<Arrangement> = None;
     for target in targets {
-        let Some(path) = route(ir, plan.handle, drivers, &target) else {
+        // From where the row was created: `into:` (ess/15) or the lifecycle's initial state.
+        let Some(path) = route_from(ir, plan.handle, drivers, &start.state, &target) else {
             continue;
         };
         let Ok(reached) = advance(

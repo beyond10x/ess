@@ -960,7 +960,11 @@ async function perform(
           detail: `the target created ${render(id)} again, over an existing record`,
         };
       }
-      record = { id, fields: { [entity.identity.name]: id, state: entity.lifecycle?.initial } };
+      // A creation lands in the state `into:` names (ess/15), or where the lifecycle starts.
+      record = {
+        id,
+        fields: { [entity.identity.name]: id, state: subject.into ?? entity.lifecycle?.initial },
+      };
       s.model.of(subject.entity).push(record);
     } else {
       record = s.model.find(subject.entity, readPath(step.input, subject.instance.field.name));
@@ -1125,15 +1129,58 @@ async function open(
   const target = await newTarget();
   const correlation = newHarness(p.system).correlation();
   await target.beginScenario({ scenario, correlation });
-  return {
+  const session = {
     p,
     target,
     model: new Model(),
     correlation,
-    undetermined: new Set(),
-    forced: new Set(),
+    undetermined: new Set<string>(),
+    forced: new Set<string>(),
     scenario,
   };
+  await preconditions(session);
+  return session;
+}
+
+/**
+ * Runs the system's preconditions (ess/15) before a sequence, so the model starts from the state
+ * they leave. A precondition the model or the target does not take is a setup failure, thrown, and
+ * never a disagreement: the sequence has not started.
+ */
+async function preconditions(s: Session): Promise<void> {
+  for (const pre of s.p.ir.preconditions ?? []) {
+    const name = String(pre.command);
+    if (nonEmpty(pre.fixtures)) {
+      throw new Error(
+        `precondition \`${name}\` reads fixture inputs, which exploration does not resolve`,
+      );
+    }
+    const planned = s.p.commands.find((candidate) => candidate.name === name);
+    if (planned === undefined) {
+      throw new Error(`precondition \`${name}\` is a command exploration excludes`);
+    }
+    const command: Command = { ...planned, actor: pre.actor ?? planned.actor };
+    const input: Row = { ...(pre.input ?? {}) };
+    const step: Step = { command: name, input, refs: [], external: '' };
+    const decision = decide(command, input, s.model);
+    // The model must take the branch the specification requires of it, as synthesis does: a
+    // precondition the model decides as a refusal, or as anything else, fails as setup.
+    const wanted = String(pre.outcome);
+    if (
+      decision.kind !== 'take' ||
+      decision.outcome === undefined ||
+      decision.outcome === null ||
+      String(decision.outcome.name) !== wanted
+    ) {
+      throw new Error(
+        `precondition \`${name}\` failed as setup: the model does not take \`${wanted}\``,
+      );
+    }
+    const found = await perform(s, command, step, decision.outcome);
+    if (found !== null) {
+      throw new Error(`precondition \`${name}\` failed as setup: ${found.kind}: ${found.detail}`);
+    }
+  }
 }
 
 /** Replays `trace` on a fresh target: the disagreement it ends in, or null when it passes. */

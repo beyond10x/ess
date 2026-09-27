@@ -263,6 +263,32 @@ pub struct SpecHeader {
     pub naming: Naming,
     /// What the system is, in one paragraph.
     pub summary: Option<String>,
+    /// The ambient command invocations every scenario and every explored sequence runs inside,
+    /// in order (ess/15).
+    pub preconditions: Vec<Precondition>,
+}
+
+/// One ambient command invocation a system runs inside — an open session whose user row exists
+/// (ess/15, beyond10x/ess#152, `docs/design/outcome-shapes.md`).
+///
+/// Synthesis runs the list, in order, before every scenario's arrangement, and a generated explorer
+/// runs it before every sequence, so the model it compares against starts from the state the
+/// preconditions leave. Each must take the command's declared success branch; one that is refused
+/// fails the scenario as setup. An input value a deterministic generator cannot choose comes from
+/// the command's `fixture_inputs:` (ess/13), written `{fixture: name}` or left out.
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct Precondition {
+    /// The command invoked.
+    pub command: QualifiedName,
+    /// The actor it is invoked as; omitted, the actor the specification grants it to.
+    #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<QualifiedName>,
+    /// Its input by declared field: a literal, or `{fixture: name}`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input: BTreeMap<String, ess_primitives::node::Node>,
 }
 
 /// One source's contribution to a specification.
@@ -394,6 +420,8 @@ pub struct SystemSpec {
     pub naming: Naming,
     /// What the system is, in one paragraph.
     pub summary: Option<String>,
+    /// The ambient command invocations every scenario runs inside, in order (ess/15).
+    pub preconditions: Vec<Precondition>,
 }
 
 impl SystemSpec {
@@ -506,6 +534,7 @@ impl SystemSpec {
             types,
             naming: header.naming,
             summary: header.summary,
+            preconditions: header.preconditions,
         };
         (Some(system), assembly.errors)
     }
@@ -1141,6 +1170,7 @@ impl RawSystemSpec {
             format: self.format.unwrap_or(FormatVersion::V1),
             naming: self.naming,
             summary: self.summary,
+            preconditions: Vec::new(),
         });
 
         let mut domains = Vec::with_capacity(self.domains.len());

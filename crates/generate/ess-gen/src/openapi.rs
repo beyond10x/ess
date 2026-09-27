@@ -972,6 +972,9 @@ fn condition_description(condition: &ResolvedCondition) -> String {
              from. Which states those are is the lifecycle's answer, not this command's."
                 .to_owned()
         }
+        ResolvedCondition::UnknownInstance => {
+            "Taken when the request names an identity no record carries.".to_owned()
+        }
     }
 }
 
@@ -995,8 +998,10 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
             ),
             ResolvedEffect::Creates => format!(
                 "A `{}` now exists, in `{}`.",
-                entity.name, entity.lifecycle.initial
+                entity.name,
+                subject.into.as_ref().unwrap_or(&entity.lifecycle.initial)
             ),
+            ResolvedEffect::Deletes => format!("A `{}` no longer exists.", entity.name),
             ResolvedEffect::Moves { transition } => format!(
                 "A `{}` has moved to `{}`, along `{}`.",
                 entity.name, transition.to, transition.name

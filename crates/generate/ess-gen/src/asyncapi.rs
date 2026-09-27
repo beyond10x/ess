@@ -783,7 +783,14 @@ fn state_changes(ir: &EssIr, event: &ResolvedEvent) -> Vec<String> {
                 }
                 ResolvedEffect::Creates => format!(
                     "`{}` emits it on `{}`, which creates a `{}` in `{}`.{publishes}",
-                    command.name, outcome.name, entity.name, entity.lifecycle.initial
+                    command.name,
+                    outcome.name,
+                    entity.name,
+                    subject.into.as_ref().unwrap_or(&entity.lifecycle.initial)
+                ),
+                ResolvedEffect::Deletes => format!(
+                    "`{}` emits it on `{}`, which removes a `{}`.",
+                    command.name, outcome.name, entity.name
                 ),
                 ResolvedEffect::Moves { transition } => format!(
                     "`{}` emits it on `{}`, which moves a `{}` to `{}` along `{}`.",

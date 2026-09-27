@@ -76,7 +76,8 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::Otherwise
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
-        | ResolvedCondition::WrongState => None,
+        | ResolvedCondition::WrongState
+        | ResolvedCondition::UnknownInstance => None,
     }
 }
 

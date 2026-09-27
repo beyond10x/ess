@@ -202,7 +202,7 @@ fn outcomes(bridge: &Bridge<'_>, command: &ess_compiler::ir::ResolvedCommand) ->
             "error": outcome.error.as_ref().map(ToString::to_string),
             "moves": outcome.subject.as_ref().map(|subject| json!({
                 "entity": subject.entity.to_string(),
-                "effect": effect(&subject.effect),
+                "effect": effect(&subject.effect, subject.into.as_ref()),
             })),
         }));
         let _ = bridge;
@@ -211,11 +211,18 @@ fn outcomes(bridge: &Bridge<'_>, command: &ess_compiler::ir::ResolvedCommand) ->
 }
 
 /// What an outcome does to the entity it acts on, in the specification's own words.
-fn effect(effect: &ess_compiler::ir::ResolvedEffect) -> Value {
+fn effect(
+    effect: &ess_compiler::ir::ResolvedEffect,
+    into: Option<&ess_domain::entity::StateName>,
+) -> Value {
     match effect {
-        ess_compiler::ir::ResolvedEffect::Creates => json!({ "kind": "creates" }),
+        ess_compiler::ir::ResolvedEffect::Creates => match into {
+            Some(state) => json!({ "kind": "creates", "into": state.to_string() }),
+            None => json!({ "kind": "creates" }),
+        },
         ess_compiler::ir::ResolvedEffect::Updates => json!({ "kind": "updates" }),
         ess_compiler::ir::ResolvedEffect::Preserves => json!({ "kind": "preserves" }),
+        ess_compiler::ir::ResolvedEffect::Deletes => json!({ "kind": "deletes" }),
         ess_compiler::ir::ResolvedEffect::Moves { transition } => json!({
             "kind": "moves",
             "transition": transition.name,

@@ -338,6 +338,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     predicate_operators(spec, spec.system().format, &mut errors);
     errors.extend(crate::command::validate_response_contracts(spec));
     errors.extend(crate::command::value_expression::validate(spec));
+    errors.extend(crate::command::outcome_shapes::validate(spec));
     let format = spec.system().format;
     for binding in spec.bindings().values() {
         if format.major() < 3
