@@ -178,6 +178,7 @@
 //! [`RefusalCause::NotSynthesisedYet`].
 
 mod aggregate;
+mod related;
 mod subject_fact;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -2491,10 +2492,24 @@ fn prepare(
     prepare_in(ir, outcome, actors, held, Distinction::PLAIN)
 }
 
+/// [`prepare_subject`], with the rows a `{related: …}` source reads arranged ahead of it and the
+/// subject or the input pointed at them (ess/16, beyond10x/ess#166, [`related::arrange`]). A branch
+/// that reads no related row is arranged exactly as before.
+fn prepare_in(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    held: Option<&StateName>,
+    distinction: Distinction,
+) -> Result<Setup, RefusalCause> {
+    let setup = prepare_subject(ir, outcome, actors, held, distinction)?;
+    Ok(related::arrange(ir, outcome, actors, distinction, setup))
+}
+
 /// [`prepare`], with the existing subject arranged under `distinction`: a further witness for every
 /// act that arranges it, which [`arranged`] asks for where the plain arrangement already holds the
 /// value the branch writes (beyond10x/ess#161).
-fn prepare_in(
+fn prepare_subject(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -3918,7 +3933,8 @@ fn determined_payload(
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
-            | ResolvedPayloadValue::Struct { .. } => {
+            | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
                 {
@@ -4488,6 +4504,12 @@ fn expression_value(
         ResolvedPayloadValue::SubjectField { field: read, .. } => {
             before.get(read).map(|held| held.value.clone())
         }
+        // ess/16 (#166): the referenced row's value, which `related::arrange` settled.
+        ResolvedPayloadValue::RelatedField {
+            via, field: read, ..
+        } => before
+            .get(&related::key(via, read))
+            .map(|held| held.value.clone()),
         ResolvedPayloadValue::Increment { by } => {
             let ScenarioValue::Literal {
                 value: Node::Number(held),
@@ -4613,7 +4635,11 @@ fn without_literal_fallbacks(
             ResolvedPayloadValue::InputOrGenerated {
                 field, otherwise, ..
             } => out.push((field, otherwise.is_some())),
-            ResolvedPayloadValue::InputField { field, .. } => out.push((field, false)),
+            ResolvedPayloadValue::InputField { field, .. }
+            | ResolvedPayloadValue::RelatedField {
+                via: ess_compiler::ir::ResolvedRelatedVia::Input { field, .. },
+                ..
+            } => out.push((field, false)),
             ResolvedPayloadValue::Struct { fields } => {
                 for leaf in fields {
                     reads(&leaf.value, out);
@@ -4624,6 +4650,7 @@ fn without_literal_fallbacks(
             | ResolvedPayloadValue::Generated
             | ResolvedPayloadValue::Cleared
             | ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::Increment { .. } => {}
         }
     }
@@ -4996,7 +5023,8 @@ fn settled(
             ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
-            | ResolvedPayloadValue::Struct { .. } => {
+            | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
                     None => continue,

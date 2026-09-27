@@ -41,10 +41,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_domain::actor::ActorSpec;
 use ess_domain::binding::{BindingName, BindingSpec, MappingSource};
-use ess_domain::command::PayloadSource;
+use ess_domain::command::related_value::{input_carrier, referenced_entity, Referenced};
 use ess_domain::command::{
     CommandSpec, Effect, ErrorSpec, EventSpec, InstanceSurface, Outcome, OutcomeCondition, Subject,
 };
+use ess_domain::command::{PayloadSource, RelatedVia};
 use ess_domain::component::{ComponentName, ComponentSpec};
 use ess_domain::entity::{EntitySpec, StateMachine};
 use ess_domain::name::QualifiedName;
@@ -65,8 +66,9 @@ use crate::ir::{
     ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
     ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
     ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelation, ResolvedSubject, ResolvedType,
-    ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle, ViewHandle,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedRelation,
+    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
+    ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -2282,6 +2284,15 @@ impl<'a> Resolver<'a> {
             PayloadSource::Struct { fields } => {
                 return self.struct_field(command, outcome, block, target, fields, input, subject);
             }
+            PayloadSource::RelatedField { via, field } => self.related_field(
+                command,
+                outcome,
+                block,
+                (target, source),
+                (via, field),
+                input,
+                subject,
+            )?,
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
         let conversion = self.crossing(command, outcome, block, target, source, &from)?;
@@ -2291,6 +2302,103 @@ impl<'a> Resolver<'a> {
             value,
             conversion,
         })
+    }
+
+    /// `{related: {via, field}}` (ess/16, #166): the entity `via` names, by the rule
+    /// `ess-domain` validated it with, and the field read there. The value and the type it is read
+    /// at; the caller checks that type against the target.
+    #[allow(clippy::too_many_arguments)]
+    fn related_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        (target, source): (&ResolvedField, &PayloadSource),
+        (via, field): (&RelatedVia, &String),
+        input: Option<&[ResolvedField]>,
+        subject: Option<&ResolvedEntity>,
+    ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
+        let spec = self.spec;
+        let read_via = match via {
+            RelatedVia::Subject(name) => subject.and_then(|entity| {
+                std::iter::once(&entity.identity)
+                    .chain(&entity.fields)
+                    .find(|held| &held.name == name)
+            }),
+            RelatedVia::Input(name) => {
+                input.and_then(|fields| fields.iter().find(|it| &it.name == name))
+            }
+        };
+        // The carrier `ess-domain` validated with: the subject field, or the one this branch sets
+        // from the input read.
+        let declared = outcome
+            .subject
+            .as_ref()
+            .and_then(|declared| spec.entities().get(&declared.entity));
+        let carrier = match via {
+            RelatedVia::Subject(name) => declared.map(|entity| (entity, name.clone())),
+            RelatedVia::Input(name) => input_carrier(outcome, declared, name),
+        };
+        let carrier = carrier
+            .as_ref()
+            .map(|(entity, field)| (*entity, field.as_str()));
+        let entity = read_via.and_then(|read| {
+            match referenced_entity(spec, &spec_type_ref(&read.type_ref), carrier) {
+                Referenced::Entity(entity) => Some(entity),
+                Referenced::NoEntity | Referenced::Ambiguous(_) => None,
+            }
+        });
+        let held = entity.and_then(|entity| {
+            if entity.identity.name == *field {
+                Some(&entity.identity)
+            } else {
+                entity.field(field)
+            }
+        });
+        let (Some(read_via), Some(entity), Some(held)) = (read_via, entity, held) else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` reads `{field}` of the row `{via}` names, and that is \
+                     no field of exactly one entity",
+                    outcome.name, command.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let read = self
+            .fields(
+                codes::COMMAND_TYPE_MISMATCH,
+                std::slice::from_ref(held),
+                &entity.name,
+                &format!("entities.{}", entity.name),
+                &[format!("name: {}", entity.name)],
+            )?
+            .pop()?;
+        let via = match via {
+            RelatedVia::Subject(_) => ResolvedRelatedVia::Subject {
+                field: read_via.name.clone(),
+                type_ref: read_via.type_ref.clone(),
+            },
+            RelatedVia::Input(_) => ResolvedRelatedVia::Input {
+                field: read_via.name.clone(),
+                type_ref: read_via.type_ref.clone(),
+            },
+        };
+        Some((
+            ResolvedPayloadValue::RelatedField {
+                via,
+                entity: EntityHandle::new(entity.name.clone()),
+                field: read.name,
+                type_ref: read.type_ref.clone(),
+            },
+            read.type_ref,
+        ))
     }
 
     /// A nested mapping, resolved against the fields of the struct its target resolves to.
@@ -4012,7 +4120,8 @@ fn payload_constant_source(
         | PayloadSource::ResponseField { .. }
         | PayloadSource::SubjectField { .. }
         | PayloadSource::InputOrGenerated { .. }
-        | PayloadSource::Struct { .. } => return None,
+        | PayloadSource::Struct { .. }
+        | PayloadSource::RelatedField { .. } => return None,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
     };
     Some(payload_constant(target, value))

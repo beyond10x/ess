@@ -10,9 +10,10 @@
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::Number;
 
+use super::related_value::{input_carrier, referenced_entity, written_from_input, Referenced};
 use super::{
     literal_representation, scalar_representation, CommandSpec, Effect, Outcome, PayloadSource,
-    Resolved, ScalarKind,
+    RelatedVia, Resolved, ScalarKind,
 };
 use crate::binding::{is_field_name, representation, Representation, Resolution};
 
@@ -137,8 +138,13 @@ fn check(
             at.clone(),
             ValidationCode::UnsupportedFormatVersion,
             format!(
-                "a {} source requires specification format ess/14",
-                kind(source)
+                "a {} source requires specification format {}",
+                kind(source),
+                if matches!(source, PayloadSource::RelatedField { .. }) {
+                    "ess/16"
+                } else {
+                    "ess/14"
+                }
             ),
         ));
         return;
@@ -182,6 +188,9 @@ fn check(
             "`{cleared: true}` clears a whole entity field, not a field inside a nested mapping",
         )),
         PayloadSource::SubjectField { field } => check_subject(context, at, target, field, errors),
+        PayloadSource::RelatedField { via, field } => {
+            check_related(context, at, target, via, field, errors);
+        }
         PayloadSource::Increment { by, scalar } => {
             check_increment(context, at, place, target, by, *scalar, errors);
         }
@@ -213,7 +222,238 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::Increment { .. } => "`{increment: …}`",
         PayloadSource::InputOrGenerated { .. } => "`{input: …, else: …}`",
         PayloadSource::Struct { .. } => "nested mapping",
+        PayloadSource::RelatedField { .. } => "`{related: …}`",
         _ => "payload",
+    }
+}
+
+/// The type of the field a `{related: …}` source's `via` reads, and the subject field whose
+/// relation may say which entity it names; or a refusal saying why there is no such field.
+///
+/// A subject field is read as it was before the outcome, so an existing subject's. On `creates:`
+/// there is no row before, but a field the branch sets from its input holds that input, so it is
+/// admitted there and read as the input (`written_from_input`). An input is carried by the subject
+/// field the branch sets from it, where there is one (`input_carrier`).
+fn related_via<'a>(
+    context: &Context<'a>,
+    at: &ConstructRef,
+    via: &RelatedVia,
+    errors: &mut ValidationErrors,
+) -> Option<(&'a TypeRef, Option<(&'a crate::entity::EntitySpec, String)>)> {
+    let command = context.command;
+    match via {
+        RelatedVia::Subject(name) => {
+            let created = context
+                .subject
+                .filter(|(_, existing)| !existing)
+                .filter(|_| written_from_input(context.outcome, name).is_some())
+                .and_then(|(entity, _)| entity.field(name).or(Some(&entity.identity)))
+                .filter(|held| held.name == *name);
+            let held = if let Some(held) = created {
+                held
+            } else {
+                existing_subject_field(context, at, "`{related: …}`", name, errors)?
+            };
+            Some((
+                &held.type_ref,
+                context.subject.map(|(entity, _)| (entity, name.clone())),
+            ))
+        }
+        RelatedVia::Input(name) => {
+            let Some(read) = command.input_field(name) else {
+                errors.push(ValidationError::at(
+                    at.clone(),
+                    ValidationCode::UndeclaredReference,
+                    format!("`{name}` is not an input of `{}`", command.name),
+                ));
+                return None;
+            };
+            Some((
+                &read.type_ref,
+                input_carrier(
+                    context.outcome,
+                    context.subject.map(|(entity, _)| entity),
+                    name,
+                ),
+            ))
+        }
+    }
+}
+
+/// The one entity a `{related: …}` source's `via`, of type `via_type`, names, or a refusal saying
+/// why there is none: a reference that may be absent or is several, a type that is no entity's
+/// identity, or one several entities share with no relation to decide.
+fn related_entity<'a>(
+    context: &Context<'a>,
+    at: &ConstructRef,
+    via: &RelatedVia,
+    via_type: &TypeRef,
+    carrier: Option<(&crate::entity::EntitySpec, &str)>,
+    errors: &mut ValidationErrors,
+) -> Option<&'a crate::entity::EntitySpec> {
+    if !matches!(via_type, TypeRef::Primitive(_) | TypeRef::Named(_)) {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{via}` is `{via_type}`, and `{{related: …}}` follows one reference that is \
+                     always there"
+                ),
+            )
+            .with_hint("read a required field typed as the other entity's identity"),
+        );
+        return None;
+    }
+    let entities = match referenced_entity(context.spec, via_type, carrier) {
+        Referenced::Entity(entity) => return Some(entity),
+        Referenced::NoEntity => {
+            errors.push(ValidationError::at(
+                at.clone(),
+                ValidationCode::TypeMismatch,
+                format!("`{via}` is `{via_type}`, which is no entity's identity"),
+            ));
+            return None;
+        }
+        Referenced::Ambiguous(entities) => entities,
+    };
+    let hint = match (via, context.subject) {
+        (RelatedVia::Subject(name), Some((subject, _))) => format!(
+            "say which: declare `relations: [{{name: …, kind: references, target: <entity>, \
+             cardinality: one, via: {name}}}]` on `{}`, or, where that entity owns `{}`, an \
+             `owns` relation on it with `via: {name}`",
+            subject.name, subject.name
+        ),
+        (RelatedVia::Input(name), Some((subject, existing))) => {
+            let setter = context
+                .outcome
+                .sets
+                .iter()
+                .find_map(|(target, source)| match source {
+                    PayloadSource::InputField { field } if field == name => Some(target.as_str()),
+                    _ => None,
+                });
+            let row = if existing {
+                "the row before the outcome"
+            } else {
+                "a `creates:` branch has no row before it, so a field it sets from the input"
+            };
+            match setter {
+                Some(target) => format!(
+                    "read the identity through a field of the subject that a `references` \
+                     relation carries — {row}: declare `relations: [{{name: …, kind: \
+                     references, target: <entity>, cardinality: one, via: {target}}}]` on `{}`, \
+                     then `input.{name}` or `via: {target}` names that entity",
+                    subject.name
+                ),
+                None => format!(
+                    "read the identity through a field of the subject that a `references` \
+                     relation carries — {row}: set a field of `{}` from `input.{name}` and \
+                     declare that relation on it",
+                    subject.name
+                ),
+            }
+        }
+        _ => "read the identity through a field of the subject that a `references` relation \
+              carries; this branch acts on no entity, so give the entities distinct identity \
+              types instead"
+            .to_owned(),
+    };
+    errors.push(
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::ConflictingDeclaration,
+            format!(
+                "`{via}` is `{via_type}`, the identity of {}",
+                entities
+                    .iter()
+                    .map(|entity| format!("`{}`", entity.name))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ),
+        )
+        .with_hint(hint),
+    );
+    None
+}
+
+/// `{related: {via, field}}` (`ess/16`, beyond10x/ess#166): `field` of the row `via` names.
+///
+/// `via` is a field of the subject before the outcome (so an existing subject, as for
+/// `{subject: …}`) or of the input, typed as exactly one entity's identity — never `Optional` or a
+/// collection, because the source reads one row that is always there. A `references` relation the
+/// subject declares on `via` says which entity where the type alone names several.
+fn check_related(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    target: &Field,
+    via: &RelatedVia,
+    field: &str,
+    errors: &mut ValidationErrors,
+) {
+    if context.spec.system().format.major() < FormatVersion::V16.major() {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "a `{related: …}` source requires specification format ess/16",
+            )
+            .with_hint("write `format: ess/16` on the source that declares the system"),
+        );
+        return;
+    }
+    if !is_field_name(via.field()) || !is_field_name(field) {
+        errors.push(ValidationError::at(
+            at.clone(),
+            ValidationCode::UndeclaredReference,
+            "`{related: …}` names one field in `via:` (a field of the subject, or \
+             `input.<field>`) and one field in `field:`",
+        ));
+        return;
+    }
+    let Some((via_type, carrier)) = related_via(context, at, via, errors) else {
+        return;
+    };
+    let carrier = carrier
+        .as_ref()
+        .map(|(entity, field)| (*entity, field.as_str()));
+    let Some(entity) = related_entity(context, at, via, via_type, carrier, errors) else {
+        return;
+    };
+    let read = if entity.identity.name == field {
+        Some(&entity.identity)
+    } else {
+        entity.field(field)
+    };
+    let Some(read) = read else {
+        errors.push(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UndeclaredReference,
+                format!("`{field}` is not a field of `{}`", entity.name),
+            )
+            .with_hint(format!(
+                "`{}` holds: {}",
+                entity.name,
+                std::iter::once(entity.identity.name.as_str())
+                    .chain(entity.fields.iter().map(|field| field.name.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        );
+        return;
+    };
+    if !context
+        .resolved
+        .conversions
+        .permits(&read.type_ref, &target.type_ref)
+    {
+        errors.push(mismatch(
+            at,
+            &format!("`{}.{field}`", entity.name),
+            &read.type_ref,
+            target,
+        ));
     }
 }
 
@@ -571,6 +811,57 @@ fn within_fallback(hint: &str, target: &str, field: &str) -> String {
     )
 }
 
+/// The refusal for a nested mapping over a non-struct target that was meant as `{related: …}`:
+/// the exact shape below `ess/16` (read there as a nested mapping, `related_value::read_below_ess_16`)
+/// is refused as the format it needs, and any other mapping keyed `related` says the one shape
+/// that is a source.
+fn related_mapping(
+    context: &Context<'_>,
+    at: &ConstructRef,
+    fields: &[super::PayloadField],
+) -> Option<ValidationError> {
+    let [written] = fields else {
+        return fields
+            .iter()
+            .any(|field| field.target == "related")
+            .then(|| {
+                ValidationError::at(
+                at.clone(),
+                ValidationCode::TypeMismatch,
+                "`{related: …}` is written alone: a mapping with other keys beside `related` is \
+                 a nested mapping",
+            )
+            .with_hint("`{related: …}` takes exactly `{via: <field>, field: <field>}`")
+            });
+    };
+    if written.target != "related" {
+        return None;
+    }
+    let exact = matches!(&written.source, PayloadSource::Struct { fields: inner }
+    if inner.len() == 2 && inner.iter().all(|leaf| {
+        matches!(leaf.target.as_str(), "via" | "field")
+            && matches!(leaf.source, PayloadSource::InputField { .. } | PayloadSource::Literal { .. })
+    }));
+    if exact && context.spec.system().format.major() < FormatVersion::V16.major() {
+        return Some(
+            ValidationError::at(
+                at.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "a `{related: …}` source requires specification format ess/16",
+            )
+            .with_hint("write `format: ess/16` on the source that declares the system"),
+        );
+    }
+    Some(
+        ValidationError::at(
+            at.clone(),
+            ValidationCode::TypeMismatch,
+            "a mapping under `related` that is not exactly `{via, field}` is a nested mapping",
+        )
+        .with_hint("`{related: …}` takes exactly `{via: <field>, field: <field>}`"),
+    )
+}
+
 /// A nested mapping: every field of the struct the target resolves to, one source each.
 fn check_struct(
     context: &Context<'_>,
@@ -590,6 +881,10 @@ fn check_struct(
         return;
     }
     let Some(declared) = context.resolved.types.struct_fields(&target.type_ref) else {
+        if let Some(refusal) = related_mapping(context, at, fields) {
+            errors.push(refusal);
+            return;
+        }
         errors.push(
             ValidationError::at(
                 at.clone(),

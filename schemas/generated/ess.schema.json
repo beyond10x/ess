@@ -2510,9 +2510,44 @@
           "$ref": "#/definitions/ExplicitPayloadSource"
         },
         {
+          "$ref": "#/definitions/RawRelatedSource"
+        },
+        {
           "$ref": "#/definitions/RawNestedSources"
         }
       ]
+    },
+    "RawRelated": {
+      "description": "What `related:` holds: the field holding the other row's identity, and the field read there.",
+      "type": "object",
+      "required": [
+        "field",
+        "via"
+      ],
+      "properties": {
+        "field": {
+          "description": "A field of the entity `via` names.",
+          "type": "string"
+        },
+        "via": {
+          "description": "A field of the subject, or `input.<field>`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedSource": {
+      "description": "`{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is a mapping of its own rather than one more keyword beside the others.\n\nRecognised by its exact shape — one key, `related`, holding exactly `via` and `field` as text — and by nothing else, so `related` is no source keyword: any other mapping under a `related` key is a nested mapping, as it was before `ess/16`. A document below `ess/16` whose struct happens to have this shape is read back as that nested mapping by [`related_value::read_below_ess_16`], so no earlier document changes meaning.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawRelated"
+        }
+      },
+      "additionalProperties": false
     },
     "RawReplicas": {
       "description": "A replica range.",

@@ -1712,7 +1712,8 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::SubjectField { .. }
                         | ResolvedPayloadValue::Increment { .. }
                         | ResolvedPayloadValue::InputOrGenerated { .. }
-                        | ResolvedPayloadValue::Struct { .. } => {
+                        | ResolvedPayloadValue::Struct { .. }
+                        | ResolvedPayloadValue::RelatedField { .. } => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
                             )
@@ -2349,7 +2350,8 @@ impl Projector<'_> {
             value @ (ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
-            | ResolvedPayloadValue::Struct { .. }) => {
+            | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. }) => {
                 self.diagnostic(
                     LoweringCode::ValueExpressionUnsupported,
                     format!("{}.{}", command.name, outcome.name.as_str()),
@@ -3176,6 +3178,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. }
     )
 }
 

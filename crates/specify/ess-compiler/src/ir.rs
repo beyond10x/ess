@@ -945,6 +945,63 @@ pub enum ResolvedPayloadValue {
         /// The struct's fields.
         fields: Vec<ResolvedPayloadField>,
     },
+    /// A field of the row another row references, as it was immediately before this outcome
+    /// (ess/16, beyond10x/ess#166): `{related: {via: customer_id, field: region}}`.
+    RelatedField {
+        /// Where the other row's identity is read.
+        via: ResolvedRelatedVia,
+        /// The entity `via` names.
+        entity: EntityHandle,
+        /// The field of that entity read.
+        field: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+}
+
+/// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "from", rename_all = "snake_case")]
+pub enum ResolvedRelatedVia {
+    /// A field of the addressed entity, as it was immediately before the outcome.
+    Subject {
+        /// The entity field.
+        field: String,
+        /// Its resolved type: the referenced entity's identity.
+        type_ref: ResolvedTypeRef,
+    },
+    /// A field of the command's input.
+    Input {
+        /// The input field.
+        field: String,
+        /// Its resolved type: the referenced entity's identity.
+        type_ref: ResolvedTypeRef,
+    },
+}
+
+impl ResolvedRelatedVia {
+    /// The field read, without its prefix.
+    pub fn field(&self) -> &str {
+        match self {
+            Self::Subject { field, .. } | Self::Input { field, .. } => field,
+        }
+    }
+
+    /// The field's type.
+    pub fn type_ref(&self) -> &ResolvedTypeRef {
+        match self {
+            Self::Subject { type_ref, .. } | Self::Input { type_ref, .. } => type_ref,
+        }
+    }
+}
+
+impl fmt::Display for ResolvedRelatedVia {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Subject { field, .. } => write!(f, "subject.{field}"),
+            Self::Input { field, .. } => write!(f, "input.{field}"),
+        }
+    }
 }
 
 impl ResolvedPayloadValue {
@@ -957,6 +1014,9 @@ impl ResolvedPayloadValue {
             Self::Generated => "implementation-generated".to_owned(),
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
+            Self::RelatedField {
+                via, entity, field, ..
+            } => format!("{}.{field} of the row {via} names", entity.name()),
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {
                 field,
