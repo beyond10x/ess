@@ -113,6 +113,9 @@ use ess_primitives::time::Rfc3339Instant;
 /// failure of one is "the values I know how to try did not satisfy this guard", reported with the
 /// number. A larger number would turn a specification that needs a solver into a slower build that
 /// still cannot say so.
+///
+/// It bounds the walk over every ladder. Where the walk is cut short, at most this many more
+/// candidates follow it, solved for the guards rather than walked (`Directed`).
 pub const MAX_CANDIDATES: usize = 64;
 
 /// Which of several instances of one entity a witness is being built for.
@@ -370,6 +373,14 @@ pub fn candidates(
         inputs = refuting;
         inputs.truncate(MAX_CANDIDATES);
     }
+    // Where the bound cut the walk short, the leaves late in path order never left their first
+    // values, and a guard over them was refused. What the walk tried stays first, in its order, so
+    // a branch it witnessed is sent the input it was always sent; only a caller that found nothing
+    // in it reaches the guard-directed candidates after it.
+    if product(&ladders) > MAX_CANDIDATES {
+        let solved = Directed::new(&mut builder, command, guards, &ladders).solve()?;
+        extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
+    }
     Ok(admitted_inputs(ir, command, inputs))
 }
 
@@ -561,6 +572,370 @@ fn paired(
     } else {
         vec![absent, written]
     })
+}
+
+/// What a candidate puts in place of the base witness, by path.
+type Overrides = BTreeMap<FactPath, Choice>;
+
+/// Appends each of `solved` as [`paired`] spells it, skipping inputs already in `inputs`, at most
+/// [`MAX_CANDIDATES`] of them.
+fn extend_paired(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    solved: &[Overrides],
+    presence_omits: &BTreeMap<FactPath, Choice>,
+    inputs: &mut Vec<BTreeMap<String, Node>>,
+) -> Result<(), WitnessGap> {
+    let limit = inputs.len().saturating_add(MAX_CANDIDATES);
+    for overrides in solved {
+        for input in paired(builder, command, overrides, presence_omits)? {
+            if !inputs.contains(&input) {
+                inputs.push(input);
+            }
+        }
+    }
+    inputs.truncate(limit);
+    Ok(())
+}
+
+/// Candidates solved for what a guard's branches need, rather than walked in path order.
+///
+/// Each atom under a guard's connectives reads some ladders. Ladders an atom reads together
+/// (`w.hi > w.lo`) form one group; an atom reading one path (`a > 10`) has a group of its own. A
+/// goal is a set of truth values wanted of some sub-predicates; it is broken down to truth values
+/// of atoms, and each group is then searched on its own, base first, for the first combination of
+/// its alternatives that gives its atoms those values. So a conjunction of seven comparisons is one
+/// search per field, not the 128th of 2^7 assignments, and the result does not depend on how the
+/// inputs are named.
+///
+/// The goals, in order: each guard satisfied with every other refuted, then satisfied alone, then
+/// refuted; every guard refuted; then, for each connective of two or more children, each child
+/// deciding alone against the others (the rows a connective mutant is killed by), and every child
+/// deciding alike — each with the guard satisfied, refuted, and either way.
+///
+/// The limits are the ladders' and the bound's: a group is searched over at most
+/// [`MAX_CANDIDATES`] × [`MAX_ENUMERATED_PER_CANDIDATE`] combinations, a goal gives up after
+/// [`MAX_CANDIDATES`] breakdowns, and at most [`MAX_CANDIDATES`] candidates are solved. A value no
+/// ladder holds (`amount > 0.1 and amount < 0.2`) is still not found. A field compared only with other
+/// fields writes no literal, so its ladder is 0 and -1 beside its base: a strict chain over four such
+/// fields has no solution here.
+struct Directed<'a, 'ir> {
+    builder: &'a mut Builder<'ir>,
+    command: &'a ResolvedCommand,
+    guards: &'a [&'a Predicate],
+    /// The distinct atoms under the guards' connectives.
+    atoms: Vec<&'a Predicate>,
+    /// Ladder paths atoms read together, each with its alternatives.
+    groups: Vec<Vec<(FactPath, Vec<Choice>)>>,
+    /// The group each atom reads, or `None` for an atom no ladder varies.
+    reads: Vec<Option<usize>>,
+    /// Each atom's decision at a group's combination (`None`: undecided), filled on demand.
+    truths: BTreeMap<(usize, usize), Vec<Option<bool>>>,
+}
+
+impl<'a, 'ir> Directed<'a, 'ir> {
+    fn new(
+        builder: &'a mut Builder<'ir>,
+        command: &'a ResolvedCommand,
+        guards: &'a [&'a Predicate],
+        ladders: &[(FactPath, Vec<Choice>)],
+    ) -> Self {
+        let mut atoms: Vec<&Predicate> = Vec::new();
+        for guard in guards {
+            for atom in guard_atoms(guard) {
+                if !atoms.contains(&atom) {
+                    atoms.push(atom);
+                }
+            }
+        }
+        // One entry per path: an optional read by a comparison and by `defined` has two ladders.
+        let mut options: Vec<(FactPath, Vec<Choice>)> = Vec::new();
+        for (path, alternatives) in ladders {
+            let at = if let Some(at) = options.iter().position(|(known, _)| known == path) {
+                at
+            } else {
+                options.push((path.clone(), Vec::new()));
+                options.len() - 1
+            };
+            for choice in alternatives {
+                if !options[at].1.contains(choice) {
+                    options[at].1.push(choice.clone());
+                }
+            }
+        }
+        // A path read at, under or above a varied one reads what that ladder varies.
+        let related = |read: &FactPath, varied: &FactPath| {
+            read.segments().starts_with(varied.segments())
+                || varied.segments().starts_with(read.segments())
+        };
+        let involved: Vec<Vec<usize>> = atoms
+            .iter()
+            .map(|atom| {
+                let reads = atom.fact_paths();
+                (0..options.len())
+                    .filter(|at| reads.iter().any(|read| related(read, &options[*at].0)))
+                    .collect()
+            })
+            .collect();
+        // Every ladder starts in a group of its own; an atom reading several joins theirs.
+        let mut label: Vec<usize> = (0..options.len()).collect();
+        for paths in &involved {
+            let joined: Vec<usize> = paths.iter().map(|at| label[*at]).collect();
+            if let Some(lowest) = joined.iter().copied().min() {
+                for held in &mut label {
+                    if joined.contains(held) {
+                        *held = lowest;
+                    }
+                }
+            }
+        }
+        let mut labels: Vec<usize> = Vec::new();
+        let mut groups: Vec<Vec<(FactPath, Vec<Choice>)>> = Vec::new();
+        for (at, option) in options.into_iter().enumerate() {
+            if let Some(group) = labels.iter().position(|known| *known == label[at]) {
+                groups[group].push(option);
+            } else {
+                labels.push(label[at]);
+                groups.push(vec![option]);
+            }
+        }
+        let reads = involved
+            .iter()
+            .map(|paths| {
+                let first = label[*paths.first()?];
+                labels.iter().position(|known| *known == first)
+            })
+            .collect();
+        Self {
+            builder,
+            command,
+            guards,
+            atoms,
+            groups,
+            reads,
+            truths: BTreeMap::new(),
+        }
+    }
+
+    /// The solved override sets, distinct, at most [`MAX_CANDIDATES`] of them.
+    fn solve(mut self) -> Result<Vec<Overrides>, WitnessGap> {
+        let mut solved: Vec<Overrides> = Vec::new();
+        for goal in self.goals() {
+            if solved.len() >= MAX_CANDIDATES {
+                break;
+            }
+            let mut budget = MAX_CANDIDATES;
+            if let Some(overrides) = self.search(goal, &mut BTreeMap::new(), &mut budget)? {
+                if !solved.contains(&overrides) {
+                    solved.push(overrides);
+                }
+            }
+        }
+        Ok(solved)
+    }
+
+    fn goals(&self) -> Vec<Vec<(&'a Predicate, bool)>> {
+        let guards = self.guards;
+        let mut goals = Vec::new();
+        for (at, guard) in guards.iter().enumerate() {
+            let mut only = vec![(*guard, true)];
+            only.extend(
+                guards
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != at)
+                    .map(|(_, other)| (*other, false)),
+            );
+            goals.push(only);
+            goals.push(vec![(*guard, true)]);
+            goals.push(vec![(*guard, false)]);
+        }
+        goals.push(guards.iter().map(|guard| (*guard, false)).collect());
+        for guard in guards {
+            for children in connectives(guard) {
+                let mut rows = Vec::new();
+                for alone in [true, false] {
+                    for at in 0..children.len() {
+                        rows.push(
+                            children
+                                .iter()
+                                .enumerate()
+                                .map(|(other, child)| (child, (other == at) == alone))
+                                .collect::<Vec<_>>(),
+                        );
+                    }
+                    rows.push(children.iter().map(|child| (child, alone)).collect());
+                }
+                for row in rows {
+                    for context in [Some(true), Some(false), None] {
+                        let mut goal = row.clone();
+                        goal.extend(context.map(|wanted| (*guard, wanted)));
+                        goals.push(goal);
+                    }
+                }
+            }
+        }
+        goals
+    }
+
+    /// The first override set meeting every wanted truth in `pending` and `wanted`.
+    fn search(
+        &mut self,
+        mut pending: Vec<(&'a Predicate, bool)>,
+        wanted: &mut BTreeMap<usize, bool>,
+        budget: &mut usize,
+    ) -> Result<Option<Overrides>, WitnessGap> {
+        if *budget == 0 {
+            return Ok(None);
+        }
+        let Some((predicate, value)) = pending.pop() else {
+            *budget -= 1;
+            return self.check(wanted);
+        };
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children)
+                if matches!(predicate, Predicate::All(_)) == value =>
+            {
+                pending.extend(children.iter().map(|child| (child, value)));
+                self.search(pending, wanted, budget)
+            }
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    let mut next = pending.clone();
+                    next.push((child, value));
+                    if let Some(found) = self.search(next, wanted, budget)? {
+                        return Ok(Some(found));
+                    }
+                }
+                Ok(None)
+            }
+            Predicate::Not(inner) => {
+                pending.push((inner, !value));
+                self.search(pending, wanted, budget)
+            }
+            atom => {
+                let Some(at) = self.atoms.iter().position(|known| *known == atom) else {
+                    return Ok(None);
+                };
+                match wanted.get(&at) {
+                    Some(held) if *held != value => Ok(None),
+                    Some(_) => self.search(pending, wanted, budget),
+                    None => {
+                        wanted.insert(at, value);
+                        let found = self.search(pending, wanted, budget);
+                        wanted.remove(&at);
+                        found
+                    }
+                }
+            }
+        }
+    }
+
+    /// Each group searched, base first, for the first combination that decides its atoms as
+    /// `wanted` says; `None` when some group has none.
+    fn check(&mut self, wanted: &BTreeMap<usize, bool>) -> Result<Option<Overrides>, WitnessGap> {
+        let mut overrides = Overrides::new();
+        let mut groups: BTreeSet<Option<usize>> = BTreeSet::new();
+        for at in wanted.keys() {
+            groups.insert(self.reads[*at]);
+        }
+        for group in groups {
+            let combinations = group.map_or(1, |group| {
+                product(&self.groups[group])
+                    .min(MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE))
+            });
+            let mut met = None;
+            for combination in 0..combinations {
+                let truths = self.truths(group, combination)?;
+                if wanted
+                    .iter()
+                    .filter(|(at, _)| self.reads[**at] == group)
+                    .all(|(at, value)| truths[*at] == Some(*value))
+                {
+                    met = Some(combination);
+                    break;
+                }
+            }
+            let Some(combination) = met else {
+                return Ok(None);
+            };
+            if let Some(group) = group {
+                overrides.extend(self.combination(group, combination));
+            }
+        }
+        Ok(Some(overrides))
+    }
+
+    /// The overrides at `combination` of `group`, first path fastest, `0` the base.
+    fn combination(&self, group: usize, combination: usize) -> Overrides {
+        let mut overrides = Overrides::new();
+        let mut remaining = combination;
+        for (path, alternatives) in &self.groups[group] {
+            let radix = alternatives.len() + 1;
+            let chosen = remaining % radix;
+            remaining /= radix;
+            if chosen > 0 {
+                overrides.insert(path.clone(), alternatives[chosen - 1].clone());
+            }
+        }
+        overrides
+    }
+
+    /// How every atom decides at `combination` of `group`, everything else at its base.
+    fn truths(
+        &mut self,
+        group: Option<usize>,
+        combination: usize,
+    ) -> Result<Vec<Option<bool>>, WitnessGap> {
+        let key = (group.unwrap_or(usize::MAX), combination);
+        if let Some(known) = self.truths.get(&key) {
+            return Ok(known.clone());
+        }
+        let overrides =
+            group.map_or_else(Overrides::new, |group| self.combination(group, combination));
+        let input = self.builder.input(self.command, &overrides)?;
+        let truths = match crate::flatten(self.builder.ir, self.command, &input) {
+            Ok(facts) => self
+                .atoms
+                .iter()
+                .map(|atom| match facts.decide(atom) {
+                    crate::Decision::Satisfied => Some(true),
+                    crate::Decision::Refuted(_) => Some(false),
+                    crate::Decision::Unevaluable(_) => None,
+                })
+                .collect(),
+            Err(_) => vec![None; self.atoms.len()],
+        };
+        self.truths.insert(key, truths.clone());
+        Ok(truths)
+    }
+}
+
+/// The atoms of a guard: everything under its connectives.
+fn guard_atoms(predicate: &Predicate) -> Vec<&Predicate> {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            children.iter().flat_map(guard_atoms).collect()
+        }
+        Predicate::Not(inner) => guard_atoms(inner),
+        atom => vec![atom],
+    }
+}
+
+/// The children of every connective of two or more children in a guard, outermost first.
+fn connectives(predicate: &Predicate) -> Vec<&[Predicate]> {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => {
+            let mut found = Vec::new();
+            if children.len() >= 2 {
+                found.push(children.as_slice());
+            }
+            found.extend(children.iter().flat_map(connectives));
+            found
+        }
+        Predicate::Not(inner) => connectives(inner),
+        _ => Vec::new(),
+    }
 }
 
 /// How many positions of the enumeration are walked, per candidate the bound allows, before

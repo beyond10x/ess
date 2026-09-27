@@ -3286,7 +3286,7 @@ fn reach_in_state(
     Err(unsatisfied(
         &guards,
         format!("{} selected in held state {held}", outcome.name),
-        inputs.len().min(MAX_CANDIDATES),
+        inputs.len(),
     ))
 }
 
@@ -3471,11 +3471,7 @@ fn reach_external(
             return Ok(input.clone());
         }
     }
-    Err(unsatisfied(
-        &guards,
-        rendered(&guards, true),
-        inputs.len().min(MAX_CANDIDATES),
-    ))
+    Err(unsatisfied(&guards, rendered(&guards, true), inputs.len()))
 }
 
 /// The input that reaches this branch, decided rather than assumed.
@@ -3524,7 +3520,7 @@ fn reach(
     Err(unsatisfied(
         &guards,
         rendered(&guards, satisfy),
-        inputs.len().min(MAX_CANDIDATES),
+        inputs.len(),
     ))
 }
 
