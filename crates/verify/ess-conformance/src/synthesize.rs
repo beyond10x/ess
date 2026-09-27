@@ -1571,10 +1571,44 @@ fn outcome_scenario(
     let (further, depends) = boundaries(ir, command, outcome, actors, &run, &steps);
     steps.extend(further);
     source.extend(depends);
+    // ess/16 (#163): the branch again with every input it reads only through `else: <literal>`
+    // left out, after everything the full invocation asserts, so the suite asserts both halves of
+    // `{input: f, else: <literal>}` — the sent value wins, and the literal stands in for none.
+    // Not a refusal where it cannot be built: the full invocation above is the scenario. A
+    // replayed branch and a state refusal are arranged by their own searches, and not again.
+    let again = outcome.replays.is_none() && !is_state_refusal(command, outcome);
+    if let Some((more, depends, _)) = again
+        .then(|| {
+            exercise_as(
+                ir,
+                command,
+                outcome,
+                actors,
+                &id,
+                &mut Vec::new(),
+                Witness::LiteralFallbacks,
+            )
+        })
+        .flatten()
+    {
+        steps.extend(more);
+        source.extend(depends);
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
     ))
+}
+
+/// Which invocation of a branch a run builds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Witness {
+    /// The witness input, every optional input it can send included.
+    Full,
+    /// A further instance and input, with every optional input the branch reads only through
+    /// `{input: f, else: <literal>}` left out ([`without_literal_fallbacks`]). A run that can leave
+    /// nothing out is not built.
+    LiteralFallbacks,
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -1591,7 +1625,20 @@ fn exercise(
     id: &ScenarioId,
     refusals: &mut Vec<Refusal>,
 ) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
-    let run = match run(ir, command, outcome, actors) {
+    exercise_as(ir, command, outcome, actors, id, refusals, Witness::Full)
+}
+
+/// [`exercise`], for the invocation `witness` names.
+fn exercise_as(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+    witness: Witness,
+) -> Option<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>, Run)> {
+    let run = match run_as(ir, command, outcome, actors, witness) {
         Ok(run) => run,
         Err(cause) => {
             refusals.push(Refusal::about(id, cause));
@@ -1742,6 +1789,17 @@ fn run(
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<Run, RefusalCause> {
+    run_as(ir, command, outcome, actors, Witness::Full)
+}
+
+/// [`run`], for the invocation `witness` names.
+fn run_as(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    witness: Witness,
+) -> Result<Run, RefusalCause> {
     if let Some(replay) = &outcome.replays {
         return run_replay(ir, command, outcome, replay, actors);
     }
@@ -1761,7 +1819,7 @@ fn run(
         return Err(first.expect("nonempty finite lifecycle"));
     }
     let routed = subject_fact::routes(command, outcome);
-    let (mut setup, input) = arranged(ir, command, outcome, actors, routed)?;
+    let (mut setup, input) = arranged_as(ir, command, outcome, actors, routed, witness)?;
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -3985,7 +4043,7 @@ fn view_expectations(
 /// |---|---|
 /// | `{subject: f}` | what `before` holds for `f` |
 /// | `{increment: n}` | `before`'s number for the target plus `n`, exactly |
-/// | `{input: f, else: …}` | the literal the invocation sent for `f`; nothing when it sent none |
+/// | `{input: f, else: …}` | what the invocation sent for `f`; else the `else:` literal, or nothing |
 /// | nested mapping | the struct, where every leaf is a determined literal |
 fn expression_value(
     ir: &EssIr,
@@ -4009,10 +4067,21 @@ fn expression_value(
                 value: Node::Number(sum),
             })
         }
-        ResolvedPayloadValue::InputOrGenerated { field: read, .. } => match supplied.get(read)? {
-            ScenarioValue::Literal { value: Node::Null } => None,
-            value @ ScenarioValue::Literal { .. } => Some(value.clone()),
-            _ => None,
+        // An omitted input leaves the fallback: nothing determined for `{generated: true}`, and the
+        // literal read as the target's type for `else: <literal>` (ess/16, #163), so an
+        // implementation storing any other default fails the scenario.
+        ResolvedPayloadValue::InputOrGenerated {
+            field: read,
+            otherwise,
+            ..
+        } => match supplied.get(read) {
+            None | Some(ScenarioValue::Literal { value: Node::Null }) => {
+                let written = otherwise.as_deref()?;
+                literal_value(ir, &field.target_type, written, 0)
+                    .map(|value| ScenarioValue::Literal { value })
+            }
+            Some(value @ ScenarioValue::Literal { .. }) => Some(value.clone()),
+            Some(_) => None,
         },
         ResolvedPayloadValue::Struct { fields } => {
             let mut leaves = BTreeMap::new();
@@ -4047,6 +4116,148 @@ fn expression_value(
         | ResolvedPayloadValue::Generated
         | ResolvedPayloadValue::Cleared => None,
     }
+}
+
+/// [`arranged`], or [`arranged_without_fallbacks`], for the invocation `witness` names.
+fn arranged_as(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    routed: bool,
+    witness: Witness,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    match witness {
+        Witness::Full => arranged(ir, command, outcome, actors, routed),
+        Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
+    }
+}
+
+/// The arrangement and input of [`Witness::LiteralFallbacks`]: a further instance, under a
+/// distinction no other arrangement of the scenario uses so its rows and identities are its own,
+/// and the input with [`without_literal_fallbacks`] applied.
+///
+/// Only for a branch its input selects: a guard over the held state or the stored row is arranged
+/// by searches that fix the plain witness, whose second arrangement would repeat the first one's
+/// identities. Such a branch keeps its full invocation alone.
+fn arranged_without_fallbacks(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    if subject_fact::routes(command, outcome) || has_subject_guards(command) {
+        return Err(no_literal_fallback_run(command));
+    }
+    let distinction = Distinction::further(FRESH_WITNESSES + 1);
+    let setup = prepare_in(ir, outcome, actors, None, distinction)?;
+    let input = reach(ir, command, outcome, distinction)?;
+    let input = freshened(
+        ir,
+        command,
+        outcome,
+        input,
+        setup.before.as_ref(),
+        &setup.settled,
+    );
+    let omitted = without_literal_fallbacks(ir, command, outcome, &setup, input.clone());
+    if omitted == input {
+        return Err(no_literal_fallback_run(command));
+    }
+    Ok((setup, omitted))
+}
+
+/// Why [`Witness::LiteralFallbacks`] builds nothing. Never reported: the full invocation is the
+/// scenario, and this run only adds to it.
+fn no_literal_fallback_run(command: &ResolvedCommand) -> RefusalCause {
+    RefusalCause::NoWitness(WitnessGap {
+        path: command.name.to_string(),
+        type_ref: "optional input".into(),
+        reason: "no optional input can be left out for an `else:` literal",
+    })
+}
+
+/// The input with every optional field left out that this outcome reads only through
+/// `{input: f, else: <literal>}` (ess/16, #163), so the scenario asserts the literal.
+///
+/// A witness sends every optional input it can, so without this no scenario reached the fallback
+/// and an implementation storing any other default passed. A field is kept when anything else in
+/// the outcome reads it — a plain `input.f`, a `{generated: true}` fallback, the subject's
+/// identity, a fixture, an owner the arrangement bound — or when
+/// the input no longer selects the branch without it, so a guard that reads the field still
+/// decides it. Each field is decided on its own, so one a guard needs does not keep the rest.
+fn without_literal_fallbacks(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    setup: &Setup,
+    input: BTreeMap<String, Node>,
+) -> BTreeMap<String, Node> {
+    fn reads<'a>(value: &'a ResolvedPayloadValue, out: &mut Vec<(&'a str, bool)>) {
+        match value {
+            ResolvedPayloadValue::InputOrGenerated {
+                field, otherwise, ..
+            } => out.push((field, otherwise.is_some())),
+            ResolvedPayloadValue::InputField { field, .. } => out.push((field, false)),
+            ResolvedPayloadValue::Struct { fields } => {
+                for leaf in fields {
+                    reads(&leaf.value, out);
+                }
+            }
+            ResolvedPayloadValue::Literal { .. }
+            | ResolvedPayloadValue::ResponseField { .. }
+            | ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::Cleared
+            | ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::Increment { .. } => {}
+        }
+    }
+    let (held, bound) = (setup.before.as_ref(), &setup.bound);
+    let mut read = Vec::new();
+    for field in outcome
+        .payload
+        .iter()
+        .flat_map(|payload| &payload.fields)
+        .chain(&outcome.sets)
+    {
+        reads(&field.value, &mut read);
+    }
+    let identity = outcome
+        .subject
+        .as_ref()
+        .and_then(|subject| match &subject.instance {
+            ResolvedInstance::Supplied { field } => Some(field.name.as_str()),
+            ResolvedInstance::Observed { .. } => None,
+        });
+    let omitted: BTreeSet<&str> = read
+        .iter()
+        .filter(|(_, literal)| *literal)
+        .map(|(field, _)| *field)
+        .filter(|field| {
+            read.iter()
+                .all(|(other, literal)| other != field || *literal)
+                && identity != Some(*field)
+                && !command.fixture_inputs.contains_key(*field)
+                && !bound.contains_key(*field)
+                && command
+                    .input
+                    .iter()
+                    .any(|declared| declared.name == *field && declared.type_ref.is_optional())
+        })
+        .collect();
+    let mut input = input;
+    for field in omitted {
+        let mut trimmed = input.clone();
+        if trimmed.remove(field).is_none() {
+            continue;
+        }
+        if admitted(ir, command, &trimmed)
+            && selects_branch(ir, command, outcome, held, &trimmed).unwrap_or(false)
+        {
+            input = trimmed;
+        }
+    }
+    input
 }
 
 /// What one invoked branch leaves in the entity's fields, read against what it was supplied.
