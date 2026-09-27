@@ -200,6 +200,7 @@
 
 pub mod finite;
 pub mod fixture_inputs;
+mod narrowing;
 pub(crate) mod outcome_shapes;
 pub mod subject_fact;
 pub mod subject_state;
@@ -2706,7 +2707,7 @@ pub fn validate_payloads(
                         .named(target);
                     errors.extend(check_payload_entry(
                         &at,
-                        command,
+                        (command, outcome),
                         event,
                         target,
                         source,
@@ -2740,7 +2741,7 @@ struct Resolved<'a> {
 
 fn check_payload_entry(
     at: &ConstructRef,
-    command: &CommandSpec,
+    (command, outcome): (&CommandSpec, &Outcome),
     event: &EventSpec,
     target: &str,
     source: &PayloadSource,
@@ -2787,7 +2788,15 @@ fn check_payload_entry(
                 ));
                 return errors;
             };
-            if conversions.permits(&read.type_ref, &filled.type_ref) {
+            // From `ess/16` an `Optional` input also reads at its present type in a branch only
+            // ever taken with it present (`narrowing`, #169); a declared crossing still applies.
+            let admitted = if matches!(source, PayloadSource::InputField { .. }) {
+                let format = resolved.types.format();
+                command.admits_input_read(outcome, read, &filled.type_ref, conversions, format)
+            } else {
+                conversions.permits(&read.type_ref, &filled.type_ref)
+            };
+            if admitted {
                 return errors;
             }
             errors.push(
@@ -3038,7 +3047,9 @@ pub fn validate_sets(
                 let Some(read) = command.input_field(field) else {
                     continue;
                 };
-                if conversions.permits(&read.type_ref, &held.type_ref) {
+                // Read as `payload:` reads it: narrowed from `ess/16` (#169), declared first.
+                let format = types.format();
+                if command.admits_input_read(outcome, read, &held.type_ref, conversions, format) {
                     continue;
                 }
                 errors.push(

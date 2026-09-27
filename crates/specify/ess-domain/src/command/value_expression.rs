@@ -736,11 +736,16 @@ fn check_read(
         ));
         return;
     };
-    if !context
-        .resolved
-        .conversions
-        .permits(&read.type_ref, &target.type_ref)
-    {
+    // A leaf reads the input as a top-level entry does: narrowed from `ess/16` (#169), with the
+    // declared type and its declared crossings first.
+    let conversions = context.resolved.conversions;
+    let admitted = if response {
+        conversions.permits(&read.type_ref, &target.type_ref)
+    } else {
+        let format = Some(context.spec.system().format);
+        command.admits_input_read(context.outcome, read, &target.type_ref, conversions, format)
+    };
+    if !admitted {
         errors.push(mismatch(
             at,
             &format!("`{}.{field}`", command.name),
