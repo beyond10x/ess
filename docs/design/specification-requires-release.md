@@ -67,3 +67,53 @@ writes nothing and says nothing. Recovery and adoption keep the producer they fo
 
 An older `ess` refuses a `/2` checkpoint as an unsupported output-state version, and its generation
 into such a tree refuses before writing. That is the same fail-closed direction as `ess-inputs/2`.
+
+## Any `ess` runs the pinned release (ess#147)
+
+The refusal above tells a user to upgrade; it does not run the release the specification names.
+Delegation closes that gap without a second pin file: the pin is the same exact `requires`.
+
+**Choosing.** Before the command line is parsed, `ess` decides which release runs, first match wins:
+
+| condition | release |
+|---|---|
+| `ESS_TOOLCHAIN_DELEGATED` is set | this `ess`: it was delegated to, and never delegates again; it removes the variable from its own environment at startup, so the processes it starts do not inherit it |
+| `ESS_TOOLCHAIN=X.Y.Z` | `X.Y.Z` (any other nonempty value refuses, exit 1) |
+| the nearest `ess-inputs.yaml` in the working directory or above has `requires: ess X.Y.Z` | `X.Y.Z` |
+| that manifest has `requires: ess X.Y`, no `requires`, does not parse, or is a symlink; there is none; or the working directory cannot be read | this `ess`, with the behaviour of the table above |
+
+Every toolchain variable reads empty as unset. The nearest manifest wins even when it has no
+`requires`, and even when it is a symlink, whose pin is not read. This walk upwards is for the pin
+only; input selection still reads only the immediate manifest of the directory it is given. When
+the chosen release is this one, nothing happens. Otherwise `ess` execs
+`<cache>/X.Y.Z/ess` with the same arguments and environment plus `ESS_TOOLCHAIN_DELEGATED=1`,
+installing it first when it is not cached. A cached release runs offline. An exact pin or override
+before 0.34.0, the first release that reads `ess-inputs/2`, is refused naming 0.34.0; it is never
+downloaded or run. `ess --version` prints `ess <dispatcher>` on stdout first, before anything can
+fail, and why it delegates on stderr; then the delegated release prints its own `ess X.Y.Z`, or the
+refusal to install it goes to stderr with exit 1. Every stdout line therefore ends in a release,
+which is what the release smoke check's `awk '{print $NF}'` reads.
+`ess specify toolchain …` (and its flat `ess toolchain …`) is never delegated: the dispatcher owns
+the cache, and an older release may not have the command.
+
+**The cache** is `$ESS_TOOLCHAIN_DIR`, else `$XDG_CACHE_HOME/ess/toolchains`, else
+`~/.cache/ess/toolchains`, holding one `<X.Y.Z>/ess` per release. A relative value of any of
+the three is ignored like an unset one, so one project uses one cache from every directory, and
+`which` prints absolute paths. An entry counts as cached only when its `ess` is a nonempty
+executable file; anything else is not cached, and installing moves it aside and replaces it.
+
+**Installing** (`ess specify toolchain install X.Y.Z [--pin]`, or implicitly on delegation) reads
+`ess-X.Y.Z-<target>.tar.gz` and `SHA256SUMS` from
+`https://github.com/beyond10x/ess/releases/download/X.Y.Z/` (`ESS_TOOLCHAIN_BASE_URL` replaces the
+base; a `file://` URL or a path reads a directory, and plain `http://` or any other scheme is
+refused). The archive's SHA-256 must equal the line
+`SHA256SUMS` states for it; the member `ess-X.Y.Z-<target>/ess` is written to a staging directory
+and renamed into place, so a failed install leaves nothing cached. A release with no asset for this
+platform, a mismatch, or an unreachable source refuses, exit 1, naming the newest cached release
+and how to run or pin it, or saying none is cached. It never prompts. `--pin` then writes
+`requires: ess X.Y.Z` into the nearest manifest, moving `ess-inputs/1` to `/2` and replacing an
+existing `requires`. A line that already says what it must keeps its bytes, comment included, as
+does every other line; a written line uses the file's line ending. `--pin` refuses a release
+before 0.34.0, which cannot read `ess-inputs/2`, and refuses a symlinked nearest manifest rather
+than writing through it or a manifest above it. Building from a git revision or tag is out of
+scope.

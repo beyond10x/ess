@@ -14,7 +14,7 @@ lists exactly those:
 
 | Area | The verbs it holds |
 |---|---|
-| `ess specify` | `cli`, `validate`, `compile`, `compose`, `inspect`, `graph`, `realization`, `runtime` |
+| `ess specify` | `cli`, `validate`, `compile`, `compose`, `inspect`, `graph`, `realization`, `runtime`, `toolchain` |
 | `ess generate` | `generate`, `cli`, `types`, `synthesize`, `project`, `schema`, `output`, `build`, `component`, `release`, `stack`, `deployment` |
 | `ess verify` | `bindings`, `conform`, `diff`, `impact` |
 | `ess infra` | `infra`, `import` |
@@ -85,6 +85,21 @@ readers; they do not acquire authored specifications through this configuration.
 | `ess specify realization compile …` | Emit deterministic `ess-realization-ir/1` or `/2`, matching the authored format. |
 | `ess specify realization generate …` | Render a run-mode guide from the resolved realization. |
 | `ess specify runtime compile …` | Compile `ess-runtime/1` against exact semantic, realization, and build inputs. |
+| `ess specify toolchain install X.Y.Z [--pin]` | Download a released `ess`, verify it against the release's `SHA256SUMS`, and cache it; `--pin` also writes `requires: ess X.Y.Z` (0.34.0 or later) into the nearest `ess-inputs.yaml`. Only `https://` or a local directory is fetched from; git revisions are not installable. |
+| `ess specify toolchain list` | List the cached releases, oldest first. |
+| `ess specify toolchain which` | Print the release that would run here and why: `ESS_TOOLCHAIN`, the pin, or this `ess`. |
+
+### The release a project runs
+
+When the nearest `ess-inputs.yaml` above the working directory carries an exact
+`requires: ess X.Y.Z` naming another release, or `ESS_TOOLCHAIN=X.Y.Z` is set, any `ess` runs that
+release from its cache (`$XDG_CACHE_HOME/ess/toolchains/X.Y.Z/ess`, else
+`~/.cache/ess/toolchains/`) with the same arguments and environment, installing it first when it is
+not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called. `ess --version` then names
+both the dispatcher and the release it delegated to. A release that cannot be installed is refused,
+naming the newest cached one. This walk upwards reads only the pin; input selection still reads
+only the manifest of the directory it is given. The `toolchain` commands always run in the `ess`
+you called.
 
 ### CLI presentation bindings
 

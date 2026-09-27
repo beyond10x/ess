@@ -57,8 +57,24 @@ fn parse(text: &str) -> Option<Required> {
     }
 }
 
+/// The exact release a `requires` value names, as `(major, minor, patch)`.
+///
+/// `None` for a minor line `ess X.Y` and for anything malformed: only an exact pin names one
+/// release that another `ess` can be delegated to (`toolchain.rs`).
+pub(crate) fn exact(requires: &str) -> Option<(u64, u64, u64)> {
+    match parse(requires)? {
+        Required::Exact(major, minor, patch) => Some((major, minor, patch)),
+        Required::Line(..) => None,
+    }
+}
+
+/// A bare exact release `X.Y.Z`, with the same component rules as `requires`.
+pub(crate) fn release(text: &str) -> Option<(u64, u64, u64)> {
+    exact(&format!("ess {text}"))
+}
+
 /// This release as (major, minor, patch); a pre-release suffix is not part of the comparison.
-fn this() -> (u64, u64, u64) {
+pub(crate) fn this() -> (u64, u64, u64) {
     let mut parts = THIS
         .split(['.', '-', '+'])
         .map(|part| part.parse::<u64>().unwrap_or(0));
@@ -128,6 +144,17 @@ mod tests {
             "ess 0..1",
         ] {
             assert_eq!(parse(malformed), None, "{malformed}");
+        }
+    }
+
+    #[test]
+    fn only_an_exact_requirement_names_a_release() {
+        assert_eq!(exact("ess 0.32.1"), Some((0, 32, 1)));
+        assert_eq!(exact("ess 0.32"), None);
+        assert_eq!(exact("ess latest"), None);
+        assert_eq!(release("0.32.1"), Some((0, 32, 1)));
+        for malformed in ["0.32", "v0.32.1", "ess 0.32.1", " 0.32.1", "0.32.01"] {
+            assert_eq!(release(malformed), None, "{malformed}");
         }
     }
 }
