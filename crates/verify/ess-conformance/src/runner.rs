@@ -2927,8 +2927,9 @@ fn quote_row(row: &ViewRow) -> String {
 /// value is walked structurally — `total` holding `{amount, currency}` binds `total.amount` and
 /// `total.currency`.
 ///
-/// A sequence binds nothing, for the reason [`flatten`](crate::flatten) does not project a list: a
-/// fact path has no index, so `lines.0.quantity` is not a path this model can spell. A row that does
+/// A sequence binds nothing but its presence, for the reason [`flatten`](crate::flatten) does not
+/// project a list: a fact path has no index, so `lines.0.quantity` is not a path this model can
+/// spell. A mapping or a sequence is present at its own path (beyond10x/ess#176). A row that does
 /// not publish what a predicate reads makes that predicate `Unknown`, which
 /// [`decide`] reports rather than retries.
 fn row_facts(row: &ViewRow) -> FactStore {
@@ -2942,13 +2943,18 @@ fn row_facts(row: &ViewRow) -> FactStore {
 }
 
 /// Binds one scalar leaf, or walks into a mapping.
+///
+/// A mapping or a sequence is recorded as present at its own path, even when empty: that is what
+/// `defined()` over an `Optional` struct, list or map reads (beyond10x/ess#176). `null` is absent.
 fn bind(path: &FactPath, value: &Node, facts: &mut FactStore) {
     match value {
-        Node::Null | Node::Seq(_) => {}
+        Node::Null => {}
+        Node::Seq(_) => facts.mark_present(path.clone()),
         Node::Bool(flag) => facts.set(path.clone(), FactValue::bool(*flag)),
         Node::Number(number) => facts.set(path.clone(), FactValue::from(*number)),
         Node::Text(text) => facts.set(path.clone(), FactValue::text(text.clone())),
         Node::Map(entries) => {
+            facts.mark_present(path.clone());
             for (key, entry) in entries {
                 bind(&path.child(key), entry, facts);
             }
