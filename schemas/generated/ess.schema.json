@@ -1290,7 +1290,7 @@
       "additionalProperties": false
     },
     "RawAggregate": {
-      "description": "An aggregate as written: a map with exactly one key, the function.\n\nThe shape is the reader's to refuse — an unknown function, two keys, or an argument to `count` fails the parse with serde's message naming the six functions, as an unknown key does anywhere a [`Field`] is read.\n\nRead and written by hand as a one-entry map rather than derived: `serde_yaml` reads and writes a derived externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design page fixes and not what a JSON document can carry. The schema is still the derived one — one object per function with exactly that key.",
+      "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`.",
       "oneOf": [
         {
           "description": "`{count: {}}`.",
@@ -1306,7 +1306,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`{count_distinct: field}`.",
+          "description": "`{count_distinct: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "count_distinct"
@@ -1314,17 +1314,27 @@
           "properties": {
             "count_distinct": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
         },
         {
-          "description": "`{sum: field}`.",
+          "description": "`{sum: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "sum"
           ],
           "properties": {
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
+            },
             "sum": {
               "type": "string"
             }
@@ -1332,7 +1342,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`{min: field}`.",
+          "description": "`{min: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "min"
@@ -1340,12 +1350,17 @@
           "properties": {
             "min": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
         },
         {
-          "description": "`{max: field}`.",
+          "description": "`{max: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "max"
@@ -1353,12 +1368,17 @@
           "properties": {
             "max": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
         },
         {
-          "description": "`{avg: field}`.",
+          "description": "`{avg: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "avg"
@@ -1366,6 +1386,11 @@
           "properties": {
             "avg": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false

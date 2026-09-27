@@ -144,6 +144,37 @@ pub fn evaluate(function: AggregateFunction, values: &[Node], kind: ValueKind) -
     }
 }
 
+/// The value a skipping aggregate (`skip_absent: true`, `docs/design/aggregate-views.md`, "Absent
+/// values") takes over `values`, where an absent value is `Node::Null`: SQL's treatment of `NULL`.
+///
+/// The absent values are skipped and [`evaluate`] reads the rest, except that a `sum` over no
+/// present value is absent, as SQL's `SUM` is — not the `0` a required input's empty sum is.
+/// `count_distinct` over no present value is `0`. `count` counts rows and is never skipping; it is
+/// passed through unchanged.
+pub fn evaluate_skipping_absent(
+    function: AggregateFunction,
+    values: &[Node],
+    kind: ValueKind,
+) -> Option<Node> {
+    if function == AggregateFunction::Count {
+        return evaluate(function, values, kind);
+    }
+    let present = present(values);
+    if present.is_empty() && function == AggregateFunction::Sum {
+        return Some(Node::Null);
+    }
+    evaluate(function, &present, kind)
+}
+
+/// The values that are not absent.
+pub fn present(values: &[Node]) -> Vec<Node> {
+    values
+        .iter()
+        .filter(|value| **value != Node::Null)
+        .cloned()
+        .collect()
+}
+
 /// Whether `avg` over `values` rounded (half-even) and truncated at [`AVG_SCALE`] places are two
 /// different numbers — the only case in which an asserted mean catches a truncating `avg`.
 ///

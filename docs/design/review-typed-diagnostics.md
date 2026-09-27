@@ -266,7 +266,7 @@ spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
 types.rs 12 1
-view.rs 25 0
+view.rs 28 0
 wire.rs 1 0
 ```
 <!-- inventory:end -->
@@ -317,7 +317,7 @@ types system.rs 3
 types types.rs 6
 types wire.rs 1
 view primitive_admission.rs 3
-view view.rs 10
+view view.rs 11
 view wire.rs 2
 ```
 <!-- heads:end -->

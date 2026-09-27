@@ -392,6 +392,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     }
     for view in spec.views().values() {
         aggregate_view(view, format, &mut errors);
+        errors.extend(view.absent_value_admission(format, &spec.system().types));
         if let Some(members) = view.projected_fields(&spec.system().types) {
             fields(
                 members,

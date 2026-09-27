@@ -1,0 +1,84 @@
+format: ess/15
+system: demo
+version: v1
+domain: demo.orders
+types:
+  - name: demo.orders.Group
+    kind: newtype
+    of: String
+  - name: demo.orders.Channel
+    kind: enum
+    variants: [Web, Phone]
+events:
+  - name: demo.orders.Placed
+    fields: [{name: order_id, type: Uuid}]
+entities:
+  - name: demo.orders.Order
+    identity: {name: order_id, type: Uuid}
+    fields:
+      - {name: customer, type: String}
+      - {name: duration, type: Optional<Integer>}
+      - {name: group, type: Optional<demo.orders.Group>}
+      - {name: channel, type: Optional<demo.orders.Channel>}
+    lifecycle:
+      initial: Placed
+      states: [Placed]
+      terminal: [Placed]
+commands:
+  - name: demo.orders.Place
+    input:
+      - {name: customer, type: String}
+      - {name: duration, type: Optional<Integer>}
+      - {name: group, type: Optional<demo.orders.Group>}
+      - {name: channel, type: Optional<demo.orders.Channel>}
+    outcomes:
+      - name: placed
+        creates: demo.orders.Order
+        instance: order_id
+        sets:
+          customer: input.customer
+          duration: input.duration
+          group: input.group
+          channel: input.channel
+        emits: [demo.orders.Placed]
+        payload:
+          demo.orders.Placed:
+            order_id: {generated: true}
+views:
+  - name: demo.orders.DurationTotal
+    source: demo.orders.Order
+    fields:
+      - {name: total, type: Optional<Integer>, aggregate: {sum: duration, skip_absent: true}}
+  - name: demo.orders.PerGroup
+    source: demo.orders.Order
+    group_by: [group]
+    fields:
+      - {name: group, type: Optional<demo.orders.Group>}
+      - {name: orders, type: Integer, aggregate: {count: {}}}
+  - name: demo.orders.DurationByCustomer
+    source: demo.orders.Order
+    group_by: [customer]
+    fields:
+      - {name: customer, type: String}
+      - {name: orders, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Optional<Integer>, aggregate: {sum: duration, skip_absent: true}}
+      - {name: mean, type: Optional<Decimal>, aggregate: {avg: duration, skip_absent: true}}
+      - {name: shortest, type: Optional<Integer>, aggregate: {min: duration, skip_absent: true}}
+      - {name: longest, type: Optional<Integer>, aggregate: {max: duration, skip_absent: true}}
+      - {name: durations, type: Integer, aggregate: {count_distinct: duration, skip_absent: true}}
+  - name: demo.orders.DurationForCustomer
+    source: demo.orders.Order
+    params: [{name: customer, type: String}]
+    filter: customer == param.customer
+    fields:
+      - {name: orders, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Optional<Integer>, aggregate: {sum: duration, skip_absent: true}}
+      - {name: mean, type: Optional<Decimal>, aggregate: {avg: duration, skip_absent: true}}
+  - name: demo.orders.PerCustomerChannel
+    source: demo.orders.Order
+    group_by: [customer, channel]
+    fields:
+      - {name: customer, type: String}
+      - {name: channel, type: Optional<demo.orders.Channel>}
+      - {name: orders, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Optional<Integer>, aggregate: {sum: duration, skip_absent: true}}
