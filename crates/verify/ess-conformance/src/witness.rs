@@ -328,7 +328,28 @@ pub fn candidates(
     // repeat is skipped rather than counted. Where the bound cuts the enumeration short, each
     // omission's own candidate — every other value at its base — is reserved inside it, so a guard
     // with many varied leaves cannot crowd the absent side of `defined(x)` out of it.
-    let inputs = enumerate(&mut builder, command, base, &ladders, &omitted)?;
+    let mut inputs = enumerate(&mut builder, command, base, &ladders, &omitted)?;
+    // A case-insensitive guard's refuting side is witnessed by a one-character change of its
+    // literal, not by whatever base text happens to refute it: a target comparing only lengths, or
+    // only the first byte folded, accepts the base and passes (beyond10x/ess#140). Tried first, so
+    // it is the input the refuting branch is sent; a satisfying branch skips it. Only commands
+    // with such a guard get it, so every other suite keeps its bytes.
+    let mut refuting = Vec::new();
+    for (path, text) in fold_refutations_at(&expanded) {
+        let input = builder.input(
+            command,
+            &BTreeMap::from([(path, Choice::Value(Node::Text(text)))]),
+        )?;
+        if !refuting.contains(&input) {
+            refuting.push(input);
+        }
+    }
+    if !refuting.is_empty() {
+        inputs.retain(|input| !refuting.contains(input));
+        refuting.extend(inputs);
+        inputs = refuting;
+        inputs.truncate(MAX_CANDIDATES);
+    }
     Ok(admitted_inputs(ir, command, inputs))
 }
 
@@ -613,6 +634,15 @@ fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
             op: *op,
             value: value.clone(),
         },
+        Predicate::FoldMatch {
+            path: read,
+            op,
+            values,
+        } => Predicate::FoldMatch {
+            path: path(read),
+            op: *op,
+            values: values.clone(),
+        },
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             let inner = ess_primitives::predicate::Quantified {
                 over: path(&quantified.over),
@@ -701,8 +731,186 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
                 found.push(value.clone());
             }
         }
+        // A literal with its ASCII case changed satisfies its own operator as the literal does, and
+        // only an implementation that folds case accepts it: tried in the literal's place, it is the
+        // witness a byte-wise comparison fails (beyond10x/ess#140). A literal with no ASCII letter
+        // is its own case change.
+        Predicate::FoldMatch {
+            path: read, values, ..
+        } => {
+            if read == path {
+                found.extend(values.iter().map(|value| match value {
+                    FactValue::Text(text) => FactValue::Text(swap_ascii_case(text)),
+                    other => other.clone(),
+                }));
+            }
+        }
         Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
     }
+}
+
+/// `text` with every ASCII letter in the other case and every other character kept.
+fn swap_ascii_case(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character.is_ascii_uppercase() {
+                character.to_ascii_lowercase()
+            } else {
+                character.to_ascii_uppercase()
+            }
+        })
+        .collect()
+}
+
+/// A fold literal with one character changed: the same length, and equal under ASCII folding to
+/// none of `members` — every literal the guards compare the path with — so it refutes
+/// `equals_ignore_case`, and `in_ignore_case` even where changing one member's first character
+/// lands on another (`web`, `xeb`, `yeb`). The first character is tried first, then each later
+/// one, each with `x`, `y`, `z`, `q` and `j` in turn. `None` for the empty literal, which every
+/// other text refutes already, and where no such change exists.
+fn fold_refuting(literal: &str, members: &[String]) -> Option<String> {
+    let characters: Vec<char> = literal.chars().collect();
+    for index in 0..characters.len() {
+        for replacement in ['x', 'y', 'z', 'q', 'j'] {
+            if characters[index].eq_ignore_ascii_case(&replacement) {
+                continue;
+            }
+            let mut changed = characters.clone();
+            changed[index] = replacement;
+            let changed: String = changed.into_iter().collect();
+            if !members
+                .iter()
+                .any(|member| member.eq_ignore_ascii_case(&changed))
+            {
+                return Some(changed);
+            }
+        }
+    }
+    None
+}
+
+/// Per fold-guarded path, the input text that refutes the guards there by one character: the
+/// refuting side of a case-insensitive guard, tried ahead of every other candidate so that it is
+/// the witness the refuting branch is sent (beyond10x/ess#140).
+fn fold_refutations_at(guards: &[&Predicate]) -> Vec<(FactPath, String)> {
+    let mut found = Vec::new();
+    for path in read_paths(guards) {
+        let members = fold_literals_at(guards, &path);
+        if let Some(changed) = members
+            .first()
+            .and_then(|literal| fold_refuting(literal, &members))
+        {
+            found.push((path, changed));
+        }
+    }
+    found
+}
+
+/// Per fold-guarded path of `guard`, each literal in the case only Unicode folding equates with it
+/// ([`unicode_refuting`]) — the further witness a refuting branch is sent so that a target folding
+/// Unicode, not ASCII, fails the suite (beyond10x/ess#140).
+pub(crate) fn unicode_refutations(guard: &Predicate) -> Vec<(FactPath, Node)> {
+    let guards = [guard];
+    let mut found = Vec::new();
+    for path in read_paths(&guards) {
+        let members = fold_literals_at(&guards, &path);
+        for literal in &members {
+            if let Some(text) = unicode_refuting(literal) {
+                if !members
+                    .iter()
+                    .any(|member| member.eq_ignore_ascii_case(&text))
+                {
+                    found.push((path.clone(), Node::Text(text)));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// A fold literal in a case only Unicode folding equates with it: each non-ASCII letter in its
+/// other case (`café` to `CAFÉ`), or — where it has none — its first `k` as U+212A KELVIN SIGN or
+/// first `s` as U+017F LONG S, both of which Unicode case folding maps onto the ASCII letter. ASCII
+/// folding compares every non-ASCII character as itself, so this refutes the guard, and a target
+/// that folds Unicode — `strings.EqualFold`, `toLowerCase` — accepts it and fails the scenario.
+/// `None` for a literal with no such character.
+fn unicode_refuting(literal: &str) -> Option<String> {
+    let other_case = |character: char| {
+        let mapped: Vec<char> = if character.is_lowercase() {
+            character.to_uppercase().collect()
+        } else if character.is_uppercase() {
+            character.to_lowercase().collect()
+        } else {
+            return None;
+        };
+        match mapped.as_slice() {
+            &[single] if single != character => Some(single),
+            _ => None,
+        }
+    };
+    let mut changed = false;
+    let swapped: String = literal
+        .chars()
+        .map(|character| {
+            if character.is_ascii_uppercase() {
+                return character.to_ascii_lowercase();
+            }
+            if character.is_ascii() {
+                return character.to_ascii_uppercase();
+            }
+            match other_case(character) {
+                Some(single) => {
+                    changed = true;
+                    single
+                }
+                None => character,
+            }
+        })
+        .collect();
+    if changed {
+        return Some(swapped);
+    }
+    let at = literal.find(['k', 'K', 's', 'S'])?;
+    let replaced = literal[at..].chars().next()?;
+    let sign = if replaced.eq_ignore_ascii_case(&'k') {
+        '\u{212A}'
+    } else {
+        '\u{017F}'
+    };
+    Some(format!("{}{sign}{}", &literal[..at], &literal[at + 1..]))
+}
+
+/// Every text literal a case-insensitive operator compares `path` with, in written order.
+fn fold_literals_at(guards: &[&Predicate], path: &FactPath) -> Vec<String> {
+    fn walk(predicate: &Predicate, path: &FactPath, found: &mut Vec<String>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, path, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, path, found),
+            Predicate::FoldMatch {
+                path: read, values, ..
+            } if read == path => {
+                found.extend(
+                    values
+                        .iter()
+                        .filter_map(FactValue::as_text)
+                        .map(str::to_owned),
+                );
+            }
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                walk(&quantified.body, path, found);
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        walk(guard, path, &mut found);
+    }
+    found
 }
 
 /// One string-operator literal a predicate reads at a path, and whether it is read positively —
@@ -1111,7 +1319,8 @@ fn refuting(op: TextOp, literal: &str) -> Option<String> {
 }
 
 /// The text candidates rule 3 adds for string operators at `path`, after the literals: each
-/// guard's compositions, then each newtype invariant's, then each literal's `L′`.
+/// guard's compositions, then each newtype invariant's, then each literal's `L′`, then each
+/// case-insensitive literal with one character changed.
 fn text_alternatives(
     guards: &[&Predicate],
     invariants: &[Predicate],
@@ -1135,6 +1344,12 @@ fn text_alternatives(
             seen.push((read.op, &read.literal));
             found.extend(refuting(read.op, &read.literal));
         }
+    }
+    // A fold literal with one character changed: the refuting side of a case-insensitive guard.
+    let members = fold_literals_at(guards, path);
+    for literal in &members {
+        found.extend(fold_refuting(literal, &members));
+        found.extend(unicode_refuting(literal));
     }
     found
 }

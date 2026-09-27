@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- A `when_subject` predicate may compare a stored field with the command's input,
+  `recording_id != input.recording_id`, source format `ess/15` (#157). The finite partition treats
+  such a guard as open, so a default is required. Synthesis arranges the row and sends the input
+  equal to the stored value for one side and different for the other. Entity Runtime lowers the
+  operand to the command's arguments. A stored field named `input` keeps being read as itself.
+- `equals_ignore_case` (one text literal) and `in_ignore_case` (a list of them) over `String` and
+  its newtypes, ASCII case folding only, source format `ess/15` (#140). Rust, Go and TypeScript
+  evaluate them identically; synthesis witnesses the guarded branch with the literal in the other
+  case and the default with one character changed. Suites carrying one in a view expectation take
+  `ess-conformance/20` and `/21`. Entity Runtime lowering and `infra-spec/1` refuse them
+  (`CaseFoldUnsupported`). (`docs/design/value-expressions.md` E6, E7)
+
 ## [0.36.0] — 2026-09-27
 
 ### Added

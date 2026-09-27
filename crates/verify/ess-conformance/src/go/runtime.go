@@ -77,7 +77,7 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17" && r["version"] != "ess-conformance/19") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17" && r["version"] != "ess-conformance/19" && r["version"] != "ess-conformance/21") || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
@@ -855,6 +855,9 @@ func meaningOperator(path, operator string, value any) any {
 		// The operand verbatim: meaningScalar trims, unquotes and reads numbers, and Rust reads a
 		// string operator's operand as exactly the text it spells.
 		return []any{operator, path, value}
+	case "equals_ignore_case", "in_ignore_case":
+		// Its own meaning too (beyond10x/ess#140), with the operand verbatim for the same reason.
+		return []any{operator, path, value}
 	default:
 		kind := "any_of"
 		if operator == "none_of" || operator == "not_in" {
@@ -1566,8 +1569,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/18" || suite.Provenance.SuiteVersion == "ess-conformance/19") && config.version != "2" {
-		t.Fatalf("suite/8 through /19 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/18" || suite.Provenance.SuiteVersion == "ess-conformance/19" || suite.Provenance.SuiteVersion == "ess-conformance/20" || suite.Provenance.SuiteVersion == "ess-conformance/21") && config.version != "2" {
+		t.Fatalf("suite/8 through /21 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -3602,11 +3605,15 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		major = 18
 	case "ess-conformance/19":
 		major = 19
+	case "ess-conformance/20":
+		major = 20
+	case "ess-conformance/21":
+		major = 21
 	default:
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15, /17 and /19")
+	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 || major == 21) {
+		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15, /17, /19 and /21")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3678,7 +3685,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 || major == 21 {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
@@ -3707,7 +3714,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 {
+	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 || major == 21 {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3738,7 +3745,7 @@ func executionSuite(suite Suite) (Suite, error) {
 			return Suite{}, err
 		}
 		var err error
-		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/19" {
+		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/19" || suite.Provenance.SuiteVersion == "ess-conformance/21" {
 			decoder := json.NewDecoder(strings.NewReader(suite.original))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
@@ -4214,6 +4221,23 @@ func admitPredicateConstraint(value any) error {
 				// refused here: a string operator compares with a JSON string and nothing else.
 				if _, ok := operand.(string); !ok {
 					return fmt.Errorf("predicate %s takes a string", operator)
+				}
+			case "equals_ignore_case":
+				// One JSON string, as for a string operator (beyond10x/ess#140).
+				if _, ok := operand.(string); !ok {
+					return fmt.Errorf("predicate %s takes a string", operator)
+				}
+			case "in_ignore_case":
+				// A JSON list of strings: a scalar is not read as a one-element list here, because
+				// the Rust reader refuses it.
+				items, ok := operand.([]any)
+				if !ok {
+					return fmt.Errorf("predicate %s takes a list of strings", operator)
+				}
+				for _, item := range items {
+					if _, ok := item.(string); !ok {
+						return fmt.Errorf("predicate %s takes a list of strings", operator)
+					}
 				}
 			default:
 				return fmt.Errorf("unknown predicate constraint operator %q", operator)
@@ -7082,10 +7106,50 @@ func admitPredicateVersion(value any, major int) error {
 	if major < 8 && predicateNeedsLosslessReader(value) {
 		return fmt.Errorf("normalized structured comparison operands require suite/8 or /9")
 	}
+	if major < 20 && predicateUsesOperator(value, "equals_ignore_case", "in_ignore_case") {
+		return fmt.Errorf("case-insensitive text operators require suite/20 or /21")
+	}
 	if major < 14 && predicateUsesTextMatch(value) {
 		return fmt.Errorf("string predicate operators require suite/14 or /15")
 	}
 	return nil
+}
+
+// predicateUsesOperator walks the admitted grammar for a constraint operator named in operators:
+// the string operators (beyond10x/ess#95) and the case-insensitive ones (beyond10x/ess#140).
+func predicateUsesOperator(value any, operators ...string) bool {
+	switch node := value.(type) {
+	case []any:
+		for _, child := range node {
+			if predicateUsesOperator(child, operators...) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, child := range node {
+			switch key {
+			case "all", "and", "all_of", "any", "or", "none", "none_of_these", "not":
+				if predicateUsesOperator(child, operators...) {
+					return true
+				}
+			case "forall", "exists":
+				if fields, ok := child.(map[string]any); ok && predicateUsesOperator(fields["that"], operators...) {
+					return true
+				}
+			default:
+				if constraint, ok := child.(map[string]any); ok {
+					for operator := range constraint {
+						for _, wanted := range operators {
+							if operator == wanted {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // predicateUsesTextMatch walks the admitted grammar for a string operator (beyond10x/ess#95).

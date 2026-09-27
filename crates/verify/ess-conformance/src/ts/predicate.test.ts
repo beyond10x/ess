@@ -47,6 +47,7 @@ import {
   TruthUnknown,
 } from './predicate.js';
 import type { FactSource, Truth } from './predicate.js';
+import { admitPredicateVersion, admitSuite } from './runtime.js';
 import type { Node, Row } from './runtime.js';
 
 const source = (entries: Record<string, Node>): FactSource => new Map(Object.entries(entries));
@@ -884,4 +885,141 @@ test('a text reads as if its count were bound, in every leaf kind, and a quantif
     body: parseLeaf('k == x'),
   });
   assert.equal(quantified.evaluate(source({ keys: '' })), TruthUnknown);
+});
+
+// ---- case folding ------------------------------------------------------------------------------
+
+// `equals_ignore_case` and `in_ignore_case` (beyond10x/ess#140): ASCII folding only, every other
+// byte compared as itself. The shared `case_folds` table decides Rust, Go and this runtime alike;
+// like the text lengths above, this fails rather than skipping when the corpus is not named.
+test('every case fold the corpus states is the truth the evaluator answers', () => {
+  const at = process.env.ESS_PRIMITIVE_VECTORS;
+  assert.ok(at, 'ESS_PRIMITIVE_VECTORS names the primitive corpus');
+  const vectors = JSON.parse(readFileSync(at, 'utf8')).case_folds as {
+    name: string;
+    value: Node;
+    op: string;
+    literal: Node;
+    truth: string;
+  }[];
+  assert.ok(vectors.length >= 25, `the corpus states ${vectors.length} case folds`);
+  const truths: Record<string, Truth> = {
+    true: TruthTrue,
+    false: TruthFalse,
+    unknown: TruthUnknown,
+  };
+  for (const vector of vectors) {
+    const node = { source: { [vector.op]: vector.literal } };
+    admitPredicateVersion(node, 20);
+    assert.match(
+      raised(() => admitPredicateVersion(node, 19)),
+      /case-insensitive text operators require suite\/20 or \/21/,
+      vector.name,
+    );
+    const leaf = fromNode(node);
+    const want = truths[vector.truth];
+    assert.ok(want !== undefined, `${vector.name}: ${vector.truth} is not a truth`);
+    const facts = source({ source: vector.value });
+    assert.equal(leaf.evaluate(facts), want, vector.name);
+    assert.equal(
+      new Predicate({ kind: 'not', body: leaf }).evaluate(facts),
+      truthNot(want),
+      `not ${vector.name}`,
+    );
+  }
+});
+
+test('a fold renders with its operator and refuses an operand of the wrong shape', () => {
+  assert.equal(
+    String(fromNode({ source: { equals_ignore_case: 'web' } })),
+    'source equals_ignore_case "web"',
+  );
+  assert.equal(
+    String(fromNode({ source: { in_ignore_case: ['web', 'phone'] } })),
+    'source in_ignore_case ["web", "phone"]',
+  );
+  assert.equal(fromNode({ source: { in_ignore_case: [] } }).evaluate(source({})), TruthUnknown);
+  for (const operand of [44, true, null, ['web']]) {
+    assert.match(
+      raised(() => admitPredicateVersion({ x: { equals_ignore_case: operand } }, 20)),
+      /takes a string/,
+      JSON.stringify(operand),
+    );
+  }
+  for (const operand of ['web', 44, [44], ['a', null], null]) {
+    assert.match(
+      raised(() => admitPredicateVersion({ x: { in_ignore_case: operand } }, 20)),
+      /takes a list of strings/,
+      JSON.stringify(operand),
+    );
+  }
+});
+
+test('the runtime admits the new suite majors and a fold in them', () => {
+  const document = (version: string, coverage: boolean): string =>
+    JSON.stringify({
+      provenance: {
+        suite_version: version,
+        system: 'demo',
+        specification_version: 'v1',
+        spec_digest: 'a'.repeat(64),
+        contract_digest: 'b'.repeat(64),
+      },
+      scenarios: {
+        'demo.orders/authored/rows': {
+          purpose: 'Check a folded filter over rows',
+          steps: [
+            {
+              step: 'expect_view',
+              view: 'demo.orders.Rows',
+              expectation: {
+                expect: 'satisfies',
+                predicate: { not: { source: { equals_ignore_case: 'web' } } },
+              },
+            },
+          ],
+          source: [],
+        },
+      },
+      ...(coverage
+        ? {
+            coverage: {
+              selection: {
+                scope: { kind: 'system' },
+                origins: 'authored',
+                filter: { kind: 'all' },
+              },
+              knowledge: 'complete_inventory',
+              generated: [],
+              authored: ['demo.orders/authored/rows'],
+              outside: [],
+              refused: [],
+              authored_sources: {
+                'rows.yaml': {
+                  digest: `sha256:${'c'.repeat(64)}`,
+                  scenario: 'demo.orders/authored/rows',
+                  disposition: 'accepted',
+                },
+              },
+              counts: { generated: 0, authored: 1, outside: 0, refused: 0 },
+            },
+          }
+        : {}),
+    });
+  assert.equal(
+    admitSuite(document('ess-conformance/20', false)).provenance.suite_version,
+    'ess-conformance/20',
+  );
+  assert.equal(
+    admitSuite(document('ess-conformance/21', true)).provenance.suite_version,
+    'ess-conformance/21',
+  );
+  assert.match(
+    raised(() => admitSuite(document('ess-conformance/18', false))),
+    /case-insensitive text operators require suite\/20 or \/21/,
+  );
+  assert.match(
+    raised(() => admitSuite(document('ess-conformance/22', false))),
+    /unsupported suite version/,
+  );
 });

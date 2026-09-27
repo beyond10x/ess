@@ -2,8 +2,9 @@
 
 Status: E1–E5 implemented in source format `ess/14` (beyond10x/ess#133, #134, #135, #136, #137).
 E1 (#135) needs no format version; E2–E5 are refused below `ess/14` with
-`unsupported_format_version`. E6 (#157) and E7 (#140) are accepted and not implemented: each needs
-a suite format version and Go and TypeScript evaluator changes, and they ship in a later format.
+`unsupported_format_version`. E6 (#157) and E7 (#140) are implemented in source format `ess/15` and
+refused below it with `unsupported_format_version`; E7 carries suite formats `ess-conformance/20`
+and `/21`.
 
 ## Behavior and authority
 
@@ -90,19 +91,56 @@ Synthesis asserts the whole struct where every leaf is determined; otherwise the
 by the shape. Per-leaf comparison would change the suite's payload key semantics in three runners
 and is left for a later suite format.
 
-### E6 — `input.<field>` in a `when_subject` predicate (#157, not implemented)
+### E6 — `input.<field>` in a `when_subject` predicate (#157, `ess/15`)
 
 A comparison in `when_subject: {predicate: …}` may name a field of the command's input as an
 operand with the `input.` prefix: `recording_id != input.recording_id`. The two operands must have
-comparable types. Synthesis witnesses the guard both ways by choosing the input from the arranged
-row's value: equal, and different.
+comparable types, by the rules any comparison is checked by; an input field the command does not
+declare is `undeclared_reference`. A bare word on the right of a comparison is a literal, as
+everywhere, so the input operand is written on the right (or both sides are dotted paths).
+Synthesis witnesses the guard both ways by choosing the input from the arranged row's value: equal,
+and different.
 
-### E7 — case-insensitive comparison (#140, not implemented)
+- The finite partition declines a guard comparing two facts, so a command with one needs a genuine
+  default, as for any open guard — even over an enum.
+- A stored field named `input` keeps being read as that field; the namespace applies only where
+  the entity declares none, so no document that validated before `ess/15` changes meaning.
+- Synthesis grounds each such comparison on the arranged row: the stored side becomes the value
+  the row holds and is handed to the candidate search as a literal. Because a text has no
+  neighbour the search could offer, a command with such a comparison also tries the candidates of
+  a further witness distinction, whose base values differ from the ones the row was built from.
+  Commands without one keep their candidates and their suites.
+- A guard reading the input is decided at synthesis and never reaches a suite, so no suite format
+  changes. Entity Runtime lowers `input.<field>` to `$args.input.<field>`.
+
+### E7 — case-insensitive comparison (#140, `ess/15`)
 
 Map operators `equals_ignore_case` (a text literal) and `in_ignore_case` (a list of text literals),
 over `String` and its newtypes. Case folding is ASCII only: `A`–`Z` fold to `a`–`z`, every other
 byte compares as itself, so the three evaluators (Rust, Go, TypeScript) agree by construction.
-Entity Runtime has no such operator; lowering refuses it, as it refuses text orderings.
+Entity Runtime has no such operator; lowering refuses it (`CaseFoldUnsupported`), as it refuses
+text orderings.
+
+- The predicate is its own variant, `Predicate::FoldMatch`, not a string operator: the two arrived
+  in different formats, and a selection plan (`ess/3`) keeps refusing it by the rule it refuses
+  every predicate outside its bounded contract.
+- A list under `equals_ignore_case` and a scalar under `in_ignore_case` are refused by the reader;
+  a non-text literal is `type_mismatch`, an empty list `empty_declaration`, a bare word naming a
+  declared field the #74 refusal.
+- The finite partition declines a fold, so a command with one needs a default.
+- Synthesis witnesses the guarded branch on the literal in the other ASCII case, which only a
+  folding implementation accepts. The refuting branch has two witnesses. First, ahead of any base
+  text, the literal with one character changed (equal under folding to no literal the guards
+  name, so `in_ignore_case: [web, xeb]` is refuted by `yeb`, not by another member), which a target
+  comparing only lengths or the first byte accepts. Then, as a further row of the default's
+  scenario where the literal has one, the literal in a case only Unicode folding equates with it —
+  each non-ASCII letter in its other case (`café` to `CAFÉ`), or else its first `k` as U+212A
+  KELVIN SIGN or first `s` as U+017F LONG S — which a target using Unicode case folding
+  (`strings.EqualFold`, `toLowerCase`) accepts.
+- A fold in a command guard is decided at synthesis. A suite carrying one in a view's `satisfies`
+  expectation or an observed selection plan takes `ess-conformance/20` (ordinary) or `/21`
+  (coverage); each implies every major below it. Rust, Go and TypeScript admit those majors;
+  browser replay refuses them by version, and `infra-spec/1` refuses the operators.
 
 ## Not in this design
 

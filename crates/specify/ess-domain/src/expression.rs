@@ -8,7 +8,7 @@ use std::fmt;
 
 use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::{FactPath, FactValue};
-use ess_primitives::predicate::{CompareOp, Operand, Predicate, Quantified, TextOp};
+use ess_primitives::predicate::{CompareOp, FoldOp, Operand, Predicate, Quantified, TextOp};
 
 use crate::{Field, Primitive, TypeBody, TypeRef, TypeRegistry};
 
@@ -126,6 +126,11 @@ pub trait TypeEnvironment {
     fn parameter(&self, _name: &str) -> Option<Self::Type> {
         None
     }
+    /// The root that names the parameter namespace: `param` for a view filter, `input` for a
+    /// stored-field predicate reading the command's input (beyond10x/ess#157).
+    fn parameter_namespace(&self) -> &'static str {
+        "param"
+    }
 }
 
 /// Required traversal operations, independent of projection capability.
@@ -223,6 +228,7 @@ pub struct DomainEnvironment<'a> {
     registry: &'a TypeRegistry,
     fields: &'a [Field],
     params: Option<&'a [Field]>,
+    namespace: &'static str,
 }
 
 impl<'a> DomainEnvironment<'a> {
@@ -232,12 +238,21 @@ impl<'a> DomainEnvironment<'a> {
             registry,
             fields,
             params: None,
+            namespace: "param",
         }
     }
     /// Enable the reserved param namespace, including when no parameters are declared.
     #[must_use]
     pub fn with_params(mut self, params: &'a [Field]) -> Self {
         self.params = Some(params);
+        self
+    }
+    /// Enable the `input` namespace over a command's input fields, for a stored-field predicate
+    /// comparing the subject with the input (beyond10x/ess#157). Replaces any param namespace.
+    #[must_use]
+    pub fn with_input(mut self, input: &'a [Field]) -> Self {
+        self.params = Some(input);
+        self.namespace = "input";
         self
     }
 }
@@ -310,6 +325,9 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     fn has_parameters(&self) -> bool {
         self.params.is_some()
     }
+    fn parameter_namespace(&self) -> &'static str {
+        self.namespace
+    }
     fn parameter(&self, name: &str) -> Option<TypeRef> {
         self.params?
             .iter()
@@ -377,14 +395,19 @@ fn root_cursor<E: TypeEnvironment>(
     let access = binder.map_or(Access::default(), |binding| binding.access);
     let current = if let Some(binding) = binder {
         binding.reference.clone()
-    } else if environment.has_parameters() && root == "param" {
+    } else if environment.has_parameters() && root == environment.parameter_namespace() {
+        let (space, article, noun) = if root == "param" {
+            ("parameter", "a", "parameter")
+        } else {
+            (root, "an", "input field")
+        };
         let Some(name) = segments.get(1) else {
             return Err(error(
                 owner,
                 ValidationCode::UnobservableFact,
                 Some(path),
                 Some(root),
-                format!("`{path}` names the parameter namespace without a parameter selector"),
+                format!("`{path}` names the {space} namespace without {article} {noun} selector"),
             ));
         };
         position = 2;
@@ -394,7 +417,7 @@ fn root_cursor<E: TypeEnvironment>(
                 ValidationCode::UndeclaredReference,
                 Some(path),
                 Some(name),
-                format!("`{path}` reads undeclared parameter `{name}`"),
+                format!("`{path}` reads undeclared {noun} `{name}`"),
             )
         })?)
     } else {
@@ -677,7 +700,10 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         if binder.is_some_and(|binding| binding.reference.is_none()) {
             return None;
         }
-        if free && self.environment.has_parameters() && path.namespace() == "param" {
+        if free
+            && self.environment.has_parameters()
+            && path.namespace() == self.environment.parameter_namespace()
+        {
             if let Some(name) = path.segments().get(1) {
                 self.checked.parameters.insert(name.clone());
             }
@@ -753,6 +779,7 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Predicate::AnyOf { path, .. }
             | Predicate::NoneOf { path, .. }
             | Predicate::TextMatch { path, .. }
+            | Predicate::FoldMatch { path, .. }
                 if left.scalar.is_none() =>
             {
                 Some(path)
@@ -1041,11 +1068,73 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// A case-insensitive operator (beyond10x/ess#140): a `String` fact, or a newtype of one at any
+    /// depth, against text literals — at least one of them, none naming a field. The empty text is a
+    /// literal like any other here: `equals_ignore_case: ""` is the empty text, which folding does
+    /// not change.
+    fn fold_match(
+        &mut self,
+        predicate: &Predicate,
+        path: &FactPath,
+        op: FoldOp,
+        values: &[FactValue],
+    ) {
+        if let Some(typed) = self.operand(&Operand::Fact(path.clone())) {
+            if !typed.string {
+                self.mismatch(predicate, op.keyword(), &typed, None);
+            }
+        }
+        if values.is_empty() {
+            self.checked.errors.push(error(
+                self.owner,
+                ValidationCode::EmptyDeclaration,
+                Some(path),
+                None,
+                format!("`{predicate}` lists no literal, so it holds for no text"),
+            ));
+            return;
+        }
+        for value in values {
+            let FactValue::Text(text) = value else {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}`: the operand {value} is a {}, not text; `{op}` compares with \
+                         text literals. YAML reads an unquoted scalar such as `44` as a number and \
+                         `true` as a Boolean before ESS sees it: quote the literal exactly as \
+                         written",
+                        value.type_name()
+                    ),
+                ));
+                continue;
+            };
+            // The #74 refusal, as for `==`: a bare word naming a declared field reads as that text.
+            if self.environment.root(text).is_some() {
+                self.checked.errors.push(error(
+                    self.owner,
+                    ValidationCode::TypeMismatch,
+                    Some(path),
+                    None,
+                    format!(
+                        "`{predicate}` reads `{text}` as the text literal \"{text}\", not the field \
+                         `{text}`: `{op}` compares with literals only"
+                    ),
+                ));
+            }
+        }
+    }
+
     fn predicate(&mut self, predicate: &Predicate) {
         match predicate {
             Predicate::Always | Predicate::Never => {}
             Predicate::TextMatch { path, op, value } => {
                 self.text_match(predicate, path, *op, value);
+            }
+            Predicate::FoldMatch { path, op, values } => {
+                self.fold_match(predicate, path, *op, values);
             }
             Predicate::All(children) | Predicate::Any(children) => {
                 for child in children {

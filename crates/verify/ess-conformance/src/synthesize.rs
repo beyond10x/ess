@@ -5917,6 +5917,18 @@ fn boundary_inputs(
                 // plain witness or an earlier row adds nothing.
                 let owned: Vec<Predicate> = conjuncts.iter().map(|it| (*it).clone()).collect();
                 one_per_child(ir, command, guard, &owned, false, primary, &mut rows, &keep);
+                // A case-insensitive guard's literal in a case only Unicode folding equates with it
+                // (beyond10x/ess#140): ASCII folding refutes it, so the default is sent it, and a target
+                // that folds Unicode takes the guarded branch and fails.
+                for (path, value) in crate::witness::unicode_refutations(guard) {
+                    if let Some(candidate) = reference
+                        .as_ref()
+                        .and_then(|base| with_leaf(base, &path, value.clone()))
+                        .or_else(|| with_leaf(primary, &path, value))
+                    {
+                        keep(candidate, &mut rows);
+                    }
+                }
             }
         }
         _ => {}
@@ -6404,6 +6416,11 @@ fn map_paths(predicate: &Predicate, onto: &dyn Fn(&FactPath) -> FactPath) -> Pre
             path: onto(path),
             op: *op,
             value: value.clone(),
+        },
+        Predicate::FoldMatch { path, op, values } => Predicate::FoldMatch {
+            path: onto(path),
+            op: *op,
+            values: values.clone(),
         },
         // The collection is a model path and moves with the rest. The binder is not: re-rooting
         // `slot.left` at a field position would produce a path naming a field that does not exist,

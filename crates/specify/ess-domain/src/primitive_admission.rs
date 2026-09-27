@@ -272,18 +272,40 @@ fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut Va
     }
 }
 
-/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) arrived in `ess/8`.
-fn string_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
-    if format.major() >= FormatVersion::V8.major() {
-        return;
-    }
+/// A format, the question that finds its operator in a predicate, and the refusal below it.
+type OperatorFormat = (
+    FormatVersion,
+    fn(&ess_primitives::predicate::Predicate) -> bool,
+    &'static str,
+);
+
+/// The predicate operators that arrived after `ess/1`, each with the format that admits it:
+/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) in `ess/8`, and
+/// `equals_ignore_case` and `in_ignore_case` (beyond10x/ess#140) in `ess/15`. One walk over every
+/// predicate position, so a later operator is gated where the earlier ones are.
+const OPERATOR_FORMATS: &[OperatorFormat] = &[
+    (
+        FormatVersion::V8,
+        ess_primitives::predicate::Predicate::uses_text_match,
+        "string predicate operators require specification format ess/8",
+    ),
+    (
+        FormatVersion::V15,
+        ess_primitives::predicate::Predicate::uses_case_fold,
+        "case-insensitive text operators require specification format ess/15",
+    ),
+];
+
+fn predicate_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
     for (site, predicate) in predicates(spec) {
-        if predicate.uses_text_match() {
-            errors.push(ValidationError::at(
-                site,
-                ValidationCode::UnsupportedFormatVersion,
-                "string predicate operators require specification format ess/8",
-            ));
+        for (admitted, uses, message) in OPERATOR_FORMATS {
+            if format.major() < admitted.major() && uses(predicate) {
+                errors.push(ValidationError::at(
+                    site.clone(),
+                    ValidationCode::UnsupportedFormatVersion,
+                    *message,
+                ));
+            }
         }
     }
 }
@@ -313,7 +335,7 @@ fn input_examples(
 
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
-    string_operators(spec, spec.system().format, &mut errors);
+    predicate_operators(spec, spec.system().format, &mut errors);
     errors.extend(crate::command::validate_response_contracts(spec));
     errors.extend(crate::command::value_expression::validate(spec));
     let format = spec.system().format;
