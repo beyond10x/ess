@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.35.1] — 2026-09-27
+
 ### Fixed
 
 - An unknown instance is answered by the command's declared not-found outcome, not its
