@@ -1,0 +1,118 @@
+# Adversary fixture for beyond10x/ess#156: the two decision exits where no ordinary branch can be
+# taken and an external branch still can.
+#
+# `Close` moves an open ticket to `Closed` and declares no `wrong_state` outcome, so from `Closed`
+# no ordinary branch applies (the no-move-state exit); `bounced` is external and moves nothing, so
+# it is eligible there. `Rate` has two refusal guards that overlap for 1..3 (the overlapping-guards
+# exit); `throttled` is external and eligible for every input. `rated` is the `otherwise` the
+# validator demands; the two guards cover every integer, so it is never selected.
+
+format: ess/6
+system: exploreexit
+version: v1
+domains:
+  - exploreexit.desk
+
+domain: exploreexit.desk
+
+summary: Tickets that are opened, closed and rated.
+
+types:
+  - name: exploreexit.desk.TicketId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: exploreexit.desk.Ticket
+    identity:
+      name: ticket_id
+      type: exploreexit.desk.TicketId
+    fields:
+      - name: size
+        type: Integer
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Open]
+          to: Closed
+
+actors:
+  - name: exploreexit.desk.Agent
+    may:
+      - exploreexit.desk.Open
+      - exploreexit.desk.Close
+      - exploreexit.desk.Rate
+
+errors:
+  - name: exploreexit.desk.Bounced
+    summary: The mail gateway bounced the closing notice.
+  - name: exploreexit.desk.Low
+    summary: The score is low.
+  - name: exploreexit.desk.High
+    summary: The score is high.
+  - name: exploreexit.desk.Throttled
+    summary: The rating service throttled the request.
+
+commands:
+  - name: exploreexit.desk.Open
+    input:
+      - name: size
+        type: Integer
+    outcomes:
+      - name: opened
+        creates: exploreexit.desk.Ticket
+        instance: ticket_id
+        emits:
+          - exploreexit.desk.Opened
+        payload:
+          exploreexit.desk.Opened:
+            ticket_id: {generated: true}
+        sets:
+          size: input.size
+
+  - name: exploreexit.desk.Close
+    input:
+      - name: ticket_id
+        type: exploreexit.desk.TicketId
+    outcomes:
+      - name: closed
+        moves: exploreexit.desk.Ticket.close
+        instance: ticket_id
+        emits:
+          - exploreexit.desk.Closed
+        payload:
+          exploreexit.desk.Closed:
+            ticket_id: input.ticket_id
+      - name: bounced
+        external: the mail gateway bounces the closing notice
+        error: exploreexit.desk.Bounced
+
+  - name: exploreexit.desk.Rate
+    input:
+      - name: score
+        type: Integer
+    outcomes:
+      - name: low
+        when: score <= 3
+        error: exploreexit.desk.Low
+      - name: high
+        when: score >= 1
+        error: exploreexit.desk.High
+      - name: throttled
+        external: the rating service throttles
+        error: exploreexit.desk.Throttled
+      - name: rated
+        error: exploreexit.desk.Low
+
+events:
+  - name: exploreexit.desk.Opened
+    fields:
+      - name: ticket_id
+        type: exploreexit.desk.TicketId
+  - name: exploreexit.desk.Closed
+    fields:
+      - name: ticket_id
+        type: exploreexit.desk.TicketId
