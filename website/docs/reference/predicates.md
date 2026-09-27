@@ -791,6 +791,19 @@ it.
 filter: tags.count > 0
 ```
 
+A filter over a field the creating command sets, such as `source == "web"`, is decided from the
+value the scenario sent. Where the scenario's own row does not meet it, and no row the default
+input creates ever does, the view is asserted over a row that does as well: synthesis creates one
+more instance with an input chosen toward the filter and expects the view to contain it, beside
+excluding the scenario's own row. A filter using `equals_ignore_case` or `in_ignore_case`, negated
+or not, gets one more instance in every scenario that reads the view, whatever its own row holds:
+one carrying the literal in its other ASCII case (`WEB` for `web`), asserted as the filter decides
+it. The view is expected to contain it under `equals_ignore_case` and to exclude it under
+`not: {equals_ignore_case: …}`, so an implementation that compares bytes fails either way. Where no
+creating command can produce such a row, or the view does not project the entity's identity and
+so cannot tell the rows apart, the scenario keeps what it asserts about its own row alone, and does
+not assert that such a view holds no rows once another row it admits has been created.
+
 ## Limits
 
 Nesting of `all`, `any`, `not`, `none` and quantifiers, in either spelling, stops at 32 levels.
