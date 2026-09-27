@@ -1,0 +1,123 @@
+domain: concurrent.history
+
+types:
+  - name: concurrent.history.SpecDigest
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: concurrent.history.QualifiedName
+    kind: newtype
+    of: String
+    invariants: ['value != ""']
+
+  - name: concurrent.history.Completion
+    kind: enum
+    variants: [Returned, Indeterminate]
+
+  - name: concurrent.history.Verdict
+    kind: enum
+    variants: [Linearizable, Violation, Unknown]
+
+entities:
+  - name: concurrent.history.History
+    identity:
+      name: history_id
+      type: Uuid
+    fields:
+      - name: spec_digest
+        type: concurrent.history.SpecDigest
+      - name: seed
+        type: Integer
+      - name: clients
+        type: Integer
+    relations:
+      - name: operations
+        kind: owns
+        target: concurrent.history.Operation
+        cardinality: many
+        via: history_id
+    lifecycle:
+      initial: Recording
+      states: [Recording, Recorded, Checked]
+      terminal: [Checked]
+      transitions:
+        - name: seal
+          from: [Recording]
+          to: Recorded
+        - name: check
+          from: [Recorded]
+          to: Checked
+
+  - name: concurrent.history.Operation
+    identity:
+      name: operation_id
+      type: Uuid
+    fields:
+      - name: history_id
+        type: Uuid
+      - name: client
+        type: Integer
+      - name: command
+        type: concurrent.history.QualifiedName
+      - name: subject_key
+        type: String
+      - name: invoked_at
+        type: Integer
+      - name: returned_at
+        type: Optional<Integer>
+      - name: completion
+        type: concurrent.history.Completion
+      - name: outcome
+        type: Optional<concurrent.history.QualifiedName>
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+commands:
+  - name: concurrent.history.SealHistory
+    input:
+      - name: history_id
+        type: Uuid
+    outcomes:
+      - name: sealed
+        moves: concurrent.history.History.seal
+        instance: history_id
+        emits: [concurrent.history.HistorySealed]
+        payload:
+          concurrent.history.HistorySealed:
+            history_id: input.history_id
+      - name: wrong-state
+        wrong_state: true
+        error: concurrent.history.StateConflict
+
+  - name: concurrent.history.CheckHistory
+    input:
+      - name: history_id
+        type: Uuid
+    outcomes:
+      - name: checked
+        moves: concurrent.history.History.check
+        instance: history_id
+        emits: [concurrent.history.HistoryChecked]
+        payload:
+          concurrent.history.HistoryChecked:
+            history_id: input.history_id
+      - name: wrong-state
+        wrong_state: true
+        error: concurrent.history.StateConflict
+
+events:
+  - name: concurrent.history.HistorySealed
+    fields:
+      - name: history_id
+        type: Uuid
+  - name: concurrent.history.HistoryChecked
+    fields:
+      - name: history_id
+        type: Uuid
+
+errors:
+  - name: concurrent.history.StateConflict
+    summary: The history is not in a state that admits this step.
