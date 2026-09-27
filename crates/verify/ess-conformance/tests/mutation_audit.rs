@@ -20,6 +20,7 @@ use ess_conformance::mutate::{
 use ess_conformance::reference::{Billing, Oracle};
 use ess_conformance::report::Status;
 use ess_conformance::runner::Runner;
+use ess_conformance::scenario::ScenarioStep;
 use ess_conformance::target::ConformanceTarget;
 use ess_conformance::AdmittedSuite;
 use ess_domain::spec::RawSpecFile;
@@ -540,18 +541,56 @@ fn a_faulty_baseline_is_refused_with_the_failing_scenarios() {
     assert_eq!(not_passed, &expected);
 }
 
+/// The interpreter executes commands and not yet views or bindings, so its baseline is not green.
+///
+/// Rewritten for `story:interpreted-command-execution`. The premise was a target that answers
+/// nothing (`Interpreted::new`); the audit now runs the interpreter holding the unchanged model, as
+/// `ess verify conform mutate --target interpreted` does. The refusal stands, and it now names
+/// exactly the scenarios that need something the interpreter does not derive: every scenario that
+/// holds only command execution passes and is absent from the list.
 #[test]
 fn the_interpreted_target_is_refused_with_mutate_001() {
     let (files, texts) = example("billing");
-    let refusal = mutate::audit(&files, &texts, MutantClass::ALL, Interpreted::new)
-        .expect_err("a target that answers nothing has no green baseline");
-    assert!(
-        matches!(refusal, AuditRefusal::BaselineFailed { .. }),
-        "{refusal}"
-    );
+    let ir = mutate::compile(files.clone(), &texts).unwrap();
+    let refusal = mutate::audit(&files, &texts, MutantClass::ALL, || {
+        Interpreted::for_model(ir.clone())
+    })
+    .expect_err("views and bindings are not interpreted, so the baseline is not green");
     assert!(
         refusal.to_string().starts_with("refusal[ESS-MUTATE-001]"),
         "{refusal}"
+    );
+    let AuditRefusal::BaselineFailed { not_passed, .. } = &refusal else {
+        panic!("a baseline refusal: {refusal}");
+    };
+
+    let mut suite = ess_conformance::synthesize(&ir).suite;
+    suite.select_fresh_format();
+    let needs_more: Vec<String> = suite
+        .scenarios
+        .iter()
+        .filter(|(_, scenario)| {
+            !scenario.steps.iter().all(|step| {
+                matches!(
+                    step,
+                    ScenarioStep::ExecuteCommand { .. }
+                        | ScenarioStep::ConfigureExternalOutcome { .. }
+                        | ScenarioStep::ExpectOutcome { .. }
+                        | ScenarioStep::ExpectError { .. }
+                        | ScenarioStep::ExpectNoError
+                        | ScenarioStep::ExpectEvent { .. }
+                        | ScenarioStep::ExpectNoEvent { .. }
+                        | ScenarioStep::ExpectNoEvents
+                        | ScenarioStep::CaptureInstance { .. }
+                )
+            })
+        })
+        .map(|(id, _)| id.to_string())
+        .collect();
+    assert!(!needs_more.is_empty() && needs_more.len() < suite.scenarios.len());
+    assert_eq!(
+        not_passed, &needs_more,
+        "exactly the scenarios needing a view or a binding did not pass"
     );
 }
 
