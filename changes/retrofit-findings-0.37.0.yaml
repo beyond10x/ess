@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/retrofit-findings-0.37.0
+repository: ess
+publishedAt: 2026-09-27T20:00:00Z
+title: Outcome shapes, subject guards over the input, new value types and a pinned toolchain
+summary: >-
+  Source format `ess/15` adds outcome shapes (`deletes:`, `into:`, `unknown_instance:`, `accepts: nothing`, `preconditions:`), `input.` in subject guards, case-insensitive text, optional aggregates, `prefix:`, `Json` and field `presence:`. Synthesis kills more mutants; `ess` can run a pinned release.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.37.0
+  version: 0.37.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

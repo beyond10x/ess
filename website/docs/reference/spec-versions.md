@@ -112,7 +112,7 @@ its compiled digest.
 
 `ess/14`, introduced in [0.36.0][r36], adds value expressions to `payload:` and `sets:`: `{subject: <field>}` reads the addressed entity as it was before the outcome, `{increment: <number>}` adds to a stored `Integer` or `Decimal`, `{input: <field>, else: {generated: true}}` takes an optional input or a minted value, a nested mapping gives each field of a struct-typed target its own source, and `{generated: true}` is admitted in `sets:`. Synthesis asserts each value where the arrangement determined what it reads, and makes no claim otherwise. An older build refuses the header, and this build refuses each construct under an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its compiled digest. See [value expressions](../guides/write-a-specification.md#value-expressions).
 
-`ess/15` is unreleased. It collects the constructs of the retrofit issues of 2026-09-27 that change what a document may say: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
+`ess/15`, introduced in [0.37.0][r37], collects the constructs of the retrofit issues of 2026-09-27 that change what a document may say: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
@@ -207,7 +207,7 @@ retained-result steps, string operators and aggregate scenarios of 12–17 by na
 refuses fixtures. A suite without fixtures keeps its earlier format, and older envelopes refuse
 the new steps.
 
-`ess-conformance/20` and `ess-conformance/21` are unreleased. They carry the case-insensitive text
+`ess-conformance/20` and `ess-conformance/21`, introduced in [0.37.0][r37], They carry the case-insensitive text
 operators `equals_ignore_case` and `in_ignore_case` (ASCII folding only) where a suite carries a
 predicate: a view's `satisfies` expectation and an observed selection plan. Version 20 is ordinary
 and 21 carries declared coverage; each implies every major below it. Rust, Go and TypeScript admit
@@ -216,13 +216,13 @@ refuse the operators, and browser replay refuses these envelopes by their versio
 case-insensitive guard over command input is decided at synthesis and never reaches the suite, so a
 suite without one in a view expectation keeps its earlier format.
 
-`ess-conformance/22` and `ess-conformance/23` are unreleased. They add three steps for the outcome
+`ess-conformance/22` and `ess-conformance/23`, introduced in [0.37.0][r37], add three steps for the outcome
 shapes of `ess/15`: `expect_subject_absent` after a `deletes:` outcome, and `snapshot_view` /
 `expect_view_unchanged` around an `accepts: nothing` outcome. Version 22 is ordinary and 23
 carries declared coverage; each implies every major below it. The Rust runner evaluates them; Go and
 TypeScript refuse these envelopes by their version.
 
-`ess-conformance/24` and `/25` are unreleased. They carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
+`ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
@@ -328,3 +328,5 @@ for a release and promises none.
 [r35]: https://github.com/beyond10x/ess/releases/tag/0.35.0
 
 [r36]: https://github.com/beyond10x/ess/releases/tag/0.36.0
+
+[r37]: https://github.com/beyond10x/ess/releases/tag/0.37.0

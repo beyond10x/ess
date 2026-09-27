@@ -2,8 +2,39 @@
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-09-27
+
 ### Added
 
+- Outcome shapes, source format `ess/15` (`docs/design/outcome-shapes.md`): `unknown_instance:`
+  answers an identity no record carries, before an external not-found refusal and `wrong_state`
+  (#145); `deletes:` removes the subject, and synthesis asserts it is gone from every
+  read-your-writes view and that a re-send gets the unknown-instance answer (#151); `into:` creates
+  into a declared state, and generated Rust gets one constructor per creation state (#150);
+  `accepts: nothing` declares an accepted no-op without a subject (#144); system-level
+  `preconditions:` run before every scenario and explorer sequence and must select exactly one
+  success branch (#152). Suites using the new steps take `ess-conformance/22` and `/23`; Entity
+  Runtime refuses the shapes (`OutcomeShapeUnsupported`).
+- Aggregates over and group keys of `Optional` fields, source format `ess/15` (#148):
+  `aggregate: {sum: duration, skip_absent: true}` skips absent values with SQL semantics, and an
+  optional group key makes the absent value its own group. Synthesis arranges one absent row per
+  skipping input.
+- `prefix:` on a `String` newtype (#146), a `Json` primitive (#138), a field-level
+  `presence: null_when_absent | omitted_when_absent` on `Optional` fields (#139), and the nested
+  `naming: {wire: …}` spelling on fields (#142), source format `ess/15` for the first three.
+  Presence is enforced in payload shapes and responses; suites carrying it take
+  `ess-conformance/24` and `/25`. Generated Rust, Go, web and CLI targets refuse `Json` by name,
+  as they refuse `Binary64`. (`docs/design/wire-presence-json-prefix.md`)
+- A field name may start with underscores before its first letter (`_url`), everywhere a field is
+  named, including fact paths and the Go, TypeScript and browser runtimes (#141).
+- A map key may be a newtype of an admitted key primitive; it resolves to that primitive while the
+  specification, authored scenarios and CLI contracts are read (#143).
+- `ess verify conform mutate --emit DIR` writes each mutant's suite for a project's own runner and
+  `--collect DIR` scores the reports it wrote (#153).
+- The Go and TypeScript model explorers take `external:` branches through the target's external
+  control and report reach per branch (#156).
+- `ess specify toolchain install|list|which`: an exact `requires: ess X.Y.Z` pin makes any `ess`
+  run that release from a verified per-version cache (#147).
 - A `when_subject` predicate may compare a stored field with the command's input,
   `recording_id != input.recording_id`, source format `ess/15` (#157). The finite partition treats
   such a guard as open, so a default is required. Synthesis arranges the row and sends the input
@@ -15,6 +46,17 @@
   case and the default with one character changed. Suites carrying one in a view expectation take
   `ess-conformance/20` and `/21`. Entity Runtime lowering and `infra-spec/1` refuse them
   (`CaseFoldUnsupported`). (`docs/design/value-expressions.md` E6, E7)
+
+### Changed
+
+- Synthesis kills more mutants: a state dropped from an all-states transition gets its refusal
+  scenario (#154); `any:` guards are witnessed once per disjunct and `all:` once per conjunct,
+  over inputs and stored fields (#155); ordering boundaries are witnessed on both sides, including
+  `.count` and near zero (#160); same-typed sources are sent apart and a written value is arranged
+  over a different prior value (#161). Committed generated suites are unchanged.
+- A wrong-state refusal whose subject no immediate view fully covers is witnessed over the fields
+  the declared views publish, with `Note::PartialObservation` naming what is left out; the refusal's
+  help line points at declaring a view (#132).
 
 ## [0.36.0] — 2026-09-27
 
