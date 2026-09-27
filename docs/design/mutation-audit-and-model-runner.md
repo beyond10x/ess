@@ -264,6 +264,52 @@ at most three killers and the total count.
 There is no reader in the first cut. The document is output for a person or for a diff, and
 nothing in this repository admits it. `formats.md` says so on its row.
 
+### Auditing an external target: `--emit` and `--collect`
+
+beyond10x/ess#153. The built-in targets pass only their own fixtures, so `--target` refuses every
+other specification with `ESS-MUTATE-001`. An adopter's implementation runs in its own language,
+under its own runner, so the audit is split in two and the running is left to the project:
+
+```console
+ess verify conform mutate --path SPEC --emit DIR [--class CLASS]...
+# the project runs its runner over DIR/baseline/suite.json and every DIR/<mutant-id>/suite.json,
+# writing the report it already writes to report.json beside each suite
+ess verify conform mutate --collect DIR [--report-out FILE] [--format text|json|yaml]
+```
+
+- **`--emit`** (`mutate::emit`) compiles and admits the specification, enumerates the mutants and
+  refuses `ESS-MUTATE-003` exactly as `--target` does, and runs nothing. It writes the baseline
+  suite to `baseline/`, each mutant's suite to `<mutant-id>/` (the id's segments are plain names,
+  checked before writing), and `manifest.json`, an `ess-mutation-manifest/1`: the baseline's and
+  each mutant's directory, `scenarios`, `refusals` and `spec_digest`, and each mutant's `class`,
+  `site` and `change`. Each mutant directory also holds `mutant.json` (its manifest entry) and
+  `ir.json` (the compact model a generated Go or TypeScript package embeds beside `suite.json`).
+  A stillborn mutant has an entry with its `ESS-MUTATE-002` refusal and no suite. The suites are
+  synthesized with the same `synthesize` and `select_fresh_format` the built-in audit uses, so no
+  suite format is new. `DIR` must be new or empty, so a report of an earlier emission is never
+  collected as one of this one.
+- **The project's runner** writes the conformance report it already writes: the Go and
+  TypeScript packages write `ess-conformance-report/1` to `ESS_REPORT_OUT`, or `/2` with
+  `ESS_REPORT_FORMAT=2`. Nothing about the report format changes.
+- **`--collect`** (`mutate::collect`) reads the manifest, then each suite and its `report.json`.
+  A report is scored only against the suite beside it: report/2 through its own reader against
+  the admitted suite, report/1 by its reader plus the suite's digest, suite version,
+  specification and scenario count, and every scenario id it names must be in that suite. The
+  verdicts are the table above, read from the report: `failed` is a kill; `error`,
+  `unsupported` and Go's `skipped` are inconclusive. The baseline report must have passed, or
+  the collection is refused with `ESS-MUTATE-001` and the scenarios that did not pass, as
+  `--target` refuses. A missing baseline report or manifest is an error (exit 1).
+- **A mutant whose report is missing**, unreadable, of another suite, or answered by another
+  implementation than the baseline's is `inconclusive`, and its entry carries the reason as
+  `unscored`. This is the report's one addition, and it is additive: `unscored` is absent from
+  every entry `--target` writes, so those bytes do not change. The exit statuses are
+  `--target`'s, so one missing report exits 3 unless a mutant survived.
+- **Checked by** `crates/verify/ess-conformance/tests/mutation_external.rs`: the Billing reference
+  run over every emitted suite, reports alternating between /1 and /2, collects to exactly the
+  report the built-in audit writes (the implementation spelled `<name> <version>`, as a report
+  names it). `crates/edge/ess-cli/tests/mutate_external.rs` holds the verb to fabricated reports:
+  two red, two green, one missing, and a baseline that did not pass.
+
 ### The mutants Part 1 must kill
 
 These are defects the implementation could have, and each has a deciding test (listed later).
@@ -626,7 +672,7 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 
 | Item | Why not now | What it needs |
 |---|---|---|
-| Replaying mutant suites in the adopter's language (`mutate --target typescript\|go --out DIR`, which emits every mutant suite and a manifest, with `runMutants`/`RunMutants`) | Go has no `RunWith` (`runtime.go:1556`); two runtimes and a new manifest format make a unit of their own | Go `RunWith` over a supplied document; a manifest family; the verdict table above, ported |
+| Replaying mutant suites inside the adopter's runtime (`runMutants`/`RunMutants` over one generated package). Emitting every mutant suite and a manifest, and scoring the reports, is `--emit`/`--collect` above | Go has no `RunWith` (`runtime.go:1556`); two runtimes make a unit of their own | Go `RunWith` over a supplied document; the verdict table above, ported |
 | The dual direction: the unchanged suite, authored scenarios included, against a mutant implementation | needs an executing interpreter; `interpret.rs` derives nothing | a Rust reference model (Part 2's, ported), selected as a target |
 | Mutating subject guards, view filters, invariants, binding mappings, payload values and literal `sets`; "add a `from` state"; an empty `from` | each has its own synthesis family; the first cut is the issue's classes | one class each, with its killer family named |
 | An accepted-survivors file for equivalent mutants | needs an identity story for a mutant across edits of the specification | a stable site id that survives renumbering |

@@ -585,15 +585,32 @@ enum ConformCommand {
     /// killed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
     /// the baseline suite did not pass (ESS-MUTATE-001), the classes found no site
     /// (ESS-MUTATE-003), or no mutant survived and at least one was inconclusive or none ran.
+    ///
+    /// For an implementation of your own, split the audit in two. `--emit DIR` writes the
+    /// baseline suite to `DIR/baseline/suite.json`, every mutant's suite to
+    /// `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on
+    /// ESS-MUTATE-003). Run your runner over each suite and write its conformance report to
+    /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
+    /// a missing report makes its mutant inconclusive.
+    #[command(group(
+        clap::ArgGroup::new("mode").required(true).args(["target", "emit", "collect"])
+    ))]
     Mutate {
         #[arg(long, default_value = ".")]
         path: PathBuf,
         /// The reference implementation every suite runs against.
         #[arg(long, value_enum)]
-        target: ReferenceTarget,
+        target: Option<ReferenceTarget>,
         /// Only these classes; every class when absent.
-        #[arg(long, value_enum)]
+        #[arg(long, value_enum, conflicts_with = "collect")]
         class: Vec<MutateClass>,
+        /// Write the baseline's and every mutant's suite, and a manifest, into this new or empty
+        /// directory; run nothing.
+        #[arg(long, conflicts_with = "report_out")]
+        emit: Option<PathBuf>,
+        /// Score the `report.json` a runner wrote beside each suite of an emitted directory.
+        #[arg(long, conflicts_with = "path")]
+        collect: Option<PathBuf>,
         /// Where to write the `ess-mutation-report/1` document.
         #[arg(long)]
         report_out: Option<PathBuf>,
@@ -3011,13 +3028,33 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
                 format,
             )
         }
-        ConformCommand::Mutate {
-            path,
-            target,
-            class,
-            report_out,
-            format,
-        } => conform_mutate(&path, target, &class, report_out.as_deref(), format),
+        command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
+    }
+}
+
+/// `ess verify conform mutate`, by the one of `--target`, `--emit` and `--collect` clap admitted.
+fn conform_mutate_mode(command: ConformCommand) -> Result<ExitCode> {
+    let ConformCommand::Mutate {
+        path,
+        target,
+        class,
+        emit,
+        collect,
+        report_out,
+        format,
+    } = command
+    else {
+        unreachable!("dispatched on `Mutate` only");
+    };
+    match (target, emit, collect) {
+        (Some(target), None, None) => {
+            conform_mutate(&path, target, &class, report_out.as_deref(), format)
+        }
+        (None, Some(emit), None) => conform_mutate_emit(&path, &class, &emit, format),
+        (None, None, Some(collect)) => {
+            conform_mutate_collect(&collect, report_out.as_deref(), format)
+        }
+        _ => unreachable!("clap requires exactly one of --target, --emit and --collect"),
     }
 }
 
@@ -3029,7 +3066,7 @@ fn conform_mutate(
     report_out: Option<&Path>,
     format: Format,
 ) -> Result<ExitCode> {
-    use ess_conformance::mutate::{self, MutantClass, Verdict};
+    use ess_conformance::mutate;
 
     // The loader's own refusal path first, so a specification that does not compile is reported
     // exactly as `run` reports it, and exits 1.
@@ -3037,11 +3074,7 @@ fn conform_mutate(
         return Ok(ExitCode::from(1));
     };
     let raw = load::raw_specification(path)?;
-    let classes: Vec<MutantClass> = if classes.is_empty() {
-        MutantClass::ALL.to_vec()
-    } else {
-        classes.iter().copied().map(MutantClass::from).collect()
-    };
+    let classes = mutant_classes(classes);
     let audited = match target {
         ReferenceTarget::Billing => mutate::audit(
             &raw.parsed,
@@ -3062,6 +3095,103 @@ fn conform_mutate(
             ess_conformance::interpret::Interpreted::new,
         ),
     };
+    finish_mutation_audit(audited, report_out, format)
+}
+
+/// The classes `--class` names, or every class when it names none.
+fn mutant_classes(classes: &[MutateClass]) -> Vec<ess_conformance::mutate::MutantClass> {
+    use ess_conformance::mutate::MutantClass;
+    if classes.is_empty() {
+        MutantClass::ALL.to_vec()
+    } else {
+        classes.iter().copied().map(MutantClass::from).collect()
+    }
+}
+
+/// `mutate --emit`: the baseline's and every mutant's suite, and the manifest, written to `dir`;
+/// nothing is run.
+fn conform_mutate_emit(
+    path: &Path,
+    classes: &[MutateClass],
+    dir: &Path,
+    format: Format,
+) -> Result<ExitCode> {
+    use ess_conformance::mutate;
+
+    let Ok(_) = resolved(path, format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let raw = load::raw_specification(path)?;
+    if dir.exists() && fs::read_dir(dir)?.next().is_some() {
+        bail!(
+            "{} is not empty: --emit writes into a new or empty directory, so no report of an \
+             earlier emission is collected as one of this one",
+            dir.display()
+        );
+    }
+    let emission = match mutate::emit(&raw.parsed, &raw.texts, &mutant_classes(classes)) {
+        Ok(emission) => emission,
+        Err(refusal) if refusal.code().is_some() => {
+            eprintln!("{refusal}");
+            return Ok(ExitCode::from(3));
+        }
+        Err(refusal) => return Err(refusal.into()),
+    };
+    for (relative, contents) in &emission.files {
+        let file = dir.join(relative);
+        if let Some(parent) = file.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        }
+        fs::write(&file, contents).with_context(|| format!("writing {}", file.display()))?;
+    }
+    let manifest = &emission.manifest;
+    match format {
+        Format::Text => {
+            let stillborn = manifest
+                .mutants
+                .iter()
+                .filter(|mutant| mutant.stillborn.is_some())
+                .count();
+            println!(
+                "emitted {} mutant(s) of {} ({} stillborn, no suite) and the baseline to {}",
+                manifest.mutants.len(),
+                manifest.specification,
+                stillborn,
+                dir.display()
+            );
+            println!(
+                "run each <dir>/{} and write its conformance report to <dir>/{}, then \
+                 `ess verify conform mutate --collect {}`",
+                mutate::SUITE_FILE,
+                mutate::REPORT_FILE,
+                dir.display()
+            );
+        }
+        Format::Json => print!("{}", manifest.to_canonical_json()),
+        Format::Yaml => render(manifest, format)?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `mutate --collect`: the reports a runner wrote beside an emission's suites, scored.
+fn conform_mutate_collect(
+    dir: &Path,
+    report_out: Option<&Path>,
+    format: Format,
+) -> Result<ExitCode> {
+    let collected =
+        ess_conformance::mutate::collect(|relative| fs::read_to_string(dir.join(relative)).ok());
+    finish_mutation_audit(collected, report_out, format)
+}
+
+/// Writes and renders a mutation report, or its refusal, and says what it exits with.
+fn finish_mutation_audit(
+    audited: Result<ess_conformance::mutate::MutationReport, ess_conformance::mutate::AuditRefusal>,
+    report_out: Option<&Path>,
+    format: Format,
+) -> Result<ExitCode> {
+    use ess_conformance::mutate::Verdict;
+
     let report = match audited {
         Ok(report) => report,
         Err(refusal) if refusal.code().is_some() => {
