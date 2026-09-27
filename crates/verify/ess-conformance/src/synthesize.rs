@@ -598,6 +598,11 @@ pub enum RefusalCause {
     /// [`ArrangeState`](TestStrategy::ArrangeState) branch asked for the input that reaches it —
     /// nothing reaches that one by choosing an input, and the illegal-move family sends the input
     /// the *moving* branch would have taken.
+    ///
+    /// One shape is not drift: an [`ObserveSubjectFact`](TestStrategy::ObserveSubjectFact) branch
+    /// asked for an input by a family that cannot arrange the row it reads. The wrong-state family
+    /// no longer asks (beyond10x/ess#173); where another still does, the text says so in the
+    /// author's terms rather than as an alarm.
     StrategyWithoutGuard {
         /// What the strategy said.
         strategy: TestStrategy,
@@ -710,7 +715,13 @@ impl RefusalCause {
         match self {
             // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
             // changing a value type (beyond10x/ess#132). Every such reason names the view it needs,
-            // and says `immediate` where only a `read_your_writes` one will do.
+            // and says `immediate` where only a `read_your_writes` one will do, or names the
+            // `eventual` alternative where one would do as well (beyond10x/ess#172).
+            Self::NoWitness(gap) if gap.reason.contains("or an `eventual` one") => {
+                "declare a view of the entity, `read_your_writes` or `eventual`, with no filter and \
+                 no parameters, that projects its identity, its state and the fields named at the \
+                 entity's types"
+            }
             Self::NoWitness(gap)
                 if gap.reason.contains(" view") && gap.reason.contains("immediate") =>
             {
@@ -784,6 +795,15 @@ impl RefusalCause {
             }
             Self::DuplicateScenario => {
                 "two declarations produced one scenario id; rename one of them"
+            }
+            // A `when_subject:` branch is reached by arranging the row it reads, and a family that
+            // can only choose an input for it has nothing to choose with: not drift, a family this
+            // synthesizer cannot yet build for that branch (beyond10x/ess#173).
+            Self::StrategyWithoutGuard {
+                strategy: TestStrategy::ObserveSubjectFact,
+            } => {
+                "the branch is selected by the subject's stored fields, which this scenario family \
+                 cannot arrange; cover it with an authored scenario (ess-scenario/1)"
             }
             Self::StrategyWithoutGuard { .. } => {
                 "`TestStrategy` and `OutcomeCondition` have drifted apart in `ess-domain`"
@@ -868,6 +888,13 @@ impl fmt::Display for RefusalCause {
                  longer than the {bound} characters or elements this synthesizer builds"
             ),
             Self::DuplicateScenario => f.write_str("a second scenario claimed this id"),
+            Self::StrategyWithoutGuard {
+                strategy: strategy @ TestStrategy::ObserveSubjectFact,
+            } => write!(
+                f,
+                "its strategy is `{strategy}`: the subject's stored fields select it, and this \
+                 scenario asked for an input that reaches it"
+            ),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
             }
@@ -1602,7 +1629,7 @@ fn exercise(
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let absent = not_emitted(ir, &emitted);
     let actor = run.actor.clone();
-    let views = view_expectations(ir, outcome, &run, actors, id, refusals);
+    let views = view_expectations(ir, command, outcome, &run, actors, id, refusals);
 
     let mut steps = run.steps();
     if let Some(error) = &outcome.error {
@@ -3841,6 +3868,7 @@ struct ViewAssertions {
 /// where emitting it anyway would have been silently free.
 fn view_expectations(
     ir: &EssIr,
+    command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     run: &Run,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -3862,6 +3890,8 @@ fn view_expectations(
     let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
     for view in views {
         match shows(ir, view, state, settled, &bound(view, settled)) {
+            // Neither asserted nor counted: an eventual read of a row left as it was proves nothing.
+            Ok(_) if awaits_nothing(command, view, run, state) => {}
             Ok(admits) => decided.push((view, admits)),
             Err(unbound) => refusals.push(Refusal::about(
                 id,
@@ -3972,6 +4002,26 @@ fn view_expectations(
         out.views.insert(name);
     }
     out
+}
+
+/// Whether an `eventually` block about `view` after this branch would wait for nothing: the view is
+/// `eventual`, and the branch of a command reading stored fields left the arranged row in the state
+/// and with every value the view projects as it was, so a projection that never saw the command
+/// shows the same row (beyond10x/ess#172). Only for such commands: every other command keeps the
+/// suites, and the committed generated ones, it had.
+fn awaits_nothing(
+    command: &ResolvedCommand,
+    view: &ResolvedView,
+    run: &Run,
+    state: &StateName,
+) -> bool {
+    subject_fact::uses(command)
+        && view.assertion_style == AssertionStyle::Eventually
+        && run.before.as_ref() == Some(state)
+        && view.fields.iter().all(|field| {
+            run.before_settled.get(&field.name).map(|held| &held.value)
+                == run.settled.get(&field.name).map(|held| &held.value)
+        })
 }
 
 /// The value an `ess/14` source leaves in `field`, where the scenario determines it
@@ -5687,7 +5737,14 @@ fn refusal_arrangement(
                 reason,
             }
         })?;
-    let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
+    // A command reading stored fields selects no branch from a state it does not run from, so the
+    // input is chosen for what it alone decides rather than asked of `reach`, whose stateless arm
+    // has no guard to offer a subject-fact branch (beyond10x/ess#173).
+    let input = if subject_fact::uses(attempt.command) && !has_subject_guards(attempt.command) {
+        subject_fact::refusal_input(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?
+    } else {
+        reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?
+    };
     Ok((arrangement, input))
 }
 

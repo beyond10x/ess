@@ -395,10 +395,16 @@ absent value is unknown and selects no branch, so write `not defined(field)` to 
 
 Validation partitions closed enum fields jointly with the input, so two branches that split an enum
 need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
-`dispatched`. Declare an immediate, unfiltered view that projects the identity, `state` and every
-guarded field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg
-for the refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that
-view, and dispatches it. The older `when_subject: {field, equals}` form keeps `ess/6`.
+`dispatched`. Declare an unfiltered view that projects the identity, `state` and every guarded
+field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg for the
+refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that view,
+and dispatches it. A `read_your_writes` view is read once; where the only such view is `eventual`,
+the observation goes in an `eventually` block that waits until the view shows the arranged parcel.
+A refused parcel is asserted unchanged only through a `read_your_writes` view: an `eventual` view
+that has not caught up shows the old row too, so without one that check is left out.
+In a state the command does not move from, no branch is selected by the stored fields, and the
+refusal scenario sends the command as it does for a command without `when_subject`. The older
+`when_subject: {field, equals}` form keeps `ess/6`.
 
 ### An outcome the input cannot decide says that too
 
