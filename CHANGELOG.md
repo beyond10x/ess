@@ -2,7 +2,18 @@
 
 ## [Unreleased]
 
+## [0.35.1] — 2026-09-27
+
 ### Fixed
+
+- An unknown instance is answered by the command's declared not-found outcome, not its
+  `wrong_state` outcome. Since 0.34 synthesis sent a fresh identity to a command declaring both
+  (`not-found` and `wrong-state`) and required `wrong-state`, so an implementation
+  answering the outcome its own specification declares for a missing record failed. A not-found
+  outcome is an `external:` refusal without input guard whose `error:` carries a field of the
+  identity's type; its scenario now sends the fresh identity instead of injecting the cause, and
+  the command gets no `…/outcome/wrong-state` scenario. A command declaring no such outcome keeps
+  the 0.34 rule; one declaring two gets a `note:` and neither is assumed. No format change.
 
 - `ess verify bindings --live --observation-out` and `cargo xtask infra-acceptance --scratch` no
   longer take a `.git` directory Git cannot open (one holding only `info/exclude`, as a harness
