@@ -13,6 +13,15 @@
 // entity (polling an `eventual` one), identity uniqueness and every invariant. A failure is shrunk
 // to a shorter trace that still fails the same way.
 //
+// # External branches
+//
+// An outcome declared `external:` (with or without an eligibility `when:`) is a choice the
+// explorer may take: where it is eligible, a seeded draw picks between it and the ordinary branch,
+// the target is asked to arrange it through `configureExternalOutcome`, and the step then expects
+// it. Once a command has had a branch arranged in a sequence, the arrangement may still hold, so
+// the explorer no longer expects that command's ordinary branch where an external one is eligible.
+// A branch the target cannot arrange is reported `unarrangeable`, never as a disagreement.
+//
 // # A port, not a second opinion
 //
 // `src/go/explore.go` is this file in Go, function for function. The random draws, their order and
@@ -29,7 +38,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { facts, fromNode, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
-import type { Predicate } from './predicate.js';
+import type { FactSource, Predicate } from './predicate.js';
 import {
   asNumber,
   byteCompare,
@@ -87,12 +96,36 @@ export interface ExploreResult {
   undetermined: string[];
   /** Draws the specification does not decide, which were redrawn rather than executed. */
   ambiguous: string[];
+  /**
+   * Every declared `external:` branch and how far the exploration got with it, in order of
+   * `outcome`. Absent when the specification declares none, so a result without external branches
+   * keeps its bytes.
+   */
+  external?: ExternalReach[];
   failure?: ExploreFailure;
+}
+
+/** One declared `external:` branch and whether a step took it. */
+export interface ExternalReach {
+  /** `command/outcome`. */
+  outcome: string;
+  /** What the specification says decides it. */
+  cause: string;
+  /**
+   * `reached`, `unreached`, `unarrangeable` (the target refused to arrange it, so no step could
+   * take it) or `excluded` (its command was left out).
+   */
+  reach: 'reached' | 'unreached' | 'unarrangeable' | 'excluded';
+  /** Why the target could not arrange it, for `unarrangeable` only. */
+  reason?: string;
 }
 
 /** What `assertExplored` accepts. */
 export interface AssertOptions {
-  /** Accept outcomes of excluded commands. An explicit, reviewable opt-out. */
+  /**
+   * Accept outcomes of excluded commands, and external outcomes the target could not arrange. An
+   * explicit, reviewable opt-out.
+   */
   allowExcluded?: boolean;
 }
 
@@ -355,6 +388,16 @@ interface Plan {
   excluded: Exclusion[];
   excludedCommands: Set<string>;
   declared: Map<string, string[]>;
+  /** Every declared external branch, in declaration order. */
+  externals: { command: string; id: string; cause: string }[];
+  /** `command/outcome` for every external branch the target refused to arrange, and its reason. */
+  unarrangeable: Map<string, string>;
+}
+
+/** True for an outcome an external cause decides. */
+function isExternal(outcome: Node): boolean {
+  const kind = outcome?.condition?.kind;
+  return kind === 'external' || kind === 'external_when';
 }
 
 function effectRefusal(outcome: Node): string | null {
@@ -373,6 +416,7 @@ function plan(ir: Node): Plan {
   const excluded: Exclusion[] = [];
   const excludedCommands = new Set<string>();
   const declared = new Map<string, string[]>();
+  const externals: { command: string; id: string; cause: string }[] = [];
   const actorFor = new Map<string, string>();
   for (const actor of sortedValues(ir.actors)) {
     for (const command of list(actor.may)) {
@@ -387,10 +431,26 @@ function plan(ir: Node): Plan {
       node.name,
       outcomes.map((outcome: Node) => String(outcome.name)),
     );
+    for (const outcome of outcomes) {
+      if (isExternal(outcome)) {
+        externals.push({
+          command: node.name,
+          id: `${node.name}/${outcome.name}`,
+          cause: typeof outcome.condition.cause === 'string' ? outcome.condition.cause : '',
+        });
+      }
+    }
     let reason: string | null = null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
-      if (reason === null && kind !== 'when' && kind !== 'otherwise' && kind !== 'wrong_state') {
+      if (
+        reason === null &&
+        kind !== 'when' &&
+        kind !== 'otherwise' &&
+        kind !== 'wrong_state' &&
+        kind !== 'external' &&
+        kind !== 'external_when'
+      ) {
         reason = `outcome \`${outcome.name}\` has a \`${kind}\` condition`;
       }
     }
@@ -410,7 +470,8 @@ function plan(ir: Node): Plan {
     }
     const guards = new Map<string, Predicate>();
     for (const outcome of outcomes) {
-      if (reason !== null || outcome.condition?.kind !== 'when') continue;
+      const kind = outcome.condition?.kind;
+      if (reason !== null || (kind !== 'when' && kind !== 'external_when')) continue;
       const guard = parsed(outcome.condition.predicate);
       if (typeof guard === 'string') reason = `the guard of \`${outcome.name}\`: ${guard}`;
       else guards.set(outcome.name, guard);
@@ -451,7 +512,17 @@ function plan(ir: Node): Plan {
     if (reason !== null) excluded.push({ subject: view.name, reason });
     else views.push(view);
   }
-  return { ir, system: String(ir.system), commands, views, excluded, excludedCommands, declared };
+  return {
+    ir,
+    system: String(ir.system),
+    commands,
+    views,
+    excluded,
+    excludedCommands,
+    declared,
+    externals,
+    unarrangeable: new Map(),
+  };
 }
 
 function exclude(p: Plan, subject: string, reason: string): void {
@@ -541,8 +612,15 @@ function valueOf(ir: Node, value: Node, input: Row, type: Node): Node | typeof C
   }
 }
 
+/**
+ * What the model says one step may take. For `take`, `outcome` is the ordinary branch (undefined
+ * when none holds) and `externals` the external branches eligible for this input and this subject,
+ * in declaration order; at least one of the two is present. A `take` with no ordinary branch
+ * carries in `names` the ambiguity it stands in for, reported if no external branch can be
+ * arranged.
+ */
 type Decision =
-  | { kind: 'take'; outcome: Node }
+  | { kind: 'take'; outcome: Node; externals: Node[]; names?: string[] }
   | { kind: 'ambiguous'; names: string[] }
   | { kind: 'unknown'; reason: string };
 
@@ -567,12 +645,25 @@ function decide(command: Command, input: Row, model: Model): Decision {
   if (supplied !== undefined && record === undefined) {
     return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
   }
+  const source = facts(input);
+  // What a step may take where no ordinary branch can be: the eligible external branches alone,
+  // or `otherwise`, when there are none.
+  const orExternal = (otherwise: { kind: 'ambiguous'; names: string[] }): Decision => {
+    const eligible = eligibleExternals(command, outcomes, source, record);
+    if (typeof eligible === 'string') return { kind: 'unknown', reason: eligible };
+    if (eligible.length > 0) {
+      return { kind: 'take', outcome: undefined, externals: eligible, names: otherwise.names };
+    }
+    return otherwise;
+  };
   if (record !== undefined && moves.length > 0 && !starts.has(record.fields.state)) {
-    if (wrong !== undefined) return { kind: 'take', outcome: wrong };
-    return { kind: 'ambiguous', names: [`no outcome for state ${record.fields.state}`] };
+    if (wrong !== undefined) return { kind: 'take', outcome: wrong, externals: [] };
+    return orExternal({
+      kind: 'ambiguous',
+      names: [`no outcome for state ${record.fields.state}`],
+    });
   }
 
-  const source = facts(input);
   const holding: Node[] = [];
   for (const outcome of outcomes) {
     if (outcome.condition?.kind !== 'when') continue;
@@ -586,14 +677,21 @@ function decide(command: Command, input: Row, model: Model): Decision {
     }
     if (truth === TruthTrue) holding.push(outcome);
   }
+  // The external branches this input and subject make eligible. Their guards state eligibility,
+  // not the verdict, so they take no part in choosing the ordinary branch; and where no ordinary
+  // branch can be taken, they still can.
+  const externals = eligibleExternals(command, outcomes, source, record);
+  if (typeof externals === 'string') return { kind: 'unknown', reason: externals };
   let selected: Node;
   if (holding.length > 1) {
-    return { kind: 'ambiguous', names: holding.map((outcome) => String(outcome.name)) };
+    return orExternal({ kind: 'ambiguous', names: holding.map((outcome) => String(outcome.name)) });
   } else if (holding.length === 1) {
     selected = holding[0];
   } else {
     selected = outcomes.find((outcome: Node) => outcome.condition?.kind === 'otherwise');
-    if (selected === undefined) return { kind: 'ambiguous', names: ['no outcome holds'] };
+    if (selected === undefined) {
+      return orExternal({ kind: 'ambiguous', names: ['no outcome holds'] });
+    }
   }
   if (
     selected.subject?.effect === 'moves' &&
@@ -602,9 +700,84 @@ function decide(command: Command, input: Row, model: Model): Decision {
   ) {
     const names = [String(selected.name)];
     if (wrong !== undefined) names.push(String(wrong.name));
-    return { kind: 'ambiguous', names };
+    return orExternal({ kind: 'ambiguous', names });
   }
-  return { kind: 'take', outcome: selected };
+  return { kind: 'take', outcome: selected, externals };
+}
+
+/**
+ * The external branches of a command this input and subject make eligible, in declaration order,
+ * or why an eligibility guard cannot be evaluated.
+ */
+function eligibleExternals(
+  command: Command,
+  outcomes: Node[],
+  source: FactSource,
+  record: Rec | undefined,
+): Node[] | string {
+  const externals: Node[] = [];
+  for (const outcome of outcomes) {
+    if (!isExternal(outcome)) continue;
+    if (outcome.condition.kind === 'external_when') {
+      const guard = command.guards.get(outcome.name) as Predicate;
+      const truth = guard.evaluate(source);
+      if (truth === TruthUnknown) {
+        return `the guard of \`${outcome.name}\` (${guard}) is unknown over a generated input`;
+      }
+      if (truth !== TruthTrue) continue;
+    }
+    if (
+      outcome.subject?.effect === 'moves' &&
+      record !== undefined &&
+      !list(outcome.subject.transition.from).includes(record.fields.state)
+    ) {
+      continue;
+    }
+    externals.push(outcome);
+  }
+  return externals;
+}
+
+/**
+ * The branches a step may take: the ordinary one, unless an earlier arrangement of this command
+ * may still hold and an external branch is eligible, then every eligible external branch the
+ * target has not refused to arrange.
+ */
+function choices(s: Session, command: Command, decision: Decision & { kind: 'take' }): Node[] {
+  const out: Node[] = [];
+  if (
+    decision.outcome !== undefined &&
+    (!s.forced.has(command.name) || decision.externals.length === 0)
+  ) {
+    out.push(decision.outcome);
+  }
+  for (const outcome of decision.externals) {
+    if (!s.p.unarrangeable.has(`${command.name}/${outcome.name}`)) out.push(outcome);
+  }
+  return out;
+}
+
+/** Asks the target to make `command` take the external branch `outcome`. */
+async function arrange(
+  s: Session,
+  command: Command,
+  outcome: string,
+): Promise<Disagreement | null> {
+  try {
+    await s.target.configureExternalOutcome({
+      command: command.name,
+      outcome,
+      correlation: s.correlation,
+    });
+  } catch (error) {
+    if (isUnsupported(error)) throw new Unsupported(errorText(error));
+    return {
+      kind: 'target',
+      detail: `arranging \`${outcome}\`, the target threw ${errorText(error)}`,
+    };
+  }
+  s.forced.add(command.name);
+  return null;
 }
 
 // ---- drawing inputs -----------------------------------------------------------------------------
@@ -614,6 +787,8 @@ interface Step {
   command: string;
   input: Row;
   refs: [string, string, number][];
+  /** The external branch arranged for this step, or empty for the ordinary branch. */
+  external: string;
 }
 
 const NO_RECORD = Symbol('no record');
@@ -681,7 +856,7 @@ function draw(command: Command, rng: Mulberry32, model: Model): Step | null {
     if (value === NO_RECORD) return null;
     input[name] = value;
   }
-  return { command: command.name, input, refs };
+  return { command: command.name, input, refs, external: '' };
 }
 
 // ---- one step against the target ----------------------------------------------------------------
@@ -699,6 +874,8 @@ interface Session {
   model: Model;
   correlation: string;
   undetermined: Set<string>;
+  /** Every command the target was asked to arrange a branch for in this sequence. */
+  forced: Set<string>;
 }
 
 function render(value: Node): string {
@@ -926,7 +1103,8 @@ function checkInvariants(s: Session): Disagreement | null {
 // ---- sequences ----------------------------------------------------------------------------------
 
 function line(step: Step): string {
-  return `${step.command} ${goMarshal(step.input)}`;
+  const external = step.external === '' ? '' : ` [external: ${step.external}]`;
+  return `${step.command} ${goMarshal(step.input)}${external}`;
 }
 
 interface Found {
@@ -947,7 +1125,15 @@ async function open(
   const target = await newTarget();
   const correlation = newHarness(p.system).correlation();
   await target.beginScenario({ scenario, correlation });
-  return { p, target, model: new Model(), correlation, undetermined: new Set(), scenario };
+  return {
+    p,
+    target,
+    model: new Model(),
+    correlation,
+    undetermined: new Set(),
+    forced: new Set(),
+    scenario,
+  };
 }
 
 /** Replays `trace` on a fresh target: the disagreement it ends in, or null when it passes. */
@@ -971,12 +1157,32 @@ async function replay(
         else setPath(input, path, (known[index] as Rec).id);
       }
       if (!resolvable) continue;
-      const step: Step = { command: recorded.command, input, refs: recorded.refs };
+      const step: Step = {
+        command: recorded.command,
+        input,
+        refs: recorded.refs,
+        external: recorded.external,
+      };
       const decision = decide(command, input, s.model);
       if (decision.kind !== 'take') continue;
+      const outcome = choices(s, command, decision).find(
+        (choice) => (isExternal(choice) ? String(choice.name) : '') === step.external,
+      );
+      if (outcome === undefined) continue;
       let found: Disagreement | null;
       try {
-        found = await perform(s, command, step, decision.outcome);
+        if (step.external !== '') {
+          const arranging = await arrange(s, command, step.external);
+          if (arranging !== null) {
+            executed.push(step);
+            return {
+              kind: arranging.kind,
+              message: describe(arranging, executed.length - 1, step),
+              executed,
+            };
+          }
+        }
+        found = await perform(s, command, step, outcome);
       } catch (error) {
         if (error instanceof Unsupported) continue;
         throw error;
@@ -1044,9 +1250,42 @@ export async function explore(
           exclude(p, command.name, decision.reason);
           continue;
         }
+        const available = choices(s, command, decision);
+        if (available.length === 0) {
+          if (decision.names !== undefined) {
+            ambiguous.add(`${command.name}: ${decision.names.join(', ')}`);
+          }
+          continue;
+        }
+        const outcome = available.length > 1 ? rng.pick(available) : available[0];
+        if (isExternal(outcome)) {
+          step.external = String(outcome.name);
+          let arranging: Disagreement | null;
+          try {
+            arranging = await arrange(s, command, step.external);
+          } catch (error) {
+            if (error instanceof Unsupported) {
+              p.unarrangeable.set(
+                `${command.name}/${step.external}`,
+                `the target cannot arrange it: ${error.message}`,
+              );
+              continue;
+            }
+            throw error;
+          }
+          if (arranging !== null) {
+            trace.push(step);
+            found = {
+              kind: arranging.kind,
+              message: describe(arranging, trace.length - 1, step),
+              executed: [...trace],
+            };
+            break;
+          }
+        }
         let disagreement: Disagreement | null;
         try {
-          disagreement = await perform(s, command, step, decision.outcome);
+          disagreement = await perform(s, command, step, outcome);
         } catch (error) {
           if (error instanceof Unsupported) {
             exclude(p, command.name, `the target does not expose it: ${error.message}`);
@@ -1056,7 +1295,7 @@ export async function explore(
         }
         executed += 1;
         trace.push(step);
-        reached.add(`${command.name}/${decision.outcome.name}`);
+        reached.add(`${command.name}/${outcome.name}`);
         if (disagreement !== null) {
           found = {
             kind: disagreement.kind,
@@ -1078,9 +1317,18 @@ export async function explore(
     for (const outcome of outcomes) {
       const id = `${command}/${outcome}`;
       if (p.excludedCommands.has(command)) excludedOutcomes.push(id);
-      else if (!reached.has(id)) unreached.push(id);
+      else if (!reached.has(id) && !p.unarrangeable.has(id)) unreached.push(id);
     }
   }
+  const external: ExternalReach[] = p.externals
+    .map(({ command, id, cause }): ExternalReach => {
+      const reason = p.unarrangeable.get(id);
+      if (p.excludedCommands.has(command)) return { outcome: id, cause, reach: 'excluded' };
+      if (reached.has(id)) return { outcome: id, cause, reach: 'reached' };
+      if (reason !== undefined) return { outcome: id, cause, reach: 'unarrangeable', reason };
+      return { outcome: id, cause, reach: 'unreached' };
+    })
+    .sort((left, right) => byteCompare(left.outcome, right.outcome));
   const result: ExploreResult = {
     sequences,
     steps,
@@ -1095,6 +1343,7 @@ export async function explore(
     undetermined: sortStrings([...undetermined]),
     ambiguous: sortStrings([...ambiguous]),
   };
+  if (external.length > 0) result.external = external;
   if (failure !== undefined) result.failure = failure;
   return result;
 }
@@ -1166,12 +1415,23 @@ export function exploreProblem(result: ExploreResult, options: AssertOptions = {
         '\naccept them explicitly with { allowExcluded: true }',
     );
   }
+  const unarrangeable = (result.external ?? []).filter(
+    (branch) => branch.reach === 'unarrangeable',
+  );
+  if (unarrangeable.length > 0 && options.allowExcluded !== true) {
+    problems.push(
+      `explore: ${unarrangeable.length} external outcome(s) the target could not arrange were never tried:\n` +
+        unarrangeable.map((branch) => `  ${branch.outcome}: ${branch.reason ?? ''}`).join('\n') +
+        '\naccept them explicitly with { allowExcluded: true }',
+    );
+  }
   return problems.length === 0 ? null : problems.join('\n');
 }
 
 /**
  * assertExplored throws when an exploration failed, when a declared outcome went unreached, or
- * when an excluded command's outcomes were never tried and `allowExcluded` is not set. What the
+ * when an excluded command's outcomes, or external outcomes the target could not arrange, were
+ * never tried and `allowExcluded` is not set. What the
  * model could not place, and the draws it would not decide, are printed and do not fail.
  */
 export function assertExplored(result: ExploreResult, options: AssertOptions = {}): void {

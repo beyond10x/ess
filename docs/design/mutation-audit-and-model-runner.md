@@ -678,7 +678,7 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 | An accepted-survivors file for equivalent mutants | needs an identity story for a mutant across edits of the specification | a stable site id that survives renumbering |
 | Coverage suites (`/5` and above) and `--component` for `mutate` | parent chains and scope would have to be re-derived per mutant | `coverage_build` per mutant |
 | Explorer inputs: `Decimal`, lists, `Optional`, unions, maps, timestamps, and types with invariants | exact-number generation and invariant-respecting draws | a generator per type, the same in TS and Go |
-| Explorer conditions: subject fields, subject state, state changes, external outcomes, replays, `preserves` | each needs arranged state or an injected cause | the arranging steps synthesis already has |
+| Explorer conditions: subject fields, subject state, state changes, replays, `preserves` (external outcomes are taken since beyond10x/ess#156: a seeded choice, arranged through `ConfigureExternalOutcome`, reported per branch in `external`) | each needs arranged state | the arranging steps synthesis already has |
 | Views with `params` or `group_by`; binding-driven events; a persisted exploration report; an explorer in Rust against the reference targets | out of the issue's measured scope | — |
 
 ## What was rejected

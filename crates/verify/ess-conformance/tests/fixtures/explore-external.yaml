@@ -1,0 +1,134 @@
+# The explorer's external-branch fixture (beyond10x/ess#156).
+#
+# A payment that is authorized, then captured or failed. `Authorize` has an ordinary branch, an
+# `otherwise` refusal and an external decline that is only eligible from 1000 up (`when:` beside
+# `external:`). `Capture` has an ordinary move, an external failure that moves the payment
+# elsewhere, and a `wrong_state` refusal. The targets beside it are `explore-external-target.mjs`
+# and `explore_external_target.go`, each switched by the mode the driver passes.
+
+format: ess/6
+system: exploreext
+version: v1
+domains:
+  - exploreext.pay
+
+domain: exploreext.pay
+
+summary: Payments that are authorized, then captured or failed by the acquirer.
+
+types:
+  - name: exploreext.pay.PaymentId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: exploreext.pay.Payment
+    identity:
+      name: payment_id
+      type: exploreext.pay.PaymentId
+    fields:
+      - name: amount
+        type: Integer
+    lifecycle:
+      initial: Pending
+      states: [Pending, Settled, Failed]
+      terminal: [Settled, Failed]
+      transitions:
+        - name: settle
+          from: [Pending]
+          to: Settled
+        - name: fail
+          from: [Pending]
+          to: Failed
+
+actors:
+  - name: exploreext.pay.Payer
+    may:
+      - exploreext.pay.Authorize
+      - exploreext.pay.Capture
+
+errors:
+  - name: exploreext.pay.InvalidAmount
+    summary: The amount was not positive.
+  - name: exploreext.pay.Declined
+    summary: The card network declined.
+  - name: exploreext.pay.PaymentStateConflict
+    summary: The payment is not in a state this command acts from.
+
+commands:
+  - name: exploreext.pay.Authorize
+    input:
+      - name: amount
+        type: Integer
+    outcomes:
+      - name: authorized
+        when: amount >= 1
+        creates: exploreext.pay.Payment
+        instance: payment_id
+        emits:
+          - exploreext.pay.Authorized
+        payload:
+          exploreext.pay.Authorized:
+            payment_id: {generated: true}
+            amount: input.amount
+        sets:
+          amount: input.amount
+      - name: declined
+        when: amount >= 1000
+        external: the card network declines
+        error: exploreext.pay.Declined
+      - name: invalid
+        error: exploreext.pay.InvalidAmount
+
+  - name: exploreext.pay.Capture
+    input:
+      - name: payment_id
+        type: exploreext.pay.PaymentId
+    outcomes:
+      - name: captured
+        moves: exploreext.pay.Payment.settle
+        instance: payment_id
+        emits:
+          - exploreext.pay.Captured
+        payload:
+          exploreext.pay.Captured:
+            payment_id: input.payment_id
+      - name: failed
+        external: the acquirer fails the capture
+        moves: exploreext.pay.Payment.fail
+        instance: payment_id
+        emits:
+          - exploreext.pay.CaptureFailed
+        payload:
+          exploreext.pay.CaptureFailed:
+            payment_id: input.payment_id
+      - name: wrong-state
+        wrong_state: true
+        error: exploreext.pay.PaymentStateConflict
+
+events:
+  - name: exploreext.pay.Authorized
+    fields:
+      - name: payment_id
+        type: exploreext.pay.PaymentId
+      - name: amount
+        type: Integer
+  - name: exploreext.pay.Captured
+    fields:
+      - name: payment_id
+        type: exploreext.pay.PaymentId
+  - name: exploreext.pay.CaptureFailed
+    fields:
+      - name: payment_id
+        type: exploreext.pay.PaymentId
+
+views:
+  - name: exploreext.pay.PendingPayments
+    source: exploreext.pay.Payment
+    consistency: read_your_writes
+    filter: state == Pending
+    fields:
+      - name: payment_id
+        type: exploreext.pay.PaymentId
+      - name: amount
+        type: Integer

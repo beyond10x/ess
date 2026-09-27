@@ -172,6 +172,15 @@ failure is replayed. `AssertExplored` fails on a disagreement, on a declared out
 reached, and on the outcomes of a command the explorer left out (`Excluded` says why) unless
 `AssertOptions{AllowExcluded: true}` accepts them. A view field is compared with the entity field
 of the same name. `ir.json` must hash to `suite.json`'s `spec_digest`; regenerate both together.
+
+An outcome declared `external:` is a choice the explorer may take: where it is eligible, a seeded
+draw picks it or the ordinary branch, `ConfigureExternalOutcome` arranges it, and the step expects
+it. Once a command has had a branch arranged in a sequence, the explorer stops expecting that
+command's ordinary branch where an external one is eligible, so an arrangement may hold until the
+scenario ends. `External` reports each external branch as `reached`, `unreached`, `excluded` or
+`unarrangeable` (the target returned `ErrUnsupported` when asked to arrange it). An unarrangeable
+branch is not a disagreement and not `Unreached`; `AssertExplored` fails on it unless
+`AllowExcluded` is set. `External` is absent when the specification declares no external branch.
 ";
 
 /// The one file that exists only to embed the other one.
