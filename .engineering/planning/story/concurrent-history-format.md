@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:concurrent-history-format
 kind: story
-status: active
+status: implemented
 title: 'A concurrent history has a format: ess-history/1'
 owner: ess
 relations:
@@ -14,18 +14,26 @@ scope:
 - confidence: inferred
   path: crates/edge/ess-xtask/tests
 - confidence: cited
+  path: crates/edge/ess-xtask/tests/history_model.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests
+- confidence: cited
   path: crates/verify/ess-conformance
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/history.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/lib.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-- confidence: inferred
+- confidence: cited
   path: models/concurrent-history/domains/history.yaml
 - confidence: cited
+  path: models/concurrent-history/system.yaml
+- confidence: cited
   path: schemas
-revision: 7
+- confidence: cited
+  path: schemas/ess-history.schema.json
+revision: 9
 ---
 # Story: a concurrent history has a format
 

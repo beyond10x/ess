@@ -58,8 +58,8 @@ scratch `~/.cache/ess-chc/<unit>/scratch`.
 
 | unit | story | serves | scope | branch | head | stage |
 |---|---|---|---|---|---|---|
-| interp | `story:interpreted-command-execution` | `vision:O2` | cited: `ess-conformance`, `src/target.rs`; inferred: `src/input.rs`, `src/interpreted.rs`, `src/lib.rs`, `tests` | `impl/interpreted-command-execution` | uncommitted | correction after adversary pass 1 (3 findings) |
-| format | `story:concurrent-history-format` | `vision:O2` | cited: `ess-conformance`, `schemas/`; inferred: `src/history.rs`, `src/lib.rs`, `ess-xtask`, `models/concurrent-history/domains/history.yaml` | `impl/concurrent-history-format` | `64370a752` | merged `7a81ad0ec` (2 adversary passes, 11 findings fixed; coordinator reviewed correction 2) |
+| interp | `story:interpreted-command-execution` | `vision:O2` | cited: `ess-conformance`, `src/target.rs`; inferred: `src/input.rs`, `src/interpreted.rs`, `src/lib.rs`, `tests` | `impl/interpreted-command-execution` | `989e811cb` | merged `85e251c20` (2 adversary passes, 8 findings fixed); implemented |
+| format | `story:concurrent-history-format` | `vision:O2` | cited: `ess-conformance`, `schemas/`; inferred: `src/history.rs`, `src/lib.rs`, `ess-xtask`, `models/concurrent-history/domains/history.yaml` | `impl/concurrent-history-format` | `64370a752` | merged `7a81ad0ec` (2 adversary passes, 11 findings fixed); implemented |
 
 Split in `crates/verify/ess-conformance/src/lib.rs`: each unit adds exactly one `pub mod` line; no
 other edit. `git merge-tree --write-tree --merge-base=<base> impl/interpreted-command-execution
@@ -92,3 +92,9 @@ impl/concurrent-history-format` runs before the first unit merges.
 - Store writes of 22:30–23:40 were rolled back and replayed: the parallel-safety round-3 critic quoted an absolute home path, `validate` refused it (S9, 6 problems), and `review-result` bodies are immutable. The rolled-back writes are kept in `git stash` on this tree ("chc: store writes … (S9); replayed clean"); the replay records the same verdicts with the path replaced by "the integration worktree".
 - The store takes one `review_outcome` per (artifact, review): four repeat `fixed` records for format adversary pass 1 were refused `semantic_mismatch`, so one outcome stands for its five findings.
 - Critic rounds 3–4 (acceptance, design, scope, parallel-safety): round 3 two `needs-revision` (3 findings, all fixed); round 4 four `approve`. The design critic's round-4 empty findings fence is recorded as `[]`.
+
+## Close (2026-09-28)
+
+Gate on `integrate/concurrent-history` `85e251c20`, one exit status per step, own build dir `b10x-target/ess-chc-int`: `task fmt-check` 0; clippy `-p ess-conformance -p ess-cli -p ess-xtask -p ess-domain` 0; doc 0; `cargo test -p ess-conformance` 0 (832 passed, 98 binaries); `-p ess-xtask` 0 (313); `-p ess-domain` 0 (756); `-p ess-cli` 0 (750); `specify validate models/concurrent-history` 0. Full `task check` runs in CI on the final PR and locally before the release tag (ESS `AGENTS.md` § Gate).
+
+Build dirs `ess-chc-format` (17G) and `ess-chc-interp` (23G) deleted after merge; `/` had filled to ENOSPC once during the interp gate.

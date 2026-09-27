@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:interpreted-command-execution
 kind: story
-status: active
+status: implemented
 title: A command's declared outcome is executed from the IR
 summary: 'Outcome selection, transition, sets: writes, emitted events and payload mappings, derived rather than decided'
 owner: ess
@@ -14,9 +14,17 @@ relations:
 - depends_on: story:interpreted-target-selection
 scope:
 - confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/interpreted_command_execution.rs
+- confidence: cited
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: crates/verify/ess-conformance/src/input.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpreted.rs
 - confidence: inferred
@@ -25,7 +33,13 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-revision: 5
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/interpreted_command_execution.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/mutation_audit.rs
+- confidence: cited
+  path: website/docs/guides/verify-conformance.md
+revision: 7
 ---
 # Story: a command's declared outcome is executed from the IR
 
