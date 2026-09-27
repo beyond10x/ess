@@ -6,12 +6,33 @@ status: draft
 title: Faults the specification declares are injected during concurrent runs
 owner: ess
 relations:
-- depends_on: story:external-mutation-explorer-and-toolchain
 - depends_on: story:session-and-eventual-view-checks
+- depends_on: story:ess-manages-its-toolchain
+- depends_on: story:explorer-takes-external-branches
 - depends_on: story:concurrent-explorer-runner
 - decomposes: epic:concurrent-history-conformance
 - serves: vision:O2
-revision: 1
+- depends_on: story:mutate-drives-an-external-target
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance
+- confidence: cited
+  path: crates/verify/ess-conformance/src/faulty.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/explore.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/reference.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/target.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/explore.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/explore.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/faults.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures
+revision: 4
 ---
 # Story: faults the specification declares are injected during concurrent runs
 
@@ -42,5 +63,14 @@ declares restart support today (`src/target.rs`), so injecting it would be an un
 
 ## Scope
 
-`src/go/explore.go`, `src/ts/explore.ts`, the target seams for redelivery and external control in
-`src/target.rs`, and `faulty.rs`.
+Derived 2026-09-27 by `aep:story-scoper` against `472d35fbe`. Every line is **cited** or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance` (explorers and fault matrix) — cited
+- **Files:** `crates/verify/ess-conformance/src/go/explore.go` — cited (embedded by `src/go/mod.rs:147`)
+- **Files:** `crates/verify/ess-conformance/src/ts/explore.ts` — cited
+- **Files:** `crates/verify/ess-conformance/src/target.rs` (`redeliver_event` `:225`, `ExternalOutcomeControl` `:874`) — cited
+- **Files:** `crates/verify/ess-conformance/src/faulty.rs` (rows `DoubleApplyOnRedelivery`, `RetryCreatesSecondEntity`) — cited
+- **Also likely:** `tests/faults.rs`, `tests/explore.rs`, `tests/fixtures/`, `src/reference.rs` — inferred
+- **Confidence:** medium — the concurrent explorer does not exist yet
+- **Would collide with:** `story:concurrent-explorer-runner` (both explorer files) and `story:session-and-eventual-view-checks` (`faulty.rs`) — both are dependencies, so these run in sequence
+- **Open:** no Rust concurrent explorer is scoped anywhere, but the acceptance says `faulty.rs` rows are "found by the concurrent explorer"; no existing symbol is the retry seam for a `replays` command (`explore.go:601`, `explore.ts:459` only exclude it)

@@ -14,7 +14,28 @@ relations:
 - depends_on: story:outcome-shapes-beyond-ess-14
 - depends_on: story:concurrent-history-format
 - decomposes: epic:concurrent-history-conformance
-revision: 1
+scope:
+- confidence: inferred
+  path: crates/edge/ess-cli/tests/explore_package.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/explore.go
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/go/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/explore.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/ts/mod.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/explore.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/explore-driver.mjs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/explore-target.mjs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures/explore_driver_test.go
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/explore_target.go
+revision: 5
 ---
 # Story: the Go and TypeScript explorers record concurrent histories and hand them to `ess`
 
@@ -41,6 +62,9 @@ Go package. That design was replaced on 2026-09-27 by one checker in Rust.
 - The same holds for the `lost-update` mutant of the TypeScript explore fixture target.
 - Against the unmutated targets, the same 200 seeds give 0 violations and 0 `Unknown`.
 - The same seed produces the same history bytes on two runs, in each language.
+- A history written by the Go runner and one written by the TypeScript runner from the same seed
+  over `examples/billing` are equal bytes (moved here from `story:concurrent-history-format`,
+  2026-09-27).
 - The emitted Go module names no module outside the Go standard library.
 - The emitted TypeScript package declares no dependency outside the Node standard library.
 - When `ess` is not on `PATH`, the concurrent mode fails with a message naming `ess`. It is never
@@ -48,4 +72,18 @@ Go package. That design was replaced on 2026-09-27 by one checker in Rust.
 
 ## Scope
 
-`src/go/explore.go`, `src/ts/explore.ts`, the Go and TS explore fixture targets, `tests/explore.rs`.
+Derived 2026-09-27 by `aep:story-scoper` against `472d35fbe`. Every line is **cited** or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance`, the emitted explorer sources and their test harness — cited
+- **Files:** `crates/verify/ess-conformance/src/go/explore.go` — cited
+- **Files:** `crates/verify/ess-conformance/src/ts/explore.ts` — cited
+- **Files:** `crates/verify/ess-conformance/tests/explore.rs` — cited
+- **Files:** `crates/verify/ess-conformance/tests/fixtures/explore_target.go` — cited (gets the `lost-update` mutant)
+- **Files:** `crates/verify/ess-conformance/tests/fixtures/explore-target.mjs` — cited (gets the `lost-update` mutant)
+- **Symbols:** `ESS_EXPLORE_MUTANT` in both fixture targets — cited
+- **Also likely:** `tests/fixtures/explore_driver_test.go`, `tests/fixtures/explore-driver.mjs` — inferred
+- **Also likely:** `src/ts/mod.rs` (`manifest()`), `src/go/mod.rs` (`EXPLORE_GO`) — inferred
+- **Also likely:** `crates/edge/ess-cli/tests/explore_package.rs` — inferred
+- **Confidence:** medium — the story's own paths omitted the crate prefix; corrected here
+- **Would collide with:** any unit touching `ess-conformance/src/{go,ts}/explore.*` or `tests/fixtures/explore*`
+- **Stale reference:** the epic cites `explore.ts:717` on `be44a3365`; on `472d35fbe` the sequential awaits are around lines 1179–1335

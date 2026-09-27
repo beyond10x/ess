@@ -12,7 +12,32 @@ relations:
 - depends_on: story:concurrent-history-format
 - decomposes: epic:concurrent-history-conformance
 - depends_on: story:interpreted-command-execution
-revision: 1
+scope:
+- confidence: inferred
+  path: changes
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: inferred
+  path: crates/edge/ess-cli/tests
+- confidence: cited
+  path: crates/verify/ess-conformance
+- confidence: cited
+  path: crates/verify/ess-conformance/src/faulty.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/interpret.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/lib.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/reference.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/faults.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/fixtures
+- confidence: inferred
+  path: website/docs/guides/verify-conformance.md
+- confidence: inferred
+  path: website/docs/reference/cli.md
+revision: 4
 ---
 # Story: a history is checked for linearizability against the interpreter, and shrunk
 
@@ -53,5 +78,17 @@ This is the only checker in ESS. The Go and TypeScript explorers call it
 
 ## Scope
 
-New checker module in `ess-conformance`, one `ess verify conform` subcommand in `ess-cli`, one row in
-`faulty.rs` and its matrix test.
+Derived 2026-09-27 by `aep:story-scoper` against `472d35fbe`. Every line is **cited** or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance` (new checker module) — cited
+- **Files:** `crates/verify/ess-conformance/src/faulty.rs` (new `Fault::LostUpdate`, enum at `:166`, `faulty::billing` at `:368`) — cited
+- **Files:** `crates/verify/ess-conformance/tests/faults.rs` (matrix at `:49`) — cited
+- **Files:** `crates/edge/ess-cli/src/main.rs` (`enum ConformCommand` `:447`, dispatch near `:3042`, `check-history` exit codes 0/1/3) — cited
+- **Files:** `crates/verify/ess-conformance/src/lib.rs` (one `pub mod`, list at `:126-164`) — inferred
+- **Files:** new checker file in `ess-conformance/src/` — inferred, name not chosen
+- **Also likely:** `crates/verify/ess-conformance/tests/fixtures/` (Herlihy–Wing register histories) — inferred
+- **Also likely:** `crates/edge/ess-cli/tests/` (CLI exit-code test) — inferred
+- **Also likely:** `src/interpret.rs`, `src/reference.rs` — inferred, read as model and target; changed only if the interpreter lacks a step hook
+- **Documents:** `changes/<name>.yaml`, `website/docs/reference/cli.md`, `website/docs/guides/verify-conformance.md` — inferred
+- **Confidence:** medium-high
+- **Would collide with:** any unit adding a `Fault` row, any `ConformCommand` change, any module added to `ess-conformance/src/lib.rs`

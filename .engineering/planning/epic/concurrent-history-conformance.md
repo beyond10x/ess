@@ -7,9 +7,11 @@ title: An implementation is held to the specification under concurrent clients a
 summary: Concurrent histories against the adopter's target, checked against the IR model at each view's declared consistency, with declared faults injected.
 owner: ess
 relations:
-- depends_on: story:external-mutation-explorer-and-toolchain
+- depends_on: story:explorer-takes-external-branches
 - depends_on: story:interpreted-command-execution
+- depends_on: story:mutate-drives-an-external-target
 - serves: vision:O2
+- depends_on: story:ess-manages-its-toolchain
 - informed_by: epic:model-driven-interpretation
 - depends_on: story:outcome-shapes-beyond-ess-14
 revision: 1
