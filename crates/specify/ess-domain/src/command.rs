@@ -200,8 +200,10 @@
 
 pub mod finite;
 pub mod fixture_inputs;
+pub(crate) mod outcome_shapes;
 pub mod subject_fact;
 pub mod subject_state;
+pub use outcome_shapes::{fixture_of as precondition_fixture, precondition_branch, Accepts};
 pub(crate) mod value_expression;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -307,20 +309,26 @@ impl From<OutcomeName> for String {
 /// does not refuse and then names the error it reports leaves a generated assertion picking one.
 fn validate_wrong_state_answer(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    if outcome.condition != OutcomeCondition::WrongState {
+    if !matches!(
+        outcome.condition,
+        OutcomeCondition::WrongState | OutcomeCondition::UnknownInstance
+    ) {
         return errors;
     }
     if outcome.refuses && outcome.error.is_none() {
+        let taken = if outcome.condition == OutcomeCondition::UnknownInstance {
+            "the branch taken when the command names an identity no record carries, and names no \
+             error; the error is the only thing this branch can add"
+        } else {
+            "the branch taken when the subject is in a state no move starts from, and names no \
+             error; the states are already declared and the error is the only thing this branch \
+             can add"
+        };
         errors.push(
             ValidationError::at(
                 at.clone().key("error"),
                 ValidationCode::MissingDeclaration,
-                format!(
-                    "outcome `{}` is the branch taken when the subject is in a state no move \
-                     starts from, and names no error; the states are already declared and the \
-                     error is the only thing this branch can add",
-                    outcome.name
-                ),
+                format!("outcome `{}` is {taken}", outcome.name),
             )
             .with_hint(
                 "give it `error:`, naming what the command reports when it will not act from this \
@@ -453,6 +461,14 @@ pub enum OutcomeCondition {
     /// author writes is the branch's `error:`, which no lifecycle can imply — see the
     /// [module documentation](self).
     WrongState,
+    /// Taken when the identity the command names is one no record carries (ess/15).
+    ///
+    /// A marker beside [`WrongState`](Self::WrongState), at most one per command, and the first
+    /// answer for such an identity: before a declared external not-found refusal, and before the
+    /// wrong-state branch, which answered it on its own before this existed
+    /// (`docs/design/outcome-shapes.md`, beyond10x/ess#145). It carries nothing: the branch names
+    /// the error it reports, or `refuses: false` for an accepted no-op.
+    UnknownInstance,
 }
 
 impl OutcomeCondition {
@@ -464,7 +480,9 @@ impl OutcomeCondition {
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
             Self::SubjectPredicate { input, .. } => input.as_ref(),
-            Self::Otherwise | Self::External { .. } | Self::WrongState => None,
+            Self::Otherwise | Self::External { .. } | Self::WrongState | Self::UnknownInstance => {
+                None
+            }
         }
     }
 
@@ -478,7 +496,8 @@ impl OutcomeCondition {
             | Self::SubjectPredicate { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
-            | Self::WrongState => None,
+            | Self::WrongState
+            | Self::UnknownInstance => None,
         }
     }
 
@@ -495,6 +514,7 @@ impl OutcomeCondition {
             Self::Otherwise => TestStrategy::DefaultBranch,
             Self::External { .. } | Self::ExternalWhen { .. } => TestStrategy::InjectFault,
             Self::WrongState => TestStrategy::ArrangeState,
+            Self::UnknownInstance => TestStrategy::SendUnknownIdentity,
         }
     }
 
@@ -542,7 +562,8 @@ impl OutcomeCondition {
             | Self::Otherwise
             | Self::ExternalWhen { .. }
             | Self::External { .. }
-            | Self::WrongState => None,
+            | Self::WrongState
+            | Self::UnknownInstance => None,
         }
     }
 }
@@ -577,6 +598,11 @@ pub enum TestStrategy {
     /// choosing what to send. Which states those are is a question the lifecycle answers, not the
     /// command — see [`OutcomeCondition::WrongState`].
     ArrangeState,
+    /// Send the command for an identity no record carries (ess/15, `unknown_instance:`).
+    ///
+    /// Neither an input the caller could choose to select the branch nor an arranged world: the
+    /// scenario arranges nothing, and the identity it sends is one no other scenario sends.
+    SendUnknownIdentity,
 }
 
 impl TestStrategy {
@@ -590,6 +616,7 @@ impl TestStrategy {
             Self::DefaultBranch => "default_branch",
             Self::InjectFault => "inject_fault",
             Self::ArrangeState => "arrange_state",
+            Self::SendUnknownIdentity => "send_unknown_identity",
         }
     }
 }
@@ -637,6 +664,12 @@ pub enum Effect {
     Updates,
     /// An existing subject and its fields remain unchanged, with no error or event.
     Preserves,
+    /// An existing instance is removed at the end of its lifecycle (ess/15, `deletes:`).
+    ///
+    /// Not a transition and not a state: a record the implementation drops has no state a view
+    /// could show, so a scenario asserts its absence from every immediate view of the entity, and
+    /// a later command naming it is answered as for an identity no record carries.
+    Deletes,
 }
 
 impl Effect {
@@ -644,7 +677,7 @@ impl Effect {
     pub fn transition(&self) -> Option<&str> {
         match self {
             Self::Moves { transition } => Some(transition.as_str()),
-            Self::Creates | Self::Updates | Self::Preserves => None,
+            Self::Creates | Self::Updates | Self::Preserves | Self::Deletes => None,
         }
     }
 
@@ -658,6 +691,7 @@ impl Effect {
             Self::Moves { .. } => "moves",
             Self::Updates => "updates",
             Self::Preserves => "preserves",
+            Self::Deletes => "deletes",
         }
     }
 }
@@ -683,6 +717,13 @@ pub struct Subject {
     /// [`Subject::instance`] and the [module documentation](self) for which surface the field is
     /// read from, and why it is declared rather than found by matching the identity's type.
     pub instance: String,
+    /// The declared state a created instance comes into existence in, where it is not the
+    /// lifecycle's `initial` (ess/15, `into:`).
+    ///
+    /// `None` on every other verb, and on a creation that lands where the lifecycle starts — which
+    /// is what every document before `ess/15` meant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub into: Option<crate::entity::StateName>,
 }
 
 impl Subject {
@@ -693,6 +734,17 @@ impl Subject {
             entity,
             effect: Effect::Creates,
             instance: instance.into(),
+            into: None,
+        }
+    }
+
+    /// An outcome that removes the instance named by the input field `instance` (ess/15).
+    pub fn deletes(entity: QualifiedName, instance: impl Into<String>) -> Self {
+        Self {
+            entity,
+            effect: Effect::Deletes,
+            instance: instance.into(),
+            into: None,
         }
     }
 
@@ -708,6 +760,7 @@ impl Subject {
                 transition: transition.into(),
             },
             instance: instance.into(),
+            into: None,
         }
     }
 
@@ -717,6 +770,7 @@ impl Subject {
             entity,
             effect: Effect::Updates,
             instance: instance.into(),
+            into: None,
         }
     }
 
@@ -729,7 +783,7 @@ impl Subject {
     pub fn surface(&self) -> InstanceSurface {
         match self.effect {
             Effect::Creates => InstanceSurface::EmittedEvent,
-            Effect::Moves { .. } | Effect::Updates | Effect::Preserves => {
+            Effect::Moves { .. } | Effect::Updates | Effect::Preserves | Effect::Deletes => {
                 InstanceSurface::CommandInput
             }
         }
@@ -1585,6 +1639,13 @@ pub struct Outcome {
     /// is the whole claim: `true` says the command reports [`Self::error`] and does not act,
     /// `false` says it is accepted and the subject does not move. See [`RawOutcome::refuses`].
     pub refuses: bool,
+    /// `true` for an outcome declared `accepts: nothing` (ess/15): accepted, with no subject, no
+    /// event and no error, and witnessed by nothing observable changing.
+    ///
+    /// The one outcome that observably does neither and is not a wrong-state branch: a request a
+    /// command answers with success and no effect, which a specification could not state before
+    /// (beyond10x/ess#144). `preserves:` stays the form for a command with a subject.
+    pub accepts_nothing: bool,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1606,6 +1667,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: None,
             refuses: true,
+            accepts_nothing: false,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1623,6 +1685,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: None,
             refuses: true,
+            accepts_nothing: false,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1644,6 +1707,7 @@ impl Outcome {
             payload: BTreeMap::new(),
             error: Some(error),
             refuses: true,
+            accepts_nothing: false,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1686,7 +1750,8 @@ impl Outcome {
             | OutcomeCondition::ExternalWhen { .. }
             | OutcomeCondition::WrongState
             | OutcomeCondition::SubjectField { .. }
-            | OutcomeCondition::SubjectPredicate { .. } => false,
+            | OutcomeCondition::SubjectPredicate { .. }
+            | OutcomeCondition::UnknownInstance => false,
         }
     }
 
@@ -1933,6 +1998,7 @@ impl CommandSpec {
         }
 
         errors.extend(self.validate_branch_coverage(types));
+        errors.extend(outcome_shapes::validate_command(self));
         errors
     }
 
@@ -1954,6 +2020,7 @@ impl CommandSpec {
 
     /// Checks one outcome: that it is observable, that a refusal changes nothing, and that its
     /// condition is decidable from what the caller supplied.
+    #[allow(clippy::too_many_lines)]
     fn validate_outcome(&self, outcome: &Outcome, inputs: &BTreeSet<&str>) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let location = self.site().key("outcomes").named(outcome.name.as_str());
@@ -1963,12 +2030,20 @@ impl CommandSpec {
         // not move — which is an observation, and a stronger one than the negative check that was
         // all a specification could make before `refuses: false` existed. Everything else with no
         // event and no error really is unobservable, so the rule stands for it.
-        let accepts_wrong_state =
-            outcome.condition == OutcomeCondition::WrongState && !outcome.refuses;
+        let accepts_wrong_state = matches!(
+            outcome.condition,
+            OutcomeCondition::WrongState | OutcomeCondition::UnknownInstance
+        ) && !outcome.refuses;
         let preserves = outcome
             .subject
             .as_ref()
             .is_some_and(|subject| subject.effect == Effect::Preserves);
+        // A removal is observable without an event: the row is gone from every immediate view.
+        let deletes = outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == Effect::Deletes);
+        errors.extend(outcome_shapes::validate_outcome(outcome, &location));
         if preserves
             && (!outcome.sets.is_empty() || !outcome.emits.is_empty() || outcome.error.is_some())
         {
@@ -1982,6 +2057,8 @@ impl CommandSpec {
             && outcome.error.is_none()
             && !accepts_wrong_state
             && !preserves
+            && !deletes
+            && !outcome.accepts_nothing
             && outcome.replays.is_none()
         {
             errors.push(
@@ -3255,7 +3332,8 @@ fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'s
         | Primitive::Timestamp
         | Primitive::Duration
         | Primitive::Uuid
-        | Primitive::Bytes => return Err(None),
+        | Primitive::Bytes
+        | Primitive::Json => return Err(None),
     };
     Err(Some(spelling))
 }
@@ -3339,9 +3417,23 @@ fn literal_representation(
         // literal fills. It is not every type with no values of its own — one whose field names
         // nothing, and one sitting behind an `Optional`, are both `Structured` and both refused
         // here, because here is where they are refused at all.
-        Resolution::Established(Representation::Text)
-        | Resolution::Undeclared
-        | Resolution::Uninhabited => None,
+        // A declared prefix is the one text constraint a literal is held to here: every value
+        // starts with it, so a literal that does not is a value the type does not have
+        // (beyond10x/ess#146).
+        Resolution::Established(Representation::Text) => resolved
+            .types
+            .effective_prefix(&held.type_ref)
+            .filter(|prefix| !value.starts_with(prefix.as_str()))
+            .map(|prefix| LiteralRefusal {
+                reason: format!(
+                    "`{value}` does not start with {prefix:?}, the prefix every value of \
+                     `{owner}.{target}` starts with"
+                ),
+                hint: format!(
+                    "write the literal starting with the prefix, as in `{prefix}{value}`"
+                ),
+            }),
+        Resolution::Undeclared | Resolution::Uninhabited => None,
         // A type that has values and still resolves through itself is nobody else's error: no pass
         // reports it, so admitting the literal would be admitting one that was never checked.
         Resolution::Cyclic(through) => refuse(format!(
@@ -3629,12 +3721,25 @@ fn example_layers(
     for layer in newtypes {
         let crate::types::TypeBody::Newtype {
             alphabet,
+            prefix,
             invariants,
             ..
         } = &layer.body
         else {
             continue;
         };
+        if let (Some(prefix), Some(text)) = (prefix, example.as_text()) {
+            if !text.starts_with(prefix.as_str()) {
+                return Err((
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{example}` does not start with {prefix:?}, the prefix of `{}`",
+                        layer.name
+                    ),
+                    "write an example that starts with the prefix the type declares",
+                ));
+            }
+        }
         if let (Some(alphabet), Some(text)) = (alphabet, example.as_text()) {
             if let Some(outside) = text
                 .chars()
@@ -3732,6 +3837,32 @@ pub struct RawCommandSpec {
     pub refs: Refs,
 }
 
+/// One field of a command's input: a [`Field`] that may also carry an `example:`.
+///
+/// Read through [`RawInputField`], which also takes the nested `naming:` spelling
+/// (beyond10x/ess#142); see it for why this is a type of its own.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "RawInputField")]
+pub struct InputField {
+    /// Its name, which [`RawInputField`] checks is a field name.
+    pub name: String,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// What it is on the wire, and what a person is shown.
+    #[serde(flatten, skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
+    /// The value synthesis builds this input from (ess/11). Not a constraint: the input still
+    /// accepts every value of its type.
+    ///
+    /// An authored `example: null` is kept as `Some(Node::Null)` rather than read as no example,
+    /// so validation can refuse it: an example is a value, and `null` is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example: Option<Node>,
+}
+
+// An input field as written: `InputField`'s keys, plus the nested `naming:` synonym a `RawField`
+// also reads (beyond10x/ess#142). The rustdoc below is the published schema's description.
 /// One field of a command's input, as written: a [`Field`] that may also carry an `example:`.
 ///
 /// Its own type rather than a key on [`Field`], which struct, event, error, entity, view,
@@ -3741,32 +3872,58 @@ pub struct RawCommandSpec {
 /// The attributes are [`Field`]'s exactly, and `the_published_input_field_is_a_field_plus_exactly_example`
 /// holds the two published schemas to differing by that one property
 /// (`docs/design/string-alphabet-and-length.md`, section 2).
-#[derive(
-    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
+#[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct InputField {
+#[schemars(rename = "InputField")]
+pub struct RawInputField {
     /// Its name.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Its type.
     #[serde(rename = "type")]
     pub type_ref: TypeRef,
     /// What it is on the wire, and what a person is shown.
-    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    #[serde(default, flatten)]
     pub naming: Naming,
+    /// The same naming, written nested as commands and events write theirs. Not beside the flat
+    /// keys.
+    #[serde(default, rename = "naming")]
+    pub nested_naming: Option<Naming>,
+    /// How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a
+    /// naming key, so no other construct's `naming:` can declare one.
+    #[serde(default)]
+    pub presence: Option<crate::types::Presence>,
     /// The value synthesis builds this input from (ess/11). Not a constraint: the input still
     /// accepts every value of its type.
     ///
     /// An authored `example: null` is kept as `Some(Node::Null)` rather than read as no example,
     /// so validation can refuse it: an example is a value, and `null` is none.
-    #[serde(
-        default,
-        deserialize_with = "deserialize_example",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, deserialize_with = "deserialize_example")]
     pub example: Option<Node>,
+}
+
+impl TryFrom<RawInputField> for InputField {
+    type Error = String;
+
+    fn try_from(raw: RawInputField) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: raw.name,
+            type_ref: raw.type_ref,
+            naming: crate::types::field_naming(raw.naming, raw.nested_naming, raw.presence)?,
+            example: raw.example,
+        })
+    }
+}
+
+impl schemars::JsonSchema for InputField {
+    fn schema_name() -> String {
+        <RawInputField as schemars::JsonSchema>::schema_name()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <RawInputField as schemars::JsonSchema>::json_schema(generator)
+    }
 }
 
 /// Reads a present `example:` as written, `null` included.
@@ -3941,6 +4098,13 @@ pub struct RawOutcome {
     /// beside it, which is required.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub wrong_state: bool,
+    /// `true` when this is the branch taken for an identity no record carries (ess/15).
+    ///
+    /// Beside `wrong_state:`, and answered first: an id the system never held is a different
+    /// behaviour from an id in a state no move starts from (beyond10x/ess#145). Like
+    /// `wrong_state:` it names an `error:`, or declares `refuses: false` for an accepted no-op.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unknown_instance: bool,
     /// Whether the command *refuses* in those states, or accepts and changes nothing.
     ///
     /// Absent means it refuses, which is what every wrong-state branch written before this key
@@ -3975,6 +4139,18 @@ pub struct RawOutcome {
     /// The existing entity whose state and fields this silent branch preserves (ess/6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preserves: Option<QualifiedName>,
+    /// The existing entity this outcome removes (ess/15, beyond10x/ess#151).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletes: Option<QualifiedName>,
+    /// The declared state a `creates:` brings its instance into, where it is not the lifecycle's
+    /// `initial` (ess/15, beyond10x/ess#150). Admitted only beside `creates:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub into: Option<crate::entity::StateName>,
+    /// `nothing`: the request is accepted and nothing observable changes (ess/15,
+    /// beyond10x/ess#144). Admitted under `when:` or as the default, on a branch with no subject,
+    /// no event and no error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepts: Option<Accepts>,
     /// The originating success of this same command, retained without another effect (ess/7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replays: Option<OutcomeName>,
@@ -4203,6 +4379,9 @@ fn held_state_key(literal: bool) -> &'static str {
 impl TryFrom<RawOutcome> for Outcome {
     type Error = ValidationErrors;
 
+    // One conversion per key an author can write; splitting it would scatter the refusals
+    // that name those keys.
+    #[allow(clippy::too_many_lines)]
     fn try_from(raw: RawOutcome) -> Result<Self, Self::Error> {
         let conflict = |key: &str, message: String, hint: &str| {
             outcome_conflict(&raw.name, key, message, hint)
@@ -4222,14 +4401,39 @@ impl TryFrom<RawOutcome> for Outcome {
                 "keep the subject fact and optional input predicate",
             ));
         }
-        let condition = outcome_condition(
-            &raw.name,
-            raw.when,
-            raw.when_subject_state,
-            raw.when_state_changes,
-            raw.external,
-            raw.wrong_state,
-        )?;
+        // The unknown-instance marker is a condition of its own and composes with none of the
+        // others: an identity no record carries has no state, no stored field and no input guard
+        // that could narrow it further.
+        if raw.unknown_instance
+            && (raw.when.is_some()
+                || subject_fact.is_some()
+                || raw.when_subject_state.is_some()
+                || raw.when_state_changes.is_some()
+                || raw.external.is_some()
+                || raw.wrong_state)
+        {
+            return Err(conflict(
+                "unknown_instance",
+                format!(
+                    "outcome `{}` declares `unknown_instance` beside another condition; the \
+                     branch an identity no record carries takes is decided by nothing else",
+                    raw.name
+                ),
+                "keep `unknown_instance: true` alone, naming its `error:` or `refuses: false`",
+            ));
+        }
+        let condition = if raw.unknown_instance {
+            OutcomeCondition::UnknownInstance
+        } else {
+            outcome_condition(
+                &raw.name,
+                raw.when,
+                raw.when_subject_state,
+                raw.when_state_changes,
+                raw.external,
+                raw.wrong_state,
+            )?
+        };
         let condition = match subject_fact {
             Some(RawSubjectFact::Field(fact)) => OutcomeCondition::SubjectField {
                 field: fact.field,
@@ -4245,7 +4449,12 @@ impl TryFrom<RawOutcome> for Outcome {
         // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
         // reads like a claim about the outcome and decides nothing, so it is refused where the
         // author would go and delete it rather than carried as a field nothing consults.
-        if raw.refuses.is_some() && condition != OutcomeCondition::WrongState {
+        if raw.refuses.is_some()
+            && !matches!(
+                condition,
+                OutcomeCondition::WrongState | OutcomeCondition::UnknownInstance
+            )
+        {
             return Err(conflict(
                 "refuses",
                 format!(
@@ -4263,8 +4472,10 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.moves,
             raw.updates,
             raw.preserves,
+            raw.deletes,
             raw.instance,
         )?;
+        let subject = outcome_shapes::creation_state(&raw.name, subject, raw.into)?;
         subject_authority(
             &raw.name,
             &condition,
@@ -4299,6 +4510,7 @@ impl TryFrom<RawOutcome> for Outcome {
             emits: raw.emits,
             error: raw.error,
             refuses,
+            accepts_nothing: raw.accepts.is_some(),
             summary: raw.summary,
             refs: raw.refs,
         })
@@ -4399,6 +4611,7 @@ fn subject_of(
     moves: Option<QualifiedName>,
     updates: Option<QualifiedName>,
     preserves: Option<QualifiedName>,
+    deletes: Option<QualifiedName>,
     instance: Option<String>,
 ) -> Result<Option<Subject>, ValidationErrors> {
     let declared: Vec<&'static str> = [
@@ -4406,6 +4619,7 @@ fn subject_of(
         moves.as_ref().map(|_| "moves"),
         updates.as_ref().map(|_| "updates"),
         preserves.as_ref().map(|_| "preserves"),
+        deletes.as_ref().map(|_| "deletes"),
     ]
     .into_iter()
     .flatten()
@@ -4476,7 +4690,11 @@ fn subject_of(
             entity,
             instance,
             effect: Effect::Preserves,
+            into: None,
         }));
+    }
+    if let Some(entity) = deletes {
+        return Ok(Some(Subject::deletes(entity, instance)));
     }
     let Some(qualified) = moves else {
         unreachable!("one of the three keys is declared, and the other two were taken above")
@@ -4575,6 +4793,7 @@ impl TryFrom<RawErrorSpec> for ErrorSpec {
 }
 
 impl From<Outcome> for RawOutcome {
+    #[allow(clippy::too_many_lines)]
     fn from(outcome: Outcome) -> Self {
         let when_subject = RawSubjectFact::written(&outcome.condition);
         let preserves = outcome
@@ -4582,6 +4801,16 @@ impl From<Outcome> for RawOutcome {
             .as_ref()
             .filter(|subject| subject.effect == Effect::Preserves)
             .map(|subject| subject.entity.clone());
+        let deletes = outcome
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect == Effect::Deletes)
+            .map(|subject| subject.entity.clone());
+        let into = outcome
+            .subject
+            .as_ref()
+            .and_then(|subject| subject.into.clone());
+        let unknown_instance = outcome.condition == OutcomeCondition::UnknownInstance;
         let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
             .condition
         {
@@ -4596,7 +4825,9 @@ impl From<Outcome> for RawOutcome {
             OutcomeCondition::StateChange { changes, predicate } => {
                 (predicate, None, Some(changes), None, false)
             }
-            OutcomeCondition::Otherwise => (None, None, None, None, false),
+            OutcomeCondition::Otherwise | OutcomeCondition::UnknownInstance => {
+                (None, None, None, None, false)
+            }
             OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
             OutcomeCondition::ExternalWhen { cause, predicate } => {
                 (Some(predicate), None, None, Some(cause), false)
@@ -4609,19 +4840,22 @@ impl From<Outcome> for RawOutcome {
                 entity,
                 effect: Effect::Creates,
                 instance,
+                ..
             }) => (Some(entity), None, None, Some(instance)),
             Some(Subject {
                 entity,
                 effect: Effect::Moves { transition },
                 instance,
+                ..
             }) => (None, Some(entity.child(&transition)), None, Some(instance)),
             Some(Subject {
                 entity,
                 effect: Effect::Updates,
                 instance,
+                ..
             }) => (None, None, Some(entity), Some(instance)),
             Some(Subject {
-                effect: Effect::Preserves,
+                effect: Effect::Preserves | Effect::Deletes,
                 instance,
                 ..
             }) => (None, None, None, Some(instance)),
@@ -4654,7 +4888,11 @@ impl From<Outcome> for RawOutcome {
             // Written back only where it says something. On any branch but a refusing wrong-state
             // one the value is the default, and a round trip that added `refuses: true` to every
             // outcome would change every document that has ever been read and re-emitted.
-            refuses: (wrong_state && !outcome.refuses).then_some(false),
+            refuses: ((wrong_state || unknown_instance) && !outcome.refuses).then_some(false),
+            unknown_instance,
+            deletes,
+            into,
+            accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
             creates,
             moves,
             updates,
@@ -4743,6 +4981,7 @@ mod tests {
                 name: name("billing.invoice.Email"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },
@@ -4939,6 +5178,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -4984,6 +5224,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
+            accepts_nothing: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5019,6 +5260,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5047,6 +5289,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
+            accepts_nothing: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5106,6 +5349,7 @@ outcomes:
             payload: BTreeMap::new(),
             error,
             refuses: false,
+            accepts_nothing: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5184,6 +5428,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: None,
             refuses: false,
+            accepts_nothing: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5227,6 +5472,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: None,
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5408,6 +5654,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5441,6 +5688,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5563,6 +5811,7 @@ outcomes:
             payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
+            accepts_nothing: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5882,6 +6131,7 @@ outcomes:
                 payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -6009,6 +6259,7 @@ outcomes:
                     payload: BTreeMap::new(),
                     error: Some(name("billing.invoice.InvalidAmount")),
                     refuses: true,
+                    accepts_nothing: false,
                     summary: None,
                     refs: Refs::new(),
                     sets: BTreeMap::new(),
@@ -6417,6 +6668,7 @@ payload:
                     name: name(&format!("billing.chain.Link{index}")),
                     body: TypeBody::Newtype {
                         alphabet: None,
+                        prefix: None,
                         of: TypeRef::Named(name(&of)),
                         invariants: Vec::new(),
                     },
@@ -6436,6 +6688,7 @@ payload:
                 name: name("billing.chain.Cycle"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Optional(Box::new(TypeRef::Named(name("billing.chain.Cycle")))),
                     invariants: Vec::new(),
                 },
@@ -6538,6 +6791,7 @@ payload:
                 name: name("billing.chain.Ring"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Named(name("billing.chain.Ring")),
                     invariants: Vec::new(),
                 },

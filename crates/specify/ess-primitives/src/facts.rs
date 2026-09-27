@@ -846,8 +846,13 @@ impl FactPath {
                 }
             }
         }
-        if !value.starts_with(|c: char| c.is_ascii_alphabetic()) {
-            return reject("must start with a letter".to_owned());
+        // Underscores may lead, as they may lead a field name (beyond10x/ess#141): a command
+        // input's fact path starts with the field's name, and `_url` is a field name.
+        if !value
+            .trim_start_matches('_')
+            .starts_with(|c: char| c.is_ascii_alphabetic())
+        {
+            return reject("must start with a letter, optionally after underscores".to_owned());
         }
         Ok(Self { segments })
     }
@@ -892,7 +897,7 @@ impl FactPath {
     }
 
     /// The pattern published in generated JSON Schema.
-    pub const PATTERN: &'static str = "^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*$";
+    pub const PATTERN: &'static str = "^_*[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*$";
 }
 
 impl fmt::Display for FactPath {

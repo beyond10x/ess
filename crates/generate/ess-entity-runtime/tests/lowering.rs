@@ -1848,3 +1848,223 @@ fn an_alphabet_and_a_text_length_are_refused_by_name_by_the_lowering() {
         "{diagnostics:?}"
     );
 }
+
+/// `CancelInvoice` under `ess/15`, with an input `note` beside the identity and `posted` guarded by
+/// `when_subject: {predicate: <predicate>}`.
+fn ess15_cancel_ir(predicate: &str) -> EssIr {
+    // A mapping is written as YAML; a compact expression is quoted, as `adv_cancel_ir` quotes it.
+    let predicate = if predicate.starts_with('{') {
+        predicate.to_owned()
+    } else {
+        format!("'{predicate}'")
+    };
+    let refusal = format!("      - name: invoice_id\n        type: billing.invoice.InvoiceId\n      - name: note\n        type: String\n\n    outcomes:\n      - name: posted\n        when_subject: {{predicate: {predicate}}}\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n");
+    compile_changes(
+        &example("billing"),
+        &[
+            ("system.yaml", "format: ess/1\n", "format: ess/15\n"),
+            (
+                "domains/email.yaml",
+                "            recipient: input.recipient\n",
+                "            recipient: input.recipient\n            message_id: {generated: true}\n",
+            ),
+            (
+                "domains/invoice.yaml",
+                "          billing.invoice.InvoiceCreated:\n",
+                "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+            ),
+            ("domains/invoice.yaml", KEPT_INPUT, refusal.as_str()),
+        ],
+    )
+}
+
+/// `input.<field>` in a stored-field predicate (beyond10x/ess#157) reads the command's arguments,
+/// never a stored field named `input`, and the lowered runtime decides it: a cancel naming the
+/// invoice's own note is cancelled, one naming another note is refused.
+#[test]
+fn an_input_operand_in_a_stored_field_predicate_lowers_to_the_arguments() {
+    let lowered = lower_billing_changes(&ess15_cancel_ir("note != input.note"))
+        .expect("a stored-field predicate over the input lowers");
+    let posted = &lowered.definitions()[&name("billing.invoice.Invoice")].operations
+        ["billing.invoice.CancelInvoice"]
+        .outcomes[0];
+    let when = serde_json::to_value(&posted.when).expect("condition serializes");
+    let text = when.to_string();
+    assert!(
+        text.contains("\"$fields.note\"") && text.contains("\"$args.input.note\""),
+        "{when}"
+    );
+    assert!(!text.contains("$fields.input"), "{when}");
+
+    let registry = registry(&lowered);
+    let runtime = Runtime::new(&registry);
+    let binding = &lowered.bindings().commands()[&name("billing.invoice.CancelInvoice")];
+    let taken = |sent: &str| {
+        let arguments = json!({
+            "input": {"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225", "note": sent},
+            "bound": bound_for(binding, |_| None)
+        });
+        let mut row = invoice_instance("Draft", "Email");
+        row.fields.insert("note".to_owned(), json!("routine"));
+        match runtime.decide_before_load(
+            &row.entity,
+            row.version,
+            row.id.clone(),
+            "billing.invoice.CancelInvoice",
+            arguments,
+        ) {
+            Ok(PreloadDecision::Load(prepared)) => match prepared.select_with(&row) {
+                Ok(LoadedDecision::NeedsFulfillment(prepared)) => prepared.outcome().to_owned(),
+                Ok(LoadedDecision::Complete(evaluation)) => match evaluation.into_decision() {
+                    Ok(_) => "accepted without fulfillment".to_owned(),
+                    Err(refusal) => format!("refused: {refusal:?}"),
+                },
+                Err(error) => format!("error: {error:?}"),
+            },
+            Ok(_) => "decided before load".to_owned(),
+            Err(error) => format!("error before load: {error:?}"),
+        }
+    };
+    assert_eq!(taken("routine"), "cancelled", "lowered `when`: {when}");
+    assert!(
+        taken("other").starts_with("refused"),
+        "lowered `when`: {when}"
+    );
+}
+
+/// `equals_ignore_case` and `in_ignore_case` (beyond10x/ess#140) have no entity-core condition, so
+/// lowering refuses them by name rather than approximating them with a case-sensitive one.
+#[test]
+fn a_case_insensitive_guard_is_refused_by_name_by_the_lowering() {
+    for guard in [
+        "{note: {equals_ignore_case: routine}}",
+        "{not: {note: {in_ignore_case: [a, b]}}}",
+    ] {
+        let diagnostics = lower_billing_changes(&ess15_cancel_ir(guard))
+            .expect_err("case folding has no entity-core operator")
+            .into_vec();
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.code, diagnostic.path.as_str()))
+                .collect::<Vec<_>>(),
+            [(
+                LoweringCode::CaseFoldUnsupported,
+                "command.billing.invoice.CancelInvoice.outcomes.posted.when_subject"
+            )],
+            "{guard}"
+        );
+        assert!(
+            diagnostics[0].message.contains("ignore_case"),
+            "{diagnostics:?}"
+        );
+    }
+}
+
+/// A declared prefix is `value starts_with <prefix>`, which entity-core has an operator for, so
+/// it lowers to a nominal rule rather than being refused as an alphabet is (beyond10x/ess#146).
+#[test]
+fn a_prefix_lowers_to_a_starts_with_rule() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4\n", "format: ess/15\n"),
+            (
+                "domains/local.yaml",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    prefix: \"sh/\"\n",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .unwrap_or_else(|diagnostics| panic!("a prefix lowers: {diagnostics:?}"));
+    let rendered: Vec<String> = lowered
+        .definitions()
+        .values()
+        .map(|definition| serde_json::to_string(definition.as_definition()).expect("serializes"))
+        .collect();
+    assert!(
+        rendered
+            .iter()
+            .any(|text| text.contains("starts_with") && text.contains("\"sh/\"")),
+        "{rendered:#?}"
+    );
+}
+
+/// A `Json` field (beyond10x/ess#138) lowers to entity-core's own JSON value kind, which checks
+/// nothing about the value, rather than being refused.
+#[test]
+fn a_json_field_lowers_to_the_json_field_kind() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4\n", "format: ess/15\n"),
+            (
+                "domains/local.yaml",
+                "      - name: memo\n        type: Optional<String>\n",
+                "      - name: memo\n        type: Optional<Json>\n",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .unwrap_or_else(|diagnostics| panic!("a Json field lowers: {diagnostics:?}"));
+    let rendered: Vec<String> = lowered
+        .definitions()
+        .values()
+        .map(|definition| serde_json::to_string(definition.as_definition()).expect("serializes"))
+        .collect();
+    assert!(
+        rendered
+            .iter()
+            .any(|text| text.contains(r#""memo":{"type":"json""#)),
+        "{rendered:#?}"
+    );
+}
+
+/// Two layers of one newtype chain that each declare an invariant lower two rules with two names:
+/// the outer layer keeps the name it always had, the inner one is told apart by its type.
+#[test]
+fn invariants_at_two_layers_of_a_newtype_chain_lower_to_distinct_rule_names() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4\n", "format: ess/15\n"),
+            (
+                "domains/local.yaml",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+                "  - name: contract.local.Base\n    kind: newtype\n    of: String\n    invariants: [value != \"a\"]\n\n  - name: contract.local.Shared\n    kind: newtype\n    of: contract.local.Base\n    invariants: [value != \"b\"]\n",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .unwrap_or_else(|diagnostics| panic!("lowers: {diagnostics:?}"));
+    let child = lowered
+        .definitions()
+        .values()
+        .map(|definition| serde_json::to_string(definition.as_definition()).expect("serializes"))
+        .find(|text| text.contains(r#""entity":"contract.local.Child""#))
+        .expect("the child is lowered");
+    assert!(
+        child.contains("\"nominal_contract_local_Child_fields_note_0000\""),
+        "{child}"
+    );
+    assert!(
+        child.contains("\"nominal_contract_local_Child_fields_note_0000_contract_local_Base\""),
+        "{child}"
+    );
+}

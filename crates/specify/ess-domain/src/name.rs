@@ -224,6 +224,15 @@ pub struct Naming {
     /// a separate key rather than a rename.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// How an absent value of an `Optional` field travels (ess/15, beyond10x/ess#139).
+    ///
+    /// A field's wire property, carried here because every projection already reads a field's
+    /// wire spelling from its naming. Never read from a document through `Naming`: a field reads it
+    /// as its own `presence:` key ([`RawField`](crate::types::RawField)), so a command's, an event's
+    /// or a type's `naming:` refuses it as an unknown key. Written back flat with the field.
+    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub presence: Option<crate::types::Presence>,
 }
 
 impl Naming {
@@ -252,6 +261,7 @@ impl Naming {
             && self.display.is_none()
             && self.summary.is_none()
             && self.code.is_none()
+            && self.presence.is_none()
     }
 }
 
@@ -594,6 +604,7 @@ mod tests {
             display: Some("Invoice created".to_owned()),
             summary: None,
             code: None,
+            presence: None,
         };
 
         assert_eq!(naming.wire_or(&name), "invoices.created.v1");

@@ -63,6 +63,10 @@ pub struct RawSpecFile {
     /// a typo that would otherwise change nothing.
     #[serde(default)]
     pub domains: Vec<QualifiedName>,
+    /// The ambient command invocations every scenario runs inside, on the file that carries the
+    /// header (ess/15, `docs/design/outcome-shapes.md`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preconditions: Vec<crate::system::Precondition>,
     /// The domain this file contributes to, when it contributes to one.
     #[serde(default)]
     pub domain: Option<QualifiedName>,
@@ -154,9 +158,24 @@ impl RawSpecFile {
     ///
     /// That applies to every mapping in the format, not just one section — which is why the check
     /// lives here rather than in each module that happens to hold a map.
+    ///
+    /// A newtype this file declares may key a map it writes (beyond10x/ess#143), together with any
+    /// the caller already put in view — which is how [`Self::parse_all`] makes a sibling file's
+    /// declarations count.
     pub fn parse(text: &str) -> Result<Self, serde_yaml::Error> {
         let document: serde_yaml::Value = serde_yaml::from_str(text)?;
-        serde_yaml::from_value(document)
+        crate::types::MapKeyNewtypes::current()
+            .with_value(&document)
+            .scope(|| serde_yaml::from_value(document))
+    }
+
+    /// Reads every file of one specification, each result in the order the texts were given.
+    ///
+    /// The same as [`Self::parse`] on each, except that a newtype declared in any of the files may
+    /// key a map in any other: validity must not depend on which file declares what.
+    pub fn parse_all(texts: &[&str]) -> Vec<Result<Self, serde_yaml::Error>> {
+        crate::types::MapKeyNewtypes::from_documents(texts.iter().copied())
+            .scope(|| texts.iter().map(|text| Self::parse(text)).collect())
     }
 }
 
@@ -766,7 +785,11 @@ impl Collected {
         errors: &mut ValidationErrors,
     ) -> Option<crate::system::SpecHeader> {
         let Some(name) = file.system.clone() else {
-            if file.format.is_some() || file.version.is_some() || !file.domains.is_empty() {
+            if file.format.is_some()
+                || file.version.is_some()
+                || !file.domains.is_empty()
+                || !file.preconditions.is_empty()
+            {
                 errors.push(
                     ValidationError::new(
                         ValidationCode::MissingDeclaration,
@@ -789,6 +812,7 @@ impl Collected {
             format: file.format.unwrap_or(FormatVersion::V1),
             naming: Naming::default(),
             summary: file.summary.clone(),
+            preconditions: file.preconditions.clone(),
         })
     }
 
@@ -1017,6 +1041,32 @@ impl Collected {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ITEM_ID: &str = "types:\n  - {name: demo.orders.ItemId, kind: newtype, of: String}\n";
+    const CHECKED: &str = "events:\n  - name: demo.orders.Checked\n    fields:\n      - {name: \
+                           results, type: \"Map<demo.orders.ItemId, Boolean>\"}\n";
+
+    #[test]
+    fn a_file_may_key_a_map_by_a_newtype_it_declares() {
+        RawSpecFile::parse(&format!("domain: demo.orders\n{ITEM_ID}{CHECKED}"))
+            .expect("beyond10x/ess#143: a newtype of String keys a map");
+        RawSpecFile::parse(&format!("domain: demo.orders\n{CHECKED}"))
+            .expect_err("read alone, a file cannot see a sibling's newtype");
+    }
+
+    #[test]
+    fn files_read_together_see_each_others_key_newtypes_in_any_order() {
+        let types = format!("domain: demo.orders\n{ITEM_ID}");
+        let events = format!("domain: demo.orders\n{CHECKED}");
+        for texts in [
+            [types.as_str(), events.as_str()],
+            [events.as_str(), types.as_str()],
+        ] {
+            for parsed in RawSpecFile::parse_all(&texts) {
+                parsed.expect("the declaring file's position does not matter");
+            }
+        }
+    }
 
     #[test]
     fn revalidation_rejects_an_expression_mutated_inside_the_sealed_module() {

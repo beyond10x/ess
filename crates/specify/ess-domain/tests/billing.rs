@@ -430,6 +430,13 @@ fn the_example_uses_every_primitive_and_every_composite() {
             );
             continue;
         }
+        if *primitive == ess_domain::Primitive::Json {
+            assert!(
+                !primitives.contains("Json"),
+                "the unchanged ess/1 example must not acquire a format-15 primitive"
+            );
+            continue;
+        }
         assert!(
             primitives.contains(&format!("{primitive:?}")),
             "the example uses no {primitive:?}: {primitives:?}"

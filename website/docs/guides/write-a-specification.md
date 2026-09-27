@@ -288,6 +288,42 @@ the first witness starts from. It is not a constraint, it has to be a value of t
 only a scalar input takes one. Generated code documents an alphabet and does not enforce it, and
 Entity Runtime refuses both an alphabet and a text length by name.
 
+### Say what a text starts with
+
+A `String` newtype whose every value starts with fixed text says so with `prefix:`. It needs
+`format: ess/15`.
+
+```yaml
+types:
+  - name: demo.msgs.Channel
+    kind: newtype
+    of: String
+    prefix: "/"
+```
+
+The prefix is literal text, not a pattern. The published JSON Schema carries it as an anchored
+`pattern` (`^/`), every witness synthesis builds starts with it (`/channel` for a field named
+`channel`), and a literal written for the field that does not start with it is refused. Beside an
+`alphabet:` every character of the prefix has to be in the alphabet, and a newtype of a newtype may
+declare a longer prefix that starts with the inner one. Entity Runtime lowers the prefix to a
+`starts_with` rule.
+
+### Carry any JSON value
+
+`Json` is a primitive for a value the specification does not structure: a body delivered as it
+arrived. It needs `format: ess/15`.
+
+```yaml
+types:
+  - {name: demo.msgs.Body, kind: newtype, of: Json}
+```
+
+It projects to the empty JSON Schema, which every value satisfies, and a suite compares it
+structurally: an object with the same members in another order is the same value. It is never a map
+key, a predicate never reads one, and no literal spells one, so a payload fills a `Json` field from
+an input. Entity Runtime stores it as its own JSON field kind. The Rust, Go, web and CLI code
+targets refuse a model that uses it, at every position, until they have a representation for it.
+
 ### Select an outcome from the held subject state
 
 `ess/3`, introduced in 0.23.0, allows `when_subject_state` beside an ordinary input predicate:
@@ -459,6 +495,104 @@ Rust and Go behaviour seams add a second variant for this answer that carries no
 in Go. The served surface answers it with the branch's `409`, the outcome and the error, and no
 `payload`. The `WrongState` variant still requires every field, so a realization cannot leave out
 the state of an instance it holds.
+
+### An unknown instance can have its own outcome
+
+From `format: ess/15`, an identity the system never held can answer differently from one in a state
+no move starts from:
+
+```yaml
+- {name: no-such-call, unknown_instance: true, error: example.call.CallNotFound}
+- {name: already-ended, wrong_state: true, refuses: false}
+```
+
+`unknown_instance:` sits beside `wrong_state:`, at most once per command, on a command with a
+`moves:`, `updates:` or `deletes:` branch that reads `instance:` from input. It names an `error:`,
+or declares `refuses: false` for an accepted no-op, and takes no other condition and no effect. It
+is the first answer for an identity no record carries — before a declared not-found refusal and
+before `wrong_state`. The suite checks it under its own outcome id, sending an identity no other
+scenario sends and arranging nothing; the `wrong_state` branch keeps its scenarios in the states it
+answers. The generated seams carry its variant like any other outcome's, and the served surface
+answers a refusing one with `404`.
+
+### An outcome can delete its subject
+
+From `format: ess/15`, a record the implementation removes at the end of its lifecycle is declared
+as removed rather than moved to a terminal state no row ever holds:
+
+```yaml
+- name: ended
+  deletes: example.call.Call
+  instance: call_id
+  when_subject_state: Connected     # optional, as on any subject outcome
+  emits: [example.call.CallEnded]
+```
+
+`deletes:` is an effect beside `creates:`, `moves:`, `updates:` and `preserves:`, on an existing
+subject named by an input. It may emit events, may not `sets:`, and names no error. Its scenario
+requires that no immediate (`read_your_writes`) view of the entity still holds a row with that
+identity, then sends the command for it again and requires the unknown-instance answer. A suite
+holding the absence check is `ess-conformance/22` (coverage `/23`); Go and TypeScript runners
+refuse those majors by version.
+
+### A creation can land in a declared state
+
+From `format: ess/15`, a record that first appears already past `initial` — a call announced as
+ringing — says so:
+
+```yaml
+- name: offered
+  creates: example.call.Call
+  instance: call_id
+  into: Ringing
+  emits: [example.call.CallOffered]
+```
+
+`into:` names a declared state of the created entity and is admitted only beside `creates:`; a
+terminal state is allowed. Omitted, creation lands in `initial` as before. The scenario asserts
+`Ringing` on the created row wherever a view projects `state`, and an arrangement that needs a
+`Ringing` call reaches it through this creation rather than through the moves from `initial`. The
+state must still be reachable from `initial` by some transition: the entity's own reachability
+check does not yet count creation states.
+
+### An accepted request can change nothing
+
+From `format: ess/15`, a request answered with success and no effect is declared as such:
+
+```yaml
+- name: acknowledged
+  when: flag == true
+  accepts: nothing
+```
+
+`accepts: nothing` is admitted under `when:` or as the default, with no subject, no event, no error,
+no assignment and no replay. Its scenario requires no error and no direct event, and that every
+immediate view without parameters holds exactly the rows it held before the command. A command with
+a subject says `preserves:` instead. The whole-view check is `ess-conformance/22` (coverage `/23`).
+
+### A system can run inside ambient preconditions
+
+From `format: ess/15`, the source carrying the system header can declare commands every command runs
+inside — an open session whose user row exists:
+
+```yaml
+preconditions:
+  - command: example.call.OpenSession
+    as: example.call.Agent
+    input: {user_id: 00000000-0000-4000-8000-000000000152}
+```
+
+Each names a declared command, optionally the actor it runs as (who must be granted it), and a
+literal for every required input. Its literal input must select exactly one branch that reports no
+error — a precondition whose `when:` guards pick a refusal, several branches, none, or cannot be
+decided from the literals is refused. An input the command declares under `fixture_inputs:` may be left
+out or written `{fixture: name}`, and is resolved like any fixture input. Synthesis prepends the
+list, in order, to every scenario and requires each to take its success branch; the generated Go
+and TypeScript explorers run it before every sequence, so the model starts from the state it leaves.
+A precondition the target, or the explorer's model, does not answer with that branch fails the
+scenario, or the exploration, as setup. A scenario that itself sends the precondition's command for
+the identity it creates runs without the prelude, so it does not create that record twice. The explorers do
+not resolve fixture inputs and refuse a precondition that needs one.
 
 ### An event's values need a declared source
 
@@ -843,6 +977,44 @@ which are what an operator types. Formats `ess/1` … `ess/4` refuse a variant t
 with `unsupported_format_version` at `types.<type>.variants.<variant>`, and a bare list is admitted
 by every format, so nothing written before this moves. `ess verify diff` reports a moved spelling as
 `VariantWireNameChanged` under [`ess-diff/5`](../reference/formats.md#change-and-conformance-records).
+
+### A field can carry its own wire name
+
+A field of a struct, an event or a command input that travels under another name declares it, flat
+or nested the way commands and events write their own naming:
+
+```yaml
+events:
+  - name: demo.orders.Placed
+    fields:
+      - name: order_id
+        type: demo.orders.OrderId
+        naming: {wire: orderId}   # the same as `wire: orderId` on the field
+```
+
+Writing both spellings on one field is refused. The model keeps the declared name, so a payload
+mapping and a predicate still say `order_id`, and JSON Schema, OpenAPI and AsyncAPI key the property
+`orderId`. The field is written back flat, so the two spellings are one model with one digest.
+
+### Say whether an absent Optional is sent as null
+
+An `Optional<T>` field says how its absent value travels with `presence:` (`format: ess/15`):
+
+```yaml
+types:
+  - name: demo.orders.OrderReceipt
+    kind: struct
+    fields:
+      - {name: partner_ref, type: Optional<String>, presence: null_when_absent}
+      - {name: discount_code, type: Optional<String>, presence: omitted_when_absent}
+```
+
+`null_when_absent` makes the JSON Schema property required and nullable; `omitted_when_absent`
+keeps it optional and not nullable, which is what an `Optional` field without a policy already
+publishes. A suite carries the policy on the field's payload leaf, so an implementation that sends
+`null` for `discount_code` or leaves `partner_ref` out fails; such a suite is written as
+`ess-conformance/24` (or `/25` with coverage), which the Go and TypeScript runners refuse by version.
+`presence:` on a required field, or in a command's, event's or type's own `naming:`, is refused.
 
 ## Three layers above the domains
 

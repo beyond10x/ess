@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -96,6 +96,9 @@ impl FormatVersion {
     /// Value expressions: `{subject}`, `{increment}`, `{input, else}`, nested struct sources,
     /// `input.` operands in subject predicates and case-insensitive text operators.
     pub const V14: Self = Self(14);
+    /// Outcome shapes, subject guards over input, case-insensitive text, new value types and
+    /// aggregates over optional fields (retrofit wave 2, beyond10x/ess#138-#157).
+    pub const V15: Self = Self(15);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";
@@ -260,6 +263,32 @@ pub struct SpecHeader {
     pub naming: Naming,
     /// What the system is, in one paragraph.
     pub summary: Option<String>,
+    /// The ambient command invocations every scenario and every explored sequence runs inside,
+    /// in order (ess/15).
+    pub preconditions: Vec<Precondition>,
+}
+
+/// One ambient command invocation a system runs inside — an open session whose user row exists
+/// (ess/15, beyond10x/ess#152, `docs/design/outcome-shapes.md`).
+///
+/// Synthesis runs the list, in order, before every scenario's arrangement, and a generated explorer
+/// runs it before every sequence, so the model it compares against starts from the state the
+/// preconditions leave. Each must take the command's declared success branch; one that is refused
+/// fails the scenario as setup. An input value a deterministic generator cannot choose comes from
+/// the command's `fixture_inputs:` (ess/13), written `{fixture: name}` or left out.
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct Precondition {
+    /// The command invoked.
+    pub command: QualifiedName,
+    /// The actor it is invoked as; omitted, the actor the specification grants it to.
+    #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<QualifiedName>,
+    /// Its input by declared field: a literal, or `{fixture: name}`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input: BTreeMap<String, ess_primitives::node::Node>,
 }
 
 /// One source's contribution to a specification.
@@ -391,6 +420,8 @@ pub struct SystemSpec {
     pub naming: Naming,
     /// What the system is, in one paragraph.
     pub summary: Option<String>,
+    /// The ambient command invocations every scenario runs inside, in order (ess/15).
+    pub preconditions: Vec<Precondition>,
 }
 
 impl SystemSpec {
@@ -503,6 +534,7 @@ impl SystemSpec {
             types,
             naming: header.naming,
             summary: header.summary,
+            preconditions: header.preconditions,
         };
         (Some(system), assembly.errors)
     }
@@ -1138,6 +1170,7 @@ impl RawSystemSpec {
             format: self.format.unwrap_or(FormatVersion::V1),
             naming: self.naming,
             summary: self.summary,
+            preconditions: Vec::new(),
         });
 
         let mut domains = Vec::with_capacity(self.domains.len());
@@ -1214,6 +1247,7 @@ mod tests {
             name: name(qualified),
             body: TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::Primitive(of),
                 invariants: Vec::new(),
             },

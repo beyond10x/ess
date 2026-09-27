@@ -164,6 +164,7 @@ fn subject(subject: &ess_compiler::ir::ResolvedSubject) -> serde_json::Value {
         ess_compiler::ir::ResolvedEffect::Creates => ("creates", None, Vec::new(), None),
         ess_compiler::ir::ResolvedEffect::Updates => ("updates", None, Vec::new(), None),
         ess_compiler::ir::ResolvedEffect::Preserves => ("preserves", None, Vec::new(), None),
+        ess_compiler::ir::ResolvedEffect::Deletes => ("deletes", None, Vec::new(), None),
         ess_compiler::ir::ResolvedEffect::Moves { transition } => (
             "moves",
             Some(transition.name.clone()),

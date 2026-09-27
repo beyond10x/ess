@@ -18,9 +18,11 @@ use ess_compiler::EssIr;
 ///
 /// `Some` exactly when all three hold:
 ///
-/// 1. a branch acts on an existing instance the caller names — `moves:` or `updates:` with
-///    `instance:` read from input — so an identity naming no record can reach the command;
-/// 2. the command declares a `wrong_state` outcome, which is the rule's answer;
+/// 1. a branch acts on an existing instance the caller names — `moves:`, `updates:` or
+///    `deletes:` with `instance:` read from input — so an identity naming no record can reach the
+///    command;
+/// 2. the command declares a `wrong_state` outcome, which is the rule's answer, and no
+///    `unknown_instance:` outcome (ess/15), which would be the answer in its place;
 /// 3. that outcome reports an error carrying at least one field, which the declared spelling
 ///    requires and an absent instance cannot supply.
 ///
@@ -35,11 +37,20 @@ pub fn unknown_instance_answer<'a>(
         outcome.subject.as_ref().is_some_and(|subject| {
             matches!(
                 subject.effect,
-                ResolvedEffect::Moves { .. } | ResolvedEffect::Updates
+                ResolvedEffect::Moves { .. } | ResolvedEffect::Updates | ResolvedEffect::Deletes
             ) && matches!(subject.instance, ResolvedInstance::Supplied { .. })
         })
     });
     if !reachable {
+        return None;
+    }
+    // A declared `unknown_instance:` branch (ess/15) is the answer itself, with its own spelling;
+    // the wrong-state branch then needs no second one.
+    if command
+        .outcomes
+        .iter()
+        .any(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+    {
         return None;
     }
     let declared = command

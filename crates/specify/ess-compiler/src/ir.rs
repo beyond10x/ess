@@ -312,6 +312,10 @@ pub enum ResolvedBody {
         /// `spec_digest`.
         #[serde(skip_serializing_if = "Option::is_none")]
         alphabet: Option<String>,
+        /// The text every value starts with, when declared (ess/15). Skipped when absent, for the
+        /// same reason.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prefix: Option<String>,
         /// Conditions every value satisfies, as predicates over `value`.
         invariants: Vec<Invariant>,
     },
@@ -341,7 +345,7 @@ pub enum ResolvedBody {
 
 impl ResolvedBody {
     /// Whether a value of this type is held to more than its representation: a newtype or a struct
-    /// with any invariant, or a newtype with a declared alphabet.
+    /// with any invariant, or a newtype with a declared alphabet or prefix.
     ///
     /// The one question every site that refuses a constrained type asks. Matching on `invariants`
     /// alone, as those sites did before ess/11, would let an alphabet-only newtype through where
@@ -351,9 +355,10 @@ impl ResolvedBody {
         match self {
             Self::Newtype {
                 alphabet,
+                prefix,
                 invariants,
                 ..
-            } => alphabet.is_some() || !invariants.is_empty(),
+            } => alphabet.is_some() || prefix.is_some() || !invariants.is_empty(),
             Self::Struct { invariants, .. } => !invariants.is_empty(),
             Self::Enum { .. } | Self::Union { .. } => false,
         }
@@ -636,6 +641,10 @@ pub enum ResolvedCondition {
     /// to perform either: [`EssIr::wrong_states`] answers it once for the whole workspace, from the
     /// lifecycles the transitions already declare.
     WrongState,
+    /// Taken when the identity the command names is one no record carries (ess/15,
+    /// `unknown_instance:`). Answered before a declared external not-found refusal and before
+    /// [`WrongState`](Self::WrongState).
+    UnknownInstance,
 }
 
 /// What one outcome does to the entity it acts on, resolved.
@@ -665,6 +674,9 @@ pub enum ResolvedEffect {
     Updates,
     /// A silent accepted outcome preserves the existing subject and its fields.
     Preserves,
+    /// An existing instance is removed (ess/15, `deletes:`); every immediate view of the entity
+    /// holds no row with its identity afterwards.
+    Deletes,
 }
 
 impl ResolvedEffect {
@@ -672,7 +684,7 @@ impl ResolvedEffect {
     pub fn transition(&self) -> Option<&Transition> {
         match self {
             Self::Moves { transition } => Some(transition),
-            Self::Creates | Self::Updates | Self::Preserves => None,
+            Self::Creates | Self::Updates | Self::Preserves | Self::Deletes => None,
         }
     }
 
@@ -683,6 +695,7 @@ impl ResolvedEffect {
             Self::Moves { .. } => "moves",
             Self::Updates => "updates",
             Self::Preserves => "preserves",
+            Self::Deletes => "deletes",
         }
     }
 }
@@ -750,6 +763,11 @@ pub struct ResolvedSubject {
     pub effect: ResolvedEffect,
     /// Where the identity of the instance it acts on is read.
     pub instance: ResolvedInstance,
+    /// The declared state a created instance comes into existence in, where it is not the
+    /// lifecycle's `initial` (ess/15, `into:`). Left out of the document otherwise, so every model
+    /// that does not write it keeps its bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub into: Option<StateName>,
 }
 
 /// A command-local original success and its retained identity authority.
@@ -780,6 +798,8 @@ fn is_refusing(refuses: &bool) -> bool {
 /// "what may this command emit" and loses "on which branch" — so a generated test could not tell the
 /// refusal path from the happy one, which is the distinction wave 1 restructured the model to keep
 /// (review F1).
+// Each flag is its own skipped-when-default key, so every model that sets none keeps its IR bytes.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResolvedOutcome {
     /// What this outcome is called.
@@ -829,6 +849,11 @@ pub struct ResolvedOutcome {
     /// *accepts* would turn that mistake into a claim.
     #[serde(skip_serializing_if = "is_refusing")]
     pub refuses: bool,
+    /// An accepted request that changes nothing observable (ess/15, `accepts: nothing`): no
+    /// subject, no event, no error, witnessed by every immediate view staying as it was. Left out
+    /// of the document when `false`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub accepts_nothing: bool,
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -1267,16 +1292,26 @@ pub struct ResolvedAggregate {
     /// `count`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<ResolvedField>,
+    /// Absent values of the input are skipped, as SQL skips `NULL` (`ess/15`,
+    /// beyond10x/ess#148). Omitted when false, so a model that does not write it keeps its bytes.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub skip_absent: bool,
 }
 
 impl std::fmt::Display for ResolvedAggregate {
-    /// `sum(talk_seconds)`, or `count()`: the rendering every projection of the construct uses.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, or `count()`: the rendering every
+    /// projection of the construct uses.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}({})",
+            "{}({}{})",
             self.function,
-            self.input.as_ref().map_or("", |input| input.name.as_str())
+            self.input.as_ref().map_or("", |input| input.name.as_str()),
+            if self.skip_absent {
+                ", skip_absent"
+            } else {
+                ""
+            }
         )
     }
 }
@@ -1301,7 +1336,7 @@ impl ResolvedAggregate {
             .input
             .as_ref()
             .map_or_else(String::new, |input| format!("`{}`", input.name));
-        match self.function {
+        let described = match self.function {
             AggregateFunction::Count => "count of instances".to_owned(),
             AggregateFunction::CountDistinct => format!("count of distinct {input} values"),
             AggregateFunction::Sum => format!("sum of {input}"),
@@ -1310,6 +1345,11 @@ impl ResolvedAggregate {
             AggregateFunction::Avg => {
                 format!("average of {input}, rounded to 6 places half-even")
             }
+        };
+        if self.skip_absent {
+            format!("{described}, skipping absent values")
+        } else {
+            described
         }
     }
 }
@@ -1837,6 +1877,32 @@ pub struct EssIr {
     components: BTreeMap<ComponentName, ResolvedComponent>,
     /// The runtime shape: one entry per component that runs.
     workloads: BTreeMap<ComponentName, ResolvedWorkload>,
+    /// The ambient command invocations every scenario and explored sequence runs inside, in
+    /// order (ess/15). Left out of the document when empty, so a model without them keeps its
+    /// bytes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    preconditions: Vec<ResolvedPrecondition>,
+}
+
+/// One ambient command invocation, with its command and actor resolved (ess/15,
+/// `docs/design/outcome-shapes.md`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedPrecondition {
+    /// The command invoked.
+    pub command: CommandHandle,
+    /// The one branch reporting no error its literal input selects, which every scenario and
+    /// explored sequence requires it to take; `ess-domain` refuses an input selecting any other.
+    pub outcome: OutcomeName,
+    /// The actor it is invoked as: the one written, or else the first actor the specification
+    /// grants the command to, in name order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<ActorHandle>,
+    /// The literal input values, by declared field.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub input: BTreeMap<String, ess_primitives::node::Node>,
+    /// The input fields read from the command's fixture inputs, by field (ess/13).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixtures: BTreeMap<String, ess_domain::command::fixture_inputs::FixtureName>,
 }
 
 /// Compiler-owned parts of a fully resolved specification.
@@ -1857,6 +1923,7 @@ pub(crate) struct EssIrParts {
     pub(crate) bindings: BTreeMap<BindingName, ResolvedBinding>,
     pub(crate) components: BTreeMap<ComponentName, ResolvedComponent>,
     pub(crate) workloads: BTreeMap<ComponentName, ResolvedWorkload>,
+    pub(crate) preconditions: Vec<ResolvedPrecondition>,
 }
 
 impl EssIr {
@@ -1879,6 +1946,7 @@ impl EssIr {
             bindings: parts.bindings,
             components: parts.components,
             workloads: parts.workloads,
+            preconditions: parts.preconditions,
         }
     }
 
@@ -1945,6 +2013,11 @@ impl EssIr {
     /// Every runtime workload, by component.
     pub fn workloads(&self) -> &BTreeMap<ComponentName, ResolvedWorkload> {
         &self.workloads
+    }
+
+    /// The ambient command invocations every scenario runs inside, in order (ess/15).
+    pub fn preconditions(&self) -> &[ResolvedPrecondition] {
+        &self.preconditions
     }
 
     /// Every relation carried by a field of `entity`, keyed by that field's name.

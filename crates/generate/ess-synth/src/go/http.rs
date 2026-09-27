@@ -215,7 +215,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     out,
                     "\t",
                     ess_gen::schema::wire_field_name(field),
-                    &format!("value.{}", name::exported(&field.name)),
+                    &format!("value.{}", super::items::member_ident(fields, &field.name)),
                     &field.type_ref,
                     &mut slot,
                 );
@@ -287,7 +287,7 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     out,
                     emit,
                     "\t",
-                    &format!("out.{}", name::exported(&field.name)),
+                    &format!("out.{}", super::items::member_ident(fields, &field.name)),
                     field,
                     &mut slot,
                 );
@@ -408,7 +408,7 @@ fn record_encoder(
             out,
             "\t",
             ess_gen::schema::wire_field_name(field),
-            &format!("value.{}", name::exported(&field.name)),
+            &format!("value.{}", super::items::member_ident(fields, &field.name)),
             &field.type_ref,
             &mut slot,
         );
@@ -442,7 +442,10 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
             out,
             emit,
             "\t",
-            &format!("out.{}", name::exported(&field.name)),
+            &format!(
+                "out.{}",
+                super::items::member_ident(&command.input, &field.name)
+            ),
             field,
             &mut slot,
         );
@@ -540,6 +543,7 @@ fn encode_into(
 fn encode_primitive(primitive: Primitive, source: &str) -> String {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Json => unreachable!("Json is refused before target rendering"),
         Primitive::String | Primitive::Boolean | Primitive::Integer => source.to_owned(),
         Primitive::Bytes => format!("base64.StdEncoding.EncodeToString({source})"),
         Primitive::Decimal | Primitive::Timestamp | Primitive::Duration | Primitive::Uuid => {
@@ -552,6 +556,7 @@ fn encode_primitive(primitive: Primitive, source: &str) -> String {
 fn encode_key(primitive: Primitive, source: &str) -> String {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Json => unreachable!("Json is refused before target rendering"),
         Primitive::String => source.to_owned(),
         Primitive::Boolean => format!("strconv.FormatBool({source})"),
         Primitive::Integer => format!("strconv.FormatInt({source}, 10)"),
@@ -705,6 +710,7 @@ fn decode_into(
 fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Json => unreachable!("Json is refused before target rendering"),
         Primitive::String => ("textAt", "a string"),
         Primitive::Boolean => ("boolAt", "true or false"),
         Primitive::Integer => ("integerAt", "a whole number"),
@@ -729,6 +735,7 @@ fn decode_key(
     let held = format!("key{}", next(slot));
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
+        Primitive::Json => unreachable!("Json is refused before target rendering"),
         Primitive::String => return source.to_owned(),
         Primitive::Boolean => {
             let _ = writeln!(

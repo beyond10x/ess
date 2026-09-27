@@ -54,7 +54,7 @@ func decodeExactSteps(raw []json.RawMessage) ([]Step, error) {
 }
 
 func decodeExactSuiteSteps(suite *Suite) error {
-	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" && suite.Provenance.SuiteVersion != "ess-conformance/16" && suite.Provenance.SuiteVersion != "ess-conformance/17" && suite.Provenance.SuiteVersion != "ess-conformance/18" && suite.Provenance.SuiteVersion != "ess-conformance/19" {
+	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" && suite.Provenance.SuiteVersion != "ess-conformance/16" && suite.Provenance.SuiteVersion != "ess-conformance/17" && suite.Provenance.SuiteVersion != "ess-conformance/18" && suite.Provenance.SuiteVersion != "ess-conformance/19" && suite.Provenance.SuiteVersion != "ess-conformance/20" && suite.Provenance.SuiteVersion != "ess-conformance/21" {
 		return nil
 	}
 	var raw struct {
@@ -307,7 +307,7 @@ type replayIdentity struct {
 }
 
 func (identity replayIdentity) validate() error {
-	if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(identity.Field) {
+	if !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(identity.Field) {
 		return fmt.Errorf("invalid replay identity field")
 	}
 	switch identity.Kind {

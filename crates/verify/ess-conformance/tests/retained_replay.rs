@@ -400,13 +400,21 @@ fn replay_identity_field_uses_the_declared_field_grammar() {
             _ => None,
         })
         .unwrap();
-    for invalid in ["", "bad field", "_leading", "1leading", "nested.field"] {
+    for invalid in ["", "bad field", "_", "_1", "1leading", "nested.field"] {
         let mut malformed = capture.clone();
         malformed.identity = ess_conformance::replay::Identity::Input {
             field: invalid.into(),
         };
         assert!(malformed.validate().is_err(), "{invalid}");
     }
+    // A leading underscore before a letter is a declared field name (beyond10x/ess#141).
+    let mut underscored = capture.clone();
+    underscored.identity = ess_conformance::replay::Identity::Input {
+        field: "_leading".into(),
+    };
+    underscored
+        .validate()
+        .expect("`_leading` is a field name the specification admits");
 }
 
 #[test]
@@ -670,9 +678,33 @@ fn source7_named_wrong_state_refusals_require_complete_effect_free_observation()
     .unwrap();
     let result =
         ess_conformance::synthesize::synthesize(&compile(&spec, &SourceMap::new()).unwrap());
+    // An observer publishing part of the subject no longer refuses the scenario (beyond10x/ess#132):
+    // it observes what the view publishes, completely, and the field no view publishes is named in
+    // a note rather than left unsaid.
+    let id = "retained.core.Transaction/state/Stale/refuses/retained.core.Validate";
+    let scenario = result
+        .suite
+        .scenarios
+        .iter()
+        .find(|(scenario, _)| scenario.to_string() == id)
+        .unwrap_or_else(|| panic!("{:?}", result.refusals))
+        .1;
+    assert!(scenario
+        .steps
+        .iter()
+        .any(|s| matches!(s, ScenarioStep::SnapshotCompleteSubject { .. })));
+    assert!(scenario
+        .steps
+        .iter()
+        .any(|s| matches!(s, ScenarioStep::ExpectCompleteSubjectUnchanged { .. })));
     assert!(
-        !result.refusals.is_empty(),
-        "an incomplete observer must refuse synthesis"
+        result.notes.iter().any(|note| matches!(
+            note,
+            ess_conformance::synthesize::Note::PartialObservation { scenario, unobserved }
+                if scenario.to_string() == id && unobserved == &["note".to_owned()]
+        )),
+        "an incomplete observer is recorded as partial: {:?}",
+        result.notes
     );
 }
 

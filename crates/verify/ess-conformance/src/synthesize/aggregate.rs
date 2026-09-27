@@ -32,10 +32,10 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{
-    advance, clipped, created, has_subject_guards, insert, literal_value, reach, reachable_types,
-    route, shows, subject_fact, Arrangement, Refusal, RefusalCause,
+    advance, clipped, created, has_subject_guards, identity_inputs, insert, literal_value, reach,
+    reachable_types, route_from, shows, subject_fact, Arrangement, Refusal, RefusalCause,
 };
-use crate::aggregate::{evaluate, ValueKind};
+use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
     ActorRef, ConformanceScenario, ConformanceSuite, EntityRef, EssSemanticRef, ScenarioId,
     ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
@@ -242,12 +242,30 @@ struct Plan<'ir> {
     entity: &'ir ResolvedEntity,
     literals: &'ir BTreeSet<String>,
     keys: Vec<(String, Key)>,
+    /// The positions in [`Self::keys`] of the keys that may be absent: each gets a group of its own
+    /// where it is (`N<k>`).
+    absent_keys: Vec<usize>,
+    /// The inputs a skipping aggregate reads, left out of the absent rows.
+    skipping: BTreeSet<String>,
     scopes: Vec<Scope>,
-    /// The group tuples in assignment order, labelled `A`, `B`, `C`, `B2`, …
+    /// The group tuples in assignment order, labelled `A`, `B`, `C`, `B2`, …, `N1`, …
     tuples: Vec<(String, Vec<Node>)>,
 }
 
 impl Plan<'_> {
+    /// Whether only this scenario's rows can land in the group with these key values: the view is
+    /// scoped by a parameter, or a scoped key holds one of its values. A tuple whose scoped key is
+    /// absent (`N<k>` of a view scoped only by that key) is shared with every row another scenario
+    /// creates without the key, so it is asserted to exist and nothing more.
+    fn scoped_tuple(&self, tuple: &[Node]) -> bool {
+        !self.scopes.is_empty()
+            || self
+                .keys
+                .iter()
+                .zip(tuple)
+                .any(|((_, key), value)| matches!(key, Key::Scoped(_)) && *value != Node::Null)
+    }
+
     fn unwitnessed(&self, reason: impl Into<String>) -> RefusalCause {
         unwitnessed(self.view, reason)
     }
@@ -323,7 +341,8 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                 }
                 ResolvedCondition::Otherwise
                 | ResolvedCondition::External { .. }
-                | ResolvedCondition::WrongState => {}
+                | ResolvedCondition::WrongState
+                | ResolvedCondition::UnknownInstance => {}
             }
             let written = outcome
                 .sets
@@ -417,21 +436,24 @@ fn scoping_equality(predicate: &Predicate) -> Option<(String, String)> {
 }
 
 /// `m`: the smallest group size at least `max(3, inputs + 2)` with a prime factor other than 2
-/// and 5, so a mean over it can repeat forever at the sixth decimal.
-fn group_size(inputs: usize) -> usize {
-    let mut size = (inputs + 2).max(3);
-    loop {
+/// and 5, so a mean over it can repeat forever at the sixth decimal — and `m + k` too for every
+/// `k` in `beyond`: an input averaged beside skipping inputs is read over A's `m` pattern rows and
+/// every absent row that holds it (one per skipping input, each lacking only its own).
+fn group_size(inputs: usize, beyond: &[usize]) -> usize {
+    let repeats = |size: usize| {
         let mut rest = size;
         for factor in [2, 5] {
             while rest % factor == 0 {
                 rest /= factor;
             }
         }
-        if rest > 1 {
-            return size;
-        }
+        rest > 1
+    };
+    let mut size = (inputs + 2).max(3);
+    while !(repeats(size) && beyond.iter().all(|k| repeats(size + k))) {
         size += 1;
     }
+    size
 }
 
 /// The ladder ordinal of input `i` at A-row `j`: `100·i + 1 + t(t+1)`, `t = max(0, j − i − 1)`.
@@ -459,9 +481,18 @@ fn scenario(
     let entity = ir.entity(handle);
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(handle).map_or(&[], Vec::as_slice);
+    // A creation into `initial` first: every declared state is reachable from there, where one
+    // `into:` (ess/15) a later state may never lead back to an earlier one.
     let creator = drivers
         .iter()
-        .find(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .min_by_key(|driver| {
+            driver
+                .outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.into.is_some())
+        })
         .ok_or_else(|| unwitnessed(view, format!("nothing creates `{}`", entity.name)))?;
     if has_subject_guards(creator.command)
         || creator.outcome.test_strategy == ess_domain::command::TestStrategy::InjectFault
@@ -504,15 +535,43 @@ fn scenario(
             .observable_field(name)
             .map(|field| leaf(ir, &field.type_ref))
     };
-    let scopable = |name: &str| -> Option<Scoped> {
+    // A group key is scoped by its present values whether or not it may be absent; its absent
+    // value is a group of its own, scoped only by another key or a parameter (see `Plan::scoped_tuple`).
+    let scopable_as = |name: &str, optional_admitted: bool| -> Option<Scoped> {
         if name == entity.identity.name || name == EntitySpec::STATE || !mapped.contains_key(name) {
             return None;
         }
         match field_type(name)? {
-            (false, Leaf::Primitive(Primitive::String)) => Some(Scoped::Text),
-            (false, Leaf::Primitive(Primitive::Uuid)) => Some(Scoped::Uuid),
+            (optional, _) if optional && !optional_admitted => None,
+            (_, Leaf::Primitive(Primitive::String)) => Some(Scoped::Text),
+            (_, Leaf::Primitive(Primitive::Uuid)) => Some(Scoped::Uuid),
             _ => None,
         }
+    };
+    let scopable = |name: &str| scopable_as(name, false);
+    // Whether a created row can lack this entity field: the creating branch fills it from an
+    // `Optional` input, which an invocation may leave out, and the field is itself `Optional`, so
+    // the row then holds it as absent (`synthesize.rs`, `settled`).
+    let absent_able = |name: &str| {
+        mapped.get(name).is_some_and(|read| {
+            creator
+                .command
+                .input
+                .iter()
+                .any(|input| input.name == *read && input.type_ref.is_optional())
+        }) && entity
+            .observable_field(name)
+            .is_some_and(|field| field.type_ref.is_optional())
+    };
+    let cannot_lack = |name: &str, role: &str| {
+        unwitnessed(
+            view,
+            format!(
+                "no row `{}/{}` creates can leave `{name}` absent, which {role}, so what an absent \
+                 value does there cannot be witnessed",
+                creator.command.name, creator.outcome.name
+            ),
+        )
     };
 
     // Scoping by parameter: every declared parameter is read by exactly one top-level
@@ -563,8 +622,15 @@ fn scenario(
     }
 
     let mut keys = Vec::new();
-    for key in &aggregation.group_by {
-        let chosen = if let Some(kind) = scopable(key) {
+    let mut absent_keys = Vec::new();
+    for (index, key) in aggregation.group_by.iter().enumerate() {
+        if field_type(key).is_some_and(|(optional, _)| optional) {
+            if !absent_able(key) {
+                return Err(cannot_lack(key, "the view groups by"));
+            }
+            absent_keys.push(index);
+        }
+        let chosen = if let Some(kind) = scopable_as(key, true) {
             Key::Scoped(kind)
         } else if key == EntitySpec::STATE {
             Key::State(entity.lifecycle.states.iter().cloned().collect())
@@ -645,6 +711,27 @@ fn scenario(
             ));
         }
     }
+    // The inputs a skipping aggregate reads (`docs/design/aggregate-views.md`, "Absent values"):
+    // each is left out of the absent rows. One no created row can lack is refused, rather than
+    // asserted over rows that all hold it — which would read as a check of skipping and be none.
+    let mut skipping: BTreeSet<String> = BTreeSet::new();
+    for (field, aggregate) in &aggregation.functions {
+        let (true, Some(input)) = (aggregate.skip_absent, &aggregate.input) else {
+            continue;
+        };
+        if aggregation.group_by.contains(&input.name) {
+            continue;
+        }
+        if !absent_able(&input.name) {
+            return Err(cannot_lack(&input.name, &format!("`{field}` skips")));
+        }
+        skipping.insert(input.name.clone());
+    }
+    // Skipping inputs are numbered first. With two or more, each gains one distinct value outside
+    // its pattern in the absent rows, so its distinct count is `m − i` against a required input's
+    // `m − 1 − i`: numbering them first keeps every input's distinct count different from every
+    // other's (`m … m − s + 1`, then `m − 1 − s …`).
+    inputs.sort_by_key(|(name, _)| !skipping.contains(name));
     if inputs.len() > MAX_INPUTS {
         return Err(unwitnessed(
             view,
@@ -674,7 +761,40 @@ fn scenario(
             ),
         ));
     }
-    let m = group_size(inputs.len());
+    // With `s` skipping inputs A gains `s` absent rows, each lacking only its own input and
+    // holding every other at its lowest A value. A required input's mean is then over `m + s` rows
+    // and a skipping input's over `m + s − 1`, and each such count must separate rounding too.
+    let absent_rows = inputs
+        .iter()
+        .filter(|(name, _)| skipping.contains(name))
+        .count();
+    let beyond: Vec<usize> = aggregation
+        .functions
+        .values()
+        .filter(|aggregate| aggregate.function == AggregateFunction::Avg && absent_rows > 0)
+        .filter_map(|aggregate| aggregate.input.as_ref())
+        .filter(|input| inputs.iter().any(|(name, _)| *name == input.name))
+        .map(|input| {
+            if skipping.contains(&input.name) {
+                absent_rows - 1
+            } else {
+                absent_rows
+            }
+        })
+        .collect();
+    let m = group_size(inputs.len(), &beyond);
+    // The pattern keeps every A value below `100·i + 85` up to nine rows (`t ≤ 7`); a group the
+    // absent rows' counts made larger would let an A value reach the values b, x, c and bₖ hold.
+    if m > group_size(MAX_INPUTS, &[]) {
+        return Err(unwitnessed(
+            view,
+            format!(
+                "{} inputs, averaged beside {absent_rows} skipping ones, need a group of {m} \
+                 rows, more than the pattern keeps apart",
+                inputs.len()
+            ),
+        ));
+    }
 
     let mut plan = Plan {
         ir,
@@ -684,6 +804,8 @@ fn scenario(
         entity,
         literals,
         keys,
+        absent_keys,
+        skipping,
         scopes,
         tuples: Vec::new(),
     };
@@ -738,11 +860,64 @@ fn assign_tuples(plan: &mut Plan<'_>) {
             plan.tuples.push((label, tuple));
         }
     }
+    // One `N<k>` per key that may be absent: B's tuple with that key absent, a group no other tuple
+    // is, because no other tuple holds an absent value.
+    for index in plan.absent_keys.clone() {
+        let mut tuple = b.clone();
+        tuple[index] = Node::Null;
+        plan.tuples.push((format!("N{}", index + 1), tuple));
+    }
 }
 
-/// The rows, in creation order: a₁ … aₘ, b, x, c, then one bₖ per further tuple.
+/// The rows, in creation order: a₁ … aₘ, one absent row aₘ₊₁, … per skipping input, b,
+/// x, c, then one bₖ per further tuple and one nₖ per key that may be absent.
+///
+/// An ordinal of `None` is an absent value: the row's creating input leaves it out.
+/// The absent rows of A, as ladder ordinals per input: one per skipping input, lacking that input
+/// only.
+///
+/// SQL skips column by column, so a target that drops a row lacking *any* skipping input must
+/// report another value: one row lacking them all would not tell it apart (correction round 1),
+/// and neither would a row holding the other skipping inputs at a value that moves no extreme
+/// (round 2). So every other skipping input holds a value outside its pattern — below the column's
+/// minimum (ordinal `100·i`) where the view takes its `min`, above its maximum (`100·i + 80`; the
+/// pattern with its δ stays at or below `100·i + 72`) otherwise — which moves that extreme, its sum
+/// and mean, and adds exactly one distinct value. A required input holds its lowest A value, so its
+/// distinct count does not move.
+fn absent_rows(plan: &Plan<'_>, inputs: &[(String, Ladder)]) -> Vec<Vec<Option<usize>>> {
+    let skips = |i: usize| plan.skipping.contains(&inputs[i].0);
+    let has_min = |i: usize| {
+        plan.aggregation.functions.values().any(|aggregate| {
+            aggregate.function == AggregateFunction::Min
+                && aggregate
+                    .input
+                    .as_ref()
+                    .is_some_and(|input| input.name == inputs[i].0)
+        })
+    };
+    let outside = |i: usize| {
+        if has_min(i) {
+            100 * i
+        } else {
+            100 * i + 80
+        }
+    };
+    (0..inputs.len())
+        .filter(|s| skips(*s))
+        .map(|s| {
+            (0..inputs.len())
+                .map(|i| match (i == s, skips(i)) {
+                    (true, _) => None,
+                    (false, true) => Some(outside(i)),
+                    (false, false) => Some(a_ordinal(i, 0)),
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
-    let row = |tuple: usize, admitted: bool, label: String, ordinals: Vec<usize>| {
+    let row = |tuple: usize, admitted: bool, label: String, ordinals: Vec<Option<usize>>| {
         let mut values = BTreeMap::new();
         for ((name, key), value) in plan.keys.iter().zip(&plan.tuples[tuple].1) {
             if !matches!(key, Key::State(_) | Key::Fixed(_)) {
@@ -753,7 +928,7 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
             values.insert(scope.field.clone(), plan.scoped(scope.kind, "in"));
         }
         for ((name, ladder), ordinal) in inputs.iter().zip(ordinals) {
-            values.insert(name.clone(), ladder.at(ordinal));
+            values.insert(name.clone(), ordinal.map_or(Node::Null, |at| ladder.at(at)));
         }
         Row {
             tuple,
@@ -762,20 +937,24 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
             label,
         }
     };
+    let skips = |i: usize| plan.skipping.contains(&inputs[i].0);
     let ladder = |offset: usize| {
         (0..inputs.len())
-            .map(|i| 100 * i + offset)
+            .map(|i| Some(100 * i + offset))
             .collect::<Vec<_>>()
     };
+    let absent_rows = absent_rows(plan, inputs);
 
     let mut a: Vec<Vec<usize>> = (0..m)
         .map(|j| (0..inputs.len()).map(|i| a_ordinal(i, j)).collect())
         .collect();
     // The A mean of every `avg` input must separate rounding from truncation: its seventh decimal
     // is 5 or more (with no tie), so `avg` rounded and `avg` truncated are different numbers. The
-    // last A value is raised by the smallest δ < m that makes it so — it stays the largest value in
-    // its column, and below `100·i + 85` (`docs/design/aggregate-views.md`, "Non-terminating
-    // mean"). Where no δ does, the check in `observe` refuses the view.
+    // last A value is raised by the smallest δ below the count the mean divides by that makes it so
+    // — it stays the largest value in its column, and below `100·i + 85`
+    // (`docs/design/aggregate-views.md`, "Non-terminating mean"). Each mean is over the `m`
+    // pattern rows and every absent row that holds its input. Where no δ does, the check in
+    // `observe` refuses the view.
     let averaged: BTreeSet<&str> = plan
         .aggregation
         .functions
@@ -787,8 +966,13 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
         if *ladder != Ladder::Number || !averaged.contains(name.as_str()) {
             continue;
         }
-        let sum: usize = a.iter().map(|ordinals| ordinals[i]).sum();
-        if let Some(delta) = (0..m).find(|delta| separates(sum + delta, m)) {
+        let mut sum: usize = a.iter().map(|ordinals| ordinals[i]).sum();
+        let mut count = m;
+        for extra in absent_rows.iter().filter_map(|ordinals| ordinals[i]) {
+            sum += extra;
+            count += 1;
+        }
+        if let Some(delta) = (0..count).find(|delta| separates(sum + delta, count)) {
             a[m - 1][i] += delta;
         }
     }
@@ -796,11 +980,25 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
     let mut out: Vec<Row> = a
         .into_iter()
         .enumerate()
-        .map(|(j, ordinals)| row(0, true, format!("a{}", j + 1), ordinals))
+        .map(|(j, ordinals)| {
+            row(
+                0,
+                true,
+                format!("a{}", j + 1),
+                ordinals.into_iter().map(Some).collect(),
+            )
+        })
         .collect();
+    for (k, ordinals) in absent_rows.into_iter().enumerate() {
+        out.push(row(0, true, format!("a{}", m + 1 + k), ordinals));
+    }
     let filtered = plan.view.filter.is_some();
     if !plan.aggregation.is_ungrouped() {
-        out.push(row(1, true, "b".to_owned(), ladder(85)));
+        // B holds no value of a skipping input: its `sum`, `avg`, `min` and `max` are absent.
+        let b = (0..inputs.len())
+            .map(|i| (!skips(i)).then_some(85 + 100 * i))
+            .collect();
+        out.push(row(1, true, "b".to_owned(), b));
     }
     if filtered {
         out.push(row(0, false, "x".to_owned(), ladder(97)));
@@ -811,8 +1009,12 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
         }
         let first_further = if filtered { 3 } else { 2 };
         for tuple in first_further..plan.tuples.len() {
-            let label = format!("b{}", &plan.tuples[tuple].0[1..]);
-            out.push(row(tuple, true, label, ladder(87)));
+            let label = &plan.tuples[tuple].0;
+            let (row_label, offset) = match label.strip_prefix('N') {
+                Some(rest) => (format!("n{rest}"), 89),
+                None => (format!("b{}", &label[1..]), 87),
+            };
+            out.push(row(tuple, true, row_label, ladder(offset)));
         }
     }
     out
@@ -899,6 +1101,15 @@ fn arrange_row(
 ) -> Result<(Arrangement, bool), RefusalCause> {
     let ir = plan.ir;
     let mut input = base.clone();
+    // An identity the scenario supplies (`instance:` published from `input.<field>`) is its own in
+    // every row: the witness at this row's distinction, never the base row's again.
+    if let Ok(distinct) = reach(ir, creator.command, creator.outcome, distinction) {
+        for field in identity_inputs(creator.command) {
+            if let Some(value) = distinct.get(&field) {
+                input.insert(field, value.clone());
+            }
+        }
+    }
     for (field, value) in &row.values {
         let Some(read) = mapped.get(field.as_str()) else {
             return Err(plan.unwitnessed(format!(
@@ -906,7 +1117,13 @@ fn arrange_row(
                 row.label
             )));
         };
-        input.insert((*read).to_owned(), value.clone());
+        // An absent value is an `Optional` input left out, never sent as `null`: the row then
+        // holds the field it fills as absent.
+        if *value == Node::Null {
+            input.remove(*read);
+        } else {
+            input.insert((*read).to_owned(), value.clone());
+        }
     }
     if !subject_fact::input_selects(ir, creator.command, creator.outcome, &input).unwrap_or(false) {
         return Err(plan.unwitnessed(format!(
@@ -941,7 +1158,8 @@ fn arrange_row(
     };
     let mut best: Option<Arrangement> = None;
     for target in targets {
-        let Some(path) = route(ir, plan.handle, drivers, &target) else {
+        // From where the row was created: `into:` (ess/15) or the lifecycle's initial state.
+        let Some(path) = route_from(ir, plan.handle, drivers, &start.state, &target) else {
             continue;
         };
         let Ok(reached) = advance(
@@ -1131,6 +1349,12 @@ fn observe(
             }
             continue;
         }
+        if !plan.scoped_tuple(tuple) {
+            // Other scenarios' rows that lack the key land here too: the group exists, and that is
+            // all this scenario can say of it.
+            expectations.push(ViewExpectation::Contains { fields: keys });
+            continue;
+        }
         if members.contains(&0) {
             rounding_is_observable(plan, arranged, &admitted)?;
         }
@@ -1206,6 +1430,13 @@ fn rounding_is_observable(
             .iter()
             .map(|index| held(plan, &arranged[*index], *index, &input.name))
             .collect();
+        let values = values.map(|values| {
+            if aggregate.skip_absent {
+                crate::aggregate::present(&values)
+            } else {
+                values
+            }
+        });
         let separates = values
             .as_deref()
             .and_then(crate::aggregate::avg_separates_rounding);
@@ -1244,7 +1475,12 @@ fn aggregates_over(
                 (values, kind(plan.ir, plan.entity, &input.name))
             }
         };
-        let value = evaluate(aggregate.function, &values, kind).ok_or_else(|| {
+        let value = if aggregate.skip_absent {
+            evaluate_skipping_absent(aggregate.function, &values, kind)
+        } else {
+            evaluate(aggregate.function, &values, kind)
+        }
+        .ok_or_else(|| {
             plan.unwitnessed(format!(
                 "`{field}` has no exact value over the arranged rows"
             ))
@@ -1294,8 +1530,11 @@ mod tests {
 
     #[test]
     fn the_group_size_has_a_factor_other_than_two_and_five() {
-        let sizes: Vec<usize> = (0..=7).map(group_size).collect();
+        let sizes: Vec<usize> = (0..=7).map(|inputs| group_size(inputs, &[])).collect();
         assert_eq!(sizes, [3, 3, 6, 6, 6, 7, 9, 9]);
+        // Beside the absent row, `m + 1` must repeat too: not 3 (4), 7 (8) or 9 (10); 6 and 11 do.
+        let beside: Vec<usize> = (0..=7).map(|inputs| group_size(inputs, &[1])).collect();
+        assert_eq!(beside, [6, 6, 6, 6, 6, 11, 11, 11]);
     }
 
     #[test]

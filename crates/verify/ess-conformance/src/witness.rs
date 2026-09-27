@@ -30,7 +30,11 @@
 //!    interchangeable — which is the only way a swapped binding mapping is a detectable fault rather
 //!    than an invisible one (`examples/oracle-fixture/README.md`). **Under a declared `alphabet:`**
 //!    (ess/11) each character of that text the alphabet does not hold becomes
-//!    `alphabet[c mod |alphabet|]`, so the witness is a value the type admits. **An input's
+//!    `alphabet[c mod |alphabet|]`, so the witness is a value the type admits. **Under a declared
+//!    `prefix:`** (ess/15) the text is the prefix followed by the path, `/channel` for `channel`
+//!    under `/`, before any alphabet maps it; a count resize keeps the prefix in front, and a
+//!    candidate that does not start with it is refused with every other value the type refuses.
+//!    **An input's
 //!    `example:`** is its base at the plain instance, for every leaf kind.
 //! 3. **Alternatives come from the guard, not from imagination.** The values a candidate varies are
 //!    the fact paths the guard actually reads, and the values it tries are the literals the guard
@@ -202,6 +206,8 @@ enum Leaf {
     Timestamp,
     /// A `Boolean`.
     Bool,
+    /// Any JSON value (ess/15). No guard reads one, so it has no alternatives.
+    Json,
     /// An enum, whose alternatives are its own declared variants.
     Enum {
         /// The variants, in declaration order.
@@ -247,7 +253,19 @@ pub fn candidates(
         // element a candidate may add, not a position the author read.
         positional_reads(guards),
     );
-    let base = builder.input(command, &BTreeMap::new())?;
+    // The base witness records every leaf the ladders below are built from; `enumerate` builds it
+    // again as its first candidate.
+    builder.input(command, &BTreeMap::new())?;
+    // A presence policy (beyond10x/ess#139) is observable only on an absent value, so an optional
+    // input, or an optional member of one, copied into a field that declares one and read by no
+    // guard is sent absent in every candidate first: each candidate is tried with those members
+    // absent before it is tried filled. A member of a copied struct is spelled as its policy spells
+    // absence (`null` under `null_when_absent`), so the struct is expected exactly as a correct
+    // implementation publishes it; a top-level input is left out. Whichever branch a candidate
+    // selects, the first one it takes publishes the policy fields absent, and an implementation
+    // that spells the absence the other way fails. No guard reads such a member, so this never
+    // changes the branch.
+    let presence_omits = presence_inputs(ir, command, &read_paths(&expanded), &builder.optionals);
 
     // A newly admitted no-default partition uses exactly the domain that validation proved.
     // Preserve the existing candidate order for commands with real defaults.
@@ -268,17 +286,19 @@ pub fn candidates(
             &ess_compiler::expression::Environment::new(ir, &command.input),
             &all_guards,
         ) {
-            let inputs = cases
-                .into_iter()
-                .map(|case| {
-                    let overrides = case
-                        .values
-                        .into_iter()
-                        .map(|(path, value)| (path, Choice::Value(Node::Text(value))))
-                        .collect();
-                    builder.input(command, &overrides)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let mut inputs = Vec::new();
+            for case in cases {
+                let overrides: BTreeMap<FactPath, Choice> = case
+                    .values
+                    .into_iter()
+                    .map(|(path, value)| (path, Choice::Value(Node::Text(value))))
+                    .collect();
+                for input in paired(&mut builder, command, &overrides, &presence_omits)? {
+                    if !inputs.contains(&input) {
+                        inputs.push(input);
+                    }
+                }
+            }
             return Ok(admitted_inputs(ir, command, inputs));
         }
     }
@@ -328,8 +348,128 @@ pub fn candidates(
     // repeat is skipped rather than counted. Where the bound cuts the enumeration short, each
     // omission's own candidate — every other value at its base — is reserved inside it, so a guard
     // with many varied leaves cannot crowd the absent side of `defined(x)` out of it.
-    let inputs = enumerate(&mut builder, command, base, &ladders, &omitted)?;
+    let mut inputs = enumerate(&mut builder, command, &ladders, &omitted, &presence_omits)?;
+    // A case-insensitive guard's refuting side is witnessed by a one-character change of its
+    // literal, not by whatever base text happens to refute it: a target comparing only lengths, or
+    // only the first byte folded, accepts the base and passes (beyond10x/ess#140). Tried first, so
+    // it is the input the refuting branch is sent; a satisfying branch skips it. Only commands
+    // with such a guard get it, so every other suite keeps its bytes.
+    let mut refuting = Vec::new();
+    for (path, text) in fold_refutations_at(&expanded) {
+        let input = builder.input(
+            command,
+            &BTreeMap::from([(path, Choice::Value(Node::Text(text)))]),
+        )?;
+        if !refuting.contains(&input) {
+            refuting.push(input);
+        }
+    }
+    if !refuting.is_empty() {
+        inputs.retain(|input| !refuting.contains(input));
+        refuting.extend(inputs);
+        inputs = refuting;
+        inputs.truncate(MAX_CANDIDATES);
+    }
     Ok(admitted_inputs(ir, command, inputs))
+}
+
+/// The optional inputs, and optional members of inputs, that a branch copies into an emitted event
+/// field declaring a presence policy or holding a struct member that does (beyond10x/ess#139), and
+/// that no guard reads — neither the input itself nor anything under it.
+///
+/// Only a direct `input.<field>` copy: `{input: x, else: {generated: true}}` mints a value when
+/// the input is absent, so leaving it out observes nothing about the policy.
+fn presence_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    read: &BTreeSet<FactPath>,
+    optionals: &BTreeSet<FactPath>,
+) -> BTreeMap<FactPath, Choice> {
+    let mut found = BTreeMap::new();
+    for outcome in &command.outcomes {
+        for payload in &outcome.payload {
+            let Some(event) = ir.events().get(payload.event.name()) else {
+                continue;
+            };
+            for field in &payload.fields {
+                let ess_compiler::ir::ResolvedPayloadValue::InputField { field: source, .. } =
+                    &field.value
+                else {
+                    continue;
+                };
+                let Some(target) = event
+                    .fields
+                    .iter()
+                    .find(|declared| declared.name == field.target)
+                else {
+                    continue;
+                };
+                let Ok(root) = FactPath::new(source) else {
+                    continue;
+                };
+                if read
+                    .iter()
+                    .any(|read| read.segments().first() == root.segments().first())
+                {
+                    continue;
+                }
+                // The field itself, and every member of a struct it is under no `Optional` of —
+                // the leaves a suite carries a policy on — read at the same path in the input.
+                let mut declaring = Vec::new();
+                policy_members(ir, target, &root, 0, &mut declaring);
+                // A member of a copied struct is spelled as its policy spells an absent value, because
+                // the whole struct is asserted as the value sent. A top-level field is left out: no
+                // value is asserted for an input that was not sent, only its declared shape.
+                for (path, presence) in declaring {
+                    if optionals.contains(&path) {
+                        let member = path.segments().len() > 1;
+                        found.entry(path).or_insert(
+                            if member && presence == ess_domain::types::Presence::NullWhenAbsent {
+                                Choice::Null
+                            } else {
+                                Choice::Omit
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The paths under `at` of `field` and of every struct member it reaches through newtypes and
+/// structs that declare a presence policy. Stops at an `Optional` below the field itself, where a
+/// suite carries no policy (`synthesize::mark_presence`), and at [`MAX_TYPE_DEPTH`].
+fn policy_members(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedField,
+    at: &FactPath,
+    depth: usize,
+    found: &mut Vec<(FactPath, ess_domain::types::Presence)>,
+) {
+    if depth > MAX_TYPE_DEPTH {
+        return;
+    }
+    if let Some(presence) = field.naming.presence {
+        found.push((at.clone(), presence));
+    }
+    let mut current = &field.type_ref;
+    for _ in 0..=MAX_TYPE_DEPTH {
+        match current {
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => current = of,
+                ResolvedBody::Struct { fields, .. } => {
+                    for member in fields {
+                        policy_members(ir, member, &at.child(&member.name), depth + 1, found);
+                    }
+                    return;
+                }
+                ResolvedBody::Enum { .. } | ResolvedBody::Union { .. } => return,
+            },
+            _ => return,
+        }
+    }
 }
 
 /// The base, then the distinct candidates the ladders describe, then each omission alone — at most
@@ -337,9 +477,9 @@ pub fn candidates(
 fn enumerate(
     builder: &mut Builder<'_>,
     command: &ResolvedCommand,
-    base: BTreeMap<String, Node>,
     ladders: &[(FactPath, Vec<Choice>)],
     omitted: &[FactPath],
+    presence_omits: &BTreeMap<FactPath, Choice>,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
     let total = product(ladders);
     let reserved = if total <= MAX_CANDIDATES {
@@ -349,7 +489,12 @@ fn enumerate(
     };
     let enumerated = MAX_CANDIDATES.saturating_sub(reserved).max(1);
 
-    let mut inputs = vec![base];
+    let mut inputs = Vec::new();
+    for input in paired(builder, command, &BTreeMap::new(), presence_omits)? {
+        if !inputs.contains(&input) {
+            inputs.push(input);
+        }
+    }
     let mut index = 1;
     while index < total
         && inputs.len() < enumerated
@@ -365,9 +510,10 @@ fn enumerate(
                 overrides.insert(path.clone(), alternatives[chosen - 1].clone());
             }
         }
-        let input = builder.input(command, &overrides)?;
-        if !inputs.contains(&input) {
-            inputs.push(input);
+        for input in paired(builder, command, &overrides, presence_omits)? {
+            if !inputs.contains(&input) {
+                inputs.push(input);
+            }
         }
         index += 1;
     }
@@ -375,12 +521,46 @@ fn enumerate(
         if inputs.len() >= MAX_CANDIDATES {
             break;
         }
-        let input = builder.input(command, &BTreeMap::from([(path.clone(), Choice::Omit)]))?;
-        if !inputs.contains(&input) {
-            inputs.push(input);
+        let overrides = BTreeMap::from([(path.clone(), Choice::Omit)]);
+        for input in paired(builder, command, &overrides, presence_omits)? {
+            if !inputs.contains(&input) {
+                inputs.push(input);
+            }
         }
     }
+    // A pair can overshoot the bound by one; the absent half of a pair always comes first.
+    inputs.truncate(MAX_CANDIDATES);
     Ok(inputs)
+}
+
+/// One candidate as `overrides` describe it: first with every presence-policy member left out
+/// where `overrides` does not name it, then as written. The same single input when there is
+/// nothing to leave out, so a model without a policy keeps exactly the candidates it had.
+fn paired(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    overrides: &BTreeMap<FactPath, Choice>,
+    presence_omits: &BTreeMap<FactPath, Choice>,
+) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    let written = builder.input(command, overrides)?;
+    if presence_omits
+        .keys()
+        .all(|path| overrides.contains_key(path))
+    {
+        return Ok(vec![written]);
+    }
+    let mut omitting = presence_omits.clone();
+    omitting.extend(
+        overrides
+            .iter()
+            .map(|(path, choice)| (path.clone(), choice.clone())),
+    );
+    let absent = builder.input(command, &omitting)?;
+    Ok(if absent == written {
+        vec![written]
+    } else {
+        vec![absent, written]
+    })
 }
 
 /// How many positions of the enumeration are walked, per candidate the bound allows, before
@@ -396,6 +576,10 @@ enum Choice {
     /// Nothing: the `Optional` member at this path is left out of the input — absent from its
     /// mapping, never present as `null`.
     Omit,
+    /// The `Optional` member at this path sent as an explicit `null`: its absence spelled the way the
+    /// `null_when_absent` field it is copied into spells it (beyond10x/ess#139), so the value a
+    /// suite expects there is the one a correct implementation publishes.
+    Null,
     /// A list of this many elements: element 0 built at `<path>.0` from the declared element type
     /// like any other value and varied there by the same ladders, and every further element a
     /// copy of it, so a quantifier is decided by element 0 alone, as it was with one element.
@@ -613,6 +797,15 @@ fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
             op: *op,
             value: value.clone(),
         },
+        Predicate::FoldMatch {
+            path: read,
+            op,
+            values,
+        } => Predicate::FoldMatch {
+            path: path(read),
+            op: *op,
+            values: values.clone(),
+        },
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
             let inner = ess_primitives::predicate::Quantified {
                 over: path(&quantified.over),
@@ -701,8 +894,186 @@ fn collect_literals(predicate: &Predicate, path: &FactPath, found: &mut Vec<Fact
                 found.push(value.clone());
             }
         }
+        // A literal with its ASCII case changed satisfies its own operator as the literal does, and
+        // only an implementation that folds case accepts it: tried in the literal's place, it is the
+        // witness a byte-wise comparison fails (beyond10x/ess#140). A literal with no ASCII letter
+        // is its own case change.
+        Predicate::FoldMatch {
+            path: read, values, ..
+        } => {
+            if read == path {
+                found.extend(values.iter().map(|value| match value {
+                    FactValue::Text(text) => FactValue::Text(swap_ascii_case(text)),
+                    other => other.clone(),
+                }));
+            }
+        }
         Predicate::Always | Predicate::Never | Predicate::Truthy(_) | Predicate::Defined(_) => {}
     }
+}
+
+/// `text` with every ASCII letter in the other case and every other character kept.
+fn swap_ascii_case(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character.is_ascii_uppercase() {
+                character.to_ascii_lowercase()
+            } else {
+                character.to_ascii_uppercase()
+            }
+        })
+        .collect()
+}
+
+/// A fold literal with one character changed: the same length, and equal under ASCII folding to
+/// none of `members` — every literal the guards compare the path with — so it refutes
+/// `equals_ignore_case`, and `in_ignore_case` even where changing one member's first character
+/// lands on another (`web`, `xeb`, `yeb`). The first character is tried first, then each later
+/// one, each with `x`, `y`, `z`, `q` and `j` in turn. `None` for the empty literal, which every
+/// other text refutes already, and where no such change exists.
+fn fold_refuting(literal: &str, members: &[String]) -> Option<String> {
+    let characters: Vec<char> = literal.chars().collect();
+    for index in 0..characters.len() {
+        for replacement in ['x', 'y', 'z', 'q', 'j'] {
+            if characters[index].eq_ignore_ascii_case(&replacement) {
+                continue;
+            }
+            let mut changed = characters.clone();
+            changed[index] = replacement;
+            let changed: String = changed.into_iter().collect();
+            if !members
+                .iter()
+                .any(|member| member.eq_ignore_ascii_case(&changed))
+            {
+                return Some(changed);
+            }
+        }
+    }
+    None
+}
+
+/// Per fold-guarded path, the input text that refutes the guards there by one character: the
+/// refuting side of a case-insensitive guard, tried ahead of every other candidate so that it is
+/// the witness the refuting branch is sent (beyond10x/ess#140).
+fn fold_refutations_at(guards: &[&Predicate]) -> Vec<(FactPath, String)> {
+    let mut found = Vec::new();
+    for path in read_paths(guards) {
+        let members = fold_literals_at(guards, &path);
+        if let Some(changed) = members
+            .first()
+            .and_then(|literal| fold_refuting(literal, &members))
+        {
+            found.push((path, changed));
+        }
+    }
+    found
+}
+
+/// Per fold-guarded path of `guard`, each literal in the case only Unicode folding equates with it
+/// ([`unicode_refuting`]) — the further witness a refuting branch is sent so that a target folding
+/// Unicode, not ASCII, fails the suite (beyond10x/ess#140).
+pub(crate) fn unicode_refutations(guard: &Predicate) -> Vec<(FactPath, Node)> {
+    let guards = [guard];
+    let mut found = Vec::new();
+    for path in read_paths(&guards) {
+        let members = fold_literals_at(&guards, &path);
+        for literal in &members {
+            if let Some(text) = unicode_refuting(literal) {
+                if !members
+                    .iter()
+                    .any(|member| member.eq_ignore_ascii_case(&text))
+                {
+                    found.push((path.clone(), Node::Text(text)));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// A fold literal in a case only Unicode folding equates with it: each non-ASCII letter in its
+/// other case (`café` to `CAFÉ`), or — where it has none — its first `k` as U+212A KELVIN SIGN or
+/// first `s` as U+017F LONG S, both of which Unicode case folding maps onto the ASCII letter. ASCII
+/// folding compares every non-ASCII character as itself, so this refutes the guard, and a target
+/// that folds Unicode — `strings.EqualFold`, `toLowerCase` — accepts it and fails the scenario.
+/// `None` for a literal with no such character.
+fn unicode_refuting(literal: &str) -> Option<String> {
+    let other_case = |character: char| {
+        let mapped: Vec<char> = if character.is_lowercase() {
+            character.to_uppercase().collect()
+        } else if character.is_uppercase() {
+            character.to_lowercase().collect()
+        } else {
+            return None;
+        };
+        match mapped.as_slice() {
+            &[single] if single != character => Some(single),
+            _ => None,
+        }
+    };
+    let mut changed = false;
+    let swapped: String = literal
+        .chars()
+        .map(|character| {
+            if character.is_ascii_uppercase() {
+                return character.to_ascii_lowercase();
+            }
+            if character.is_ascii() {
+                return character.to_ascii_uppercase();
+            }
+            match other_case(character) {
+                Some(single) => {
+                    changed = true;
+                    single
+                }
+                None => character,
+            }
+        })
+        .collect();
+    if changed {
+        return Some(swapped);
+    }
+    let at = literal.find(['k', 'K', 's', 'S'])?;
+    let replaced = literal[at..].chars().next()?;
+    let sign = if replaced.eq_ignore_ascii_case(&'k') {
+        '\u{212A}'
+    } else {
+        '\u{017F}'
+    };
+    Some(format!("{}{sign}{}", &literal[..at], &literal[at + 1..]))
+}
+
+/// Every text literal a case-insensitive operator compares `path` with, in written order.
+fn fold_literals_at(guards: &[&Predicate], path: &FactPath) -> Vec<String> {
+    fn walk(predicate: &Predicate, path: &FactPath, found: &mut Vec<String>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, path, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, path, found),
+            Predicate::FoldMatch {
+                path: read, values, ..
+            } if read == path => {
+                found.extend(
+                    values
+                        .iter()
+                        .filter_map(FactValue::as_text)
+                        .map(str::to_owned),
+                );
+            }
+            Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                walk(&quantified.body, path, found);
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        walk(guard, path, &mut found);
+    }
+    found
 }
 
 /// One string-operator literal a predicate reads at a path, and whether it is read positively —
@@ -1017,6 +1388,43 @@ fn chain_alphabet(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<String> {
     ess_domain::types::effective_alphabet(alphabets)
 }
 
+/// The effective prefix of the newtype chain `type_ref` is declared through: the longest any layer
+/// declares, which `ess-domain` holds every other layer's prefix to be a prefix of.
+fn chain_prefix(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<String> {
+    let mut longest: Option<&str> = None;
+    let mut current = type_ref;
+    for _ in 0..=MAX_TYPE_DEPTH {
+        match current {
+            ResolvedTypeRef::Optional { of } => current = of,
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, prefix, .. } => {
+                    if let Some(prefix) = prefix.as_deref() {
+                        if longest.is_none_or(|held| prefix.chars().count() > held.chars().count())
+                        {
+                            longest = Some(prefix);
+                        }
+                    }
+                    current = of;
+                }
+                _ => break,
+            },
+            _ => break,
+        }
+    }
+    longest.map(str::to_owned)
+}
+
+/// `text` as a value of a type whose values start with `prefix` (rule 2 under a prefix): itself
+/// where it already starts with it, otherwise the prefix followed by it, so the path's own text
+/// still tells two fields apart.
+fn with_prefix(text: &str, prefix: &str) -> String {
+    if text.starts_with(prefix) {
+        text.to_owned()
+    } else {
+        format!("{prefix}{text}")
+    }
+}
+
 /// Ladders for the leaves no guard reads whose own type refuses their base witness.
 ///
 /// Without a value the type admits, no candidate survives [`admitted_inputs`] and no branch has a
@@ -1111,7 +1519,8 @@ fn refuting(op: TextOp, literal: &str) -> Option<String> {
 }
 
 /// The text candidates rule 3 adds for string operators at `path`, after the literals: each
-/// guard's compositions, then each newtype invariant's, then each literal's `L′`.
+/// guard's compositions, then each newtype invariant's, then each literal's `L′`, then each
+/// case-insensitive literal with one character changed.
 fn text_alternatives(
     guards: &[&Predicate],
     invariants: &[Predicate],
@@ -1135,6 +1544,12 @@ fn text_alternatives(
             seen.push((read.op, &read.literal));
             found.extend(refuting(read.op, &read.literal));
         }
+    }
+    // A fold literal with one character changed: the refuting side of a case-insensitive guard.
+    let members = fold_literals_at(guards, path);
+    for literal in &members {
+        found.extend(fold_refuting(literal, &members));
+        found.extend(unicode_refuting(literal));
     }
     found
 }
@@ -1176,6 +1591,7 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool)
             }
         }
         Leaf::Bool => push(Node::Bool(!matches!(base, Node::Bool(true)))),
+        Leaf::Json => {}
         Leaf::Text => {
             let texts: Vec<&str> = literals.iter().filter_map(FactValue::as_text).collect();
             for text in &texts {
@@ -1297,6 +1713,9 @@ struct Builder<'ir> {
     /// outermost alphabet's characters every inner one also holds. Recorded inside a union as
     /// well, because a value there must be legal even where no guard can vary it.
     alphabets: BTreeMap<FactPath, String>,
+    /// The effective prefix of every text a declared newtype chain constrains, by path: the
+    /// longest any layer declares (ess/15). Recorded where alphabets are, for the same reason.
+    prefixes: BTreeMap<FactPath, String>,
     /// Every recorded leaf declared `String`, the one text that has a length. [`Leaf::Text`] also
     /// covers `Uuid`, `Duration` and `Bytes`.
     strings: BTreeSet<FactPath>,
@@ -1325,6 +1744,7 @@ impl<'ir> Builder<'ir> {
             optionals: BTreeSet::new(),
             invariants: BTreeMap::new(),
             alphabets: BTreeMap::new(),
+            prefixes: BTreeMap::new(),
             strings: BTreeSet::new(),
             plain_texts: BTreeMap::new(),
             examples: BTreeMap::new(),
@@ -1376,8 +1796,10 @@ impl<'ir> Builder<'ir> {
             if record {
                 self.optionals.insert(path.clone());
             }
-            if overrides.get(path) == Some(&Choice::Omit) {
-                return Ok(None);
+            match overrides.get(path) {
+                Some(Choice::Omit) => return Ok(None),
+                Some(Choice::Null) => return Ok(Some(Node::Null)),
+                _ => {}
             }
         }
         self.value(type_ref, path, overrides, depth, record)
@@ -1388,6 +1810,11 @@ impl<'ir> Builder<'ir> {
     /// the input's example at the plain instance.
     fn primitive(&mut self, name: Primitive, path: &FactPath, record: bool) -> Node {
         let mut base = primitive_value(name, path, self.distinction);
+        // The prefix goes in front first, and the alphabet then maps the whole text: every
+        // character of the prefix is in the alphabet, which validation holds, so mapping keeps it.
+        if let (Node::Text(text), Some(prefix)) = (&base, self.prefixes.get(path)) {
+            base = Node::Text(with_prefix(text, prefix));
+        }
         if let (Node::Text(text), Some(alphabet)) = (&base, self.alphabets.get(path)) {
             base = Node::Text(into_alphabet(text, alphabet));
         }
@@ -1492,6 +1919,11 @@ impl<'ir> Builder<'ir> {
                                 self.alphabets.insert(path.clone(), alphabet);
                             }
                         }
+                        if !self.prefixes.contains_key(path) {
+                            if let Some(prefix) = chain_prefix(ir, type_ref) {
+                                self.prefixes.insert(path.clone(), prefix);
+                            }
+                        }
                         if record {
                             let recorded = self.invariants.entry(path.clone()).or_default();
                             for invariant in invariants {
@@ -1572,6 +2004,7 @@ impl Leaf {
             Primitive::Integer => Self::Number { integral: true },
             Primitive::Decimal => Self::Number { integral: false },
             Primitive::Timestamp => Self::Timestamp,
+            Primitive::Json => Self::Json,
             Primitive::String | Primitive::Duration | Primitive::Uuid | Primitive::Bytes => {
                 Self::Text
             }
@@ -1614,6 +2047,17 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
         // a value came from is still the first thing a reader of a failing diagnostic sees.
         Primitive::String if nth == 0 => Node::Text(path.to_string()),
         Primitive::String => Node::Text(format!("{path}-{nth}")),
+        // A small object (beyond10x/ess#138), keyed and valued by the path as a text witness is, so
+        // two `Json` fields — and two instances — never carry one value, and a payload that copies
+        // it is held to the whole structure rather than to a scalar.
+        Primitive::Json => Node::Map(std::collections::BTreeMap::from([(
+            path.to_string(),
+            Node::Text(if nth == 0 {
+                path.to_string()
+            } else {
+                format!("{path}-{nth}")
+            }),
+        )])),
     }
 }
 

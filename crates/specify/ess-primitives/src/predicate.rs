@@ -278,6 +278,56 @@ impl fmt::Display for TextOp {
     }
 }
 
+/// A case-insensitive text operator (beyond10x/ess#140): a text fact equal, under ASCII case
+/// folding, to one text literal or to one of a list of them.
+///
+/// Map form only (`source: {equals_ignore_case: web}`, `source: {in_ignore_case: [web, phone]}`).
+/// Folding is ASCII only — `A`–`Z` fold to `a`–`z` and every other byte compares as itself — so
+/// every evaluator lane answers it from its standard library the same way, which Unicode case
+/// folding would not. `docs/design/value-expressions.md` § E7 is the design.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FoldOp {
+    /// `equals_ignore_case`: one text literal.
+    EqualsIgnoreCase,
+    /// `in_ignore_case`: a list of text literals.
+    InIgnoreCase,
+}
+
+impl FoldOp {
+    /// Both operators, in the order the design names them.
+    pub const ALL: [Self; 2] = [Self::EqualsIgnoreCase, Self::InIgnoreCase];
+
+    /// The map-form key.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::EqualsIgnoreCase => "equals_ignore_case",
+            Self::InIgnoreCase => "in_ignore_case",
+        }
+    }
+
+    /// Parses the map-form key. There is exactly one spelling of each.
+    pub fn from_keyword(keyword: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|op| op.keyword() == keyword)
+    }
+
+    /// Whether `text` equals any of `literals` under ASCII case folding.
+    ///
+    /// `str::eq_ignore_ascii_case` is exactly the design's rule: equal lengths, and each byte pair
+    /// equal after mapping `A`–`Z` to `a`–`z`. A non-ASCII byte maps to itself, so `É` and `é`
+    /// differ, and so do `@` and `` ` ``, which a folding that set bit 5 would confuse.
+    pub fn holds(self, text: &str, literals: &[&str]) -> bool {
+        literals
+            .iter()
+            .any(|literal| text.eq_ignore_ascii_case(literal))
+    }
+}
+
+impl fmt::Display for FoldOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.keyword())
+    }
+}
+
 /// One side of a comparison: either a fact to look up, or a literal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
@@ -446,6 +496,21 @@ pub enum Predicate {
         op: TextOp,
         /// The literal, verbatim as written: never a fact path, never read as a number.
         value: FactValue,
+    },
+    /// The text fact equals a literal, or one of a list of them, under ASCII case folding
+    /// (beyond10x/ess#140).
+    ///
+    /// Unobserved is [`Truth::Unknown`]; an observed value that is not text is [`Truth::False`],
+    /// and a literal that is not text matches nothing. Validation refuses such a literal, so only
+    /// an unchecked caller reaches that row. [`FoldOp::EqualsIgnoreCase`] carries exactly one
+    /// value, which is what keeps the two spellings apart when the predicate is rendered.
+    FoldMatch {
+        /// The fact to read.
+        path: FactPath,
+        /// Which of the two spellings.
+        op: FoldOp,
+        /// The literals, verbatim as written: never a fact path, never read as a number.
+        values: Vec<FactValue>,
     },
     /// Every element of a collection satisfies the body.
     ///
@@ -636,6 +701,16 @@ impl Predicate {
                         }
                         _ => Truth::False,
                     })
+            }
+            Self::FoldMatch { path, op, values } => {
+                facts.observe(path).map_or(Truth::Unknown, |observed| {
+                    let FactValue::Text(text) = &observed else {
+                        return Truth::False;
+                    };
+                    let literals: Vec<&str> =
+                        values.iter().filter_map(FactValue::as_text).collect();
+                    Truth::from_bool(op.holds(text, &literals))
+                })
             }
             Self::Forall(quantified) => quantified.evaluate(facts, true),
             Self::Exists(quantified) => quantified.evaluate(facts, false),
@@ -874,7 +949,8 @@ impl Predicate {
             | Self::Defined(path)
             | Self::AnyOf { path, .. }
             | Self::NoneOf { path, .. }
-            | Self::TextMatch { path, .. } => {
+            | Self::TextMatch { path, .. }
+            | Self::FoldMatch { path, .. } => {
                 if !bound.contains(&path.namespace()) {
                     visit(path);
                 }
@@ -927,7 +1003,8 @@ impl Predicate {
             | Self::Defined(_)
             | Self::AnyOf { .. }
             | Self::NoneOf { .. }
-            | Self::TextMatch { .. } => {}
+            | Self::TextMatch { .. }
+            | Self::FoldMatch { .. } => {}
         }
     }
 
@@ -949,7 +1026,30 @@ impl Predicate {
             | Self::Truthy(_)
             | Self::Defined(_)
             | Self::AnyOf { .. }
-            | Self::NoneOf { .. } => false,
+            | Self::NoneOf { .. }
+            | Self::FoldMatch { .. } => false,
+        }
+    }
+
+    /// Whether any leaf of this predicate, at any depth, is a case-insensitive text operator.
+    ///
+    /// The question every format gate asks of the construct (beyond10x/ess#140): `ess/15` for an
+    /// authored specification, the suite pair `/20` and `/21` for a suite, and `infra-spec/1`'s
+    /// refusal. Apart from [`Self::uses_text_match`], because the two arrived in different formats.
+    pub fn uses_case_fold(&self) -> bool {
+        match self {
+            Self::FoldMatch { .. } => true,
+            Self::All(children) | Self::Any(children) => children.iter().any(Self::uses_case_fold),
+            Self::Not(inner) => inner.uses_case_fold(),
+            Self::Forall(quantified) | Self::Exists(quantified) => quantified.body.uses_case_fold(),
+            Self::Always
+            | Self::Never
+            | Self::Compare { .. }
+            | Self::Truthy(_)
+            | Self::Defined(_)
+            | Self::AnyOf { .. }
+            | Self::NoneOf { .. }
+            | Self::TextMatch { .. } => false,
         }
     }
 
@@ -1214,11 +1314,13 @@ impl Predicate {
             }
             "truthy" => Ok(Self::Truthy(path)),
             "starts_with" | "ends_with" | "contains" => Self::text_match(path, operator, operand),
+            "equals_ignore_case" | "in_ignore_case" => Self::fold_match(path, operator, operand),
             unknown => Err(ParseError::predicate(
                 &format!("{path}: {{{unknown}: …}}"),
                 format!(
                     "unknown operator {unknown:?}; expected one of eq, ne, lt, lte, gt, gte, \
-                     any_of, none_of, exists, truthy, starts_with, ends_with, contains"
+                     any_of, none_of, exists, truthy, starts_with, ends_with, contains, \
+                     equals_ignore_case, in_ignore_case"
                 ),
             )),
         }
@@ -1242,6 +1344,42 @@ impl Predicate {
             }
         };
         Ok(Self::TextMatch { path, op, value })
+    }
+
+    /// Parses a case-insensitive operator's operand (beyond10x/ess#140): one scalar under
+    /// `equals_ignore_case`, a list of scalars under `in_ignore_case`, each text read byte for byte
+    /// as a string operator's is. A number or a Boolean is kept for validation to refuse with a
+    /// code and a site. The shapes are not interchangeable, so a list under the one and a scalar
+    /// under the other are refused here rather than read as the other operator.
+    fn fold_match(path: FactPath, operator: &str, operand: &Node) -> Result<Self, ParseError> {
+        let op = FoldOp::from_keyword(operator).expect("dispatched on a fold operator keyword");
+        let scalar = |node: &Node| match node {
+            Node::Text(text) => Ok(FactValue::Text(text.clone())),
+            Node::Number(number) => Ok(FactValue::Number(*number)),
+            Node::Bool(value) => Ok(FactValue::Bool(*value)),
+            other => Err(ParseError::predicate(
+                &format!("{path}: {{{operator}: {other}}}"),
+                "a comparison operand must be a scalar",
+            )),
+        };
+        let values =
+            match (op, operand) {
+                (FoldOp::InIgnoreCase, Node::Seq(items)) => {
+                    items.iter().map(scalar).collect::<Result<_, _>>()?
+                }
+                (FoldOp::InIgnoreCase, other) => {
+                    return Err(ParseError::predicate(
+                        &format!("{path}: {{{operator}: {other}}}"),
+                        "`in_ignore_case` takes a list of text literals",
+                    ))
+                }
+                (FoldOp::EqualsIgnoreCase, Node::Seq(_)) => return Err(ParseError::predicate(
+                    &format!("{path}: {{{operator}: {operand}}}"),
+                    "`equals_ignore_case` takes one text literal; use `in_ignore_case` for a list",
+                )),
+                (FoldOp::EqualsIgnoreCase, other) => vec![scalar(other)?],
+            };
+        Ok(Self::FoldMatch { path, op, values })
     }
 
     /// Parses the compact string form of a predicate.
@@ -1463,6 +1601,22 @@ impl Predicate {
                 )]
                 .into(),
             ),
+            // Explicit for the same reason: there is no compact form. `equals_ignore_case` carries
+            // exactly one value by construction; should a caller build it with another count, the
+            // list is written, which the reader refuses rather than reading as something else.
+            Self::FoldMatch { path, op, values } => {
+                let operand = match (op, values.as_slice()) {
+                    (FoldOp::EqualsIgnoreCase, [only]) => value_node(only),
+                    _ => Node::Seq(values.iter().map(value_node).collect()),
+                };
+                Node::Map(
+                    [(
+                        path.to_string(),
+                        Node::Map([(op.keyword().to_owned(), operand)].into()),
+                    )]
+                    .into(),
+                )
+            }
             Self::Compare {
                 left: Operand::Fact(path),
                 op,
@@ -1664,6 +1818,21 @@ impl fmt::Display for Predicate {
                 value: FactValue::Text(text),
             } => write!(f, "{path} {op} {text:?}"),
             Self::TextMatch { path, op, value } => write!(f, "{path} {op} {value}"),
+            // For a reader and the semantic diff, never read back: each text quoted by `Debug`.
+            Self::FoldMatch { path, op, values } => {
+                let quoted = |value: &FactValue| match value {
+                    FactValue::Text(text) => format!("{text:?}"),
+                    other => other.to_string(),
+                };
+                match (op, values.as_slice()) {
+                    (FoldOp::EqualsIgnoreCase, [only]) => write!(f, "{path} {op} {}", quoted(only)),
+                    _ => write!(
+                        f,
+                        "{path} {op} [{}]",
+                        values.iter().map(quoted).collect::<Vec<_>>().join(", ")
+                    ),
+                }
+            }
             Self::Forall(quantified) => write_quantified(f, "forall", quantified),
             Self::Exists(quantified) => write_quantified(f, "exists", quantified),
         }
@@ -1746,7 +1915,9 @@ impl schemars::JsonSchema for Predicate {
             "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a \
              list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, \
              `exists` or a fact path with an operator constraint. A text fact is tested against a \
-             text literal, map form only, with `starts_with`, `ends_with` or `contains`."
+             text literal, map form only, with `starts_with`, `ends_with` or `contains`, and \
+             without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a \
+             list)."
                 .to_owned(),
         );
         schema.into()

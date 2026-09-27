@@ -26,8 +26,16 @@ pub(super) fn named_type(out: &mut String, emit: &Emit<'_>, declared: &ResolvedT
         ResolvedBody::Newtype {
             of,
             alphabet,
+            prefix,
             invariants,
-        } => newtype(out, emit, declared, of, alphabet.as_deref(), invariants),
+        } => newtype(
+            out,
+            emit,
+            declared,
+            of,
+            [alphabet.as_deref(), prefix.as_deref()],
+            invariants,
+        ),
         ResolvedBody::Struct { fields, invariants } => {
             structure(out, emit, declared, fields, invariants);
         }
@@ -42,7 +50,7 @@ fn newtype(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     of: &ResolvedTypeRef,
-    alphabet: Option<&str>,
+    text: [Option<&str>; 2],
     invariants: &[Invariant],
 ) {
     let _ = writeln!(
@@ -52,7 +60,8 @@ fn newtype(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
-    alphabet_doc(out, alphabet);
+    alphabet_doc(out, text[0]);
+    prefix_doc(out, text[1]);
     invariant_doc(out, invariants);
     let _ = writeln!(
         out,
@@ -531,4 +540,11 @@ fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
         );
     }
     out.push_str("        }\n    }\n}\n");
+}
+
+/// A declared prefix, documented as an alphabet is and for the same reason.
+fn prefix_doc(out: &mut String, prefix: Option<&str>) {
+    if let Some(prefix) = prefix {
+        let _ = writeln!(out, "///\n/// Every value starts with `{prefix}`.");
+    }
 }

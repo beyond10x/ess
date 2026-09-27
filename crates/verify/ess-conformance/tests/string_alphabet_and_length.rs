@@ -79,11 +79,20 @@ fn sent(scenario: &ConformanceScenario, command: &str, field: &str) -> Vec<Strin
         .collect()
 }
 
+/// The witness the scenario sends first. Every further send is a boundary row of a `.count` guard
+/// (beyond10x/ess#160), which differs from the witness in its length and nothing else it cycles.
 fn keys(result: &Synthesis, id: &str) -> String {
     let scenario = scenario(&result.suite, id)
         .unwrap_or_else(|| panic!("no scenario {id}: {:?}", refusals_about(result, id)));
     let sent = sent(scenario, "keypad.dial.SendKeys", "keys");
-    assert_eq!(sent.len(), 1, "{id} sends once: {sent:?}");
+    assert!(!sent.is_empty(), "{id} sends: {sent:?}");
+    for further in &sent[1..] {
+        assert_ne!(
+            further.chars().count(),
+            sent[0].chars().count(),
+            "{id}: a further send is a boundary row, at another length: {sent:?}"
+        );
+    }
     sent[0].clone()
 }
 
@@ -112,6 +121,18 @@ fn the_keypad_suite_witnesses_both_branches_with_sendable_keys() {
     // The worked example: `keys` mapped into the alphabet, then cycled from its own start.
     assert_eq!(short, "#593");
     assert_eq!(long, format!("{}#", "#593".repeat(16)));
+    // And the accepting side at the boundary itself (beyond10x/ess#160): 64 sendable keys, so a
+    // keypad that moved its limit to 63 fails.
+    let boundary = sent(
+        scenario(&result.suite, SENT).expect("held"),
+        "keypad.dial.SendKeys",
+        "keys",
+    );
+    assert!(
+        boundary.iter().any(|text| text.chars().count() == 64
+            && text.chars().all(|character| ALPHABET.contains(character))),
+        "{boundary:?}"
+    );
 }
 
 /// A keypad that sends only `0-9 * # A-D` and refuses a sequence longer than 64 keys — the

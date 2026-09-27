@@ -1,0 +1,56 @@
+format: ess/15
+system: calls
+version: v1
+domain: calls.rec
+entities:
+  - name: calls.rec.Call
+    identity: {name: call_id, type: Uuid}
+    fields:
+      - {name: recording_id, type: String}
+    lifecycle:
+      initial: Recording
+      states: [Recording, Stopped]
+      terminal: [Stopped]
+      transitions:
+        - {name: stop, from: [Recording], to: Stopped}
+events:
+  - name: calls.rec.Started
+    fields:
+      - {name: call_id, type: Uuid}
+  - name: calls.rec.Stopped
+    fields: []
+commands:
+  - name: calls.rec.Start
+    input:
+      - {name: recording_id, type: String}
+    outcomes:
+      - name: started
+        creates: calls.rec.Call
+        instance: call_id
+        sets: {recording_id: input.recording_id}
+        emits: [calls.rec.Started]
+        payload:
+          calls.rec.Started:
+            call_id: {generated: true}
+  - name: calls.rec.Stop
+    input:
+      - {name: call_id, type: Uuid}
+      - {name: recording_id, type: String}
+    outcomes:
+      - name: other-recording
+        when_subject:
+          predicate: recording_id != input.recording_id
+        preserves: calls.rec.Call
+        instance: call_id
+      - name: stopped
+        moves: calls.rec.Call.stop
+        instance: call_id
+        emits: [calls.rec.Stopped]
+views:
+  - name: calls.rec.Calls
+    source: calls.rec.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: Uuid}
+      - {name: state, type: calls.rec.Call.State}
+      - {name: recording_id, type: String}

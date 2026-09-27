@@ -151,8 +151,16 @@ fn named_type(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
         ResolvedBody::Newtype {
             of,
             alphabet,
+            prefix,
             invariants,
-        } => newtype(out, emit, declared, of, alphabet.as_deref(), invariants),
+        } => newtype(
+            out,
+            emit,
+            declared,
+            of,
+            [alphabet.as_deref(), prefix.as_deref()],
+            invariants,
+        ),
         ResolvedBody::Struct { fields, invariants } => {
             structure(out, emit, declared, fields, invariants);
         }
@@ -172,7 +180,7 @@ fn newtype(
     emit: &Emit<'_>,
     declared: &ResolvedType,
     of: &ResolvedTypeRef,
-    alphabet: Option<&str>,
+    text: [Option<&str>; 2],
     invariants: &[Invariant],
 ) {
     let type_name = emit.layout.declared(&declared.name);
@@ -185,7 +193,8 @@ fn newtype(
         declared.name
     );
     summary_doc(out, declared.naming.summary.as_deref());
-    alphabet_doc(out, alphabet);
+    alphabet_doc(out, text[0]);
+    prefix_doc(out, text[1]);
     invariant_doc(out, invariants);
     let _ = writeln!(
         out,
@@ -603,7 +612,13 @@ pub(super) fn field_ident(taken: &mut BTreeMap<String, usize>, field: &str) -> S
     unique_field(taken, name::exported(field))
 }
 
-fn response_field_name(fields: &[ResolvedField], wanted: &str) -> String {
+/// The Go identifier of the member `wanted` in a struct declaring `fields`, in that order.
+///
+/// Every access to a generated struct's member goes through this or [`field_ident`] over the
+/// declaration in order, never through [`name::exported`] alone: two specification names can
+/// export to one identifier (`_url` and `url` both want `Url`), and the struct moved one of them.
+/// A member spelled from its name alone then reads the other field, or one that does not exist.
+pub(super) fn member_ident(fields: &[ResolvedField], wanted: &str) -> String {
     let mut taken = BTreeMap::new();
     for field in fields {
         let ident = unique_field(&mut taken, name::exported(&field.name));
@@ -613,6 +628,7 @@ fn response_field_name(fields: &[ResolvedField], wanted: &str) -> String {
     }
     unreachable!("resolved field has a native name")
 }
+
 fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand) {
     for outcome in &command.outcomes {
         if !super::super::rust::items::response_mapped(outcome) {
@@ -636,11 +652,11 @@ fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
                     let actual = format!(
                         "outcome.{}.{}",
                         event.field,
-                        response_field_name(&emit.ir.event(event.event).fields, &field.target)
+                        member_ident(&emit.ir.event(event.event).fields, &field.target)
                     );
                     let mut expected = format!(
                         "outcome.Response.{}",
-                        response_field_name(&command.response, source)
+                        member_ident(&command.response, source)
                     );
                     let mut target = &field.target_type;
                     while target != type_ref {
@@ -663,5 +679,12 @@ fn response_checks(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
             }
         }
         let _=writeln!(out,"\n// ResponsePayloadMatches compares independently returned response and event values.\nfunc (outcome {variant}) ResponsePayloadMatches() bool {{ return {} }}",checks.join(" && "));
+    }
+}
+
+/// A declared prefix, documented as an alphabet is and for the same reason.
+fn prefix_doc(out: &mut String, prefix: Option<&str>) {
+    if let Some(prefix) = prefix {
+        let _ = writeln!(out, "//\n// Every value starts with `{prefix}`.");
     }
 }

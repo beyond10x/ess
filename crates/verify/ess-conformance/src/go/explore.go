@@ -13,6 +13,15 @@
 // entity (polling an `eventual` one), identity uniqueness and every invariant. A failure is shrunk
 // to a shorter trace that still fails the same way.
 //
+// # External branches
+//
+// An outcome declared `external:` (with or without an eligibility `when:`) is a choice the
+// explorer may take: where it is eligible, a seeded draw picks between it and the ordinary branch,
+// the target is asked to arrange it through ConfigureExternalOutcome, and the step then expects it.
+// Once a command has had a branch arranged in a sequence, the arrangement may still hold, so the
+// explorer no longer expects that command's ordinary branch where an external one is eligible.
+// A branch the target cannot arrange is reported `unarrangeable`, never as a disagreement.
+//
 // # A port, not a second opinion
 //
 // This file is `src/ts/explore.ts` in Go, function for function. The random draws, their order and
@@ -95,13 +104,31 @@ type ExploreResult struct {
 	Undetermined []string `json:"undetermined"`
 	// Ambiguous is every draw the specification does not decide, which was redrawn rather than
 	// executed.
-	Ambiguous []string        `json:"ambiguous"`
-	Failure   *ExploreFailure `json:"failure,omitempty"`
+	Ambiguous []string `json:"ambiguous"`
+	// External is every declared `external:` branch and how far the exploration got with it, in
+	// order of Outcome. Absent when the specification declares none, so a result without external
+	// branches keeps its bytes.
+	External []ExternalReach `json:"external,omitempty"`
+	Failure  *ExploreFailure `json:"failure,omitempty"`
+}
+
+// ExternalReach is one declared `external:` branch and whether a step took it.
+type ExternalReach struct {
+	// Outcome is `command/outcome`.
+	Outcome string `json:"outcome"`
+	// Cause is what the specification says decides it.
+	Cause string `json:"cause"`
+	// Reach is `reached`, `unreached`, `unarrangeable` (the target refused to arrange it, so no
+	// step could take it) or `excluded` (its command was left out).
+	Reach string `json:"reach"`
+	// Reason is why the target could not arrange it, for `unarrangeable` only.
+	Reason string `json:"reason,omitempty"`
 }
 
 // AssertOptions is what AssertExplored accepts.
 type AssertOptions struct {
-	// AllowExcluded accepts outcomes of excluded commands. An explicit, reviewable opt-out.
+	// AllowExcluded accepts outcomes of excluded commands, and external outcomes the target could
+	// not arrange. An explicit, reviewable opt-out.
 	AllowExcluded bool
 }
 
@@ -489,6 +516,12 @@ type exploreDeclared struct {
 	outcomes []string
 }
 
+type exploreExternal struct {
+	command string
+	id      string
+	cause   string
+}
+
 type explorePlan struct {
 	ir               map[string]any
 	system           string
@@ -497,6 +530,17 @@ type explorePlan struct {
 	excluded         []Exclusion
 	excludedCommands map[string]bool
 	declared         []exploreDeclared
+	// externals is every declared external branch, in declaration order.
+	externals []exploreExternal
+	// unarrangeable is `command/outcome` for every external branch the target refused to arrange,
+	// and its reason.
+	unarrangeable map[string]string
+}
+
+// exploreIsExternal is true for an outcome an external cause decides.
+func exploreIsExternal(outcome map[string]any) bool {
+	kind := exploreObject(outcome["condition"])["kind"]
+	return kind == "external" || kind == "external_when"
 }
 
 func exploreEffectRefusal(outcome map[string]any) string {
@@ -515,7 +559,7 @@ func exploreEffectRefusal(outcome map[string]any) string {
 }
 
 func explorePlanOf(ir map[string]any) *explorePlan {
-	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}}
+	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}, unarrangeable: map[string]string{}}
 	actorFor := map[string]string{}
 	for _, actor := range exploreSorted(ir["actors"]) {
 		for _, command := range exploreStrings(actor["may"]) {
@@ -531,12 +575,20 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 		names := []string{}
 		for _, outcome := range outcomes {
 			names = append(names, fmt.Sprint(exploreObject(outcome)["name"]))
+			if exploreIsExternal(exploreObject(outcome)) {
+				p.externals = append(p.externals, exploreExternal{
+					command: name,
+					id:      name + "/" + fmt.Sprint(exploreObject(outcome)["name"]),
+					cause:   exploreString(exploreObject(exploreObject(outcome)["condition"])["cause"]),
+				})
+			}
 		}
 		p.declared = append(p.declared, exploreDeclared{command: name, outcomes: names})
 		reason := ""
 		for _, outcome := range outcomes {
 			kind := exploreObject(exploreObject(outcome)["condition"])["kind"]
-			if reason == "" && kind != "when" && kind != "otherwise" && kind != "wrong_state" {
+			if reason == "" && kind != "when" && kind != "otherwise" && kind != "wrong_state" &&
+				kind != "external" && kind != "external_when" {
 				reason = fmt.Sprintf("outcome `%v` has a `%v` condition", exploreObject(outcome)["name"], exploreUndefined(kind))
 			}
 		}
@@ -564,7 +616,7 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 		for _, outcome := range outcomes {
 			outcome := exploreObject(outcome)
 			condition := exploreObject(outcome["condition"])
-			if reason != "" || condition["kind"] != "when" {
+			if reason != "" || (condition["kind"] != "when" && condition["kind"] != "external_when") {
 				continue
 			}
 			guard, refusal := exploreParse(condition["predicate"])
@@ -779,11 +831,17 @@ func exploreValue(ir map[string]any, value map[string]any, input Row, ref map[st
 	}
 }
 
+// exploreDecision is what the model says one step may take. For `take`, outcome is the ordinary
+// branch (nil when none holds) and externals the external branches eligible for this input and
+// this subject, in declaration order; at least one of the two is present. A `take` with no
+// ordinary branch carries in names the ambiguity it stands in for, reported if no external branch
+// can be arranged.
 type exploreDecision struct {
-	kind    string
-	outcome map[string]any
-	names   []string
-	reason  string
+	kind      string
+	outcome   map[string]any
+	externals []map[string]any
+	names     []string
+	reason    string
 }
 
 func exploreSupplied(command *exploreCommand) map[string]any {
@@ -839,14 +897,26 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 	if supplied != nil && record == nil {
 		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
 	}
+	source := facts(input)
+	// orExternal is what a step may take where no ordinary branch can be: the eligible external
+	// branches alone, or otherwise, when there are none.
+	orExternal := func(otherwise exploreDecision) exploreDecision {
+		externals, unknown := exploreEligible(command, outcomes, source, record)
+		if unknown != "" {
+			return exploreDecision{kind: "unknown", reason: unknown}
+		}
+		if len(externals) > 0 {
+			return exploreDecision{kind: "take", externals: externals, names: otherwise.names}
+		}
+		return otherwise
+	}
 	if record != nil && moves > 0 && !starts[fmt.Sprint(record.fields["state"])] {
 		if wrong != nil {
 			return exploreDecision{kind: "take", outcome: wrong}
 		}
-		return exploreDecision{kind: "ambiguous", names: []string{fmt.Sprintf("no outcome for state %v", record.fields["state"])}}
+		return orExternal(exploreDecision{kind: "ambiguous", names: []string{fmt.Sprintf("no outcome for state %v", record.fields["state"])}})
 	}
 
-	source := facts(input)
 	holding := []map[string]any{}
 	for _, outcome := range outcomes {
 		if exploreObject(outcome["condition"])["kind"] != "when" {
@@ -860,6 +930,13 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 			holding = append(holding, outcome)
 		}
 	}
+	// The external branches this input and subject make eligible. Their guards state eligibility,
+	// not the verdict, so they take no part in choosing the ordinary branch; and where no ordinary
+	// branch can be taken, they still can.
+	externals, unknown := exploreEligible(command, outcomes, source, record)
+	if unknown != "" {
+		return exploreDecision{kind: "unknown", reason: unknown}
+	}
 	var selected map[string]any
 	switch {
 	case len(holding) > 1:
@@ -867,7 +944,7 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		for _, outcome := range holding {
 			names = append(names, fmt.Sprint(outcome["name"]))
 		}
-		return exploreDecision{kind: "ambiguous", names: names}
+		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	case len(holding) == 1:
 		selected = holding[0]
 	default:
@@ -878,7 +955,7 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 			}
 		}
 		if selected == nil {
-			return exploreDecision{kind: "ambiguous", names: []string{"no outcome holds"}}
+			return orExternal(exploreDecision{kind: "ambiguous", names: []string{"no outcome holds"}})
 		}
 	}
 	if exploreObject(selected["subject"])["effect"] == "moves" && record != nil &&
@@ -887,9 +964,67 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		if wrong != nil {
 			names = append(names, fmt.Sprint(wrong["name"]))
 		}
-		return exploreDecision{kind: "ambiguous", names: names}
+		return orExternal(exploreDecision{kind: "ambiguous", names: names})
 	}
-	return exploreDecision{kind: "take", outcome: selected}
+	return exploreDecision{kind: "take", outcome: selected, externals: externals}
+}
+
+// exploreEligible is the external branches of a command this input and subject make eligible, in
+// declaration order, or why an eligibility guard cannot be evaluated.
+func exploreEligible(command *exploreCommand, outcomes []map[string]any, source factSource, record *exploreRecord) ([]map[string]any, string) {
+	externals := []map[string]any{}
+	for _, outcome := range outcomes {
+		if !exploreIsExternal(outcome) {
+			continue
+		}
+		if exploreObject(outcome["condition"])["kind"] == "external_when" {
+			guard := command.guards[fmt.Sprint(outcome["name"])]
+			truth := guard.evaluate(source)
+			if truth == truthUnknown {
+				return nil, fmt.Sprintf("the guard of `%v` (%s) is unknown over a generated input", outcome["name"], guard)
+			}
+			if truth != truthTrue {
+				continue
+			}
+		}
+		if exploreObject(outcome["subject"])["effect"] == "moves" && record != nil &&
+			!exploreContains(exploreFrom(outcome), fmt.Sprint(record.fields["state"])) {
+			continue
+		}
+		externals = append(externals, outcome)
+	}
+	return externals, ""
+}
+
+// exploreChoices is the branches a step may take: the ordinary one, unless an earlier arrangement
+// of this command may still hold and an external branch is eligible, then every eligible external
+// branch the target has not refused to arrange.
+func exploreChoices(s *exploreSession, command *exploreCommand, decision exploreDecision) []map[string]any {
+	choices := []map[string]any{}
+	if decision.outcome != nil && (!s.forced[command.name] || len(decision.externals) == 0) {
+		choices = append(choices, decision.outcome)
+	}
+	for _, outcome := range decision.externals {
+		if _, refused := s.p.unarrangeable[command.name+"/"+fmt.Sprint(outcome["name"])]; !refused {
+			choices = append(choices, outcome)
+		}
+	}
+	return choices
+}
+
+// exploreArrange asks the target to make command take the external branch outcome.
+func exploreArrange(s *exploreSession, command *exploreCommand, outcome string) (*exploreDisagreement, *exploreUnsupported) {
+	err := s.target.ConfigureExternalOutcome(ExternalOutcomeControl{
+		Command: command.name, Outcome: outcome, Correlation: s.correlation,
+	})
+	if err != nil {
+		if errors.Is(err, ErrUnsupported) {
+			return nil, &exploreUnsupported{reason: err.Error()}
+		}
+		return &exploreDisagreement{kind: "target", detail: fmt.Sprintf("arranging `%s`, the target threw %s", outcome, err.Error())}, nil
+	}
+	s.forced[command.name] = true
+	return nil, nil
 }
 
 // ---- drawing inputs -----------------------------------------------------------------------------
@@ -906,6 +1041,8 @@ type exploreStep struct {
 	command string
 	input   Row
 	refs    []exploreRef
+	// external is the external branch arranged for this step, or empty for the ordinary branch.
+	external string
 }
 
 var errExploreNoRecord = errors.New("no record")
@@ -1000,6 +1137,8 @@ type exploreSession struct {
 	correlation  string
 	scenario     string
 	undetermined map[string]bool
+	// forced is every command the target was asked to arrange a branch for in this sequence.
+	forced map[string]bool
 }
 
 func exploreRender(value Node, determined bool) string {
@@ -1085,7 +1224,12 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 				return &exploreDisagreement{kind: "identity", detail: fmt.Sprintf("the target created %s again, over an existing record", exploreRender(id, true))}, nil
 			}
 			identity := exploreString(exploreObject(entity["identity"])["name"])
-			record = &exploreRecord{id: id, fields: Row{identity: id, "state": exploreObject(entity["lifecycle"])["initial"]}}
+			// A creation lands in the state `into:` names (ess/15), or where the lifecycle starts.
+			state := exploreObject(entity["lifecycle"])["initial"]
+			if into, ok := subject["into"]; ok && into != nil {
+				state = into
+			}
+			record = &exploreRecord{id: id, fields: Row{identity: id, "state": state}}
 			s.model.records[entityName] = append(s.model.records[entityName], record)
 		} else {
 			id, _ := exploreReadPath(map[string]any(step.input), field)
@@ -1249,7 +1393,11 @@ func exploreInvariants(s *exploreSession) *exploreDisagreement {
 // ---- sequences ----------------------------------------------------------------------------------
 
 func exploreLine(step *exploreStep) string {
-	return step.command + " " + exploreRender(map[string]Node(step.input), true)
+	line := step.command + " " + exploreRender(map[string]Node(step.input), true)
+	if step.external != "" {
+		line += " [external: " + step.external + "]"
+	}
+	return line
 }
 
 type exploreFound struct {
@@ -1268,10 +1416,56 @@ func exploreOpen(p *explorePlan, newTarget func() Target, scenario string) (*exp
 	if err := target.BeginScenario(ScenarioContext{Scenario: scenario, Correlation: correlation}); err != nil {
 		return nil, err
 	}
-	return &exploreSession{
+	s := &exploreSession{
 		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}},
-		correlation: correlation, scenario: scenario, undetermined: map[string]bool{},
-	}, nil
+		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{},
+	}
+	if err := explorePreconditions(s); err != nil {
+		s.close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// explorePreconditions runs the system's preconditions (ess/15) before a sequence, so the model
+// starts from the state they leave. A precondition the model or the target does not take is a setup
+// failure, returned as an error, and never a disagreement: the sequence has not started.
+func explorePreconditions(s *exploreSession) error {
+	for _, node := range exploreList(s.p.ir["preconditions"]) {
+		pre := exploreObject(node)
+		name := exploreString(pre["command"])
+		if exploreNonEmpty(pre["fixtures"]) {
+			return fmt.Errorf("precondition `%s` reads fixture inputs, which exploration does not resolve", name)
+		}
+		planned := s.p.command(name)
+		if planned == nil {
+			return fmt.Errorf("precondition `%s` is a command exploration excludes", name)
+		}
+		command := *planned
+		if actor := exploreString(pre["actor"]); actor != "" {
+			command.actor = actor
+		}
+		input := Row{}
+		for key, value := range exploreObject(pre["input"]) {
+			input[key] = value
+		}
+		step := &exploreStep{command: name, input: input}
+		decision := exploreDecide(&command, input, s.model)
+		// The model must take the branch the specification requires of it, as synthesis does: a
+		// precondition the model decides as a refusal, or as anything else, fails as setup.
+		wanted := exploreString(pre["outcome"])
+		if decision.kind != "take" || decision.outcome == nil || fmt.Sprint(decision.outcome["name"]) != wanted {
+			return fmt.Errorf("precondition `%s` failed as setup: the model does not take `%s`", name, wanted)
+		}
+		found, unsupported := explorePerform(s, &command, step, decision.outcome)
+		if unsupported != nil {
+			return fmt.Errorf("precondition `%s` is not exposed by the target: %s", name, unsupported.reason)
+		}
+		if found != nil {
+			return fmt.Errorf("precondition `%s` failed as setup: %s: %s", name, found.kind, found.detail)
+		}
+	}
+	return nil
 }
 
 func (s *exploreSession) close() {
@@ -1305,12 +1499,36 @@ func exploreReplay(p *explorePlan, newTarget func() Target, trace []*exploreStep
 		if !resolvable {
 			continue
 		}
-		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs}
+		step := &exploreStep{command: recorded.command, input: Row(input), refs: recorded.refs, external: recorded.external}
 		decision := exploreDecide(command, step.input, s.model)
 		if decision.kind != "take" {
 			continue
 		}
-		found, unsupported := explorePerform(s, command, step, decision.outcome)
+		var outcome map[string]any
+		for _, choice := range exploreChoices(s, command, decision) {
+			name := ""
+			if exploreIsExternal(choice) {
+				name = fmt.Sprint(choice["name"])
+			}
+			if name == step.external {
+				outcome = choice
+				break
+			}
+		}
+		if outcome == nil {
+			continue
+		}
+		if step.external != "" {
+			found, unsupported := exploreArrange(s, command, step.external)
+			if unsupported != nil {
+				continue
+			}
+			if found != nil {
+				executed = append(executed, step)
+				return &exploreFound{kind: found.kind, message: exploreDescribe(found, len(executed)-1, step), executed: executed}, nil
+			}
+		}
+		found, unsupported := explorePerform(s, command, step, outcome)
 		if unsupported != nil {
 			continue
 		}
@@ -1389,14 +1607,38 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 				p.exclude(command.name, decision.reason)
 				continue
 			}
-			disagreement, unsupported := explorePerform(s, command, step, decision.outcome)
+			choices := exploreChoices(s, command, decision)
+			if len(choices) == 0 {
+				if len(decision.names) > 0 {
+					ambiguous[command.name+": "+strings.Join(decision.names, ", ")] = true
+				}
+				continue
+			}
+			outcome := choices[0]
+			if len(choices) > 1 {
+				outcome = explorePick(r, choices)
+			}
+			if exploreIsExternal(outcome) {
+				step.external = fmt.Sprint(outcome["name"])
+				arranging, unsupported := exploreArrange(s, command, step.external)
+				if unsupported != nil {
+					p.unarrangeable[command.name+"/"+step.external] = "the target cannot arrange it: " + unsupported.reason
+					continue
+				}
+				if arranging != nil {
+					trace = append(trace, step)
+					found = &exploreFound{kind: arranging.kind, message: exploreDescribe(arranging, len(trace)-1, step), executed: append([]*exploreStep{}, trace...)}
+					break
+				}
+			}
+			disagreement, unsupported := explorePerform(s, command, step, outcome)
 			if unsupported != nil {
 				p.exclude(command.name, "the target does not expose it: "+unsupported.reason)
 				continue
 			}
 			executed++
 			trace = append(trace, step)
-			reached[command.name+"/"+fmt.Sprint(decision.outcome["name"])] = true
+			reached[command.name+"/"+fmt.Sprint(outcome["name"])] = true
 			if disagreement != nil {
 				found = &exploreFound{kind: disagreement.kind, message: exploreDescribe(disagreement, len(trace)-1, step), executed: append([]*exploreStep{}, trace...)}
 				break
@@ -1418,11 +1660,27 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 			id := declared.command + "/" + outcome
 			if p.excludedCommands[declared.command] {
 				excludedOutcomes[id] = true
-			} else if !reached[id] {
+			} else if _, refused := p.unarrangeable[id]; !reached[id] && !refused {
 				unreached[id] = true
 			}
 		}
 	}
+	external := []ExternalReach{}
+	for _, branch := range p.externals {
+		reach := ExternalReach{Outcome: branch.id, Cause: branch.cause, Reach: "unreached"}
+		reason, refused := p.unarrangeable[branch.id]
+		switch {
+		case p.excludedCommands[branch.command]:
+			reach.Reach = "excluded"
+		case reached[branch.id]:
+			reach.Reach = "reached"
+		case refused:
+			reach.Reach = "unarrangeable"
+			reach.Reason = reason
+		}
+		external = append(external, reach)
+	}
+	sort.SliceStable(external, func(i, j int) bool { return external[i].Outcome < external[j].Outcome })
 	excluded := append([]Exclusion{}, p.excluded...)
 	sort.SliceStable(excluded, func(i, j int) bool {
 		if excluded[i].Subject != excluded[j].Subject {
@@ -1440,6 +1698,7 @@ func Explore(newTarget func() Target, options ExploreOptions) (ExploreResult, er
 		ExcludedOutcomes: exploreSet(excludedOutcomes),
 		Undetermined:     exploreSet(undetermined),
 		Ambiguous:        exploreSet(ambiguous),
+		External:         external,
 		Failure:          failure,
 	}, nil
 }
@@ -1515,6 +1774,15 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 		}
 		problems = append(problems, fmt.Sprintf("explore: %d declared outcome(s) of excluded commands were never tried:\n%s\nexcluded:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(result.ExcludedOutcomes), strings.Join(lines, "\n"), strings.Join(reasons, "\n")))
 	}
+	unarrangeable := []string{}
+	for _, branch := range result.External {
+		if branch.Reach == "unarrangeable" {
+			unarrangeable = append(unarrangeable, fmt.Sprintf("  %s: %s", branch.Outcome, branch.Reason))
+		}
+	}
+	if len(unarrangeable) > 0 && !options.AllowExcluded {
+		problems = append(problems, fmt.Sprintf("explore: %d external outcome(s) the target could not arrange were never tried:\n%s\naccept them explicitly with AssertOptions{AllowExcluded: true}", len(unarrangeable), strings.Join(unarrangeable, "\n")))
+	}
 	if len(problems) == 0 {
 		return nil
 	}
@@ -1522,7 +1790,8 @@ func CheckExplored(result ExploreResult, options AssertOptions) error {
 }
 
 // AssertExplored fails t when an exploration failed, when a declared outcome went unreached, or
-// when an excluded command's outcomes were never tried and AllowExcluded is not set. What the
+// when an excluded command's outcomes, or external outcomes the target could not arrange, were
+// never tried and AllowExcluded is not set. What the
 // model could not place, and the draws it would not decide, are logged and do not fail.
 func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 	t.Helper()

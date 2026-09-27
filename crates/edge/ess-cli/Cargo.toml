@@ -53,6 +53,7 @@ getrandom = "0.3"
 # backend: `rust_backend` keeps the decompressor inside the Rust toolchain the MSRV pins.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 tar = { version = "0.4", default-features = false }
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 
 [[bin]]
 # Test-only. The offline qualification requires real, separate driver processes running the same

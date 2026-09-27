@@ -489,14 +489,15 @@ fn kind_of(
                 return None;
             }
             // The predicate grammar is shared with ESS, and `infra-spec/1` does not gain the
-            // string operators (beyond10x/ess#95) by accident: admitting them is its own format
-            // decision.
-            if predicate.uses_text_match() {
+            // string operators (beyond10x/ess#95) or the case-insensitive ones (beyond10x/ess#140)
+            // by accident: admitting them is its own format decision.
+            if predicate.uses_text_match() || predicate.uses_case_fold() {
                 errors.refuse(
                     InfraCode::SpecInvalidExpectation,
                     at("workload_predicate"),
-                    "`starts_with`, `ends_with` and `contains` are not part of infra-spec/1; \
-                     compare with `==`, `!=` or `any_of`",
+                    "`starts_with`, `ends_with`, `contains`, `equals_ignore_case` and \
+                     `in_ignore_case` are not part of infra-spec/1; compare with `==`, `!=` or \
+                     `any_of`",
                 );
                 return None;
             }

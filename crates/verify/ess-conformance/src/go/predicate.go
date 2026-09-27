@@ -157,6 +157,17 @@ func (p predicate) String() string {
 		return p.path + word + strings.Join(parts, ", ") + "]"
 	case "starts_with", "ends_with", "contains":
 		return fmt.Sprintf("%s %s %q", p.path, p.kind, p.right.literal)
+	case "equals_ignore_case":
+		if len(p.values) == 1 {
+			return fmt.Sprintf("%s %s %q", p.path, p.kind, p.values[0])
+		}
+		fallthrough
+	case "in_ignore_case":
+		parts := make([]string, 0, len(p.values))
+		for _, value := range p.values {
+			parts = append(parts, fmt.Sprintf("%q", value))
+		}
+		return p.path + " " + p.kind + " [" + strings.Join(parts, ", ") + "]"
 	case "forall", "exists":
 		return fmt.Sprintf("%s %s in %s: (%s)", p.kind, p.bind, p.over, p.body)
 	default:
@@ -360,6 +371,27 @@ func parseOperator(path, key string, raw any) (predicate, error) {
 			return predicate{}, fmt.Errorf("`%s: {%s: …}` takes a string", path, key)
 		}
 		return predicate{kind: key, path: path, right: operand{literal: text}}, nil
+	case "equals_ignore_case":
+		// Verbatim, as for a string operator (beyond10x/ess#140).
+		text, ok := raw.(string)
+		if !ok {
+			return predicate{}, fmt.Errorf("`%s: {%s: …}` takes a string", path, key)
+		}
+		return predicate{kind: key, path: path, values: []Node{text}}, nil
+	case "in_ignore_case":
+		items, ok := raw.([]any)
+		if !ok {
+			return predicate{}, fmt.Errorf("`%s: {%s: …}` takes a list of strings", path, key)
+		}
+		values := make([]Node, 0, len(items))
+		for _, item := range items {
+			text, ok := item.(string)
+			if !ok {
+				return predicate{}, fmt.Errorf("`%s: {%s: …}` takes a list of strings", path, key)
+			}
+			values = append(values, text)
+		}
+		return predicate{kind: key, path: path, values: values}, nil
 	case "exists", "defined":
 		expected, ok := raw.(bool)
 		if !ok {
@@ -575,7 +607,7 @@ func splitPredicateComparison(trimmed string) (string, string, string, bool) {
 
 var meaningDecimal = regexp.MustCompile(`^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$`)
 
-var factPath = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
+var factPath = regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
 
 // ---- evaluation -------------------------------------------------------------------------------
 
@@ -625,6 +657,8 @@ func (p predicate) evaluate(source factSource) truth {
 		return truthOf(found == (p.kind == "any_of"))
 	case "starts_with", "ends_with", "contains":
 		return p.textMatch(source)
+	case "equals_ignore_case", "in_ignore_case":
+		return p.foldMatch(source)
 	case "forall", "exists":
 		return p.quantify(source)
 	default:
@@ -680,6 +714,47 @@ func (p predicate) textMatch(source factSource) truth {
 	default:
 		return truthOf(strings.Contains(text, literal))
 	}
+}
+
+// foldMatch is a case-insensitive operator (beyond10x/ess#140): the text equals one of the literals
+// under ASCII case folding. Not `strings.EqualFold`, which folds Unicode — it equates the Kelvin sign
+// with `k` — where every lane folds `A`–`Z` alone. Unbound, or bound to the null the flattener
+// binds, is Unknown; a value that is not text is False.
+func (p predicate) foldMatch(source factSource) truth {
+	value, ok := readLeaf(source, p.path)
+	if !ok || value == nil {
+		return truthUnknown
+	}
+	text, isText := value.(string)
+	if !isText {
+		return truthFalse
+	}
+	for _, candidate := range p.values {
+		if literal, ok := candidate.(string); ok && asciiEqualFold(text, literal) {
+			return truthTrue
+		}
+	}
+	return truthFalse
+}
+
+// asciiEqualFold compares two texts byte for byte after mapping `A`–`Z` to `a`–`z`.
+func asciiEqualFold(left, right string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := 0; index < len(left); index++ {
+		a, b := left[index], right[index]
+		if 'A' <= a && a <= 'Z' {
+			a += 'a' - 'A'
+		}
+		if 'A' <= b && b <= 'Z' {
+			b += 'a' - 'A'
+		}
+		if a != b {
+			return false
+		}
+	}
+	return true
 }
 
 // quantify walks the collection, rebinding the body's reads onto each element.

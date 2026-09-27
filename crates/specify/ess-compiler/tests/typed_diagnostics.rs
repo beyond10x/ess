@@ -622,7 +622,7 @@ fn the_head_census_on_the_design_page_is_the_count_in_the_tree() {
             .iter()
             .map(|(_, file, count)| (file.as_str(), *count))
             .collect::<Vec<_>>(),
-        vec![("primitive_admission.rs", 1), ("wire.rs", 1)],
+        vec![("primitive_admission.rs", 2), ("wire.rs", 1)],
         "a `command.…` location is written somewhere the design page does not account for; the \
          command family is the one this wave migrated"
     );

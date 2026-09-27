@@ -1310,6 +1310,7 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
         ResolvedBody::Newtype {
             of,
             alphabet,
+            prefix,
             invariants,
         } => {
             let mut text = vec![
@@ -1324,6 +1325,11 @@ fn type_prose(declared: &ResolvedType) -> Vec<Block> {
             if let Some(alphabet) = alphabet {
                 text.push(Inline::text(" Its characters are drawn from "));
                 text.push(Inline::code(alphabet.clone()));
+                text.push(Inline::text("."));
+            }
+            if let Some(prefix) = prefix {
+                text.push(Inline::text(" Every value starts with "));
+                text.push(Inline::code(prefix.clone()));
                 text.push(Inline::text("."));
             }
             let clause = invariants_clause(invariants);
@@ -1497,7 +1503,13 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
             Inline::text("It creates a "),
             Inline::code(entity.name.to_string()),
             Inline::text(", which starts in "),
-            Inline::code(entity.lifecycle.initial.to_string()),
+            Inline::code(
+                subject
+                    .into
+                    .as_ref()
+                    .unwrap_or(&entity.lifecycle.initial)
+                    .to_string(),
+            ),
             Inline::text("."),
         ],
         ResolvedEffect::Moves { transition } => {
@@ -1517,6 +1529,11 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
         ResolvedEffect::Preserves => vec![Inline::text(
             "It preserves the existing subject, without an error or event.",
         )],
+        ResolvedEffect::Deletes => vec![
+            Inline::text("It removes the "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" its input names; no view shows it afterwards."),
+        ],
         ResolvedEffect::Updates => vec![
             Inline::text("It changes a "),
             Inline::code(entity.name.to_string()),
@@ -1659,6 +1676,10 @@ fn condition_sentence(
             ));
             out
         }
+        ResolvedCondition::UnknownInstance => vec![Inline::text(
+            "Taken when the identity the command names is one no record carries, before any other \
+             answer for it.",
+        )],
     }
 }
 
@@ -1685,6 +1706,9 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         TestStrategy::ArrangeState => {
             "A test reaches it by driving an instance into one of those states and then issuing the \
              command, because no input selects this branch."
+        }
+        TestStrategy::SendUnknownIdentity => {
+            "A test reaches it by sending an identity no record carries, arranging nothing."
         }
     }
 }

@@ -695,7 +695,7 @@ pub struct RelationSpec {
     /// twice for different reasons, and because a projection needs something to call it that is not
     /// a type.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Whether the source owns the target or merely names it.
     pub kind: RelationKind,
@@ -709,7 +709,7 @@ pub struct RelationSpec {
     /// field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an
     /// optional `one`, in `List<…>` for `many`.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub via: String,
 }
 
@@ -1653,6 +1653,7 @@ invariants:
                     name: name(newtype),
                     body: TypeBody::Newtype {
                         alphabet: None,
+                        prefix: None,
                         of: TypeRef::Primitive(Primitive::Uuid),
                         invariants: Vec::new(),
                     },
@@ -2172,6 +2173,7 @@ lifecycle:
                 name: name("billing.CustomerId"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::Uuid),
                     invariants: Vec::new(),
                 },
@@ -2304,6 +2306,7 @@ lifecycle:
                 payload: std::collections::BTreeMap::new(),
                 error: None,
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: crate::refs::Refs::new(),
                 sets: BTreeMap::new(),

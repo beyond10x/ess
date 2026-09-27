@@ -243,9 +243,9 @@ non-aggregate view, and is **skipped for aggregate fields**. Codes are `ess-doma
 | V6 | an aggregate argument that is not an observable field of the source (hint lists them, as `view.rs:525-529` does) | `UndeclaredReference` | `view.<name>.fields[<i>].aggregate` | `ESS-VIEW-001` |
 | V7 | an aggregate argument containing a dot (`total.amount`) | `UnsupportedConstruct` | `view.<name>.fields[<i>].aggregate` | `ESS-VIEW-009` |
 | V8 | an argument with no `Optional` in its newtype chain whose unwrapped type the function does not admit (table above), including `List`, `Map`, struct, union, `Binary64`, `Duration` and `Bytes` | `TypeMismatch` | `view.<name>.fields[<i>].aggregate` | `ESS-VIEW-002` |
-| V9 | an argument with an `Optional<…>` anywhere in its newtype chain (checked before V8) | `UnsupportedConstruct` | `view.<name>.fields[<i>].aggregate` | `ESS-VIEW-009` |
+| V9 | an argument with an `Optional<…>` anywhere in its newtype chain (checked before V8) and no `skip_absent: true` (see "Absent values") | `UnsupportedConstruct` | `view.<name>.fields[<i>].aggregate` | `ESS-VIEW-009` |
 | V10 | a declared `type:` other than the function's result type. Message names the expected type | `TypeMismatch` | `view.<name>.fields[<i>].type` | `ESS-VIEW-002` |
-| V11 | a group key with an `Optional<…>` anywhere in its newtype chain (checked before V12), or whose unwrapped type is `Timestamp` (decision 2: time bucketing is not in this cut) | `UnsupportedConstruct` | `view.<name>.group_by[<i>]` | `ESS-VIEW-009` |
+| V11 | below `ess/15`, a group key with an `Optional<…>` anywhere in its newtype chain (checked before V12; `UnsupportedFormatVersion` since "Absent values"), or whose unwrapped type is `Timestamp` (decision 2: time bucketing is not in this cut) | `UnsupportedConstruct` | `view.<name>.group_by[<i>]` | `ESS-VIEW-009` |
 | V12 | a group key with no `Optional` in its chain whose unwrapped type is not an equality type (`List`, `Map`, struct, union, `Binary64`, `Duration`, `Bytes`) | `TypeMismatch` | `view.<name>.group_by[<i>]` | `ESS-VIEW-002` |
 | V13 | a non-empty `group_by` beside `shape:` | `ConflictingDeclaration` | `view.<name>.group_by` | `ESS-VIEW-004` |
 | V14 | `order_by:` on an aggregate view | `UnsupportedConstruct` | `view.<name>.order_by` | `ESS-VIEW-009` |
@@ -761,6 +761,139 @@ than `<view>/aggregate` names that view in any step.
     a view whose filter is only `f == param.p` arranges x with `f = "<view>/out"` and no
     `ESS-SYNTH-017`.
 
+## Absent values (ess/15, beyond10x/ess#148)
+
+Status: implemented (`story:aggregates-over-optional-fields`, retrofit wave 2). A read model
+aggregates stored rows whose columns are nullable, and its query decides what an absent value
+means. Before this section V9 and V11 refused every such view, so an adopter had to declare a
+nullable column required, which misstates the data. The coordinator fixed the shape; this section
+records it and what the implementation had to decide inside it.
+
+### Syntax
+
+`skip_absent: true` is written **inside the aggregate map**, beside the function:
+
+```yaml
+format: ess/15
+views:
+  - name: demo.orders.DurationByCustomer
+    source: demo.orders.Order          # `duration: Optional<Integer>`, `channel: Optional<Channel>`
+    group_by: [customer, channel]
+    fields:
+      - {name: customer, type: String}
+      - {name: channel, type: Optional<demo.orders.Channel>}   # an absent channel is one group
+      - {name: orders, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Optional<Integer>, aggregate: {sum: duration, skip_absent: true}}
+```
+
+- It is admitted on `count_distinct`, `sum`, `min`, `max` and `avg`. `count: {}` counts rows, has
+  no value to skip, and is unaffected; `{count: {}, skip_absent: true}` is a reader error.
+- The only value is `true`. `skip_absent: false` is a reader error: SQL has no aggregate that
+  counts an absent value, so "false" would name a treatment nothing implements. Leaving the key out
+  is the refusal V9 has always been.
+- It is refused over an argument with no `Optional` in its newtype chain
+  (`ConflictingDeclaration`, `ESS-VIEW-004`): there is nothing absent to skip, and a declaration
+  that changes nothing reads as if it did.
+- An argument with an `Optional` in its chain **and no `skip_absent: true`** is still V9
+  (`UnsupportedConstruct`, `ESS-VIEW-009`), and its hint now names the key: "write
+  `skip_absent: true` in the aggregate (specification format ess/15) to skip absent values".
+- A **group key** with an `Optional` in its chain is admitted. V11 keeps refusing a `Timestamp`
+  key, optional or not (time bucketing), and V12 still applies to the unwrapped type.
+
+### Semantics: SQL's
+
+| function with `skip_absent: true` | reads | result type | no value present in the group |
+|---|---|---|---|
+| `count_distinct` | the present values | `Integer` | `0` |
+| `sum` | the present values | `Optional<Integer>` / `Optional<Decimal>` | absent |
+| `min`, `max` | the present values | `Optional<T>`, `T` the declared type **with its outer `Optional` removed**, newtype kept | absent |
+| `avg` | the present values, divided by how many are present | `Optional<Decimal>` | absent |
+
+`sum` becomes `Optional` here, unlike the required-input table: SQL's `SUM` over no non-null value
+is `NULL`, not `0`, and #148's own repro declares `total: Optional<Integer>`. A group whose rows all
+lack the value is therefore distinguishable from one whose values sum to zero, which is what the
+treat-absent-as-zero mutant below relies on. An ungrouped view's empty partition follows the same
+column. Where the chain's `Optional` is inside a newtype (`MaybeSeconds` of `Optional<Integer>`),
+`min`/`max` return `Optional<MaybeSeconds>`: only a top-level `Optional` is removed, so the newtype
+is kept as the required-input rule keeps it.
+
+**A group key's absent value is one group.** Partitioning compares keys by value equality, and
+absent equals absent (SQL `GROUP BY` puts every `NULL` in one group). The row reports the key as
+`null`, as every absent field of a semantic row already is ("Result types", "Absent").
+
+### Format
+
+Both are refused below `ess/15` with `UnsupportedFormatVersion` (`ESS-VIEW-009`): `skip_absent` at
+`view.<name>.fields[<i>].aggregate` ("`skip_absent` requires specification format ess/15"), an
+optional key at `view.<name>.group_by[<i>]`. An older reader fails `skip_absent` as an unknown field
+with no version hint, and it refuses an optional key under V11, so both are a construct of their
+own format. The gate is `ViewSpec::absent_value_admission`
+(`crates/specify/ess-domain/src/view.rs`), called beside V15 in
+`primitive_admission::specification` — the only place a view meets its document's format.
+
+The IR gains `ResolvedAggregate::skip_absent`, omitted when false: every model that does not write
+it keeps its IR bytes and provenance digests. No suite format and no diff format change: the
+expected rows use `null`, which suite `/16` already carries for an absent `min`, and
+`field-aggregate-changed` renders a skipping aggregate as `sum(duration, skip_absent)`, the same
+rendering the OpenAPI description, the documentation and the conformance catalog read
+(`ResolvedAggregate::describe` adds ", skipping absent values").
+
+### Conformance
+
+Witness rule 1 fills every optional input, so no arrangement so far lacked a value. An aggregate
+scenario now leaves one out on purpose, through the creating command's own `Optional` input: an
+input the invocation omits leaves the `Optional` field it fills absent, and the row holds `null`
+(`synthesize.rs`, `settled`).
+
+- **The absent rows.** For each of the view's `s` skipping inputs, group A gains one row after its
+  *m* pattern rows that lacks **that input only**. SQL skips column by column, so a target that
+  drops a row lacking *any* skipping input (`WHERE a IS NOT NULL AND b IS NOT NULL`) must report
+  another number somewhere. One row lacking every skipping input at once did not tell it apart
+  (correction round 1), and neither did absent rows holding the other skipping inputs at their
+  lowest A value, which moves no `min` or `max` (round 2). So in each absent row every **other
+  skipping input** holds a value outside its pattern: ordinal `100·i`, below the column's minimum,
+  where the view takes that input's `min`, and `100·i + 80`, above the pattern's maximum (at most
+  `100·i + 72` with δ) and below b's `100·i + 85`, otherwise. It moves that extreme, the input's
+  sum and mean, and adds exactly one distinct value. A **required input** holds its lowest A value
+  in every absent row, so its distinct count stays `m − 1 − i`. Skipping inputs are numbered first:
+  with `s ≥ 2` their distinct counts are `m − i` (`m … m − s + 1`) and the required inputs' are
+  `m − 1 − i` (`m − 1 − s …`), so every input's count differs from every other's. A's row count is
+  `m + s` and a skipping input's present count `m + s − 1`, so `count()`, `COUNT(duration)` and
+  `COUNT(DISTINCT duration)` are three different numbers for every input.
+  A mean is over the *m* pattern rows and every absent row holding its input — `m + s` for a
+  required input, `m + s − 1` for a skipping one — so *m* is also chosen so that each such count
+  of an averaged input has a prime factor other than 2 and 5, and that input's δ is searched over
+  it. That can raise *m* past the nine rows the pattern keeps below `100·i + 85`; such a view is
+  `ESS-SYNTH-017`.
+- **The all-absent group.** In a grouped view, row b lacks every skipping input, so group B holds
+  no value: `sum`, `avg`, `min`, `max` absent and `count_distinct` 0.
+- **The null group.** For each optional group key `k`, one further group `N<k>` — B's tuple with
+  `k` absent — gets one admitted row, created with `k`'s input left out. Where another key in that
+  tuple is scoped, or the view is scoped by a parameter, the group holds only this scenario's rows
+  and is asserted exactly. Otherwise (#148's `PerGroup`: one optional key and nothing else) rows
+  other scenarios make without a key land in it too, so it is asserted as a **floor**: a `Contains`
+  naming only the keys, which says the group exists and makes no claim about its size.
+- **A key that is scopable when present.** An optional `String` or `Uuid` key the creating command
+  fills from its input is scoped by its present values exactly as a required one.
+- **Refusal.** Where the creating command's input for a skipping aggregate's argument, or for an
+  optional key, is required, no created row can lack the value. The view is `ESS-SYNTH-017` naming
+  the field, rather than a suite whose assertions look like a check of skipping and are not.
+
+| mutant | caught by (fixture `aggregate-optional-fields.yaml`) |
+|---|---|
+| reads an absent value as 0 | A's `mean` 1.25 against 1.666667, `shortest` 0 against 1, `durations` 3 against 2; B's `total` 0 against `null` |
+| counts an absent value as a distinct value | A's `durations` 3 against 2 |
+| drops a row whose value is absent (`WHERE duration IS NOT NULL`) | A's `orders` 3 against 4; B missing |
+| drops a row whose group key is absent | the null group's `Contains` |
+
+**Not killed.** Half-even against half-away-from-zero (as before). The size of a null group that
+nothing else scopes. An absent value of an input that is not an aggregate argument.
+
+**The issue's `DurationTotal`** (ungrouped, no parameter) is `ESS-SYNTH-016`: nothing keeps its one
+row to rows the scenario made, which is the page's rule for every aggregate view and not one about
+absent values. The fixture's `DurationForCustomer` is the same total scoped by a parameter, and it
+is witnessed.
+
 ## Out of scope
 
 - **Time buckets** (decision 2), including `Timestamp` group keys (V11).
@@ -768,8 +901,9 @@ than `<view>/aggregate` names that view in any step.
 - **`having`**: a filter over aggregate results. The filter reads source rows only.
 - **Joins**: aggregates over more than one entity. `source:` stays one entity.
 - **Windows and ranking**: running totals, top-N, and `order_by` on an aggregate view (V14).
-- `Optional` inputs and group keys (V9, V11). `Duration`, `Bytes` and `Binary64` inputs (V8).
-  Struct paths (V7). Percentiles, median, and distinct over more than one field.
+- `Optional` inputs without `skip_absent: true` (V9) and optional group keys below `ess/15` (see
+  "Absent values"). `Duration`, `Bytes` and `Binary64` inputs (V8). Struct paths (V7).
+  Percentiles, median, and distinct over more than one field.
 
 ## What was rejected
 

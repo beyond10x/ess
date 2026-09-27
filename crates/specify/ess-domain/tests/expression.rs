@@ -39,6 +39,7 @@ fn registry() -> TypeRegistry {
             "sample.Email",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("String").unwrap(),
                 invariants: vec![],
             },
@@ -47,6 +48,7 @@ fn registry() -> TypeRegistry {
             "sample.Wrapped",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("Optional<sample.Money>").unwrap(),
                 invariants: vec![],
             },
@@ -55,6 +57,7 @@ fn registry() -> TypeRegistry {
             "sample.WrappedState",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("sample.State").unwrap(),
                 invariants: vec![],
             },
@@ -73,6 +76,7 @@ fn registry() -> TypeRegistry {
             "sample.Loop",
             TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("Optional<sample.Loop>").unwrap(),
                 invariants: vec![],
             },
@@ -410,6 +414,7 @@ fn clock_reading_provenance_cannot_be_erased_by_generic_comparison_or_wrappers()
             naming: Naming::default(),
             body: TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("String").unwrap(),
                 invariants: vec![],
             },
@@ -428,6 +433,7 @@ fn clock_reading_provenance_cannot_be_erased_by_generic_comparison_or_wrappers()
             naming: Naming::default(),
             body: TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::parse("sample.Clock").unwrap(),
                 invariants: vec![],
             },
@@ -498,6 +504,9 @@ predicate_forms! {
     // as a type mismatch whatever its literal, declared variant or not, so the variant rule this
     // file checks has no case of it. `tests/string_operators.rs` asserts that refusal.
     TextMatch => false,
+    // The same for the case-insensitive operators (beyond10x/ess#140): refused over an enum as a
+    // type mismatch whatever the literal. `tests/subject_guard_input.rs` asserts that refusal.
+    FoldMatch => false,
 }
 
 /// The form a predicate is, as an exhaustive match.
@@ -519,6 +528,7 @@ fn form_of(predicate: &Predicate) -> Form {
         Predicate::Forall(_) => Form::Forall,
         Predicate::Exists(_) => Form::Exists,
         Predicate::TextMatch { .. } => Form::TextMatch,
+        Predicate::FoldMatch { .. } => Form::FoldMatch,
     }
 }
 
@@ -536,7 +546,9 @@ fn carries_a_literal(predicate: &Predicate) -> bool {
         Predicate::Compare { left, right, .. } => {
             matches!(left, Operand::Literal(_)) || matches!(right, Operand::Literal(_))
         }
-        Predicate::AnyOf { values, .. } | Predicate::NoneOf { values, .. } => !values.is_empty(),
+        Predicate::AnyOf { values, .. }
+        | Predicate::NoneOf { values, .. }
+        | Predicate::FoldMatch { values, .. } => !values.is_empty(),
         Predicate::TextMatch { .. } => true,
         Predicate::All(children) | Predicate::Any(children) => {
             children.iter().any(carries_a_literal)

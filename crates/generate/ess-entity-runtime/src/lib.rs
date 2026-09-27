@@ -421,6 +421,13 @@ pub enum LoweringCode {
     /// A `payload:` or `sets:` source reads the subject, increments, falls back to a generated value
     /// or nests (ess/14), and entity-core has no value expression for it.
     ValueExpressionUnsupported,
+    /// A guard compares text without ASCII case (`equals_ignore_case`, `in_ignore_case`, ess/15),
+    /// and entity-core has no condition that folds case; a case-sensitive one would decide a
+    /// different rule.
+    CaseFoldUnsupported,
+    /// An outcome shape of ess/15 — an `unknown_instance:` branch, a `deletes:` effect, a creation
+    /// `into:` a declared state, or `accepts: nothing` — which entity-core has no definition for.
+    OutcomeShapeUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -525,9 +532,37 @@ impl Projector<'_> {
     /// arrays and maps only, so a lowered `keys.count` would be `Unknown` for every row. Lifting
     /// it needs an entity-core length address (`docs/design/string-alphabet-and-length.md`,
     /// section 8).
-    fn refuse_text_lengths(&mut self, fields: &[ResolvedField], predicate: &Predicate, at: &str) {
-        let checked =
-            ess_compiler::expression::check_predicate(self.service.source(), fields, predicate, at);
+    ///
+    /// A `when_subject` predicate's `input.<field>` reads (beyond10x/ess#157) are resolved over
+    /// `input`, so `input.note.count` is refused like `note.count`.
+    ///
+    /// Every lowered predicate site passes through here, so the case-insensitive operators
+    /// (beyond10x/ess#140) are refused here too: entity-core has no condition that folds case.
+    fn refuse_text_lengths(
+        &mut self,
+        fields: &[ResolvedField],
+        input: Option<&[ResolvedField]>,
+        predicate: &Predicate,
+        at: &str,
+    ) {
+        if predicate.uses_case_fold() {
+            self.diagnostic(
+                LoweringCode::CaseFoldUnsupported,
+                at,
+                format!(
+                    "`{predicate}` compares text with `equals_ignore_case` or `in_ignore_case`, \
+                     and Entity Runtime has no condition that folds case; a case-sensitive one \
+                     would decide a different rule"
+                ),
+            );
+        }
+        let checked = ess_compiler::expression::check_predicate_with_input(
+            self.service.source(),
+            fields,
+            input,
+            predicate,
+            at,
+        );
         for read in checked.reads {
             if read.resolution.access.text_length {
                 self.diagnostic(
@@ -562,7 +597,8 @@ impl Projector<'_> {
             });
             if lowered {
                 let at = site.site.render();
-                self.refuse_text_lengths(&site.fields, site.predicate, &at);
+                let input = (!site.input.is_empty()).then_some(site.input.as_slice());
+                self.refuse_text_lengths(&site.fields, input, site.predicate, &at);
             }
         }
     }
@@ -921,7 +957,8 @@ impl Projector<'_> {
             Primitive::Bytes => BindingRequirement::BytesSpelling { at },
             Primitive::Decimal => BindingRequirement::DecimalSpelling { at },
             Primitive::Binary64 => BindingRequirement::Binary64Spelling { at },
-            Primitive::String | Primitive::Boolean | Primitive::Integer => return,
+            // A JSON value is carried as JSON, so it needs no spelling (beyond10x/ess#138).
+            Primitive::String | Primitive::Boolean | Primitive::Integer | Primitive::Json => return,
         };
         self.requirements.push(requirement);
     }
@@ -979,8 +1016,37 @@ impl Projector<'_> {
                     ResolvedBody::Newtype {
                         of,
                         alphabet,
+                        prefix,
                         invariants,
                     } => {
+                        // A declared prefix is `value starts_with <prefix>`, which entity-core
+                        // has an operator for (beyond10x/ess#146).
+                        if let Some(prefix) = prefix {
+                            let mut condition = lower_predicate(
+                                &Predicate::TextMatch {
+                                    path: FactPath::new(ess_domain::NamedType::VALUE)
+                                        .expect("the newtype pseudo-field is a fact path"),
+                                    op: TextOp::StartsWith,
+                                    value: FactValue::text(prefix.clone()),
+                                },
+                                &PathRewrite::Nominal {
+                                    base: base.to_owned(),
+                                    value_root: true,
+                                },
+                            );
+                            if optional {
+                                condition = optional_guard(base, condition);
+                            }
+                            out.push(RuleDefinition {
+                                name: Some(unique_rule_name(
+                                    out,
+                                    format!("nominal_{}_prefix", sanitize(semantic_path)),
+                                    &resolved.name,
+                                )),
+                                condition,
+                                message: Some(format!("value starts with {prefix:?}")),
+                            });
+                        }
                         if alphabet.is_some() {
                             self.diagnostic(
                                 LoweringCode::AlphabetUnsupported,
@@ -998,7 +1064,12 @@ impl Projector<'_> {
                             naming: ess_domain::name::Naming::default(),
                         }];
                         for invariant in invariants {
-                            self.refuse_text_lengths(&value, &invariant.predicate, semantic_path);
+                            self.refuse_text_lengths(
+                                &value,
+                                None,
+                                &invariant.predicate,
+                                semantic_path,
+                            );
                         }
                         for (index, invariant) in invariants.iter().enumerate() {
                             let mut condition = lower_predicate(
@@ -1012,9 +1083,10 @@ impl Projector<'_> {
                                 condition = optional_guard(base, condition);
                             }
                             out.push(RuleDefinition {
-                                name: Some(format!(
-                                    "nominal_{}_{index:04}",
-                                    sanitize(semantic_path)
+                                name: Some(unique_rule_name(
+                                    out,
+                                    format!("nominal_{}_{index:04}", sanitize(semantic_path)),
+                                    &resolved.name,
                                 )),
                                 condition,
                                 message: Some(invariant.statement.clone()),
@@ -1031,7 +1103,12 @@ impl Projector<'_> {
                     }
                     ResolvedBody::Struct { fields, invariants } => {
                         for invariant in invariants {
-                            self.refuse_text_lengths(fields, &invariant.predicate, semantic_path);
+                            self.refuse_text_lengths(
+                                fields,
+                                None,
+                                &invariant.predicate,
+                                semantic_path,
+                            );
                         }
                         for (index, invariant) in invariants.iter().enumerate() {
                             let mut condition = lower_predicate(
@@ -1045,9 +1122,10 @@ impl Projector<'_> {
                                 condition = optional_guard(base, condition);
                             }
                             out.push(RuleDefinition {
-                                name: Some(format!(
-                                    "nominal_{}_{index:04}",
-                                    sanitize(semantic_path)
+                                name: Some(unique_rule_name(
+                                    out,
+                                    format!("nominal_{}_{index:04}", sanitize(semantic_path)),
+                                    &resolved.name,
                                 )),
                                 condition,
                                 message: Some(invariant.statement.clone()),
@@ -1675,7 +1753,21 @@ impl Projector<'_> {
         let mut wrong_state = false;
         let source = self.service.source();
         let input = Typing::over(source, &command.input);
-        let stored = Typing::over(source, &entity.fields);
+        // A stored-field predicate reads the command's input under `input.` (beyond10x/ess#157),
+        // unless the entity declares a field of that name, which keeps being read as itself.
+        let reads_input = !entity
+            .fields
+            .iter()
+            .any(|field| field.name == ess_domain::command::subject_fact::INPUT_NAMESPACE);
+        let mut stored = Typing::over(source, &entity.fields);
+        if reads_input {
+            stored.input = Some(&command.input);
+        }
+        let stored_rewrite = if reads_input {
+            PathRewrite::Stored
+        } else {
+            PathRewrite::Entity
+        };
         match &outcome.condition {
             ResolvedCondition::When { predicate } => {
                 when = Some(lower_typed(predicate, &PathRewrite::Input, &input));
@@ -1701,12 +1793,13 @@ impl Projector<'_> {
                 when = Some(with_input_guard(subject, predicate.as_ref(), &input));
             }
             // The stored-field predicate lowers through the rewrite entity invariants already use:
-            // every path is a declared field of the addressed row, never `state` (ess/9).
+            // every path is a declared field of the addressed row, never `state` (ess/9) — except an
+            // `input.` operand (ess/15), which addresses the arguments.
             ResolvedCondition::SubjectPredicate {
                 predicate,
                 input: guard,
             } => {
-                let subject = lower_typed(predicate, &PathRewrite::Entity, &stored);
+                let subject = lower_typed(predicate, &stored_rewrite, &stored);
                 when = Some(with_input_guard(subject, guard.as_ref(), &input));
             }
             ResolvedCondition::StateChange {
@@ -1737,6 +1830,13 @@ impl Projector<'_> {
                 });
             }
             ResolvedCondition::WrongState => wrong_state = true,
+            ResolvedCondition::UnknownInstance => self.diagnostic(
+                LoweringCode::OutcomeShapeUnsupported,
+                &path,
+                "an `unknown_instance:` branch (ess/15) has no Entity Runtime definition; a missing \
+                 row is the runtime's own answer"
+                    .to_owned(),
+            ),
         }
         for ordering in input
             .take_refused()
@@ -1759,7 +1859,7 @@ impl Projector<'_> {
             .map_or(OutcomeEffect::None, |subject| match &subject.effect {
                 ResolvedEffect::Creates => OutcomeEffect::Creates,
                 ResolvedEffect::Updates => OutcomeEffect::Updates,
-                ResolvedEffect::Preserves => OutcomeEffect::None,
+                ResolvedEffect::Preserves | ResolvedEffect::Deletes => OutcomeEffect::None,
                 ResolvedEffect::Moves { transition } => {
                     let from = transition
                         .from
@@ -1776,6 +1876,30 @@ impl Projector<'_> {
                     }
                 }
             });
+
+        // The ess/15 outcome shapes entity-core cannot state: refused by name, like an ess/14
+        // value expression, rather than lowered to a definition that means something else.
+        let unsupported_shape = match outcome.subject.as_ref() {
+            Some(subject) if subject.effect == ResolvedEffect::Deletes => Some(
+                "a `deletes:` outcome (ess/15) removes its row, and entity-core has no removal",
+            ),
+            Some(subject) if subject.into.is_some() => Some(
+                "a creation `into:` a declared state (ess/15) starts past the lifecycle's initial \
+                 state, and entity-core creates every row in its initial state",
+            ),
+            _ if outcome.accepts_nothing => Some(
+                "an `accepts: nothing` outcome (ess/15) is accepted with no subject, and \
+                 entity-core has no stateless acceptance",
+            ),
+            _ => None,
+        };
+        if let Some(message) = unsupported_shape {
+            self.diagnostic(
+                LoweringCode::OutcomeShapeUnsupported,
+                &path,
+                message.to_owned(),
+            );
+        }
 
         let refusal = outcome.error.as_ref().map(|handle| {
             let error = self.service.source().error(handle);
@@ -2896,6 +3020,8 @@ fn primitive_kind(primitive: Primitive) -> FieldKind {
         Primitive::Integer => FieldKind::Integer,
         Primitive::Decimal => FieldKind::Number,
         Primitive::Binary64 => FieldKind::Binary64,
+        // entity-core's own kind for any JSON value, which it checks nothing about.
+        Primitive::Json => FieldKind::Json,
     }
 }
 
@@ -2909,6 +3035,9 @@ fn map_key(primitive: Primitive) -> MapKey {
         Primitive::Duration => MapKey::Duration,
         Primitive::Uuid => MapKey::Uuid,
         Primitive::Bytes => MapKey::Bytes,
+        Primitive::Json => {
+            unreachable!("a Json value is refused as a map key while the document is read")
+        }
     }
 }
 
@@ -2922,6 +3051,38 @@ fn optional_guard(path: &str, condition: Condition) -> Condition {
             },
             condition,
         ],
+    }
+}
+
+/// `name`, or `name` followed by the declaring type when a rule of that name is already lowered.
+///
+/// A field whose type is a chain of newtypes lowers each layer's rules under the field's one
+/// semantic path, so two layers — a prefix narrowed by the newtype that wraps it, invariants at
+/// two depths, a newtype's invariants over a struct's own — want the same name. The outermost
+/// layer is lowered first and keeps the name it always had; each inner layer's rule is told apart
+/// by the type that declares it, and by a counter after that when the name is still taken
+/// (beyond10x/ess#146).
+fn unique_rule_name(out: &[RuleDefinition], name: String, layer: &QualifiedName) -> String {
+    let taken = |candidate: &str| {
+        out.iter()
+            .any(|rule| rule.name.as_deref() == Some(candidate))
+    };
+    if !taken(&name) {
+        return name;
+    }
+    // Two semantic paths can sanitize to one text (`x.y` and `x_y`), so the layer suffix alone is
+    // not enough: a counter follows it until the name is unused.
+    let layered = format!("{name}_{}", sanitize(&layer.to_string()));
+    if !taken(&layered) {
+        return layered;
+    }
+    let mut count = 2_usize;
+    loop {
+        let candidate = format!("{layered}_{count}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+        count += 1;
     }
 }
 
@@ -3040,6 +3201,8 @@ fn scalar_primitive(
             Primitive::Integer => Scalar::Integer,
             Primitive::Decimal => Scalar::Number,
             Primitive::Binary64 => Scalar::Binary64,
+            // No literal spells a JSON value, so it has no scalar.
+            Primitive::Json => return None,
             Primitive::String
             | Primitive::Timestamp
             | Primitive::Duration
@@ -3066,6 +3229,9 @@ fn scalar_primitive(
 enum PathRewrite {
     Input,
     Entity,
+    /// A stored-field predicate that also reads the command's input under `input.`
+    /// (beyond10x/ess#157): `input.<rest>` addresses the arguments, every other path the row.
+    Stored,
     Nominal {
         base: String,
         value_root: bool,
@@ -3081,6 +3247,15 @@ impl PathRewrite {
         let segments = path.segments();
         match self {
             Self::Input => Value::String(format!("$args.input.{}", segments.join("."))),
+            Self::Stored => match segments {
+                [root, rest @ ..]
+                    if root == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                        && !rest.is_empty() =>
+                {
+                    Value::String(format!("$args.input.{}", rest.join(".")))
+                }
+                _ => Self::Entity.path(path),
+            },
             Self::Entity => {
                 if segments.len() == 1 && segments[0] == "state" {
                     Value::String("$state".to_owned())
@@ -3172,7 +3347,10 @@ fn lower_predicate(predicate: &Predicate, rewrite: &PathRewrite) -> Condition {
 fn lower_typed(predicate: &Predicate, rewrite: &PathRewrite, typing: &Typing<'_>) -> Condition {
     match predicate {
         Predicate::Always => Condition::Literal(true),
-        Predicate::Never => Condition::Literal(false),
+        // A fold never reaches a lowered definition: every lowered predicate site carrying one is
+        // refused as `CaseFoldUnsupported` first (`refuse_text_lengths`), and a refusal returns no
+        // output.
+        Predicate::Never | Predicate::FoldMatch { .. } => Condition::Literal(false),
         Predicate::All(children) if children.is_empty() => Condition::Literal(true),
         Predicate::All(children) => Condition::All {
             all: children
@@ -3313,6 +3491,8 @@ enum Terminal {
 struct Typing<'a> {
     ir: Option<&'a EssIr>,
     fields: &'a [ResolvedField],
+    /// The command's input, read under `input.` by a stored-field predicate (beyond10x/ess#157).
+    input: Option<&'a [ResolvedField]>,
     refused: std::cell::RefCell<Vec<String>>,
 }
 
@@ -3321,6 +3501,7 @@ impl<'a> Typing<'a> {
         Self {
             ir: None,
             fields: &[],
+            input: None,
             refused: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -3329,6 +3510,7 @@ impl<'a> Typing<'a> {
         Self {
             ir: Some(ir),
             fields,
+            input: None,
             refused: std::cell::RefCell::new(Vec::new()),
         }
     }
@@ -3339,8 +3521,17 @@ impl<'a> Typing<'a> {
         let (Some(ir), Operand::Fact(path)) = (self.ir, operand) else {
             return None;
         };
+        let (fields, path) = match (self.input, path.segments()) {
+            (Some(input), [root, rest @ ..])
+                if root == ess_domain::command::subject_fact::INPUT_NAMESPACE
+                    && !rest.is_empty() =>
+            {
+                (input, &FactPath::from_segments(rest))
+            }
+            _ => (self.fields, path),
+        };
         let resolved =
-            ess_compiler::expression::resolve_path(ir, self.fields, path, "entity runtime guard")
+            ess_compiler::expression::resolve_path(ir, fields, path, "entity runtime guard")
                 .ok()?;
         Some(match resolved.terminal {
             ResolvedTypeRef::Primitive { name } => Terminal::Primitive(name),

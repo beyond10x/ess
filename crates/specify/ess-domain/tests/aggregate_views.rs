@@ -458,7 +458,7 @@ fn v10_a_declared_type_other_than_the_result_type() {
 }
 
 #[test]
-fn v11_a_group_key_that_is_optional_or_a_timestamp() {
+fn v11_a_group_key_that_is_a_timestamp_and_one_that_is_optional_below_ess_15() {
     for key in ["note", "wrapped", "started"] {
         let text = typed_view(&format!(
             "    group_by: [{key}]\n    fields:\n      - {{name: {key}, type: \"{}\"}}\n      - {{name: n, type: Integer, aggregate: {{count: {{}}}}}}\n",
@@ -469,11 +469,15 @@ fn v11_a_group_key_that_is_optional_or_a_timestamp() {
             }
         ));
         let errors = refused(&text);
-        assert_has(
-            &errors,
-            ValidationCode::UnsupportedConstruct,
-            &format!("{V}.group_by[0]"),
-        );
+        // A key that may be absent is admitted from `ess/15` (beyond10x/ess#148); this fixture is
+        // `ess/10`, so it is refused as a format the document does not declare. Time bucketing is
+        // not in this cut at any version.
+        let code = if key == "started" {
+            ValidationCode::UnsupportedConstruct
+        } else {
+            ValidationCode::UnsupportedFormatVersion
+        };
+        assert_has(&errors, code, &format!("{V}.group_by[0]"));
         assert!(
             !has(
                 &errors,

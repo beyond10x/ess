@@ -1,0 +1,133 @@
+format: ess/15
+system: example
+version: v1
+preconditions:
+  - command: example.call.OpenSession
+    as: example.call.Agent
+    input: {user_id: 00000000-0000-4000-8000-000000000152}
+domain: example.call
+types:
+  - {name: example.call.CallId, kind: newtype, of: Uuid}
+  - {name: example.call.UserId, kind: newtype, of: Uuid}
+entities:
+  - name: example.call.Call
+    identity: {name: call_id, type: example.call.CallId}
+    lifecycle:
+      initial: Dialing
+      states: [Dialing, Ringing, Connected]
+      terminal: [Connected]
+      transitions:
+        - {name: ring, from: [Dialing], to: Ringing}
+        - {name: answer, from: [Ringing], to: Connected}
+  - name: example.call.User
+    identity: {name: user_id, type: example.call.UserId}
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+events:
+  - name: example.call.CallPlaced
+    fields: [{name: call_id, type: example.call.CallId}]
+  - name: example.call.CallOffered
+    fields: [{name: call_id, type: example.call.CallId}]
+  - name: example.call.CallRang
+    fields: [{name: call_id, type: example.call.CallId}]
+  - name: example.call.CallAnswered
+    fields: [{name: call_id, type: example.call.CallId}]
+  - name: example.call.CallEnded
+    fields: [{name: call_id, type: example.call.CallId}]
+  - name: example.call.SessionOpened
+    fields: [{name: user_id, type: example.call.UserId}]
+errors:
+  - name: example.call.CallNotFound
+actors:
+  - name: example.call.Agent
+    may: [example.call.PlaceCall, example.call.OfferCall, example.call.RingCall,
+          example.call.AnswerCall, example.call.EndCall, example.call.Touch,
+          example.call.OpenSession]
+commands:
+  - name: example.call.OpenSession
+    input:
+      - {name: user_id, type: example.call.UserId}
+    outcomes:
+      - name: opened
+        creates: example.call.User
+        instance: user_id
+        emits: [example.call.SessionOpened]
+        payload:
+          example.call.SessionOpened: {user_id: input.user_id}
+  - name: example.call.PlaceCall
+    input:
+      - {name: call_id, type: example.call.CallId}
+    outcomes:
+      - name: placed
+        creates: example.call.Call
+        instance: call_id
+        emits: [example.call.CallPlaced]
+        payload:
+          example.call.CallPlaced: {call_id: input.call_id}
+  - name: example.call.OfferCall
+    input:
+      - {name: call_id, type: example.call.CallId}
+    outcomes:
+      - name: offered
+        creates: example.call.Call
+        instance: call_id
+        into: Ringing
+        emits: [example.call.CallOffered]
+        payload:
+          example.call.CallOffered: {call_id: input.call_id}
+  - name: example.call.RingCall
+    input:
+      - {name: call_id, type: example.call.CallId}
+    outcomes:
+      - name: rang
+        moves: example.call.Call.ring
+        instance: call_id
+        emits: [example.call.CallRang]
+        payload:
+          example.call.CallRang: {call_id: input.call_id}
+      - {name: not-dialing, wrong_state: true, refuses: false}
+  - name: example.call.AnswerCall
+    input:
+      - {name: call_id, type: example.call.CallId}
+    outcomes:
+      - name: answered
+        moves: example.call.Call.answer
+        instance: call_id
+        emits: [example.call.CallAnswered]
+        payload:
+          example.call.CallAnswered: {call_id: input.call_id}
+      - {name: no-such-call, unknown_instance: true, error: example.call.CallNotFound}
+      - {name: not-ringing, wrong_state: true, refuses: false}
+  - name: example.call.EndCall
+    input:
+      - {name: call_id, type: example.call.CallId}
+    outcomes:
+      - name: ended
+        deletes: example.call.Call
+        instance: call_id
+        emits: [example.call.CallEnded]
+        payload:
+          example.call.CallEnded: {call_id: input.call_id}
+      - {name: no-such-call, unknown_instance: true, error: example.call.CallNotFound}
+  - name: example.call.Touch
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: accepted
+        summary: The system accepts the request and publishes nothing.
+        accepts: nothing
+views:
+  - name: example.call.Calls
+    source: example.call.Call
+    consistency: read_your_writes
+    fields:
+      - {name: call_id, type: example.call.CallId}
+      - {name: state, type: example.call.Call.State}
+  - name: example.call.Users
+    source: example.call.User
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: example.call.UserId}
+      - {name: state, type: example.call.User.State}

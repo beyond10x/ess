@@ -1,0 +1,133 @@
+# Adversary fixture for beyond10x/ess#156: an external branch that moves its subject from a state
+# the ordinary branch does not act from.
+#
+# `Close` closes an open ticket (ordinary), and closes a held ticket only when a supervisor
+# overrides (external). From `Held` the ordinary branch cannot apply and the external one can, so an
+# explorer that takes external branches must be able to take it there.
+
+format: ess/6
+system: exploreadv
+version: v1
+domains:
+  - exploreadv.desk
+
+domain: exploreadv.desk
+
+summary: Tickets that are opened, held, and closed.
+
+types:
+  - name: exploreadv.desk.TicketId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: exploreadv.desk.Ticket
+    identity:
+      name: ticket_id
+      type: exploreadv.desk.TicketId
+    fields:
+      - name: size
+        type: Integer
+    lifecycle:
+      initial: Open
+      states: [Open, Held, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: hold
+          from: [Open]
+          to: Held
+        - name: close
+          from: [Open]
+          to: Closed
+        - name: override
+          from: [Held]
+          to: Closed
+
+actors:
+  - name: exploreadv.desk.Agent
+    may:
+      - exploreadv.desk.Open
+      - exploreadv.desk.Hold
+      - exploreadv.desk.Close
+
+errors:
+  - name: exploreadv.desk.TicketStateConflict
+    summary: The ticket is not in a state this command acts from.
+
+commands:
+  - name: exploreadv.desk.Open
+    input:
+      - name: size
+        type: Integer
+    outcomes:
+      - name: opened
+        creates: exploreadv.desk.Ticket
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Opened
+        payload:
+          exploreadv.desk.Opened:
+            ticket_id: {generated: true}
+        sets:
+          size: input.size
+
+  - name: exploreadv.desk.Hold
+    input:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+    outcomes:
+      - name: held
+        moves: exploreadv.desk.Ticket.hold
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Held
+        payload:
+          exploreadv.desk.Held:
+            ticket_id: input.ticket_id
+      - name: wrong-state
+        wrong_state: true
+        error: exploreadv.desk.TicketStateConflict
+
+  - name: exploreadv.desk.Close
+    input:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+    outcomes:
+      - name: closed
+        moves: exploreadv.desk.Ticket.close
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Closed
+        payload:
+          exploreadv.desk.Closed:
+            ticket_id: input.ticket_id
+      - name: overridden
+        external: a supervisor overrides the hold
+        moves: exploreadv.desk.Ticket.override
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Overridden
+        payload:
+          exploreadv.desk.Overridden:
+            ticket_id: input.ticket_id
+      - name: wrong-state
+        wrong_state: true
+        error: exploreadv.desk.TicketStateConflict
+
+events:
+  - name: exploreadv.desk.Opened
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Held
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Closed
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Overridden
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId

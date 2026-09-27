@@ -112,6 +112,13 @@
         "$ref": "#/definitions/RawOutcomeGroup"
       }
     },
+    "preconditions": {
+      "description": "The ambient command invocations every scenario runs inside, on the file that carries the header (ess/15, `docs/design/outcome-shapes.md`).",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Precondition"
+      }
+    },
     "summary": {
       "description": "What the system is, in one paragraph.",
       "default": null,
@@ -173,6 +180,18 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "Accepts": {
+      "description": "What an `accepts:` key may say. One word, so a later form has somewhere to go.",
+      "oneOf": [
+        {
+          "description": "The request is accepted and nothing observable changes.",
+          "type": "string",
+          "enum": [
+            "nothing"
+          ]
+        }
+      ]
+    },
     "Anchor": {
       "description": "The actual host poll activation anchors the grid.",
       "oneOf": [
@@ -500,7 +519,31 @@
         "name": {
           "description": "Its name.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "naming": {
+          "description": "The same naming, written nested as commands and events write theirs. Not beside the flat keys.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Naming"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presence": {
+          "description": "How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a naming key, so no other construct's `naming:` can declare one.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Presence"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -655,6 +698,7 @@
         },
         "example": {
           "description": "The value synthesis builds this input from (ess/11). Not a constraint: the input still accepts every value of its type.\n\nAn authored `example: null` is kept as `Some(Node::Null)` rather than read as no example, so validation can refuse it: an example is a value, and `null` is none.",
+          "default": null,
           "anyOf": [
             {
               "$ref": "#/definitions/Node"
@@ -667,7 +711,31 @@
         "name": {
           "description": "Its name.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "naming": {
+          "description": "The same naming, written nested as commands and events write theirs. Not beside the flat keys.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Naming"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presence": {
+          "description": "How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a naming key, so no other construct's `naming:` can declare one.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Presence"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -837,6 +905,14 @@
                 {
                   "$ref": "#/definitions/TypeRef"
                 }
+              ]
+            },
+            "prefix": {
+              "description": "The text every value starts with (ess/15); only a newtype of `String` takes one.",
+              "default": null,
+              "type": [
+                "string",
+                "null"
               ]
             },
             "reading": {
@@ -1203,8 +1279,44 @@
       },
       "additionalProperties": false
     },
+    "Precondition": {
+      "description": "One ambient command invocation a system runs inside — an open session whose user row exists (ess/15, beyond10x/ess#152, `docs/design/outcome-shapes.md`).\n\nSynthesis runs the list, in order, before every scenario's arrangement, and a generated explorer runs it before every sequence, so the model it compares against starts from the state the preconditions leave. Each must take the command's declared success branch; one that is refused fails the scenario as setup. An input value a deterministic generator cannot choose comes from the command's `fixture_inputs:` (ess/13), written `{fixture: name}` or left out.",
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "as": {
+          "description": "The actor it is invoked as; omitted, the actor the specification grants it to.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "description": "The command invoked.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "input": {
+          "description": "Its input by declared field: a literal, or `{fixture: name}`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Node"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "Predicate": {
-      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`.",
+      "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`, and without ASCII case with `equals_ignore_case` (one literal) or `in_ignore_case` (a list).",
       "anyOf": [
         {
           "type": "string"
@@ -1223,6 +1335,25 @@
           "additionalProperties": {
             "$ref": "#/definitions/Node"
           }
+        }
+      ]
+    },
+    "Presence": {
+      "description": "How an absent value of an `Optional<T>` field is spelled on the wire (beyond10x/ess#139, ess/15).\n\nAn `Optional` that declares neither admits both spellings, as it always did. A field that declares one is held to it by the published JSON Schema and by a conformance suite's payload shape, so an implementation that swaps the two fails.",
+      "oneOf": [
+        {
+          "description": "The key is always sent; an absent value is an explicit `null`.",
+          "type": "string",
+          "enum": [
+            "null_when_absent"
+          ]
+        },
+        {
+          "description": "The key is left out when the value is absent, and never sent as `null`.",
+          "type": "string",
+          "enum": [
+            "omitted_when_absent"
+          ]
         }
       ]
     },
@@ -1290,7 +1421,7 @@
       "additionalProperties": false
     },
     "RawAggregate": {
-      "description": "An aggregate as written: a map with exactly one key, the function.\n\nThe shape is the reader's to refuse — an unknown function, two keys, or an argument to `count` fails the parse with serde's message naming the six functions, as an unknown key does anywhere a [`Field`] is read.\n\nRead and written by hand as a one-entry map rather than derived: `serde_yaml` reads and writes a derived externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design page fixes and not what a JSON document can carry. The schema is still the derived one — one object per function with exactly that key.",
+      "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`.",
       "oneOf": [
         {
           "description": "`{count: {}}`.",
@@ -1306,7 +1437,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`{count_distinct: field}`.",
+          "description": "`{count_distinct: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "count_distinct"
@@ -1314,17 +1445,27 @@
           "properties": {
             "count_distinct": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
         },
         {
-          "description": "`{sum: field}`.",
+          "description": "`{sum: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "sum"
           ],
           "properties": {
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
+            },
             "sum": {
               "type": "string"
             }
@@ -1332,7 +1473,7 @@
           "additionalProperties": false
         },
         {
-          "description": "`{min: field}`.",
+          "description": "`{min: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "min"
@@ -1340,12 +1481,17 @@
           "properties": {
             "min": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
         },
         {
-          "description": "`{max: field}`.",
+          "description": "`{max: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "max"
@@ -1353,12 +1499,17 @@
           "properties": {
             "max": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
         },
         {
-          "description": "`{avg: field}`.",
+          "description": "`{avg: field}`, optionally with `skip_absent: true`.",
           "type": "object",
           "required": [
             "avg"
@@ -1366,6 +1517,11 @@
           "properties": {
             "avg": {
               "type": "string"
+            },
+            "skip_absent": {
+              "description": "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written `true` or not at all.",
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
@@ -2041,8 +2197,30 @@
         "name"
       ],
       "properties": {
+        "accepts": {
+          "description": "`nothing`: the request is accepted and nothing observable changes (ess/15, beyond10x/ess#144). Admitted under `when:` or as the default, on a branch with no subject, no event and no error.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Accepts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "creates": {
           "description": "The entity a new instance of which this outcome brings into existence.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletes": {
+          "description": "The existing entity this outcome removes (ess/15, beyond10x/ess#151).",
           "anyOf": [
             {
               "$ref": "#/definitions/QualifiedName"
@@ -2082,6 +2260,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "into": {
+          "description": "The declared state a `creates:` brings its instance into, where it is not the lifecycle's `initial` (ess/15, beyond10x/ess#150). Admitted only beside `creates:`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StateName"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "moves": {
@@ -2162,6 +2351,10 @@
             "string",
             "null"
           ]
+        },
+        "unknown_instance": {
+          "description": "`true` when this is the branch taken for an identity no record carries (ess/15).\n\nBeside `wrong_state:`, and answered first: an id the system never held is a different behaviour from an id in a state no move starts from (beyond10x/ess#145). Like `wrong_state:` it names an `error:`, or declares `refuses: false` for an accepted no-op.",
+          "type": "boolean"
         },
         "updates": {
           "description": "The entity this outcome changes without moving along its lifecycle.",
@@ -2528,7 +2721,7 @@
         "name": {
           "description": "Its name.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -2865,7 +3058,7 @@
         "name": {
           "description": "What the relation is called — `invoices`, `clients`.\n\nA name of its own rather than the target's name, because an entity may reach the same target twice for different reasons, and because a projection needs something to call it that is not a type.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
         "target": {
           "description": "The entity at the other end.",
@@ -2878,7 +3071,7 @@
         "via": {
           "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false

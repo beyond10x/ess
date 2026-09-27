@@ -702,6 +702,7 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
         }
         ResolvedCondition::External { cause } => format!("externally decided ({cause})"),
         ResolvedCondition::WrongState => "from a state no declared move starts in".to_owned(),
+        ResolvedCondition::UnknownInstance => "for an identity no record carries".to_owned(),
     }
 }
 
@@ -712,6 +713,7 @@ fn effect_phrase(effect: &ResolvedEffect) -> String {
         ResolvedEffect::Moves { transition } => format!("takes `{}` of", transition.name),
         ResolvedEffect::Updates => "updates".to_owned(),
         ResolvedEffect::Preserves => "preserves".to_owned(),
+        ResolvedEffect::Deletes => "deletes".to_owned(),
     }
 }
 

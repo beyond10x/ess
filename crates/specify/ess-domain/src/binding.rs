@@ -1905,8 +1905,7 @@ fn misspelt_event_prefix(value: &str) -> Option<(&str, &str)> {
 
 /// `true` when `value` could be a field name — the same shape [`Field`] enforces.
 pub(crate) fn is_field_name(value: &str) -> bool {
-    value.starts_with(|c: char| c.is_ascii_alphabetic())
-        && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    crate::types::field_name(value).is_ok()
 }
 
 /// `true` when `value` is `word` misspelt: a different case, one edit away, or the right letters in
@@ -2104,6 +2103,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     fn newtype(of: &str) -> TypeBody {
         TypeBody::Newtype {
             alphabet: None,
+            prefix: None,
             of: type_ref(of),
             invariants: Vec::new(),
         }

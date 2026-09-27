@@ -60,6 +60,9 @@ pub enum Primitive {
     Uuid,
     /// Opaque bytes.
     Bytes,
+    /// Any JSON value, compared structurally (ess/15, beyond10x/ess#138). Never a map key, and
+    /// never read by a predicate.
+    Json,
 }
 
 impl Primitive {
@@ -74,6 +77,7 @@ impl Primitive {
         Self::Uuid,
         Self::Bytes,
         Self::Binary64,
+        Self::Json,
     ];
 
     /// The primitive as written in a specification.
@@ -88,6 +92,7 @@ impl Primitive {
             Self::Uuid => "Uuid",
             Self::Bytes => "Bytes",
             Self::Binary64 => "Binary64",
+            Self::Json => "Json",
         }
     }
 
@@ -133,6 +138,8 @@ pub enum TypeRef {
     /// An ordered sequence.
     List(Box<TypeRef>),
     /// A mapping. The key must be a primitive, because a structured key has no stable wire form.
+    /// A key written as a newtype of a key primitive is resolved to that primitive while the
+    /// document is read ([`MapKeyNewtypes`]).
     Map(Primitive, Box<TypeRef>),
 }
 
@@ -186,19 +193,28 @@ impl TypeRef {
             let (key, value_type) = inner.split_once(',').ok_or_else(|| {
                 reject("a map needs a key and a value, as in `Map<String, Money>`")
             })?;
-            let key = Primitive::parse(key.trim()).ok_or_else(|| {
-                ParseError::identifier(
-                    "type",
-                    value,
-                    format!(
-                        "a map key must be a primitive, not {:?}; a structured key has no stable \
-                         wire form",
-                        key.trim()
-                    ),
-                )
-            })?;
+            let key = Primitive::parse(key.trim())
+                .or_else(|| MapKeyNewtypes::in_scope(key.trim()))
+                .ok_or_else(|| {
+                    ParseError::identifier(
+                        "type",
+                        value,
+                        format!(
+                            "a map key must be a primitive, or a newtype of one declared where this \
+                             type is read; {:?} is neither, and a structured key has no stable wire \
+                             form",
+                            key.trim()
+                        ),
+                    )
+                })?;
             if key == Primitive::Binary64 {
                 return Err(reject("Binary64 map keys have no admitted wire spelling"));
+            }
+            if key == Primitive::Json {
+                return Err(reject(
+                    "a Json value is not a map key: a JSON object key is text, and a value has no \
+                     canonical spelling as one",
+                ));
             }
             return Ok(Self::Map(
                 key,
@@ -238,6 +254,158 @@ impl TypeRef {
             Self::Optional(inner) => inner.required(),
             other => other,
         }
+    }
+}
+
+/// The newtypes a specification declares that may key a map, each with the primitive it is spelled
+/// as on the wire (beyond10x/ess#143).
+///
+/// `Map<demo.orders.ItemId, Boolean>` with `ItemId` a newtype of `String` has exactly the wire form
+/// of `Map<String, Boolean>`, so the reason a structured key is refused does not apply to it. The
+/// key is resolved to that primitive while the document is read, so [`TypeRef::Map`] keeps a
+/// [`Primitive`] key and nothing downstream of the parser changes: every projection, generator and
+/// suite sees `Map<String, Boolean>`. What the resolution gives up is the newtype's identity at
+/// the key position — its alphabet, length and name are not carried into the map.
+///
+/// A reference is a string parsed one document at a time, and the newtype it names may be declared
+/// later in the same document or in another file. So the declarations are collected first
+/// ([`Self::from_documents`]) and parsing runs inside [`Self::scope`]. Outside any scope, a named
+/// key is refused exactly as before.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MapKeyNewtypes {
+    /// Every newtype declared, with the spelling of what it wraps; `None` for a name declared
+    /// twice with different underlying types.
+    declared: BTreeMap<QualifiedName, Option<String>>,
+}
+
+std::thread_local! {
+    /// The key newtypes in view of [`TypeRef::parse`] on this thread, set only by
+    /// [`MapKeyNewtypes::scope`].
+    static MAP_KEY_NEWTYPES: std::cell::RefCell<MapKeyNewtypes> =
+        std::cell::RefCell::new(MapKeyNewtypes::default());
+}
+
+impl MapKeyNewtypes {
+    /// Collects the newtypes declared in `texts`.
+    ///
+    /// Reads only `types:` entries with `kind: newtype`, `name:` and `of:`. A document that does
+    /// not parse, or an entry of the wrong shape, contributes nothing here: the real read of that
+    /// document reports it. A name declared twice with different underlying types resolves to
+    /// nothing, because assembly refuses the duplicate and choosing one would be a guess.
+    pub fn from_documents<'a>(texts: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut keys = Self::default();
+        for text in texts {
+            if let Ok(document) = serde_yaml::from_str::<serde_yaml::Value>(text) {
+                keys.absorb(&document);
+            }
+        }
+        keys
+    }
+
+    /// Newtypes given as `(name, what it wraps as written)` pairs, by a reader that has them in
+    /// hand rather than as source text — a compiled model, whose newtype `String`s and chains are
+    /// the same ones the specification was read with.
+    pub fn from_declarations(
+        declarations: impl IntoIterator<Item = (QualifiedName, String)>,
+    ) -> Self {
+        let mut keys = Self::default();
+        for (name, of) in declarations {
+            keys.declare(name, of);
+        }
+        keys
+    }
+
+    /// Records one newtype; a second, different declaration of the name makes it resolve to
+    /// nothing.
+    fn declare(&mut self, name: QualifiedName, of: String) {
+        self.declared
+            .entry(name)
+            .and_modify(|seen| {
+                if seen.as_deref() != Some(of.as_str()) {
+                    *seen = None;
+                }
+            })
+            .or_insert(Some(of));
+    }
+
+    /// The key newtypes in view on this thread: empty outside every [`Self::scope`].
+    pub fn current() -> Self {
+        MAP_KEY_NEWTYPES.with(|cell| cell.borrow().clone())
+    }
+
+    /// These declarations and the ones in `document`, an already-read source file.
+    ///
+    /// What a reader of one file uses, so that a newtype declared in the same file keys a map
+    /// with no loader involved, and one declared in a sibling file does when the loader put it in
+    /// view.
+    #[must_use]
+    pub fn with_value(&self, document: &serde_yaml::Value) -> Self {
+        let mut keys = self.clone();
+        keys.absorb(document);
+        keys
+    }
+
+    /// Adds the newtypes one document declares.
+    fn absorb(&mut self, document: &serde_yaml::Value) {
+        let Some(types) = document
+            .get("types")
+            .and_then(serde_yaml::Value::as_sequence)
+        else {
+            return;
+        };
+        for entry in types {
+            if entry.get("kind").and_then(serde_yaml::Value::as_str) != Some("newtype") {
+                continue;
+            }
+            let (Some(name), Some(of)) = (
+                entry.get("name").and_then(serde_yaml::Value::as_str),
+                entry.get("of").and_then(serde_yaml::Value::as_str),
+            ) else {
+                continue;
+            };
+            let Ok(name) = QualifiedName::new(name.trim()) else {
+                continue;
+            };
+            self.declare(name, of.trim().to_owned());
+        }
+    }
+
+    /// The primitive `name` is spelled as, when it is a newtype whose underlying type, through
+    /// newtypes, is a primitive admitted as a map key. A cycle resolves to nothing.
+    pub fn get(&self, name: &QualifiedName) -> Option<Primitive> {
+        let mut current = name.clone();
+        // Each step moves to a declaration, so more steps than declarations is a cycle.
+        for _ in 0..=self.declared.len() {
+            let of = self.declared.get(&current)?.as_deref()?;
+            if let Some(primitive) = Primitive::parse(of) {
+                return (!matches!(primitive, Primitive::Binary64 | Primitive::Json))
+                    .then_some(primitive);
+            }
+            current = QualifiedName::new(of).ok()?;
+        }
+        None
+    }
+
+    /// Runs `body` with exactly these key newtypes in view of every [`TypeRef::parse`] it makes on
+    /// this thread, and restores whatever was in view before — also when `body` panics.
+    pub fn scope<T>(&self, body: impl FnOnce() -> T) -> T {
+        struct Restore(Option<MapKeyNewtypes>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                if let Some(previous) = self.0.take() {
+                    MAP_KEY_NEWTYPES.with(|cell| *cell.borrow_mut() = previous);
+                }
+            }
+        }
+        let previous = MAP_KEY_NEWTYPES.with(|cell| cell.replace(self.clone()));
+        let _restore = Restore(Some(previous));
+        body()
+    }
+
+    /// The key newtype `spelling` names in the current scope, if any.
+    fn in_scope(spelling: &str) -> Option<Primitive> {
+        let name = QualifiedName::new(spelling).ok()?;
+        MAP_KEY_NEWTYPES.with(|cell| cell.borrow().get(&name))
     }
 }
 
@@ -304,20 +472,19 @@ impl schemars::JsonSchema for TypeRef {
 }
 
 /// One field of a struct or an event.
-#[derive(
-    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
-#[serde(deny_unknown_fields)]
+///
+/// Read through [`RawField`], which also takes the nested `naming: {wire: …}` spelling
+/// (beyond10x/ess#142) and normalizes it to the flat keys this type is written back with.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "RawField")]
 pub struct Field {
-    /// Its name.
-    #[serde(deserialize_with = "deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    /// Its name, which [`RawField`] checks is a field name.
     pub name: String,
     /// Its type.
     #[serde(rename = "type")]
     pub type_ref: TypeRef,
     /// What it is on the wire, and what a person is shown.
-    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    #[serde(flatten, skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
 }
 
@@ -326,7 +493,7 @@ impl Field {
     ///
     /// Kept beside the parser that enforces it, and a test asserts the published schema carries
     /// this one: a schema that accepts what the parser refuses is worse than no schema.
-    pub const PATTERN: &'static str = "^[A-Za-z][A-Za-z0-9_]*$";
+    pub const PATTERN: &'static str = "^_*[A-Za-z][A-Za-z0-9_]*$";
 
     /// A field with no naming overrides.
     pub fn new(name: impl Into<String>, type_ref: TypeRef) -> Self {
@@ -335,6 +502,129 @@ impl Field {
             type_ref,
             naming: Naming::default(),
         }
+    }
+}
+
+impl Field {
+    /// How an absent value of this `Optional` field travels, when declared (ess/15).
+    pub fn presence(&self) -> Option<Presence> {
+        self.naming.presence
+    }
+}
+
+/// How an absent value of an `Optional<T>` field is spelled on the wire (beyond10x/ess#139, ess/15).
+///
+/// An `Optional` that declares neither admits both spellings, as it always did. A field that
+/// declares one is held to it by the published JSON Schema and by a conformance suite's payload
+/// shape, so an implementation that swaps the two fails.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Presence {
+    /// The key is always sent; an absent value is an explicit `null`.
+    NullWhenAbsent,
+    /// The key is left out when the value is absent, and never sent as `null`.
+    OmittedWhenAbsent,
+}
+
+impl fmt::Display for Presence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NullWhenAbsent => "null_when_absent",
+            Self::OmittedWhenAbsent => "omitted_when_absent",
+        })
+    }
+}
+
+// A field as written: `Field`'s keys, plus the nested `naming:` synonym.
+//
+// `wire:`, `display:`, `summary:` and `code:` are written on the field itself, flat, because that
+// is where they have always been read. A command, an event and a type write the same [`Naming`]
+// nested under `naming:`, so an author who writes `naming: {wire: orderId}` on a field is writing
+// what the model already means (beyond10x/ess#142). Both spellings are read; writing both on one
+// field is refused rather than one silently winning, and the field is written back flat, so a
+// model's bytes do not depend on which spelling its author chose.
+//
+// The rustdoc below is the published schema's description of a field, unchanged.
+/// One field of a struct or an event.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "Field")]
+pub struct RawField {
+    /// Its name.
+    #[serde(deserialize_with = "deserialize_field_name")]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
+    pub name: String,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// What it is on the wire, and what a person is shown.
+    #[serde(default, flatten)]
+    pub naming: Naming,
+    /// The same naming, written nested as commands and events write theirs. Not beside the flat
+    /// keys.
+    #[serde(default, rename = "naming")]
+    pub nested_naming: Option<Naming>,
+    /// How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a
+    /// naming key, so no other construct's `naming:` can declare one.
+    #[serde(default)]
+    pub presence: Option<Presence>,
+}
+
+/// One field's naming from its two spellings: the flat keys, or the nested `naming:` mapping,
+/// with the field's presence policy carried beside the wire name it governs.
+///
+/// Shared by every field type that reads both, so the refusal is worded once.
+pub(crate) fn field_naming(
+    flat: Naming,
+    nested: Option<Naming>,
+    presence: Option<Presence>,
+) -> Result<Naming, String> {
+    let naming = match nested {
+        None => flat,
+        Some(nested) if flat.is_empty() => nested,
+        Some(_) => {
+            return Err(
+                "a field's naming is written either flat (`wire:`, `display:`, `summary:`, \
+                 `code:`) or nested under `naming:`, not both"
+                    .to_owned(),
+            )
+        }
+    };
+    Ok(Naming { presence, ..naming })
+}
+
+impl TryFrom<RawField> for Field {
+    type Error = String;
+
+    fn try_from(raw: RawField) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: raw.name,
+            type_ref: raw.type_ref,
+            naming: field_naming(raw.naming, raw.nested_naming, raw.presence)?,
+        })
+    }
+}
+
+impl schemars::JsonSchema for Field {
+    fn schema_name() -> String {
+        <RawField as schemars::JsonSchema>::schema_name()
+    }
+
+    // The raw form, because the published schema describes what a document may say.
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <RawField as schemars::JsonSchema>::json_schema(generator)
     }
 }
 
@@ -550,15 +840,24 @@ impl schemars::JsonSchema for EnumVariant {
 /// things nobody can spell, in files where the specification that wrote them is no longer in view.
 /// [`StateName`](crate::entity::StateName), [`OutcomeName`](crate::command::OutcomeName) and
 /// [`QualifiedName`] check theirs for the same reason.
+///
+/// Leading underscores are admitted before the first letter (beyond10x/ess#141): `_url` and `__v`
+/// are wire names real services publish, and every target this repository emits for has a
+/// deterministic identifier for them. `_` and `_1` stay refused, because once the underscores are
+/// taken off nothing is left that starts like a name.
 pub(crate) fn field_name(value: &str) -> Result<String, ParseError> {
     let reject = |reason: String| Err(ParseError::identifier("field name", value, reason));
 
-    let Some(first) = value.chars().next() else {
+    if value.is_empty() {
         return reject("must not be empty".to_owned());
+    }
+    let Some(first) = value.trim_start_matches('_').chars().next() else {
+        return reject("must have a letter after its leading underscores, as in `_url`".to_owned());
     };
     if !first.is_ascii_alphabetic() {
         return reject(format!(
-            "must start with a letter, as in `invoice_id`, got {first:?}"
+            "must start with a letter, optionally after underscores, as in `invoice_id` or \
+             `_url`, got {first:?}"
         ));
     }
     for character in value.chars() {
@@ -570,6 +869,15 @@ pub(crate) fn field_name(value: &str) -> Result<String, ParseError> {
         }
     }
     Ok(value.to_owned())
+}
+
+/// `true` when `value` is a field name: [`Field::PATTERN`], decided by the parser that enforces it.
+///
+/// For the checks outside this crate that hold a persisted name to the field-name rule — a suite's
+/// reading member, a periodic contract's input, an entity setup's field. Each used to spell the
+/// rule itself, and each went on refusing `_url` after the specification admitted it.
+pub fn is_field_name(value: &str) -> bool {
+    field_name(value).is_ok()
 }
 
 /// Serde entry point for [`field_name`], so a name nothing could generate is refused while the
@@ -600,6 +908,14 @@ pub enum TypeBody {
         /// field's own text into (`docs/design/string-alphabet-and-length.md`, section 4).
         #[serde(skip_serializing_if = "Option::is_none")]
         alphabet: Option<String>,
+        /// The text every value starts with, when declared (ess/15, beyond10x/ess#146).
+        ///
+        /// A literal prefix, compared character for character with no normalization; not a
+        /// pattern. Only a newtype of `String` takes one, its characters are in the effective
+        /// alphabet, and nested prefixes extend one another
+        /// (`docs/design/wire-presence-json-prefix.md`).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prefix: Option<String>,
         /// Conditions every value must satisfy, as predicates over `value`, what it wraps.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         invariants: Vec<Invariant>,
@@ -704,6 +1020,26 @@ impl NamedType {
         } = &self.body
         {
             errors.extend(self.check_alphabet(alphabet));
+        }
+
+        if let TypeBody::Newtype {
+            prefix: Some(prefix),
+            ..
+        } = &self.body
+        {
+            if prefix.is_empty() {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::EmptyDeclaration,
+                        at("prefix"),
+                        format!(
+                            "`{}` declares an empty prefix, which every text already starts with",
+                            self.name
+                        ),
+                    )
+                    .with_hint("write the text every value starts with, or delete `prefix:`"),
+                );
+            }
         }
 
         // A tagged union whose tag collides with a variant's own field is decodable only by luck.
@@ -839,6 +1175,106 @@ impl NamedType {
         errors
     }
 
+    /// Check a declared prefix against the registry: what it sits on is text, it extends or is
+    /// extended by every prefix it wraps, and every character of the effective prefix is in the
+    /// effective alphabet (beyond10x/ess#146).
+    pub fn validate_prefix(&self, registry: &TypeRegistry) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let TypeBody::Newtype {
+            of,
+            prefix,
+            alphabet,
+            ..
+        } = &self.body
+        else {
+            return errors;
+        };
+        let at = format!("types.{}.prefix", self.name);
+        if let Some(prefix) = prefix {
+            let layers = registry.newtype_layers(of);
+            match &layers.terminal {
+                TypeRef::Primitive(Primitive::String) if !layers.optional => {}
+                TypeRef::Named(name) if registry.get(name).is_none() => {}
+                other => {
+                    let reached = match other {
+                        TypeRef::Named(name) => format!("`{name}`"),
+                        _ if layers.optional => format!("`{of}`, which may be absent,"),
+                        _ => format!("`{other}`"),
+                    };
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::TypeMismatch,
+                            at.clone(),
+                            format!(
+                                "`{}` declares a prefix over `{of}`, which is {reached} rather \
+                                 than text",
+                                self.name
+                            ),
+                        )
+                        .with_hint("only a newtype of `String`, at any depth, takes `prefix:`"),
+                    );
+                }
+            }
+            for inner in &layers.newtypes {
+                let TypeBody::Newtype {
+                    prefix: Some(held), ..
+                } = &inner.body
+                else {
+                    continue;
+                };
+                if !(prefix.starts_with(held.as_str()) || held.starts_with(prefix.as_str())) {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::ConflictingDeclaration,
+                            at.clone(),
+                            format!(
+                                "`{}`'s prefix {prefix:?} and the prefix {held:?} of `{}`, which \
+                                 it wraps, do not extend one another, so no text starts with both",
+                                self.name, inner.name
+                            ),
+                        )
+                        .with_hint(
+                            "a nested prefix narrows the one it wraps; start it with that prefix",
+                        ),
+                    );
+                }
+            }
+        }
+        // Reported where a prefix or an alphabet is declared, so a chain that combines one layer's
+        // prefix with another's alphabet is refused at the layer that brought them together.
+        if prefix.is_some() || alphabet.is_some() {
+            let this = TypeRef::Named(self.name.clone());
+            if let (Some(effective), Some(characters)) = (
+                registry.effective_prefix(&this),
+                registry.effective_alphabet(&this),
+            ) {
+                if let Some(outside) = effective
+                    .chars()
+                    .find(|character| !characters.contains(*character))
+                {
+                    errors.push(
+                        ValidationError::new(
+                            ValidationCode::ConflictingDeclaration,
+                            if prefix.is_some() {
+                                at
+                            } else {
+                                format!("types.{}.alphabet", self.name)
+                            },
+                            format!(
+                                "every value of `{}` starts with the prefix {effective:?}, and \
+                                 {outside:?} is not in its alphabet (\"{characters}\"), so no \
+                                 text is a value of it",
+                                self.name
+                            ),
+                        )
+                        .with_hint("keep the prefix's characters inside the alphabet"),
+                    );
+                }
+            }
+        }
+        errors
+    }
+
     /// Every named type this one depends on.
     pub fn dependencies(&self) -> Vec<&QualifiedName> {
         match &self.body {
@@ -969,6 +1405,9 @@ pub enum RawTypeBody {
         /// The characters every value is drawn from (ess/11); only a newtype of `String` takes one.
         #[serde(default)]
         alphabet: Option<String>,
+        /// The text every value starts with (ess/15); only a newtype of `String` takes one.
+        #[serde(default)]
+        prefix: Option<String>,
         /// Conditions every value must satisfy, as predicates over `value`, what it wraps.
         #[serde(default)]
         invariants: Vec<RawInvariant>,
@@ -1001,10 +1440,12 @@ impl From<RawTypeBody> for TypeBody {
             RawTypeBody::Newtype {
                 of,
                 alphabet,
+                prefix,
                 invariants,
             } => Self::Newtype {
                 of,
                 alphabet,
+                prefix,
                 invariants: invariants.into_iter().map(Invariant::from).collect(),
             },
             RawTypeBody::Struct { fields, invariants } => Self::Struct {
@@ -1355,12 +1796,29 @@ impl TypeRegistry {
         )
     }
 
-    /// Recheck all named-type predicates, and every declared alphabet, against the complete
-    /// registry.
+    /// The text every value of `reference` starts with: the longest prefix any layer of its
+    /// newtype chain declares. `None` when no layer declares one. Layers whose prefixes do not
+    /// extend one another are refused by [`NamedType::validate_prefix`]; the longest is still what
+    /// is returned for them.
+    pub fn effective_prefix(&self, reference: &TypeRef) -> Option<String> {
+        self.newtype_layers(reference)
+            .newtypes
+            .iter()
+            .filter_map(|declared| match &declared.body {
+                TypeBody::Newtype { prefix, .. } => prefix.as_deref(),
+                _ => None,
+            })
+            .max_by_key(|prefix| prefix.chars().count())
+            .map(str::to_owned)
+    }
+
+    /// Recheck all named-type predicates, and every declared alphabet and prefix, against the
+    /// complete registry.
     pub(crate) fn validate_invariants(&self) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         for declared in self.iter() {
             errors.extend(declared.validate_alphabet(self));
+            errors.extend(declared.validate_prefix(self));
             errors.extend(declared.validate_invariants(self));
         }
         errors
@@ -1532,6 +1990,7 @@ mod tests {
                 name: name("billing.Email"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },

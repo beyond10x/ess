@@ -734,7 +734,8 @@ export function suiteReference(value: Node): void {
       reference.version !== 'ess-conformance/7' &&
       reference.version !== 'ess-conformance/9' &&
       reference.version !== 'ess-conformance/11' &&
-      reference.version !== 'ess-conformance/19') ||
+      reference.version !== 'ess-conformance/19' &&
+      reference.version !== 'ess-conformance/21') ||
     reference.digest_profile !== 'sha256-json-bytes/1' ||
     typeof digest !== 'string' ||
     !digest.startsWith('sha256:') ||
@@ -2353,7 +2354,9 @@ export async function runWith(
       version === 'ess-conformance/10' ||
       version === 'ess-conformance/11' ||
       version === 'ess-conformance/18' ||
-      version === 'ess-conformance/19') &&
+      version === 'ess-conformance/19' ||
+      version === 'ess-conformance/20' ||
+      version === 'ess-conformance/21') &&
     config.version !== '2'
   ) {
     throw new Error('suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution');
@@ -4304,6 +4307,8 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/11': 11,
   'ess-conformance/18': 18,
   'ess-conformance/19': 19,
+  'ess-conformance/20': 20,
+  'ess-conformance/21': 21,
 };
 
 export function admitSuite(raw: string): Suite {
@@ -4326,7 +4331,8 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
   if (
-    carriesCoverage !== (major === 5 || major === 7 || major === 9 || major === 11 || major === 19)
+    carriesCoverage !==
+    (major === 5 || major === 7 || major === 9 || major === 11 || major === 19 || major === 21)
   ) {
     throw new Error('coverage is required exactly for suite/5, suite/7, suite/9 and suite/11');
   }
@@ -4377,7 +4383,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       admitReference(source);
     }
   }
-  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 19) {
+  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 19 || major === 21) {
     const coverage = root.coverage as { [key: string]: Node };
     if (Array.isArray(coverage.refused)) {
       for (const item of coverage.refused as Node[]) {
@@ -4422,7 +4428,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     original: raw,
     document: root,
   };
-  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 19) {
+  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 19 || major === 21) {
     suite.coverage = root.coverage as { [key: string]: Node };
     // Original admission includes parents which will never execute. Retain their exact unsigned
     // metadata independently of the narrower execution view.
@@ -5085,6 +5091,18 @@ export function admitPredicateConstraint(value: Node): void {
         case 'truthy':
           // The truthy form ignores its operand; payload validity still applies.
           break;
+        case 'equals_ignore_case':
+          // One JSON string (beyond10x/ess#140), as Go admits it.
+          if (typeof operand !== 'string') {
+            throw new Error(`predicate ${operator} takes a string`);
+          }
+          break;
+        case 'in_ignore_case':
+          // A JSON list of strings; a scalar is not a one-element list here.
+          if (!Array.isArray(operand) || !operand.every((item) => typeof item === 'string')) {
+            throw new Error(`predicate ${operator} takes a list of strings`);
+          }
+          break;
         default:
           throw new Error(`unknown predicate constraint operator ${quoteGo(operator)}`);
       }
@@ -5679,7 +5697,7 @@ export interface AccessorTypeBody {
   members: string[];
 }
 
-const ACCESSOR_SEGMENT = /^[A-Za-z][A-Za-z0-9_]*$/;
+const ACCESSOR_SEGMENT = /^_*[A-Za-z][A-Za-z0-9_]*$/;
 
 function decodeAccessorField(value: Node): AccessorField {
   const held = isObject(value) ? value : {};
@@ -8381,9 +8399,52 @@ export function admitSelection(value: Node): SelectionObservation {
 /** Only admitted predicate grammar is visited; payload maps are never interpreted as expressions. */
 export function admitPredicateVersion(value: Node, major: number): void {
   admitPredicateEnvelope(value, 0);
+  if (major < 20 && predicateUsesCaseFold(value)) {
+    throw new Error('case-insensitive text operators require suite/20 or /21');
+  }
   if (major < 8 && predicateNeedsLosslessReader(value)) {
     throw new Error('normalized structured comparison operands require suite/8 or /9');
   }
+}
+
+/** Whether admitted predicate grammar carries a case-insensitive operator (beyond10x/ess#140). */
+export function predicateUsesCaseFold(value: Node): boolean {
+  if (Array.isArray(value)) {
+    return value.some(predicateUsesCaseFold);
+  }
+  if (!isObject(value)) {
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    const child = value[key];
+    switch (key) {
+      case 'all':
+      case 'and':
+      case 'all_of':
+      case 'any':
+      case 'or':
+      case 'none':
+      case 'none_of_these':
+      case 'not':
+        if (predicateUsesCaseFold(child)) return true;
+        break;
+      case 'forall':
+      case 'exists':
+        if (isObject(child) && predicateUsesCaseFold((child as { [key: string]: Node }).that)) {
+          return true;
+        }
+        break;
+      default:
+        if (
+          isObject(child) &&
+          (Object.hasOwn(child, 'equals_ignore_case') || Object.hasOwn(child, 'in_ignore_case'))
+        ) {
+          return true;
+        }
+        break;
+    }
+  }
+  return false;
 }
 
 const COMPARISON_OPERATORS = new Set([

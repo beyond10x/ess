@@ -181,18 +181,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=19) {
+    if !matches!(version.major(), 1..=25) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–19",
+            "execution readers admit suite majors 1–25",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19)
-        != root.contains_key("coverage")
+    if matches!(
+        version.major(),
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25
+    ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17 and suite/19",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23 and suite/25",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -285,7 +287,7 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
     }
     Ok(())
 }
-fn shape(value: &Json) -> Result<(), AdmissionError> {
+fn shape(value: &Json, major: u32) -> Result<(), AdmissionError> {
     for v in value.object()?.values() {
         let object = v.object()?;
         let tag = object
@@ -298,9 +300,21 @@ fn shape(value: &Json) -> Result<(), AdmissionError> {
             "list" | "map" | "union" => &["holds"],
             _ => return Err(v.error("UnsupportedHolds", tag)),
         };
-        let fields = v.closed(required, &["optional"])?;
+        let fields = v.closed(required, &["optional", "presence"])?;
         if let Some(optional) = fields.get("optional") {
             optional.boolean()?;
+        }
+        // A presence policy (beyond10x/ess#139) is suite/24 and /25 vocabulary.
+        if let Some(presence) = fields.get("presence") {
+            if major < crate::presence::ORDINARY {
+                return Err(presence.error(
+                    "UnsupportedVocabulary",
+                    "field presence policies require suite/24 or /25",
+                ));
+            }
+            if !matches!(presence.text()?, "null_when_absent" | "omitted_when_absent") {
+                return Err(presence.error("InvalidPresence", presence.text()?));
+            }
         }
     }
     Ok(())
@@ -370,6 +384,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < 8 && tag == "expect_response_payload")
         || (major < crate::fixtures::ORDINARY
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
+        || crate::outcome_shapes::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
@@ -394,6 +409,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
         "expect_subject_unchanged" if major >= 10 => (&["step", "view"], &[]),
+        "expect_subject_absent" => (&["step", "view", "subject"], &[]),
+        "snapshot_view" | "expect_view_unchanged" => (&["step", "view"], &[]),
         "expect_error" => (&["step", "error"], &["fields"]),
         "expect_event" | "eventually_event" => (&["step", "event"], &["payload", "shape"]),
         "expect_no_event" | "redeliver_event" => (&["step", "event"], &[]),
@@ -444,7 +461,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 let _: crate::subject::SubjectShape = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidSubjectShape", error.to_string()))?;
             }
-            "shape" => shape(field)?,
+            "shape" => shape(field, major)?,
             "expectation" => expectation(field, major)?,
             _ => {}
         }
@@ -483,6 +500,8 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
+    crate::outcome_shapes::admit_suite(suite)?;
+    crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;
     crate::aggregate::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;
@@ -640,12 +659,10 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                             "identity cannot be null",
                         ));
                     }
-                    if fields.keys().any(|key| {
-                        !key.starts_with(|character: char| character.is_ascii_alphabetic())
-                            || !key.chars().all(|character| {
-                                character.is_ascii_alphanumeric() || character == '_'
-                            })
-                    }) {
+                    if fields
+                        .keys()
+                        .any(|key| !ess_domain::types::is_field_name(key))
+                    {
                         return Err(AdmissionError::new(
                             "InvalidEntitySetup",
                             path,
@@ -668,6 +685,8 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 | ScenarioStep::ExpectOutcome { .. }
                 | ScenarioStep::ExpectNoError
                 | ScenarioStep::ExpectSubjectUnchanged { .. }
+                | ScenarioStep::ExpectSubjectAbsent { .. }
+                | ScenarioStep::ExpectViewUnchanged { .. }
                 | ScenarioStep::ExpectError { .. }
                 | ScenarioStep::ExpectEvent { .. }
                 | ScenarioStep::ExpectNoEvent { .. }

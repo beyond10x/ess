@@ -287,6 +287,8 @@ fn the_correct_target_passes_and_reaches_every_declared_outcome() {
         assert_eq!(correct["steps"], 60);
         assert_eq!(correct["executed"], 12000);
         assert!(strings(&correct["undetermined"]).is_empty(), "{correct}");
+        // A specification without an `external:` branch keeps the result's bytes: no `external`.
+        assert!(correct.get("external").is_none(), "{correct}");
     }
 }
 

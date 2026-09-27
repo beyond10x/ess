@@ -1,7 +1,7 @@
 //! Admission at every authored type position, including directly constructed models.
 
 use crate::system::{FormatVersion, SystemSpec};
-use crate::{Field, Primitive, Specification, TypeBody, TypeRef};
+use crate::{Field, Primitive, Specification, TypeBody, TypeRef, TypeRegistry};
 use ess_primitives::error::{
     ConstructKind, ConstructRef, ValidationCode, ValidationError, ValidationErrors,
 };
@@ -19,12 +19,29 @@ pub(crate) fn reference(
                 at,
                 "Binary64 requires specification format ess/2",
             )),
+        // An older reader refuses `Json` as an undeclared type, with no version hint.
+        TypeRef::Primitive(Primitive::Json)
+            if format.is_some_and(|format| format.major() < FormatVersion::V15.major()) =>
+        {
+            errors.push(ValidationError::new(
+                ValidationCode::UnsupportedFormatVersion,
+                at,
+                "Json requires specification format ess/15",
+            ));
+        }
         TypeRef::Map(key, value) => {
             if *key == Primitive::Binary64 {
                 errors.push(ValidationError::new(
                     ValidationCode::TypeMismatch,
                     format!("{at}.key"),
                     "Binary64 map keys have no admitted wire spelling",
+                ));
+            }
+            if *key == Primitive::Json {
+                errors.push(ValidationError::new(
+                    ValidationCode::TypeMismatch,
+                    format!("{at}.key"),
+                    "a Json value is not a map key",
                 ));
             }
             reference(value, format, &format!("{at}.value"), errors);
@@ -36,13 +53,89 @@ pub(crate) fn reference(
     }
 }
 
-fn fields(values: &[Field], format: FormatVersion, at: &str, errors: &mut ValidationErrors) {
+fn fields(
+    values: &[Field],
+    format: FormatVersion,
+    types: &TypeRegistry,
+    at: &str,
+    errors: &mut ValidationErrors,
+) {
     for field in values {
         reference(
             &field.type_ref,
             Some(format),
             &format!("{at}.{}.type", field.name),
             errors,
+        );
+        presence(
+            field,
+            format,
+            types,
+            &format!("{at}.{}.presence", field.name),
+            errors,
+        );
+    }
+}
+
+/// A field's `presence:` (beyond10x/ess#139): ess/15, and only on an `Optional<T>`, because a
+/// required field is always sent and has no absent value to spell.
+///
+/// Here, beside the type admission, because this walk reaches every field position that takes
+/// `presence:` — struct, entity, command input and response, event, error — so no position is gated
+/// in one place and forgotten in another. A view's own fields and parameters do not take it: a
+/// view field is read as `RawViewField`, which refuses the key, and a view projecting a named
+/// struct carries that struct's fields, checked where the struct is declared. The walk still
+/// visits view fields, where no policy can be set.
+fn presence(
+    field: &Field,
+    format: FormatVersion,
+    types: &TypeRegistry,
+    at: &str,
+    errors: &mut ValidationErrors,
+) {
+    let Some(policy) = field.presence() else {
+        return;
+    };
+    // An older reader fails `presence:` as an unknown field with no version hint.
+    if format.major() < FormatVersion::V15.major() {
+        errors.push(ValidationError::new(
+            ValidationCode::UnsupportedFormatVersion,
+            at,
+            "field presence policies require specification format ess/15",
+        ));
+    }
+    if !field.type_ref.is_optional() {
+        errors.push(
+            ValidationError::new(
+                ValidationCode::TypeMismatch,
+                at,
+                format!(
+                    "`{}` is `{}`, which is always sent, so `presence: {policy}` has no absent \
+                     value to spell",
+                    field.name, field.type_ref
+                ),
+            )
+            .with_hint("declare the field `Optional<…>`, or delete `presence:`"),
+        );
+    }
+    // `null` is a JSON value (beyond10x/ess#138): an `Optional<Json>` that is never sent as
+    // `null` would refuse one of its own values, so the only spelling of its absence left is the
+    // explicit `null` of `null_when_absent`.
+    if policy == crate::types::Presence::OmittedWhenAbsent
+        && types.newtype_layers(field.type_ref.required()).terminal
+            == TypeRef::Primitive(Primitive::Json)
+    {
+        errors.push(
+            ValidationError::new(
+                ValidationCode::ConflictingDeclaration,
+                at,
+                format!(
+                    "`{}` is `{}`, and `null` is a JSON value, so `presence: omitted_when_absent` \
+                     (never sent as null) would refuse a value the type has",
+                    field.name, field.type_ref
+                ),
+            )
+            .with_hint("write `presence: null_when_absent`, or delete `presence:`"),
         );
     }
 }
@@ -59,7 +152,12 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
             ));
         }
         match &declared.body {
-            TypeBody::Newtype { of, alphabet, .. } => {
+            TypeBody::Newtype {
+                of,
+                alphabet,
+                prefix,
+                ..
+            } => {
                 reference(of, Some(system.format), &format!("{at}.of"), &mut errors);
                 // An older reader fails `alphabet:` as an unknown field with no version hint.
                 if alphabet.is_some() && system.format.major() < FormatVersion::V11.major() {
@@ -69,10 +167,24 @@ pub(crate) fn system(system: &SystemSpec) -> ValidationErrors {
                         "declared alphabets require specification format ess/11",
                     ));
                 }
+                // The same for `prefix:` (beyond10x/ess#146).
+                if prefix.is_some() && system.format.major() < FormatVersion::V15.major() {
+                    errors.push(ValidationError::new(
+                        ValidationCode::UnsupportedFormatVersion,
+                        format!("{at}.prefix"),
+                        "declared prefixes require specification format ess/15",
+                    ));
+                }
             }
             TypeBody::Struct {
                 fields: members, ..
-            } => fields(members, system.format, &format!("{at}.fields"), &mut errors),
+            } => fields(
+                members,
+                system.format,
+                &system.types,
+                &format!("{at}.fields"),
+                &mut errors,
+            ),
             TypeBody::Union { variants, .. } => {
                 for (name, ty) in variants {
                     reference(
@@ -272,18 +384,40 @@ fn aggregate_view(view: &crate::ViewSpec, format: FormatVersion, errors: &mut Va
     }
 }
 
-/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) arrived in `ess/8`.
-fn string_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
-    if format.major() >= FormatVersion::V8.major() {
-        return;
-    }
+/// A format, the question that finds its operator in a predicate, and the refusal below it.
+type OperatorFormat = (
+    FormatVersion,
+    fn(&ess_primitives::predicate::Predicate) -> bool,
+    &'static str,
+);
+
+/// The predicate operators that arrived after `ess/1`, each with the format that admits it:
+/// `starts_with`, `ends_with` and `contains` (beyond10x/ess#95) in `ess/8`, and
+/// `equals_ignore_case` and `in_ignore_case` (beyond10x/ess#140) in `ess/15`. One walk over every
+/// predicate position, so a later operator is gated where the earlier ones are.
+const OPERATOR_FORMATS: &[OperatorFormat] = &[
+    (
+        FormatVersion::V8,
+        ess_primitives::predicate::Predicate::uses_text_match,
+        "string predicate operators require specification format ess/8",
+    ),
+    (
+        FormatVersion::V15,
+        ess_primitives::predicate::Predicate::uses_case_fold,
+        "case-insensitive text operators require specification format ess/15",
+    ),
+];
+
+fn predicate_operators(spec: &Specification, format: FormatVersion, errors: &mut ValidationErrors) {
     for (site, predicate) in predicates(spec) {
-        if predicate.uses_text_match() {
-            errors.push(ValidationError::at(
-                site,
-                ValidationCode::UnsupportedFormatVersion,
-                "string predicate operators require specification format ess/8",
-            ));
+        for (admitted, uses, message) in OPERATOR_FORMATS {
+            if format.major() < admitted.major() && uses(predicate) {
+                errors.push(ValidationError::at(
+                    site.clone(),
+                    ValidationCode::UnsupportedFormatVersion,
+                    *message,
+                ));
+            }
         }
     }
 }
@@ -311,11 +445,38 @@ fn input_examples(
     }
 }
 
+/// A command's input fields, and the presence policy of its response fields: a response field's
+/// type was never gated here, so only its `presence:` is.
+fn command_fields(
+    command: &crate::command::CommandSpec,
+    format: FormatVersion,
+    types: &TypeRegistry,
+    errors: &mut ValidationErrors,
+) {
+    fields(
+        &command.input,
+        format,
+        types,
+        &format!("command.{}.input", command.name),
+        errors,
+    );
+    for field in &command.response {
+        presence(
+            field,
+            format,
+            types,
+            &format!("command.{}.response.{}.presence", command.name, field.name),
+            errors,
+        );
+    }
+}
+
 pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     let mut errors = system(spec.system());
-    string_operators(spec, spec.system().format, &mut errors);
+    predicate_operators(spec, spec.system().format, &mut errors);
     errors.extend(crate::command::validate_response_contracts(spec));
     errors.extend(crate::command::value_expression::validate(spec));
+    errors.extend(crate::command::outcome_shapes::validate(spec));
     let format = spec.system().format;
     for binding in spec.bindings().values() {
         if format.major() < 3
@@ -353,6 +514,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         fields(
             &entity.fields,
             format,
+            &spec.system().types,
             &format!("entity {}.fields", entity.name),
             &mut errors,
         );
@@ -360,17 +522,13 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     for command in spec.commands().values() {
         held_state_conditions(command, format, &mut errors);
         input_examples(command, format, &mut errors);
-        fields(
-            &command.input,
-            format,
-            &format!("command.{}.input", command.name),
-            &mut errors,
-        );
+        command_fields(command, format, &spec.system().types, &mut errors);
     }
     for event in spec.events().values() {
         fields(
             &event.fields,
             format,
+            &spec.system().types,
             &format!("event.{}.fields", event.name),
             &mut errors,
         );
@@ -386,16 +544,19 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         fields(
             &error.fields,
             format,
+            &spec.system().types,
             &format!("error.{}.fields", error.name),
             &mut errors,
         );
     }
     for view in spec.views().values() {
         aggregate_view(view, format, &mut errors);
+        errors.extend(view.absent_value_admission(format, &spec.system().types));
         if let Some(members) = view.projected_fields(&spec.system().types) {
             fields(
                 members,
                 format,
+                &spec.system().types,
                 &format!("view.{}.fields", view.name),
                 &mut errors,
             );
@@ -403,6 +564,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
         fields(
             &view.params,
             format,
+            &spec.system().types,
             &format!("view.{}.params", view.name),
             &mut errors,
         );
