@@ -927,12 +927,18 @@ pub enum ResolvedPayloadValue {
         /// The amount, as canonical text.
         by: String,
     },
-    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14).
+    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14) or
+    /// the literal written after `else:` (ess/16).
     InputOrGenerated {
         /// The input field read.
         field: String,
         /// Its resolved type, `Optional<…>`.
         type_ref: ResolvedTypeRef,
+        /// The fallback literal, as [`Literal`](Self::Literal) carries one: checked by `ess-domain`
+        /// against the target's type. Absent for `{generated: true}`, which keeps the bytes an
+        /// `ess/14` document compiled to.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        otherwise: Option<String>,
     },
     /// One source per field of a struct-typed target, in the struct's declaration order (ess/14).
     Struct {
@@ -952,9 +958,18 @@ impl ResolvedPayloadValue {
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
             Self::Increment { by } => format!("its previous value plus {by}"),
-            Self::InputOrGenerated { field, .. } => {
+            Self::InputOrGenerated {
+                field,
+                otherwise: None,
+                ..
+            } => {
                 format!("input.{field}, else implementation-generated")
             }
+            Self::InputOrGenerated {
+                field,
+                otherwise: Some(value),
+                ..
+            } => format!("input.{field}, else \"{value}\""),
             Self::Struct { fields } => format!(
                 "{{{}}}",
                 fields

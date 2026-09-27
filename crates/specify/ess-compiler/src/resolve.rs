@@ -2197,7 +2197,7 @@ impl<'a> Resolver<'a> {
                     read.type_ref.clone(),
                 )
             }
-            PayloadSource::InputOrGenerated { field } => {
+            PayloadSource::InputOrGenerated { field, otherwise } => {
                 let read = input.and_then(|fields| fields.iter().find(|it| &it.name == field));
                 let Some(read) = read else {
                     if input.is_some() {
@@ -2225,6 +2225,13 @@ impl<'a> Resolver<'a> {
                     ResolvedPayloadValue::InputOrGenerated {
                         field: read.name.clone(),
                         type_ref: read.type_ref.clone(),
+                        // As a top-level literal compiles: an unquoted scalar to its quoted
+                        // form's text.
+                        otherwise: otherwise.as_deref().and_then(|literal| match literal {
+                            PayloadSource::Literal { value }
+                            | PayloadSource::Scalar { value, .. } => Some(value.clone()),
+                            _ => None,
+                        }),
                     },
                     present,
                 )

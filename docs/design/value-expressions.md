@@ -4,7 +4,8 @@ Status: E1–E5 implemented in source format `ess/14` (beyond10x/ess#133, #134, 
 E1 (#135) needs no format version; E2–E5 are refused below `ess/14` with
 `unsupported_format_version`. E6 (#157) and E7 (#140) are implemented in source format `ess/15` and
 refused below it with `unsupported_format_version`; E7 carries suite formats `ess-conformance/20`
-and `/21`.
+and `/21`. E4's literal fallback (#163) is implemented in source format `ess/16` and refused below
+it with `unsupported_format_version`.
 
 ## Behavior and authority
 
@@ -64,12 +65,42 @@ arrangement determined `before`.
 `{generated: true}` is admitted in `sets:`: the implementation decides the new value. Synthesis
 makes no claim about the field after the outcome, so preservation no longer asserts the old value.
 
-### E4 — `{input: <field>, else: {generated: true}}` (#137)
+### E4 — `{input: <field>, else: {generated: true}}` (#137) and `else: <literal>` (#163, `ess/16`)
 
 The caller's value when the optional input is present, otherwise a value the implementation mints.
 The input must be `Optional<T>` with `T` assignable to the target. Admitted in `payload:` and
-`sets:`. `else` admits `{generated: true}` only in this cut. Synthesis asserts the supplied value
-when the scenario sends one, and the shape only when it omits the input.
+`sets:`. Synthesis asserts the supplied value when the scenario sends one, and the shape only when
+it omits the input.
+
+From `ess/16` the fallback may instead be a literal: `tier: {input: tier, else: Standard}`,
+`rank: {input: rank, else: 3}`. The literal is held to the rule a literal written in the target's
+place is — a variant of the enum the target is, text for a String-backed target, an unquoted
+boolean, whole number or decimal over the primitive it spells, `'0'` rather than `0` over a
+`String` — and `subject.<field>` after `else:` is refused as the misspelling E2 describes. In a
+payload it also gets the bare payload literal's `misspelled_reference` checks: `else: rank` names
+an input without its prefix, and `else: inptu.rank` or `else: event.rank` misspells one. `else:`
+admits nothing else: `input.<field>`, `{subject: …}`, `{cleared: true}`, a nested mapping or a
+second `{input: …}` are refused where they are written. Below `ess/16` a literal fallback is
+refused with `unsupported_format_version`; `{generated: true}` keeps its `ess/14` meaning and its
+IR bytes. The IR carries the literal as `otherwise` on the same `input_or_generated` source, left
+out when the fallback is generated.
+
+Synthesis asserts both halves in the outcome's scenario. Its first invocation sends the witness
+input as before, so the sent value is asserted and an implementation that always stores the
+literal fails. After everything that invocation asserts, the branch runs again on a further
+instance, with every optional input that the outcome reads only through literal fallbacks left
+out, and asserts the literal, read as the target's type, on the event and the row. An input is
+kept where anything else reads it (a plain `input.<field>`, a generated fallback, the subject's
+identity, a fixture), and where the branch is no longer selected without it, one field at a time.
+An implementation storing a different default fails that second invocation. A branch selected by
+the held state or the stored row, a replayed branch and a state refusal get only the first
+invocation: their arrangement searches fix the plain witness, and arranging it twice would repeat
+its identities.
+
+A refusal of the literal reads as the refusal of the same literal written bare in that place: same
+code, path, owner and reason. Only the hint differs, and only where the bare repair is one `else:`
+refuses: a misspelled reference is repaired with a literal or `else: {generated: true}`, and a
+quoted spelling keeps its wrapper (`label: {input: label, else: '0'}`).
 
 ### E5 — nested mappings for a struct target (#136)
 

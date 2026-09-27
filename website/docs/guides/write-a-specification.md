@@ -660,6 +660,7 @@ the input or a literal:
 | `{subject: <field>}` | `payload:`, `sets:` | the outcome `moves:` or `updates:` an existing subject; `creates:` has no row before it |
 | `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
+| `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 
@@ -672,6 +673,22 @@ Synthesis asserts each value where the arrangement determined what it reads: the
 arrangement wrote, the input the scenario sent. Where it did not, a payload field is checked for
 presence and type only, and a `sets:` target is not asserted on the row. Entity Runtime lowering
 refuses these sources.
+
+From source `ess/16` a fallback can be a literal instead of `{generated: true}`:
+
+```yaml
+sets:
+  tier: {input: tier, else: Standard}       # the caller's tier, or Standard when none is sent
+  rank: {input: rank, else: 3}
+```
+
+The literal is checked against the target exactly as a literal written there is: a variant of the
+enum, text for a String-backed type, `3` over an `Integer`, `'3'` rather than `3` over a `String`.
+Nothing else follows `else:` — not `input.<field>`, not `{subject: …}`. Below `ess/16` a literal
+fallback is refused with `unsupported_format_version`. The outcome's synthesized scenario checks
+both halves: it first sends the input and asserts the sent value, then invokes the branch again
+without the input and asserts the literal. An implementation that ignores the input fails the
+first check, and one that stores another default fails the second.
 
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.

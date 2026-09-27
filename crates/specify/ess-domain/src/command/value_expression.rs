@@ -87,6 +87,12 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                         0,
                         &mut errors,
                     );
+                    errors.extend(fallback_literal(
+                        &context,
+                        &Filled::Payload { at: &at, event },
+                        filled,
+                        source,
+                    ));
                 }
             }
             if let Some((entity, _)) = context.subject {
@@ -101,6 +107,12 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     };
                     let at = site.clone().key("sets").named(target);
                     check(&context, &at, Place::Sets, held, source, 0, &mut errors);
+                    errors.extend(fallback_literal(
+                        &context,
+                        &Filled::Sets { entity },
+                        held,
+                        source,
+                    ));
                 }
             }
         }
@@ -173,8 +185,16 @@ fn check(
         PayloadSource::Increment { by, scalar } => {
             check_increment(context, at, place, target, by, *scalar, errors);
         }
-        PayloadSource::InputOrGenerated { field } => {
-            check_fallback(context, at, target, field, errors);
+        PayloadSource::InputOrGenerated { field, otherwise } => {
+            check_fallback(
+                context,
+                at,
+                (place, depth),
+                target,
+                field,
+                otherwise.as_deref(),
+                errors,
+            );
         }
         PayloadSource::Struct { fields } => {
             check_struct(context, at, place, target, fields, depth, errors);
@@ -367,14 +387,42 @@ fn check_increment(
     }
 }
 
-/// `{input: f, else: {generated: true}}`: an optional input, or a minted value.
+/// `{input: f, else: {generated: true}}`: an optional input, or a minted value; or
+/// `{input: f, else: <literal>}` (`ess/16`, #163): an optional input, or the literal, which is held
+/// to the rule a literal written in the target's place is.
 fn check_fallback(
     context: &Context<'_>,
     at: &ConstructRef,
+    (place, depth): (Place, usize),
     target: &Field,
     field: &str,
+    otherwise: Option<&PayloadSource>,
     errors: &mut ValidationErrors,
 ) {
+    if let Some(literal) = otherwise {
+        let format = context.spec.system().format;
+        if format.major() < FormatVersion::V16.major() {
+            errors.push(
+                ValidationError::at(
+                    at.clone(),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "a literal after `else:` requires specification format ess/16",
+                )
+                .with_hint(
+                    "write `format: ess/16` on the source that declares the system, or \
+                     `else: {generated: true}`",
+                ),
+            );
+            return;
+        }
+        // The rule a literal written in the target's place gets. A top-level fallback is read at
+        // depth 0, the `subject.<field>` misspelling only, because [`fallback_literal`] runs the
+        // bare payload or `sets:` literal's own checks on it, as `validate_payloads` and
+        // `validate_sets` do on a bare one; inside a nested mapping the leaf rule at depth 1
+        // checks both the misspelling and the literal's type against the target.
+        let depth = usize::from(depth > 0);
+        check(context, at, place, target, literal, depth, errors);
+    }
     let command = context.command;
     let Some(read) = command.input_field(field) else {
         errors.push(ValidationError::at(
@@ -410,6 +458,117 @@ fn check_fallback(
             target,
         ));
     }
+}
+
+/// Where a top-level literal after `else:` is written: an event's payload field, or the addressed
+/// entity's field in `sets:`.
+enum Filled<'a> {
+    Payload {
+        at: &'a ConstructRef,
+        event: &'a super::EventSpec,
+    },
+    Sets {
+        entity: &'a crate::entity::EntitySpec,
+    },
+}
+
+/// The literal after `else:` in a top-level payload or `sets:` field, checked by the rule a bare
+/// literal written there is held to — `check_payload_literal` or `sets_literal` — and refused under
+/// the same code, the same owner and the same path, so the two refusals read the same.
+///
+/// Two things differ, both hints, because the bare one's repair is not one `else:` admits: a
+/// misspelled reference is repaired by a literal or `{generated: true}` (`else:` reads no input),
+/// and a quoted spelling keeps the `{input, else}` around it. Nothing below `ess/16`, where the
+/// fallback itself is refused.
+fn fallback_literal(
+    context: &Context<'_>,
+    filled: &Filled<'_>,
+    target: &Field,
+    source: &PayloadSource,
+) -> ValidationErrors {
+    let PayloadSource::InputOrGenerated {
+        field,
+        otherwise: Some(literal),
+    } = source
+    else {
+        return ValidationErrors::new();
+    };
+    if context.spec.system().format.major() < FormatVersion::V16.major() {
+        return ValidationErrors::new();
+    }
+    let (value, scalar) = match literal.as_ref() {
+        PayloadSource::Literal { value } => (value, None),
+        PayloadSource::Scalar { value, scalar } => (value, Some(*scalar)),
+        _ => return ValidationErrors::new(),
+    };
+    let command = context.command;
+    let errors = match filled {
+        Filled::Payload { at, event } => super::check_payload_literal(
+            at,
+            command,
+            event,
+            &target.name,
+            target,
+            value,
+            scalar,
+            context.resolved,
+        ),
+        Filled::Sets { entity } => {
+            let Some(refusal) = super::sets_literal(
+                &entity.name,
+                &target.name,
+                target,
+                literal,
+                command,
+                context.resolved,
+            ) else {
+                return ValidationErrors::new();
+            };
+            let at = format!(
+                "commands.{}.outcomes.{}.sets.{}",
+                command.name, context.outcome.name, target.name
+            );
+            ValidationErrors::from(
+                ValidationError::new(ValidationCode::TypeMismatch, at, refusal.reason)
+                    .with_hint(refusal.hint),
+            )
+        }
+    };
+    let mut out = ValidationErrors::new();
+    for mut error in errors {
+        error.hint = error.hint.map(|hint| {
+            if error.code == ValidationCode::MisspelledReference {
+                format!(
+                    "`else:` reads no input: write a literal `{}` admits, or \
+                     `else: {{generated: true}}`",
+                    target.name
+                )
+            } else {
+                within_fallback(&hint, &target.name, field)
+            }
+        });
+        out.push(error);
+    }
+    out
+}
+
+/// A bare literal's repair, quoting `label: '0'`, rewritten as the fallback's own:
+/// `label: {input: label, else: '0'}`. A hint that spells no `target: …` is left as it is.
+fn within_fallback(hint: &str, target: &str, field: &str) -> String {
+    let opening = format!("`{target}: ");
+    let Some(start) = hint.find(&opening) else {
+        return hint.to_owned();
+    };
+    let value_at = start + opening.len();
+    let Some(length) = hint[value_at..].find('`') else {
+        return hint.to_owned();
+    };
+    format!(
+        "{}{target}: {{input: {field}, else: {}}}{}",
+        &hint[..=start],
+        &hint[value_at..value_at + length],
+        &hint[value_at + length..]
+    )
 }
 
 /// A nested mapping: every field of the struct the target resolves to, one source each.

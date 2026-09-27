@@ -923,10 +923,16 @@ pub enum PayloadSource {
         scalar: ScalarKind,
     },
     /// The optional input's value when the caller sent one, otherwise a value the implementation
-    /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137).
+    /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137), or the literal written after
+    /// `else:`: `{input: tier, else: Standard}` (ess/16, #163).
     InputOrGenerated {
         /// The optional input field read.
         field: String,
+        /// The fallback when it is a literal — only ever a [`Literal`](Self::Literal) or a
+        /// [`Scalar`](Self::Scalar), checked against the target as a literal written there would
+        /// be. `None` is `{generated: true}`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        otherwise: Option<Box<PayloadSource>>,
     },
     /// One source per field of a struct-typed target (ess/14, #136), in the order written.
     Struct {
@@ -963,13 +969,20 @@ impl fmt::Display for PayloadSource {
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
-            Self::InputOrGenerated { field } => {
+            Self::InputOrGenerated {
+                field,
+                otherwise: None,
+            } => {
                 write!(
                     f,
                     "{}{field}, else implementation-generated",
                     Self::INPUT_PREFIX
                 )
             }
+            Self::InputOrGenerated {
+                field,
+                otherwise: Some(literal),
+            } => write!(f, "{}{field}, else {literal}", Self::INPUT_PREFIX),
             Self::Struct { fields } => write!(
                 f,
                 "{{{}}}",
@@ -1073,7 +1086,8 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                 f.write_str(
                     "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
                      `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
-                     `{input: <field>, else: {generated: true}}`, or a mapping of struct fields",
+                     `{input: <field>, else: {generated: true}}`, \
+                     `{input: <field>, else: <literal>}`, or a mapping of struct fields",
                 )
             }
 
@@ -1290,10 +1304,23 @@ fn decimal_text(value: f64) -> Option<String> {
 }
 
 impl PayloadSource {
+    /// What follows `else:`: `None` for `{generated: true}`, the literal for a literal.
+    ///
+    /// A literal is admitted here in every format and refused below `ess/16` by
+    /// `value_expression::validate`, which knows the format and the target's type.
+    fn fallback(otherwise: RawPayloadSource) -> Result<Option<Box<Self>>, &'static str> {
+        match Self::try_from(otherwise)? {
+            Self::Generated => Ok(None),
+            literal @ (Self::Literal { .. } | Self::Scalar { .. }) => Ok(Some(Box::new(literal))),
+            _ => Err("`else:` admits `{generated: true}` only, or a literal (format ess/16)"),
+        }
+    }
+
     fn from_explicit(explicit: ExplicitPayloadSource) -> Result<Self, &'static str> {
         const ONE_OF: &str = "payload source requires exactly one of {response: field}, \
                               {generated: true}, {cleared: true}, {subject: field}, \
-                              {increment: number} or {input: field, else: {generated: true}}";
+                              {increment: number} or {input: field, else: {generated: true} or a \
+                              literal}";
         match explicit {
             ExplicitPayloadSource {
                 response: Some(field),
@@ -1367,19 +1394,19 @@ impl PayloadSource {
                 increment: None,
                 input: Some(field),
                 otherwise: Some(otherwise),
-            } => match Self::try_from(*otherwise)? {
-                Self::Generated => source_field(field)
-                    .map(|field| Self::InputOrGenerated { field })
-                    .ok_or("`{input: <field>, else: …}` names one field of the command's input"),
-                _ => Err("`else:` admits `{generated: true}` only"),
-            },
+            } => {
+                let otherwise = Self::fallback(*otherwise)?;
+                source_field(field)
+                    .map(|field| Self::InputOrGenerated { field, otherwise })
+                    .ok_or("`{input: <field>, else: …}` names one field of the command's input")
+            }
             ExplicitPayloadSource {
                 input: Some(_),
                 otherwise: None,
                 ..
             } => Err(
-                "`{input: <field>}` needs `else: {generated: true}`; a plain input is \
-                      written `input.<field>`",
+                "`{input: <field>}` needs `else: {generated: true}` or `else: <literal>`; a plain \
+                 input is written `input.<field>`",
             ),
             _ => Err(ONE_OF),
         }
@@ -1408,9 +1435,11 @@ impl From<&PayloadSource> for RawPayloadSource {
                     ScalarKind::Boolean | ScalarKind::Decimal => RawIncrement::Text(by.clone()),
                 });
             }),
-            PayloadSource::InputOrGenerated { field } => explicit(&|e| {
+            PayloadSource::InputOrGenerated { field, otherwise } => explicit(&|e| {
                 e.input = Some(field.clone());
-                e.otherwise = Some(Box::new(Self::from(&PayloadSource::Generated)));
+                e.otherwise = Some(Box::new(Self::from(
+                    otherwise.as_deref().unwrap_or(&PayloadSource::Generated),
+                )));
             }),
             PayloadSource::Struct { fields } => Self::Nested(RawNestedSources(
                 fields
