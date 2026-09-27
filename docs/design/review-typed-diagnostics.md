@@ -201,7 +201,7 @@ compatibility clause. Nothing here is a silent omission.
 | `Outcome::try_from` (`command.rs:2163`), `keyed_sets` (`:2259`), `keyed_payload` (`:2286`), `subject_of` (`:2336`) — relative locations rebased by string concatenation at `command.rs:2447` | 1 + 1 + 2 + 4 = **8** | deferred | These build a location *relative* to a construct they do not know, and the prefix is prepended later by mutating `error.location`. The typed replacement is a `ConstructRef` passed into admission; it is a signature change on the raw→admitted conversion and is the next unit of this migration. |
 | `ess-domain/src/entity.rs` (16), `binding.rs` (17), `component.rs` (15), `view.rs` (11), `topology.rs` (10), `system.rs` (10), `spec.rs` (7), `types.rs` (6), `domain.rs` (5), `wire.rs` (1) | 98 | deferred, by family | **Not** "the same shape as `command.rs`", which is what this row used to say. `entity.rs` and `component.rs` write `entity <name>` and `component <name>` with a space — 16 of the location literals in the head census below open that way (`entity entity.rs 4`, `component component.rs 12`), and every refusal those two files raise is rooted at one of them; `system.rs` and `types.rs` write the plural heads `types.` and `domain.`, for which no `ConstructKind` exists. The space form is now renderable (`ConstructKind::separator`), so those two families migrate without moving a string. The plural heads are not, and migrating them would move the string — the same result as the `validate_sets` row. |
 | `ess-domain/src/wire.rs:30`, one `command.…` location | 1 | **deferred with a stated reason** | `wire.rs`'s `Namespace` helper is shared by five heads, one of which is `types.` — a head no `ConstructKind` renders. Migrating only its command caller needs the helper to accept "a site or a string", which is the shape this story is removing. It moves with the `type` family. Pinned at 1 by the head census. |
-| `ess-domain/src/primitive_admission.rs:96`, one `command.…` location | 1 | **not this unit** | `story:review-primitive-semantics` owns the file. A ready patch is at `target/review-boundaries-21/scratch/primitive-admission-command-site.patch`; it is not applied. Pinned at 1 by the head census, so it cannot grow unnoticed. |
+| `ess-domain/src/primitive_admission.rs`, two `command.…` locations: the input fields (`:460`) and, since 0.37.0, a response field's `presence` (`:468`) | 2 | **not this unit** | `story:review-primitive-semantics` owns the file. A ready patch for the first is at `target/review-boundaries-21/scratch/primitive-admission-command-site.patch`; it is not applied. The second goes through the same text-located `presence` helper as the struct and event fields. Pinned at 2 by the head census, so it cannot grow unnoticed. |
 | `command.rs` `validate_sets` (`:1727`) + `field_shape` (`:1987`) + the eight admission sites above | 11 | see rows above | `grep -c 'ValidationError::new' crates/specify/ess-domain/src/command.rs` = 11, which is 2 + 1 + 8. |
 | `ess-domain/src/actor.rs` | 1 | deferred | An `actor`-family site the story's own scope does not list; recorded here so the inventory is complete rather than equal to the scope. |
 | `ess-domain/src/expression.rs` (1), `primitive_admission.rs` (2) | 3 | **not this unit** | `story:review-primitive-semantics`, same wave. `CommandSpec::validate_typed_guard` hands `check_predicate` the *rendered* form of its own site, so the two spellings cannot drift while that file waits. |
@@ -260,12 +260,12 @@ domain.rs 5 0
 entity.rs 16 4
 expression.rs 1 0
 outcome_group.rs 17 0
-primitive_admission.rs 9 7
+primitive_admission.rs 15 7
 selection.rs 2 0
 spec.rs 7 0
 system.rs 10 0
 topology.rs 10 0
-types.rs 12 1
+types.rs 16 1
 view.rs 28 0
 wire.rs 1 0
 ```
@@ -287,7 +287,7 @@ actor actor.rs 1
 actors actor.rs 1
 binding binding.rs 18
 binding primitive_admission.rs 2
-command primitive_admission.rs 1
+command primitive_admission.rs 2
 command wire.rs 1
 commands command.rs 1
 component component.rs 12
@@ -314,7 +314,7 @@ outcome_groups outcome_group.rs 17
 topology topology.rs 6
 types primitive_admission.rs 1
 types system.rs 3
-types types.rs 6
+types types.rs 8
 types wire.rs 1
 view primitive_admission.rs 3
 view view.rs 11
