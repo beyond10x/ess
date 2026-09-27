@@ -132,3 +132,19 @@ Collisions involving the retrofit stories (verbatim from the verb, 73 rows):
 Commits approval authorises: this page and the scope records (1 plan commit), 1 unit commit, the
 merge into `integrate/retrofit-wave-1`, 1 closing store commit, the merge to `main`. No tag, no
 release.
+
+## Units added 2026-09-27 (operator: "use multiple sub-agents, aggregate multiple fixes under the same branch / PR")
+
+N = 4 (default budget). #160 and #161 (filed 05:44) were added to the synthesis unit: same
+functions (`boundary_inputs`, `freshened`).
+
+| unit | story | issues | worktree (managed id) | build dir | scratch | stage |
+|---|---|---|---|---|---|---|
+| synthesis | `story:synthesis-kills-connective-and-source-mutants` | #154, #155, #132, #160, #161 | `ess-wave1-synthesis` | `<cache>/b10x-target/ess-expr` | `<cache>/ess-wave1/synthesis/scratch` | dispatched |
+| names | `story:field-names-underscore-and-newtype-map-keys` | #141, #143 | `ess-wave1-names` | `/dev/shm/ess-wave1-names-target` | `<cache>/ess-wave1/names/scratch` | dispatched |
+| mutate | `story:mutate-drives-an-external-target` | #153 | `ess-wave1-mutate` | `<cache>/b10x-target/ess-wave1-mutate` | `<cache>/ess-wave1/mutate/scratch` | dispatched |
+| explorer | `story:explorer-takes-external-branches` | #156 | `ess-wave1-explorer` | `<cache>/b10x-target/ess-wave1-explorer` | `<cache>/ess-wave1/explorer/scratch` | dispatched |
+
+All four fork from `a0a18d31b` and merge into `integrate/retrofit-wave-1`; one PR.
+Split on 2026-09-27: `story:field-names-wire-and-value-types` and
+`story:external-mutation-explorer-and-toolchain` archived, superseded by six stories.

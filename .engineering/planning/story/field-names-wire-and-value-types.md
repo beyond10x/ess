@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:field-names-wire-and-value-types
 kind: story
-status: draft
+status: archived
 title: Underscore names, newtype map keys, field wire names, presence policy, Json, text patterns
 relations:
 - decomposes: epic:retrofit-findings-20260927
@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 5
+revision: 6
 ---
 ## Scope
 

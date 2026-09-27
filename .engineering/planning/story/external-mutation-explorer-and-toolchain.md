@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:external-mutation-explorer-and-toolchain
 kind: story
-status: draft
+status: archived
 title: Mutation audits an external target, the explorer takes external branches, ess manages its toolchain
 relations:
 - decomposes: epic:retrofit-findings-20260927
@@ -27,7 +27,7 @@ scope:
   path: crates/verify/ess-conformance/src/ts/explore.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
-revision: 5
+revision: 6
 ---
 ## Scope
 
