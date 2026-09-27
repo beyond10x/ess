@@ -356,46 +356,62 @@ pub struct Aggregate {
     /// The source field it reads: a top-level observable field of the view's source. `None`
     /// exactly for [`AggregateFunction::Count`].
     pub input: Option<String>,
+    /// Absent values of [`Self::input`] are skipped, as SQL skips `NULL` (`skip_absent: true`,
+    /// `ess/15`, beyond10x/ess#148). Never set for [`AggregateFunction::Count`], which counts rows.
+    pub skip_absent: bool,
 }
 
 impl fmt::Display for Aggregate {
-    /// `sum(talk_seconds)`, or `count()`.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, or `count()`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}({})",
+            "{}({}{})",
             self.function,
-            self.input.as_deref().unwrap_or_default()
+            self.input.as_deref().unwrap_or_default(),
+            if self.skip_absent {
+                ", skip_absent"
+            } else {
+                ""
+            }
         )
     }
 }
 
 impl From<&RawAggregate> for Aggregate {
     fn from(raw: &RawAggregate) -> Self {
-        let (function, input) = match raw {
-            RawAggregate::Count(_) => (AggregateFunction::Count, None),
-            RawAggregate::CountDistinct(input) => {
+        let (function, input) = match &raw.function {
+            RawFunction::Count(_) => (AggregateFunction::Count, None),
+            RawFunction::CountDistinct(input) => {
                 (AggregateFunction::CountDistinct, Some(input.clone()))
             }
-            RawAggregate::Sum(input) => (AggregateFunction::Sum, Some(input.clone())),
-            RawAggregate::Min(input) => (AggregateFunction::Min, Some(input.clone())),
-            RawAggregate::Max(input) => (AggregateFunction::Max, Some(input.clone())),
-            RawAggregate::Avg(input) => (AggregateFunction::Avg, Some(input.clone())),
+            RawFunction::Sum(input) => (AggregateFunction::Sum, Some(input.clone())),
+            RawFunction::Min(input) => (AggregateFunction::Min, Some(input.clone())),
+            RawFunction::Max(input) => (AggregateFunction::Max, Some(input.clone())),
+            RawFunction::Avg(input) => (AggregateFunction::Avg, Some(input.clone())),
         };
-        Self { function, input }
+        Self {
+            function,
+            input,
+            skip_absent: raw.skip_absent,
+        }
     }
 }
 
 impl From<&Aggregate> for RawAggregate {
     fn from(aggregate: &Aggregate) -> Self {
         let input = aggregate.input.clone().unwrap_or_default();
-        match aggregate.function {
-            AggregateFunction::Count => Self::Count(Empty {}),
-            AggregateFunction::CountDistinct => Self::CountDistinct(input),
-            AggregateFunction::Sum => Self::Sum(input),
-            AggregateFunction::Min => Self::Min(input),
-            AggregateFunction::Max => Self::Max(input),
-            AggregateFunction::Avg => Self::Avg(input),
+        let function = match aggregate.function {
+            AggregateFunction::Count => RawFunction::Count(Empty {}),
+            AggregateFunction::CountDistinct => RawFunction::CountDistinct(input),
+            AggregateFunction::Sum => RawFunction::Sum(input),
+            AggregateFunction::Min => RawFunction::Min(input),
+            AggregateFunction::Max => RawFunction::Max(input),
+            AggregateFunction::Avg => RawFunction::Avg(input),
+        };
+        Self {
+            function,
+            skip_absent: aggregate.skip_absent,
         }
     }
 }
@@ -428,19 +444,29 @@ impl Aggregation {
     }
 }
 
-/// An aggregate as written: a map with exactly one key, the function.
+/// An aggregate as written: a map with exactly one function key and, beside a function that reads
+/// a value, `skip_absent: true`.
 ///
-/// The shape is the reader's to refuse — an unknown function, two keys, or an argument to `count`
-/// fails the parse with serde's message naming the six functions, as an unknown key does anywhere a
-/// [`Field`] is read.
+/// The shape is the reader's to refuse — an unknown function, two functions, an argument to
+/// `count`, `skip_absent` beside `count`, or `skip_absent` written anything but `true` fails the
+/// parse with a message naming the six functions, as an unknown key does anywhere a [`Field`] is
+/// read.
 ///
-/// Read and written by hand as a one-entry map rather than derived: `serde_yaml` reads and writes a
-/// derived externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the
-/// design page fixes and not what a JSON document can carry. The schema is still the derived one —
-/// one object per function with exactly that key.
-#[derive(Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RawAggregate {
+/// Read and written by hand as a map rather than derived: `serde_yaml` reads and writes a derived
+/// externally tagged enum as a YAML tag (`!sum talk_seconds`), which is not the syntax the design
+/// page fixes and not what a JSON document can carry. The schema is written by hand to match — one
+/// object per function with exactly that key, and `skip_absent` beside the five that read a value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawAggregate {
+    /// The function and its argument.
+    pub function: RawFunction,
+    /// `skip_absent: true`: absent values of the argument are skipped (`ess/15`).
+    pub skip_absent: bool,
+}
+
+/// One aggregate function as written, with its argument.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RawFunction {
     /// `{count: {}}`.
     Count(Empty),
     /// `{count_distinct: field}`.
@@ -458,19 +484,24 @@ pub enum RawAggregate {
 impl RawAggregate {
     /// Every function name, as the reader's refusal lists them.
     const NAMES: &'static [&'static str] = &["count", "count_distinct", "sum", "min", "max", "avg"];
+    /// The key that says absent values are skipped.
+    const SKIP_ABSENT: &'static str = "skip_absent";
 }
 
 impl serde::Serialize for RawAggregate {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(1))?;
-        match self {
-            Self::Count(empty) => map.serialize_entry("count", empty)?,
-            Self::CountDistinct(input) => map.serialize_entry("count_distinct", input)?,
-            Self::Sum(input) => map.serialize_entry("sum", input)?,
-            Self::Min(input) => map.serialize_entry("min", input)?,
-            Self::Max(input) => map.serialize_entry("max", input)?,
-            Self::Avg(input) => map.serialize_entry("avg", input)?,
+        let mut map = serializer.serialize_map(Some(1 + usize::from(self.skip_absent)))?;
+        match &self.function {
+            RawFunction::Count(empty) => map.serialize_entry("count", empty)?,
+            RawFunction::CountDistinct(input) => map.serialize_entry("count_distinct", input)?,
+            RawFunction::Sum(input) => map.serialize_entry("sum", input)?,
+            RawFunction::Min(input) => map.serialize_entry("min", input)?,
+            RawFunction::Max(input) => map.serialize_entry("max", input)?,
+            RawFunction::Avg(input) => map.serialize_entry("avg", input)?,
+        }
+        if self.skip_absent {
+            map.serialize_entry(Self::SKIP_ABSENT, &true)?;
         }
         map.end()
     }
@@ -491,32 +522,148 @@ impl<'de> serde::Deserialize<'de> for RawAggregate {
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 use serde::de::Error;
-                let Some(function) = map.next_key::<String>()? else {
+                let names = || RawAggregate::NAMES.join(", ");
+                let mut function: Option<RawFunction> = None;
+                let mut skip_absent: Option<bool> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == RawAggregate::SKIP_ABSENT {
+                        if skip_absent.is_some() {
+                            return Err(A::Error::duplicate_field(RawAggregate::SKIP_ABSENT));
+                        }
+                        if !map.next_value::<bool>()? {
+                            return Err(A::Error::custom(
+                                "`skip_absent` is written `true` or not at all; without it an \
+                                 aggregate over an optional field is refused",
+                            ));
+                        }
+                        skip_absent = Some(true);
+                        continue;
+                    }
+                    let read = match key.as_str() {
+                        "count" => RawFunction::Count(map.next_value()?),
+                        "count_distinct" => RawFunction::CountDistinct(map.next_value()?),
+                        "sum" => RawFunction::Sum(map.next_value()?),
+                        "min" => RawFunction::Min(map.next_value()?),
+                        "max" => RawFunction::Max(map.next_value()?),
+                        "avg" => RawFunction::Avg(map.next_value()?),
+                        other => return Err(A::Error::unknown_variant(other, RawAggregate::NAMES)),
+                    };
+                    if function.is_some() {
+                        return Err(A::Error::custom(format!(
+                            "an aggregate names exactly one function, and this one also names \
+                             `{key}`; expected one of {}",
+                            names()
+                        )));
+                    }
+                    function = Some(read);
+                }
+                let Some(function) = function else {
                     return Err(A::Error::custom(format!(
                         "an aggregate names one function; expected one of {}",
-                        RawAggregate::NAMES.join(", ")
+                        names()
                     )));
                 };
-                let aggregate = match function.as_str() {
-                    "count" => RawAggregate::Count(map.next_value()?),
-                    "count_distinct" => RawAggregate::CountDistinct(map.next_value()?),
-                    "sum" => RawAggregate::Sum(map.next_value()?),
-                    "min" => RawAggregate::Min(map.next_value()?),
-                    "max" => RawAggregate::Max(map.next_value()?),
-                    "avg" => RawAggregate::Avg(map.next_value()?),
-                    other => return Err(A::Error::unknown_variant(other, RawAggregate::NAMES)),
-                };
-                if let Some(second) = map.next_key::<String>()? {
-                    return Err(A::Error::custom(format!(
-                        "an aggregate names exactly one function, and this one also names \
-                         `{second}`; expected one of {}",
-                        RawAggregate::NAMES.join(", ")
-                    )));
+                let skip_absent = skip_absent.unwrap_or(false);
+                if skip_absent && matches!(function, RawFunction::Count(_)) {
+                    return Err(A::Error::custom(
+                        "`count` counts rows and has no value to skip; `skip_absent` is written \
+                         beside count_distinct, sum, min, max or avg",
+                    ));
                 }
-                Ok(aggregate)
+                Ok(RawAggregate {
+                    function,
+                    skip_absent,
+                })
             }
         }
         deserializer.deserialize_map(Visitor)
+    }
+}
+
+impl schemars::JsonSchema for RawAggregate {
+    fn schema_name() -> String {
+        "RawAggregate".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::{
+            InstanceType, Metadata, ObjectValidation, Schema, SchemaObject, SubschemaValidation,
+        };
+        let described = |text: &str| {
+            Some(Box::new(Metadata {
+                description: Some(text.to_owned()),
+                ..Metadata::default()
+            }))
+        };
+        let skip = Schema::Object(SchemaObject {
+            metadata: described(
+                "Absent values of the argument are skipped, as SQL skips NULL (ess/15). Written \
+                 `true` or not at all.",
+            ),
+            instance_type: Some(InstanceType::Boolean.into()),
+            const_value: Some(serde_json::Value::Bool(true)),
+            ..SchemaObject::default()
+        });
+        let text = generator.subschema_for::<String>();
+        let empty = generator.subschema_for::<Empty>();
+        let variants = [
+            ("count", "`{count: {}}`.", empty),
+            (
+                "count_distinct",
+                "`{count_distinct: field}`, optionally with `skip_absent: true`.",
+                text.clone(),
+            ),
+            (
+                "sum",
+                "`{sum: field}`, optionally with `skip_absent: true`.",
+                text.clone(),
+            ),
+            (
+                "min",
+                "`{min: field}`, optionally with `skip_absent: true`.",
+                text.clone(),
+            ),
+            (
+                "max",
+                "`{max: field}`, optionally with `skip_absent: true`.",
+                text.clone(),
+            ),
+            (
+                "avg",
+                "`{avg: field}`, optionally with `skip_absent: true`.",
+                text,
+            ),
+        ]
+        .into_iter()
+        .map(|(name, description, argument)| {
+            let mut object = ObjectValidation::default();
+            object.required.insert(name.to_owned());
+            object.properties.insert(name.to_owned(), argument);
+            if name != "count" {
+                object
+                    .properties
+                    .insert(Self::SKIP_ABSENT.to_owned(), skip.clone());
+            }
+            object.additional_properties = Some(Box::new(Schema::Bool(false)));
+            Schema::Object(SchemaObject {
+                metadata: described(description),
+                instance_type: Some(InstanceType::Object.into()),
+                object: Some(Box::new(object)),
+                ..SchemaObject::default()
+            })
+        })
+        .collect();
+        Schema::Object(SchemaObject {
+            metadata: described(
+                "An aggregate as written: a map with exactly one function key and, beside a \
+                 function that reads a value, `skip_absent: true`.",
+            ),
+            subschemas: Some(Box::new(SubschemaValidation {
+                one_of: Some(variants),
+                ..SubschemaValidation::default()
+            })),
+            ..SchemaObject::default()
+        })
     }
 }
 
@@ -624,9 +771,23 @@ impl Leaf {
 
 /// The result type `function` gives over a source field of type `source` unwrapping to `leaf`, or
 /// `None` where the function does not admit it (V8).
-fn result_type(function: AggregateFunction, leaf: Leaf, source: &TypeRef) -> Option<TypeRef> {
+///
+/// `skip_absent` (`docs/design/aggregate-views.md`, "Absent values"): a `sum` that skips absent
+/// values is absent where no value is present, as SQL's `SUM` is `NULL` there, so it is `Optional`;
+/// every other result type is the one a required input gives, `min`/`max` reading `T` off the
+/// declared type with its outer `Optional` removed.
+fn result_type(
+    function: AggregateFunction,
+    leaf: Leaf,
+    source: &TypeRef,
+    skip_absent: bool,
+) -> Option<TypeRef> {
     use Primitive as P;
     let integer = TypeRef::Primitive(P::Integer);
+    let optional = |of: TypeRef| TypeRef::Optional(Box::new(of));
+    if skip_absent && function == AggregateFunction::Sum {
+        return result_type(function, leaf, source, false).map(optional);
+    }
     match function {
         AggregateFunction::Count => Some(integer),
         AggregateFunction::CountDistinct => (leaf == Leaf::Enum
@@ -647,15 +808,19 @@ fn result_type(function: AggregateFunction, leaf: Leaf, source: &TypeRef) -> Opt
             Leaf::Primitive(P::Decimal) => Some(TypeRef::Primitive(P::Decimal)),
             _ => None,
         },
-        // A minimum is one of the inputs, so it keeps the source's declared type.
+        // A minimum is one of the inputs, so it keeps the source's declared type — the value, not
+        // its absence, which the result's own `Optional` carries.
         AggregateFunction::Min | AggregateFunction::Max => {
             [P::Integer, P::Decimal, P::String, P::Timestamp]
                 .iter()
                 .any(|admitted| leaf.is(*admitted))
-                .then(|| TypeRef::Optional(Box::new(source.clone())))
+                .then(|| match source {
+                    TypeRef::Optional(inner) => optional(inner.as_ref().clone()),
+                    declared => optional(declared.clone()),
+                })
         }
         AggregateFunction::Avg => (leaf.is(P::Integer) || leaf.is(P::Decimal))
-            .then(|| TypeRef::Optional(Box::new(TypeRef::Primitive(P::Decimal)))),
+            .then(|| optional(TypeRef::Primitive(P::Decimal))),
     }
 }
 
@@ -1047,30 +1212,24 @@ impl ViewSpec {
         };
 
         let expected = match source_type {
-            None => result_type(aggregate.function, Leaf::Other, &field.type_ref),
+            None => result_type(aggregate.function, Leaf::Other, &field.type_ref, false),
             Some(source_field) => {
                 let unwrapped = unwrap_chain(&source_field.type_ref, types);
-                if unwrapped.optional {
-                    errors.push(
-                        ValidationError::new(
-                            ValidationCode::UnsupportedConstruct,
-                            at("aggregate"),
-                            format!(
-                                "`{}` computes {aggregate} over `{}`, which may be absent ({}); \
-                                 an aggregate over an optional field is not in this cut",
-                                self.name, source_field.name, source_field.type_ref
-                            ),
-                        )
-                        .with_hint(
-                            "aggregate a field every row holds; which rows an absent value is \
-                             skipped in cannot be witnessed yet",
-                        ),
-                    );
+                if let Some(refused) = self.absence_refusal(
+                    at("aggregate"),
+                    aggregate,
+                    source_field,
+                    unwrapped.optional,
+                ) {
+                    errors.push(refused);
                     return Some(errors);
                 }
-                let Some(expected) =
-                    result_type(aggregate.function, unwrapped.leaf, &source_field.type_ref)
-                else {
+                let Some(expected) = result_type(
+                    aggregate.function,
+                    unwrapped.leaf,
+                    &source_field.type_ref,
+                    aggregate.skip_absent,
+                ) else {
                     errors.push(ValidationError::new(
                         ValidationCode::TypeMismatch,
                         at("aggregate"),
@@ -1152,8 +1311,100 @@ impl ViewSpec {
         errors
     }
 
-    /// V1, V2, V11 and V12: each group key names a non-aggregate field of an equality type every
-    /// row holds.
+    /// V9 and its converse (`docs/design/aggregate-views.md`, "Absent values"): an argument that
+    /// may be absent needs `skip_absent: true`, and `skip_absent: true` needs an argument that may
+    /// be absent — over a field every row holds it would change nothing and read as if it did.
+    fn absence_refusal(
+        &self,
+        at: String,
+        aggregate: &Aggregate,
+        source_field: &Field,
+        optional: bool,
+    ) -> Option<ValidationError> {
+        match (optional, aggregate.skip_absent) {
+            (true, false) => Some(
+                ValidationError::new(
+                    ValidationCode::UnsupportedConstruct,
+                    at,
+                    format!(
+                        "`{}` computes {aggregate} over `{}`, which may be absent ({}), and does \
+                         not say what an absent value means",
+                        self.name, source_field.name, source_field.type_ref
+                    ),
+                )
+                .with_hint(
+                    "write `skip_absent: true` in the aggregate (specification format ess/15) \
+                     to skip absent values, or aggregate a field every row holds",
+                ),
+            ),
+            (false, true) => Some(
+                ValidationError::new(
+                    ValidationCode::ConflictingDeclaration,
+                    at,
+                    format!(
+                        "`{}` computes {aggregate} over `{}`, which every row holds ({}), so \
+                         there is no absent value to skip",
+                        self.name, source_field.name, source_field.type_ref
+                    ),
+                )
+                .with_hint("drop `skip_absent: true`"),
+            ),
+            _ => None,
+        }
+    }
+
+    /// The source-format gate of absent values (`docs/design/aggregate-views.md`, "Absent values"):
+    /// below `ess/15`, `skip_absent: true` and a group key that may be absent are refused at the
+    /// key the author wrote.
+    ///
+    /// Beside V15 in `primitive_admission::specification`, the one place a view meets its
+    /// document's format: [`Self::validate`] admits both at every version, and an older reader
+    /// fails `skip_absent` as an unknown field and refuses an optional key, with no version hint.
+    pub fn absent_value_admission(
+        &self,
+        format: crate::system::FormatVersion,
+        types: &TypeRegistry,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(aggregation) = &self.aggregation else {
+            return errors;
+        };
+        if format.major() >= crate::system::FormatVersion::V15.major() {
+            return errors;
+        }
+        let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
+        for (index, field) in self.fields.iter().enumerate() {
+            if aggregation
+                .function(&field.name)
+                .is_some_and(|aggregate| aggregate.skip_absent)
+            {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at(&format!("fields[{index}].aggregate")),
+                    "`skip_absent` requires specification format ess/15",
+                ));
+            }
+        }
+        for (index, key) in aggregation.group_by.iter().enumerate() {
+            if self
+                .field(key)
+                .is_some_and(|field| unwrap_chain(&field.type_ref, types).optional)
+            {
+                errors.push(ValidationError::new(
+                    ValidationCode::UnsupportedFormatVersion,
+                    at(&format!("group_by[{index}]")),
+                    format!(
+                        "`{}` groups by `{key}`, which may be absent; a group key that may be \
+                         absent requires specification format ess/15",
+                        self.name
+                    ),
+                ));
+            }
+        }
+        errors
+    }
+
+    /// V1, V2, V11 and V12: each group key names a non-aggregate field of an equality type.
     fn validate_keys(&self, aggregation: &Aggregation, types: &TypeRegistry) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
         let at = |suffix: &str| format!("view.{}.{suffix}", self.name);
@@ -1189,25 +1440,21 @@ impl ViewSpec {
                 ));
                 continue;
             }
+            // A key that may be absent makes the absent value its own group (`ess/15`, gated in
+            // `absent_value_admission`); its unwrapped type is checked as any other key's.
             let unwrapped = unwrap_chain(&field.type_ref, types);
-            if unwrapped.optional || unwrapped.leaf.is(Primitive::Timestamp) {
+            if unwrapped.leaf.is(Primitive::Timestamp) {
                 errors.push(
                     ValidationError::new(
                         ValidationCode::UnsupportedConstruct,
                         key_at,
                         format!(
-                            "`{}` groups by `{key}` of type {}: {}",
-                            self.name,
-                            field.type_ref,
-                            if unwrapped.optional {
-                                "a group key that may be absent is not in this cut"
-                            } else {
-                                "grouping by a timestamp is time bucketing, which is not in this \
-                                 cut"
-                            }
+                            "`{}` groups by `{key}` of type {}: grouping by a timestamp is time \
+                             bucketing, which is not in this cut",
+                            self.name, field.type_ref,
                         ),
                     )
-                    .with_hint("group by a field every row holds, of an equality type"),
+                    .with_hint("group by a field of an equality type"),
                 );
                 continue;
             }

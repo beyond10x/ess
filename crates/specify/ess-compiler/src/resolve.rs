@@ -2770,6 +2770,7 @@ impl<'a> Resolver<'a> {
                 ResolvedAggregate {
                     function: aggregate.function,
                     input,
+                    skip_absent: aggregate.skip_absent,
                 },
             );
         }

@@ -1267,16 +1267,26 @@ pub struct ResolvedAggregate {
     /// `count`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<ResolvedField>,
+    /// Absent values of the input are skipped, as SQL skips `NULL` (`ess/15`,
+    /// beyond10x/ess#148). Omitted when false, so a model that does not write it keeps its bytes.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub skip_absent: bool,
 }
 
 impl std::fmt::Display for ResolvedAggregate {
-    /// `sum(talk_seconds)`, or `count()`: the rendering every projection of the construct uses.
+    /// `sum(talk_seconds)`, `sum(duration, skip_absent)`, or `count()`: the rendering every
+    /// projection of the construct uses.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}({})",
+            "{}({}{})",
             self.function,
-            self.input.as_ref().map_or("", |input| input.name.as_str())
+            self.input.as_ref().map_or("", |input| input.name.as_str()),
+            if self.skip_absent {
+                ", skip_absent"
+            } else {
+                ""
+            }
         )
     }
 }
@@ -1301,7 +1311,7 @@ impl ResolvedAggregate {
             .input
             .as_ref()
             .map_or_else(String::new, |input| format!("`{}`", input.name));
-        match self.function {
+        let described = match self.function {
             AggregateFunction::Count => "count of instances".to_owned(),
             AggregateFunction::CountDistinct => format!("count of distinct {input} values"),
             AggregateFunction::Sum => format!("sum of {input}"),
@@ -1310,6 +1320,11 @@ impl ResolvedAggregate {
             AggregateFunction::Avg => {
                 format!("average of {input}, rounded to 6 places half-even")
             }
+        };
+        if self.skip_absent {
+            format!("{described}, skipping absent values")
+        } else {
+            described
         }
     }
 }
