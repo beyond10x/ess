@@ -3464,14 +3464,39 @@ fn reach_external(
         ResolvedCondition::ExternalWhen { predicate, .. } => vec![predicate],
         _ => Vec::new(),
     };
-    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
-    for input in &inputs {
-        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        if decides(&facts, &guards, true)? {
-            return Ok(input.clone());
-        }
+    // An input-guarded refusal is taken before the external decision is asked for (beyond10x/ess
+    // #178), so the witness refutes every one; searched first over the branch's own guard, as it
+    // always was, and over the refusals' guards as well only where that finds none.
+    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    let mut searches = vec![guards.clone()];
+    if !refusals.is_empty() {
+        let mut widened = guards.clone();
+        widened.extend(refusals.iter().copied());
+        searches.push(widened);
     }
-    Err(unsatisfied(&guards, rendered(&guards, true), inputs.len()))
+    let mut tried = 0;
+    let mut shadow = Shadow::default();
+    for searched in searches {
+        let inputs =
+            candidates(ir, command, &searched, distinction).map_err(RefusalCause::NoWitness)?;
+        for input in &inputs {
+            let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+            if !decides(&facts, &guards, true)? {
+                continue;
+            }
+            if decides(&facts, &refusals, false)? {
+                return Ok(input.clone());
+            }
+            shadow.record(command, outcome, &facts)?;
+        }
+        tried = tried.max(inputs.len());
+    }
+    let predicate = shadow
+        .rendered(&guards)
+        .unwrap_or_else(|| rendered(&guards, true));
+    Err(unsatisfied(&guards, predicate, tried))
 }
 
 /// The input that reaches this branch, decided rather than assumed.
@@ -3510,18 +3535,145 @@ fn reach(
         });
     }
     let (guards, satisfy) = plain_guards(command, outcome)?;
-    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
-    for input in &inputs {
-        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        if admits_plain(command, outcome, &facts, &guards, satisfy)? {
-            return Ok(input.clone());
+    let mut tried = 0;
+    let mut shadow = Shadow::default();
+    for searched in searched_guards(command, outcome, &guards, satisfy) {
+        let inputs =
+            candidates(ir, command, &searched, distinction).map_err(RefusalCause::NoWitness)?;
+        for input in &inputs {
+            let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+            if admits_plain(command, outcome, &facts, &guards, satisfy)? {
+                return Ok(input.clone());
+            }
+            if satisfy && decides(&facts, &guards, true)? {
+                shadow.record(command, outcome, &facts)?;
+            }
+        }
+        tried = tried.max(inputs.len());
+    }
+    let predicate = shadow
+        .rendered(&guards)
+        .unwrap_or_else(|| rendered(&guards, satisfy));
+    Err(unsatisfied(&guards, predicate, tried))
+}
+
+/// Which sibling input-guarded refusals claimed the candidates that satisfied an accepting
+/// branch's own guard (beyond10x/ess#178).
+///
+/// Where every such candidate was claimed by one, the branch is shadowed by the stated precedence,
+/// and its refusal names the refusal rather than saying that a satisfiable guard has no witness.
+#[derive(Default)]
+pub(super) struct Shadow {
+    /// The refusals that claimed some candidate, by name.
+    claimed: BTreeMap<OutcomeName, String>,
+    /// Whether some candidate satisfying the guard was lost to anything other than a refusal.
+    otherwise: bool,
+}
+
+impl Shadow {
+    pub(super) fn record(
+        &mut self,
+        command: &ResolvedCommand,
+        outcome: &ResolvedOutcome,
+        facts: &crate::InputFacts<'_>,
+    ) -> Result<(), RefusalCause> {
+        if outcome.error.is_some() {
+            self.otherwise = true;
+            return Ok(());
+        }
+        let mut claimed = false;
+        for refusal in sibling_refusals(command, outcome) {
+            let Some(guard) = when(refusal) else {
+                continue;
+            };
+            if decides(facts, &[guard], true)? {
+                claimed = true;
+                self.claimed.insert(refusal.name.clone(), guard.to_string());
+            }
+        }
+        self.otherwise |= !claimed;
+        Ok(())
+    }
+
+    pub(super) fn rendered(&self, guards: &[&Predicate]) -> Option<String> {
+        if self.otherwise || self.claimed.is_empty() {
+            return None;
+        }
+        let refusals: Vec<String> = self
+            .claimed
+            .iter()
+            .map(|(name, guard)| format!("{name} ({guard})"))
+            .collect();
+        Some(format!(
+            "{} outside {}, the input-guarded refusal taken first",
+            rendered(guards, true),
+            refusals.join(", ")
+        ))
+    }
+}
+
+/// The guard sets a stateless branch's witness is searched over, in order.
+///
+/// The branch's own guards first, which is every search there was before beyond10x/ess#178, so a
+/// witness that already refuted every sibling refusal stays the one it was. An accepting branch
+/// must also refute every sibling input-guarded refusal ([`admits_plain`]), and a candidate search
+/// varies only what its guards read — so where none of the first candidates steps out of a refusal
+/// (`count < 5` beside `open == false`, and `count` at its base `1`), the search runs again over
+/// the refusals' guards as well, which puts `5` on `count`'s ladder.
+fn searched_guards<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+    guards: &[&'c Predicate],
+    satisfy: bool,
+) -> Vec<Vec<&'c Predicate>> {
+    let mut searches = vec![guards.to_vec()];
+    if satisfy && outcome.error.is_none() {
+        let mut widened = guards.to_vec();
+        widened.extend(
+            sibling_refusals(command, outcome)
+                .filter_map(when)
+                .filter(|guard| !guards.contains(guard)),
+        );
+        if widened.len() > guards.len() {
+            searches.push(widened);
         }
     }
-    Err(unsatisfied(
-        &guards,
-        rendered(&guards, satisfy),
-        inputs.len(),
-    ))
+    searches
+}
+
+/// Whether `outcome` is an input-guarded refusal: a `when:` over the input and an `error:`.
+///
+/// Such a branch is taken before any accepting branch whose guard it overlaps
+/// (`docs/design/input-guard-overlap-precedence.md`).
+pub(crate) fn is_input_guarded_refusal(outcome: &ResolvedOutcome) -> bool {
+    outcome.error.is_some() && matches!(outcome.condition, ResolvedCondition::When { .. })
+}
+
+/// The guard over the input an accepting branch is selected under, where it has one: its `when:`,
+/// the `when:` beside its `when_subject:`, or the input guard of an external branch. What an
+/// input-guarded refusal can overlap.
+pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predicate> {
+    if outcome.error.is_some() {
+        return None;
+    }
+    match &outcome.condition {
+        ResolvedCondition::When { predicate }
+        | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
+        ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+        _ => None,
+    }
+}
+
+/// Every input-guarded refusal of `command` other than `outcome`.
+pub(crate) fn sibling_refusals<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &'c ResolvedOutcome,
+) -> impl Iterator<Item = &'c ResolvedOutcome> {
+    command
+        .outcomes
+        .iter()
+        .filter(move |other| other.name != outcome.name && is_input_guarded_refusal(other))
 }
 
 /// Whether one input reaches `outcome`, by exactly the reading [`reach`], [`reach_in_state`] and
@@ -3598,6 +3750,11 @@ fn plain_guards<'c>(
 
 /// Whether these input facts do what a stateless branch's strategy asks of `guards`, and — for a
 /// guarded branch of a command with no default — refute every sibling's guard as well.
+///
+/// An accepting guarded branch refutes every sibling input-guarded refusal whether or not a default
+/// exists (beyond10x/ess#178): such a refusal is taken before any accepting branch it overlaps, so
+/// an input satisfying both reaches the refusal, and a scenario requiring the accepting branch for
+/// it would fail a target that honours the precedence.
 fn admits_plain(
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
@@ -3608,21 +3765,28 @@ fn admits_plain(
     if !decides(facts, guards, satisfy)? {
         return Ok(false);
     }
-    if satisfy
-        && command
-            .outcomes
-            .iter()
-            .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
+    if !satisfy {
+        return Ok(true);
+    }
+    let others: Vec<_> = if command
+        .outcomes
+        .iter()
+        .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
     {
-        let others: Vec<_> = command
+        command
             .outcomes
             .iter()
             .filter(|other| other.name != outcome.name)
             .filter_map(when)
-            .collect();
-        return decides(facts, &others, false);
-    }
-    Ok(true)
+            .collect()
+    } else if outcome.error.is_none() {
+        sibling_refusals(command, outcome)
+            .filter_map(when)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    decides(facts, &others, false)
 }
 
 /// `true` when this candidate does what the strategy asks of every guard.
@@ -7132,6 +7296,9 @@ fn boundary_inputs(
                     ir, command, guard, children, true, primary, &mut rows, &keep,
                 );
             }
+            for candidate in overlap_inputs(ir, command, outcome) {
+                keep(candidate, &mut rows);
+            }
         }
         TestStrategy::DefaultBranch => {
             for sibling in command.outcomes.iter().filter(|sibling| {
@@ -7193,6 +7360,59 @@ fn boundary_inputs(
             }
         }
         _ => {}
+    }
+    rows
+}
+
+/// The inputs an input-guarded refusal is further witnessed at because it overlaps an accepting
+/// branch (beyond10x/ess#178): one per accepting guarded sibling whose guard some candidate
+/// satisfies together with the refusal's, refuting every other input-guarded refusal so the
+/// refusal required is the only one the input reaches.
+///
+/// The precedence is stated, not refused: `closed: open == false` and `id-required: ticket_id ==
+/// ""` both hold of `{ticket_id: "", open: false}`, and the accepting branch cannot read the
+/// identity to step aside (ESS-COMMAND-003). Sending that input and requiring the refusal is what
+/// fails a target that reads `open` first. A default is never overlapped — it is what no other
+/// guard selects — and a sibling no candidate satisfies alongside the refusal adds nothing.
+///
+/// Every accepting sibling with an input half counts: a plain `when:`, the `when:` beside a
+/// `when_subject:`, and the input guard of an external branch, whose provider is never asked for an
+/// input the refusal claims. No row is arranged here: this is the refusal sent as a plain
+/// invocation, which a refusal over the identity always is ([`subject_fact::routes`]); a refusal
+/// sent for an arranged row gets its overlap rows from `subject_fact::overlaps`.
+fn overlap_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<BTreeMap<String, Node>> {
+    let mut rows = Vec::new();
+    let Some(own) = is_input_guarded_refusal(outcome)
+        .then(|| when(outcome))
+        .flatten()
+    else {
+        return rows;
+    };
+    let refusals: Vec<&Predicate> = sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    for accepting in &command.outcomes {
+        let Some(guard) = accepting_input_half(accepting) else {
+            continue;
+        };
+        let mut searched = vec![own, guard];
+        searched.extend(refusals.iter().copied());
+        let Ok(inputs) = candidates(ir, command, &searched, Distinction::PLAIN) else {
+            continue;
+        };
+        let found = inputs.into_iter().find(|input| {
+            flatten(ir, command, input).is_ok_and(|facts| {
+                decides(&facts, &[own, guard], true).unwrap_or(false)
+                    && decides(&facts, &refusals, false).unwrap_or(false)
+            })
+        });
+        if let Some(input) = found.filter(|input| !rows.contains(input)) {
+            rows.push(input);
+        }
     }
     rows
 }

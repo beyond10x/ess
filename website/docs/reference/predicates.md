@@ -735,6 +735,16 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
 | `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. A value none of the literals leads to, such as `amount > 0.1 and amount < 0.2`, is refused too. |
 
+A refusal with a `when:` over the input is taken before any accepting branch whose guard it
+overlaps. Synthesis holds a target to that twice. An accepting branch's witness refutes every such
+refusal, with or without a default. And each such refusal is sent again at every overlap point, and
+the refusal is required there. For `closed: open == false` and `id-required: ticket_id == ""`,
+the `id-required` scenario also sends `{ticket_id: "", open: false}`. This holds for the `when:`
+beside a `when_subject:`, sent for a ticket the stored guard admits (or for no ticket, where the
+refusal reads the identity itself), and for an external branch's
+`when:`, sent without asking the provider. A branch every input of which such a refusal claims is
+refused with `ESS-SYNTH-003`, naming that refusal.
+
 ```yaml ess-check="when" ess-expect="unwitnessed:ESS-SYNTH-003"
 when: sku
 ```
