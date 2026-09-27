@@ -112,3 +112,46 @@ The generated Rust and Go behaviour seams spell that answer with a second varian
 `wrong_state` outcome that carries none of the error's fields, generated exactly where the
 declared variant demands one (`unknown-instance-seams.md`). `gatepass-realization`,
 `gatepass-go-realization` and `billing-realization` answer the rule through it.
+
+## 2a. A declared not-found outcome comes first (0.35.1)
+
+### Before
+
+Section 2 made `wrong_state` the answer for an unknown instance even where the command declares
+its own answer for one. A command such as `Validate` in an external adopter's kernel declares
+`transaction-not-found` (`external: no retained transaction carries input.transaction_id`,
+`error: TransactionNotFound { transaction_id }`) beside `wrong-state`. Synthesis still sent a fresh
+identity and required `wrong-state` / `TransactionStateConflict`, so an implementation answering
+its own declared outcome failed, and no declaration could change that without dropping coverage.
+A transaction that does not exist is not in the wrong state.
+
+### Rule
+
+> A command whose input selects a `moves:` or `updates:` branch, and whose `instance:` names no
+> record, is answered with the command's **not-found outcome** when it declares exactly one;
+> otherwise with its `wrong_state` outcome, when it declares one.
+
+A not-found outcome is read from the declaration, never from a name: an externally decided refusal
+(`external:` without an input guard, acting on no instance, replaying nothing) whose declared
+error carries a field of the type of an identity the command's acting branches read from input.
+The error reports the identity it could not find. A sibling external refusal whose error reports
+something else (`RevisionNotFound { requested }`) is about another input and does not qualify.
+
+Two or more qualifying outcomes leave the answer undeclared: synthesis records
+`Note::UnknownInstanceAmbiguous` naming them and assumes neither. Their injected scenarios stay.
+
+### Witness
+
+The same scenario as section 2 — the command, the input reaching the acting branch, a fresh
+identity, nothing arranged — requiring the not-found outcome, its error by name, and no declared
+event. It is filed under the not-found outcome's own id and **replaces** the scenario that injected
+its external cause with `ConfigureExternalOutcome`: sending an identity no record carries is that
+cause, witnessed rather than forced. The `wrong_state` id then holds no scenario, as before
+section 2; its states remain the illegal-move family's. Where no identity is known to be fresh, the
+injected scenario stays and nothing is refused.
+
+### Formats
+
+No format moves, for the reason section 2 gives. A suite for a command declaring both outcomes
+loses the `…/outcome/wrong-state` scenario section 2 added and its not-found scenario changes
+content under the same id.
