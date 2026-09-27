@@ -12,12 +12,25 @@ use crate::ir::{EssIr, ResolvedBody, ResolvedCondition, ResolvedField, ResolvedT
 pub struct Environment<'a> {
     ir: &'a EssIr,
     fields: &'a [ResolvedField],
+    /// A command's input, read under `input.` by a stored-field predicate (beyond10x/ess#157).
+    input: Option<&'a [ResolvedField]>,
 }
 
 impl<'a> Environment<'a> {
     /// Observe exactly these declared fields.
     pub fn new(ir: &'a EssIr, fields: &'a [ResolvedField]) -> Self {
-        Self { ir, fields }
+        Self {
+            ir,
+            fields,
+            input: None,
+        }
+    }
+
+    /// Also observe `input.<field>` over a command's input (beyond10x/ess#157).
+    #[must_use]
+    pub fn with_input(mut self, input: &'a [ResolvedField]) -> Self {
+        self.input = Some(input);
+        self
     }
 }
 
@@ -100,6 +113,18 @@ impl TypeEnvironment for Environment<'_> {
             .find(|field| field.name == name)
             .map(|field| field.type_ref.clone())
     }
+    fn has_parameters(&self) -> bool {
+        self.input.is_some()
+    }
+    fn parameter(&self, name: &str) -> Option<Self::Type> {
+        self.input?
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.type_ref.clone())
+    }
+    fn parameter_namespace(&self) -> &'static str {
+        ess_domain::command::subject_fact::INPUT_NAMESPACE
+    }
 }
 
 /// Complete path typing, independent of which producer can supply its facts.
@@ -122,6 +147,24 @@ pub fn check_predicate(
     expression::check_predicate(&Environment::new(ir, fields), predicate, owner)
 }
 
+/// [`check_predicate`], with `input.<field>` also resolved over `input` when it is given: the
+/// environment a stored-field predicate reading the command's input is checked in (beyond10x/ess#157).
+pub fn check_predicate_with_input(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    input: Option<&[ResolvedField]>,
+    predicate: &Predicate,
+    owner: &str,
+) -> Checked<ResolvedTypeRef> {
+    let environment = Environment::new(ir, fields);
+    match input {
+        Some(input) => {
+            expression::check_predicate(&environment.with_input(input), predicate, owner)
+        }
+        None => expression::check_predicate(&environment, predicate, owner),
+    }
+}
+
 /// One predicate the IR holds: where it is written, and the owner fields it reads.
 #[derive(Debug, Clone)]
 pub struct PredicateSite<'ir> {
@@ -131,12 +174,22 @@ pub struct PredicateSite<'ir> {
     pub predicate: &'ir Predicate,
     /// The fields its free paths are rooted in.
     pub fields: Vec<ResolvedField>,
+    /// The command input a `when_subject` predicate reads under `input.` (beyond10x/ess#157); empty
+    /// everywhere else, and where the entity declares a field named `input`, which keeps being read
+    /// as itself.
+    pub input: Vec<ResolvedField>,
 }
 
 impl PredicateSite<'_> {
     /// Checks this predicate against its owner fields: every read, resolved.
     pub fn check(&self, ir: &EssIr) -> Checked<ResolvedTypeRef> {
-        check_predicate(ir, &self.fields, self.predicate, &self.site.render())
+        check_predicate_with_input(
+            ir,
+            &self.fields,
+            (!self.input.is_empty()).then_some(self.input.as_slice()),
+            self.predicate,
+            &self.site.render(),
+        )
     }
 }
 
@@ -166,6 +219,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                     .index(index),
                 predicate: &invariant.predicate,
                 fields: fields.clone(),
+                input: Vec::new(),
             });
         }
     }
@@ -178,6 +232,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                     .index(index),
                 predicate: &invariant.predicate,
                 fields: fields.clone(),
+                input: Vec::new(),
             });
         }
     }
@@ -191,6 +246,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                     site: at.clone(),
                     predicate,
                     fields: command.input.clone(),
+                    input: Vec::new(),
                 });
             }
             if let ResolvedCondition::SubjectPredicate { predicate, .. } = &outcome.condition {
@@ -201,6 +257,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                 found.push(PredicateSite {
                     site: at.key("when_subject"),
                     predicate,
+                    input: stored_input(&fields, &command.input),
                     fields,
                 });
             }
@@ -212,6 +269,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                 site: ConstructRef::new(ConstructKind::View, view.name.to_string()).key("filter"),
                 predicate: filter,
                 fields: entity_fields(ir.entity(&view.source)),
+                input: Vec::new(),
             });
         }
     }
@@ -236,11 +294,25 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
                     fields: item
                         .map(|item| vec![owner_field("item", item)])
                         .unwrap_or_default(),
+                    input: Vec::new(),
                 });
             }
         }
     }
     found
+}
+
+/// What a `when_subject` predicate over `fields` reads under `input.` (ess/15): the command's input,
+/// unless the entity declares a field named `input`, which keeps being read as itself.
+fn stored_input(fields: &[ResolvedField], input: &[ResolvedField]) -> Vec<ResolvedField> {
+    if fields
+        .iter()
+        .any(|field| field.name == ess_domain::command::subject_fact::INPUT_NAMESPACE)
+    {
+        Vec::new()
+    } else {
+        input.to_vec()
+    }
 }
 
 /// The input predicate an outcome condition tests, as `OutcomeCondition::predicate` reads it.

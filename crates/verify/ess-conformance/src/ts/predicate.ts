@@ -216,6 +216,14 @@ export class Predicate {
         const word = this.kind === 'none_of' ? ' not in [' : ' in [';
         return `${this.path}${word}${parts.join(', ')}]`;
       }
+      case 'equals_ignore_case':
+      case 'in_ignore_case': {
+        const parts = this.values.map((value) => quoteGo(String(value)));
+        if (this.kind === 'equals_ignore_case' && parts.length === 1) {
+          return `${this.path} ${this.kind} ${parts[0]}`;
+        }
+        return `${this.path} ${this.kind} [${parts.join(', ')}]`;
+      }
       case 'forall':
       case 'exists':
         return `${this.kind} ${this.bind} in ${this.over}: (${this.body})`;
@@ -260,12 +268,29 @@ export class Predicate {
         const found = this.values.some((candidate) => equal(value, candidate));
         return truthOf(found === (this.kind === 'any_of'));
       }
+      case 'equals_ignore_case':
+      case 'in_ignore_case':
+        return this.foldMatch(source);
       case 'forall':
       case 'exists':
         return this.quantify(source);
       default:
         return TruthUnknown;
     }
+  }
+
+  /**
+   * A case-insensitive operator (beyond10x/ess#140): the text equals one of the literals under
+   * ASCII case folding. Not `toLowerCase`, which folds Unicode; unbound or null is Unknown, and a
+   * value that is not text is False.
+   */
+  foldMatch(source: FactSource): Truth {
+    const [value, ok] = readLeaf(source, this.path);
+    if (!ok || value === null || value === undefined) return TruthUnknown;
+    if (typeof value !== 'string') return TruthFalse;
+    return truthOf(
+      this.values.some((literal) => typeof literal === 'string' && asciiEqualFold(value, literal)),
+    );
   }
 
   /** The Go method of the same name; `compare` below it is the runtime's ordering function. */
@@ -474,6 +499,21 @@ export function parseConstraint(path: string, value: Node): Predicate {
       if (!Array.isArray(listed)) throw new Error(`\`${key}\` takes a list`);
       return new Predicate({ kind: key, path, values: listed });
     }
+  }
+  // The case-insensitive operators (beyond10x/ess#140), operands verbatim as Go reads them.
+  if (Object.hasOwn(value, 'equals_ignore_case')) {
+    const literal = value['equals_ignore_case'];
+    if (typeof literal !== 'string') {
+      throw new Error(`\`${path}: {equals_ignore_case: …}\` takes a string`);
+    }
+    return new Predicate({ kind: 'equals_ignore_case', path, values: [literal] });
+  }
+  if (Object.hasOwn(value, 'in_ignore_case')) {
+    const listed = value['in_ignore_case'];
+    if (!Array.isArray(listed) || !listed.every((item) => typeof item === 'string')) {
+      throw new Error(`\`${path}: {in_ignore_case: …}\` takes a list of strings`);
+    }
+    return new Predicate({ kind: 'in_ignore_case', path, values: listed });
   }
   for (const [spelling, op] of comparisonOperators) {
     if (Object.hasOwn(value, spelling)) {
@@ -733,6 +773,19 @@ const runeEscapes: Record<string, string> = {
   '\t': '\\t',
   '\v': '\\v',
 };
+
+/** Two texts equal code unit for code unit after mapping `A`–`Z` to `a`–`z` (beyond10x/ess#140). */
+export function asciiEqualFold(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    let a = left.charCodeAt(index);
+    let b = right.charCodeAt(index);
+    if (a >= 0x41 && a <= 0x5a) a += 0x20;
+    if (b >= 0x41 && b <= 0x5a) b += 0x20;
+    if (a !== b) return false;
+  }
+  return true;
+}
 
 export function quoteGo(value: string): string {
   let quoted = '"';

@@ -23,7 +23,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | Place | What the predicate reads | Notes |
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
-| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch | Not the input and not `state`. Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
+| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | Not `state`. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
 | an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
@@ -50,7 +50,7 @@ replaces the guard of outcome `placed`. An `invariants:` fragment replaces the i
 `shop.order.Order`. A `filter:` fragment replaces the filter of `shop.order.OpenOrders`.
 
 ```yaml ess-check="model"
-format: ess/11
+format: ess/15
 system: shop
 version: v1
 domain: shop.order
@@ -617,6 +617,84 @@ invariants:
   - quantity >= 1
   - not: {sku: {contains: " "}}
 ```
+
+## Case-insensitive operators
+
+`equals_ignore_case` tests a text fact against one text literal, and `in_ignore_case` against a
+list of them, ignoring ASCII case. They need `format: ess/15`; an older document that uses one is
+refused as `unsupported_format_version`, in every predicate position. Like the string operators
+they are map-form only, with no compact form and no negated spelling: negate one with `not:`.
+
+They apply to `String` and to newtypes of `String` at any depth, including through `Optional`.
+Folding is ASCII only: `A` to `Z` fold to `a` to `z`, and every other character compares as
+itself. So `WEB` equals `web`, but `É` does not equal `é`, `STRASSE` does not equal `straße`, and
+the Kelvin sign does not equal `k`. Rust, Go and TypeScript all answer this way. An unobserved fact
+is unknown.
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when:
+  sku: {equals_ignore_case: "sku-1"}
+```
+
+```yaml ess-check="when" ess-expect="synthesizes"
+when:
+  not: {sku: {in_ignore_case: ["a-1", "b-2"]}}
+```
+
+Synthesis sends the guarded branch the literal with its ASCII letters in the other case, `SKU-1`
+for the first example, which only an implementation that ignores case accepts. It sends the other
+side the literal with one character changed, `xku-1`, which folds to nothing the guard names, and,
+in a further row, `ſku-1` with the long s U+017F in place of the `s`: ASCII folding refutes it,
+and an implementation that folds Unicode case, as `toLowerCase` or `strings.EqualFold` do,
+accepts it and fails the scenario. A literal with a non-ASCII letter gets that letter in its other
+case instead (`café` becomes `CAFÉ`).
+
+The operand is the text it spells. A number, a Boolean or a literal naming a field of the same
+owner is refused. `equals_ignore_case` takes one literal and `in_ignore_case` a list; the other
+shape is refused, and so is an empty list, which holds for no text.
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-002" ess-says="quote the literal exactly as written"
+when:
+  sku: {equals_ignore_case: 44}
+```
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-002" ess-says="does not admit"
+when:
+  channel: {equals_ignore_case: "web"}
+```
+
+```yaml ess-check="when" ess-expect="refused:ESS-COMMAND-007" ess-says="lists no literal"
+when:
+  sku: {in_ignore_case: []}
+```
+
+As with the string operators, the prover that lets enum branches go without a default does not read
+text, so a command guarded only by these operators needs a default branch. They work in
+invariants and view filters too. A binding selection refuses them, and so does Entity Runtime
+lowering (`CaseFoldUnsupported`), which has no condition that folds case.
+
+```yaml ess-check="filter" ess-expect="valid"
+filter:
+  sku: {in_ignore_case: ["SKU-1", "SKU-2"]}
+```
+
+A generated suite carries one of these operators only in a view expectation. Such a suite takes
+`ess-conformance/20`, or `/21` with coverage; a guard over command input is decided when the suite
+is generated and does not change its format.
+
+## Comparing a stored field with the input
+
+From `ess/15`, a `when_subject` predicate may compare a stored field of the addressed entity with a
+field of the command's input, named with the `input.` prefix: `recording_id != input.recording_id`
+ignores a stop for a recording other than the one the call holds. The two sides must have
+comparable types, and the input field must be declared by the command. A bare word on the right of
+a comparison is a literal, as everywhere, so write the input operand on the right. Under an earlier
+header it is refused as `unsupported_format_version`.
+
+The finite prover cannot enumerate two facts against each other, so a command with such a guard
+needs a default branch, even over an enum. Synthesis arranges the row and sends the input once
+equal to the stored value and once different, one scenario per branch. An entity that declares a
+stored field named `input` keeps reading `input.<member>` as that field.
 
 ## What synthesis can witness
 

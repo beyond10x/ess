@@ -207,6 +207,15 @@ retained-result steps, string operators and aggregate scenarios of 12–17 by na
 refuses fixtures. A suite without fixtures keeps its earlier format, and older envelopes refuse
 the new steps.
 
+`ess-conformance/20` and `ess-conformance/21` are unreleased. They carry the case-insensitive text
+operators `equals_ignore_case` and `in_ignore_case` (ASCII folding only) where a suite carries a
+predicate: a view's `satisfies` expectation and an observed selection plan. Version 20 is ordinary
+and 21 carries declared coverage; each implies every major below it. Rust, Go and TypeScript admit
+and evaluate them identically and refuse an operand that is not a JSON string; older envelopes
+refuse the operators, and browser replay refuses these envelopes by their version. A
+case-insensitive guard over command input is decided at synthesis and never reaches the suite, so a
+suite without one in a view expectation keeps its earlier format.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

@@ -198,6 +198,19 @@ pub(super) fn row_truth(
     settled: &BTreeMap<String, super::Determined>,
     predicate: &Predicate,
 ) -> Truth {
+    row_truth_with(ir, entity, settled, predicate, None)
+}
+
+/// [`row_truth`], with the command's input bound under `input.` for a predicate that compares the
+/// row with it (beyond10x/ess#157). Without an input such a comparison is `Unknown`, which is what
+/// the search and the boundary goals see: the row alone does not decide it.
+fn row_truth_with(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    predicate: &Predicate,
+    input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
+) -> Truth {
     let declared = ir.entity(entity);
     let values: BTreeMap<String, Node> = settled
         .iter()
@@ -222,7 +235,180 @@ pub(super) fn row_truth(
     ) else {
         return Truth::Unknown;
     };
-    predicate.evaluate(&crate::input::TypedFacts::new(ir, &declared.fields, store))
+    let row = crate::input::TypedFacts::new(ir, &declared.fields, store);
+    let input = match input {
+        Some((command, values)) if reads_input(ir, entity, predicate) => {
+            match flatten(ir, command, values) {
+                Ok(facts) => Some(facts),
+                Err(_) => return Truth::Unknown,
+            }
+        }
+        _ => None,
+    };
+    predicate.evaluate(&RowAndInput { row, input })
+}
+
+/// Whether a stored-field predicate compares the row with the command's input: a path rooted at
+/// `input.`, where the entity declares no field of that name (beyond10x/ess#157).
+fn reads_input(ir: &EssIr, entity: &EntityHandle, predicate: &Predicate) -> bool {
+    let namespace = ess_domain::command::subject_fact::INPUT_NAMESPACE;
+    !ir.entity(entity)
+        .fields
+        .iter()
+        .any(|field| field.name == namespace)
+        && predicate
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == namespace && path.segments().len() > 1)
+}
+
+/// The path under `input.` a stored-field predicate reads, as the input path it names.
+fn input_path(path: &FactPath) -> Option<FactPath> {
+    let (root, rest) = path.segments().split_first()?;
+    (root == ess_domain::command::subject_fact::INPUT_NAMESPACE && !rest.is_empty())
+        .then(|| FactPath::from_segments(rest))
+}
+
+/// The arranged row, and the input a scenario sends read under `input.`: the one fact source a
+/// stored-field predicate over both is evaluated against, each half at its declared types.
+struct RowAndInput<'a> {
+    row: crate::input::TypedFacts<'a>,
+    input: Option<crate::InputFacts<'a>>,
+}
+
+impl RowAndInput<'_> {
+    fn split(&self, path: &FactPath) -> Option<(&crate::InputFacts<'_>, FactPath)> {
+        let input = self.input.as_ref()?;
+        input_path(path).map(|rest| (input, rest))
+    }
+}
+
+impl ess_primitives::facts::FactSource for RowAndInput<'_> {
+    fn fact(&self, path: &FactPath) -> Option<ess_primitives::facts::FactValue> {
+        match self.split(path) {
+            Some((input, rest)) => input.fact(&rest),
+            None => self.row.fact(path),
+        }
+    }
+
+    fn scales(&self) -> &ess_primitives::facts::Scales {
+        self.row.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        match self.split(path) {
+            Some((input, rest)) => input.orders_as_instant(&rest),
+            None => self.row.orders_as_instant(path),
+        }
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        match self.split(path) {
+            Some((input, rest)) => input.orders_text_by_bytes(&rest),
+            None => self.row.orders_text_by_bytes(path),
+        }
+    }
+}
+
+/// `predicate` with every comparison between the row and the input replaced by `Always`: what the
+/// arranging branches' input search is handed, because an `input.` path names nothing of theirs.
+fn without_input(ir: &EssIr, entity: &EntityHandle, predicate: &Predicate) -> Predicate {
+    match predicate {
+        Predicate::All(children) => Predicate::All(
+            children
+                .iter()
+                .map(|child| without_input(ir, entity, child))
+                .collect(),
+        ),
+        Predicate::Any(children) => Predicate::Any(
+            children
+                .iter()
+                .map(|child| without_input(ir, entity, child))
+                .collect(),
+        ),
+        Predicate::Not(inner) => Predicate::Not(Box::new(without_input(ir, entity, inner))),
+        leaf if reads_input(ir, entity, leaf) => Predicate::Always,
+        other => other.clone(),
+    }
+}
+
+/// Every comparison between the row and the input, grounded on this arrangement: the stored side
+/// replaced by the value the row holds, the input side by the input path it names. Handed to the
+/// candidate search beside the command's own guards, its literals are the values the input is
+/// tried at — the row's value, and by rule 3 its neighbours — so one candidate names the stored
+/// value and another does not, and the guard is witnessed both ways (beyond10x/ess#157).
+fn grounded(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    predicates: &[Predicate],
+) -> Vec<Predicate> {
+    let mut found = Vec::new();
+    for predicate in predicates {
+        leaves(predicate, &mut found);
+    }
+    let held = |path: &FactPath| -> Option<ess_primitives::facts::FactValue> {
+        let (root, rest) = path.segments().split_first()?;
+        let mut node = settled.get(root)?.value.as_literal()?;
+        for segment in rest {
+            let Node::Map(entries) = node else {
+                return None;
+            };
+            node = entries.get(segment)?;
+        }
+        super::fact_value(node)
+    };
+    let side = |operand: &Operand| -> Option<Operand> {
+        match operand {
+            Operand::Fact(path) => match input_path(path) {
+                Some(rest) => Some(Operand::Fact(rest)),
+                None => held(path).map(Operand::Literal),
+            },
+            Operand::Literal(value) => Some(Operand::Literal(value.clone())),
+        }
+    };
+    found
+        .iter()
+        .filter(|leaf| reads_input(ir, entity, leaf))
+        .filter_map(|leaf| match leaf {
+            Predicate::Compare { left, op, right } => Some(Predicate::Compare {
+                left: side(left)?,
+                op: *op,
+                right: side(right)?,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The inputs tried against `arrangement` for one command reading stored fields: the witness
+/// search over the command's own guards, and over every row/input comparison grounded on the row.
+fn inputs_for(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    let grounded = grounded(ir, entity, &arrangement.settled, &hints(command));
+    let mut guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    guards.extend(grounded.iter());
+    let mut inputs =
+        candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
+    // The row was arranged from plain witnesses, so a plain input may carry the very value the row
+    // holds on every candidate — a text has no neighbour rule 3 could offer. A further witness
+    // starts every leaf from another base value, which is the input a comparison with the row
+    // needs for its other side. Only where such a comparison exists: every other command keeps the
+    // candidates, and so the suites, it had.
+    if !grounded.is_empty() {
+        if let Ok(further) = candidates(ir, command, &guards, Distinction::further(1)) {
+            inputs.extend(further);
+        }
+    }
+    Ok(inputs)
 }
 
 /// Which branch this command selects for the row `arrangement` holds and this input, if exactly
@@ -248,7 +434,13 @@ fn selects<'a>(
     let mut selected = Vec::new();
     for branch in guarded(command) {
         if let Some(predicate) = stored(&branch.condition) {
-            match row_truth(ir, entity, &arrangement.settled, &predicate) {
+            match row_truth_with(
+                ir,
+                entity,
+                &arrangement.settled,
+                &predicate,
+                Some((command, input)),
+            ) {
                 Truth::True => {}
                 Truth::False => continue,
                 Truth::Unknown => return Ok(None),
@@ -326,10 +518,17 @@ fn mapped(outcome: &ResolvedOutcome) -> BTreeMap<&str, &str> {
 /// maps none of the fields the hints read, because then no choice of its input moves the row.
 fn hinted(
     ir: &EssIr,
+    entity: &EntityHandle,
     driver: &Driver<'_>,
     hints: &[Predicate],
 ) -> Result<Option<Vec<BTreeMap<String, Node>>>, RefusalCause> {
     let mapping = mapped(driver.outcome);
+    // A comparison with the command's input (ess/15) is decided by the input the branch under
+    // test sends, not by the row an arranging branch leaves, so it steers nothing here.
+    let hints: Vec<Predicate> = hints
+        .iter()
+        .map(|hint| without_input(ir, entity, hint))
+        .collect();
     let translated: Vec<Predicate> = hints
         .iter()
         .filter(|hint| {
@@ -479,7 +678,7 @@ fn creations(
     {
         return Ok(out);
     }
-    for input in hinted(ir, creator, hints)?.unwrap_or_default() {
+    for input in hinted(ir, entity, creator, hints)?.unwrap_or_default() {
         if input_selects(ir, creator.command, creator.outcome, &input)? {
             if let Ok(arrangement) =
                 created(ir, entity, creator, actors, distinction, &[], Some(&input))
@@ -544,15 +743,8 @@ fn successors(
         let Ok((observed, _)) = observe_fields(ir, entity, &fields, arrangement) else {
             return out;
         };
-        let guards: Vec<&Predicate> = driver
-            .command
-            .outcomes
-            .iter()
-            .filter_map(|branch| input_guard(&branch.condition))
-            .collect();
-        let mut inputs =
-            candidates(ir, driver.command, &guards, Distinction::PLAIN).unwrap_or_default();
-        if let Ok(Some(more)) = hinted(ir, driver, hints) {
+        let mut inputs = inputs_for(ir, driver.command, entity, arrangement).unwrap_or_default();
+        if let Ok(Some(more)) = hinted(ir, entity, driver, hints) {
             inputs.extend(more);
         }
         for input in inputs {
@@ -597,7 +789,11 @@ fn successors(
     {
         return out;
     }
-    for input in hinted(ir, driver, hints).ok().flatten().unwrap_or_default() {
+    for input in hinted(ir, entity, driver, hints)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+    {
         if input_selects(ir, driver.command, driver.outcome, &input).unwrap_or(false) {
             out.push(advanced(
                 ir,
@@ -718,14 +914,7 @@ fn reach_at(
     entity: &EntityHandle,
     arrangement: &Arrangement,
 ) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
-    let guards: Vec<&Predicate> = command
-        .outcomes
-        .iter()
-        .filter_map(|branch| input_guard(&branch.condition))
-        .collect();
-    let inputs =
-        candidates(ir, command, &guards, Distinction::PLAIN).map_err(RefusalCause::NoWitness)?;
-    for input in inputs {
+    for input in inputs_for(ir, command, entity, arrangement)? {
         if selects(ir, command, entity, arrangement, &input)?
             .is_some_and(|branch| branch.name == outcome.name)
         {
@@ -861,13 +1050,7 @@ pub(super) fn step(
     arrangement: &Arrangement,
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Option<Arrangement> {
-    let guards: Vec<&Predicate> = driver
-        .command
-        .outcomes
-        .iter()
-        .filter_map(|branch| input_guard(&branch.condition))
-        .collect();
-    let inputs = candidates(ir, driver.command, &guards, Distinction::PLAIN).ok()?;
+    let inputs = inputs_for(ir, driver.command, entity, arrangement).ok()?;
     inputs.into_iter().find_map(|input| {
         selects(ir, driver.command, entity, arrangement, &input)
             .ok()

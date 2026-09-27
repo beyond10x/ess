@@ -134,10 +134,11 @@ fn samples() -> Vec<Predicate> {
             | Predicate::AnyOf { .. }
             | Predicate::NoneOf { .. }
             | Predicate::Exists(_) => {}
-            // A string operator reads text, not a number, so it has no `.count` sample; a
-            // connective reads through its children. Each is named, so a new kind is a compile
-            // error here rather than a silent gap.
+            // A string or case-insensitive operator reads text, not a number, so it has no `.count`
+            // sample; a connective reads through its children. Each is named, so a new kind is a
+            // compile error here rather than a silent gap.
             Predicate::TextMatch { .. }
+            | Predicate::FoldMatch { .. }
             | Predicate::Forall(_)
             | Predicate::All(_)
             | Predicate::Any(_)

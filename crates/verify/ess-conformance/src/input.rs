@@ -615,11 +615,12 @@ impl<'ir> InputFacts<'ir> {
             // The four leaves that read one path: `Unknown` means nothing is bound there.
             // `Defined` is not among them — it reports `False` for an unbound path, by design.
             // A string operator is `Unknown` only when its path is unbound: its literal always
-            // resolves, and a resolved value that is not text is `False`.
+            // resolves, and a resolved value that is not text is `False`. So is a case-insensitive one.
             Predicate::Truthy(path)
             | Predicate::AnyOf { path, .. }
             | Predicate::NoneOf { path, .. }
-            | Predicate::TextMatch { path, .. } => push(self.explain_path(path)),
+            | Predicate::TextMatch { path, .. }
+            | Predicate::FoldMatch { path, .. } => push(self.explain_path(path)),
             Predicate::Compare { left, op, right } => {
                 let mut unresolved = false;
                 for operand in [left, right] {

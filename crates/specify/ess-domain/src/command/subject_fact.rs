@@ -163,7 +163,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                     }
                 }
                 OutcomeCondition::SubjectPredicate { predicate, .. } => {
-                    errors.extend(check(entity, types, predicate, &site));
+                    errors.extend(check(command, entity, types, predicate, &site));
                 }
                 _ => {}
             }
@@ -221,22 +221,68 @@ fn declares_variant(entity: &EntitySpec, types: &TypeRegistry, field: &str, equa
         })
 }
 
-/// The expression checker, over the entity's declared fields and nothing else.
+/// The namespace a stored-field predicate reads the command's input under (beyond10x/ess#157).
+pub const INPUT_NAMESPACE: &str = "input";
+
+/// Whether a stored-field predicate of a command reading `entity` names the command's input.
+///
+/// A path rooted at `input.` with a field after it does, unless the entity declares a stored field
+/// named `input`: that field keeps being read as itself, so a document that validated before
+/// `ess/15` means under it what it meant. A bare `input` names no field, and keeps the
+/// `unobservable_fact` refusal it always had rather than being told to upgrade.
+pub fn reads_input(entity: &EntitySpec, predicate: &ess_primitives::predicate::Predicate) -> bool {
+    !declares_input_field(entity)
+        && predicate
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == INPUT_NAMESPACE && path.segments().len() > 1)
+}
+
+fn declares_input_field(entity: &EntitySpec) -> bool {
+    entity
+        .fields
+        .iter()
+        .any(|field| field.name == INPUT_NAMESPACE)
+}
+
+/// The expression checker, over the entity's declared fields and — from `ess/15` — the command's
+/// input under `input.` (beyond10x/ess#157).
 ///
 /// The environment `entity.rs` builds for invariants, minus the `state` pseudo-field: the lifecycle
 /// stays with `when_subject_state:` and `when_state_changes:`. The checker's own diagnostics are
 /// kept — `unobservable_fact` for a root the entity does not declare, `type_mismatch` and
-/// `undeclared_reference` for a literal — and sited at the key the author wrote.
+/// `undeclared_reference` for a literal or an input field the command does not declare — and sited
+/// at the key the author wrote. Below `ess/15` an `input.` operand is refused with the format it
+/// needs, not with `unobservable_fact`, because the document is not wrong, only its header is.
 fn check(
+    command: &CommandSpec,
     entity: &EntitySpec,
     types: &TypeRegistry,
     predicate: &ess_primitives::predicate::Predicate,
     site: &ess_primitives::error::ConstructRef,
 ) -> ValidationErrors {
     let owner = site.render();
-    let environment = DomainEnvironment::new(types, &entity.fields);
-    let checked = crate::expression::check_predicate(&environment, predicate, &owner);
     let mut errors = ValidationErrors::new();
+    let admits_input = types
+        .format()
+        .is_none_or(|format| format.major() >= crate::system::FormatVersion::V15.major());
+    if reads_input(entity, predicate) && !admits_input {
+        errors.push(
+            ValidationError::at(
+                site.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "an `input.` operand in a `when_subject` predicate requires specification format \
+                 ess/15",
+            )
+            .with_hint("declare `format: ess/15`, or compare the stored field with a literal"),
+        );
+        return errors;
+    }
+    let mut environment = DomainEnvironment::new(types, &entity.fields);
+    if admits_input && !declares_input_field(entity) {
+        environment = environment.with_input(&command.input);
+    }
+    let checked = crate::expression::check_predicate(&environment, predicate, &owner);
     for error in &checked.errors {
         let mut diagnostic = error.validation_error();
         if let Some(path) = &error.path {
@@ -254,8 +300,8 @@ fn check(
                 )
                 .expect("writing to a String");
                 diagnostic.hint = Some(format!(
-                    "stored fields: {}; the input stays in `when:` and the lifecycle state in \
-                     `when_subject_state:`",
+                    "stored fields: {}; the input is read as `input.<field>` (ess/15) or in \
+                     `when:`, and the lifecycle state in `when_subject_state:`",
                     super::join(entity.fields.iter().map(|field| &field.name))
                 ));
             }
