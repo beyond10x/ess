@@ -43,6 +43,9 @@ const BLOG_LAG: u64 = 3;
 /// version. A historical version number belongs on the history page, not here.
 const INSTALL: &str = "website/docs/getting-started.md";
 
+/// The page that records which release introduced each format version.
+const HISTORY: &str = "website/docs/reference/spec-versions.md";
+
 /// Where each format family keeps the list of versions this build admits.
 ///
 /// Read from source rather than repeated here, so growing a constant is enough to make
@@ -83,6 +86,12 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
 /// | `874962d3` | `ess-conformance/5` | 0.21.0 |
 /// | `9572af9b` | `ess/3`, `ess/4`, `ess-diff/3`, `ess-diff/4`, `ess-conformance/6`–`/9` | 0.23.0 |
 /// | `9746c09f` | `ess/5`, `ess-diff/5` | 0.27.0 |
+///
+/// The families after `ess-conformance` have no `SUPPORTED_*` constant to read. Their rows are the
+/// ones the version history gives a release (`HISTORY`), each read as the earliest version tag
+/// whose non-test Rust source carries the quoted `"family/N"` literal
+/// (`git grep -F '"family/N"' <tag> -- '*.rs' ':!*/tests/*'`, tags in version order). A version
+/// no tag's source names — `ess-impact/1`, `ess-conformance-run/1` — has no row.
 ///
 /// A version that is supported in this checkout and not yet in any release carries `None`, and is
 /// the one case a document may still call unreleased.
@@ -127,6 +136,39 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 17, Some("0.34.0")),
     ("ess-conformance", 18, Some("0.35.0")),
     ("ess-conformance", 19, Some("0.35.0")),
+    ("ess-scenario", 1, Some("0.16.0")),
+    ("ess-scenario", 2, Some("0.23.0")),
+    ("ess-scenario", 3, Some("0.35.0")),
+    ("ess-normalization", 1, Some("0.19.0")),
+    ("ess-normalization", 2, Some("0.20.0")),
+    ("ess-normalization", 3, Some("0.20.0")),
+    ("ess-normalization", 4, Some("0.20.0")),
+    ("ess-normalization", 5, Some("0.20.0")),
+    ("ess-normalization", 6, Some("0.20.0")),
+    ("ess-conformance-report", 1, Some("0.1.0")),
+    ("ess-conformance-report", 2, Some("0.19.0")),
+    ("ess-schema-bundle", 1, Some("0.19.0")),
+    ("ess-schema-bundle", 2, Some("0.19.0")),
+    ("ess-impact", 2, Some("0.1.0")),
+    ("ess-impact", 3, Some("0.19.0")),
+    ("ess-conformance-run", 2, Some("0.20.0")),
+    ("ess-target-failure", 1, Some("0.19.0")),
+    ("ess-target-failure", 2, Some("0.20.0")),
+    ("ess-target-failure", 3, Some("0.23.0")),
+    ("infra-observation", 1, Some("0.1.0")),
+    ("infra-observation", 2, Some("0.1.0")),
+    ("infra-observation", 3, Some("0.33.0")),
+    ("infra-ir", 1, Some("0.1.0")),
+    ("infra-ir", 2, Some("0.21.0")),
+    ("infra-ir", 3, Some("0.33.0")),
+    ("infra-drift", 1, Some("0.1.0")),
+    ("infra-drift", 2, Some("0.21.0")),
+    ("infra-drift", 3, Some("0.33.0")),
+    ("ess-observed-bindings-report", 1, Some("0.21.0")),
+    ("ess-observed-bindings-report", 2, Some("0.32.0")),
+    ("ess-observed-bindings-report", 3, Some("0.33.0")),
+    ("ess-observed-bindings", 1, Some("0.21.0")),
+    ("ess-observed-bindings", 2, Some("0.33.0")),
 ];
 
 /// Checks the published documents against the source and the changelog.
@@ -159,6 +201,8 @@ pub fn run(root: &Path) -> Result<String, String> {
             }
         }
     }
+
+    let untracked = untracked_in(root)?;
 
     let mut stale = Vec::new();
     for (path, text) in read_documents(root)? {
@@ -198,6 +242,12 @@ pub fn run(root: &Path) -> Result<String, String> {
         refusals.push(format!(
             "supported format versions with no release recorded in FORMAT_RELEASES: {}",
             undeclared.join(", ")
+        ));
+    }
+    if !untracked.is_empty() {
+        refusals.push(format!(
+            "format families {HISTORY} gives a release and FORMAT_RELEASES does not track: {}",
+            untracked.join(", ")
         ));
     }
     if !undocumented.is_empty() {
@@ -326,15 +376,31 @@ fn newest_release(changelog: &str) -> Result<String, String> {
         .ok_or_else(|| "CHANGELOG.md has no dated release heading".to_owned())
 }
 
+/// Every phrasing `website/docs` has used to call a format unreleased.
+///
+/// Read from the history of the tree (`git log -p -- website/docs`), not guessed: `ess/9`–`/13`
+/// were "not yet released", the revised-envelope table wrote "next release" in its release
+/// column, and a traversal step was "not yet shipped". Matched case-insensitively.
+const UNRELEASED: &[&str] = &[
+    "unreleased",
+    "not yet released",
+    "not released",
+    "next release",
+    "upcoming",
+    "not yet shipped",
+];
+
 /// Every line of one document that calls a released format unreleased.
 fn stale_claims(path: &str, text: &str, released: &BTreeMap<(&str, u32), &str>) -> Vec<String> {
+    let families: BTreeSet<&str> = released.keys().map(|&(family, _)| family).collect();
     let mut claims = Vec::new();
     for (number, line) in text.lines().enumerate() {
-        if !line.to_lowercase().contains("unreleased") {
+        let lower = line.to_lowercase();
+        if !UNRELEASED.iter().any(|phrase| lower.contains(phrase)) {
             continue;
         }
-        for (&(family, version), release) in released {
-            if names(line, family, version) {
+        for (family, version) in formats_on_line(line, &families) {
+            if let Some(release) = released.get(&(family, version)) {
                 claims.push(format!(
                     "{path}:{}: {family}/{version} shipped in {release}",
                     number + 1
@@ -343,6 +409,90 @@ fn stale_claims(path: &str, text: &str, released: &BTreeMap<(&str, u32), &str>) 
         }
     }
     claims
+}
+
+/// Every `family/version` one line names, including a bare `/N` after a family.
+///
+/// The revised-envelope table names its family once, as `infra-ir/`, and its versions bare, as
+/// `/3`; prose writes `ess-conformance/18` and `/19`. A bare version belongs to the family
+/// most recently named before it on the line, and is only read where no token precedes the
+/// slash, so `tag/0.35.0` and `docs/2` are not versions.
+fn formats_on_line<'a>(line: &str, families: &BTreeSet<&'a str>) -> BTreeSet<(&'a str, u32)> {
+    let bytes = line.as_bytes();
+    let mut found = BTreeSet::new();
+    let mut current: Option<&str> = None;
+    for start in 0..bytes.len() {
+        if !line.is_char_boundary(start) || (start > 0 && is_token(bytes[start - 1])) {
+            continue;
+        }
+        let rest = &line[start..];
+        let (family, digits) = if let Some(after) = rest.strip_prefix('/') {
+            (current, after)
+        } else if let Some(&family) = families
+            .iter()
+            .filter(|family| rest.starts_with(&format!("{family}/")))
+            .max_by_key(|family| family.len())
+        {
+            current = Some(family);
+            (current, &rest[family.len() + 1..])
+        } else {
+            continue;
+        };
+        let end = digits
+            .find(|character: char| !character.is_ascii_digit())
+            .unwrap_or(digits.len());
+        let mut after = digits[end..].bytes();
+        let closes = match after.next() {
+            None => true,
+            Some(b'.') => !after.next().is_some_and(|byte| byte.is_ascii_digit()),
+            Some(byte) => !is_token(byte),
+        };
+        if let (Some(family), Ok(version), true) = (family, digits[..end].parse::<u32>(), closes) {
+            found.insert((family, version));
+        }
+    }
+    found
+}
+
+/// The families the committed version history gives a release and [`FORMAT_RELEASES`] does not track.
+fn untracked_in(root: &Path) -> Result<Vec<String>, String> {
+    let history = fs::read_to_string(root.join(HISTORY))
+        .map_err(|error| format!("read {HISTORY}: {error}"))?;
+    let tracked: BTreeSet<&str> = FORMAT_RELEASES
+        .iter()
+        .map(|&(family, _, _)| family)
+        .collect();
+    Ok(untracked_families(&history, &tracked))
+}
+
+/// Every format family the version history gives a release that [`FORMAT_RELEASES`] does not track.
+///
+/// A family is taken from the first backticked `family/…` token of every line that carries a
+/// bracketed release, which is how both the version tables and the prose paragraphs write one.
+/// A family this lane does not track can be called unreleased for ever, as `ess-scenario` was.
+fn untracked_families(page: &str, tracked: &BTreeSet<&str>) -> Vec<String> {
+    let mut untracked = BTreeSet::new();
+    for line in page.lines() {
+        if !versions_in(line)
+            .iter()
+            .any(|version| line.contains(&format!("[{version}]")))
+        {
+            continue;
+        }
+        let family = line.split('`').skip(1).step_by(2).find_map(|span| {
+            let (family, version) = span.split_once('/')?;
+            let named = !family.is_empty()
+                && family
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+                && version.bytes().all(|byte| byte.is_ascii_digit());
+            named.then_some(family)
+        });
+        if let Some(family) = family.filter(|family| !tracked.contains(family)) {
+            untracked.insert(family.to_owned());
+        }
+    }
+    untracked.into_iter().collect()
 }
 
 /// Every line of the install walkthrough that names a version other than the newest release.
@@ -496,6 +646,85 @@ mod tests {
                     .to_owned()
             ]
         );
+    }
+
+    #[test]
+    fn every_phrasing_the_docs_have_used_for_an_unreleased_format_is_read() {
+        // Each line is a phrasing that has stood in website/docs beside a format that had
+        // already shipped; the history of the tree names them, not a guess about English.
+        for line in [
+            "`ess/13`, not yet released, admits `fixture_inputs:` on a command",
+            "`ess/13` (not yet released) declares that",
+            "`ess/13` (unreleased) adds command",
+            "| `ess/13` | next release | Fixture inputs. |",
+            "`ess/13` is designed and **not yet shipped**.",
+            "`ess/13` returns it in the upcoming pre-1.0 minor release.",
+        ] {
+            let claims = stale_claims("page.md", line, &released());
+            assert_eq!(
+                claims,
+                vec!["page.md:1: ess/13 shipped in 0.35.0".to_owned()],
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_version_belongs_to_the_family_named_before_it_on_the_line() {
+        let row = "| `ess-scenario/` | [0.23.0][r23], next release | `/2` authored setup. `/3` adds typed `fixtures:`. |";
+        assert_eq!(
+            stale_claims("page.md", row, &released()),
+            vec![
+                "page.md:1: ess-scenario/2 shipped in 0.23.0".to_owned(),
+                "page.md:1: ess-scenario/3 shipped in 0.35.0".to_owned(),
+            ]
+        );
+        let prose = "`ess-conformance/18` and `/19`, not yet released, carry fixture values.";
+        assert_eq!(
+            stale_claims("page.md", prose, &released()),
+            vec![
+                "page.md:1: ess-conformance/18 shipped in 0.35.0".to_owned(),
+                "page.md:1: ess-conformance/19 shipped in 0.35.0".to_owned(),
+            ]
+        );
+        // Published prose is not ASCII; a curly quote beside a format is still read.
+        assert_eq!(
+            stale_claims(
+                "page.md",
+                "the checkout’s `ess/13` is unreleased",
+                &released()
+            ),
+            vec!["page.md:1: ess/13 shipped in 0.35.0".to_owned()]
+        );
+        // A path or a link is not a bare version.
+        assert!(
+            stale_claims("page.md", "unreleased tag/0.35.0 and docs/2", &released()).is_empty()
+        );
+    }
+
+    #[test]
+    fn a_family_the_version_history_gives_a_release_and_this_lane_does_not_track_is_refused() {
+        let tracked = BTreeSet::from(["ess"]);
+        let page = "| `ess/1` | [0.1.0][r1] | first |
+| `ess-widget/` | [0.2.0][r2] | `/2` more |
+`ess-gadget/3`, introduced in [0.3.0][r3], admits.
+`ess-draft/1`, next release.
+";
+        assert_eq!(
+            untracked_families(page, &tracked),
+            vec!["ess-gadget".to_owned(), "ess-widget".to_owned()]
+        );
+    }
+
+    #[test]
+    fn every_family_the_committed_version_history_gives_a_release_is_tracked() {
+        let root = crate::workspace_root().expect("workspace root");
+        let page = fs::read_to_string(root.join(HISTORY)).expect("version history");
+        let tracked: BTreeSet<&str> = FORMAT_RELEASES
+            .iter()
+            .map(|&(family, _, _)| family)
+            .collect();
+        assert_eq!(untracked_families(&page, &tracked), Vec::<String>::new());
     }
 
     #[test]

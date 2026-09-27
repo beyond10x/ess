@@ -10,6 +10,19 @@
   `objects`, `refs` or `commondir`, a `.git` file, a `.git` symlink and an unreadable marker are
   still refused. Both guards share one rule; the xtask check previously also refused an empty
   `.git` directory and admitted an unreadable one.
+- `cargo xtask docs` reads every phrasing the published documents have used for an unreleased
+  format — "not yet released", "not released", "next release", "upcoming" and "not yet shipped"
+  as well as "unreleased" — where it read only the last, and missed `ess/13` called "not yet
+  released" after 0.35.0 shipped it. A bare `/N` counts for the family named before it on the line,
+  as the revised-envelope table writes `ess-scenario/` and `/3`. It tracks the release of every
+  family the version history gives one (`ess-scenario`, `ess-normalization`, the revised
+  envelopes and `infra-*` besides `ess`, `ess-diff` and `ess-conformance`), and refuses a family
+  the history gives a release that it does not track.
+- The two ess-xtask regressions that execute the schema-metadata guard no longer fail when the
+  caller sets `CARGO_TARGET_DIR`, a job count, a debug profile or a compiler wrapper: they decide
+  over controlled build and process facts, and one now asserts that the same authority refuses each
+  of the four. Production qualification still reads this build and this process and refuses
+  exactly what it refused.
 
 ## [0.35.0] — 2026-09-26
 

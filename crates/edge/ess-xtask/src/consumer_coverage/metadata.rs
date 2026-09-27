@@ -211,12 +211,23 @@ fn validate_entries(definitions: &Value) -> Result<()> {
 pub(super) struct Authority {
     root: PathBuf,
     profile: Value,
+    measured: super::Measured,
 }
 impl Authority {
     pub(super) fn capture(root: &Path, profile: &Value) -> Result<Self> {
+        Self::capture_in(root, profile, super::Measured::current()?)
+    }
+    /// Captures an authority decided over the given build and process facts rather than this
+    /// process's own; [`Authority::capture`] is this with [`super::Measured::current`].
+    pub(super) fn capture_in(
+        root: &Path,
+        profile: &Value,
+        measured: super::Measured,
+    ) -> Result<Self> {
         let authority = Self {
             root: root.to_owned(),
             profile: profile.clone(),
+            measured,
         };
         authority.verify()?;
         Ok(authority)
@@ -227,27 +238,24 @@ impl Authority {
             env!("OUT_DIR"),
             "/consumer-source.json"
         )))?;
-        let compiled_build: Value = serde_json::from_str(include_str!(concat!(
-            env!("OUT_DIR"),
-            "/consumer-build.json"
-        )))?;
         if json!(files) != self.profile["source"]
             || self.profile["source"] != self.profile["compiled_provider_source"]
             || self.profile["compiled_provider_source"] != compiled_source
-            || self.profile["compiled_build"] != compiled_build
+            || &self.profile["compiled_build"] != self.measured.compiled_build()
             || self.profile["source"][SOURCE] != guard_digest()
             || self.profile["provider_executable_sha256"]
                 != super::hash_bytes(&fs::read(std::env::current_exe()?)?)
         {
             bail!("schema metadata source/provider authority changed");
         }
-        let invocation = super::invocation(&self.root, &self.profile["compiled_build"])?;
+        let invocation =
+            super::invocation_in(&self.root, &self.profile["compiled_build"], &self.measured)?;
         if invocation != self.profile["current_invocation"] {
             bail!("schema metadata invocation authority changed");
         }
         super::validate_build(
             &self.profile["compiled_build"],
-            |key| std::env::var(key).ok(),
+            |key| self.measured.var(key),
             |path| Ok(fs::read(path)?),
         )
     }
