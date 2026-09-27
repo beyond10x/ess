@@ -1488,11 +1488,11 @@ fn expect_payload(
     // other two look like consequences of it.
     let mut wrong = Vec::new();
     for (field, expected) in values {
-        if carried.get(field) == Some(expected) {
+        if carried_at(carried, field) == Some(expected) {
             continue;
         }
         diagnostic = diagnostic.expected(format!("{event}.{field} = {}", quote(expected)));
-        wrong.push(match carried.get(field) {
+        wrong.push(match carried_at(carried, field) {
             Some(observed) => format!("{field} = {}", quote(observed)),
             None => format!("{field} was not carried"),
         });
@@ -2461,7 +2461,23 @@ impl Run {
 fn matches(payload: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
     wanted
         .iter()
-        .all(|(field, value)| payload.get(field) == Some(value))
+        .all(|(field, value)| match carried_at(payload, field) {
+            Some(carried) => carried == value,
+            // A leaf path finds nothing where the leaf, or a struct above it, was not written or
+            // is null: that is the leaf holding nothing, which is what a `null` asks about
+            // (suite/26, beyond10x/ess#179). A plain field name keeps exact comparison.
+            None => field.contains('.') && matches!(value, Node::Null),
+        })
+}
+
+/// The value a payload or row carries under `key`: a field name, or — suite/26 and later
+/// (beyond10x/ess#179) — the dotted path of one leaf inside a struct field. A field name holds no
+/// dot, so an older suite reads exactly as before.
+fn carried_at<'a>(payload: &'a BTreeMap<String, Node>, key: &str) -> Option<&'a Node> {
+    match reach_into(payload, key) {
+        Reached::Value(value) => Some(value),
+        Reached::Absent | Reached::Blocked { .. } => None,
+    }
 }
 
 /// The first field that does not carry what was required, rendered for a diagnostic.
@@ -2472,9 +2488,10 @@ fn mismatch(
 ) -> Option<String> {
     wanted
         .iter()
-        .find_map(|(field, value)| match payload.get(field) {
+        .find_map(|(field, value)| match carried_at(payload, field) {
             Some(observed) if observed == value => None,
             Some(observed) => Some(format!("{subject}.{field} = {}", quote(observed))),
+            None if field.contains('.') && matches!(value, Node::Null) => None,
             None => Some(format!("{subject} carried no field `{field}`")),
         })
 }

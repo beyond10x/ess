@@ -181,20 +181,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=25) {
+    if !matches!(version.major(), 1..=27) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–25",
+            "execution readers admit suite majors 1–27",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23 and suite/25",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23, suite/25 and suite/27",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -500,6 +500,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
+    crate::leaf_payloads::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;

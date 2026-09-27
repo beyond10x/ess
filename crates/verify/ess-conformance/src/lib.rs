@@ -139,6 +139,7 @@ pub mod fixtures;
 pub mod go;
 pub mod input;
 pub mod interpret;
+pub mod leaf_payloads;
 pub mod mutate;
 pub mod outcome_shapes;
 pub mod periodic;

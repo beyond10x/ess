@@ -3678,6 +3678,16 @@ fn determined_payload(
                     expression_value(ir, field, supplied, before)
                 {
                     values.insert(field.target.clone(), value);
+                } else {
+                    // beyond10x/ess#179: a struct with an undetermined leaf is still asserted
+                    // leaf by leaf, each under its dotted path (suite/26).
+                    values.extend(determined_leaves(
+                        ir,
+                        field,
+                        &field.target,
+                        supplied,
+                        before,
+                    ));
                 }
             }
         }
@@ -3917,24 +3927,24 @@ fn view_expectations(
     for (view, admits_subject) in &decided {
         let name = ViewRef::new(view.name.clone());
         let fields = identifying(ir, subject, instance, view);
-        let expectation = if *admits_subject {
+        let expectations = if *admits_subject {
             // Every projected field whose value this scenario determined, beside the identity that
             // says which row. A view whose rows all carry the same wrong value passes `Contains`
             // on the identity alone and passes `Ranked` below trivially; this is the assertion
             // that reads them. It is sound on a target §8 permits to be shared, where a claim
             // about which row comes *first* would not be: a row this scenario did not make cannot
             // stop one it did from holding what it was given.
-            let mut row = shown(view, fields.clone(), settled);
-            row.extend(lifecycle_state(ir, &subject.entity, view, state));
-            ViewExpectation::Contains { fields: row }
+            subject_row(ir, view, outcome, run, &subject.entity, &fields, state)
         } else {
             // A cancelled invoice that stays in `OutstandingInvoices` is the defect the positive
             // assertion cannot see, and an entity that has not reached the filtered state yet is
             // exactly that case at the other end.
-            ViewExpectation::Excludes { fields }
+            vec![ViewExpectation::Excludes { fields }]
         };
         let params = bound(view, settled);
-        require(view, &name, params.clone(), expectation, &mut out.asserted);
+        for expectation in expectations {
+            require(view, &name, params.clone(), expectation, &mut out.asserted);
+        }
         // How many rows this scenario put there, as a floor and never as a ceiling. §8 permits a
         // target to be shared as long as scenarios do not interfere, so a row this scenario did not
         // make is legitimate and cannot take one away — where "exactly this many" would be a claim
@@ -4017,25 +4027,7 @@ fn expression_value(
         ResolvedPayloadValue::Struct { fields } => {
             let mut leaves = BTreeMap::new();
             for leaf in fields {
-                if leaf.conversion.is_some() {
-                    return None;
-                }
-                let value = match &leaf.value {
-                    ResolvedPayloadValue::Literal { value } => {
-                        literal_value(ir, &leaf.target_type, value, 0)?
-                    }
-                    ResolvedPayloadValue::InputField { field: read, .. } => {
-                        match supplied.get(read) {
-                            Some(ScenarioValue::Literal { value }) => value.clone(),
-                            _ => return None,
-                        }
-                    }
-                    _ => match expression_value(ir, leaf, supplied, before)? {
-                        ScenarioValue::Literal { value } => value,
-                        _ => return None,
-                    },
-                };
-                leaves.insert(leaf.target.clone(), value);
+                leaves.insert(leaf.target.clone(), leaf_value(ir, leaf, supplied, before)?);
             }
             Some(ScenarioValue::Literal {
                 value: Node::Map(leaves),
@@ -4047,6 +4039,253 @@ fn expression_value(
         | ResolvedPayloadValue::Generated
         | ResolvedPayloadValue::Cleared => None,
     }
+}
+
+/// The literal one leaf of a nested mapping determines, where the scenario knows it; `None` where
+/// it crosses a conversion or its source determines nothing here.
+fn leaf_value(
+    ir: &EssIr,
+    leaf: &ess_compiler::ir::ResolvedPayloadField,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+) -> Option<Node> {
+    if leaf.conversion.is_some() {
+        return None;
+    }
+    match &leaf.value {
+        ResolvedPayloadValue::Literal { value } => literal_value(ir, &leaf.target_type, value, 0),
+        ResolvedPayloadValue::InputField { field: read, .. } => match supplied.get(read) {
+            Some(ScenarioValue::Literal { value }) => Some(value.clone()),
+            _ => None,
+        },
+        _ => match expression_value(ir, leaf, supplied, before)? {
+            ScenarioValue::Literal { value } => Some(value),
+            _ => None,
+        },
+    }
+}
+
+/// Every determined leaf of a nested mapping whose struct is **not** determined as a whole, keyed
+/// by its dotted path under `prefix` (beyond10x/ess#179, `docs/design/value-expressions.md` E5).
+///
+/// Empty for any other source, and for a struct [`expression_value`] determines whole: that one
+/// keeps being asserted as one value, so a suite without an undetermined leaf keeps its bytes. A
+/// leaf that is itself a nested mapping is walked the same way. The undetermined leaves are left
+/// to the payload shape, which checks their presence and type under the same paths.
+fn determined_leaves(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    prefix: &str,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, Node> {
+    let mut out = BTreeMap::new();
+    if matches!(field.value, ResolvedPayloadValue::Struct { .. })
+        && field.conversion.is_none()
+        && expression_value(ir, field, supplied, before).is_none()
+    {
+        collect_leaves(ir, field, prefix, supplied, before, &mut out);
+    }
+    out
+}
+
+/// Every determined scalar leaf under a nested mapping, by dotted path — always down to the leaf,
+/// because those are the paths a payload shape names.
+fn collect_leaves(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    prefix: &str,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    out: &mut BTreeMap<String, Node>,
+) {
+    let ResolvedPayloadValue::Struct { fields } = &field.value else {
+        return;
+    };
+    for leaf in fields {
+        let path = format!("{prefix}.{}", leaf.target);
+        if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
+            if leaf.conversion.is_none() {
+                collect_leaves(ir, leaf, &path, supplied, before, out);
+            }
+        } else if let Some(value) = leaf_value(ir, leaf, supplied, before) {
+            flatten_leaf(ir, &leaf.target_type, &path, &value, 0, out);
+        }
+    }
+}
+
+/// One determined value, split into the scalar leaves [`describe`] names for its declared type.
+///
+/// A struct-typed leaf read whole — `place: input.place` — holds a map, and a payload shape has no
+/// leaf at `lead.place`, only `lead.place.city` and `lead.place.code`; so the map is walked by the
+/// declared fields, as `describe` walks the type. Where the value does not follow the type — an
+/// absent `Optional` struct, a field the map does not carry, a non-map where a struct is declared
+/// — that part is left unasserted: a weaker claim, never one the shape contradicts.
+fn flatten_leaf(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    path: &str,
+    value: &Node,
+    depth: usize,
+    out: &mut BTreeMap<String, Node>,
+) {
+    if depth > MAX_TYPE_DEPTH {
+        return;
+    }
+    let body = match type_ref {
+        ResolvedTypeRef::Optional { of } => {
+            return flatten_leaf(ir, of, path, value, depth + 1, out);
+        }
+        ResolvedTypeRef::Declared { name } => &ir.named_type(name).body,
+        ResolvedTypeRef::Primitive { .. }
+        | ResolvedTypeRef::List { .. }
+        | ResolvedTypeRef::Map { .. } => {
+            out.insert(path.to_owned(), value.clone());
+            return;
+        }
+    };
+    match body {
+        ResolvedBody::Newtype { of, .. } => flatten_leaf(ir, of, path, value, depth + 1, out),
+        ResolvedBody::Enum { .. } | ResolvedBody::Union { .. } => {
+            out.insert(path.to_owned(), value.clone());
+        }
+        ResolvedBody::Struct { fields, .. } => {
+            let Node::Map(entries) = value else {
+                return;
+            };
+            for field in fields {
+                if let Some(entry) = entries.get(&field.name) {
+                    let nested = format!("{path}.{}", field.name);
+                    flatten_leaf(ir, &field.type_ref, &nested, entry, depth + 1, out);
+                }
+            }
+        }
+    }
+}
+
+/// The determined leaves of every partly determined struct this branch's `sets:` writes, where
+/// the view projects that field at the entity's own type — the row counterpart of
+/// [`determined_leaves`] in a payload (beyond10x/ess#179).
+///
+/// Read from the branch's own `sets:` rather than from [`settled`]: a dotted path is no entity
+/// field, and every reader of `settled` looks fields up by name. A field the row already asserts
+/// whole keeps that value.
+///
+/// Returns the paths of the same structs' **undetermined** leaves that the declared type says are
+/// always there — a `{generated: true}` `rank: Integer` — for [`present_leaves`]: a view row
+/// carries no payload shape, so their presence is claimed separately.
+fn shown_leaves(
+    ir: &EssIr,
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    row: &mut BTreeMap<String, ScenarioValue>,
+) -> Vec<String> {
+    let mut required = Vec::new();
+    for field in &outcome.sets {
+        if row.contains_key(&field.target)
+            || view.field(&field.target).map(|shown| &shown.type_ref) != Some(&field.target_type)
+        {
+            continue;
+        }
+        let determined = determined_leaves(ir, field, &field.target, supplied, before);
+        if determined.is_empty() {
+            continue;
+        }
+        for (path, value) in determined {
+            row.entry(path)
+                .or_insert_with(|| ScenarioValue::literal(value));
+        }
+        undetermined_leaves(ir, field, &field.target, supplied, before, &mut required);
+    }
+    required
+}
+
+/// The dotted paths of a nested mapping's leaves that determine no value here and whose declared
+/// type is never absent: not `Optional` (through newtypes), and not `Json`, whose `null` is a value.
+fn undetermined_leaves(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    prefix: &str,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+    out: &mut Vec<String>,
+) {
+    let ResolvedPayloadValue::Struct { fields } = &field.value else {
+        return;
+    };
+    for leaf in fields {
+        let path = format!("{prefix}.{}", leaf.target);
+        if matches!(leaf.value, ResolvedPayloadValue::Struct { .. }) {
+            if leaf.conversion.is_none() {
+                undetermined_leaves(ir, leaf, &path, supplied, before, out);
+            }
+        } else if leaf_value(ir, leaf, supplied, before).is_none()
+            && !may_be_null(ir, &leaf.target_type, 0)
+        {
+            out.push(path);
+        }
+    }
+}
+
+/// Whether a value of this type may be `null` or absent in a conforming row.
+fn may_be_null(ir: &EssIr, type_ref: &ResolvedTypeRef, depth: usize) -> bool {
+    if depth > MAX_TYPE_DEPTH {
+        return true;
+    }
+    match type_ref {
+        ResolvedTypeRef::Optional { .. } => true,
+        ResolvedTypeRef::Primitive { name } => *name == ess_domain::types::Primitive::Json,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => may_be_null(ir, of, depth + 1),
+            _ => false,
+        },
+        ResolvedTypeRef::List { .. } | ResolvedTypeRef::Map { .. } => false,
+    }
+}
+
+/// The row a view that admits the branch's subject is required to hold, followed by the presence
+/// claims for the undetermined leaves of its partly determined structs ([`present_leaves`]).
+fn subject_row(
+    ir: &EssIr,
+    view: &ResolvedView,
+    outcome: &ResolvedOutcome,
+    run: &Run,
+    entity: &EntityHandle,
+    identity: &BTreeMap<String, ScenarioValue>,
+    state: &StateName,
+) -> Vec<ViewExpectation> {
+    let mut row = shown(view, identity.clone(), &run.settled);
+    let required = shown_leaves(ir, view, outcome, &run.input, &run.before_settled, &mut row);
+    row.extend(lifecycle_state(ir, entity, view, state));
+    let mut expectations = vec![ViewExpectation::Contains { fields: row }];
+    expectations.extend(present_leaves(identity, required));
+    expectations
+}
+
+/// One `Excludes` per always-present undetermined leaf: no row of **this** subject holds that leaf
+/// null or absent (beyond10x/ess#179). The runner reads an absent dotted path as `null`, so a row
+/// that never wrote `lead.rank` matches and fails. Nothing when the view does not project the
+/// identity: without it the claim would be about every row.
+///
+/// The leaf's type is not claimed: no view expectation can say "holds an `Integer`". The event
+/// payload's shape does; the row's type of a generated leaf is not asserted.
+fn present_leaves(
+    identity: &BTreeMap<String, ScenarioValue>,
+    required: Vec<String>,
+) -> Vec<ViewExpectation> {
+    if identity.is_empty() {
+        return Vec::new();
+    }
+    required
+        .into_iter()
+        .map(|path| {
+            let mut fields = identity.clone();
+            fields.insert(path, ScenarioValue::literal(Node::Null));
+            ViewExpectation::Excludes { fields }
+        })
+        .collect()
 }
 
 /// What one invoked branch leaves in the entity's fields, read against what it was supplied.
@@ -5885,6 +6124,7 @@ fn from_source(
         });
     }
     let determined = settled(ir, outcome, &supplied, &arrangement.settled);
+    let before = arrangement.settled.clone();
     let mut left = arrangement.settled;
     absorb(&mut left, outcome, determined);
     // The reads go after the command in a block of their own: a `QueryView` the arrangement made
@@ -5899,20 +6139,21 @@ fn from_source(
         if shows(ir, view, to, &left, &params) != Ok(true) {
             continue;
         }
-        let mut row = shown(
-            view,
-            identifying(ir, subject, Some(&arrangement.instance), view),
-            &left,
-        );
+        let identity = identifying(ir, subject, Some(&arrangement.instance), view);
+        let mut row = shown(view, identity.clone(), &left);
+        let required = shown_leaves(ir, view, outcome, &supplied, &before, &mut row);
         row.extend(lifecycle_state(ir, &subject.entity, view, to));
         let name = ViewRef::new(view.name.clone());
         require(
             view,
             &name,
-            params,
+            params.clone(),
             ViewExpectation::Contains { fields: row },
             &mut asserted,
         );
+        for claim in present_leaves(&identity, required) {
+            require(view, &name, params.clone(), claim, &mut asserted);
+        }
         source.insert(name.into());
     }
     steps.extend(asserted);

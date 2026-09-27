@@ -226,6 +226,8 @@ TypeScript refuse these envelopes by their version.
 
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
 
+`ess-conformance/26` and `/27` are unreleased. They are the round-3 pair, first carrying per-leaf struct values (beyond10x/ess#179): a nested mapping whose struct has an undetermined leaf, such as `rank: {generated: true}`, is asserted leaf by leaf, each determined leaf under its dotted path (`lead.number`) in the event payload or the view row, and the undetermined leaf by the payload shape for presence and type. Version 26 is ordinary and 27 carries declared coverage; each implies every major below it. The Rust runner compares them; the Go and TypeScript runtimes refuse both by version. A suite without such a leaf keeps its earlier format and bytes.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named

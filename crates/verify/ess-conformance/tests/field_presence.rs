@@ -83,13 +83,13 @@ fn presence_is_written_only_where_declared_and_round_trips() {
 }
 
 #[test]
-fn suite_formats_24_and_25_are_this_units_and_26_is_nobodys_yet() {
+fn suite_formats_24_and_25_are_this_units_and_28_is_nobodys_yet() {
     for version in ["ess-conformance/24", "ess-conformance/25"] {
         assert!(SuiteFormat::parse(version)
             .expect("well formed")
             .is_supported());
     }
-    assert!(!SuiteFormat::parse("ess-conformance/26")
+    assert!(!SuiteFormat::parse("ess-conformance/28")
         .expect("well formed")
         .is_supported());
 }
