@@ -114,6 +114,8 @@ its compiled digest.
 
 `ess/15`, introduced in [0.37.0][r37], collects the constructs of the retrofit issues of 2026-09-27 that change what a document may say: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
 
+`ess/16` is unreleased. It collects the constructs of the retrofit issues filed against 0.36.0 (beyond10x/ess#162-#179) that change what a document may say. This build admits the header; each construct states its own refusal under an earlier header.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
