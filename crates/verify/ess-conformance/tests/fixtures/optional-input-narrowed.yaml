@@ -1,0 +1,51 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.notes
+summary: Notes submitted on behalf of an account named in an optional parameter.
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+  - {name: demo.notes.AccountId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: text, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - {name: demo.notes.Service, may: [demo.notes.SubmitNote]}
+errors:
+  - name: demo.notes.AccountMissing
+    summary: No account was named.
+    fields: []
+commands:
+  - name: demo.notes.SubmitNote
+    input:
+      - {name: account_id, type: Optional<demo.notes.AccountId>}
+      - {name: text, type: String}
+    outcomes:
+      - name: account-missing
+        when: not defined(account_id)
+        error: demo.notes.AccountMissing
+      - name: submitted
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {account_id: input.account_id, text: input.text}
+        emits: [demo.notes.NoteSubmitted]
+        payload:
+          demo.notes.NoteSubmitted: {note_id: {generated: true}, account_id: input.account_id, text: input.text}
+events:
+  - name: demo.notes.NoteSubmitted
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: text, type: String}
+views:
+  - name: demo.notes.NoteDetails
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: text, type: String}

@@ -2099,19 +2099,19 @@ impl<'a> Resolver<'a> {
             }
             return None;
         };
-
-        let from = spec_type_ref(&read.type_ref);
-        let to = spec_type_ref(&target.type_ref);
-        let conversion = if is_assignable(&from, &to) {
-            None
-        } else if let Some(crossing) = self
-            .spec
-            .conversions()
-            .iter()
-            .find(|crossing| crossing.from == from && crossing.to == to)
-        {
-            Some(crossing.because.clone())
-        } else {
+        // The declared type first, so a crossing the author declared from it is still the one
+        // recorded; the narrowed type only adds a way in (#169).
+        let narrowed = (!response_source)
+            .then(|| self.narrowed_read(command, outcome, read))
+            .flatten();
+        let admitted = self
+            .admits(read, target)
+            .map(|conversion| (read, conversion))
+            .or_else(|| {
+                let narrowed = narrowed.as_ref()?;
+                Some((narrowed, self.admits(narrowed, target)?))
+            });
+        let Some((read, conversion)) = admitted else {
             self.refuse_payload(
                 command,
                 outcome,
@@ -2149,6 +2149,49 @@ impl<'a> Resolver<'a> {
             target_type: target.type_ref.clone(),
             value: payload_read(read, response_source),
             conversion,
+        })
+    }
+
+    /// Whether a value read as `read` may fill `target`: `Some(None)` when it is assignable,
+    /// `Some(Some(because))` through a declared conversion, `None` otherwise.
+    #[allow(clippy::option_option)]
+    fn admits(&self, read: &ResolvedField, target: &ResolvedField) -> Option<Option<String>> {
+        let (from, to) = (
+            spec_type_ref(&read.type_ref),
+            spec_type_ref(&target.type_ref),
+        );
+        if is_assignable(&from, &to) {
+            return Some(None);
+        }
+        self.spec
+            .conversions()
+            .iter()
+            .find(|crossing| crossing.from == from && crossing.to == to)
+            .map(|crossing| Some(crossing.because.clone()))
+    }
+
+    /// The input field `read` at its present type, when `outcome` is only ever taken with it
+    /// present and the specification is `ess/16` or later (#169,
+    /// `docs/design/optional-input-narrowing.md`). `None` reads it at its declared type.
+    ///
+    /// The rule is `ess-domain`'s [`CommandSpec::narrowed_input`], so the compiler narrows exactly
+    /// where validation did: narrowing in one and not the other admits a model and then refuses it
+    /// as `ESS-COMMAND-002`. The read records `T`, the type it was checked at, so a consumer
+    /// lowering the branch copies a value it knows is present.
+    fn narrowed_read(
+        &self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        read: &ResolvedField,
+    ) -> Option<ResolvedField> {
+        let ResolvedTypeRef::Optional { of } = &read.type_ref else {
+            return None;
+        };
+        let admitted =
+            self.spec.system().format.major() >= ess_domain::system::FormatVersion::V16.major();
+        (admitted && command.narrowed_input(outcome, &read.name).is_some()).then(|| ResolvedField {
+            type_ref: of.as_ref().clone(),
+            ..read.clone()
         })
     }
 
