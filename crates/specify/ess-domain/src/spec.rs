@@ -63,6 +63,10 @@ pub struct RawSpecFile {
     /// a typo that would otherwise change nothing.
     #[serde(default)]
     pub domains: Vec<QualifiedName>,
+    /// The ambient command invocations every scenario runs inside, on the file that carries the
+    /// header (ess/15, `docs/design/outcome-shapes.md`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preconditions: Vec<crate::system::Precondition>,
     /// The domain this file contributes to, when it contributes to one.
     #[serde(default)]
     pub domain: Option<QualifiedName>,
@@ -766,7 +770,11 @@ impl Collected {
         errors: &mut ValidationErrors,
     ) -> Option<crate::system::SpecHeader> {
         let Some(name) = file.system.clone() else {
-            if file.format.is_some() || file.version.is_some() || !file.domains.is_empty() {
+            if file.format.is_some()
+                || file.version.is_some()
+                || !file.domains.is_empty()
+                || !file.preconditions.is_empty()
+            {
                 errors.push(
                     ValidationError::new(
                         ValidationCode::MissingDeclaration,
@@ -789,6 +797,7 @@ impl Collected {
             format: file.format.unwrap_or(FormatVersion::V1),
             naming: Naming::default(),
             summary: file.summary.clone(),
+            preconditions: file.preconditions.clone(),
         })
     }
 

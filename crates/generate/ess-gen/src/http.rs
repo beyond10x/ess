@@ -76,6 +76,10 @@ pub const UPSTREAM: &str = "502";
 /// was not — the same visit, admitted before it was signed out, would have been accepted.
 pub const CONFLICT: &str = "409";
 
+/// The request named an identity no record carries, and the command declares that answer
+/// (`unknown_instance:`, ess/15).
+pub const NOT_FOUND: &str = "404";
+
 /// Which status one declared outcome is.
 ///
 /// The whole mapping, in one place, so that "which HTTP status does this refusal get" has exactly
@@ -97,6 +101,7 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             | ResolvedCondition::StateChange { .. },
             true,
         ) => CONFLICT,
+        (ResolvedCondition::UnknownInstance, true) => NOT_FOUND,
         (ResolvedCondition::When { .. } | ResolvedCondition::Otherwise, true) => REFUSED,
         // An external branch that emits rather than errors is still a branch that was taken; what
         // decided it does not change what happened.

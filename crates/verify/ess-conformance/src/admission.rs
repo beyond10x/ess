@@ -181,18 +181,18 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=19) {
+    if !matches!(version.major(), 1..=19 | 22 | 23) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–19",
+            "execution readers admit suite majors 1–19, 22 and 23",
         ));
     }
-    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19)
+    if matches!(version.major(), 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 23)
         != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17 and suite/19",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19 and suite/23",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -370,6 +370,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < 8 && tag == "expect_response_payload")
         || (major < crate::fixtures::ORDINARY
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
+        || crate::outcome_shapes::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
@@ -394,6 +395,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
         "expect_subject_unchanged" if major >= 10 => (&["step", "view"], &[]),
+        "expect_subject_absent" => (&["step", "view", "subject"], &[]),
+        "snapshot_view" | "expect_view_unchanged" => (&["step", "view"], &[]),
         "expect_error" => (&["step", "error"], &["fields"]),
         "expect_event" | "eventually_event" => (&["step", "event"], &["payload", "shape"]),
         "expect_no_event" | "redeliver_event" => (&["step", "event"], &[]),
@@ -483,6 +486,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
+    crate::outcome_shapes::admit_suite(suite)?;
     crate::replay::admit_suite(suite)?;
     crate::aggregate::admit_suite(suite)?;
     crate::quoted_predicate_format::admit_suite(suite)?;
@@ -668,6 +672,8 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                 | ScenarioStep::ExpectOutcome { .. }
                 | ScenarioStep::ExpectNoError
                 | ScenarioStep::ExpectSubjectUnchanged { .. }
+                | ScenarioStep::ExpectSubjectAbsent { .. }
+                | ScenarioStep::ExpectViewUnchanged { .. }
                 | ScenarioStep::ExpectError { .. }
                 | ScenarioStep::ExpectEvent { .. }
                 | ScenarioStep::ExpectNoEvent { .. }

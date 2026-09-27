@@ -1116,6 +1116,7 @@ impl<'a> Resolver<'a> {
         let components = self.components(&commands, &events);
         let bindings = self.bindings(&events, &commands);
         let workloads = self.workloads(&components);
+        let preconditions = self.preconditions(&commands, &actors);
         let domains = self.domains(&Members {
             types: &types,
             entities: &entities,
@@ -1147,7 +1148,70 @@ impl<'a> Resolver<'a> {
             bindings,
             components,
             workloads,
+            preconditions,
         }))
+    }
+
+    /// The system's preconditions (ess/15), in the order written, with the command and actor
+    /// resolved and each input value split into a literal or the fixture it reads.
+    ///
+    /// `ess-domain` refused a precondition naming anything undeclared, so every name here resolves;
+    /// one that does not belongs to a declaration whose own refusal already stopped compilation.
+    fn preconditions(
+        &self,
+        commands: &BTreeMap<QualifiedName, ResolvedCommand>,
+        actors: &BTreeMap<QualifiedName, ResolvedActor>,
+    ) -> Vec<crate::ir::ResolvedPrecondition> {
+        self.spec
+            .system()
+            .preconditions
+            .iter()
+            .filter(|precondition| commands.contains_key(&precondition.command))
+            .filter_map(|precondition| {
+                let actor = precondition
+                    .actor
+                    .clone()
+                    .filter(|actor| actors.contains_key(actor))
+                    .or_else(|| {
+                        actors
+                            .values()
+                            .find(|actor| {
+                                actor
+                                    .may
+                                    .iter()
+                                    .any(|command| command.name() == &precondition.command)
+                            })
+                            .map(|actor| actor.name.clone())
+                    })
+                    .map(ActorHandle::new);
+                let declared = self.spec.commands().get(&precondition.command)?;
+                let outcome =
+                    ess_domain::command::precondition_branch(declared, &precondition.input)
+                        .ok()?
+                        .name
+                        .clone();
+                let mut input = BTreeMap::new();
+                let mut fixtures = BTreeMap::new();
+                for (field, value) in &precondition.input {
+                    if ess_domain::command::precondition_fixture(value).is_some() {
+                        continue;
+                    }
+                    input.insert(field.clone(), value.clone());
+                }
+                for (field, fixture) in &declared.fixture_inputs {
+                    if !input.contains_key(field) {
+                        fixtures.insert(field.clone(), fixture.clone());
+                    }
+                }
+                Some(crate::ir::ResolvedPrecondition {
+                    command: CommandHandle::new(precondition.command.clone()),
+                    outcome,
+                    actor,
+                    input,
+                    fixtures,
+                })
+            })
+            .collect()
     }
 
     // ---- reporting ------------------------------------------------------------------------
@@ -1753,6 +1817,7 @@ impl<'a> Resolver<'a> {
                 payload,
                 error,
                 refuses: outcome.refuses,
+                accepts_nothing: outcome.accepts_nothing,
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
                 sets,
@@ -2382,6 +2447,7 @@ impl<'a> Resolver<'a> {
         let effect = match subject.effect.transition() {
             None if matches!(subject.effect, Effect::Creates) => ResolvedEffect::Creates,
             None if matches!(subject.effect, Effect::Preserves) => ResolvedEffect::Preserves,
+            None if matches!(subject.effect, Effect::Deletes) => ResolvedEffect::Deletes,
             None => ResolvedEffect::Updates,
             Some(named) => {
                 let declared = entities
@@ -2427,6 +2493,7 @@ impl<'a> Resolver<'a> {
             entity,
             effect,
             instance,
+            into: subject.into.clone(),
         })
     }
 
@@ -3862,6 +3929,7 @@ fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> Resolve
             cause: cause.clone(),
         },
         OutcomeCondition::WrongState => ResolvedCondition::WrongState,
+        OutcomeCondition::UnknownInstance => ResolvedCondition::UnknownInstance,
     }
 }
 

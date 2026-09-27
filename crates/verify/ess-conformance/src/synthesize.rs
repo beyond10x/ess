@@ -1279,7 +1279,12 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
             // would assert a strict subset of what they assert. Its own `/outcome/` id is filed
             // by `unknown_instances` instead, for the one case that family cannot arrange: an
             // identity naming no record (beyond10x/ess#113).
-            if outcome.condition == ResolvedCondition::WrongState {
+            // An `unknown_instance:` branch (ess/15) likewise: `unknown_instances` files it, sent
+            // for an identity no record carries.
+            if matches!(
+                outcome.condition,
+                ResolvedCondition::WrongState | ResolvedCondition::UnknownInstance
+            ) {
                 continue;
             }
             let Some((id, scenario)) =
@@ -1299,6 +1304,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
+    preconditions(ir, &mut suite);
     for (id, reason) in crate::fixtures::install(ir, &mut suite) {
         suite.scenarios.remove(&id);
         refusals.push(Refusal::about(
@@ -1482,6 +1488,9 @@ pub(crate) fn needs_of(
             | ScenarioStep::ExpectCompleteSubjectUnchanged { view }
             | ScenarioStep::SnapshotSubject { view, .. }
             | ScenarioStep::ExpectSubjectUnchanged { view }
+            | ScenarioStep::ExpectSubjectAbsent { view, .. }
+            | ScenarioStep::SnapshotView { view }
+            | ScenarioStep::ExpectViewUnchanged { view }
             | ScenarioStep::ExpectView { view, .. }
             | ScenarioStep::EventuallyView { view, .. }
             // A halt is a *read* of a view, so it needs the view the same way a query does — the
@@ -1651,6 +1660,8 @@ fn exercise(
         });
     }
     steps.extend(run.after_steps.iter().cloned());
+    let mut removed = BTreeSet::new();
+    steps.extend(deletion_witness(ir, command, outcome, &run, &mut removed));
     // After everything that reads the branch, and before anything that reads a view. Both halves of
     // that are load-bearing. Put later, the arrangement would run after the view it exists to fill;
     // put earlier, its own creating command would publish the first occurrence of the event the
@@ -1660,6 +1671,7 @@ fn exercise(
     steps.extend(views.asserted);
 
     let mut source = dependencies(ir, command, outcome, &absent, actor, &views.views);
+    source.extend(removed);
     source.extend(run.source.iter().cloned());
     source.extend(views.source);
     Some((steps, source, run))
@@ -1789,11 +1801,12 @@ fn run(
     if subject_fact::uses(command) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let after_steps = if routed {
+    let mut after_steps = if routed {
         subject_fact::around(ir, command, outcome, actors, &mut setup, &supplied)?
     } else {
         Vec::new()
     };
+    accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     if outcome
         .subject
         .as_ref()
@@ -2326,7 +2339,8 @@ fn replay_condition(
             }
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
-            | ResolvedCondition::ExternalWhen { .. } => return Ok(false),
+            | ResolvedCondition::ExternalWhen { .. }
+            | ResolvedCondition::UnknownInstance => return Ok(false),
         };
     decides(facts, &predicate.into_iter().collect::<Vec<_>>(), true)
 }
@@ -2406,6 +2420,8 @@ fn prepare_in(
         return Ok(Setup::none());
     };
     let lifecycle = &ir.entity(&subject.entity).lifecycle;
+    // Where a creation lands: the state `into:` names (ess/15), or where the lifecycle starts.
+    let born = subject.into.as_ref().unwrap_or(&lifecycle.initial);
     let (mut targets, need): (Vec<StateName>, InstanceNeed) = match &subject.effect {
         ResolvedEffect::Creates => {
             // The new row is the scenario's own doing and needs nothing arranged — except the row it
@@ -2420,7 +2436,7 @@ fn prepare_in(
             );
             return Ok(match owner {
                 None => Setup {
-                    after: Some(lifecycle.initial.clone()),
+                    after: Some(born.clone()),
                     ..Setup::none()
                 },
                 Some((field, arrangement)) => Setup {
@@ -2429,7 +2445,7 @@ fn prepare_in(
                     // the subject's *owner*. The subject does not exist yet.
                     bound: [(field, arrangement.instance)].into_iter().collect(),
                     source: arrangement.source,
-                    after: Some(lifecycle.initial.clone()),
+                    after: Some(born.clone()),
                     // Not the owner's either. `settled` is what the *subject's* fields hold, and
                     // the owner's fields are another row's.
                     settled: BTreeMap::new(),
@@ -2444,17 +2460,19 @@ fn prepare_in(
                 transition: transition.name.clone(),
             },
         ),
-        ResolvedEffect::Updates | ResolvedEffect::Preserves => {
+        ResolvedEffect::Updates | ResolvedEffect::Preserves | ResolvedEffect::Deletes => {
             (vec![lifecycle.initial.clone()], InstanceNeed::Updates)
         }
     };
     if let Some(state) = held {
         targets = vec![state.clone()];
     }
+    // A removed row rests in no state (ess/15): nothing shows it afterwards.
     let after = match &subject.effect {
-        ResolvedEffect::Moves { transition } => transition.to.clone(),
+        ResolvedEffect::Moves { transition } => Some(transition.to.clone()),
+        ResolvedEffect::Deletes => None,
         ResolvedEffect::Creates | ResolvedEffect::Updates | ResolvedEffect::Preserves => {
-            held.unwrap_or(&lifecycle.initial).clone()
+            Some(held.unwrap_or(&lifecycle.initial).clone())
         }
     };
 
@@ -2471,7 +2489,7 @@ fn prepare_in(
         // subject and nothing else the arrangement built.
         bound: BTreeMap::new(),
         source: arrangement.source,
-        after: Some(after),
+        after,
         before: Some(arrangement.state),
         settled: arrangement.settled,
     })
@@ -2561,11 +2579,28 @@ fn arrange(
 ) -> Result<Arrangement, Unreachable> {
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
-    let creator = drivers
+    // Every creating branch is a place to start (ess/15, `into:`): the route is the shortest from
+    // the state some creation lands in, ties to the first creator declared.
+    let mut creators = drivers
         .iter()
-        .find(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-        .ok_or(Unreachable::NothingCreates)?;
-    let route = route(ir, entity, drivers, target).ok_or_else(|| Unreachable::NoPath {
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .peekable();
+    if creators.peek().is_none() {
+        return Err(Unreachable::NothingCreates);
+    }
+    let mut chosen: Option<(&Driver<'_>, Vec<Driver<'_>>)> = None;
+    for creator in creators {
+        let Some(path) = route_from(ir, entity, drivers, born(ir, creator), target) else {
+            continue;
+        };
+        if chosen
+            .as_ref()
+            .is_none_or(|(_, held)| path.len() < held.len())
+        {
+            chosen = Some((creator, path));
+        }
+    }
+    let (creator, route) = chosen.ok_or_else(|| Unreachable::NoPath {
         from: ir.entity(entity).lifecycle.initial.clone(),
     })?;
 
@@ -2709,7 +2744,7 @@ fn created(
 
     Ok(Arrangement {
         instance,
-        state: ir.entity(entity).lifecycle.initial.clone(),
+        state: born(ir, creator).clone(),
         steps,
         source,
         settled,
@@ -2891,14 +2926,45 @@ struct Invocation {
 /// Breadth-first over the states, with the edges out of each state visited in a fixed order —
 /// transition name, then command, then branch — so the route is a function of the model and not of
 /// how a map happened to iterate (§37).
+///
+/// Every caller in this tree now routes from a creation state with [`route_from`]; this stays for the
+/// callers the aggregates unit merges in, which route from `initial`.
+#[allow(dead_code)]
 fn route<'a>(
     ir: &EssIr,
     entity: &EntityHandle,
     drivers: &[Driver<'a>],
     target: &StateName,
 ) -> Option<Vec<Driver<'a>>> {
-    let lifecycle = &ir.entity(entity).lifecycle;
-    if &lifecycle.initial == target {
+    route_from(
+        ir,
+        entity,
+        drivers,
+        &ir.entity(entity).lifecycle.initial,
+        target,
+    )
+}
+
+/// The state a creating driver leaves its new row in: `into:` (ess/15), or the lifecycle's initial.
+fn born<'a>(ir: &'a EssIr, creator: &Driver<'a>) -> &'a StateName {
+    creator
+        .outcome
+        .subject
+        .as_ref()
+        .and_then(|subject| subject.into.as_ref())
+        .unwrap_or_else(|| &ir.entity(&subject(creator).entity).lifecycle.initial)
+}
+
+/// [`route`], from `start` rather than from where the lifecycle starts.
+fn route_from<'a>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'a>],
+    start: &StateName,
+    target: &StateName,
+) -> Option<Vec<Driver<'a>>> {
+    let _ = ir.entity(entity);
+    if start == target {
         return Some(Vec::new());
     }
 
@@ -2937,8 +3003,8 @@ fn route<'a>(
     }
 
     let mut came: BTreeMap<StateName, (StateName, Driver<'a>)> = BTreeMap::new();
-    let mut seen: BTreeSet<StateName> = [lifecycle.initial.clone()].into();
-    let mut queue: VecDeque<StateName> = [lifecycle.initial.clone()].into();
+    let mut seen: BTreeSet<StateName> = [start.clone()].into();
+    let mut queue: VecDeque<StateName> = [start.clone()].into();
     while let Some(state) = queue.pop_front() {
         for (to, driver) in edges.get(&state).map(Vec::as_slice).unwrap_or_default() {
             if !seen.insert(to.clone()) {
@@ -3098,7 +3164,8 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::SubjectField { .. }
-        | ResolvedCondition::SubjectPredicate { .. } => None,
+        | ResolvedCondition::SubjectPredicate { .. }
+        | ResolvedCondition::UnknownInstance => None,
     }
 }
 
@@ -3439,6 +3506,7 @@ fn plain_guards<'c>(
         // invention this crate refuses everywhere else — so it is a drift alarm.
         TestStrategy::ArrangeState
         | TestStrategy::ReplayResult
+        | TestStrategy::SendUnknownIdentity
         | TestStrategy::ConstructInputInState
         | TestStrategy::ObserveSubjectFact => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
@@ -4749,6 +4817,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
         TestStrategy::DefaultBranch => "an input no other branch's guard claims",
         TestStrategy::InjectFault => "the cause it declares as external, injected",
         TestStrategy::ArrangeState => "a subject in a state its moves do not start from",
+        TestStrategy::SendUnknownIdentity => "an identity no record carries",
     };
     let text = format!(
         "`{}` answers `{}` for {reached}",
@@ -5044,7 +5113,7 @@ fn names_existing(outcome: &ResolvedOutcome) -> Option<&str> {
     let subject = outcome.subject.as_ref()?;
     if !matches!(
         subject.effect,
-        ResolvedEffect::Moves { .. } | ResolvedEffect::Updates
+        ResolvedEffect::Moves { .. } | ResolvedEffect::Updates | ResolvedEffect::Deletes
     ) {
         return None;
     }
@@ -5090,6 +5159,22 @@ fn unknown_instances(
             continue;
         }
         let command_ref = CommandRef::new(command.name.clone());
+        // A declared `unknown_instance:` branch (ess/15) is the first answer, before a not-found
+        // refusal and before `wrong_state`.
+        if let Some(declared) = command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+        {
+            let id = ScenarioId::Outcome {
+                outcome: OutcomeRef::new(command_ref, declared.name.clone()),
+            };
+            match unknown_instance(ir, command, &acting, declared, actors) {
+                Ok(scenario) => insert(suite, id, scenario, refusals),
+                Err(cause) => refusals.push(Refusal::about(&id, cause)),
+            }
+            continue;
+        }
         match not_found(ir, command, &acting).as_slice() {
             [] => {}
             [answer] => {
@@ -5257,6 +5342,268 @@ fn unknown_instance(
         ),
     };
     Ok(ConformanceScenario::new(clipped(&text), steps, source))
+}
+
+/// The branch a command answers for an identity no record carries, in the order the design fixes:
+/// a declared `unknown_instance:` branch (ess/15), then one declared not-found refusal, then
+/// `wrong_state`. `None` where it declares none of them, or two not-found candidates.
+fn unknown_answer<'c>(ir: &EssIr, command: &'c ResolvedCommand) -> Option<&'c ResolvedOutcome> {
+    if let Some(declared) = command
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.condition == ResolvedCondition::UnknownInstance)
+    {
+        return Some(declared);
+    }
+    let acting: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| names_existing(outcome).is_some())
+        .collect();
+    match not_found(ir, command, &acting).as_slice() {
+        [answer] => Some(answer),
+        [] => command
+            .outcomes
+            .iter()
+            .find(|outcome| outcome.condition == ResolvedCondition::WrongState),
+        _ => None,
+    }
+}
+
+/// What a `deletes:` branch (ess/15) is witnessed by, after its own assertions: every immediate
+/// row view of the entity holds no row with the removed identity, and the same command sent for
+/// it again takes the unknown-instance answer — a deleted identity is one no record carries.
+///
+/// Immediate views only, as preservation is (`docs/design/outcome-shapes.md`, open question 2): an
+/// eventual view may still show the row, and waiting for its absence is a claim about lag.
+fn deletion_witness(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    run: &Run,
+    source: &mut BTreeSet<EssSemanticRef>,
+) -> Vec<ScenarioStep> {
+    let mut steps = Vec::new();
+    let Some(subject) = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect == ResolvedEffect::Deletes)
+    else {
+        return steps;
+    };
+    let projections = row_projections(ir);
+    for view in projections.get(&subject.entity).into_iter().flatten() {
+        if view.consistency != ess_domain::view::Consistency::ReadYourWrites
+            || !view.params.is_empty()
+        {
+            continue;
+        }
+        let identity = identifying(ir, subject, run.instance.as_ref(), view);
+        if identity.is_empty() {
+            continue;
+        }
+        let name = ViewRef::new(view.name.clone());
+        steps.push(ScenarioStep::QueryView {
+            view: name.clone(),
+            params: BTreeMap::new(),
+        });
+        steps.push(ScenarioStep::ExpectSubjectAbsent {
+            view: name.clone(),
+            subject: identity,
+        });
+        source.insert(name.into());
+    }
+    if let Some(answer) = unknown_answer(ir, command) {
+        let command_ref = CommandRef::new(command.name.clone());
+        let branch = OutcomeRef::new(command_ref.clone(), answer.name.clone());
+        steps.push(ScenarioStep::ExecuteCommand {
+            command: command_ref,
+            actor: run.actor.clone(),
+            input: run.input.clone(),
+        });
+        steps.push(ScenarioStep::ExpectOutcome {
+            outcome: branch.clone(),
+        });
+        source.insert(branch.into());
+        if let Some(error) = answer.error.as_ref().filter(|_| answer.refuses) {
+            steps.push(ScenarioStep::ExpectError {
+                error: ErrorRef::from(error),
+                fields: BTreeMap::new(),
+            });
+            source.insert(ErrorRef::from(error).into());
+        }
+        // The answer publishes nothing it does not declare, so a deleted identity answered with
+        // its old event again is caught.
+        if answer.emits.is_empty() {
+            steps.push(ScenarioStep::ExpectNoEvents);
+        }
+    }
+    steps
+}
+
+/// What an `accepts: nothing` branch (ess/15) is witnessed by: no error, no direct event of any
+/// name, and every immediate view read whole before and after it holding the same rows.
+fn accepts_nothing(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    setup: &mut Setup,
+    invoke: &mut Vec<ScenarioStep>,
+    after: &mut Vec<ScenarioStep>,
+) {
+    if !outcome.accepts_nothing {
+        return;
+    }
+    invoke.push(ScenarioStep::ExpectNoError);
+    invoke.push(ScenarioStep::ExpectNoEvents);
+    for view in whole_views(ir) {
+        for steps in [&mut setup.steps, &mut *after] {
+            steps.push(ScenarioStep::QueryView {
+                view: view.clone(),
+                params: BTreeMap::new(),
+            });
+        }
+        setup
+            .steps
+            .push(ScenarioStep::SnapshotView { view: view.clone() });
+        after.push(ScenarioStep::ExpectViewUnchanged { view: view.clone() });
+        setup.source.insert(view.into());
+    }
+}
+
+/// Every immediate view a scenario can read whole: read-your-writes, no parameters. What an
+/// `accepts: nothing` branch (ess/15) is required to leave exactly as it was.
+fn whole_views(ir: &EssIr) -> Vec<ViewRef> {
+    ir.views()
+        .values()
+        .filter(|view| {
+            view.consistency == ess_domain::view::Consistency::ReadYourWrites
+                && view.params.is_empty()
+        })
+        .map(|view| ViewRef::new(view.name.clone()))
+        .collect()
+}
+
+/// The system's preconditions (ess/15), prepended to every scenario: each command sent as its
+/// resolved actor with its literal and fixture inputs, and required to take its success branch.
+fn preconditions(ir: &EssIr, suite: &mut ConformanceSuite) {
+    // One entry per precondition, in order: its two steps, and what it would create again — its
+    // command and the value it sends for an input that becomes the created identity.
+    let mut chunks: Vec<(Vec<ScenarioStep>, Vec<Recreated>)> = Vec::new();
+    for precondition in ir.preconditions() {
+        let mut prelude = Vec::new();
+        let mut creates = Vec::new();
+        let command = ir.command(&precondition.command);
+        let command_ref = CommandRef::new(command.name.clone());
+        let mut input: BTreeMap<String, ScenarioValue> = precondition
+            .input
+            .iter()
+            .map(|(field, value)| (field.clone(), ScenarioValue::literal(value.clone())))
+            .collect();
+        for (field, fixture) in &precondition.fixtures {
+            input.insert(
+                field.clone(),
+                ScenarioValue::Fixture {
+                    fixture: fixture.clone(),
+                },
+            );
+        }
+        for field in identity_inputs(command) {
+            if let Some(value) = input.get(&field) {
+                creates.push((command_ref.clone(), field, value.clone()));
+            }
+        }
+        prelude.push(ScenarioStep::ExecuteCommand {
+            command: command_ref.clone(),
+            actor: precondition
+                .actor
+                .as_ref()
+                .map(|actor| ActorRef::new(actor.name().clone())),
+            input,
+        });
+        // Always required: `ess-domain` admits a precondition only where its input selects
+        // exactly one branch reporting no error, so a refused one fails the scenario as setup.
+        prelude.push(ScenarioStep::ExpectOutcome {
+            outcome: OutcomeRef::new(command_ref, precondition.outcome.clone()),
+        });
+        chunks.push((prelude, creates));
+    }
+    for scenario in suite.scenarios.values_mut() {
+        // A scenario that sends a precondition's command for the identity that precondition
+        // creates would create it again over an existing record. It keeps the preconditions before
+        // that one and drops it and every later one: its own send is what that precondition did,
+        // and a later one may depend on it.
+        let kept = chunks
+            .iter()
+            .position(|(_, creates)| recreates(&scenario.steps, creates))
+            .unwrap_or(chunks.len());
+        let prelude: Vec<ScenarioStep> = chunks[..kept]
+            .iter()
+            .flat_map(|(steps, _)| steps.iter().cloned())
+            .collect();
+        if prelude.is_empty() {
+            continue;
+        }
+        let mut steps = prelude.clone();
+        steps.append(&mut scenario.steps);
+        scenario.steps = steps;
+        for step in &prelude {
+            match step {
+                ScenarioStep::ExecuteCommand { command, .. } => {
+                    scenario.source.insert(command.clone().into());
+                }
+                ScenarioStep::ExpectOutcome { outcome } => {
+                    scenario.source.insert(outcome.clone().into());
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// The input fields whose value becomes an identity one of the command's branches creates: the
+/// `input.` source its payload declares for the event field the creation publishes the identity in.
+fn identity_inputs(command: &ResolvedCommand) -> BTreeSet<String> {
+    let mut fields = BTreeSet::new();
+    for outcome in &command.outcomes {
+        let Some(subject) = &outcome.subject else {
+            continue;
+        };
+        let ResolvedInstance::Observed { event, field } = &subject.instance else {
+            continue;
+        };
+        for payload in outcome
+            .payload
+            .iter()
+            .filter(|payload| &payload.event == event)
+        {
+            for entry in payload
+                .fields
+                .iter()
+                .filter(|entry| entry.target == field.name)
+            {
+                if let ResolvedPayloadValue::InputField { field, .. } = &entry.value {
+                    fields.insert(field.clone());
+                }
+            }
+        }
+    }
+    fields
+}
+
+/// What a creating precondition would create again: its command, and the value it sends for an
+/// input that becomes the created identity.
+type Recreated = (CommandRef, String, ScenarioValue);
+
+/// Whether `steps` send a creating precondition's command with the identity it already sends.
+fn recreates(steps: &[ScenarioStep], creates: &[Recreated]) -> bool {
+    steps.iter().any(|step| {
+        let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+            return false;
+        };
+        creates
+            .iter()
+            .any(|(creating, field, value)| creating == command && input.get(field) == Some(value))
+    })
 }
 
 /// A value of the identity field that no other scenario sends.

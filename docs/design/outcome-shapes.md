@@ -1,8 +1,33 @@
 # Outcome shapes beyond `ess/14`
 
-Status: proposed (beyond10x/ess#144, #145, #150, #151, #152; `story:outcome-shapes-beyond-ess-14`).
-No source, IR or format change is made by this page. Each construct below is admitted under one
-new source format, `ess/15`, and refused below it with `unsupported_format_version`.
+Status: implemented (beyond10x/ess#144, #145, #150, #151, #152; `story:outcome-shapes-beyond-ess-14`).
+All five constructs are admitted under source format `ess/15`; below it each is refused with
+`unsupported_format_version` at the key written (`unknown_instance`, `deletes`, `into`, `accepts`,
+`system.preconditions`). The absence and whole-view steps are ordinary suite `22` and coverage suite
+`23`. The open questions took their defaults.
+
+Refusals under `ess/15`, by validation code:
+
+| Code | Refused |
+|---|---|
+| `conflicting_declaration` | `unknown_instance:` beside another condition, twice on one command, with an effect, or with `refuses: false` and an `error:`; `deletes:` with `sets:` or beside another verb; `into:` without `creates:`; `accepts: nothing` beside a subject, event, error, assignment, replay or a condition other than `when:`/default; a precondition whose input selects a refusing branch or several branches |
+| `missing_declaration` | a refusing `unknown_instance:` branch with no `error:`; a precondition leaving a required, non-fixture input out |
+| `unreachable_branch` | `unknown_instance:` on a command with no `moves:`/`updates:`/`deletes:` branch reading `instance:` from input |
+| `unknown_state` | `into:` naming a state the lifecycle does not declare |
+| `undeclared_reference` | a precondition naming an undeclared command, input field, actor, an actor not granted the command, or a fixture the command does not declare for that input |
+| `type_mismatch` | a precondition literal that is not a value of its input's type |
+| `unobservable_fact` | a precondition whose guard its literal input leaves undecided, or whose command selects by the existing subject |
+| `non_exhaustive_branches` | a precondition whose input selects no branch |
+| `empty_change` (unchanged) | a subjectless outcome with no event, no error and no `accepts: nothing` |
+
+Known limits: a state reachable only through a creation `into:` it is still refused by the entity's
+own reachability check (`unreachable_state`); the generated explorers exclude a command with an
+`unknown_instance:` branch or a `deletes:` effect, and refuse a precondition that reads a fixture
+input; `ess-diff` reports a changed creation state as `outcome-subject-changed` (no separate
+`CreationStateChanged` kind, so no new delta format) and a changed precondition list as an
+unclassified system change; Entity Runtime lowering refuses an `unknown_instance:` branch, a
+`deletes:` effect, a creation `into:` a state and `accepts: nothing` with the lowering code
+`OutcomeShapeUnsupported`.
 
 ## Behavior and authority
 

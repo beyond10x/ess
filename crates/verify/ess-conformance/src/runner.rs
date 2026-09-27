@@ -453,6 +453,7 @@ impl<C: Clock> Runner<C> {
     /// Executes one step.
     ///
     /// Each step delegates to its own function, keeping its rule and diagnostics together.
+    #[allow(clippy::too_many_lines)]
     fn step<T: ConformanceTarget>(
         &mut self,
         step: &ScenarioStep,
@@ -496,6 +497,9 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::ExpectSubjectUnchanged { view } => {
                 snapshot_subject(view, None, None, run)
             }
+            ScenarioStep::ExpectSubjectAbsent { .. }
+            | ScenarioStep::SnapshotView { .. }
+            | ScenarioStep::ExpectViewUnchanged { .. } => outcome_shape_step(step, run),
             ScenarioStep::SnapshotCompleteSubject {
                 view,
                 subject,
@@ -2115,6 +2119,140 @@ fn snapshot_subject(
     Flow::Continue
 }
 
+/// The rows of the last query, when it was a query of `view`; otherwise the suite defect recorded.
+fn queried_rows(view: &ViewRef, run: &mut Run, step: &str) -> Option<Vec<ViewRow>> {
+    match &run.last_view {
+        Some((queried, result)) if queried == view => Some(result.rows.clone()),
+        Some(_) => {
+            run.record(unresolvable(
+                view,
+                &run.id,
+                &format!("the last query before `{step}` names a different view"),
+            ));
+            None
+        }
+        None => {
+            run.record(unresolvable(
+                view,
+                &run.id,
+                &format!("no consistent view query preceded `{step}`"),
+            ));
+            None
+        }
+    }
+}
+
+/// The three suite/22 steps (`docs/design/outcome-shapes.md`).
+fn outcome_shape_step(step: &ScenarioStep, run: &mut Run) -> Flow {
+    match step {
+        ScenarioStep::ExpectSubjectAbsent { view, subject } => expect_absent(view, subject, run),
+        ScenarioStep::SnapshotView { view } => snapshot_view(view, run),
+        ScenarioStep::ExpectViewUnchanged { view } => expect_view_unchanged(view, run),
+        _ => unreachable!("dispatched only for the suite/22 steps"),
+    }
+}
+
+/// Requires that the last query of `view` holds no row with the removed subject's identity
+/// (suite/22, `deletes:`).
+fn expect_absent(view: &ViewRef, subject: &BTreeMap<String, ScenarioValue>, run: &mut Run) -> Flow {
+    if subject.is_empty() {
+        run.record(unresolvable(view, &run.id, "empty subject identity"));
+        return Flow::Stop;
+    }
+    let mut selected = BTreeMap::new();
+    for (field, value) in subject {
+        match run.resolve(value) {
+            Ok(value) => {
+                selected.insert(field.clone(), value);
+            }
+            Err(reason) => {
+                run.record(unresolvable(view, &run.id, &reason));
+                return Flow::Stop;
+            }
+        }
+    }
+    let Some(rows) = queried_rows(view, run, "expect_subject_absent") else {
+        return Flow::Stop;
+    };
+    let remaining = rows
+        .iter()
+        .filter(|row| {
+            selected
+                .iter()
+                .all(|(field, value)| row.get(field) == Some(value))
+        })
+        .count();
+    let about = format!("the removed subject is absent from {view}");
+    if remaining == 0 {
+        run.record(CheckResult::passed(CheckCode::View, about));
+    } else {
+        run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::View, run.id.clone())
+                .declared_by(view.clone())
+                .expected(format!(
+                    "no row of `{view}` carries {}, which the command removed",
+                    quote_input("the subject", &selected)
+                ))
+                .observed(format!("{remaining} row(s) still carry it")),
+        ));
+    }
+    Flow::Continue
+}
+
+/// Captures every row of the last query of `view` (suite/22, `accepts: nothing`).
+fn snapshot_view(view: &ViewRef, run: &mut Run) -> Flow {
+    let Some(rows) = queried_rows(view, run, "snapshot_view") else {
+        return Flow::Stop;
+    };
+    run.view_snapshots.insert(view.clone(), rows);
+    run.record(CheckResult::passed(
+        CheckCode::View,
+        format!("view snapshot {view}"),
+    ));
+    Flow::Continue
+}
+
+/// Requires the last query of `view` to hold exactly the snapshot's rows, in any order (suite/22,
+/// `accepts: nothing`): the same multiset, so a row added, removed or changed is each a failure.
+fn expect_view_unchanged(view: &ViewRef, run: &mut Run) -> Flow {
+    let Some(before) = run.view_snapshots.get(view).cloned() else {
+        run.record(unresolvable(
+            view,
+            &run.id,
+            "no view snapshot preceded this assertion",
+        ));
+        return Flow::Stop;
+    };
+    let Some(after) = queried_rows(view, run, "expect_view_unchanged") else {
+        return Flow::Stop;
+    };
+    let canonical = |rows: &[ViewRow]| {
+        let mut rendered: Vec<String> = rows
+            .iter()
+            .map(|row| serde_json::to_string(row).unwrap_or_default())
+            .collect();
+        rendered.sort();
+        rendered
+    };
+    let about = format!("{view} is unchanged by a command that changes nothing");
+    if canonical(&before) == canonical(&after) {
+        run.record(CheckResult::passed(CheckCode::View, about));
+    } else {
+        run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::View, run.id.clone())
+                .declared_by(view.clone())
+                .expected(format!(
+                    "the {} row(s) `{view}` held before the command",
+                    before.len()
+                ))
+                .observed(format!("{} row(s), not the same ones", after.len())),
+        ));
+    }
+    Flow::Continue
+}
+
 /// The suite defect of an expectation naming something no earlier step established.
 fn unresolvable(view: &ViewRef, id: &ScenarioId, reason: &str) -> CheckResult {
     CheckResult::errored(
@@ -2199,6 +2337,8 @@ struct Run {
     instances: BTreeMap<InstanceName, Node>,
     fixtures: BTreeMap<String, Node>,
     snapshots: BTreeMap<ViewRef, (ViewRow, ViewRow)>,
+    /// Every row a `SnapshotView` step captured, by view (suite/22).
+    view_snapshots: BTreeMap<ViewRef, Vec<ViewRow>>,
     complete_shapes: BTreeMap<ViewRef, crate::subject::SubjectShape>,
     retained: BTreeMap<InstanceName, RetainedResult>,
     established: Vec<(EntityRef, Node)>,
@@ -2220,6 +2360,7 @@ impl Run {
             instances: BTreeMap::new(),
             fixtures: BTreeMap::new(),
             snapshots: BTreeMap::new(),
+            view_snapshots: BTreeMap::new(),
             complete_shapes: BTreeMap::new(),
             retained: BTreeMap::new(),
             established: Vec::new(),

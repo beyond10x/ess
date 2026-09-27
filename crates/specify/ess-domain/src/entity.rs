@@ -2304,6 +2304,7 @@ lifecycle:
                 payload: std::collections::BTreeMap::new(),
                 error: None,
                 refuses: true,
+                accepts_nothing: false,
                 summary: None,
                 refs: crate::refs::Refs::new(),
                 sets: BTreeMap::new(),

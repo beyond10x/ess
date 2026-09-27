@@ -1224,7 +1224,12 @@ func explorePerform(s *exploreSession, command *exploreCommand, step *exploreSte
 				return &exploreDisagreement{kind: "identity", detail: fmt.Sprintf("the target created %s again, over an existing record", exploreRender(id, true))}, nil
 			}
 			identity := exploreString(exploreObject(entity["identity"])["name"])
-			record = &exploreRecord{id: id, fields: Row{identity: id, "state": exploreObject(entity["lifecycle"])["initial"]}}
+			// A creation lands in the state `into:` names (ess/15), or where the lifecycle starts.
+			state := exploreObject(entity["lifecycle"])["initial"]
+			if into, ok := subject["into"]; ok && into != nil {
+				state = into
+			}
+			record = &exploreRecord{id: id, fields: Row{identity: id, "state": state}}
 			s.model.records[entityName] = append(s.model.records[entityName], record)
 		} else {
 			id, _ := exploreReadPath(map[string]any(step.input), field)
@@ -1411,10 +1416,56 @@ func exploreOpen(p *explorePlan, newTarget func() Target, scenario string) (*exp
 	if err := target.BeginScenario(ScenarioContext{Scenario: scenario, Correlation: correlation}); err != nil {
 		return nil, err
 	}
-	return &exploreSession{
+	s := &exploreSession{
 		p: p, target: target, model: &exploreModel{records: map[string][]*exploreRecord{}},
 		correlation: correlation, scenario: scenario, undetermined: map[string]bool{}, forced: map[string]bool{},
-	}, nil
+	}
+	if err := explorePreconditions(s); err != nil {
+		s.close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// explorePreconditions runs the system's preconditions (ess/15) before a sequence, so the model
+// starts from the state they leave. A precondition the model or the target does not take is a setup
+// failure, returned as an error, and never a disagreement: the sequence has not started.
+func explorePreconditions(s *exploreSession) error {
+	for _, node := range exploreList(s.p.ir["preconditions"]) {
+		pre := exploreObject(node)
+		name := exploreString(pre["command"])
+		if exploreNonEmpty(pre["fixtures"]) {
+			return fmt.Errorf("precondition `%s` reads fixture inputs, which exploration does not resolve", name)
+		}
+		planned := s.p.command(name)
+		if planned == nil {
+			return fmt.Errorf("precondition `%s` is a command exploration excludes", name)
+		}
+		command := *planned
+		if actor := exploreString(pre["actor"]); actor != "" {
+			command.actor = actor
+		}
+		input := Row{}
+		for key, value := range exploreObject(pre["input"]) {
+			input[key] = value
+		}
+		step := &exploreStep{command: name, input: input}
+		decision := exploreDecide(&command, input, s.model)
+		// The model must take the branch the specification requires of it, as synthesis does: a
+		// precondition the model decides as a refusal, or as anything else, fails as setup.
+		wanted := exploreString(pre["outcome"])
+		if decision.kind != "take" || decision.outcome == nil || fmt.Sprint(decision.outcome["name"]) != wanted {
+			return fmt.Errorf("precondition `%s` failed as setup: the model does not take `%s`", name, wanted)
+		}
+		found, unsupported := explorePerform(s, &command, step, decision.outcome)
+		if unsupported != nil {
+			return fmt.Errorf("precondition `%s` is not exposed by the target: %s", name, unsupported.reason)
+		}
+		if found != nil {
+			return fmt.Errorf("precondition `%s` failed as setup: %s: %s", name, found.kind, found.detail)
+		}
+	}
+	return nil
 }
 
 func (s *exploreSession) close() {

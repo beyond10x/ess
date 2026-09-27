@@ -67,7 +67,8 @@ fn admitted(outcome: &Outcome, entity: &EntitySpec) -> Option<BTreeSet<StateName
         | OutcomeCondition::SubjectPredicate { .. }
         | OutcomeCondition::External { .. }
         | OutcomeCondition::ExternalWhen { .. }
-        | OutcomeCondition::WrongState => None,
+        | OutcomeCondition::WrongState
+        | OutcomeCondition::UnknownInstance => None,
     }
 }
 
@@ -94,7 +95,9 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     for outcome in &command.outcomes {
         if matches!(
             outcome.condition,
-            OutcomeCondition::External { .. } | OutcomeCondition::ExternalWhen { .. }
+            OutcomeCondition::External { .. }
+                | OutcomeCondition::ExternalWhen { .. }
+                | OutcomeCondition::UnknownInstance
         ) {
             continue;
         }
@@ -189,7 +192,8 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 | OutcomeCondition::SubjectPredicate { .. }
                 | OutcomeCondition::External { .. }
                 | OutcomeCondition::ExternalWhen { .. }
-                | OutcomeCondition::WrongState => {}
+                | OutcomeCondition::WrongState
+                | OutcomeCondition::UnknownInstance => {}
             }
         }
         errors.extend(validate_partition(command, entity, types));
@@ -213,6 +217,7 @@ fn validate_partition(
                     OutcomeCondition::External { .. }
                         | OutcomeCondition::ExternalWhen { .. }
                         | OutcomeCondition::WrongState
+                        | OutcomeCondition::UnknownInstance
                 )
         })
         .collect();

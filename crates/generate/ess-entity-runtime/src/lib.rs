@@ -421,6 +421,9 @@ pub enum LoweringCode {
     /// A `payload:` or `sets:` source reads the subject, increments, falls back to a generated value
     /// or nests (ess/14), and entity-core has no value expression for it.
     ValueExpressionUnsupported,
+    /// An outcome shape of ess/15 — an `unknown_instance:` branch, a `deletes:` effect, a creation
+    /// `into:` a declared state, or `accepts: nothing` — which entity-core has no definition for.
+    OutcomeShapeUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1737,6 +1740,13 @@ impl Projector<'_> {
                 });
             }
             ResolvedCondition::WrongState => wrong_state = true,
+            ResolvedCondition::UnknownInstance => self.diagnostic(
+                LoweringCode::OutcomeShapeUnsupported,
+                &path,
+                "an `unknown_instance:` branch (ess/15) has no Entity Runtime definition; a missing \
+                 row is the runtime's own answer"
+                    .to_owned(),
+            ),
         }
         for ordering in input
             .take_refused()
@@ -1759,7 +1769,7 @@ impl Projector<'_> {
             .map_or(OutcomeEffect::None, |subject| match &subject.effect {
                 ResolvedEffect::Creates => OutcomeEffect::Creates,
                 ResolvedEffect::Updates => OutcomeEffect::Updates,
-                ResolvedEffect::Preserves => OutcomeEffect::None,
+                ResolvedEffect::Preserves | ResolvedEffect::Deletes => OutcomeEffect::None,
                 ResolvedEffect::Moves { transition } => {
                     let from = transition
                         .from
@@ -1776,6 +1786,30 @@ impl Projector<'_> {
                     }
                 }
             });
+
+        // The ess/15 outcome shapes entity-core cannot state: refused by name, like an ess/14
+        // value expression, rather than lowered to a definition that means something else.
+        let unsupported_shape = match outcome.subject.as_ref() {
+            Some(subject) if subject.effect == ResolvedEffect::Deletes => Some(
+                "a `deletes:` outcome (ess/15) removes its row, and entity-core has no removal",
+            ),
+            Some(subject) if subject.into.is_some() => Some(
+                "a creation `into:` a declared state (ess/15) starts past the lifecycle's initial \
+                 state, and entity-core creates every row in its initial state",
+            ),
+            _ if outcome.accepts_nothing => Some(
+                "an `accepts: nothing` outcome (ess/15) is accepted with no subject, and \
+                 entity-core has no stateless acceptance",
+            ),
+            _ => None,
+        };
+        if let Some(message) = unsupported_shape {
+            self.diagnostic(
+                LoweringCode::OutcomeShapeUnsupported,
+                &path,
+                message.to_owned(),
+            );
+        }
 
         let refusal = outcome.error.as_ref().map(|handle| {
             let error = self.service.source().error(handle);

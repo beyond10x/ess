@@ -352,6 +352,7 @@ fn type_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
 
 fn entity_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
     for entity in ir.entities().values() {
+        let born = super::entity::creation_states(ir, entity);
         let source = entity.name.to_string();
         let scope = domain_scope(layout, &entity.name);
         let ty = layout.type_name(&entity.name);
@@ -390,6 +391,16 @@ fn entity_declarations(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) {
             }
             if *state == entity.lifecycle.initial {
                 inventory.symbol(&methods, "new", &source, "constructor");
+            }
+            // The typed constructor a creation `into:` this state generates (ess/15): it shares the
+            // state's impl with its transition methods, so a clash is refused here, not at rustc.
+            if born.contains(state) {
+                inventory.symbol(
+                    &methods,
+                    &name::value_ident(&format!("new-{state}")),
+                    &format!("{source}.{state}"),
+                    "constructor",
+                );
             }
             for transition in entity.lifecycle.outgoing(state) {
                 inventory.symbol(

@@ -357,6 +357,9 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::SnapshotCompleteSubject { .. } => "snapshot complete subject",
             ScenarioStep::ExpectCompleteSubjectUnchanged { .. } => "complete subject unchanged",
             ScenarioStep::ExpectSubjectUnchanged { .. } => "unchanged subject",
+            ScenarioStep::ExpectSubjectAbsent { .. } => "subject absent",
+            ScenarioStep::SnapshotView { .. } => "snapshot view",
+            ScenarioStep::ExpectViewUnchanged { .. } => "unchanged view",
         })
         .collect()
 }

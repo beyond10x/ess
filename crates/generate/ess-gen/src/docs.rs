@@ -1497,7 +1497,13 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
             Inline::text("It creates a "),
             Inline::code(entity.name.to_string()),
             Inline::text(", which starts in "),
-            Inline::code(entity.lifecycle.initial.to_string()),
+            Inline::code(
+                subject
+                    .into
+                    .as_ref()
+                    .unwrap_or(&entity.lifecycle.initial)
+                    .to_string(),
+            ),
             Inline::text("."),
         ],
         ResolvedEffect::Moves { transition } => {
@@ -1517,6 +1523,11 @@ fn effect_sentence(ir: &EssIr, subject: Option<&ResolvedSubject>) -> Vec<Inline>
         ResolvedEffect::Preserves => vec![Inline::text(
             "It preserves the existing subject, without an error or event.",
         )],
+        ResolvedEffect::Deletes => vec![
+            Inline::text("It removes the "),
+            Inline::code(entity.name.to_string()),
+            Inline::text(" its input names; no view shows it afterwards."),
+        ],
         ResolvedEffect::Updates => vec![
             Inline::text("It changes a "),
             Inline::code(entity.name.to_string()),
@@ -1659,6 +1670,10 @@ fn condition_sentence(
             ));
             out
         }
+        ResolvedCondition::UnknownInstance => vec![Inline::text(
+            "Taken when the identity the command names is one no record carries, before any other \
+             answer for it.",
+        )],
     }
 }
 
@@ -1685,6 +1700,9 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         TestStrategy::ArrangeState => {
             "A test reaches it by driving an instance into one of those states and then issuing the \
              command, because no input selects this branch."
+        }
+        TestStrategy::SendUnknownIdentity => {
+            "A test reaches it by sending an identity no record carries, arranging nothing."
         }
     }
 }

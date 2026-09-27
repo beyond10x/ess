@@ -254,7 +254,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
-        | ResolvedCondition::WrongState => None,
+        | ResolvedCondition::WrongState
+        | ResolvedCondition::UnknownInstance => None,
     }
 }
 

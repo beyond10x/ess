@@ -985,6 +985,7 @@ fn written_condition(condition: &ResolvedCondition) -> String {
         }
         ResolvedCondition::External { cause } => format!("external: {cause}"),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
+        ResolvedCondition::UnknownInstance => "unknown-instance".to_owned(),
     }
 }
 
@@ -992,7 +993,12 @@ fn written_condition(condition: &ResolvedCondition) -> String {
 fn written_subject(subject: &ResolvedSubject) -> String {
     let entity = EntityRef::from(&subject.entity);
     let effect = match &subject.effect {
-        ess_compiler::ir::ResolvedEffect::Creates => format!("creates {entity}"),
+        // The state a creation lands in is part of what it does (ess/15, `into:`); a creation into
+        // `initial` renders as it always did.
+        ess_compiler::ir::ResolvedEffect::Creates => match &subject.into {
+            Some(state) => format!("creates {entity} into {state}"),
+            None => format!("creates {entity}"),
+        },
         ess_compiler::ir::ResolvedEffect::Moves { transition } => {
             format!(
                 "moves {entity} via {} ({})",
@@ -1002,6 +1008,7 @@ fn written_subject(subject: &ResolvedSubject) -> String {
         }
         ess_compiler::ir::ResolvedEffect::Updates => format!("updates {entity}"),
         ess_compiler::ir::ResolvedEffect::Preserves => format!("preserves {entity}"),
+        ess_compiler::ir::ResolvedEffect::Deletes => format!("deletes {entity}"),
     };
     let instance = match &subject.instance {
         ResolvedInstance::Supplied { field } => {

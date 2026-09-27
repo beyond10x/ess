@@ -112,6 +112,13 @@
         "$ref": "#/definitions/RawOutcomeGroup"
       }
     },
+    "preconditions": {
+      "description": "The ambient command invocations every scenario runs inside, on the file that carries the header (ess/15, `docs/design/outcome-shapes.md`).",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Precondition"
+      }
+    },
     "summary": {
       "description": "What the system is, in one paragraph.",
       "default": null,
@@ -173,6 +180,18 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "Accepts": {
+      "description": "What an `accepts:` key may say. One word, so a later form has somewhere to go.",
+      "oneOf": [
+        {
+          "description": "The request is accepted and nothing observable changes.",
+          "type": "string",
+          "enum": [
+            "nothing"
+          ]
+        }
+      ]
+    },
     "Anchor": {
       "description": "The actual host poll activation anchors the grid.",
       "oneOf": [
@@ -1203,6 +1222,42 @@
       },
       "additionalProperties": false
     },
+    "Precondition": {
+      "description": "One ambient command invocation a system runs inside — an open session whose user row exists (ess/15, beyond10x/ess#152, `docs/design/outcome-shapes.md`).\n\nSynthesis runs the list, in order, before every scenario's arrangement, and a generated explorer runs it before every sequence, so the model it compares against starts from the state the preconditions leave. Each must take the command's declared success branch; one that is refused fails the scenario as setup. An input value a deterministic generator cannot choose comes from the command's `fixture_inputs:` (ess/13), written `{fixture: name}` or left out.",
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "as": {
+          "description": "The actor it is invoked as; omitted, the actor the specification grants it to.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "description": "The command invoked.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "input": {
+          "description": "Its input by declared field: a literal, or `{fixture: name}`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Node"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "Predicate": {
       "description": "A condition over facts: the compact expression form (`tests.unit.failed == 0`), a list (implicit `all`), or a mapping using `all`, `any`, `not`, `none`, `forall`, `exists` or a fact path with an operator constraint. A text fact is tested against a text literal, map form only, with `starts_with`, `ends_with` or `contains`.",
       "anyOf": [
@@ -2041,8 +2096,30 @@
         "name"
       ],
       "properties": {
+        "accepts": {
+          "description": "`nothing`: the request is accepted and nothing observable changes (ess/15, beyond10x/ess#144). Admitted under `when:` or as the default, on a branch with no subject, no event and no error.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Accepts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "creates": {
           "description": "The entity a new instance of which this outcome brings into existence.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletes": {
+          "description": "The existing entity this outcome removes (ess/15, beyond10x/ess#151).",
           "anyOf": [
             {
               "$ref": "#/definitions/QualifiedName"
@@ -2082,6 +2159,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "into": {
+          "description": "The declared state a `creates:` brings its instance into, where it is not the lifecycle's `initial` (ess/15, beyond10x/ess#150). Admitted only beside `creates:`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StateName"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "moves": {
@@ -2162,6 +2250,10 @@
             "string",
             "null"
           ]
+        },
+        "unknown_instance": {
+          "description": "`true` when this is the branch taken for an identity no record carries (ess/15).\n\nBeside `wrong_state:`, and answered first: an id the system never held is a different behaviour from an id in a state no move starts from (beyond10x/ess#145). Like `wrong_state:` it names an `error:`, or declares `refuses: false` for an accepted no-op.",
+          "type": "boolean"
         },
         "updates": {
           "description": "The entity this outcome changes without moving along its lifecycle.",
