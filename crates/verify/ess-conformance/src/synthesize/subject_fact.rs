@@ -297,6 +297,15 @@ impl ess_primitives::facts::FactSource for RowAndInput<'_> {
         }
     }
 
+    /// `defined()` over an `Optional` struct, list or map reads the presence the row or the input
+    /// recorded for it, which no fact carries (beyond10x/ess#176).
+    fn present(&self, path: &FactPath) -> bool {
+        match self.split(path) {
+            Some((input, rest)) => input.present(&rest),
+            None => self.row.present(path),
+        }
+    }
+
     fn scales(&self) -> &ess_primitives::facts::Scales {
         self.row.scales()
     }

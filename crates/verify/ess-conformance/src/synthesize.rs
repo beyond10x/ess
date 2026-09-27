@@ -4967,12 +4967,24 @@ fn shows(
     // knowable, and a filter over a field this scenario supplied is decidable from what it
     // supplied. Without this, `lane_id == param.lane_id` is `Unknown` however well the parameter
     // is bound, because the left side is the one nothing had answered.
+    //
+    // Each value is bound at the entity's declared type, as `subject_fact::row_truth_with` binds a
+    // row: a struct's leaves and every present struct, list or map inside it, empty or not, are
+    // what `defined()` and `missing()` read (beyond10x/ess#176). One field at a time, so a value
+    // that is not of its type is left to the scalar reading it had rather than dropping the rest.
+    let declared = &ir.entity(&view.source).fields;
     for (name, determined) in settled {
         if let (Ok(path), ScenarioValue::Literal { value }) =
             (FactPath::new(name), &determined.value)
         {
-            if let Some(fact) = fact_value(value) {
-                facts.set(path, fact);
+            let one = BTreeMap::from([(name.clone(), value.clone())]);
+            match crate::input::bind(ir, declared, &one, crate::input::Completeness::Partial) {
+                Ok(bound) => facts.extend(bound),
+                Err(_) => {
+                    if let Some(fact) = fact_value(value) {
+                        facts.set(path, fact);
+                    }
+                }
             }
         }
     }

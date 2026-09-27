@@ -399,6 +399,53 @@ test('defined is never unknown, because absence is exactly what it asks about', 
   assert.equal(parseLeaf('defined( total.amount )').path, 'total.amount');
 });
 
+// beyond10x/ess#176, the vectors `tests/fixtures/defined-over-optional-aggregates.go` holds the Go
+// evaluator to: a present struct, list or map is present even when it is empty; null and a
+// left-out member are absent; and no value read sees the presence mark.
+test('defined reads a present aggregate as present, and null or a left-out one as absent', () => {
+  const defined = parseLeaf('defined(metrics)');
+  assert.equal(defined.evaluate(facts({ metrics: { waiting: 3 } })), TruthTrue);
+  assert.equal(defined.evaluate(facts({ metrics: {} })), TruthTrue);
+  assert.equal(defined.evaluate(facts({ metrics: [] })), TruthTrue);
+  assert.equal(defined.evaluate(facts({ queue: { metrics: {} } })), TruthFalse);
+  assert.equal(defined.evaluate(facts({ metrics: null })), TruthFalse);
+  assert.equal(defined.evaluate(facts({})), TruthFalse);
+  assert.equal(defined.evaluate(facts({ metrics: 'x' })), TruthTrue);
+  assert.equal(
+    parseLeaf('defined(queue.metrics)').evaluate(facts({ queue: { metrics: {} } })),
+    TruthTrue,
+  );
+});
+
+test('no value read sees the presence mark of an aggregate', () => {
+  const row = facts({ metrics: { waiting: 3 }, tags: [] });
+  for (const expression of ['metrics', 'metrics == 1', 'tags']) {
+    assert.equal(parseLeaf(expression).evaluate(row), TruthUnknown, expression);
+  }
+  assert.equal(parseLeaf('tags.count == 0').evaluate(row), TruthTrue);
+});
+
+test('the #176 invariant holds while paused and fails for a running queue holding metrics', () => {
+  const invariant = fromNode({ any: ['state == Paused', { not: 'defined(metrics)' }] });
+  assert.equal(invariant.evaluate(facts({ state: 'Paused', metrics: { waiting: 1 } })), TruthTrue);
+  assert.equal(invariant.evaluate(facts({ state: 'Running' })), TruthTrue);
+  assert.equal(invariant.evaluate(facts({ state: 'Running', metrics: null })), TruthTrue);
+  assert.equal(
+    invariant.evaluate(facts({ state: 'Running', metrics: { waiting: 1 } })),
+    TruthFalse,
+  );
+  assert.equal(invariant.evaluate(facts({ state: 'Running', metrics: {} })), TruthFalse);
+});
+
+test('a quantified element reads presence through its binder', () => {
+  const row = facts({ queues: [{ metrics: {} }, { state: 'Running' }] });
+  const over = (kind: string, that: string) =>
+    fromNode({ [kind]: { in: 'queues', as: 'q', that } });
+  assert.equal(over('exists', 'defined(q.metrics)').evaluate(row), TruthTrue);
+  assert.equal(over('forall', 'defined(q.metrics)').evaluate(row), TruthFalse);
+  assert.equal(over('exists', 'defined(q)').evaluate(row), TruthTrue);
+});
+
 test('always and never are constants', () => {
   assert.equal(parseLeaf('always').evaluate(source({})), TruthTrue);
   assert.equal(parseLeaf('never').evaluate(source({})), TruthFalse);

@@ -120,6 +120,13 @@ pub trait TypeEnvironment {
     fn admits_text_length(&self) -> bool {
         true
     }
+    /// Whether this environment admits `defined(x)` where `x` is an `Optional` aggregate — a
+    /// struct, list, map, union or `Json` — which `ess/16` introduced (beyond10x/ess#176).
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_aggregate_presence(&self) -> bool {
+        true
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -275,6 +282,11 @@ impl TypeEnvironment for DomainEnvironment<'_> {
         self.registry
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V11.major())
+    }
+    fn admits_aggregate_presence(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V16.major())
     }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
@@ -732,20 +744,25 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// What a resolved read is, as an operand.
+    fn typed(&self, resolved: Resolution<E::Type>) -> ValueType {
+        ValueType {
+            instant: self.environment.is_instant(&resolved.terminal),
+            duration: self.environment.is_duration(&resolved.terminal),
+            string: self.environment.is_string(&resolved.terminal),
+            declaring_variants: resolved
+                .variants
+                .is_some()
+                .then(|| resolved.terminal.to_string()),
+            declared: resolved.declared,
+            scalar: resolved.scalar,
+            variants: resolved.variants,
+        }
+    }
+
     fn operand(&mut self, operand: &Operand) -> Option<ValueType> {
         match operand {
-            Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
-                instant: self.environment.is_instant(&resolved.terminal),
-                duration: self.environment.is_duration(&resolved.terminal),
-                string: self.environment.is_string(&resolved.terminal),
-                declaring_variants: resolved
-                    .variants
-                    .is_some()
-                    .then(|| resolved.terminal.to_string()),
-                declared: resolved.declared,
-                scalar: resolved.scalar,
-                variants: resolved.variants,
-            }),
+            Operand::Fact(path) => self.read(path, false).map(|resolved| self.typed(resolved)),
             Operand::Literal(value) => {
                 let scalar = ScalarKind::literal(value);
                 Some(ValueType {
@@ -1151,20 +1168,39 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Predicate::Not(inner) => self.predicate(inner),
             Predicate::Compare { left, op, right } => self.compare(predicate, left, *op, right),
             Predicate::Truthy(path) | Predicate::Defined(path) => {
-                if let Some(value) = self.operand(&Operand::Fact(path.clone())) {
-                    if value.scalar.is_none() {
-                        self.mismatch(
-                            predicate,
-                            if matches!(predicate, Predicate::Truthy(_)) {
-                                "Truthy"
-                            } else {
-                                "Defined"
-                            },
-                            &value,
-                            None,
-                        );
-                    }
+                let Some(resolved) = self.read(path, false) else {
+                    return;
+                };
+                if resolved.scalar.is_some() {
+                    return;
                 }
+                let optional = resolved.optional;
+                let value = self.typed(resolved);
+                let defined = matches!(predicate, Predicate::Defined(_));
+                // Presence is a property of the `Optional`, not of what it holds (beyond10x/ess#176):
+                // an `Optional` aggregate is present or absent like an `Optional` scalar is.
+                if defined && optional {
+                    if !self.environment.admits_aggregate_presence() {
+                        self.checked.errors.push(error(
+                            self.owner,
+                            ValidationCode::UnsupportedFormatVersion,
+                            Some(path),
+                            None,
+                            format!(
+                                "`{predicate}`: `defined()` over an Optional aggregate (`{}`) \
+                                 requires specification format ess/16",
+                                value.declared
+                            ),
+                        ));
+                    }
+                    return;
+                }
+                self.mismatch(
+                    predicate,
+                    if defined { "Defined" } else { "Truthy" },
+                    &value,
+                    None,
+                );
             }
             Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
                 let Some(typed) = self.operand(&Operand::Fact(path.clone())) else {

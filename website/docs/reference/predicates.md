@@ -163,7 +163,7 @@ A compact predicate is one string. It holds a single comparison, a bare path, a 
 |---|---|---|
 | comparison | `quantity > 0` | the operator holds. The operators are `==`, `!=`, `<`, `<=`, `>`, `>=`. |
 | bare path | `gift` | the fact is present and truthy. |
-| presence, `defined` or `exists` | `defined(coupon)`, `exists(coupon)` | the fact is present. |
+| presence, `defined` or `exists` | `defined(coupon)`, `exists(coupon)` | the fact is present. From `ess/16` the fact may be an `Optional` struct, list or map; see [presence of an aggregate](#presence-of-an-optional-struct-list-or-map). |
 | absence, `missing` | `missing(coupon)` | the fact is absent. It is the same as `not defined(coupon)`. |
 | negation | `not gift`, `not defined(coupon)` | the rest of the string does not hold. |
 | constant | `always`, `true`, `never`, `false` | always, or never. |
@@ -262,6 +262,26 @@ when: coupon == null
 when: coupon == "null"
 ```
 
+### Presence of an Optional struct, list or map
+
+From `ess/16`, `defined(x)` and `missing(x)` accept any `Optional<T>`, including a struct, a list
+or a map `T`. Presence belongs to the `Optional`, not to what it holds:
+
+| The value at `x` | `defined(x)` |
+|---|---|
+| a struct, list or map, including an empty one | `true` |
+| left out, or `null` | `false` |
+
+This lets an invariant say when an optional field must be gone. For an entity whose
+`metrics: Optional<demo.queue.Metrics>` is held only while it is `Paused`, the invariant is
+`any: [state == Paused, {not: "defined(metrics)"}]`. Synthesis checks it after every branch that
+changes the entity. If an outcome leaves `Paused` without clearing `metrics`, that check fails.
+
+Below `ess/16`, `defined()` over an `Optional` aggregate is refused with
+`unsupported_format_version`. `defined()` over an aggregate that is not `Optional` is always
+present, so it is refused as a type mismatch in every format. A bare path over any aggregate is
+refused in the same way.
+
 ## Structured forms
 
 | Key | Aliases | Holds when |
@@ -333,7 +353,7 @@ A fact path used as a key constrains that fact. The value is one of three things
 | `gte` | `ge` | a scalar | the fact is greater or equal |
 | `any_of` | `in`, `one_of` | a list or one value | the fact is one of the values |
 | `none_of` | `not_in` | a list or one value | the fact is none of the values |
-| `exists` | `defined` | `true` or `false` | the fact is present, or absent for `false` |
+| `exists` | `defined` | `true` or `false` | the fact is present, or absent for `false`. From `ess/16` also over an `Optional` struct, list or map |
 | `truthy` | | any value | the fact is present and truthy |
 
 The comparison operators also accept their symbols as keys (`"=="`, `"<="`, …). A string operand

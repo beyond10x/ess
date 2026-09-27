@@ -599,6 +599,10 @@ impl FactSource for Element<'_> {
         self.inner.fact(&self.rebind(path))
     }
 
+    fn present(&self, path: &FactPath) -> bool {
+        self.inner.present(&self.rebind(path))
+    }
+
     fn scales(&self) -> &Scales {
         self.inner.scales()
     }
@@ -681,7 +685,7 @@ impl Predicate {
             Self::Truthy(path) => facts
                 .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
-            Self::Defined(path) => Truth::from_bool(facts.observe(path).is_some()),
+            Self::Defined(path) => Truth::from_bool(facts.present(path)),
             Self::AnyOf { path, values } => {
                 facts.observe(path).map_or(Truth::Unknown, |observed| {
                     Truth::from_bool(values.contains(&observed))
@@ -2004,6 +2008,45 @@ mod tests {
             ("slots.1.matched", FactValue::Bool(false)),
             ("slots.1.score", FactValue::count(5)),
         ])
+    }
+
+    /// beyond10x/ess#176: a present aggregate binds no leaf at its own path, only a presence mark,
+    /// and `defined()` reads the mark; every value read still ignores it.
+    #[test]
+    fn defined_reads_a_present_aggregate_and_no_value_read_does() {
+        let mut facts = store(&[("state", FactValue::text("Running"))]);
+        facts.mark_present(FactPath::new("metrics").expect("path"));
+        assert_eq!(parse("defined(metrics)").evaluate(&facts), Truth::True);
+        assert_eq!(parse("defined(other)").evaluate(&facts), Truth::False);
+        assert_eq!(parse("metrics").evaluate(&facts), Truth::Unknown);
+        assert_eq!(facts.fact(&FactPath::new("metrics").expect("path")), None);
+        assert_eq!(
+            quantifier("any: [state == Paused, {not: 'defined(metrics)'}]").evaluate(&facts),
+            Truth::False,
+            "a running queue holding metrics breaks the #176 invariant"
+        );
+    }
+
+    #[test]
+    fn a_quantified_element_reads_presence_through_its_binder() {
+        let mut facts = store(&[
+            ("queues.count", FactValue::count(2)),
+            ("queues.1.state", FactValue::text("Running")),
+        ]);
+        facts.mark_present(FactPath::new("queues.0.metrics").expect("path"));
+        let some = quantifier("exists: {in: queues, as: q, that: 'defined(q.metrics)'}");
+        let every = quantifier("forall: {in: queues, as: q, that: 'defined(q.metrics)'}");
+        assert_eq!(some.evaluate(&facts), Truth::True);
+        assert_eq!(every.evaluate(&facts), Truth::False);
+    }
+
+    #[test]
+    fn extending_a_store_carries_its_presence_marks() {
+        let mut left = FactStore::new();
+        let mut right = FactStore::new();
+        right.mark_present(FactPath::new("metrics").expect("path"));
+        left.extend(right);
+        assert!(left.present(&FactPath::new("metrics").expect("path")));
     }
 
     #[test]
