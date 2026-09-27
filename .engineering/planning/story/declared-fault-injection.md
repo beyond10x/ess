@@ -7,12 +7,10 @@ title: Faults the specification declares are injected during concurrent runs
 owner: ess
 relations:
 - depends_on: story:session-and-eventual-view-checks
-- depends_on: story:ess-manages-its-toolchain
 - depends_on: story:explorer-takes-external-branches
 - depends_on: story:concurrent-explorer-runner
 - decomposes: epic:concurrent-history-conformance
 - serves: vision:O2
-- depends_on: story:mutate-drives-an-external-target
 scope:
 - confidence: cited
   path: crates/verify/ess-conformance

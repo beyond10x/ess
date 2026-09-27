@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:concurrent-history-format
 kind: story
-status: draft
+status: active
 title: 'A concurrent history has a format: ess-history/1'
 owner: ess
 relations:
@@ -25,7 +25,7 @@ scope:
   path: models/concurrent-history/domains/history.yaml
 - confidence: cited
   path: schemas
-revision: 5
+revision: 7
 ---
 # Story: a concurrent history has a format
 

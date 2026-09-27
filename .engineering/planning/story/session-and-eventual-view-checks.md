@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/reference.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/faults.rs
-revision: 5
+revision: 6
 ---
 # Story: session and eventual views are checked at their declared strength
 
@@ -39,10 +39,10 @@ A `Current` view keeps the linearizable check.
 
 - New `faulty.rs` row `StaleReadUnderReadYourWrites`: `OutstandingInvoices` answers from a lagged
   copy. Its history is a violation naming the client and the read.
-- The single-client suite does not catch `StaleReadUnderReadYourWrites`: the fault matrix records it
-  as caught by the history check only. The existing row `StaleReadYourWrites` (`F-VIEW-RACE`,
-  `faulty.rs:243-246`), which the single-client suite already catches (`tests/faults.rs:335`), stays
-  a separate row.
+- The fault matrix records `StaleReadUnderReadYourWrites` as caught by the history check and not by
+  the single-client suite.
+- The existing row `StaleReadYourWrites` (`F-VIEW-RACE`, `faulty.rs:243-246`) is still present as a
+  separate row and is still caught by the single-client suite (`tests/faults.rs:335`).
 - The billing target's eventual `InvoiceById` (`Billing::DEFAULT_LAG`) passes, and a variant that
   never converges fails.
 

@@ -103,7 +103,7 @@ checker, so its concurrent mode needs the Rust interpreter first.
 | `story:linearizability-checker-over-the-interpreter` | the format; `story:interpreted-command-execution` |
 | `story:concurrent-explorer-runner` | the format, the checker; `story:outcome-shapes-beyond-ess-14` (#152) |
 | `story:session-and-eventual-view-checks` | the checker |
-| `story:declared-fault-injection` | the runner, the session checks; `story:external-mutation-explorer-and-toolchain` (#156) |
+| `story:declared-fault-injection` | the runner, the session checks; `story:explorer-takes-external-branches` (#156; replaced the archived `story:external-mutation-explorer-and-toolchain`) |
 | `story:concurrent-history-lanes` | the checker, the runner |
 | `story:recorded-history-validation` (later milestone) | the checker, the session checks |
 

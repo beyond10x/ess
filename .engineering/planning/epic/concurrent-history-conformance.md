@@ -9,12 +9,10 @@ owner: ess
 relations:
 - depends_on: story:explorer-takes-external-branches
 - depends_on: story:interpreted-command-execution
-- depends_on: story:mutate-drives-an-external-target
 - serves: vision:O2
-- depends_on: story:ess-manages-its-toolchain
 - informed_by: epic:model-driven-interpretation
 - depends_on: story:outcome-shapes-beyond-ess-14
-revision: 1
+revision: 2
 ---
 # Epic: concurrent history conformance
 
@@ -80,7 +78,11 @@ Design record with the research, the effort/gain ranking and these decisions:
 - `story:interpreted-command-execution` (`epic:model-driven-interpretation`): the Rust interpreter
   is the sequential model the checker searches against.
 - `story:outcome-shapes-beyond-ess-14` (#152): the ambient precondition / explorer seed.
-- `story:external-mutation-explorer-and-toolchain` (#156): external branches as explorer choices.
+- `story:explorer-takes-external-branches` (#156, implemented): external branches as explorer
+  choices, which `story:declared-fault-injection` drives as "delay or no answer". It replaced
+  the archived `story:external-mutation-explorer-and-toolchain`; that story's other two successors
+  (`story:mutate-drives-an-external-target`, `story:ess-manages-its-toolchain`) give this epic
+  nothing it uses, so no edge points at them (design critic, round 3, 2026-09-27).
 
 ## Specification
 

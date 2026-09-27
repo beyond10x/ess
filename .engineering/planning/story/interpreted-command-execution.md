@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:interpreted-command-execution
 kind: story
-status: draft
+status: active
 title: A command's declared outcome is executed from the IR
 summary: 'Outcome selection, transition, sets: writes, emitted events and payload mappings, derived rather than decided'
 owner: ess
@@ -25,7 +25,7 @@ scope:
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
-revision: 3
+revision: 5
 ---
 # Story: a command's declared outcome is executed from the IR
 

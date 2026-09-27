@@ -58,8 +58,8 @@ scratch `~/.cache/ess-chc/<unit>/scratch`.
 
 | unit | story | serves | scope | branch | head | stage |
 |---|---|---|---|---|---|---|
-| interp | `story:interpreted-command-execution` | `vision:O2` | cited: `ess-conformance`, `src/target.rs`; inferred: `src/input.rs`, `src/interpreted.rs`, `src/lib.rs`, `tests` | `impl/interpreted-command-execution` | `472d35fbe` | dispatched 21:10 (`aep:implementor`) |
-| format | `story:concurrent-history-format` | `vision:O2` | cited: `ess-conformance`, `schemas/`; inferred: `src/history.rs`, `src/lib.rs`, `ess-xtask`, `models/concurrent-history/domains/history.yaml` | `impl/concurrent-history-format` | `472d35fbe` | dispatched 21:10 (`aep:implementor`) |
+| interp | `story:interpreted-command-execution` | `vision:O2` | cited: `ess-conformance`, `src/target.rs`; inferred: `src/input.rs`, `src/interpreted.rs`, `src/lib.rs`, `tests` | `impl/interpreted-command-execution` | uncommitted | correction after adversary pass 1 (3 findings) |
+| format | `story:concurrent-history-format` | `vision:O2` | cited: `ess-conformance`, `schemas/`; inferred: `src/history.rs`, `src/lib.rs`, `ess-xtask`, `models/concurrent-history/domains/history.yaml` | `impl/concurrent-history-format` | `64370a752` | merged `7a81ad0ec` (2 adversary passes, 11 findings fixed; coordinator reviewed correction 2) |
 
 Split in `crates/verify/ess-conformance/src/lib.rs`: each unit adds exactly one `pub mod` line; no
 other edit. `git merge-tree --write-tree --merge-base=<base> impl/interpreted-command-execution
@@ -68,8 +68,8 @@ impl/concurrent-history-format` runs before the first unit merges.
 ## Planning changes made before wave 1
 
 - `depends_on story:external-mutation-explorer-and-toolchain` (archived) replaced on the epic and on
-  `story:declared-fault-injection` by `depends_on` its three implemented successors
-  (`explorer-takes-external-branches`, `ess-manages-its-toolchain`, `mutate-drives-an-external-target`).
+  `story:declared-fault-injection` by `depends_on story:explorer-takes-external-branches`, the one
+  successor that supplies what they use (critic round 3 design finding; round 4 approved).
 - `story:concurrent-history-format`: the Go/TS equal-bytes acceptance line moved to
   `story:concurrent-explorer-runner`; a model-drift acceptance line added.
 - `story:session-and-eventual-view-checks`: acceptance line keeping the new
@@ -89,3 +89,6 @@ impl/concurrent-history-format` runs before the first unit merges.
 ## Deviations
 
 - Units forked from `472d35fbe` and dispatched before the opening store commit: each `aep` write took 3–4 min at load average 43 (`uptime` 21:08), and the 33-write batch would have held dispatch about 2 h. Story moves to `active` follow the batch; unit branches merge into `integrate/concurrent-history` after it.
+- Store writes of 22:30–23:40 were rolled back and replayed: the parallel-safety round-3 critic quoted an absolute home path, `validate` refused it (S9, 6 problems), and `review-result` bodies are immutable. The rolled-back writes are kept in `git stash` on this tree ("chc: store writes … (S9); replayed clean"); the replay records the same verdicts with the path replaced by "the integration worktree".
+- The store takes one `review_outcome` per (artifact, review): four repeat `fixed` records for format adversary pass 1 were refused `semantic_mismatch`, so one outcome stands for its five findings.
+- Critic rounds 3–4 (acceptance, design, scope, parallel-safety): round 3 two `needs-revision` (3 findings, all fixed); round 4 four `approve`. The design critic's round-4 empty findings fence is recorded as `[]`.
