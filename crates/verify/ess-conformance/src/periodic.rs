@@ -216,14 +216,7 @@ impl Check {
             return Err("PeriodicResource: require 1..64 mapped host inputs".into());
         }
         for (target, source) in &self.mapping {
-            if !target
-                .as_bytes()
-                .first()
-                .is_some_and(u8::is_ascii_alphabetic)
-                || !target
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-            {
+            if !ess_domain::types::is_field_name(target) {
                 return Err("PeriodicContract: empty input name".into());
             }
             let (name, fields) = match source {

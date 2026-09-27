@@ -189,17 +189,29 @@ pub fn run(w: &mut Writer, entry: Entry, input: &[u8], control: Control) -> Resu
     let all = observation::stages(Some(&bundle));
     let mut sources = SourceMap::new();
     let mut parsed = Vec::new();
-    for (index, doc) in bundle.documents.iter().enumerate() {
-        let stage = Stage::Parse {
-            index,
-            label: doc.label.clone(),
-        };
-        start(w, id, &stage, control)?;
-        let Some(raw) = result(w, id, &stage, RawSpecFile::parse(&doc.text), control)? else {
-            return stopped(w, id, Outcome::ParseRefused, &all, &stage, control);
-        };
-        sources.insert(doc.label.clone(), doc.text.clone());
-        parsed.push((Source::new(doc.label.clone()), raw));
+    // Read the documents together, as `RawSpecFile::parse_all` and the CLI do, so a newtype one
+    // declares may key a map in another. Spelled as its scope rather than one `parse_all` call so
+    // each document still parses after its own stage starts, and a panic stays attributed to it.
+    let keys = ess_domain::types::MapKeyNewtypes::from_documents(
+        bundle.documents.iter().map(|doc| doc.text.as_str()),
+    );
+    let refused = keys.scope(|| -> Result<Option<Outcome>> {
+        for (index, doc) in bundle.documents.iter().enumerate() {
+            let stage = Stage::Parse {
+                index,
+                label: doc.label.clone(),
+            };
+            start(w, id, &stage, control)?;
+            let Some(raw) = result(w, id, &stage, RawSpecFile::parse(&doc.text), control)? else {
+                return stopped(w, id, Outcome::ParseRefused, &all, &stage, control).map(Some);
+            };
+            sources.insert(doc.label.clone(), doc.text.clone());
+            parsed.push((Source::new(doc.label.clone()), raw));
+        }
+        Ok(None)
+    })?;
+    if let Some(outcome) = refused {
+        return Ok(outcome);
     }
     let assembly = Stage::AssembleValidate;
     start(w, id, &assembly, control)?;

@@ -215,7 +215,7 @@ fn type_encoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     out,
                     "\t",
                     ess_gen::schema::wire_field_name(field),
-                    &format!("value.{}", name::exported(&field.name)),
+                    &format!("value.{}", super::items::member_ident(fields, &field.name)),
                     &field.type_ref,
                     &mut slot,
                 );
@@ -287,7 +287,7 @@ fn type_decoder(out: &mut String, emit: &Emit<'_>, declared: &ResolvedType) {
                     out,
                     emit,
                     "\t",
-                    &format!("out.{}", name::exported(&field.name)),
+                    &format!("out.{}", super::items::member_ident(fields, &field.name)),
                     field,
                     &mut slot,
                 );
@@ -408,7 +408,7 @@ fn record_encoder(
             out,
             "\t",
             ess_gen::schema::wire_field_name(field),
-            &format!("value.{}", name::exported(&field.name)),
+            &format!("value.{}", super::items::member_ident(fields, &field.name)),
             &field.type_ref,
             &mut slot,
         );
@@ -442,7 +442,10 @@ fn command_decoder(out: &mut String, emit: &Emit<'_>, command: &ResolvedCommand)
             out,
             emit,
             "\t",
-            &format!("out.{}", name::exported(&field.name)),
+            &format!(
+                "out.{}",
+                super::items::member_ident(&command.input, &field.name)
+            ),
             field,
             &mut slot,
         );

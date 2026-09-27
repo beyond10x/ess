@@ -133,6 +133,8 @@ pub enum TypeRef {
     /// An ordered sequence.
     List(Box<TypeRef>),
     /// A mapping. The key must be a primitive, because a structured key has no stable wire form.
+    /// A key written as a newtype of a key primitive is resolved to that primitive while the
+    /// document is read ([`MapKeyNewtypes`]).
     Map(Primitive, Box<TypeRef>),
 }
 
@@ -186,17 +188,20 @@ impl TypeRef {
             let (key, value_type) = inner.split_once(',').ok_or_else(|| {
                 reject("a map needs a key and a value, as in `Map<String, Money>`")
             })?;
-            let key = Primitive::parse(key.trim()).ok_or_else(|| {
-                ParseError::identifier(
-                    "type",
-                    value,
-                    format!(
-                        "a map key must be a primitive, not {:?}; a structured key has no stable \
-                         wire form",
-                        key.trim()
-                    ),
-                )
-            })?;
+            let key = Primitive::parse(key.trim())
+                .or_else(|| MapKeyNewtypes::in_scope(key.trim()))
+                .ok_or_else(|| {
+                    ParseError::identifier(
+                        "type",
+                        value,
+                        format!(
+                            "a map key must be a primitive, or a newtype of one declared where this \
+                             type is read; {:?} is neither, and a structured key has no stable wire \
+                             form",
+                            key.trim()
+                        ),
+                    )
+                })?;
             if key == Primitive::Binary64 {
                 return Err(reject("Binary64 map keys have no admitted wire spelling"));
             }
@@ -238,6 +243,157 @@ impl TypeRef {
             Self::Optional(inner) => inner.required(),
             other => other,
         }
+    }
+}
+
+/// The newtypes a specification declares that may key a map, each with the primitive it is spelled
+/// as on the wire (beyond10x/ess#143).
+///
+/// `Map<demo.orders.ItemId, Boolean>` with `ItemId` a newtype of `String` has exactly the wire form
+/// of `Map<String, Boolean>`, so the reason a structured key is refused does not apply to it. The
+/// key is resolved to that primitive while the document is read, so [`TypeRef::Map`] keeps a
+/// [`Primitive`] key and nothing downstream of the parser changes: every projection, generator and
+/// suite sees `Map<String, Boolean>`. What the resolution gives up is the newtype's identity at
+/// the key position — its alphabet, length and name are not carried into the map.
+///
+/// A reference is a string parsed one document at a time, and the newtype it names may be declared
+/// later in the same document or in another file. So the declarations are collected first
+/// ([`Self::from_documents`]) and parsing runs inside [`Self::scope`]. Outside any scope, a named
+/// key is refused exactly as before.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MapKeyNewtypes {
+    /// Every newtype declared, with the spelling of what it wraps; `None` for a name declared
+    /// twice with different underlying types.
+    declared: BTreeMap<QualifiedName, Option<String>>,
+}
+
+std::thread_local! {
+    /// The key newtypes in view of [`TypeRef::parse`] on this thread, set only by
+    /// [`MapKeyNewtypes::scope`].
+    static MAP_KEY_NEWTYPES: std::cell::RefCell<MapKeyNewtypes> =
+        std::cell::RefCell::new(MapKeyNewtypes::default());
+}
+
+impl MapKeyNewtypes {
+    /// Collects the newtypes declared in `texts`.
+    ///
+    /// Reads only `types:` entries with `kind: newtype`, `name:` and `of:`. A document that does
+    /// not parse, or an entry of the wrong shape, contributes nothing here: the real read of that
+    /// document reports it. A name declared twice with different underlying types resolves to
+    /// nothing, because assembly refuses the duplicate and choosing one would be a guess.
+    pub fn from_documents<'a>(texts: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut keys = Self::default();
+        for text in texts {
+            if let Ok(document) = serde_yaml::from_str::<serde_yaml::Value>(text) {
+                keys.absorb(&document);
+            }
+        }
+        keys
+    }
+
+    /// Newtypes given as `(name, what it wraps as written)` pairs, by a reader that has them in
+    /// hand rather than as source text — a compiled model, whose newtype `String`s and chains are
+    /// the same ones the specification was read with.
+    pub fn from_declarations(
+        declarations: impl IntoIterator<Item = (QualifiedName, String)>,
+    ) -> Self {
+        let mut keys = Self::default();
+        for (name, of) in declarations {
+            keys.declare(name, of);
+        }
+        keys
+    }
+
+    /// Records one newtype; a second, different declaration of the name makes it resolve to
+    /// nothing.
+    fn declare(&mut self, name: QualifiedName, of: String) {
+        self.declared
+            .entry(name)
+            .and_modify(|seen| {
+                if seen.as_deref() != Some(of.as_str()) {
+                    *seen = None;
+                }
+            })
+            .or_insert(Some(of));
+    }
+
+    /// The key newtypes in view on this thread: empty outside every [`Self::scope`].
+    pub fn current() -> Self {
+        MAP_KEY_NEWTYPES.with(|cell| cell.borrow().clone())
+    }
+
+    /// These declarations and the ones in `document`, an already-read source file.
+    ///
+    /// What a reader of one file uses, so that a newtype declared in the same file keys a map
+    /// with no loader involved, and one declared in a sibling file does when the loader put it in
+    /// view.
+    #[must_use]
+    pub fn with_value(&self, document: &serde_yaml::Value) -> Self {
+        let mut keys = self.clone();
+        keys.absorb(document);
+        keys
+    }
+
+    /// Adds the newtypes one document declares.
+    fn absorb(&mut self, document: &serde_yaml::Value) {
+        let Some(types) = document
+            .get("types")
+            .and_then(serde_yaml::Value::as_sequence)
+        else {
+            return;
+        };
+        for entry in types {
+            if entry.get("kind").and_then(serde_yaml::Value::as_str) != Some("newtype") {
+                continue;
+            }
+            let (Some(name), Some(of)) = (
+                entry.get("name").and_then(serde_yaml::Value::as_str),
+                entry.get("of").and_then(serde_yaml::Value::as_str),
+            ) else {
+                continue;
+            };
+            let Ok(name) = QualifiedName::new(name.trim()) else {
+                continue;
+            };
+            self.declare(name, of.trim().to_owned());
+        }
+    }
+
+    /// The primitive `name` is spelled as, when it is a newtype whose underlying type, through
+    /// newtypes, is a primitive admitted as a map key. A cycle resolves to nothing.
+    pub fn get(&self, name: &QualifiedName) -> Option<Primitive> {
+        let mut current = name.clone();
+        // Each step moves to a declaration, so more steps than declarations is a cycle.
+        for _ in 0..=self.declared.len() {
+            let of = self.declared.get(&current)?.as_deref()?;
+            if let Some(primitive) = Primitive::parse(of) {
+                return (primitive != Primitive::Binary64).then_some(primitive);
+            }
+            current = QualifiedName::new(of).ok()?;
+        }
+        None
+    }
+
+    /// Runs `body` with exactly these key newtypes in view of every [`TypeRef::parse`] it makes on
+    /// this thread, and restores whatever was in view before — also when `body` panics.
+    pub fn scope<T>(&self, body: impl FnOnce() -> T) -> T {
+        struct Restore(Option<MapKeyNewtypes>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                if let Some(previous) = self.0.take() {
+                    MAP_KEY_NEWTYPES.with(|cell| *cell.borrow_mut() = previous);
+                }
+            }
+        }
+        let previous = MAP_KEY_NEWTYPES.with(|cell| cell.replace(self.clone()));
+        let _restore = Restore(Some(previous));
+        body()
+    }
+
+    /// The key newtype `spelling` names in the current scope, if any.
+    fn in_scope(spelling: &str) -> Option<Primitive> {
+        let name = QualifiedName::new(spelling).ok()?;
+        MAP_KEY_NEWTYPES.with(|cell| cell.borrow().get(&name))
     }
 }
 
@@ -311,7 +467,7 @@ impl schemars::JsonSchema for TypeRef {
 pub struct Field {
     /// Its name.
     #[serde(deserialize_with = "deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Its type.
     #[serde(rename = "type")]
@@ -326,7 +482,7 @@ impl Field {
     ///
     /// Kept beside the parser that enforces it, and a test asserts the published schema carries
     /// this one: a schema that accepts what the parser refuses is worse than no schema.
-    pub const PATTERN: &'static str = "^[A-Za-z][A-Za-z0-9_]*$";
+    pub const PATTERN: &'static str = "^_*[A-Za-z][A-Za-z0-9_]*$";
 
     /// A field with no naming overrides.
     pub fn new(name: impl Into<String>, type_ref: TypeRef) -> Self {
@@ -550,15 +706,24 @@ impl schemars::JsonSchema for EnumVariant {
 /// things nobody can spell, in files where the specification that wrote them is no longer in view.
 /// [`StateName`](crate::entity::StateName), [`OutcomeName`](crate::command::OutcomeName) and
 /// [`QualifiedName`] check theirs for the same reason.
+///
+/// Leading underscores are admitted before the first letter (beyond10x/ess#141): `_url` and `__v`
+/// are wire names real services publish, and every target this repository emits for has a
+/// deterministic identifier for them. `_` and `_1` stay refused, because once the underscores are
+/// taken off nothing is left that starts like a name.
 pub(crate) fn field_name(value: &str) -> Result<String, ParseError> {
     let reject = |reason: String| Err(ParseError::identifier("field name", value, reason));
 
-    let Some(first) = value.chars().next() else {
+    if value.is_empty() {
         return reject("must not be empty".to_owned());
+    }
+    let Some(first) = value.trim_start_matches('_').chars().next() else {
+        return reject("must have a letter after its leading underscores, as in `_url`".to_owned());
     };
     if !first.is_ascii_alphabetic() {
         return reject(format!(
-            "must start with a letter, as in `invoice_id`, got {first:?}"
+            "must start with a letter, optionally after underscores, as in `invoice_id` or \
+             `_url`, got {first:?}"
         ));
     }
     for character in value.chars() {
@@ -570,6 +735,15 @@ pub(crate) fn field_name(value: &str) -> Result<String, ParseError> {
         }
     }
     Ok(value.to_owned())
+}
+
+/// `true` when `value` is a field name: [`Field::PATTERN`], decided by the parser that enforces it.
+///
+/// For the checks outside this crate that hold a persisted name to the field-name rule — a suite's
+/// reading member, a periodic contract's input, an entity setup's field. Each used to spell the
+/// rule itself, and each went on refusing `_url` after the specification admitted it.
+pub fn is_field_name(value: &str) -> bool {
+    field_name(value).is_ok()
 }
 
 /// Serde entry point for [`field_name`], so a name nothing could generate is refused while the

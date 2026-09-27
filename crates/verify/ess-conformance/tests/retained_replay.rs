@@ -400,13 +400,21 @@ fn replay_identity_field_uses_the_declared_field_grammar() {
             _ => None,
         })
         .unwrap();
-    for invalid in ["", "bad field", "_leading", "1leading", "nested.field"] {
+    for invalid in ["", "bad field", "_", "_1", "1leading", "nested.field"] {
         let mut malformed = capture.clone();
         malformed.identity = ess_conformance::replay::Identity::Input {
             field: invalid.into(),
         };
         assert!(malformed.validate().is_err(), "{invalid}");
     }
+    // A leading underscore before a letter is a declared field name (beyond10x/ess#141).
+    let mut underscored = capture.clone();
+    underscored.identity = ess_conformance::replay::Identity::Input {
+        field: "_leading".into(),
+    };
+    underscored
+        .validate()
+        .expect("`_leading` is a field name the specification admits");
 }
 
 #[test]

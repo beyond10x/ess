@@ -5679,7 +5679,7 @@ export interface AccessorTypeBody {
   members: string[];
 }
 
-const ACCESSOR_SEGMENT = /^[A-Za-z][A-Za-z0-9_]*$/;
+const ACCESSOR_SEGMENT = /^_*[A-Za-z][A-Za-z0-9_]*$/;
 
 function decodeAccessorField(value: Node): AccessorField {
   const held = isObject(value) ? value : {};

@@ -695,7 +695,7 @@ pub struct RelationSpec {
     /// twice for different reasons, and because a projection needs something to call it that is not
     /// a type.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Whether the source owns the target or merely names it.
     pub kind: RelationKind,
@@ -709,7 +709,7 @@ pub struct RelationSpec {
     /// field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an
     /// optional `one`, in `List<…>` for `many`.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
-    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_]*$"))]
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub via: String,
 }
 

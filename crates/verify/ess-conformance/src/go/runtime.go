@@ -4767,7 +4767,7 @@ func admitAccessorField(value any) error {
 		return err
 	}
 	n, err := text(f["name"])
-	if err != nil || !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(n) {
+	if err != nil || !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(n) {
 		return fmt.Errorf("invalid accessor field name")
 	}
 	for _, key := range []string{"wire", "display", "summary"} {
@@ -5104,7 +5104,7 @@ func admitAccessorMode(value any, item bool) (*accessorObservation, error) {
 		return nil, fmt.Errorf("invalid accessor root")
 	}
 	for _, s := range plan.Segments {
-		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(s) {
+		if !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(s) {
 			return nil, fmt.Errorf("invalid accessor segment")
 		}
 	}
@@ -6614,7 +6614,7 @@ func admitSelection(value any) (*selectionObservation, error) {
 			return nil, err
 		}
 		input := s.Plan.Inputs[index]
-		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(input.Name) || names[input.Name] {
+		if !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(input.Name) || names[input.Name] {
 			return nil, fmt.Errorf("invalid selection input name")
 		}
 		names[input.Name] = true
@@ -6689,7 +6689,7 @@ func admitSelection(value any) (*selectionObservation, error) {
 			return nil, err
 		}
 		selector := s.Plan.Selectors[index]
-		if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(selector.Name) || names[selector.Name] || selector.Input < 0 || selector.Input >= len(inputs) {
+		if !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(selector.Name) || names[selector.Name] || selector.Input < 0 || selector.Input >= len(inputs) {
 			return nil, fmt.Errorf("selection identity invalid")
 		}
 		names[selector.Name] = true

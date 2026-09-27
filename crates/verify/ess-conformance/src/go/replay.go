@@ -307,7 +307,7 @@ type replayIdentity struct {
 }
 
 func (identity replayIdentity) validate() error {
-	if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(identity.Field) {
+	if !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(identity.Field) {
 		return fmt.Errorf("invalid replay identity field")
 	}
 	switch identity.Kind {

@@ -575,7 +575,7 @@ func splitPredicateComparison(trimmed string) (string, string, string, bool) {
 
 var meaningDecimal = regexp.MustCompile(`^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$`)
 
-var factPath = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
+var factPath = regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$`)
 
 // ---- evaluation -------------------------------------------------------------------------------
 

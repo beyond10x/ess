@@ -500,7 +500,7 @@
         "name": {
           "description": "Its name.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -667,7 +667,7 @@
         "name": {
           "description": "Its name.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -2528,7 +2528,7 @@
         "name": {
           "description": "Its name.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -2865,7 +2865,7 @@
         "name": {
           "description": "What the relation is called — `invoices`, `clients`.\n\nA name of its own rather than the target's name, because an entity may reach the same target twice for different reasons, and because a projection needs something to call it that is not a type.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
         "target": {
           "description": "The entity at the other end.",
@@ -2878,7 +2878,7 @@
         "via": {
           "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
           "type": "string",
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false

@@ -7,9 +7,10 @@
 //!
 //! The specification's own patterns do most of the work: a type segment is already `PascalCase`
 //! ([`StateName::PATTERN`](ess_domain::entity::StateName::PATTERN) and the type-name convention),
-//! a field matches `^[A-Za-z][A-Za-z0-9_]*$`, and an outcome is kebab-case. What is left for this
-//! module is joining, case conversion, and the one hazard the specification cannot see: a name that
-//! is legal there and a keyword here.
+//! a field matches `^_*[A-Za-z][A-Za-z0-9_]*$` (a leading `_` is kept: `_url` is a valid Rust
+//! field), and an outcome is kebab-case. What is left for this module is joining, case
+//! conversion, and the one hazard the specification cannot see: a name that is legal there and a
+//! keyword here.
 
 /// A Rust type name for a declaration, relative to the bounded context that owns it.
 ///

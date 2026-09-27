@@ -44,7 +44,7 @@ func admitReading(value any) error {
 		return fmt.Errorf("invalid reading occurrence")
 	}
 	field, err := text(f["field"])
-	if err != nil || len(field) > 128 || !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`).MatchString(field) {
+	if err != nil || len(field) > 128 || !regexp.MustCompile(`^_*[A-Za-z][A-Za-z0-9_]*$`).MatchString(field) {
 		return fmt.Errorf("invalid reading member")
 	}
 	event, _ := text(f["event"])

@@ -640,12 +640,10 @@ pub(crate) fn entity_setup(suite: &ConformanceSuite) -> Result<(), AdmissionErro
                             "identity cannot be null",
                         ));
                     }
-                    if fields.keys().any(|key| {
-                        !key.starts_with(|character: char| character.is_ascii_alphabetic())
-                            || !key.chars().all(|character| {
-                                character.is_ascii_alphanumeric() || character == '_'
-                            })
-                    }) {
+                    if fields
+                        .keys()
+                        .any(|key| !ess_domain::types::is_field_name(key))
+                    {
                         return Err(AdmissionError::new(
                             "InvalidEntitySetup",
                             path,

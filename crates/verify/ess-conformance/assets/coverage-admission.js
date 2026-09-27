@@ -147,7 +147,7 @@ const modelDigest = value => { require(/^[0-9a-f]{64}$/.test(text(value)), 'inva
 const qualified = value => { require(/^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$/.test(text(value)), 'invalid qualified name'); return value }
 const local = value => { qualified(value); require(!value.includes('.'), 'expected local name'); return value }
 const kebab = value => { require(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(text(value)), 'invalid kebab name'); return value }
-const fact = value => { require(/^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$/.test(text(value)), 'invalid fact path'); return value }
+const fact = value => { require(/^_*[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$/.test(text(value)), 'invalid fact path'); return value }
 const sourceIdentity = value => {
   text(value)
   require(!/[\\:\x00-\x1f\x7f-\x9f]/.test(value) && value.split('/').every(part => part !== '' && part !== '.' && part !== '..'), 'invalid root-relative source identity')
@@ -225,7 +225,7 @@ const scalar = value => {
 const operand = value => {
   if (typeof value === 'string') {
     const trimmed = trim(value), numeric = /^[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|inf(?:inity)?|nan)$/i.test(trimmed)
-    if (!['"', "'"].includes(trimmed[0]) && trimmed.includes('.') && !numeric && /^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$/.test(trimmed)) return ['fact', trimmed]
+    if (!['"', "'"].includes(trimmed[0]) && trimmed.includes('.') && !numeric && /^_*[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*$/.test(trimmed)) return ['fact', trimmed]
   }
   return ['literal', scalar(value)]
 }
