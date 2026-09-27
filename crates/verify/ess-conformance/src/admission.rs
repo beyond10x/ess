@@ -328,6 +328,9 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
     if major < 2 && matches!(tag, "counts" | "at") {
         return Err(value.error("UnsupportedVocabulary", "expectation requires suite/2"));
     }
+    if crate::aggregate_delta::needs_newer(tag, major) {
+        return Err(value.error("UnsupportedVocabulary", crate::aggregate_delta::REQUIRES));
+    }
     match tag {
         "contains" | "excludes" => {
             let f = value.closed(&["expect", "fields"], &[])?;
@@ -364,6 +367,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 values(v, major, false)?;
             }
         }
+        "changed_by" => crate::aggregate_delta::admit_json(value)?,
         _ => return Err(value.error("UnsupportedViewExpectation", tag)),
     }
     Ok(())
@@ -504,6 +508,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;
+    crate::aggregate_delta::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;

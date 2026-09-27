@@ -186,7 +186,7 @@ fn over_no_present_value_sum_avg_and_the_extremes_are_absent_and_the_distinct_co
 // ---- synthesis -------------------------------------------------------------------------------
 
 #[test]
-fn the_issues_ungrouped_total_is_unscoped_and_every_other_view_has_its_scenario() {
+fn the_issues_ungrouped_total_and_every_other_view_have_their_scenario() {
     let result = synthesis(ORDERS);
     let ids: Vec<String> = result
         .suite
@@ -200,22 +200,90 @@ fn the_issues_ungrouped_total_is_unscoped_and_every_other_view_has_its_scenario(
         [
             format!("{BY_CUSTOMER}/aggregate"),
             format!("{FOR_CUSTOMER}/aggregate"),
+            format!("{TOTAL}/aggregate"),
             format!("{PER_CHANNEL}/aggregate"),
             format!("{PER_GROUP}/aggregate"),
         ]
     );
     // The issue's `DurationTotal` has no group key and no parameter, so nothing keeps its one row
-    // to rows this scenario made (`ESS-SYNTH-016`) — the page's rule for every aggregate view, not
-    // one about absent values. `DurationForCustomer` is the same total, scoped by a parameter.
+    // to rows this scenario made. It is witnessed by the change the scenario's rows make to it,
+    // which no other user of the target decides; it was `ESS-SYNTH-016` before.
     let refused: Vec<(String, String)> = result
         .refusals
         .iter()
         .filter(|refusal| refusal.to_string().contains("demo.orders."))
         .map(|refusal| (refusal.code().to_string(), refusal.to_string()))
         .collect();
-    assert_eq!(refused.len(), 1, "{refused:?}");
-    assert_eq!(refused[0].0, "ESS-SYNTH-016", "{refused:?}");
-    assert!(refused[0].1.contains(TOTAL), "{refused:?}");
+    assert_eq!(refused, Vec::<(String, String)>::new());
+}
+
+#[test]
+fn the_issues_ungrouped_total_is_asserted_as_the_change_its_rows_make() {
+    let suite = synthesis(ORDERS).suite;
+    let total = scenario(&suite, &format!("{TOTAL}/aggregate"));
+    // A's pattern rows, and the row that lacks `duration`: 1 + 1 + 3 is what they add.
+    assert_eq!(
+        durations(total),
+        vec![
+            Some(number("1")),
+            Some(number("1")),
+            Some(number("3")),
+            None
+        ]
+    );
+    // The view is read and snapshotted before the first row is created, never assumed empty.
+    let first_place = total
+        .steps
+        .iter()
+        .position(|step| matches!(step, ScenarioStep::ExecuteCommand { .. }))
+        .expect("the rows are created");
+    let snapshot = total
+        .steps
+        .iter()
+        .position(
+            |step| matches!(step, ScenarioStep::SnapshotView { view } if view.to_string() == TOTAL),
+        )
+        .expect("the view is snapshotted");
+    assert!(snapshot < first_place, "{:#?}", total.steps);
+    assert!(
+        matches!(
+            &total.steps[snapshot - 1],
+            ScenarioStep::QueryView { view, params } if view.to_string() == TOTAL && params.is_empty()
+        ),
+        "{:#?}",
+        total.steps
+    );
+    // `DurationTotal` is `eventual`: the change is retried until it holds, beside its one row.
+    let after: Vec<ViewExpectation> = total
+        .steps
+        .iter()
+        .skip(first_place)
+        .filter_map(|step| match step {
+            ScenarioStep::EventuallyView {
+                view, expectation, ..
+            } if view.to_string() == TOTAL => Some(expectation.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        after,
+        vec![
+            ViewExpectation::ChangedBy {
+                fields: BTreeMap::from([("total".to_owned(), n("5"))]),
+                absent_is_zero: BTreeSet::from(["total".to_owned()]),
+            },
+            ViewExpectation::Counts {
+                at_least: Some(1),
+                at_most: Some(1),
+            },
+        ]
+    );
+    // No absolute value of the total is asserted anywhere.
+    assert_eq!(contains(total, TOTAL), Vec::<BTreeMap<_, _>>::new());
+    assert_eq!(
+        suite.provenance.suite_version.major(),
+        ess_conformance::aggregate_delta::ORDINARY
+    );
 }
 
 #[test]
@@ -459,14 +527,49 @@ enum Mutant {
     DropsAbsentKeyRows,
     /// A row that lacks `duration` is in no group (`WHERE duration IS NOT NULL`).
     DropsAbsentValueRows,
+    /// `DurationTotal` counts the rows that hold a `duration` instead of summing them.
+    TotalCountsInsteadOfSums,
+}
+
+/// What the target holds before a scenario starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Seed {
+    /// Nothing: every scenario starts on an empty target.
+    Empty,
+    /// Rows another user made, one with a `duration` and one without.
+    Held,
+    /// Rows another user made, none with a `duration`, so `DurationTotal` starts absent.
+    OnlyAbsent,
 }
 
 type Row = BTreeMap<String, Node>;
 
 struct Orders {
     mutant: Mutant,
+    seed: Seed,
     rows: RefCell<Vec<Row>>,
     minted: Cell<u64>,
+}
+
+/// Rows another user of the target made: no value any scenario scopes by.
+fn seeded(seed: Seed) -> Vec<Row> {
+    let other = |id: &str, duration: Option<&str>| {
+        let mut row = Row::new();
+        row.insert("order_id".into(), Node::Text(id.to_owned()));
+        row.insert("customer".into(), Node::Text("someone else".to_owned()));
+        if let Some(duration) = duration {
+            row.insert("duration".into(), n(duration));
+        }
+        row
+    };
+    match seed {
+        Seed::Empty => Vec::new(),
+        Seed::Held => vec![
+            other("00000000-0000-4000-8000-900000000001", Some("40")),
+            other("00000000-0000-4000-8000-900000000002", None),
+        ],
+        Seed::OnlyAbsent => vec![other("00000000-0000-4000-8000-900000000003", None)],
+    }
 }
 
 fn int(node: &Node) -> i128 {
@@ -493,8 +596,13 @@ fn mean(values: &[i128]) -> Node {
 
 impl Orders {
     fn new(mutant: Mutant) -> Self {
+        Self::seeded(mutant, Seed::Empty)
+    }
+
+    fn seeded(mutant: Mutant, seed: Seed) -> Self {
         Self {
             mutant,
+            seed,
             rows: RefCell::default(),
             minted: Cell::new(0),
         }
@@ -584,7 +692,15 @@ impl Orders {
                         out.insert("total".into(), total);
                         out.insert("mean".into(), mean(&present));
                     }
-                    PER_CHANNEL => {
+                    TOTAL if self.mutant == Mutant::TotalCountsInsteadOfSums => {
+                        let counted = if present.is_empty() {
+                            Node::Null
+                        } else {
+                            n(&present.len().to_string())
+                        };
+                        out.insert("total".into(), counted);
+                    }
+                    PER_CHANNEL | TOTAL => {
                         out.insert("total".into(), total);
                     }
                     _ => {}
@@ -600,7 +716,7 @@ impl ConformanceTarget for Orders {
         Ok(ImplementationIdentity::new("orders-fixture", "1"))
     }
     fn begin_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
-        self.rows.replace(Vec::new());
+        self.rows.replace(seeded(self.seed));
         Ok(())
     }
     fn end_scenario(&self, _: &ScenarioContext) -> Result<(), TargetError> {
@@ -655,10 +771,14 @@ impl ConformanceTarget for Orders {
 
 /// The aggregate scenarios that do not pass against this target, and how many ran.
 fn failing(mutant: Mutant) -> (BTreeSet<String>, usize) {
+    failing_on(&Orders::new(mutant))
+}
+
+fn failing_on(target: &Orders) -> (BTreeSet<String>, usize) {
     let suite = synthesis(ORDERS).suite;
     let admitted = AdmittedSuite::from_suite(&suite).unwrap();
     let report = Runner::for_suite(&suite)
-        .run_admitted(&admitted, &Orders::new(mutant))
+        .run_admitted(&admitted, target)
         .into_report();
     let aggregate: Vec<_> = report
         .scenarios
@@ -683,8 +803,52 @@ fn set(views: &[&str]) -> BTreeSet<String> {
 #[test]
 fn the_views_as_specified_pass_their_own_suite() {
     let (failed, ran) = failing(Mutant::None);
-    assert_eq!(ran, 4);
+    assert_eq!(ran, 5);
     assert_eq!(failed, BTreeSet::new());
+}
+
+#[test]
+fn the_views_pass_their_own_suite_on_a_target_that_already_holds_rows() {
+    // The total starts at 40, or absent, and the scenario asserts only what its own rows add.
+    for seed in [Seed::Held, Seed::OnlyAbsent] {
+        let (failed, ran) = failing_on(&Orders::seeded(Mutant::None, seed));
+        assert_eq!(ran, 5, "{seed:?}");
+        assert_eq!(failed, BTreeSet::new(), "{seed:?}");
+    }
+}
+
+#[test]
+fn a_total_that_miscounts_fails_its_scenario_on_an_empty_and_on_a_held_target() {
+    // Empty: 3 against 5. Held: 1 → 4, a change of 3 against 5. Absent: absent → 3.
+    for seed in [Seed::Empty, Seed::Held, Seed::OnlyAbsent] {
+        let (failed, _) = failing_on(&Orders::seeded(Mutant::TotalCountsInsteadOfSums, seed));
+        assert_eq!(failed, set(&[TOTAL]), "{seed:?}");
+    }
+}
+
+#[test]
+fn a_change_with_no_snapshot_before_it_is_a_suite_error_not_a_verdict() {
+    let mut suite = synthesis(ORDERS).suite;
+    suite
+        .scenarios
+        .retain(|id, _| id.to_string() == format!("{TOTAL}/aggregate"));
+    for scenario in suite.scenarios.values_mut() {
+        scenario
+            .steps
+            .retain(|step| !matches!(step, ScenarioStep::SnapshotView { .. }));
+    }
+    let admitted = AdmittedSuite::from_suite(&suite).unwrap();
+    let report = Runner::for_suite(&suite)
+        .run_admitted(&admitted, &Orders::new(Mutant::None))
+        .into_report();
+    assert_eq!(report.scenarios.len(), 1);
+    let result = &report.scenarios[0];
+    assert_eq!(result.status, Status::Error, "{result:#?}");
+    let rendered = format!("{result:?}");
+    assert!(
+        rendered.contains("no view snapshot preceded this change"),
+        "{rendered}"
+    );
 }
 
 #[test]

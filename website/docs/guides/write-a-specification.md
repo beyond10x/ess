@@ -873,8 +873,11 @@ that every row holds, so an `Optional` argument or group key is refused, and so 
 Conformance creates the rows itself, through the declared creating outcome, and asserts every
 group's exact numbers. Because a target may be shared, the rows are kept apart from every other
 scenario's by a group key or a parameter compared with one (`queue_id == param.queue_id`) that is a
-`String` or `Uuid` the creating command sets from its input. A view with neither gets no scenario
-and the refusal `ESS-SYNTH-016`.
+`String` or `Uuid` the creating command sets from its input. An ungrouped view with no parameter
+is over every row, including other scenarios' rows, so conformance reads it before creating its rows
+and asserts only how much each `count` and `sum` changed; its other aggregates are not asserted. A
+grouped view with neither, or an ungrouped one with no `count` or `sum`, gets no scenario and the
+refusal `ESS-SYNTH-016`.
 
 ### A binding says what happens when it fails
 
