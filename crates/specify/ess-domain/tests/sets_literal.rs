@@ -57,6 +57,8 @@ entities:
         type: Boolean
       - name: tries
         type: Integer
+      - name: score
+        type: Decimal
       - name: label
         type: demo.dial.Label
       - name: reason
@@ -371,4 +373,38 @@ commands:
         error.contains("a literal in a payload is text, `true` or `false`"),
         "the payload sentence is unchanged:\n{error}"
     );
+}
+
+#[test]
+fn a_decimal_literal_sets_a_decimal_field_quoted_or_not() {
+    // beyond10x/ess#135: `score: "0.0"`, `0.0`, `"0"` and `0` were all refused, so a creating
+    // branch could only take a default score from an input.
+    for value in ["0.0", "0", "-2.5", "12.75", "0.1"] {
+        spec(&model("score", value))
+            .unwrap_or_else(|error| panic!("`score: \"{value}\"` must compile:\n{error}"));
+        spec(&unquoted("score", value))
+            .unwrap_or_else(|error| panic!("`score: {value}` must compile:\n{error}"));
+    }
+}
+
+#[test]
+fn a_decimal_literal_outside_the_one_grammar_is_refused() {
+    for value in [
+        "+1",
+        "01",
+        ".5",
+        "5.",
+        "1e3",
+        "1,5",
+        "zero",
+        "0.30000000000000001",
+    ] {
+        let error = spec(&model("score", value))
+            .err()
+            .unwrap_or_else(|| panic!("`score: \"{value}\"` must not compile"));
+        assert!(
+            error.contains("Decimal") && error.contains("type_mismatch"),
+            "`score: \"{value}\"`:\n{error}"
+        );
+    }
 }

@@ -451,9 +451,18 @@ fn include_payload_field(
     include_type_ref(types, &field.target_type);
     let source = match &field.value {
         ResolvedPayloadValue::ResponseField { type_ref, .. }
-        | ResolvedPayloadValue::InputField { type_ref, .. } => Some(type_ref),
+        | ResolvedPayloadValue::InputField { type_ref, .. }
+        | ResolvedPayloadValue::SubjectField { type_ref, .. }
+        | ResolvedPayloadValue::InputOrGenerated { type_ref, .. } => Some(type_ref),
+        ResolvedPayloadValue::Struct { fields } => {
+            for field in fields {
+                include_payload_field(ir, types, conversions, field);
+            }
+            None
+        }
         ResolvedPayloadValue::Generated
         | ResolvedPayloadValue::Literal { .. }
+        | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::Cleared => None,
     };
     if let Some(source) = source {

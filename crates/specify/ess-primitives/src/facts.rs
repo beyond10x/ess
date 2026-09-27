@@ -272,6 +272,50 @@ impl Number {
         }
     }
 
+    /// Reads a `Decimal` literal as an author writes one in a `sets:` or `payload:` entry.
+    ///
+    /// One grammar for the validator that admits the literal and the generator that turns it into
+    /// the value a suite compares with, so the two cannot come apart (beyond10x/ess#135): an
+    /// optional `-`, digits without a leading zero, and optionally a point followed by digits.
+    /// `+1`, `01`, `.5`, `5.` and `1e3` are refused rather than normalised. A literal with more
+    /// places than the value it reads as keeps is refused too: `0.30000000000000001` would be
+    /// compared as `0.3`, a value nobody wrote.
+    pub fn decimal_literal(text: &str) -> Option<Self> {
+        let body = text.strip_prefix('-').unwrap_or(text);
+        let (integer, fraction) = match body.split_once('.') {
+            Some((integer, fraction)) => (integer, Some(fraction)),
+            None => (body, None),
+        };
+        let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+        if !digits(integer)
+            || (integer.len() > 1 && integer.starts_with('0'))
+            || fraction.is_some_and(|fraction| !digits(fraction))
+        {
+            return None;
+        }
+        let number = Self::parse_decimal(text)?;
+        (number.exact() == exact_of_decimal_text(text)).then_some(number)
+    }
+
+    /// `self + other`, exactly, where both are exact and the sum survives its own write.
+    ///
+    /// What an `{increment: …}` leaves in a row (beyond10x/ess#134). `None` for a
+    /// [`Binary64`](Repr::Binary64) operand, an overflow, or a sum with more places than binary64
+    /// keeps: a synthesized suite then makes no claim about the field rather than a rounded one.
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        let (a, a_scale) = self.exact()?;
+        let (b, b_scale) = other.exact()?;
+        let scale = a_scale.max(b_scale);
+        let widen =
+            |units: i128, from: u8| (from..scale).try_fold(units, |units, _| units.checked_mul(10));
+        let sum = widen(a, a_scale)?.checked_add(widen(b, b_scale)?)?;
+        let (units, scale) = normalise(sum, u32::from(scale));
+        if scale == 0 {
+            return i64::try_from(units).ok().map(Self::from);
+        }
+        Self::decimal_literal(&exact_text(units, scale))
+    }
+
     /// An exact integer of any width this type can hold.
     pub(crate) fn from_integer(units: i128) -> Self {
         Self(Repr::of_integer(units))

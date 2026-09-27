@@ -1259,6 +1259,25 @@ impl TypeRegistry {
         self.types.get(name)
     }
 
+    /// The fields of the struct `reference` resolves to through `Optional` and newtypes, or `None`
+    /// where it resolves to anything else. A nested payload mapping fills exactly these (ess/14).
+    pub fn struct_fields<'a>(&'a self, reference: &'a TypeRef) -> Option<&'a [Field]> {
+        let mut current = reference;
+        // A newtype chain longer than the registry has declarations is a cycle.
+        for _ in 0..=self.len() {
+            match current {
+                TypeRef::Optional(inner) => current = inner,
+                TypeRef::Named(name) => match &self.get(name)?.body {
+                    TypeBody::Newtype { of, .. } => current = of,
+                    TypeBody::Struct { fields, .. } => return Some(fields),
+                    TypeBody::Enum { .. } | TypeBody::Union { .. } => return None,
+                },
+                TypeRef::Primitive(_) | TypeRef::List(_) | TypeRef::Map(..) => return None,
+            }
+        }
+        None
+    }
+
     /// Every type, in name order.
     pub fn iter(&self) -> impl Iterator<Item = &NamedType> {
         self.types.values()

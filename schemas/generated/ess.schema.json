@@ -394,13 +394,45 @@
             "null"
           ]
         },
+        "else": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawPayloadSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "generated": {
           "type": [
             "boolean",
             "null"
           ]
         },
+        "increment": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawIncrement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "response": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject": {
           "type": [
             "string",
             "null"
@@ -1962,6 +1994,22 @@
       },
       "additionalProperties": false
     },
+    "RawIncrement": {
+      "description": "The amount of an `{increment: …}`: a whole number, an unquoted decimal, or quoted decimal text.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
     "RawInvocation": {
       "description": "What a binding does.",
       "type": "object",
@@ -1979,6 +2027,12 @@
         }
       },
       "additionalProperties": false
+    },
+    "RawNestedSources": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/RawPayloadSource"
+      }
     },
     "RawOutcome": {
       "description": "One outcome as written in a document, before validation.\n\n`when`, `external` and `wrong_state` are the three spellings of a condition; writing none of them is the default branch. In ess/6, `when` beside `external` states input eligibility while retaining an independently arranged external cause. Other conflicts are refused.\n\n`creates`, `moves` and `updates` are the three spellings of a [`Subject`], and follow the same shape for the same reason: three keys an author writes at most one of, rather than one key whose value is sometimes a keyword and sometimes a name. Writing none of them says the outcome changes no entity, which is the honest answer for `SendEmail`.",
@@ -2261,6 +2315,9 @@
         },
         {
           "$ref": "#/definitions/ExplicitPayloadSource"
+        },
+        {
+          "$ref": "#/definitions/RawNestedSources"
         }
       ]
     },

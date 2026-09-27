@@ -418,6 +418,9 @@ pub enum LoweringCode {
     /// entity-core resolves `count` on arrays and maps only, so the lowered rule would be
     /// `Unknown` for every row.
     TextLengthUnsupported,
+    /// A `payload:` or `sets:` source reads the subject, increments, falls back to a generated value
+    /// or nests (ess/14), and entity-core has no value expression for it.
+    ValueExpressionUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1566,6 +1569,14 @@ impl Projector<'_> {
                 );
                 IdentityValue::Literal { value: Value::Null }
             }
+            Some(mapped) if is_value_expression(&mapped.value) => {
+                self.diagnostic(
+                    LoweringCode::ValueExpressionUnsupported,
+                    format!("{}.{}.identity", command.name, outcome.name.as_str()),
+                    "a logical identity is not lowered from an ess/14 value expression",
+                );
+                IdentityValue::Literal { value: Value::Null }
+            }
             mapping => {
                 let target = BoundTarget::LogicalIdentity { at: at.clone() };
                 let (source, requirement_kind) = match mapping {
@@ -1609,8 +1620,15 @@ impl Projector<'_> {
                                 },
                             )
                         }
-                        ResolvedPayloadValue::Literal { .. } | ResolvedPayloadValue::Cleared => {
-                            unreachable!("literals and clears were handled above")
+                        ResolvedPayloadValue::Literal { .. }
+                        | ResolvedPayloadValue::Cleared
+                        | ResolvedPayloadValue::SubjectField { .. }
+                        | ResolvedPayloadValue::Increment { .. }
+                        | ResolvedPayloadValue::InputOrGenerated { .. }
+                        | ResolvedPayloadValue::Struct { .. } => {
+                            unreachable!(
+                                "literals, clears and value expressions were handled above"
+                            )
                         }
                     },
                 };
@@ -2195,6 +2213,17 @@ impl Projector<'_> {
                 kind: ProducedValueKind::Absent,
                 slot: None,
             }),
+            value @ (ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::Struct { .. }) => {
+                self.diagnostic(
+                    LoweringCode::ValueExpressionUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    format!("`{}` has no entity-core lowering", value.describe()),
+                );
+                None
+            }
             ResolvedPayloadValue::InputField { field, type_ref }
                 if mapping.conversion.is_none() =>
             {
@@ -2967,6 +2996,17 @@ enum Scalar {
     Number,
     Binary64,
     String,
+}
+
+/// The ess/14 sources, which entity-core has no value expression for.
+fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
+    matches!(
+        value,
+        ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::Struct { .. }
+    )
 }
 
 fn decode_literal(scalar: Option<&Scalar>, text: &str) -> Result<Value, LoweringCode> {

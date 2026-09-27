@@ -1542,7 +1542,7 @@ fn exercise(
         });
     }
     for event in &emitted {
-        let literals = determined_payload(outcome, event, &run.input);
+        let literals = determined_payload(ir, outcome, event, &run.input, &run.before_settled);
         let shape = crate::response::event_shape(ir, event, outcome);
         let mut payload = crate::fixtures::event_values(outcome, event, &run.input);
         if payload.is_empty() {
@@ -1648,6 +1648,9 @@ struct Run {
     /// The arrangement's, with this branch's own `sets:` applied over the top — this branch runs
     /// last, so where both name a field it is this one's value the row will carry.
     settled: BTreeMap<String, Determined>,
+    /// What the subject's fields held before the branch under test ran: the arrangement's. An ess/14
+    /// payload source that reads the subject is asserted against this.
+    before_settled: BTreeMap<String, Determined>,
 }
 
 impl Run {
@@ -1753,11 +1756,12 @@ fn run(
         }
     }
 
+    let before_settled = setup.settled.clone();
     let mut settled = setup.settled;
     absorb(
         &mut settled,
         outcome,
-        super::synthesize::settled(ir, outcome, &supplied),
+        super::synthesize::settled(ir, outcome, &supplied, &before_settled),
     );
     Ok(Run {
         after_steps,
@@ -1769,6 +1773,7 @@ fn run(
         actor,
         input: supplied,
         source,
+        before_settled,
         settled,
     })
 }
@@ -1890,6 +1895,7 @@ fn run_state_refusal(
         actor,
         input,
         source,
+        before_settled: arranged.settled.clone(),
         settled: arranged.settled,
     })
 }
@@ -1979,7 +1985,7 @@ fn run_replay(
     for event in &original.emits {
         let event = EventRef::from(event);
         setup.push(ScenarioStep::ExpectEvent {
-            payload: determined_payload(original, &event, &origin.input),
+            payload: determined_payload(ir, original, &event, &origin.input, &BTreeMap::new()),
             shape: crate::response::event_shape(ir, &event, original),
             event,
         });
@@ -2036,6 +2042,7 @@ fn run_replay(
         actor: origin.actor,
         input: origin.input,
         source,
+        before_settled: origin.settled.clone(),
         settled: origin.settled,
     })
 }
@@ -2706,7 +2713,8 @@ fn invoke_with(
         instance,
         bound,
     );
-    let settled = settled(ir, driver.outcome, &supplied);
+    // An arranging act reads no row it can name here; an ess/14 source then determines nothing.
+    let settled = settled(ir, driver.outcome, &supplied, &BTreeMap::new());
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&driver.command.name).cloned(),
@@ -3416,9 +3424,11 @@ fn not_emitted(ir: &EssIr, emitted: &[EventRef]) -> Vec<EventRef> {
 /// name no transformation, so the value that went in is the value that comes out — the same
 /// reading [`ScenarioStep::ExpectInvocation`] already makes of a binding's mapped field.
 fn determined_payload(
+    ir: &EssIr,
     outcome: &ResolvedOutcome,
     event: &EventRef,
     supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
 ) -> BTreeMap<String, Node> {
     let mut values = BTreeMap::new();
     let Some(determined) = outcome
@@ -3436,12 +3446,28 @@ fn determined_payload(
             ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::Generated
             | ResolvedPayloadValue::Cleared => {}
+            // Read as the target's type, as `settled` reads a `sets:` literal: `ess-domain` admits
+            // `true`, a whole number and a decimal over the primitives they spell, and asserting
+            // their text would fail every implementation that publishes the number.
             ResolvedPayloadValue::Literal { value } => {
-                values.insert(field.target.clone(), Node::Text(value.clone()));
+                if let Some(read) = literal_value(ir, &field.target_type, value, 0) {
+                    values.insert(field.target.clone(), read);
+                }
             }
             ResolvedPayloadValue::InputField { field: input, .. } => {
                 if let Some(ScenarioValue::Literal { value }) = supplied.get(input) {
                     values.insert(field.target.clone(), value.clone());
+                }
+            }
+            // ess/14: asserted where the arrangement determined what they read, as a literal.
+            ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::Struct { .. } => {
+                if let Some(ScenarioValue::Literal { value }) =
+                    expression_value(ir, field, supplied, before)
+                {
+                    values.insert(field.target.clone(), value);
                 }
             }
         }
@@ -3718,6 +3744,81 @@ fn view_expectations(
     out
 }
 
+/// The value an `ess/14` source leaves in `field`, where the scenario determines it
+/// (`docs/design/value-expressions.md`).
+///
+/// `before` is what the subject's fields held before this act, as the arrangement settled them.
+/// `None` is "not determined": a payload field is then covered by its shape alone, and a `sets:`
+/// target stops being a claim about the row.
+///
+/// | source | determined as |
+/// |---|---|
+/// | `{subject: f}` | what `before` holds for `f` |
+/// | `{increment: n}` | `before`'s number for the target plus `n`, exactly |
+/// | `{input: f, else: …}` | the literal the invocation sent for `f`; nothing when it sent none |
+/// | nested mapping | the struct, where every leaf is a determined literal |
+fn expression_value(
+    ir: &EssIr,
+    field: &ess_compiler::ir::ResolvedPayloadField,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+) -> Option<ScenarioValue> {
+    match &field.value {
+        ResolvedPayloadValue::SubjectField { field: read, .. } => {
+            before.get(read).map(|held| held.value.clone())
+        }
+        ResolvedPayloadValue::Increment { by } => {
+            let ScenarioValue::Literal {
+                value: Node::Number(held),
+            } = &before.get(&field.target)?.value
+            else {
+                return None;
+            };
+            let by = ess_primitives::facts::Number::decimal_literal(by)?;
+            held.checked_add(by).map(|sum| ScenarioValue::Literal {
+                value: Node::Number(sum),
+            })
+        }
+        ResolvedPayloadValue::InputOrGenerated { field: read, .. } => match supplied.get(read)? {
+            ScenarioValue::Literal { value: Node::Null } => None,
+            value @ ScenarioValue::Literal { .. } => Some(value.clone()),
+            _ => None,
+        },
+        ResolvedPayloadValue::Struct { fields } => {
+            let mut leaves = BTreeMap::new();
+            for leaf in fields {
+                if leaf.conversion.is_some() {
+                    return None;
+                }
+                let value = match &leaf.value {
+                    ResolvedPayloadValue::Literal { value } => {
+                        literal_value(ir, &leaf.target_type, value, 0)?
+                    }
+                    ResolvedPayloadValue::InputField { field: read, .. } => {
+                        match supplied.get(read) {
+                            Some(ScenarioValue::Literal { value }) => value.clone(),
+                            _ => return None,
+                        }
+                    }
+                    _ => match expression_value(ir, leaf, supplied, before)? {
+                        ScenarioValue::Literal { value } => value,
+                        _ => return None,
+                    },
+                };
+                leaves.insert(leaf.target.clone(), value);
+            }
+            Some(ScenarioValue::Literal {
+                value: Node::Map(leaves),
+            })
+        }
+        ResolvedPayloadValue::Literal { .. }
+        | ResolvedPayloadValue::InputField { .. }
+        | ResolvedPayloadValue::ResponseField { .. }
+        | ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::Cleared => None,
+    }
+}
+
 /// What one invoked branch leaves in the entity's fields, read against what it was supplied.
 ///
 /// The `sets:` block names the field and where its value comes from; `supplied` is what this
@@ -3755,6 +3856,7 @@ fn settled(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
 ) -> BTreeMap<String, Determined> {
     let mut out = BTreeMap::new();
     for field in &outcome.sets {
@@ -3787,7 +3889,19 @@ fn settled(
                 }
                 None => continue,
             },
-            _ => continue,
+            // ess/14 (`docs/design/value-expressions.md`): read against the row before this act.
+            ResolvedPayloadValue::SubjectField { .. }
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::InputOrGenerated { .. }
+            | ResolvedPayloadValue::Struct { .. } => {
+                match expression_value(ir, field, supplied, before) {
+                    Some(value) => value,
+                    None => continue,
+                }
+            }
+            ResolvedPayloadValue::Generated | ResolvedPayloadValue::ResponseField { .. } => {
+                continue
+            }
         };
         out.insert(
             field.target.clone(),
@@ -3973,8 +4087,8 @@ fn admitted(ir: &EssIr, command: &ResolvedCommand, input: &BTreeMap<String, Node
 /// | target resolves to | the literal is |
 /// |---|---|
 /// | text, or a variant of an enum | the text itself |
-/// | `Boolean`, `Integer` | that value, spelled as [`crate::input::primitive_literal`] admits |
-/// | `Decimal`, `Binary64` | nothing — no admitted literal spelling |
+/// | `Boolean`, `Integer`, `Decimal` | that value, spelled as [`crate::input::primitive_literal`] admits |
+/// | `Binary64` | nothing — no admitted literal spelling |
 /// | a struct, a union, a list, a map | nothing — a literal is one piece of text |
 ///
 /// **This deliberately duplicates a rule `ess-domain` also enforces, and is not dead for it.**
@@ -5093,13 +5207,14 @@ fn from_source(
     });
     for event in outcome.emits.iter().map(EventRef::from) {
         steps.push(ScenarioStep::ExpectEvent {
-            payload: determined_payload(outcome, &event, &supplied),
+            payload: determined_payload(ir, outcome, &event, &supplied, &arrangement.settled),
             shape: crate::response::event_shape(ir, &event, outcome),
             event,
         });
     }
+    let determined = settled(ir, outcome, &supplied, &arrangement.settled);
     let mut left = arrangement.settled;
-    absorb(&mut left, outcome, settled(ir, outcome, &supplied));
+    absorb(&mut left, outcome, determined);
     // The reads go after the command in a block of their own: a `QueryView` the arrangement made
     // is a read of the row before it moved.
     let mut asserted = Vec::new();

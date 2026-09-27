@@ -1468,19 +1468,7 @@ fn sets_sentence(outcome: &ess_compiler::ir::ResolvedOutcome) -> Vec<Inline> {
                     value => vec![
                         Inline::code(field.target.clone()),
                         Inline::text(" from "),
-                        Inline::code(match value {
-                            ResolvedPayloadValue::InputField { field, .. } => {
-                                format!("input.{field}")
-                            }
-                            ResolvedPayloadValue::Literal { value } => format!("\"{value}\""),
-                            ResolvedPayloadValue::ResponseField { field, .. } => {
-                                format!("response field `{field}`")
-                            }
-                            ResolvedPayloadValue::Generated => {
-                                "implementation-generated".to_owned()
-                            }
-                            ResolvedPayloadValue::Cleared => unreachable!("matched above"),
-                        }),
+                        Inline::code(value.describe()),
                     ],
                 };
                 if let Some(because) = &field.conversion {
