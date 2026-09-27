@@ -2,10 +2,11 @@
 format: aep.planning-md/2
 id: story:aggregates-over-optional-fields
 kind: story
-status: draft
+status: implemented
 title: Aggregate over and group by an Optional field
 relations:
 - decomposes: epic:retrofit-findings-20260927
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: crates/specify/ess-compiler/src/ir.rs
@@ -29,7 +30,7 @@ scope:
   path: docs/design/aggregate-views.md
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 5
+revision: 8
 ---
 ## Scope
 

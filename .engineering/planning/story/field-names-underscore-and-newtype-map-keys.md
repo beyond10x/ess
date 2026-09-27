@@ -2,13 +2,13 @@
 format: aep.planning-md/2
 id: story:field-names-underscore-and-newtype-map-keys
 kind: story
-status: active
+status: implemented
 title: A field name may start with an underscore, and a map key may be a newtype
 relations:
 - decomposes: epic:retrofit-findings-20260927
 - serves: vision:O2
 - supersedes: story:field-names-wire-and-value-types
-revision: 3
+revision: 4
 ---
 ## Scope
 

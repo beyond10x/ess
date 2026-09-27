@@ -2,10 +2,11 @@
 format: aep.planning-md/2
 id: story:subject-guard-input-and-case-folding
 kind: story
-status: draft
+status: implemented
 title: A subject guard compares with the input, and text compares without case
 relations:
 - decomposes: epic:retrofit-findings-20260927
+- serves: vision:O2
 scope:
 - confidence: inferred
   path: CHANGELOG.md
@@ -43,7 +44,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 5
+revision: 8
 ---
 ## Scope
 

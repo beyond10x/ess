@@ -2,9 +2,10 @@
 format: aep.planning-md/2
 id: story:outcome-shapes-beyond-ess-14
 kind: story
-status: draft
+status: implemented
 title: Create into a state, delete a subject, answer an unknown id, accept with no subject, seed the explorer
 relations:
+- serves: vision:O2
 - decomposes: epic:retrofit-findings-20260927
 scope:
 - confidence: inferred
@@ -31,7 +32,7 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: schemas/generated/ess.schema.json
-revision: 5
+revision: 8
 ---
 ## Scope
 

@@ -2,12 +2,13 @@
 format: aep.planning-md/2
 id: story:ess-manages-its-toolchain
 kind: story
-status: draft
+status: implemented
 title: Any ess runs the release a repository pins
 relations:
 - supersedes: story:external-mutation-explorer-and-toolchain
 - decomposes: epic:retrofit-findings-20260927
-revision: 1
+- serves: vision:O2
+revision: 4
 ---
 ## Scope
 

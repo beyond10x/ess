@@ -2,12 +2,13 @@
 format: aep.planning-md/2
 id: story:field-wire-names-and-presence-policy
 kind: story
-status: draft
+status: implemented
 title: A field keeps its wire name, and an Optional says whether it is sent as null
 relations:
+- serves: vision:O2
 - decomposes: epic:retrofit-findings-20260927
 - supersedes: story:field-names-wire-and-value-types
-revision: 1
+revision: 4
 ---
 ## Scope
 

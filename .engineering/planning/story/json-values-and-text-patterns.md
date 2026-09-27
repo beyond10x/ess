@@ -2,12 +2,13 @@
 format: aep.planning-md/2
 id: story:json-values-and-text-patterns
 kind: story
-status: draft
+status: implemented
 title: Any JSON value is a type, and a text type can require a prefix or pattern
 relations:
 - decomposes: epic:retrofit-findings-20260927
+- serves: vision:O2
 - supersedes: story:field-names-wire-and-value-types
-revision: 1
+revision: 4
 ---
 ## Scope
 

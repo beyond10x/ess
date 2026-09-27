@@ -148,3 +148,13 @@ functions (`boundary_inputs`, `freshened`).
 All four fork from `a0a18d31b` and merge into `integrate/retrofit-wave-1`; one PR.
 Split on 2026-09-27: `story:field-names-wire-and-value-types` and
 `story:external-mutation-explorer-and-toolchain` archived, superseded by six stories.
+
+## Closed 2026-09-27
+
+All nine units (wave 1: synthesis, names, mutate, explorer; wave 2: toolchain, aggregates, guards,
+outcomes, types) merged into `integrate/retrofit-wave-1`. `task check` exit 0 at `2c94940ac`,
+`task site-lab` exit 0. Ten stories implemented with `test_result` evidence; seventeen adversary
+passes carry a `review_outcome`. Released as 0.37.0 from one PR. Left out and filed:
+`story:witness-search-beyond-64-candidates`, `story:ungrouped-aggregate-views-are-witnessed`,
+`story:view-filters-witnessed-on-matching-rows`. Issues #162-#176, #178, #179 filed during the
+wave are triaged under `epic:retrofit-findings-round-3`.

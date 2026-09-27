@@ -2,13 +2,13 @@
 format: aep.planning-md/2
 id: story:mutate-drives-an-external-target
 kind: story
-status: active
+status: implemented
 title: Mutation audits a real implementation through its own runner
 relations:
 - serves: vision:O2
 - decomposes: epic:retrofit-findings-20260927
 - supersedes: story:external-mutation-explorer-and-toolchain
-revision: 3
+revision: 4
 ---
 ## Scope
 

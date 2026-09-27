@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:synthesis-kills-connective-and-source-mutants
 kind: story
-status: active
+status: implemented
 title: Synthesis kills dropped-source and connective mutants, and witnesses partial views
 relations:
 - decomposes: epic:retrofit-findings-20260927
@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
-revision: 7
+revision: 8
 ---
 ## Scope
 

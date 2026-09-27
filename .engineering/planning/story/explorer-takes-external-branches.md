@@ -2,13 +2,13 @@
 format: aep.planning-md/2
 id: story:explorer-takes-external-branches
 kind: story
-status: active
+status: implemented
 title: The model explorer reaches external branches and reports reach per branch
 relations:
 - serves: vision:O2
 - supersedes: story:external-mutation-explorer-and-toolchain
 - decomposes: epic:retrofit-findings-20260927
-revision: 3
+revision: 4
 ---
 ## Scope
 
