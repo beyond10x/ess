@@ -3332,7 +3332,8 @@ fn primitive_literal(primitive: Primitive, value: &str) -> Result<(), Option<&'s
         | Primitive::Timestamp
         | Primitive::Duration
         | Primitive::Uuid
-        | Primitive::Bytes => return Err(None),
+        | Primitive::Bytes
+        | Primitive::Json => return Err(None),
     };
     Err(Some(spelling))
 }
@@ -3416,9 +3417,23 @@ fn literal_representation(
         // literal fills. It is not every type with no values of its own — one whose field names
         // nothing, and one sitting behind an `Optional`, are both `Structured` and both refused
         // here, because here is where they are refused at all.
-        Resolution::Established(Representation::Text)
-        | Resolution::Undeclared
-        | Resolution::Uninhabited => None,
+        // A declared prefix is the one text constraint a literal is held to here: every value
+        // starts with it, so a literal that does not is a value the type does not have
+        // (beyond10x/ess#146).
+        Resolution::Established(Representation::Text) => resolved
+            .types
+            .effective_prefix(&held.type_ref)
+            .filter(|prefix| !value.starts_with(prefix.as_str()))
+            .map(|prefix| LiteralRefusal {
+                reason: format!(
+                    "`{value}` does not start with {prefix:?}, the prefix every value of \
+                     `{owner}.{target}` starts with"
+                ),
+                hint: format!(
+                    "write the literal starting with the prefix, as in `{prefix}{value}`"
+                ),
+            }),
+        Resolution::Undeclared | Resolution::Uninhabited => None,
         // A type that has values and still resolves through itself is nobody else's error: no pass
         // reports it, so admitting the literal would be admitting one that was never checked.
         Resolution::Cyclic(through) => refuse(format!(
@@ -3706,12 +3721,25 @@ fn example_layers(
     for layer in newtypes {
         let crate::types::TypeBody::Newtype {
             alphabet,
+            prefix,
             invariants,
             ..
         } = &layer.body
         else {
             continue;
         };
+        if let (Some(prefix), Some(text)) = (prefix, example.as_text()) {
+            if !text.starts_with(prefix.as_str()) {
+                return Err((
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{example}` does not start with {prefix:?}, the prefix of `{}`",
+                        layer.name
+                    ),
+                    "write an example that starts with the prefix the type declares",
+                ));
+            }
+        }
         if let (Some(alphabet), Some(text)) = (alphabet, example.as_text()) {
             if let Some(outside) = text
                 .chars()
@@ -3809,6 +3837,32 @@ pub struct RawCommandSpec {
     pub refs: Refs,
 }
 
+/// One field of a command's input: a [`Field`] that may also carry an `example:`.
+///
+/// Read through [`RawInputField`], which also takes the nested `naming:` spelling
+/// (beyond10x/ess#142); see it for why this is a type of its own.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "RawInputField")]
+pub struct InputField {
+    /// Its name, which [`RawInputField`] checks is a field name.
+    pub name: String,
+    /// Its type.
+    #[serde(rename = "type")]
+    pub type_ref: TypeRef,
+    /// What it is on the wire, and what a person is shown.
+    #[serde(flatten, skip_serializing_if = "Naming::is_empty")]
+    pub naming: Naming,
+    /// The value synthesis builds this input from (ess/11). Not a constraint: the input still
+    /// accepts every value of its type.
+    ///
+    /// An authored `example: null` is kept as `Some(Node::Null)` rather than read as no example,
+    /// so validation can refuse it: an example is a value, and `null` is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example: Option<Node>,
+}
+
+// An input field as written: `InputField`'s keys, plus the nested `naming:` synonym a `RawField`
+// also reads (beyond10x/ess#142). The rustdoc below is the published schema's description.
 /// One field of a command's input, as written: a [`Field`] that may also carry an `example:`.
 ///
 /// Its own type rather than a key on [`Field`], which struct, event, error, entity, view,
@@ -3818,11 +3872,10 @@ pub struct RawCommandSpec {
 /// The attributes are [`Field`]'s exactly, and `the_published_input_field_is_a_field_plus_exactly_example`
 /// holds the two published schemas to differing by that one property
 /// (`docs/design/string-alphabet-and-length.md`, section 2).
-#[derive(
-    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
+#[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct InputField {
+#[schemars(rename = "InputField")]
+pub struct RawInputField {
     /// Its name.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
     #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
@@ -3831,19 +3884,46 @@ pub struct InputField {
     #[serde(rename = "type")]
     pub type_ref: TypeRef,
     /// What it is on the wire, and what a person is shown.
-    #[serde(default, flatten, skip_serializing_if = "Naming::is_empty")]
+    #[serde(default, flatten)]
     pub naming: Naming,
+    /// The same naming, written nested as commands and events write theirs. Not beside the flat
+    /// keys.
+    #[serde(default, rename = "naming")]
+    pub nested_naming: Option<Naming>,
+    /// How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a
+    /// naming key, so no other construct's `naming:` can declare one.
+    #[serde(default)]
+    pub presence: Option<crate::types::Presence>,
     /// The value synthesis builds this input from (ess/11). Not a constraint: the input still
     /// accepts every value of its type.
     ///
     /// An authored `example: null` is kept as `Some(Node::Null)` rather than read as no example,
     /// so validation can refuse it: an example is a value, and `null` is none.
-    #[serde(
-        default,
-        deserialize_with = "deserialize_example",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, deserialize_with = "deserialize_example")]
     pub example: Option<Node>,
+}
+
+impl TryFrom<RawInputField> for InputField {
+    type Error = String;
+
+    fn try_from(raw: RawInputField) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: raw.name,
+            type_ref: raw.type_ref,
+            naming: crate::types::field_naming(raw.naming, raw.nested_naming, raw.presence)?,
+            example: raw.example,
+        })
+    }
+}
+
+impl schemars::JsonSchema for InputField {
+    fn schema_name() -> String {
+        <RawInputField as schemars::JsonSchema>::schema_name()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        <RawInputField as schemars::JsonSchema>::json_schema(generator)
+    }
 }
 
 /// Reads a present `example:` as written, `null` included.
@@ -4901,6 +4981,7 @@ mod tests {
                 name: name("billing.invoice.Email"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Primitive(Primitive::String),
                     invariants: Vec::new(),
                 },
@@ -6587,6 +6668,7 @@ payload:
                     name: name(&format!("billing.chain.Link{index}")),
                     body: TypeBody::Newtype {
                         alphabet: None,
+                        prefix: None,
                         of: TypeRef::Named(name(&of)),
                         invariants: Vec::new(),
                     },
@@ -6606,6 +6688,7 @@ payload:
                 name: name("billing.chain.Cycle"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Optional(Box::new(TypeRef::Named(name("billing.chain.Cycle")))),
                     invariants: Vec::new(),
                 },
@@ -6708,6 +6791,7 @@ payload:
                 name: name("billing.chain.Ring"),
                 body: TypeBody::Newtype {
                     alphabet: None,
+                    prefix: None,
                     of: TypeRef::Named(name("billing.chain.Ring")),
                     invariants: Vec::new(),
                 },

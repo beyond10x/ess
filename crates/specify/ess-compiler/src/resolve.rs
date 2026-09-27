@@ -1328,6 +1328,7 @@ impl<'a> Resolver<'a> {
             TypeBody::Newtype {
                 of,
                 alphabet,
+                prefix,
                 invariants,
             } => {
                 let mut of_needles = vec![format!("of: {of}")];
@@ -1337,6 +1338,7 @@ impl<'a> Resolver<'a> {
                 Some(ResolvedBody::Newtype {
                     of,
                     alphabet: alphabet.clone(),
+                    prefix: prefix.clone(),
                     invariants: invariants.clone(),
                 })
             }

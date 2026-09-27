@@ -26,6 +26,7 @@ fn field(name: &str, kind: &str) -> Field {
 fn newtype(of: &str) -> TypeBody {
     TypeBody::Newtype {
         alphabet: None,
+        prefix: None,
         of: TypeRef::parse(of).unwrap(),
         invariants: vec![],
     }

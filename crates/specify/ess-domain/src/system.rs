@@ -1247,6 +1247,7 @@ mod tests {
             name: name(qualified),
             body: TypeBody::Newtype {
                 alphabet: None,
+                prefix: None,
                 of: TypeRef::Primitive(of),
                 invariants: Vec::new(),
             },

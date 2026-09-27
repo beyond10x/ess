@@ -288,6 +288,42 @@ the first witness starts from. It is not a constraint, it has to be a value of t
 only a scalar input takes one. Generated code documents an alphabet and does not enforce it, and
 Entity Runtime refuses both an alphabet and a text length by name.
 
+### Say what a text starts with
+
+A `String` newtype whose every value starts with fixed text says so with `prefix:`. It needs
+`format: ess/15`.
+
+```yaml
+types:
+  - name: demo.msgs.Channel
+    kind: newtype
+    of: String
+    prefix: "/"
+```
+
+The prefix is literal text, not a pattern. The published JSON Schema carries it as an anchored
+`pattern` (`^/`), every witness synthesis builds starts with it (`/channel` for a field named
+`channel`), and a literal written for the field that does not start with it is refused. Beside an
+`alphabet:` every character of the prefix has to be in the alphabet, and a newtype of a newtype may
+declare a longer prefix that starts with the inner one. Entity Runtime lowers the prefix to a
+`starts_with` rule.
+
+### Carry any JSON value
+
+`Json` is a primitive for a value the specification does not structure: a body delivered as it
+arrived. It needs `format: ess/15`.
+
+```yaml
+types:
+  - {name: demo.msgs.Body, kind: newtype, of: Json}
+```
+
+It projects to the empty JSON Schema, which every value satisfies, and a suite compares it
+structurally: an object with the same members in another order is the same value. It is never a map
+key, a predicate never reads one, and no literal spells one, so a payload fills a `Json` field from
+an input. Entity Runtime stores it as its own JSON field kind. The Rust, Go, web and CLI code
+targets refuse a model that uses it, at every position, until they have a representation for it.
+
 ### Select an outcome from the held subject state
 
 `ess/3`, introduced in 0.23.0, allows `when_subject_state` beside an ordinary input predicate:
@@ -941,6 +977,44 @@ which are what an operator types. Formats `ess/1` … `ess/4` refuse a variant t
 with `unsupported_format_version` at `types.<type>.variants.<variant>`, and a bare list is admitted
 by every format, so nothing written before this moves. `ess verify diff` reports a moved spelling as
 `VariantWireNameChanged` under [`ess-diff/5`](../reference/formats.md#change-and-conformance-records).
+
+### A field can carry its own wire name
+
+A field of a struct, an event or a command input that travels under another name declares it, flat
+or nested the way commands and events write their own naming:
+
+```yaml
+events:
+  - name: demo.orders.Placed
+    fields:
+      - name: order_id
+        type: demo.orders.OrderId
+        naming: {wire: orderId}   # the same as `wire: orderId` on the field
+```
+
+Writing both spellings on one field is refused. The model keeps the declared name, so a payload
+mapping and a predicate still say `order_id`, and JSON Schema, OpenAPI and AsyncAPI key the property
+`orderId`. The field is written back flat, so the two spellings are one model with one digest.
+
+### Say whether an absent Optional is sent as null
+
+An `Optional<T>` field says how its absent value travels with `presence:` (`format: ess/15`):
+
+```yaml
+types:
+  - name: demo.orders.OrderReceipt
+    kind: struct
+    fields:
+      - {name: partner_ref, type: Optional<String>, presence: null_when_absent}
+      - {name: discount_code, type: Optional<String>, presence: omitted_when_absent}
+```
+
+`null_when_absent` makes the JSON Schema property required and nullable; `omitted_when_absent`
+keeps it optional and not nullable, which is what an `Optional` field without a policy already
+publishes. A suite carries the policy on the field's payload leaf, so an implementation that sends
+`null` for `discount_code` or leaves `partner_ref` out fails; such a suite is written as
+`ess-conformance/24` (or `/25` with coverage), which the Go and TypeScript runners refuse by version.
+`presence:` on a required field, or in a command's, event's or type's own `naming:`, is refused.
 
 ## Three layers above the domains
 

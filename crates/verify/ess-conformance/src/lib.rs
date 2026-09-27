@@ -142,6 +142,7 @@ pub mod interpret;
 pub mod mutate;
 pub mod outcome_shapes;
 pub mod periodic;
+pub mod presence;
 pub mod quoted_predicate_format;
 pub mod reading;
 pub mod reference;

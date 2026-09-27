@@ -1960,3 +1960,111 @@ fn a_case_insensitive_guard_is_refused_by_name_by_the_lowering() {
         );
     }
 }
+
+/// A declared prefix is `value starts_with <prefix>`, which entity-core has an operator for, so
+/// it lowers to a nominal rule rather than being refused as an alphabet is (beyond10x/ess#146).
+#[test]
+fn a_prefix_lowers_to_a_starts_with_rule() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4\n", "format: ess/15\n"),
+            (
+                "domains/local.yaml",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n    prefix: \"sh/\"\n",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .unwrap_or_else(|diagnostics| panic!("a prefix lowers: {diagnostics:?}"));
+    let rendered: Vec<String> = lowered
+        .definitions()
+        .values()
+        .map(|definition| serde_json::to_string(definition.as_definition()).expect("serializes"))
+        .collect();
+    assert!(
+        rendered
+            .iter()
+            .any(|text| text.contains("starts_with") && text.contains("\"sh/\"")),
+        "{rendered:#?}"
+    );
+}
+
+/// A `Json` field (beyond10x/ess#138) lowers to entity-core's own JSON value kind, which checks
+/// nothing about the value, rather than being refused.
+#[test]
+fn a_json_field_lowers_to_the_json_field_kind() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4\n", "format: ess/15\n"),
+            (
+                "domains/local.yaml",
+                "      - name: memo\n        type: Optional<String>\n",
+                "      - name: memo\n        type: Optional<Json>\n",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .unwrap_or_else(|diagnostics| panic!("a Json field lowers: {diagnostics:?}"));
+    let rendered: Vec<String> = lowered
+        .definitions()
+        .values()
+        .map(|definition| serde_json::to_string(definition.as_definition()).expect("serializes"))
+        .collect();
+    assert!(
+        rendered
+            .iter()
+            .any(|text| text.contains(r#""memo":{"type":"json""#)),
+        "{rendered:#?}"
+    );
+}
+
+/// Two layers of one newtype chain that each declare an invariant lower two rules with two names:
+/// the outer layer keeps the name it always had, the inner one is told apart by its type.
+#[test]
+fn invariants_at_two_layers_of_a_newtype_chain_lower_to_distinct_rule_names() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/contract");
+    let ir = compile_changes(
+        &fixture,
+        &[
+            ("system.yaml", "format: ess/4\n", "format: ess/15\n"),
+            (
+                "domains/local.yaml",
+                "  - name: contract.local.Shared\n    kind: newtype\n    of: String\n",
+                "  - name: contract.local.Base\n    kind: newtype\n    of: String\n    invariants: [value != \"a\"]\n\n  - name: contract.local.Shared\n    kind: newtype\n    of: contract.local.Base\n    invariants: [value != \"b\"]\n",
+            ),
+        ],
+    );
+    let plan = SynthesisPlan::of(&ir);
+    let lowered = lower(
+        &selected(&ir, &plan, "local-service"),
+        &options(&["contract.foreign.Owner", "contract.local.Child"]),
+    )
+    .unwrap_or_else(|diagnostics| panic!("lowers: {diagnostics:?}"));
+    let child = lowered
+        .definitions()
+        .values()
+        .map(|definition| serde_json::to_string(definition.as_definition()).expect("serializes"))
+        .find(|text| text.contains(r#""entity":"contract.local.Child""#))
+        .expect("the child is lowered");
+    assert!(
+        child.contains("\"nominal_contract_local_Child_fields_note_0000\""),
+        "{child}"
+    );
+    assert!(
+        child.contains("\"nominal_contract_local_Child_fields_note_0000_contract_local_Base\""),
+        "{child}"
+    );
+}

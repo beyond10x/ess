@@ -2,6 +2,7 @@
 use crate::scenario::{CommandRef, EventRef, OutcomeRef};
 use crate::selection::Declaration;
 use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedOutcome, ResolvedPayloadValue};
+use ess_domain::types::Presence;
 use ess_domain::{Field, QualifiedName, TypeRef};
 use ess_primitives::node::Node;
 use std::collections::BTreeMap;
@@ -81,7 +82,14 @@ impl Observation {
             let fields: Vec<_> = command
                 .response
                 .iter()
-                .map(|f| Field::new(&f.name, crate::accessor::unresolve(&f.type_ref)))
+                .map(|f| {
+                    // Only the presence policy of a response field is carried (beyond10x/ess#139):
+                    // it is what the comparison below holds an absent value to, and without one
+                    // the observation keeps its bytes.
+                    let mut field = Field::new(&f.name, crate::accessor::unresolve(&f.type_ref));
+                    field.naming.presence = f.naming.presence;
+                    field
+                })
                 .collect();
             let declarations =
                 crate::typed_fields::declarations(ir, fields.iter().chain(&targets))?;
@@ -161,6 +169,23 @@ impl Observation {
         }
         if bytes > 1_048_576 {
             return Err("response byte limit".into());
+        }
+        for field in &self.fields {
+            match (field.presence(), response.get(&field.name)) {
+                (Some(Presence::NullWhenAbsent), None) => {
+                    return Err(format!(
+                        "response field {} was left out, and it is declared null_when_absent",
+                        field.name
+                    ))
+                }
+                (Some(Presence::OmittedWhenAbsent), Some(Node::Null)) => {
+                    return Err(format!(
+                    "response field {} was sent as null, and it is declared omitted_when_absent",
+                    field.name
+                ))
+                }
+                _ => {}
+            }
         }
         for (target, source) in &self.mappings {
             let actual = response.get(source);

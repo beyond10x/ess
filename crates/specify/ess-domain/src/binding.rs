@@ -2103,6 +2103,7 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
     fn newtype(of: &str) -> TypeBody {
         TypeBody::Newtype {
             alphabet: None,
+            prefix: None,
             of: type_ref(of),
             invariants: Vec::new(),
         }

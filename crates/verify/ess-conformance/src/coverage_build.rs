@@ -478,7 +478,9 @@ fn coverage_version(
     suite: &crate::ConformanceSuite,
     inventory: &Inventory,
 ) -> crate::scenario::SuiteFormat {
-    crate::scenario::SuiteFormat::parse(if crate::outcome_shapes::used_by(suite) {
+    crate::scenario::SuiteFormat::parse(if crate::presence::used_by(suite) {
+        "ess-conformance/25"
+    } else if crate::outcome_shapes::used_by(suite) {
         "ess-conformance/23"
     } else if crate::text_match_format::case_fold_used_by(suite) {
         "ess-conformance/21"

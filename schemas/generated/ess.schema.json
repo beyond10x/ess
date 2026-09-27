@@ -521,6 +521,30 @@
           "type": "string",
           "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         },
+        "naming": {
+          "description": "The same naming, written nested as commands and events write theirs. Not beside the flat keys.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Naming"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presence": {
+          "description": "How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a naming key, so no other construct's `naming:` can declare one.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Presence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
           "type": [
@@ -674,6 +698,7 @@
         },
         "example": {
           "description": "The value synthesis builds this input from (ess/11). Not a constraint: the input still accepts every value of its type.\n\nAn authored `example: null` is kept as `Some(Node::Null)` rather than read as no example, so validation can refuse it: an example is a value, and `null` is none.",
+          "default": null,
           "anyOf": [
             {
               "$ref": "#/definitions/Node"
@@ -687,6 +712,30 @@
           "description": "Its name.",
           "type": "string",
           "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+        },
+        "naming": {
+          "description": "The same naming, written nested as commands and events write theirs. Not beside the flat keys.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Naming"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presence": {
+          "description": "How an absent value travels, on an `Optional<T>` field (ess/15). A field key rather than a naming key, so no other construct's `naming:` can declare one.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Presence"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "summary": {
           "description": "One line about what it is, for generated documentation.",
@@ -856,6 +905,14 @@
                 {
                   "$ref": "#/definitions/TypeRef"
                 }
+              ]
+            },
+            "prefix": {
+              "description": "The text every value starts with (ess/15); only a newtype of `String` takes one.",
+              "default": null,
+              "type": [
+                "string",
+                "null"
               ]
             },
             "reading": {
@@ -1278,6 +1335,25 @@
           "additionalProperties": {
             "$ref": "#/definitions/Node"
           }
+        }
+      ]
+    },
+    "Presence": {
+      "description": "How an absent value of an `Optional<T>` field is spelled on the wire (beyond10x/ess#139, ess/15).\n\nAn `Optional` that declares neither admits both spellings, as it always did. A field that declares one is held to it by the published JSON Schema and by a conformance suite's payload shape, so an implementation that swaps the two fails.",
+      "oneOf": [
+        {
+          "description": "The key is always sent; an absent value is an explicit `null`.",
+          "type": "string",
+          "enum": [
+            "null_when_absent"
+          ]
+        },
+        {
+          "description": "The key is left out when the value is absent, and never sent as `null`.",
+          "type": "string",
+          "enum": [
+            "omitted_when_absent"
+          ]
         }
       ]
     },
