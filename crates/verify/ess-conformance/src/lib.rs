@@ -127,6 +127,7 @@ pub mod accessor;
 mod accessor_types;
 pub mod admission;
 pub mod aggregate;
+pub mod aggregate_delta;
 pub mod authored;
 mod count_json;
 pub mod counts;

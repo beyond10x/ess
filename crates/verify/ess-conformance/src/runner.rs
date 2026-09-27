@@ -924,7 +924,7 @@ impl<C: Clock> Runner<C> {
         let Ok(bound) = resolve_params(view, params, run) else {
             return Flow::Stop;
         };
-        let required = match Required::of(expectation, run) {
+        let required = match Required::of_view(view, expectation, run) {
             Ok(required) => required,
             Err(reason) => {
                 run.record(unresolvable(view, &run.id, &reason));
@@ -1958,7 +1958,7 @@ fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> 
         ));
         return Flow::Continue;
     }
-    let required = match Required::of(expectation, run) {
+    let required = match Required::of_view(view, expectation, run) {
         Ok(required) => required,
         Err(reason) => {
             run.record(unresolvable(view, &run.id, &reason));
@@ -2567,6 +2567,67 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
         Required::At {
             position, fields, ..
         } => at(position, fields, result),
+        Required::ChangedBy {
+            before,
+            fields,
+            absent_is_zero,
+        } => changed_by(before, fields, absent_is_zero, result),
+    }
+}
+
+/// The view's one row moved by exactly the stated amounts since its snapshot (suite/26).
+///
+/// Both reads must hold one row, as an ungrouped aggregate view always does; either holding
+/// another number is the implementation contradicting the view's definition, not a change of any
+/// size. Every field that moved by another amount is named, with both values it was read at.
+///
+/// A field absent on either read reads as zero only when `absent_is_zero` lists it (a skipping
+/// `sum`). Any other field is `0` over no row, so its absence is the implementation contradicting
+/// the view, whatever the other read held.
+fn changed_by(
+    before: &[ViewRow],
+    fields: &BTreeMap<String, Node>,
+    absent_is_zero: &BTreeSet<String>,
+    result: &SemanticViewResult,
+) -> Verdict {
+    let ([earlier], [later]) = (before, result.rows.as_slice()) else {
+        return Verdict::Unsatisfied(format!(
+            "the snapshot held {} row(s) and this read {}; an ungrouped aggregate view holds one",
+            before.len(),
+            result.rows.len()
+        ));
+    };
+    let mut wrong = Vec::new();
+    for (field, expected) in fields {
+        let was = earlier.get(field).unwrap_or(&Node::Null);
+        let now = later.get(field).unwrap_or(&Node::Null);
+        if !absent_is_zero.contains(field) && (*was == Node::Null || *now == Node::Null) {
+            wrong.push(format!(
+                "`{field}` was read as {} and then {}; it is never absent: over no row it is 0",
+                quote(was),
+                quote(now)
+            ));
+            continue;
+        }
+        match crate::aggregate::change(was, now) {
+            Some(moved) if crate::aggregate::same_number(&moved, expected) == Some(true) => {}
+            Some(moved) => wrong.push(format!(
+                "`{field}` changed by {} ({} → {})",
+                quote(&moved),
+                quote(was),
+                quote(now)
+            )),
+            None => wrong.push(format!(
+                "`{field}` was read as {} and then {}, which are not both numbers",
+                quote(was),
+                quote(now)
+            )),
+        }
+    }
+    if wrong.is_empty() {
+        Verdict::Satisfied
+    } else {
+        Verdict::Unsatisfied(wrong.join("; "))
     }
 }
 
@@ -2705,9 +2766,43 @@ enum Required {
         /// What that row must match.
         fields: BTreeMap<String, Node>,
     },
+    /// The view's one row moved by these amounts since its snapshot (suite/26).
+    ChangedBy {
+        /// Every row the snapshot of this view captured.
+        before: Vec<ViewRow>,
+        /// The amount each named field must have changed by.
+        fields: BTreeMap<String, Node>,
+        /// The fields whose absent value reads as zero.
+        absent_is_zero: BTreeSet<String>,
+    },
 }
 
 impl Required {
+    /// [`Self::of`], for an expectation of `view`: a change is resolved against the snapshot this
+    /// run took of that view, which only the view names.
+    fn of_view(view: &ViewRef, expectation: &ViewExpectation, run: &Run) -> Result<Self, String> {
+        let ViewExpectation::ChangedBy {
+            fields,
+            absent_is_zero,
+        } = expectation
+        else {
+            return Self::of(expectation, run);
+        };
+        if let Some(reason) = crate::aggregate_delta::defect(fields, absent_is_zero) {
+            return Err(reason);
+        }
+        let before = run
+            .view_snapshots
+            .get(view)
+            .cloned()
+            .ok_or_else(|| "no view snapshot preceded this change".to_owned())?;
+        Ok(Self::ChangedBy {
+            before,
+            fields: fields.clone(),
+            absent_is_zero: absent_is_zero.clone(),
+        })
+    }
+
     /// Resolves every reference an expectation carries against what this run has bound.
     fn of(expectation: &ViewExpectation, run: &Run) -> Result<Self, String> {
         let resolve = |fields: &BTreeMap<String, ScenarioValue>| {
@@ -2756,6 +2851,10 @@ impl Required {
                     position: position.clone(),
                     fields: resolve(fields)?,
                 }
+            }
+            // Read only through `of_view`, which knows whose snapshot it is.
+            ViewExpectation::ChangedBy { .. } => {
+                return Err("a change is read against a snapshot of the view it names".to_owned())
             }
         })
     }
@@ -2905,6 +3004,14 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
                 .collect::<Vec<_>>()
                 .join(", then ");
             format!("{view} holds its rows ordered by {keys}")
+        }
+        Required::ChangedBy { fields, .. } => {
+            let amounts = fields
+                .iter()
+                .map(|(field, amount)| format!("`{field}` by {}", quote(amount)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{view}'s one row changed since its snapshot: {amounts}")
         }
     }
 }

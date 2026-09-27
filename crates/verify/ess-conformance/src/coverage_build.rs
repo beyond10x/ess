@@ -478,7 +478,8 @@ fn coverage_version(
     suite: &crate::ConformanceSuite,
     inventory: &Inventory,
 ) -> crate::scenario::SuiteFormat {
-    crate::scenario::SuiteFormat::parse(if crate::leaf_payloads::used_by(suite) {
+    let round_three = crate::aggregate_delta::used_by(suite);
+    crate::scenario::SuiteFormat::parse(if round_three || crate::leaf_payloads::used_by(suite) {
         "ess-conformance/27"
     } else if crate::presence::used_by(suite) {
         "ess-conformance/25"

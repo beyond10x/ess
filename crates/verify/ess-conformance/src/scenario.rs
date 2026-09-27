@@ -154,7 +154,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::leaf_payloads::used_by(self) {
+        self.provenance.suite_version = if crate::leaf_payloads::used_by(self)
+            || crate::aggregate_delta::used_by(self)
+        {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
                 crate::leaf_payloads::ORDINARY
@@ -2382,6 +2384,26 @@ pub enum ViewExpectation {
         /// has a row at that position, which is a claim [`Counts`](Self::Counts) makes better.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         fields: BTreeMap<String, ScenarioValue>,
+    },
+    /// The view's one row changed, since the [`SnapshotView`](ScenarioStep::SnapshotView) of it,
+    /// by exactly these amounts (suite/26, [`crate::aggregate_delta`]).
+    ///
+    /// The claim an ungrouped aggregate view with no parameter admits on a shared target (§8): its
+    /// one row is over rows other users made too, so its absolute value is theirs to decide, and
+    /// the change is the scenario's own. Both the snapshot and this read must hold exactly one
+    /// row. Each amount is a number, compared exactly.
+    ///
+    /// A field is absent over no row only where the function makes it so — a skipping `sum`
+    /// (`skip_absent: true`) over no present value. Such a field is listed in
+    /// [`absent_is_zero`](Self::ChangedBy::absent_is_zero), and its absent value reads as zero.
+    /// Every other field — a `count`, a `sum` over a required input — is `0` over no row, so its
+    /// value absent on either read fails the expectation.
+    ChangedBy {
+        /// The fields to compare, by name, and the amount each must have changed by.
+        fields: BTreeMap<String, Node>,
+        /// The fields of [`fields`](Self::ChangedBy::fields) whose absent value reads as zero.
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+        absent_is_zero: BTreeSet<String>,
     },
 }
 
