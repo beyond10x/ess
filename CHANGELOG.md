@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-09-27
+
 ### Added
 
 - Value expressions in `payload:` and `sets:`, source format `ess/14`: `{subject: <field>}` reads
