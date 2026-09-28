@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-09-28
+
 ### Added
 
 - **`ess-composition/3`: reader-side conformance (#191).** A `conformances:` entry may carry

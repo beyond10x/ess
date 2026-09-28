@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/runtime-parity-0.40.0
+repository: ess
+publishedAt: 2026-09-28T21:00:00Z
+title: Generated Go and TypeScript runtimes run every suite, and reader-side composition checks
+summary: >-
+  The generated Go and TypeScript runtimes run suites `ess-conformance/22` to `/27` with the Rust runner's verdicts, where 0.38.0 refused them. `ess-composition/3` adds `reader: true`, admitting the widenings a consumer may read. Duplicate names are refused once, and the schema publishes name charsets.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.40.0
+  version: 0.40.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
