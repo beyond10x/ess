@@ -80,7 +80,6 @@
   actor or command they belong to. Paths with no declaration needle, such as
   `topology.workloads.<component>`, are still cited at their key.
 
-
 ## [0.39.0] — 2026-09-28
 
 ### Added
