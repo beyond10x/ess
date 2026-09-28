@@ -201,7 +201,10 @@ impl std::fmt::Display for BindingCause {
 #[serde(deny_unknown_fields)]
 pub struct RawBindingSpec {
     /// Its identifier, unique in the system.
+    // `BindingName::PATTERN`, published so an editor refuses what `BindingName::new` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
     #[serde(alias = "id")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
     pub name: String,
     /// What it reacts to.
     pub when: RawTrigger,
