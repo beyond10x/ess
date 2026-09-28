@@ -97,7 +97,7 @@ Left out:
 
 | unit | story | issue | worktree (managed id) | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|---|---|
-| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | adversary 2 (head ff62941c5) |
+| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | merged |
 | reader | `a-reader-side-conformance-admits-reader-widening` | #191 | `ess-n-reader` | `impl/reader-side-conformance` | `~/.cache/b10x-target/ess-n-reader` | `~/.cache/ess-wave-c1/reader` | merged (380852f06) |
 
 The full gate that was running on this branch (`fmt-check` 0, `clippy` 0, `test` in progress) was stopped at 99% disk use (13G free); it runs once, on the whole shared branch, after every unit has merged. Its build dir was deleted (disk back to 64G).
@@ -113,3 +113,5 @@ Coordinator decisions for #191 are in the story body (per-entry `reader: true` i
 - 14:14 reader: two over-refusals pinned (ess-composition 70→85), committed 5994d2b00; VERIFIED; merged as 380852f06.
 - 14:28 docdrift: correction 1 green (ess-conformance 1374 passed, 0 failed), committed ff62941c5; 6 outcomes fixed; adversary pass 2 dispatched. Behaviour change: emit refuses a suite version the emitted runtime does not admit. Left: ess-cli coverage.rs:160 message still says suite/8 and /9 (not in scope).
 - 14:31 integrate/ess-next: stale 'runtimes refuse /22–/27' text fixed in 21 files; origin/main (0.39.0, #190) merged (67e5e19fe), conflicts in formats.md and spec-versions.md resolved keeping both sides; CHANGELOG Unreleased assembled (Added #191, Changed target surface, Fixed #188, #186, correctness-1). This release is 0.40.0.
+- 14:38 docdrift: adversary pass 2 green; VERIFIED; merged into integrate/ess-next. All eight units merged; full gate next.
+- 15:34 gate on a4b422e7e stopped at 100% disk after fmt-check 0 and clippy 0 (test step incomplete); build dir ess-next-int (56G) deleted. One final gate runs on the release candidate after #192 and wave 5 merge. Primary checkout: 2 stale store edits restored, 3 stashes dropped, 726M pre-migration .engineering/state and untracked .agents/ + one review doc removed — non-integrated content archived under ~/.local/state/worktree/archives/ess/primary-leftovers-20260928/; primary fast-forwarded to main 9966add71.
