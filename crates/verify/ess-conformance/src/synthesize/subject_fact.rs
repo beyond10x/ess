@@ -458,8 +458,9 @@ fn inputs_for(
 /// Which branch this command selects for the row `arrangement` holds and this input, if exactly
 /// one does.
 ///
-/// A row whose state no move of the command starts from is the wrong-state family's, and selects
-/// nothing here. An `Unknown` stored fact selects no branch, and never the default.
+/// A row whose state no move of the command starts from is the wrong-state family's
+/// ([`refusal_witness`]) and is not answered here, although its stored fields do select a guarded
+/// branch there. An `Unknown` stored fact selects no branch, and never the default.
 fn selects<'a>(
     ir: &EssIr,
     command: &'a ResolvedCommand,
@@ -550,36 +551,33 @@ pub(super) fn input_selects(
     Ok(pick.is_some_and(|branch| branch.name == outcome.name))
 }
 
-/// The input a wrong-state scenario sends a command reading stored fields (beyond10x/ess#173):
-/// one the moving branch `outcome`'s own input guard admits, where it declares one, and that the
-/// input half of every other non-default branch refutes: a plain `when:` branch, and the `when:`
-/// beside a `when_subject:` one alike.
+/// The row and input a wrong-state scenario sends a command reading stored fields
+/// (beyond10x/ess#173, #192): an input the moving branch `outcome`'s own input guard admits, where
+/// it declares one, sent to a row in `state` on which no sibling branch is selected.
 ///
-/// In a state no move of the command starts from, no branch is selected by the row — the stored
-/// facts never get a say, which is why [`selects`] answers nothing there. So the input is the one
-/// that would have reached the moving branch in a state the command runs from: its own input guard
-/// passed and no sibling's input half claimed. An input a sibling's `when:` admits would make the
-/// scenario depend on whether the implementation decides the state or that guard first, which the
-/// specification does not settle; refuting every such guard, as the default branch's input does in
-/// `plain_guards`, keeps the state the only thing the scenario varies. The row half, and a default
-/// defined against it, are the arranged row's business, and the wrong-state row leaves them
-/// undecided on purpose.
+/// A guarded branch is selected in any state before `wrong_state` applies — the stored fields do
+/// select there (`docs/design/cross-record-and-stored-field-guards.md`, *Wrong state*; Entity
+/// Runtime orders guarded branches before the wrong-state one). So every sibling is missed:
 ///
-/// A sibling that needs both halves — a `when:` beside a `when_subject:` — is selected by neither
-/// alone, so it is equally missed where the arranged row falsifies its subject half
-/// (beyond10x/ess#192): `already-confirmed: history == Confirmed, token != ""` beside
-/// `token-required: token == ""` leaves no input refuting both input halves, and the witness sends
-/// `token != ""` to a row whose `history` is not `Confirmed`. That reading is taken only where no
-/// candidate refutes every input half, so a witness that already did stays the one it was. A
-/// branch with no subject half — a plain `when:`, an input-guarded refusal (#178) — is still missed
-/// only through its input, and so is a mixed sibling whose subject half the row holds or does not
-/// decide: the scenario is then refused rather than left to depend on evaluation order.
+/// * a branch guarded by its input alone — a plain `when:`, an input-guarded refusal (#178) — only
+///   through its input;
+/// * a branch guarded by the stored row alone — `held: when_subject: history == Pending` — only
+///   through the row, which must decide its guard false;
+/// * a branch that needs both — a `when:` beside a `when_subject:` — through either: its input half
+///   refuted, or, where no candidate refutes every input half, its subject half decided false by
+///   the row. `already-confirmed: history == Confirmed, token != ""` beside `token-required: token
+///   == ""` is missed by `token != ""` on a row whose `history` is not `Confirmed`.
 ///
-/// Where the witness relies on the row, the row is `arrangement` when it already falsifies what
-/// is relied on, and otherwise the first row in `state` the declared drivers leave that does —
-/// found by the search [`prepare`] arranges subject-fact branches with, steered by the command's
-/// own stored guards. Either way the fields relied on are observed before the command, as
-/// [`prepare`] observes them: the row is a fact the scenario is about, not one it assumes.
+/// A sibling that moves the subject along a transition not starting from `state` needs no
+/// refuting: selected or not, the move is the wrong-state answer.
+///
+/// A candidate refuting every input half is preferred, so a witness that already did stays the one
+/// it was. The row is `arrangement` where it serves, and otherwise the first row in `state` the
+/// declared drivers leave that does — found by the search [`prepare`] arranges subject-fact
+/// branches with, steered by the command's own stored guards. Where no row serves, the scenario is
+/// refused (ESS-SYNTH-003, naming the guards) rather than written to depend on evaluation order.
+/// Every stored guard the witness relies on the row for is observed before the command, as
+/// [`prepare`] observes it: the row is a fact the scenario is about, not one it assumes.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn refusal_witness(
     ir: &EssIr,
@@ -607,11 +605,7 @@ pub(super) fn refusal_witness(
                         if &node.state != state {
                             return Ok(None);
                         }
-                        Ok(
-                            refusal_input(ir, entity, node, command, outcome, distinction)
-                                .ok()
-                                .filter(|(_, relied)| !relied.is_empty()),
-                        )
+                        Ok(refusal_input(ir, entity, node, command, outcome, distinction).ok())
                     },
                 );
                 let Ok((row, (input, relied))) = found else {
@@ -629,9 +623,9 @@ pub(super) fn refusal_witness(
     Ok((arrangement, input))
 }
 
-/// The input [`refusal_witness`] sends to `arrangement`'s row, and the stored guards of the mixed
-/// siblings it misses through that row rather than through its input: empty where every sibling's
-/// input half is refuted, which is every witness there was before beyond10x/ess#192.
+/// The input [`refusal_witness`] sends to `arrangement`'s row, and the stored guards of the
+/// siblings it misses through that row rather than through its input: every row-only sibling's,
+/// and a mixed sibling's where its input half holds.
 fn refusal_input(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -656,20 +650,68 @@ fn refusal_input(
         .iter()
         .filter_map(|other| input_guard(&other.condition))
         .collect();
+    // A sibling selected by the stored row alone — `held: when_subject: history == Pending` — is
+    // taken in any state before `wrong_state` applies, and no input refutes it: only the row can.
+    // A sibling moving the subject along a transition that does not start from the row's state is
+    // answered by `wrong_state` whether or not its guard selects it — Entity Runtime lowers no
+    // held-state guard onto a stored-field branch, and a move from a state it does not leave is the
+    // wrong-state answer — so the row need not refute it (`rushed: urgent and not fast` on the row
+    // `rush` itself left in `Rushed`).
+    let answered_by_state = |other: &ResolvedOutcome| {
+        other
+            .subject
+            .as_ref()
+            .and_then(|own| own.effect.transition())
+            .is_some_and(|transition| !transition.from.contains(&arrangement.state))
+    };
+    let row_only: Vec<&ResolvedOutcome> = guarded(command)
+        .filter(|other| other.name != outcome.name && input_guard(&other.condition).is_none())
+        .filter(|other| stored(&other.condition).is_some() && !answered_by_state(other))
+        .collect();
+    // What the row must refute, where the input leaves it to the row: every row-only sibling's
+    // stored guard, and a mixed sibling's where its input half holds.
+    let halves: Vec<Predicate> = row_only
+        .iter()
+        .chain(&branches)
+        .filter_map(|other| stored(&other.condition))
+        .collect();
+    // The row the stored guards read is the command's subject; a row of another entity decides
+    // none of them.
+    let on_row = common(command).is_some_and(|subject| &subject.entity == entity);
+    let falsified = |branch: &ResolvedOutcome, input: &BTreeMap<String, Node>| {
+        stored(&branch.condition).filter(|predicate| {
+            on_row
+                && row_truth_with(
+                    ir,
+                    entity,
+                    &arrangement.settled,
+                    predicate,
+                    Some((command, input)),
+                ) == Truth::False
+        })
+    };
     let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
     let mut through_row = None;
-    for input in &inputs {
+    let mut lost_on_row = false;
+    'candidates: for input in &inputs {
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
         if !decides(&facts, &own, true)? {
             continue;
         }
+        let mut relied = Vec::new();
+        for branch in &row_only {
+            let Some(predicate) = falsified(branch, input) else {
+                lost_on_row = true;
+                continue 'candidates;
+            };
+            relied.push(predicate);
+        }
         if decides(&facts, &siblings, false)? {
-            return Ok((input.clone(), Vec::new()));
+            return Ok((input.clone(), relied));
         }
         if through_row.is_some() {
             continue;
         }
-        let mut relied = Vec::new();
         for branch in &branches {
             let Some(guard) = input_guard(&branch.condition) else {
                 continue;
@@ -677,49 +719,67 @@ fn refusal_input(
             if decides(&facts, &[guard], false)? {
                 continue;
             }
-            let falsified = branch
-                .subject
-                .as_ref()
-                .filter(|subject| &subject.entity == entity)
-                .and_then(|_| stored(&branch.condition))
-                .filter(|predicate| {
-                    row_truth_with(
-                        ir,
-                        entity,
-                        &arrangement.settled,
-                        predicate,
-                        Some((command, input)),
-                    ) == Truth::False
-                });
-            let Some(predicate) = falsified else {
-                relied.clear();
-                break;
+            if stored(&branch.condition).is_some() && answered_by_state(branch) {
+                continue;
+            }
+            let Some(predicate) = falsified(branch, input) else {
+                lost_on_row |= stored(&branch.condition).is_some();
+                continue 'candidates;
             };
             relied.push(predicate);
         }
-        if !relied.is_empty() {
-            through_row = Some((input.clone(), relied));
-        }
+        through_row = Some((input.clone(), relied));
     }
     if let Some(found) = through_row {
         return Ok(found);
     }
-    let mut named = own.clone();
-    named.extend(siblings.iter().copied());
-    let rendered = match (own.is_empty(), siblings.is_empty()) {
-        (_, true) => super::rendered(&own, true),
-        (true, false) => super::rendered(&siblings, false),
-        (false, false) => format!(
-            "{} and {}",
-            super::rendered(&own, true),
-            super::rendered(&siblings, false)
-        ),
-    };
-    Err(super::unsatisfied(
-        &named,
-        rendered,
+    Err(refusal_unsatisfied(
+        entity,
+        &own,
+        &siblings,
+        lost_on_row.then_some(halves.as_slice()),
         inputs.len().min(super::MAX_CANDIDATES),
     ))
+}
+
+/// ESS-SYNTH-003 for [`refusal_input`]: the input guards no candidate satisfied, and — where some
+/// candidate was lost only to the row — the stored guards the row had to refute.
+fn refusal_unsatisfied(
+    entity: &EntityHandle,
+    own: &[&Predicate],
+    siblings: &[&Predicate],
+    halves: Option<&[Predicate]>,
+    tried: usize,
+) -> RefusalCause {
+    let mut named = own.to_vec();
+    named.extend(siblings.iter().copied());
+    let mut rendered = match (own.is_empty(), siblings.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => super::rendered(own, true),
+        (true, false) => super::rendered(siblings, false),
+        (false, false) => format!(
+            "{} and {}",
+            super::rendered(own, true),
+            super::rendered(siblings, false)
+        ),
+    };
+    if let Some(halves) = halves {
+        named.extend(halves.iter());
+        let row = format!(
+            "a `{entity}` row in this state refuting every one of: {}",
+            halves
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        rendered = if rendered.is_empty() {
+            row
+        } else {
+            format!("{rendered}, on {row}")
+        };
+    }
+    super::unsatisfied(&named, rendered, tried)
 }
 
 /// The stored fields `outcome`'s `sets:` fills from an input field, and the input field each reads.

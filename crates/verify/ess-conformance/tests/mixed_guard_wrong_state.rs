@@ -388,3 +388,88 @@ fn an_input_alone_guard_is_still_missed_only_through_its_input() {
         );
     }
 }
+
+// ---- siblings selected by the stored row alone ---------------------------------------------------
+//
+// A guarded branch is selected in any state before `wrong_state` applies (coordinator ruling,
+// beyond10x/ess#192; Entity Runtime orders guarded branches before the wrong-state one), so a
+// sibling guarded by the row alone is missed only through the row.
+
+/// `held: when_subject: history == Pending`, a refusal selected by the stored row alone.
+const HELD: &str = "      - name: held\n        when_subject: {predicate: 'history == Pending'}\n        error: demo.orders.Held\n";
+
+fn with_held(text: &str) -> String {
+    let held = text
+        .replace(
+            "      - name: gone\n        wrong_state: true\n",
+            &format!("{HELD}      - name: gone\n        wrong_state: true\n"),
+        )
+        .replace(
+            "errors:\n",
+            "errors:\n  - {name: demo.orders.Held, summary: The order is held., fields: []}\n",
+        );
+    assert_ne!(held, text);
+    held
+}
+
+/// Only `held` beside the move and `gone`: no input guard anywhere.
+fn held_alone(variants: &str) -> String {
+    let text = with_held(&without_token_required(ORDERS))
+        .replace(
+            "      - name: already-confirmed\n        when_subject: {field: history, equals: Confirmed}\n        when: token != \"\"\n        preserves: demo.orders.Order\n        instance: id\n",
+            "",
+        )
+        .replace(
+            "variants: [Pending, Confirmed]",
+            &format!("variants: {variants}"),
+        );
+    assert!(!text.contains("already-confirmed"));
+    text
+}
+
+#[test]
+fn a_row_only_sibling_is_missed_through_the_row_whichever_variant_is_declared_first() {
+    for variants in ["[Pending, Confirmed]", "[Confirmed, Pending]"] {
+        let result = synthesis(&held_alone(variants));
+        let refused = refusals_about(&result, CLOSED);
+        assert_eq!(refused, Vec::<String>::new(), "{variants}");
+        let witness = scenario(&result, CLOSED);
+        let history = placed_history(witness);
+        assert!(
+            !history.is_empty() && history.iter().all(|value| value == "Confirmed"),
+            "{variants}: the row refutes held: {history:?}"
+        );
+        assert!(requires(witness, GONE), "{variants}: requires `gone`");
+        let observed = witness.steps.iter().any(|step| {
+            matches!(
+                step,
+                ScenarioStep::QueryView { .. }
+                    | ScenarioStep::ExpectView { .. }
+                    | ScenarioStep::EventuallyView { .. }
+            ) && format!("{step:?}").contains("\"Confirmed\"")
+        });
+        assert!(observed, "{variants}: history is observed before Confirm");
+    }
+}
+
+#[test]
+fn no_row_refuting_every_subject_guard_refuses_the_scenario_and_names_them() {
+    // `held` claims every Pending row, `already-confirmed` every Confirmed row under
+    // `token != ""`, and `token-required` claims `token == ""`: no row and input miss all three.
+    let result = synthesis(&with_held(ORDERS));
+    assert!(
+        !result
+            .suite
+            .scenarios
+            .keys()
+            .any(|key| key.to_string() == CLOSED),
+        "{CLOSED} is not written"
+    );
+    let refused = refusals_about(&result, CLOSED);
+    let [only] = refused.as_slice() else {
+        panic!("{CLOSED}: one refusal, found {refused:#?}");
+    };
+    assert!(only.starts_with("ESS-SYNTH-003"), "{only}");
+    assert!(only.contains("history == Pending"), "{only}");
+    assert!(only.contains(r#"token == """#), "{only}");
+}
