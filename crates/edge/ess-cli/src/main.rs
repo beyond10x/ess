@@ -627,6 +627,33 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Check a recorded concurrent history for linearizability against the specification's model.
+    ///
+    /// Reads an `ess-history/1` document recorded against the specification at `--path`, and
+    /// searches for an order of its operations the interpreter accepts, answer for answer. The
+    /// history records no inputs, so an operation is explained by any candidate input synthesis
+    /// would submit for its command. Reads of views are not judged and are listed. A violation is
+    /// reported with the longest partial linearization found and a shrunk history that is still a
+    /// violation.
+    ///
+    /// Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget`
+    /// before it finished, which is never a pass. Exit 2: the specification or the history could
+    /// not be read, the specification did not load, or the
+    /// history or one of its operations was refused.
+    CheckHistory {
+        /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The `ess-history/1` document.
+        #[arg(long)]
+        history: PathBuf,
+        /// How many executions of the model the search may spend; the same history and budget
+        /// always give the same verdict.
+        #[arg(long, default_value_t = ess_conformance::linearize::DEFAULT_BUDGET)]
+        budget: u64,
+        #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
+        format: MachineFormat,
+    },
 }
 
 /// The mutant classes `mutate --class` takes, one per `ess_conformance::mutate::MutantClass`.
@@ -2989,7 +3016,58 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         command @ ConformCommand::Run { .. } => conform_run(command),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
+        ConformCommand::CheckHistory {
+            path,
+            history,
+            budget,
+            format,
+        } => Ok(check_history(&path, &history, budget, format)),
     }
+}
+
+/// `ess verify conform check-history`: 0 linearizable, 1 violation, 3 unknown, 2 refused.
+fn check_history(path: &Path, history: &Path, budget: u64, format: MachineFormat) -> ExitCode {
+    const REFUSED: u8 = 2;
+    // Every refusal exits 2, including one the loader or the file system reports as an error:
+    // exit 1 is the Violation verdict, and a history nobody read is not one.
+    let loaded = match resolved(path, Format::Text) {
+        Ok(Ok((loaded, _))) => loaded,
+        Ok(Err(_)) => return ExitCode::from(REFUSED),
+        Err(error) => {
+            eprintln!("check-history.specification-unreadable: {error:#}");
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let bytes = match fs::read(history) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!(
+                "check-history.history-unreadable: reading {}: {error}",
+                history.display()
+            );
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let digest = ess_conformance::SuiteProvenance::of(&loaded).spec_digest;
+    let recorded = match ess_conformance::history::read(&bytes, &digest) {
+        Ok(recorded) => recorded,
+        Err(refusal) => {
+            eprintln!("{} was refused: {refusal}", history.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let report = match ess_conformance::linearize::report(&loaded, &recorded, budget) {
+        Ok(report) => report,
+        Err(refusal) => {
+            eprintln!("{} cannot be checked: {refusal}", history.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    match format {
+        MachineFormat::Text => print!("{}", report.to_text()),
+        MachineFormat::Json => print!("{}", report.to_json()),
+    }
+    ExitCode::from(report.exit_code())
 }
 
 /// `ess verify conform run`: one suite against one built-in target.
@@ -4366,7 +4444,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 63;
+    const AREA_LEAVES: usize = 64;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in

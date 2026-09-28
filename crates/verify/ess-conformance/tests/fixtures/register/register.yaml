@@ -1,0 +1,96 @@
+format: ess/11
+system: register
+version: v1
+domain: register.cell
+types:
+  - name: register.cell.RegisterId
+    kind: newtype
+    of: Uuid
+errors:
+  - name: register.cell.OtherValue
+    fields: []
+events:
+  - name: register.cell.RegisterCreated
+    fields:
+      - {name: register_id, type: register.cell.RegisterId}
+  - name: register.cell.Written
+    fields:
+      - {name: register_id, type: register.cell.RegisterId}
+  - name: register.cell.Read
+    fields:
+      - {name: register_id, type: register.cell.RegisterId}
+entities:
+  - name: register.cell.Register
+    identity:
+      name: register_id
+      type: register.cell.RegisterId
+    lifecycle:
+      initial: Zero
+      states: [Zero, One]
+      terminal: []
+      transitions:
+        - {name: write_zero, from: [Zero, One], to: Zero}
+        - {name: write_one, from: [Zero, One], to: One}
+        - {name: saw_zero, from: [Zero], to: Zero}
+        - {name: saw_one, from: [One], to: One}
+commands:
+  - name: register.cell.CreateRegister
+    input: []
+    outcomes:
+      - name: created
+        creates: register.cell.Register
+        instance: register_id
+        emits: [register.cell.RegisterCreated]
+        payload:
+          register.cell.RegisterCreated:
+            register_id: {generated: true}
+  - name: register.cell.WriteZero
+    input:
+      - {name: register_id, type: register.cell.RegisterId}
+    outcomes:
+      - name: written
+        moves: register.cell.Register.write_zero
+        instance: register_id
+        emits: [register.cell.Written]
+        payload:
+          register.cell.Written:
+            register_id: input.register_id
+  - name: register.cell.WriteOne
+    input:
+      - {name: register_id, type: register.cell.RegisterId}
+    outcomes:
+      - name: written
+        moves: register.cell.Register.write_one
+        instance: register_id
+        emits: [register.cell.Written]
+        payload:
+          register.cell.Written:
+            register_id: input.register_id
+  - name: register.cell.ReadZero
+    input:
+      - {name: register_id, type: register.cell.RegisterId}
+    outcomes:
+      - name: zero
+        moves: register.cell.Register.saw_zero
+        instance: register_id
+        emits: [register.cell.Read]
+        payload:
+          register.cell.Read:
+            register_id: input.register_id
+      - name: other
+        wrong_state: true
+        error: register.cell.OtherValue
+  - name: register.cell.ReadOne
+    input:
+      - {name: register_id, type: register.cell.RegisterId}
+    outcomes:
+      - name: one
+        moves: register.cell.Register.saw_one
+        instance: register_id
+        emits: [register.cell.Read]
+        payload:
+          register.cell.Read:
+            register_id: input.register_id
+      - name: other
+        wrong_state: true
+        error: register.cell.OtherValue

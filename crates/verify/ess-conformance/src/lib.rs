@@ -140,12 +140,14 @@ pub mod go;
 pub mod history;
 pub mod input;
 pub mod interpret;
+pub mod linearize;
 pub mod mutate;
 pub mod outcome_shapes;
 pub mod periodic;
 pub mod presence;
 pub mod quoted_predicate_format;
 pub mod reading;
+pub mod record;
 pub mod reference;
 /// Exact observations of retained command results.
 pub mod replay;

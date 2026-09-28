@@ -47,6 +47,9 @@ use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_conformance::faulty::{self, Caught, Fault, Injection, System};
+use ess_conformance::history::Verdict;
+use ess_conformance::linearize;
+use ess_conformance::record::{self, Atomic};
 use ess_conformance::reference::{Billing, Oracle, Untraced};
 use ess_conformance::report::{CheckCode, ConformanceReport, ConformanceStatus, Status};
 use ess_conformance::runner::Runner;
@@ -327,6 +330,10 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             an invoice no record carries, and one wrong error name is wrong in
     //                             all four. Narrower is not available: the injection sees a command
     //                             and a result, not which invoice.
+    //   LostUpdate             0  a race: every scenario runs one call at a time, so nothing happens
+    //                             between the read and the write and every answer is the
+    //                             reference's. The row is caught by a recorded concurrent history,
+    //                             and the test after the next section says so.
     let allowance: &[(Fault, usize)] = &[
         (Fault::WrongEvent, 24),
         (Fault::DropConsistencyToken, 9),
@@ -340,6 +347,7 @@ fn a_faults_blast_radius_is_accounted_for() {
         (Fault::PartialEventPayload, 2),
         (Fault::WrongEventPayload, 2),
         (Fault::NegativeProjectedTotal, 4),
+        (Fault::LostUpdate, 0),
     ];
 
     for fault in Fault::ALL {
@@ -357,7 +365,11 @@ fn a_faults_blast_radius_is_accounted_for() {
             fault.written(),
             fault.system().directory(),
             broken.len(),
-            fault.caught().scenario().unwrap_or("— nothing"),
+            match fault.caught() {
+                Caught::By(scenario) => scenario,
+                Caught::ByHistory(_) => "— a concurrent history only",
+                Caught::Nothing(_) => "— nothing",
+            },
             report.scenarios.len() - broken.len(),
             report.scenarios.len(),
         );
@@ -514,6 +526,78 @@ fn a_wrong_mapping_is_invisible_to_a_target_that_cannot_show_its_invocations() {
         "nothing in the report names the value that was actually mapped, which is the cost of \
          having exactly one scenario able to see it"
     );
+}
+
+// ---- the row only a concurrent history catches ---------------------------------------------------
+
+#[test]
+fn a_fault_only_a_concurrent_history_catches_passes_every_suite_scenario_and_fails_the_history() {
+    // The epic's rule for a check that adds a bug class: a planted fault the new check catches and
+    // no earlier check catches. Both halves are asserted. The earlier checks are the synthesized
+    // suite, every scenario of which passes against the fault; the new one is a two-client history
+    // recorded against it and checked against the interpreter. The same recordings against the
+    // unfaulted reference are linearizable, so the violation is the fault's and not the workload's.
+    let model = example(System::Billing.directory());
+    let mut rows = Vec::new();
+    for fault in Fault::ALL {
+        let Caught::ByHistory(_) = fault.caught() else {
+            continue;
+        };
+        rows.push(*fault);
+
+        let report = injected(*fault);
+        assert_eq!(
+            report.status,
+            ConformanceStatus::Passed,
+            "{fault:?} is recorded as caught only by a concurrent history, but the suite caught \
+             it: {:?}",
+            not_passed(&report)
+        );
+
+        let mut violations = 0;
+        for seed in 0..24 {
+            let faulted = record::record(
+                &model,
+                &faulty::billing(*fault),
+                &faulty::lost_update_workload(),
+                seed,
+            )
+            .expect("the workload names what billing declares");
+            if linearize::check(&model, &faulted, linearize::DEFAULT_BUDGET)
+                .expect("checked")
+                .verdict
+                == Verdict::Violation
+            {
+                violations += 1;
+            }
+            let reference = Billing::new();
+            let control = record::record(
+                &model,
+                &Atomic(&reference),
+                &faulty::lost_update_workload(),
+                seed,
+            )
+            .expect("the workload names what billing declares");
+            assert_eq!(
+                linearize::check(&model, &control, linearize::DEFAULT_BUDGET)
+                    .expect("checked")
+                    .verdict,
+                Verdict::Linearizable,
+                "seed {seed}: the reference is linearizable, or the violation is not the fault's"
+            );
+        }
+        println!(
+            "{:<24} {:<14} caught by a concurrent history in {violations} of 24 seeds; the suite \
+             caught nothing",
+            fault.written(),
+            fault.system().directory()
+        );
+        assert!(
+            violations > 0,
+            "{fault:?}: no recorded two-client history was a violation"
+        );
+    }
+    assert_eq!(rows, vec![Fault::LostUpdate]);
 }
 
 // ---- the matrix has to be repeatable, or it is not a matrix ---------------------------------------

@@ -305,6 +305,33 @@ The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. 
 a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
 editing either file.
 
+## Check a concurrent history
+
+A suite and the explorer drive a target one call at a time, so a race between two clients never
+happens under them. `check-history` reads an
+`ess-history/1` document, one run of several clients with each call's invoke and return instants,
+and searches for an order of the calls that the specification's own model accepts, answer for
+answer.
+
+```shell-session
+$ ess verify conform check-history \
+    --path examples/billing \
+    --history target/history.json
+```
+
+| exit | meaning |
+|---|---|
+| 0 | `Linearizable`: some order of the calls explains every recorded answer. |
+| 1 | `Violation`: no order does. The report names the longest partial order found and a shrunk history that is still a violation. |
+| 3 | `Unknown`: the search spent `--budget` model executions (default 1,000,000) first. Unknown is not a pass. |
+| 2 | The specification did not load, or the history was refused, for example because it was recorded against another specification. |
+
+The search is split by subject: calls on different instances are checked apart. A call that never
+answered may have taken effect or not, and is placed after every other call. A history records no
+inputs, so a call is explained by any input the suite would submit for its command. Reads of views
+are listed as not judged. The same history and budget always print the same report; `--format json`
+prints it as JSON.
+
 ## Opt into explicit outcome counts
 
 ### Where passed, failed and skipped live
