@@ -823,6 +823,11 @@ impl Claim {
         self.kind
     }
 
+    /// The domain that claims the name, or `None` when it is the system's.
+    pub(crate) fn owner(&self) -> Option<&QualifiedName> {
+        self.owner.as_ref()
+    }
+
     /// How the claimant reads in a message.
     fn owner_label(&self) -> String {
         self.owner.as_ref().map_or_else(
@@ -833,9 +838,9 @@ impl Claim {
 
     /// The refusal of `second`, a later claim to the `name` this one already holds.
     ///
-    /// One sentence for one fault, whichever reporter finds it: [`Assembly::claim`] when both
-    /// declarations converted, and `spec.rs`'s `Collected` when one of them did not and so never
-    /// reached the assembly.
+    /// One sentence for one fault, whichever reporter finds it: [`Assembly::claim`] for parts
+    /// merged directly, and `spec.rs`'s `Collected::write` for a specification's documents, which
+    /// hands the assembly one copy of each name and refuses the rest itself, converted or not.
     pub(crate) fn refuse(&self, name: &QualifiedName, second: &Self) -> ValidationError {
         let (first, claim) = (self, second);
         let (source, kind) = (&claim.source, claim.kind);

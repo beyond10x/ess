@@ -611,12 +611,17 @@ impl Specification {
 /// declarations, and fixing that error made a refusal appear that was true all along. A name is
 /// declared where it is written, whether or not what is written under it converts.
 ///
+/// **The only refusal of a same-kind repeat, so it names both files.** [`Collected::write`] keeps
+/// the repeat away from `Assembly::claim`, which used to refuse it a second time and was, for two
+/// files, the only sentence that named the first one. The sentence here is unchanged; the hint
+/// names the file that declared the name first whenever that is another file.
+///
 /// Keyed by kind as well as by name, which is the same-kind half of the class. One name held by two
 /// *different* kinds — and one type name written twice, since types do not come through here — is
 /// a different fault with a different message, and is [`Collected::write`]'s: it asks the same
 /// question across kinds, after conversion, of every writing whether it converted or not, and
-/// leaves to `Assembly::claim` in `system.rs` the pairs where both copies converted, so each is
-/// refused once. `Assembly::claim` alone read member lists a failed conversion never reaches, so a
+/// keeps a second copy of a name away from `Assembly::claim` in `system.rs`, so each is refused
+/// once. `Assembly::claim` alone read member lists a failed conversion never reaches, so a
 /// command carrying a duplicate input plus an event of the same name used to tell the author about
 /// the input field and nothing about the name; `tests/masked_declaration_boundaries.rs` pins that
 /// in all four soundness combinations.
@@ -625,22 +630,31 @@ impl Specification {
 /// refusal this function already makes onto a new sentence and location, a diagnostic contract
 /// that cases already reported today depend on, to fix cases that are not reported at all.
 fn declare(
-    declared: &mut BTreeSet<(&'static str, String)>,
+    declared: &mut BTreeMap<(&'static str, String), Source>,
     kind: &'static str,
     name: &impl std::fmt::Display,
     source: &Source,
     errors: &mut ValidationErrors,
 ) -> bool {
-    if declared.insert((kind, name.to_string())) {
-        return true;
-    }
+    let first = match declared.entry((kind, name.to_string())) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(source.clone());
+            return true;
+        }
+        std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
+    };
+    let hint = "a name identifies one thing; two declarations cannot both be it";
     errors.push(
         ValidationError::new(
             ValidationCode::DuplicateDeclaration,
             format!("{kind} {name}"),
             format!("`{name}` is declared more than once; {source} declares it again"),
         )
-        .with_hint("a name identifies one thing; two declarations cannot both be it"),
+        .with_hint(if &first == source {
+            hint.to_owned()
+        } else {
+            format!("{first} declares it first; {hint}")
+        }),
     );
     false
 }
@@ -751,7 +765,7 @@ struct Collected {
     /// Held beside the registries rather than read off them, because a registry holds what was
     /// *recorded* and this has to answer what was *declared*. See [`declare`] for the difference
     /// and for what the registries alone could not see.
-    declared: BTreeSet<(&'static str, String)>,
+    declared: BTreeMap<(&'static str, String), Source>,
     /// Every type and domain member name written so far, whether or not its declaration
     /// converted: the cross-kind half of what `declared` is for. See [`Collected::write`].
     written: BTreeMap<QualifiedName, Written>,
@@ -767,8 +781,9 @@ struct Written {
     first: Claim,
     /// Every kind the name has been written as.
     kinds: BTreeSet<MemberKind>,
-    /// Whether any writing of the name converted, and so reaches `Assembly::claim`.
-    converted: bool,
+    /// Whether a copy of the name has been kept for `Assembly::claim`: converted, and a type or a
+    /// member of a domain.
+    claimed: bool,
 }
 
 /// Declarations refused by their own conversion: declared, and absent from every registry.
@@ -844,51 +859,59 @@ impl Collected {
         })
     }
 
-    /// Records that `name` is written as `claim`'s kind, refusing it when it is written already
-    /// and no other reporter will say so.
+    /// Records that `name` is written as `claim`'s kind, refusing it when it is written already and
+    /// no other reporter will say so, and answers whether a converted copy is kept as a member.
     ///
     /// **Called after the declaration is converted, and asked of every writing, converted or not.**
-    /// One name held by two kinds, or one type name written twice, is refused by
-    /// `Assembly::claim` in `system.rs` — but the assembly sees only declarations that converted,
-    /// so a pair with one broken copy reached it as one claim and the other copy took the name in
-    /// silence. This is the question [`declare`] asks for one kind, asked across kinds.
+    /// One name held by two kinds, or one type name written twice, was refused only by
+    /// `Assembly::claim` in `system.rs` — but the assembly sees only declarations that converted
+    /// and belong to a domain, so a pair with one broken copy, or one copy in a file with no
+    /// `domain:`, reached it as one claim and the other copy took the name in silence. This is the
+    /// question [`declare`] asks for one kind, asked across kinds.
     ///
-    /// A second writing is refused here unless another reporter already refuses it, so no fault is
-    /// reported twice:
+    /// Every later writing of a name is refused exactly once:
     ///
     /// * the same member kind again is [`declare`]'s, which has already reported it;
-    /// * a converted copy after an earlier converted copy reaches `Assembly::claim`, which reports
-    ///   it in this same sentence ([`Claim::refuse`]).
+    /// * everything else — another kind, or a type again, since types do not go through
+    ///   [`declare`] — is refused here, whether or not either copy converted.
     ///
-    /// Everything else — any writing where one side never converted — is refused here. Types do not
-    /// go through [`declare`], so a type written twice is refused by whichever of the two reporters
-    /// sees it.
+    /// **`Assembly::claim` is kept out of it by what this answers.** A converted copy is kept as a
+    /// member only while no earlier copy of the name has reached the assembly, so the assembly
+    /// never receives a name twice from a specification and never reports it a second time; it
+    /// still receives the one copy that owns the name, which is the copy it would have kept. A
+    /// member of a file with no `domain:` never reaches the assembly, so it is always kept — the
+    /// file is refused for having no domain by the members it holds — and never counts as the
+    /// copy that does. The refusal here is [`Claim::refuse`]'s sentence, the one the assembly
+    /// writes for the same pair, and it is written against the first copy in the order the
+    /// assembly claims them, so which copy converted does not change it.
     fn write(
         &mut self,
         name: &QualifiedName,
         claim: Claim,
         converted: bool,
         errors: &mut ValidationErrors,
-    ) {
+    ) -> bool {
         let kind = claim.kind();
+        let reaches = kind == MemberKind::Type || claim.owner().is_some();
         let Some(written) = self.written.get_mut(name) else {
             self.written.insert(
                 name.clone(),
                 Written {
                     first: claim,
                     kinds: BTreeSet::from([kind]),
-                    converted,
+                    claimed: converted && reaches,
                 },
             );
-            return;
+            return converted;
         };
         let declared_already = kind != MemberKind::Type && written.kinds.contains(&kind);
-        let assembled = converted && written.converted;
-        if !declared_already && !assembled {
+        if !declared_already {
             errors.push(written.first.refuse(name, &claim));
         }
         written.kinds.insert(kind);
-        written.converted |= converted;
+        let keep = converted && !(reaches && written.claimed);
+        written.claimed |= keep && reaches;
+        keep
     }
 
     /// Takes one file's members, and returns what that file contributes to the system.
@@ -896,6 +919,10 @@ impl Collected {
     /// A member whose own conversion failed is not recorded. Its name goes into [`Refused`]
     /// instead, so the later reference pass neither resolves it nor reports a reference to it as
     /// a reference to nothing.
+    ///
+    /// Kinds are taken in the order `Assembly::absorb_domain` claims them — types, entities,
+    /// commands, events, views, errors, actors — so that [`Collected::write`] names the same first
+    /// copy the assembly would.
     fn absorb(
         &mut self,
         source: &Source,
@@ -910,17 +937,16 @@ impl Collected {
         for raw in file.types {
             let name = raw.name.clone();
             let converted = match NamedType::try_from(raw) {
-                Ok(declared) => {
-                    part.types.push(declared);
-                    true
-                }
+                Ok(declared) => Some(declared),
                 Err(type_errors) => {
                     errors.extend(type_errors);
-                    false
+                    None
                 }
             };
             let claim = Claim::new(source, None, MemberKind::Type);
-            self.write(&name, claim, converted, errors);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                part.types.extend(converted);
+            }
         }
 
         let mut members = DomainMembers::default();
@@ -930,18 +956,20 @@ impl Collected {
             let name = raw.name.clone();
             let converted = match EntitySpec::try_from(raw) {
                 Ok(entity) => {
-                    members.entities.push(entity.name.clone());
+                    let converted = entity.name.clone();
                     record(first, &mut self.entities, entity.name.clone(), entity);
-                    true
+                    Some(converted)
                 }
                 Err(member_errors) => {
                     self.refused.entities.insert(name.clone());
                     errors.extend(member_errors);
-                    false
+                    None
                 }
             };
             let claim = Claim::new(source, owner, MemberKind::Entity);
-            self.write(&name, claim, converted, errors);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.entities.extend(converted);
+            }
         }
         self.absorb_commands(source, owner, file.commands, &mut members, errors);
         for raw in file.events {
@@ -949,38 +977,28 @@ impl Collected {
             let name = raw.name.clone();
             let converted = match EventSpec::try_from(raw) {
                 Ok(event) => {
-                    members.events.push(event.name.clone());
+                    let converted = event.name.clone();
                     record(first, &mut self.events, event.name.clone(), event);
-                    true
+                    Some(converted)
                 }
                 Err(member_errors) => {
                     self.refused.events.insert(name.clone());
                     errors.extend(member_errors);
-                    false
+                    None
                 }
             };
             let claim = Claim::new(source, owner, MemberKind::Event);
-            self.write(&name, claim, converted, errors);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.events.extend(converted);
+            }
         }
-        for raw in file.errors {
-            let first = declare(&mut self.declared, "error", &raw.name, source, errors);
-            let name = raw.name.clone();
-            let converted = match ErrorSpec::try_from(raw) {
-                Ok(error) => {
-                    members.errors.push(error.name.clone());
-                    record(first, &mut self.errors, error.name.clone(), error);
-                    true
-                }
-                Err(member_errors) => {
-                    self.refused.errors.insert(name.clone());
-                    errors.extend(member_errors);
-                    false
-                }
-            };
-            let claim = Claim::new(source, owner, MemberKind::Error);
-            self.write(&name, claim, converted, errors);
-        }
-        self.absorb_views_and_actors(source, owner, file.views, file.actors, &mut members, errors);
+        self.absorb_views_errors_and_actors(
+            source,
+            owner,
+            (file.views, file.errors, file.actors),
+            &mut members,
+            errors,
+        );
 
         self.absorb_system_level(
             source,
@@ -1011,13 +1029,17 @@ impl Collected {
         part
     }
 
-    /// One file's views and actors, each declared, converted and written like any other member.
-    fn absorb_views_and_actors(
+    /// One file's views, errors and actors, in that order — the order `Assembly::absorb_domain`
+    /// claims them in — each declared, converted and written like any other member.
+    fn absorb_views_errors_and_actors(
         &mut self,
         source: &Source,
         owner: Option<&QualifiedName>,
-        views: Vec<crate::view::RawViewSpec>,
-        actors: Vec<crate::actor::RawActorSpec>,
+        (views, declared_errors, actors): (
+            Vec<crate::view::RawViewSpec>,
+            Vec<crate::command::RawErrorSpec>,
+            Vec<crate::actor::RawActorSpec>,
+        ),
         members: &mut DomainMembers,
         errors: &mut ValidationErrors,
     ) {
@@ -1026,34 +1048,58 @@ impl Collected {
             let name = raw.name.clone();
             let converted = match ViewSpec::try_from(raw) {
                 Ok(view) => {
-                    members.views.push(view.name.clone());
+                    let converted = view.name.clone();
                     record(first, &mut self.views, view.name.clone(), view);
-                    true
+                    Some(converted)
                 }
                 Err(member_errors) => {
                     errors.extend(member_errors);
-                    false
+                    None
                 }
             };
             let claim = Claim::new(source, owner, MemberKind::View);
-            self.write(&name, claim, converted, errors);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.views.extend(converted);
+            }
+        }
+        for raw in declared_errors {
+            let first = declare(&mut self.declared, "error", &raw.name, source, errors);
+            let name = raw.name.clone();
+            let converted = match ErrorSpec::try_from(raw) {
+                Ok(error) => {
+                    let converted = error.name.clone();
+                    record(first, &mut self.errors, error.name.clone(), error);
+                    Some(converted)
+                }
+                Err(member_errors) => {
+                    self.refused.errors.insert(name.clone());
+                    errors.extend(member_errors);
+                    None
+                }
+            };
+            let claim = Claim::new(source, owner, MemberKind::Error);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.errors.extend(converted);
+            }
         }
         for raw in actors {
             let first = declare(&mut self.declared, "actor", &raw.name, source, errors);
             let name = raw.name.clone();
             let converted = match ActorSpec::try_from(raw) {
                 Ok(actor) => {
-                    members.actors.push(actor.name.clone());
+                    let converted = actor.name.clone();
                     record(first, &mut self.actors, actor.name.clone(), actor);
-                    true
+                    Some(converted)
                 }
                 Err(member_errors) => {
                     errors.extend(member_errors);
-                    false
+                    None
                 }
             };
             let claim = Claim::new(source, owner, MemberKind::Actor);
-            self.write(&name, claim, converted, errors);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.actors.extend(converted);
+            }
         }
     }
 
@@ -1077,19 +1123,21 @@ impl Collected {
                 .collect();
             let converted = match CommandSpec::try_from(raw) {
                 Ok(command) => {
-                    members.commands.push(command.name.clone());
+                    let converted = command.name.clone();
                     record(first, &mut self.commands, command.name.clone(), command);
-                    true
+                    Some(converted)
                 }
                 Err(member_errors) => {
                     self.refused.commands.insert(name.clone());
                     self.refused.moves.extend(moves);
                     errors.extend(member_errors);
-                    false
+                    None
                 }
             };
             let claim = Claim::new(source, owner, MemberKind::Command);
-            self.write(&name, claim, converted, errors);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.commands.extend(converted);
+            }
         }
     }
 
@@ -1707,10 +1755,9 @@ bindings:
     /// [`crate::types::ConversionRegistry`] without converting anything, and a topology is one per
     /// system and records the source that carried it before converting it, so neither can be
     /// masked this way. A declared *type* can be, and is not a [`MASKED`] row because it is not
-    /// refused by [`declare`]: `SpecPart` carries to `SystemSpec::merge` only the types that
-    /// converted, so `merge` refuses a second declaration when both copies convert, and
-    /// [`Collected::write`] refuses it when either one does not — the same reporter as the
-    /// cross-kind half. Measured in all four soundness combinations in
+    /// refused by [`declare`]: [`Collected::write`] refuses a second type declaration whether or
+    /// not either copy converts — the same reporter as the cross-kind half — and carries only the
+    /// first converted one to `SystemSpec::merge`. Measured in all four soundness combinations in
     /// `tests/masked_declaration_boundaries.rs`.
     #[test]
     fn a_name_declared_twice_is_refused_even_when_a_copy_is_broken_itself() {
