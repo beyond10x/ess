@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.39.0](#concurrent-histories-checked-against-the-model-and-direct-library-returns) | Concurrent histories checked against the model, and direct library returns | capability | significant |
 | [0.38.0](#set-effects-caller-values-existence-selected-outcomes-bounded-retries-and-paged-views) | Set effects, caller values, existence-selected outcomes, bounded retries and paged views | capability | significant |
 | [0.37.0](#outcome-shapes-subject-guards-over-the-input-new-value-types-and-a-pinned-toolchain) | Outcome shapes, subject guards over the input, new value types and a pinned toolchain | capability | significant |
 | [0.36.0](#payload-and-sets-values-read-the-subject-increment-fall-back-and-nest) | Payload and sets values read the subject, increment, fall back and nest | capability | significant |
@@ -32,6 +33,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.39.0 — 2026-09-28
+
+### Concurrent histories checked against the model, and direct library returns
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.39.0)
+
+`ess verify conform check-history` checks an `ess-history/1` run of several clients for linearizability against the interpreted model and holds each view to its declared consistency; the Go and TypeScript explorers record concurrent histories and inject declared faults. Source format `ess/17` adds `returns: true`, checked as a typed direct response.
 
 ## 0.38.0 — 2026-09-28
 

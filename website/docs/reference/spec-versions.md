@@ -53,7 +53,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/14` | [0.36.0][r36] | value expressions in `payload:` and `sets:` |
 | `ess/15` | [0.37.0][r37] | `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing`, `preconditions:`; `input.` in subject guards; `equals_ignore_case`, `in_ignore_case`; `prefix:`, `Json`, `presence:`; aggregates over `Optional` fields |
 | `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`, `{related: …}`, literal `else:` |
-| `ess/17` | unreleased | `returns: true` |
+| `ess/17` | [0.39.0][r39] | `returns: true` |
 
 The sections below give each version's rules. The first five are a table:
 
@@ -161,7 +161,7 @@ Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: 
 A bare variant list is admitted by every version, and a variant that declares no naming serializes
 back as a bare name, so a specification written before `ess/5` keeps its exact bytes.
 
-`ess/17` is unreleased. It adds `returns: true` to an outcome whose command declares a nonempty
+`ess/17`, introduced in [0.39.0][r39], adds `returns: true` to an outcome whose command declares a nonempty
 typed `response`. The outcome promises a successful return matching that schema; it makes no
 claim about persistence or side effects. Those require their own declarations and real API
 observations. It cannot also declare an error, `accepts: nothing`, or `replays`. Older readers
@@ -281,7 +281,7 @@ The `page` view expectation (beyond10x/ess#174) belongs to this pair too: after 
 
 A bounded retry (beyond10x/ess#165) belongs to this pair too: `configure_external_outcome` may carry `times` (force the outcome on the next `times` invocations), `expect_invocation` may carry `count` (exactly that many matching invocations), and a binding scenario may be filed under the `final-failure` aspect. A suite carrying any of them takes `/26` or `/27`. A target that cannot force an outcome more than once reports the scenario `unsupported`.
 
-`ess-conformance/28` and `ess-conformance/29` are unreleased. They add
+`ess-conformance/28` and `ess-conformance/29`, introduced in [0.39.0][r39], add
 `expect_direct_response`, which checks the immediately preceding invocation's actual return
 against its complete typed response schema and any authored literals. Version 28 is ordinary;
 29 carries declared coverage and exact-parent lineage. The Rust runner requires report/2.
@@ -314,7 +314,7 @@ skipped, which is the right answer reached by accident. Neither is a verdict any
 
 ## `ess-scenario/` — authored conformance scenarios
 
-`ess-scenario/4` is unreleased. An act may declare `response: {field: literal}` to assert
+`ess-scenario/4`, introduced in [0.39.0][r39], lets an act declare `response: {field: literal}` to assert
 selected fields of its command's return. Each literal must match its complete declared type;
 unknown fields and invalid nested presence are refused before execution. An empty mapping
 requests only the complete response shape check. Every selected `returns: true` outcome gets
@@ -343,7 +343,7 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-impact/` | [0.19.0][r19] | `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
-| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. |
+| `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
 | `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
@@ -361,6 +361,18 @@ does not declare; ESS-generated closed types do not, so a consumer reading throu
 use `reader` for a field subset. An entry without the key is compared as before. Earlier formats
 keep their meaning and bytes and refuse the key whatever its value, `null` included; an older
 reader refuses `/3`.
+
+## `ess-history/` — recorded concurrent histories
+
+`ess-history/1`, introduced in [0.39.0][r39], is one run of several clients against a target:
+each call's client, command, subject, invoke and return instants, `Returned` or `Indeterminate`
+completion and outcome, the rows a view read answered, and the `retry_of` of a retried request.
+`ess verify conform check-history` reads it; the Go and TypeScript concurrent explorers write it.
+The document is specified in `models/concurrent-history/` and published as
+`schemas/ess-history.schema.json`.
+
+`ess-history-adapter/1`, introduced in [0.39.0][r39], maps each field of a JSON Lines call log to a
+JSON pointer or declares it `absent`, for `ess verify conform import-history`.
 
 ## Still at version 1
 
@@ -420,3 +432,5 @@ for a release and promises none.
 [r37]: https://github.com/beyond10x/ess/releases/tag/0.37.0
 
 [r38]: https://github.com/beyond10x/ess/releases/tag/0.38.0
+
+[r39]: https://github.com/beyond10x/ess/releases/tag/0.39.0

@@ -4,14 +4,57 @@
 
 ### Added
 
-- Direct library returns: `returns: true` in source `ess/17`, literal `response:` assertions in
-  authored `ess-scenario/4`, and typed direct-response observations in suites `ess-conformance/28`
-  and `/29`. The Rust runner checks actual return values without invented events or persistence;
-  unsupported Go/TypeScript generation refuses explicitly. Released source `ess/16` and suites
-  `/26` and `/27` retain their existing meaning and bytes.
+- **`ess-composition/3`: reader-side conformance (#191).** A `conformances:` entry may carry
+  `reader: true`, asserting that the consumer's type reads every value the imported type allows.
+  Beyond the `/2` rule it may read an imported newtype, through any chain, as what it wraps; an
+  enum as `String` (`Optional<String>` where the imported enum is optional); enum variants by wire
+  name, with every imported wire name present; a value that is always a JSON object (a struct, or a
+  map with `String` keys) as `Map<String, Json>`; and a subset of a struct's fields, where an extra
+  local field is compared with the imported field sharing its wire name, omitted or not, and one
+  that meets none is `Optional` and not `null_when_absent`. Anything that could reject an imported
+  value stays `type_conformance_drift`: a different primitive, a missing wire name, a local field
+  required where the imported one may be absent, `Json` read as any map (it may be an array or a
+  scalar), an extra field reading an imported key as another type. `reader: true` also asserts
+  that the consumer's reader ignores keys it does not declare; ESS-generated closed types
+  (`additionalProperties: false`, `deny_unknown_fields`) do not, so a consumer reading through
+  them must not use `reader` for a field subset. An entry without `reader` is compared exactly as
+  before. A `/1` or `/2` document carrying `reader`, whatever its value (`null` included), is
+  refused as `unsupported_format`; `/2` documents keep their meaning and their authored, compiled
+  and client-plan bytes.
+
+### Changed
+
+- The generated Go and TypeScript packages grow the target surface the new suite versions need:
+  Go `CommandRequest.Caller`, `ViewResult.Total` and the optional `AbsentInputTarget` and
+  `RepeatedOutcomeTarget`; TypeScript optional `executeCommandWithoutInput` and
+  `configureExternalOutcomeRepeatedly`, `CommandRequest.caller` and `ViewResult.total`. A target
+  without an optional method has the scenarios that need it reported skipped (unsupported), never
+  passed. Request values past 2^53 reach a TypeScript target as a `JsonNumber` (`RequestValue`),
+  and a TypeScript target's answers are read as `JSON.stringify` reads them.
 
 ### Fixed
 
+- The generated Go and TypeScript runtimes run every suite version the same release synthesizes,
+  `ess-conformance/22` to `/27` included (TypeScript also `/12` to `/17`), instead of refusing it
+  with `suite admission: unsupported suite version` and zero verdicts (#188). An unchanged
+  specification whose nested `sets:` struct has one generated leaf synthesizes `/26`, and ran on
+  0.36.0 but not on 0.38.0 or 0.39.0. The runtimes now execute dotted-leaf payload and row values,
+  subject absence and whole-view preservation, presence policies on payload leaves and response
+  fields, a command sent with no input, `caller`, `now_offset`, `changed_by`, `page` with a view
+  total, bounded retries (`times`, `count`, `final-failure`) and `defined()` over `Optional`
+  aggregates, and give the Rust runner's verdict per scenario on the repository's fixtures. The Go
+  runtime now also holds an eventually observed event to its payload and shape, a named event
+  value or dotted leaf to being carried, and list, map and union leaves to their types. A test
+  fails if the synthesizer can write a suite version either runtime does not admit.
+- The generated Go and TypeScript conformance packages describe what their runner does
+  (#186). `CommandResult.Outcome` (`outcome` in TypeScript) now says a refusal returns the
+  refusing outcome's name, which the runner has always compared. For suites at
+  `ess-conformance/5` and later, the package README's run instructions state that the runner
+  executes only with `ESS_REPORT_FORMAT=2` and stops before the first scenario without it. The
+  TypeScript runner's refusal names the actual rule. `ess verify conform synthesize --target
+  go|typescript` refuses a suite version its generated runner would refuse at admission instead of
+  writing a package that cannot run, and `--help` no longer says `--target ir` writes
+  `ess-conformance/1`.
 - A name written as two different kinds (a command and an event, say), or a type name written
   twice, is now refused as a duplicate even when one of the declarations fails its own conversion
   or sits in a file with no `domain:`. Before, the refusal appeared only once both copies were
@@ -36,6 +79,55 @@
   declaration's list item. Relation, attribute and response refusals are now cited at the entity,
   actor or command they belong to. Paths with no declaration needle, such as
   `topology.workloads.<component>`, are still cited at their key.
+
+
+## [0.39.0] — 2026-09-28
+
+### Added
+
+- Concurrent history conformance (#189, `docs/design/concurrent-history-conformance.md`): every
+  earlier check drives a target with one client, one call at a time; these record several clients
+  at once and search for an order the specification's own model accepts.
+- The Rust interpreter executes commands from the model: `ess verify conform run --target
+  interpreted --path SPEC` runs outcomes, transitions, `sets:` writes, emitted events and declared
+  refusals, and refuses a specification whose `spec_digest` is not the suite's. Views and
+  bindings are not interpreted yet; a scenario that reads one is an unsatisfied obligation.
+- `ess-history/1`: one run of several clients, each call with its client, command, subject,
+  invoke and return instants, `Returned` or `Indeterminate` completion and outcome, plus the rows
+  of a view read and the `retry_of` of a retried request. Specified in `models/concurrent-history/`
+  and published as `schemas/ess-history.schema.json`.
+- `ess verify conform check-history --history FILE`: Wing–Gong–Lowe linearizability search over
+  the interpreter, partitioned by subject, within `--budget` model executions (default 1,000,000).
+  A call that never answered is placed after every other one. Exit 0 linearizable, 1 violation
+  (the longest partial order and a shrunk history that still violates), 3 unknown when the budget
+  ran out, which is never a pass, 2 refused. The same history and budget print the same report;
+  `--format json` prints it as JSON.
+- The same check holds each view to its declared consistency: a `read_your_writes` read is judged
+  per client session, and an `eventual` view must converge once the writes stop, after at most
+  `--settle` behind reads per session (default 4; a count of reads, not of instants).
+- `ExploreConcurrent` (Go) and `exploreConcurrent` (TypeScript) in the emitted conformance
+  packages drive 2–4 clients against a target on a seeded logical clock, write
+  `history-<seed>.json` and call `ess` to check it; one seed writes the same bytes in both ports.
+  With `Inject`/`inject`, they inject every fault the specification declares and no other: a second
+  delivery for `delivery: at_least_once`, a client retry for `replays:`, and a delayed or
+  unanswered answer for another `external:` branch. No restart is injected.
+- `ess verify conform web --history FILE [--out DIR]` draws a checked history as one
+  self-contained `index.html`: a lane per client, each call's invoke–return bar, the linearization
+  points found, and for a violation the failing call, the call it conflicts with and the shrunk
+  history. It exits 0 whatever the verdict.
+- `ess verify conform import-history --log FILE --adapter FILE [--output FILE]` converts a JSON
+  Lines call log into `ess-history/1` through an `ess-history-adapter/1` document mapping each
+  field to a JSON pointer or `absent`. Nothing is guessed: a field a call cannot be judged without
+  is refused by line and field (exit 2); every other missing field is a coverage gap on stderr and
+  in `FILE.gaps.json`.
+- Four planted faults that no earlier check catches: `LostUpdate` and
+  `StaleReadUnderReadYourWrites` are caught by a recorded concurrent history,
+  `DoubleApplyOnRedelivery` and `RetryCreatesSecondEntity` only by declared fault injection.
+- Direct library returns: `returns: true` in source `ess/17`, literal `response:` assertions in
+  authored `ess-scenario/4`, and typed direct-response observations in suites `ess-conformance/28`
+  and `/29`. The Rust runner checks actual return values without invented events or persistence;
+  unsupported Go/TypeScript generation refuses explicitly. Released source `ess/16` and suites
+  `/26` and `/27` retain their existing meaning and bytes.
 
 ## [0.38.0] — 2026-09-28
 
