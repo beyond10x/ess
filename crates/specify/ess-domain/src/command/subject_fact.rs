@@ -335,6 +335,7 @@ fn validate_partition(
                         | OutcomeCondition::WrongState
                         | OutcomeCondition::UnknownInstance
                         | OutcomeCondition::InputAbsent
+                        | OutcomeCondition::ExistingInstance
                 )
         })
         .collect();

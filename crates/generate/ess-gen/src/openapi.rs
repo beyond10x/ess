@@ -990,6 +990,11 @@ fn condition_description(condition: &ResolvedCondition) -> String {
              any input field is read."
                 .to_owned()
         }
+        ResolvedCondition::ExistingInstance => {
+            "Taken when a record already carries the identity the request would create, and no \
+             input-guarded refusal applies."
+                .to_owned()
+        }
     }
 }
 

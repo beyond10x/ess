@@ -179,6 +179,7 @@
 
 mod absent_input;
 mod aggregate;
+mod existence;
 mod related;
 mod subject_fact;
 
@@ -1317,6 +1318,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
                 ResolvedCondition::WrongState
                     | ResolvedCondition::UnknownInstance
                     | ResolvedCondition::InputAbsent
+                    | ResolvedCondition::ExistingInstance
             ) {
                 continue;
             }
@@ -1334,6 +1336,7 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     let mut notes = Vec::new();
     unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
     absent_input::absent_inputs(ir, &actors, &mut suite, &mut refusals);
+    existence::existence(ir, &actors, &mut suite, &mut refusals);
     notes.extend(partial);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
@@ -1961,7 +1964,7 @@ fn arranged(
         // branch's writes change first, and only then for any row (beyond10x/ess#161).
         return subject_fact::prepare(ir, command, outcome, actors);
     }
-    let (setup, input) = if has_subject_guards(command) {
+    let (setup, input) = if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         prepare_state_input(ir, command, outcome, actors)?
     } else {
         (
@@ -1969,6 +1972,7 @@ fn arranged(
             reach(ir, command, outcome, Distinction::PLAIN)?,
         )
     };
+    let input = existence::fresh_created(ir, command, outcome, input, false)?;
     let fresh = freshened(
         ir,
         command,
@@ -2434,7 +2438,8 @@ fn replay_condition(
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
             | ResolvedCondition::UnknownInstance
-            | ResolvedCondition::InputAbsent => return Ok(false),
+            | ResolvedCondition::InputAbsent
+            | ResolvedCondition::ExistingInstance => return Ok(false),
         };
     decides(facts, &predicate.into_iter().collect::<Vec<_>>(), true)
 }
@@ -2955,6 +2960,7 @@ fn invoke(
     // exactly why no input reaches it; repeating it here would be one defect reported twice with two
     // repairs to weigh.
     let input = if has_subject_guards(driver.command)
+        && !existence::creates_unknown(driver.outcome)
         && driver.outcome.test_strategy != TestStrategy::InjectFault
     {
         held.ok_or(RefusalCause::StrategyWithoutGuard {
@@ -3274,7 +3280,8 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
         | ResolvedCondition::UnknownInstance
-        | ResolvedCondition::InputAbsent => None,
+        | ResolvedCondition::InputAbsent
+        | ResolvedCondition::ExistingInstance => None,
     }
 }
 
@@ -3553,7 +3560,7 @@ fn reach(
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
         return reach_in_state(ir, command, outcome, state, distinction);
     }
-    if has_subject_guards(command) {
+    if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         });
@@ -3725,7 +3732,7 @@ fn selects_branch(
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
         return selected_in_state(command, outcome, state, &facts);
     }
-    if has_subject_guards(command) {
+    if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         })?;
@@ -3756,6 +3763,14 @@ fn plain_guards<'c>(
             .filter_map(when)
             .collect(),
         TestStrategy::InjectFault => Vec::new(),
+        // A creating `unknown_instance:` (ess/16) is selected by existence, not by input: like the
+        // default branch, its input refutes every sibling guard.
+        TestStrategy::SendUnknownIdentity if existence::creates_unknown(outcome) => command
+            .outcomes
+            .iter()
+            .filter(|other| other.name != outcome.name)
+            .filter_map(when)
+            .collect(),
         // A wrong-state branch is decided by the subject, not by the input, so nothing asks this
         // function for the input that reaches it: `refused_here` sends the input that reaches the
         // *moving* branch and arranges the subject instead. Answering with "no guards" would hand
@@ -3765,6 +3780,7 @@ fn plain_guards<'c>(
         | TestStrategy::ReplayResult
         | TestStrategy::SendUnknownIdentity
         | TestStrategy::SendNoInput
+        | TestStrategy::SendExistingIdentity
         | TestStrategy::ConstructInputInState
         | TestStrategy::ObserveSubjectFact => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
@@ -4599,6 +4615,7 @@ fn arranged_without_fallbacks(
     let distinction = Distinction::further(FRESH_WITNESSES + 1);
     let setup = prepare_in(ir, outcome, actors, None, distinction)?;
     let input = reach(ir, command, outcome, distinction)?;
+    let input = existence::fresh_created(ir, command, outcome, input, true)?;
     let input = freshened(
         ir,
         command,
@@ -5926,6 +5943,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
         TestStrategy::ArrangeState => "a subject in a state its moves do not start from",
         TestStrategy::SendUnknownIdentity => "an identity no record carries",
         TestStrategy::SendNoInput => "a request with no input at all",
+        TestStrategy::SendExistingIdentity => "a second call with an identity a record carries",
     };
     let text = format!(
         "`{}` answers `{}` for {reached}",
@@ -6263,7 +6281,7 @@ fn unknown_instances(
             .iter()
             .filter(|outcome| names_existing(outcome).is_some())
             .collect();
-        if acting.is_empty() {
+        if acting.is_empty() || existence::creates_on_unknown(command) {
             continue;
         }
         let command_ref = CommandRef::new(command.name.clone());

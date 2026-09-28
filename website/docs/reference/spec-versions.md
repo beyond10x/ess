@@ -118,6 +118,8 @@ its compiled digest.
 
 Under `ess/16` a command may declare `input_absent: true` with an `error:`: the answer for a request that carries no input at all (beyond10x/ess#170). It is refused below `ess/16` with `unsupported_format_version`. Under `ess/16`, a guard that cannot hold because every way it could hold needs an input `f` that is not `Optional` to be absent (`not defined(f)`, `missing(f)`) is refused as a type mismatch; below `ess/16` it validates as before.
 
+Under `ess/16` an outcome may be selected by whether the addressed record exists (beyond10x/ess#164): a `creates:` branch marked `unknown_instance: true` beside the branch that updates the record the same input names (create or update), or an `existing_instance: true` branch with an `error:` beside a creation whose identity the caller supplies (create or refuse). Each is refused below `ess/16` with `unsupported_format_version`. See [selection by existence](../guides/write-a-specification.md#an-outcome-can-be-selected-by-whether-the-record-exists).
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 

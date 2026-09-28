@@ -113,7 +113,9 @@ pub(super) fn validate_outcome(outcome: &Outcome, at: &ConstructRef) -> Validati
             "drop `sets:`, or split the branch into an update and a deletion",
         ));
     }
-    if outcome.condition == OutcomeCondition::UnknownInstance
+    if creates_unknown(outcome) {
+        errors.extend(validate_creating_unknown(outcome, at));
+    } else if outcome.condition == OutcomeCondition::UnknownInstance
         && (outcome.subject.is_some()
             || !outcome.emits.is_empty()
             || !outcome.sets.is_empty()
@@ -129,6 +131,300 @@ pub(super) fn validate_outcome(outcome: &Outcome, at: &ConstructRef) -> Validati
             ),
             "keep the error it reports, or `refuses: false`, and nothing else",
         ));
+    }
+    errors.extend(validate_existing(outcome, at));
+    errors
+}
+
+// ---- selection by existence (ess/16, beyond10x/ess#164) ----------------------------------------
+
+/// `true` for the create-or-update form's creating half: a `creates:` branch marked
+/// `unknown_instance: true`, taken when no record carries the identity the input names.
+pub(crate) fn creates_unknown(outcome: &Outcome) -> bool {
+    outcome.condition == OutcomeCondition::UnknownInstance
+        && outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == Effect::Creates)
+}
+
+/// The input field a creating branch takes its new identity from: the `input.` source its payload
+/// declares for the event field `instance:` names. `None` for a branch that creates nothing, and
+/// for an identity the implementation generates — one no caller could name a second time.
+pub(crate) fn created_identity(outcome: &Outcome) -> Option<&str> {
+    let subject = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect == Effect::Creates)?;
+    outcome
+        .payload
+        .values()
+        .filter_map(|fields| fields.get(&subject.instance))
+        .find_map(|source| match source {
+            super::PayloadSource::InputField { field } => Some(field.as_str()),
+            _ => None,
+        })
+}
+
+/// [`created_identity`], or the optional input `{input: f, else: {generated: true}}` reads: a caller
+/// that sends `f` names the identity, and can name it twice (the #164 follow-up's optional id). What
+/// `existing_instance:` needs; create-or-update keeps the stricter rule, because its update reads
+/// the same field as a required `instance:`.
+pub(crate) fn supplied_identity(outcome: &Outcome) -> Option<&str> {
+    created_identity(outcome).or_else(|| {
+        let subject = outcome
+            .subject
+            .as_ref()
+            .filter(|subject| subject.effect == Effect::Creates)?;
+        outcome
+            .payload
+            .values()
+            .filter_map(|fields| fields.get(&subject.instance))
+            .find_map(|source| match source {
+                super::PayloadSource::InputOrGenerated {
+                    field,
+                    otherwise: None,
+                } => Some(field.as_str()),
+                _ => None,
+            })
+    })
+}
+
+/// The creating half of create-or-update, alone: it creates, and reports nothing. The branch is an
+/// acceptance, so an `error:` or `refuses: false` would say a second thing about it.
+fn validate_creating_unknown(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if outcome.replays.is_some() || outcome.error.is_some() || !outcome.refuses {
+        errors.push(
+            ValidationError::at(
+                at.clone().key("unknown_instance"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` is `unknown_instance` and creates the record; a creation taken \
+                     for an identity no record carries reports no error, declares no `refuses:` \
+                     and replays nothing",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "drop `error:`/`refuses:`/`replays:`; a refusal for an unknown identity is a \
+                 separate `unknown_instance:` branch on a command that does not create",
+            ),
+        );
+    }
+    errors
+}
+
+/// The refusal half of create-or-refuse, alone: it names an error and changes nothing.
+fn validate_existing(outcome: &Outcome, at: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if outcome.condition != OutcomeCondition::ExistingInstance {
+        return errors;
+    }
+    if outcome.subject.is_some()
+        || !outcome.emits.is_empty()
+        || !outcome.sets.is_empty()
+        || !outcome.payload.is_empty()
+        || outcome.replays.is_some()
+        || outcome.accepts_nothing
+    {
+        errors.push(
+            ValidationError::at(
+                at.clone().key("existing_instance"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcome `{}` is `existing_instance` and declares an effect; the branch taken \
+                     for an identity a record already carries is refused and changes nothing",
+                    outcome.name
+                ),
+            )
+            .with_hint(
+                "keep the error it reports, and nothing else; to update the existing record \
+                 instead, mark the creating branch `unknown_instance: true` beside an `updates:`",
+            ),
+        );
+    }
+    if outcome.error.is_none() {
+        errors.push(
+            ValidationError::at(
+                at.clone().key("error"),
+                ValidationCode::MissingDeclaration,
+                format!(
+                    "outcome `{}` is the branch taken for an identity a record already carries, \
+                     and names no error; the error is the only thing this branch can say",
+                    outcome.name
+                ),
+            )
+            .with_hint("give it `error:`, naming what the command reports for a duplicate"),
+        );
+    }
+    errors
+}
+
+/// `existing_instance:` composes with no other condition and says nothing but that the record
+/// exists.
+pub(super) fn existing_alone(raw: &super::RawOutcome) -> Result<(), ValidationErrors> {
+    if raw.when.is_some()
+        || raw.when_subject.is_some()
+        || raw.when_subject_state.is_some()
+        || raw.when_state_changes.is_some()
+        || raw.external.is_some()
+        || raw.wrong_state
+        || raw.unknown_instance
+        || raw.input_absent
+    {
+        return Err(super::outcome_conflict(
+            &raw.name,
+            "existing_instance",
+            format!(
+                "outcome `{}` declares `existing_instance` beside another condition; the branch \
+                 an identity a record already carries takes is decided by nothing else",
+                raw.name
+            ),
+            "keep `existing_instance: true` alone, naming its `error:`",
+        ));
+    }
+    Ok(())
+}
+
+/// The command-level rules of both forms: a creating `unknown_instance:` pairs with a branch
+/// acting on the record its own identity names; [`validate_existing_pair`] checks the other form.
+fn validate_existence_pair(command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let at = |outcome: &Outcome| command.site().key("outcomes").named(outcome.name.as_str());
+    for creating in command
+        .outcomes
+        .iter()
+        .filter(|outcome| creates_unknown(outcome))
+    {
+        if !command.outcomes.iter().any(names_existing) {
+            // Reported by `validate_command` as an unreachable branch.
+            continue;
+        }
+        let Some(subject) = &creating.subject else {
+            continue;
+        };
+        let Some(identity) = created_identity(creating) else {
+            errors.push(
+                ValidationError::at(
+                    at(creating).key("unknown_instance"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{}` creates `{}` for an identity no record carries, and its \
+                         payload does not take that identity from the input; an identity the \
+                         implementation generates is never one a caller names again, so whether \
+                         a record exists cannot select this branch",
+                        creating.name, subject.entity
+                    ),
+                )
+                .with_hint(format!(
+                    "publish `{}` from the input field the updating branch reads as `instance:`",
+                    subject.instance
+                )),
+            );
+            continue;
+        };
+        // The update half is a `moves:` or an `updates:`; a `deletes:` sibling would make the pair a
+        // create-or-delete toggle, which is not the construct.
+        let paired = command.outcomes.iter().any(|sibling| {
+            names_existing(sibling)
+                && sibling.subject.as_ref().is_some_and(|acting| {
+                    matches!(acting.effect, Effect::Moves { .. } | Effect::Updates)
+                        && acting.entity == subject.entity
+                        && acting.instance == identity
+                })
+        });
+        if !paired {
+            errors.push(
+                ValidationError::at(
+                    at(creating).key("unknown_instance"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{}` creates `{}` from input `{identity}` when no record carries \
+                         it, and no branch of `{}` acts on the `{}` that input names, so nothing \
+                         answers the call when one does",
+                        creating.name, subject.entity, command.name, subject.entity
+                    ),
+                )
+                .with_hint(format!(
+                    "declare the `updates:` or `moves:` branch on `{}` with `instance: {identity}`",
+                    subject.entity
+                )),
+            );
+        }
+    }
+    errors.extend(validate_existing_pair(command));
+    errors
+}
+
+/// An `existing_instance:` pairs with a creation whose identity the caller supplies, and with
+/// nothing that acts on an existing record.
+fn validate_existing_pair(command: &CommandSpec) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let at = |outcome: &Outcome| command.site().key("outcomes").named(outcome.name.as_str());
+    let existing: Vec<&Outcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| outcome.condition == OutcomeCondition::ExistingInstance)
+        .collect();
+    if existing.len() > 1 {
+        errors.push(
+            ValidationError::at(
+                command.site().key("outcomes"),
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "outcomes {} are all `existing_instance`, so `{}` declares more than one \
+                     answer for an identity a record already carries",
+                    super::join(existing.iter().map(|outcome| &outcome.name)),
+                    command.name
+                ),
+            )
+            .with_hint("keep one"),
+        );
+    }
+    if let Some(first) = existing.first() {
+        if let Some(acting) = command
+            .outcomes
+            .iter()
+            .find(|outcome| names_existing(outcome) || outcome.is_wrong_state())
+        {
+            errors.push(
+                ValidationError::at(
+                    at(first).key("existing_instance"),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "outcome `{}` refuses an identity a record already carries, and `{}` \
+                         answers the existing record too, so two branches claim one call",
+                        first.name, acting.name
+                    ),
+                )
+                .with_hint(
+                    "keep `existing_instance:` on a command that only creates; to update the \
+                     existing record, mark the creation `unknown_instance: true` instead",
+                ),
+            );
+        } else if !command
+            .outcomes
+            .iter()
+            .any(|outcome| supplied_identity(outcome).is_some())
+        {
+            errors.push(
+                ValidationError::at(
+                    at(first).key("existing_instance"),
+                    ValidationCode::UnreachableBranch,
+                    format!(
+                        "outcome `{}` answers an identity a record already carries, and no branch \
+                         of `{}` creates a record from an identity its input supplies, so no call \
+                         can name an existing one",
+                        first.name, command.name
+                    ),
+                )
+                .with_hint(
+                    "declare it beside a `creates:` whose payload publishes `instance:` from an \
+                     `input.` field",
+                ),
+            );
+        }
     }
     errors
 }
@@ -187,6 +483,7 @@ pub(super) fn validate_command(command: &CommandSpec) -> ValidationErrors {
             );
         }
     }
+    errors.extend(validate_existence_pair(command));
     errors
 }
 
@@ -204,9 +501,30 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
         )
         .with_hint("write `format: ess/15` on the source that declares the system")
     };
+    let before_16 = format.major() < FormatVersion::V16.major();
+    let gate_16 = |at: ConstructRef, construct: &str| {
+        ValidationError::at(
+            at,
+            ValidationCode::UnsupportedFormatVersion,
+            format!("{construct} requires specification format ess/16"),
+        )
+        .with_hint("write `format: ess/16` on the source that declares the system")
+    };
     for command in spec.commands().values() {
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
+            if before_16 && creates_unknown(outcome) {
+                errors.push(gate_16(
+                    at.clone().key("unknown_instance"),
+                    "`unknown_instance:` on a `creates:` branch",
+                ));
+            }
+            if before_16 && outcome.condition == OutcomeCondition::ExistingInstance {
+                errors.push(gate_16(
+                    at.clone().key("existing_instance"),
+                    "`existing_instance:`",
+                ));
+            }
             if old && outcome.condition == OutcomeCondition::UnknownInstance {
                 errors.push(gate(
                     at.clone().key("unknown_instance"),
@@ -451,6 +769,16 @@ pub fn precondition_branch<'c>(
             ValidationCode::UnobservableFact,
             "its branches are selected by the existing subject, which a precondition cannot \
              observe before it runs"
+                .to_owned(),
+        ));
+    }
+    if command.outcomes.iter().any(|outcome| {
+        creates_unknown(outcome) || outcome.condition == OutcomeCondition::ExistingInstance
+    }) {
+        return Err((
+            ValidationCode::UnobservableFact,
+            "its branches are selected by whether a record carries the identity it names, which \
+             a precondition cannot observe before it runs"
                 .to_owned(),
         ));
     }

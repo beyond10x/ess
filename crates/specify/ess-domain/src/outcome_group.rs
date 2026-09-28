@@ -133,6 +133,7 @@ impl RawGroupOutcome {
             wrong_state: false,
             unknown_instance: false,
             input_absent: false,
+            existing_instance: false,
             refuses: None,
             creates: None,
             moves: None,

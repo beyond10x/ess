@@ -43,6 +43,7 @@
 mod accessor_output;
 mod alias;
 pub mod clap;
+pub(crate) mod existence;
 mod failure;
 pub mod go;
 pub mod plan;
@@ -289,6 +290,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
     failure::binary64(ir, &plan, target)?;
     failure::json(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
+    existence::refuse(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
     insert(
         &mut artifacts,
