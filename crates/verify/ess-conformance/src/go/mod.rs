@@ -317,7 +317,24 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
         version = provenance.specification_version,
         digest = provenance.spec_digest,
     );
-    if provenance.suite_version.major() >= 5 {
+    if REPORT_FORMAT_2_REQUIRED.contains(&provenance.suite_version.major()) {
+        readme
+            .replace(
+                "## What to return when you cannot answer",
+                &format!(
+                    "{}## What to return when you cannot answer",
+                    running_section(provenance.suite_version, "Run", "go test ./...")
+                ),
+            )
+            .replace(
+                "Set `ESS_REPORT_OUT` to a file path and `Run` writes an `ess-conformance-report/1` there when the",
+                "Set `ESS_REPORT_OUT` to a file path and `Run` writes an `ess-conformance-report/2` there when the",
+            )
+            .replace(
+                "ESS_REPORT_OUT=$PWD/report.json go test ./...",
+                "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...",
+            )
+    } else if provenance.suite_version.major() >= 5 {
         readme.replace(
             "Set `ESS_REPORT_OUT` to a file path and `Run` writes an `ess-conformance-report/1` there when the",
             "Select `ESS_REPORT_FORMAT=2` explicitly before execution. Set `ESS_REPORT_OUT` to a file path\nand `Run` writes an `ess-conformance-report/2` there when the",
@@ -328,6 +345,39 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
     } else {
         readme
     }
+}
+
+/// The suite majors the Go runner refuses to execute without an explicit `ESS_REPORT_FORMAT=2`:
+/// the version gate in `Run` (`runtime.go`), between suite admission and execution adaptation.
+///
+/// The README states the requirement for exactly these, and `tests/generated_docs.rs` reads the
+/// gate out of the emitted runtime and fails when the two disagree (beyond10x/ess#186).
+const REPORT_FORMAT_2_REQUIRED: std::ops::RangeInclusive<u32> = 5..=21;
+
+/// The README's run instructions for a suite the runner executes only under
+/// `ESS_REPORT_FORMAT=2`.
+///
+/// Placed beside the wiring rather than under "The report", because it is not a report option:
+/// without it the run stops before the first scenario whether or not a report was asked for, and
+/// two of two agents in a trial round read it as one (beyond10x/ess#186).
+pub(crate) fn running_section(
+    version: crate::scenario::SuiteFormat,
+    runner: &str,
+    command: &str,
+) -> String {
+    format!(
+        "## Running it\n\
+         \n\
+         This suite is `{version}`, and the runner executes it only with `ESS_REPORT_FORMAT=2`\n\
+         set in the environment. Without it `{runner}` stops before the first scenario\n\
+         (`… require explicit ESS_REPORT_FORMAT=2 before execution`), whatever the target does, so\n\
+         set it for every run, not only when you want a report:\n\
+         \n\
+         ```console\n\
+         ESS_REPORT_FORMAT=2 {command}\n\
+         ```\n\
+         \n"
+    )
 }
 
 fn runtime() -> String {

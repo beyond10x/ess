@@ -774,7 +774,8 @@ struct RealizationInput {
 /// What a synthesized suite is written as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum SuiteTarget {
-    /// The canonical `ess-conformance/1` document.
+    /// The canonical suite document; its `suite_version` is chosen by the constructs the
+    /// specification uses.
     Ir,
     /// A Go test package: the runner, the evaluator and the suite.
     Go,

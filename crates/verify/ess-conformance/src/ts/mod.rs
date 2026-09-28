@@ -402,6 +402,17 @@ fn shared_compiler_options(root: &str, out: Option<&str>) -> serde_json::Value {
     options
 }
 
+/// `true` for the suite majors the TypeScript runner refuses to execute without an explicit
+/// `ESS_REPORT_FORMAT=2`: the version gate in `runWith` (`runtime.ts`), between suite admission
+/// and execution adaptation.
+///
+/// Not the Go runner's `5..=21`: this gate leaves out `/12` through `/17`, and the README states
+/// what this runner does. `tests/generated_docs.rs` reads the gate out of the emitted runtime and
+/// fails when the two disagree (beyond10x/ess#186).
+fn report_format_2_required(major: u32) -> bool {
+    matches!(major, 5..=11 | 18..=21)
+}
+
 /// How to wire the package up, written against this suite's own numbers.
 fn readme(suite: &ConformanceSuite) -> String {
     let provenance = &suite.provenance;
@@ -498,7 +509,24 @@ ESS_REPORT_OUT=$PWD/report.json npm test
         version = provenance.specification_version,
         digest = provenance.spec_digest,
     );
-    if provenance.suite_version.major() >= 5 {
+    if report_format_2_required(provenance.suite_version.major()) {
+        readme
+            .replace(
+                "## What to throw when you cannot answer",
+                &format!(
+                    "{}## What to throw when you cannot answer",
+                    crate::go::running_section(provenance.suite_version, "run", "npm test")
+                ),
+            )
+            .replace(
+                "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the",
+                "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/2` there when the",
+            )
+            .replace(
+                "ESS_REPORT_OUT=$PWD/report.json npm test",
+                "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test",
+            )
+    } else if provenance.suite_version.major() >= 5 {
         readme.replace(
             "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the",
             "Select `ESS_REPORT_FORMAT=2` explicitly before execution. Set `ESS_REPORT_OUT` to a file path\nand `run` writes an `ess-conformance-report/2` there when the",
