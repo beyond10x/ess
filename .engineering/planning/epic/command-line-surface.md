@@ -1,10 +1,14 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:command-line-surface
 kind: epic
 status: implemented
 title: A command line is a declared surface, not a hand-written one
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T09:45:29Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T09:45:29Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-04T09:45:29Z", actor: "human:timo", revision: 4, imported: true}
 ---
 # Epic: a command line is a declared surface, not a hand-written one
 

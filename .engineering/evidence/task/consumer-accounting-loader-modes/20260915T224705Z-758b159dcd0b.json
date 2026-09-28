@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T22:47:05Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-loader-modes",
+  "kind": "task",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact native loader execution: 27 selected/executed/passed, 2061 claims, zero qualified cells; composed 66 CLI tests and strict test-target Clippy pass",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s2-adoption/acceptance.md"
+  }
+}

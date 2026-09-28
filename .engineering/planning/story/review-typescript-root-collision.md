@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-typescript-root-collision
 kind: story
 status: implemented
@@ -24,6 +24,10 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/tests/typescript_typecheck.rs
 revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T12:47:52Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T12:50:24Z", actor: "human:timo", revision: 8, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T14:29:45Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Finding and source
 

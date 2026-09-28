@@ -183,6 +183,23 @@ pub trait ConformanceTarget {
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError>;
 
+    /// Invokes a command with no input at all — an absent request body, not `{}` — and reports
+    /// what is observable of it (suite/26, `input_absent:`; beyond10x/ess#170).
+    ///
+    /// A method of its own rather than [`execute_command`](Self::execute_command) with an empty
+    /// input, because an implementation may answer the two differently and the scenario says which
+    /// it sends. Its default body answers [`TargetError::Unsupported`]: a target that cannot send a
+    /// request without input reports the one scenario that needs it `unsupported`, never passed.
+    fn execute_command_without_input(
+        &self,
+        request: AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        Err(TargetError::unsupported(
+            format!("invoking `{}` with no input", request.command),
+            "this target cannot send a command without an input document",
+        ))
+    }
+
     /// Reads a view, no fresher than the request demands (§14).
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError>;
 
@@ -206,6 +223,30 @@ pub trait ConformanceTarget {
         &self,
         request: ExternalOutcomeControl,
     ) -> Result<(), TargetError>;
+
+    /// Forces the answer of an outcome the input cannot decide on the next `times` invocations of
+    /// its command (suite/26, [`crate::bounded_retry`]).
+    ///
+    /// What a bounded retry is witnessed by: every attempt it makes fails with a retried refusal,
+    /// and the suite counts the attempts. Forcing only the first would let the second succeed.
+    /// Like [`configure_external_outcome`](Self::configure_external_outcome), a test adapter
+    /// control, and it lapses after `times` invocations.
+    ///
+    /// The default answers [`TargetError::Unsupported`], so a target written before the control
+    /// existed reports that one scenario `unsupported` rather than passing it on one failure.
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            format!(
+                "forcing `{}` on the next {times} invocations",
+                request.force
+            ),
+            "this target forces an external outcome on the next invocation only",
+        ))
+    }
 
     /// Delivers an event this context has already published to its bindings a second time (§17).
     ///
@@ -469,8 +510,32 @@ pub struct SemanticCommandRequest {
     pub command: CommandRef,
     /// As whom, where the specification grants commands to actors.
     pub actor: Option<crate::scenario::ActorRef>,
+    /// The attributes of the caller to send it as, where its actor declares any (suite/26,
+    /// ess/16, [`crate::caller_values`]); `None` otherwise.
+    ///
+    /// The target sends the command authenticated as a caller carrying exactly these values —
+    /// the account, the agent — because the command reads them from the credential and not from
+    /// the input. A target that cannot authenticate as the caller named here answers
+    /// [`TargetError::unsupported`], never the command sent as someone else.
+    pub caller: Option<BTreeMap<String, Node>>,
     /// The input, by declared field name, with every reference already resolved by the runner.
     pub input: BTreeMap<String, Node>,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// A command to invoke with no input document at all (suite/26, `input_absent:`).
+///
+/// [`SemanticCommandRequest`] without its `input`, rather than that type with an empty map: an
+/// empty map is `{}`, which is the other request.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AbsentInputRequest {
+    /// Which command.
+    pub command: CommandRef,
+    /// As whom, where the specification grants commands to actors.
+    pub actor: Option<crate::scenario::ActorRef>,
+    /// The attributes of the caller to send it as, as [`SemanticCommandRequest::caller`].
+    pub caller: Option<BTreeMap<String, Node>>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
 }
@@ -758,6 +823,14 @@ pub struct SemanticViewRequest {
 pub struct SemanticViewResult {
     /// The rows, each a value per projected field name.
     pub rows: Vec<ViewRow>,
+    /// The number of rows the view's filter admits, where the answer carried one: a view that
+    /// declares `paging: {total: true}` (ess/16, [`crate::view_paging`]) answers it beside a page.
+    ///
+    /// `None` for every other answer. The page and the size a read asks for travel as the view's
+    /// declared parameters, under their declared names, in
+    /// [`SemanticViewRequest::params`]; only the total needs a field of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 impl SemanticViewResult {
@@ -765,7 +838,15 @@ impl SemanticViewResult {
     pub fn of(rows: impl IntoIterator<Item = ViewRow>) -> Self {
         Self {
             rows: rows.into_iter().collect(),
+            total: None,
         }
+    }
+
+    /// The same answer, carrying the number of rows the view's filter admits beside them.
+    #[must_use]
+    pub fn with_total(mut self, total: u64) -> Self {
+        self.total = Some(total);
+        self
     }
 }
 

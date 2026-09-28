@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T14:17:32Z",
+  "actor": "human:timo",
+  "artifact": "story:review-delivery-trust-contract",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Complete task check lanes, task site-build and AEP validation on combined commit 922dd160263acf3bea5f76e2c97b6eddce1553c6: all eleven exits zero; 2205 tests passed",
+    "reference": "home-path:sha256:9dfb89f3ccc461787a976b415e2b47fed81d952a0637429d3c1e1fb1f109c5ea"
+  }
+}

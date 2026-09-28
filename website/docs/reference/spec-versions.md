@@ -114,6 +114,20 @@ its compiled digest.
 
 `ess/15`, introduced in [0.37.0][r37], collects the constructs of the retrofit issues of 2026-09-27 that change what a document may say: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
 
+`ess/16`, introduced in [0.38.0][r38], collects the constructs of the retrofit issues filed against 0.36.0 (beyond10x/ess#162-#179) that change what a document may say. This build admits the header; each construct states its own refusal under an earlier header.
+
+Under `ess/16` a command may declare `input_absent: true` with an `error:`: the answer for a request that carries no input at all (beyond10x/ess#170). It is refused below `ess/16` with `unsupported_format_version`. Under `ess/16`, a guard that cannot hold because every way it could hold needs an input `f` that is not `Optional` to be absent (`not defined(f)`, `missing(f)`) is refused as a type mismatch; below `ess/16` it validates as before.
+
+Under `ess/16` an outcome may be selected by whether the addressed record exists (beyond10x/ess#164): a `creates:` branch marked `unknown_instance: true` beside the branch that updates the record the same input names (create or update), or an `existing_instance: true` branch with an `error:` beside a creation whose identity the caller supplies (create or refuse). Each is refused below `ess/16` with `unsupported_format_version`. See [selection by existence](../guides/write-a-specification.md#an-outcome-can-be-selected-by-whether-the-record-exists).
+
+Under `ess/16` an actor may declare `attributes:` its credential carries, which a command reads as `{caller: <attribute>}` in `payload:` and `sets:` and as `caller.<attribute>` in a `when:` or `when_subject:` comparison (beyond10x/ess#168). Below `ess/16` the attributes and a `caller.` operand are refused with `unsupported_format_version`, and `{caller: …}` stays a nested mapping.
+
+Under `ess/16` a view with `order_by:` may declare `paging: {page: <param>, size: <param>, first_page: 0|1, total: true|false}` (beyond10x/ess#174): two declared `Integer` parameters that slice the declared order, `size` rows starting at `(page - first_page) * size`, with the number of rows the filter admits beside them where `total: true`; a read that sends neither answers every row. The parameters `paging:` names are exempt from the refusal of a parameter no filter reads. `paging:` is refused below `ess/16` with `unsupported_format_version`. A caller-supplied filter expression is not part of it. See [paging a view](../guides/write-a-specification.md#a-view-can-be-paged).
+
+Under `ess/16` a binding may bound its retry: `on_failure: {retry: {attempts: 3, final: [<refusal>]}}` (beyond10x/ess#165). `attempts` counts invocations including the first and is at least 2; `final` names refusals of the invoked command, by outcome or by error, that end the retry at once. The block is refused below `ess/16` with `unsupported_format_version`; `on_failure: retry` written bare keeps its meaning.
+
+Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: <predicate>}` instead of `instance:`, changing every stored record the predicate selects over the entity's fields and `input.<field>` (beyond10x/ess#167), with `{count: changed}` as the number it changed; and an outcome with one existing subject may declare `affects:`, a list of `{entity, where, sets}` changing the records each filter selects, which may also read `subject.<field>` (beyond10x/ess#175). Each is refused below `ess/16` with `unsupported_format_version`, and `{count: changed}` stays a nested mapping there. See [set effects](../guides/write-a-specification.md#an-outcome-can-change-every-record-a-filter-selects).
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -132,6 +146,7 @@ back as a bare name, so a specification written before `ess/5` keeps its exact b
 | `ess-diff/6` | [0.29.0][r29] | Typed deltas retain the before/after originating replay relation and complete refusal-observation requirement. | Refuses the new vocabulary; existing changes retain their earlier format. |
 | `ess-diff/7` | [0.34.0][r34] | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
 | `ess-diff/8` | [0.34.0][r34] | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
+| `ess-diff/9` | [0.38.0][r38] | `PagingChanged` on `ViewChange`: a view's `paging:` (ess/16) declared, dropped or changed, carrying the parameters, the first page and whether a total is answered on each side. `OutcomeSetEffectChanged` on `CommandChange`: an outcome's `instances:` or `affects:` (ess/16) declared, dropped or changed, one line per construct on each side. | Refuses a delta carrying it. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -224,6 +239,14 @@ TypeScript refuse these envelopes by their version.
 
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
 
+`ess-conformance/26` and `/27`, introduced in [0.38.0][r38], are the round-3 pair, carrying several constructs. Per-leaf struct values (beyond10x/ess#179): a nested mapping whose struct has an undetermined leaf, such as `rank: {generated: true}`, is asserted leaf by leaf, each determined leaf under its dotted path (`lead.number`) in the event payload or the view row, and the undetermined leaf by the payload shape for presence and type. Presence of an `Optional` aggregate (beyond10x/ess#176): a view `satisfies` predicate reading `defined(x)` or `missing(x)` where `x` is an `Optional` struct, list, map or `Json` in the view's fields, which a 0.37.0 runner would read as absent for a present value; over an `Optional` scalar the predicate selects nothing, and a view filter or `when_subject` guard is decided at synthesis and never reaches the suite. Version 26 is ordinary and 27 carries declared coverage; each implies every major below it. The Rust runner compares them; the Go and TypeScript runtimes refuse both by version. A suite with none of them keeps its earlier format and bytes. The pair also carries the `changed_by` view expectation (beyond10x/ess#148): an ungrouped aggregate view with no parameter is read and snapshotted before its scenario creates rows, and read again after them, holding exactly one row whose every named `count` and `sum` moved by exactly the stated amount. Only a skipping `sum`, listed in `absent_is_zero`, reads as zero where absent; a `count` or a required `sum` absent on either read fails. The pair also carries the `now_offset` scenario value (beyond10x/ess#171): an instant that many seconds from the moment the runner first sends it, which a guard over the current time is witnessed with.
+
+The `execute_command_without_input` step (beyond10x/ess#170) is round-3 vocabulary: it invokes a command with no input document, which is not `execute_command` with `input: {}`, and a suite carrying it takes `/26` or `/27`. A target that cannot send a request without input reports the scenario `unsupported`.
+
+The `page` view expectation (beyond10x/ess#174) is round-3 vocabulary too: after a read of a paged view that sent its page and size parameters, the page holds exactly `rows` rows (at least `rows`, and at most `size`, with `at_least: true`), the answer carries a total of at least `total_at_least` where one is named, and with `follows` the page continues the one the run snapshotted before it — its rows in `follows.order_by`, none ranked before that page's last row, and none carrying that page's values in all of `follows.distinct_by`. Each claim holds on a target other users share. A suite carrying it takes `ess-conformance/26` or `/27`; the Go and TypeScript runtimes refuse both by version.
+
+A bounded retry (beyond10x/ess#165) is round-3 vocabulary too: `configure_external_outcome` may carry `times` (force the outcome on the next `times` invocations), `expect_invocation` may carry `count` (exactly that many matching invocations), and a binding scenario may be filed under the `final-failure` aspect. A suite carrying any of them takes `/26` or `/27`. A target that cannot force an outcome more than once reports the scenario `unsupported`.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
@@ -273,11 +296,12 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
 | `ess-observed-bindings-report/` | [0.32.0][r32], [0.33.0][r33] | `/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. `/3` adds each binding's `acknowledged` list, so a satisfied `OBS-BIND-008` no longer means every entry is bound; a `/2` reader must reject `/3`. |
 | `ess-observed-bindings/` | [0.33.0][r33] | `/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
+| `ess-composition/` | [0.38.0][r38] | `/2` lets a reference name any type the selected component's owned domains declare, and adds `conformances`: an assertion that a consumer's local type has an imported component type's shape, checked field by field, where the consumer may treat a required value as optional and nothing else may differ (`type_conformance_drift`). The client plan is unchanged. The earlier format keeps its meaning and bytes and refuses the key, even empty; an older reader refuses `/2`. |
 
 ## Still at version 1
 
 Never revised, and a document that claims a higher number is refused:
-`ess-realization/1`, `ess-realization-ir/1`, `ess-composition/1`, `ess-client-plan/1`,
+`ess-realization/1`, `ess-realization-ir/1`, `ess-client-plan/1`,
 `ess-docs/1`, `ess-build/1`, `ess-build-ir/1`, `ess-component/1`, `ess-component-ir/1`,
 `ess-release/1`, `ess-release-bundle/1`, `ess-release-catalog/1`, `ess-runtime/1`,
 `ess-runtime-ir/1`, `ess-stack/1`, `ess-stack-lock/1`, `ess-environment/1`, `ess-deployment/1`,
@@ -330,3 +354,5 @@ for a release and promises none.
 [r36]: https://github.com/beyond10x/ess/releases/tag/0.36.0
 
 [r37]: https://github.com/beyond10x/ess/releases/tag/0.37.0
+
+[r38]: https://github.com/beyond10x/ess/releases/tag/0.38.0

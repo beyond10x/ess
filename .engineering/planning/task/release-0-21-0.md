@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:release-0-21-0
 kind: task
 status: active
@@ -8,6 +8,9 @@ relations:
 - serves: vision:O2
 - derived_from: story:cli-presentation-binding
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-09T21:59:13Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-09T21:59:15Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, imported: true}
 ---
 ## Authorization and outcome
 

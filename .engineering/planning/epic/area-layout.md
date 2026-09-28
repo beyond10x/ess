@@ -1,11 +1,15 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:area-layout
 kind: epic
 status: implemented
 title: Crates grouped by bounded context
 summary: Group the 20 crates into specify, generate, verify, infra and edge; no crate renamed, no consumer re-pins.
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-03T21:31:33Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-03T21:31:33Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-03T21:31:33Z", actor: "human:timo", revision: 4, imported: true}
 ---
 # Epic: Crates grouped by bounded context
 

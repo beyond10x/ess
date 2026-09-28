@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:cli-presentation-binding
 kind: story
 status: implemented
@@ -53,6 +53,10 @@ scope:
 - confidence: inferred
   path: website/docs/status/where-this-stands.md
 revision: 24
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-09T13:35:36Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-09T13:35:38Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-09T20:30:08Z", actor: "human:timo", revision: 24, decided_on: {"recorded":{"test_result":4,"review_outcome":3}}, imported: true}
 ---
 ## Operator authorization
 The Connectors operator approved closing necessary ESS gaps upstream to specify its local CLI. Work is local in the isolated cli-binding-ess-20260909 managed tree; preserve the live review-boundaries-21 wave and current main. Serving objective O2. No release/external publication or production provider/credential execution.

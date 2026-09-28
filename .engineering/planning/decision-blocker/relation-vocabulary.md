@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:relation-vocabulary
 kind: decision-blocker
 status: cleared
@@ -9,6 +9,8 @@ owner: ess
 relations:
 - blocks: story:relations-in-the-domain-model
 revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-02T22:02:59Z", actor: "human:timo", revision: 3, imported: true}
 ---
 # Decision blocker: Nobody has decided the relation vocabulary
 

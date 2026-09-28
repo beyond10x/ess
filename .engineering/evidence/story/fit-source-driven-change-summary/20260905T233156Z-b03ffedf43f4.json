@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T23:31:56Z",
+  "actor": "human:timo",
+  "artifact": "story:fit-source-driven-change-summary",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Pinned Docs System validator and delivered source-set Website gate:99 cases,356 routes,1327 files",
+    "reference": "docs/plan/2026-09-05-review-boundaries-5.md"
+  }
+}

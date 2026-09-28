@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:fit-source-driven-change-summary
 kind: story
 status: implemented
@@ -11,6 +11,10 @@ scope:
 - confidence: cited
   path: changes/source-driven-realization-0.19.0.yaml
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T22:42:10Z", actor: "agent:specification-planner", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T22:42:11Z", actor: "agent:specification-planner", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T00:03:56Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Observed publication refusal
 

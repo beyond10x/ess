@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-09T15:26:09Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-presentation-binding",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:cli-presentation-adversary-r2-20260909",
+    "review": "review-result:cli-presentation-adversary-r2-20260909",
+    "outcome": "fixed"
+  }
+}

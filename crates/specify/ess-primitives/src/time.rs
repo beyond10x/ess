@@ -808,6 +808,41 @@ impl Rfc3339Instant {
         })
     }
 
+    /// The instant `millis` milliseconds after the Unix epoch (before it when negative), or `None`
+    /// past the years an RFC 3339 `date-time` can spell (0000 through 9999).
+    ///
+    /// How a clock's reading becomes an instant a guard can be ordered against.
+    #[must_use]
+    pub fn from_epoch_millis(millis: i64) -> Option<Self> {
+        let instant = Self {
+            seconds: millis.div_euclid(1000),
+            nanos: u32::try_from(millis.rem_euclid(1000)).ok()? * 1_000_000,
+        };
+        (FIRST_SPELLED_SECOND..=LAST_SPELLED_SECOND)
+            .contains(&instant.seconds)
+            .then_some(instant)
+    }
+
+    /// The first whole second at or after this instant: the instant itself when it has no fraction.
+    #[must_use]
+    pub fn ceil_to_second(self) -> Self {
+        if self.nanos == 0 {
+            self
+        } else {
+            Self {
+                seconds: self.seconds.saturating_add(1),
+                nanos: 0,
+            }
+        }
+    }
+
+    /// How many whole seconds after `earlier` this instant is (negative when before), or `None`
+    /// when the two are not a whole number of seconds apart.
+    #[must_use]
+    pub fn whole_seconds_since(self, earlier: Self) -> Option<i64> {
+        (self.nanos == earlier.nanos).then(|| self.seconds.checked_sub(earlier.seconds))?
+    }
+
     /// The instant in UTC with a `Z`, with a fraction only when it has one.
     #[must_use]
     pub fn to_rfc3339(self) -> String {
@@ -827,6 +862,96 @@ impl Rfc3339Instant {
             (into_day % 3600) / 60,
             into_day % 60
         )
+    }
+}
+
+/// `0000-01-01T00:00:00Z`, the first second an RFC 3339 `date-time` spells.
+const FIRST_SPELLED_SECOND: i64 = -62_167_219_200;
+
+/// `9999-12-31T23:59:59Z`, the last second an RFC 3339 `date-time` spells.
+const LAST_SPELLED_SECOND: i64 = 253_402_300_799;
+
+/// The current-time operand of a `Timestamp` ordering: `now`, optionally with a signed offset
+/// (beyond10x/ess#171, source format `ess/16`, `docs/design/current-time-guards.md`).
+///
+/// `starts_at < now - 60s` orders the instant a command carries against the moment the
+/// implementation handles it, less a minute. The operand is written as a text literal on the right
+/// of an ordering, and names an instant only against a clock: [`Self::at`] is that reading, and a
+/// source with no clock leaves the comparison `Unknown`, as it leaves any text that is no instant.
+///
+/// The offset is a whole number of one unit — `s`, `m` or `h` — without a leading zero, with or
+/// without spaces around its sign, and at most [`Self::MAX_OFFSET_SECONDS`]. No days, no calendar
+/// arithmetic and no fraction: a day is not always 24 hours, and the operand is read the same way by
+/// every evaluator because it reads nothing but a clock and a number of seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CurrentTime {
+    offset_seconds: i64,
+}
+
+impl CurrentTime {
+    /// The word the operand is written with.
+    pub const KEYWORD: &'static str = "now";
+
+    /// The largest offset, either way: one hundred years of 365.25 days.
+    pub const MAX_OFFSET_SECONDS: i64 = 3_155_760_000;
+
+    /// The spellings a refusal offers.
+    pub const SPELLINGS: &'static str = "`now`, `now - 60s`, `now + 5m` or `now - 1h`";
+
+    /// Parses the operand, or `None` when `text` is not one.
+    pub fn parse(text: &str) -> Option<Self> {
+        let rest = text.strip_prefix(Self::KEYWORD)?;
+        if rest.is_empty() {
+            return Some(Self { offset_seconds: 0 });
+        }
+        let rest = rest.trim_start_matches(' ');
+        let (sign, rest) = match rest.as_bytes().first()? {
+            b'+' => (1, &rest[1..]),
+            b'-' => (-1, &rest[1..]),
+            _ => return None,
+        };
+        let rest = rest.trim_start_matches(' ');
+        let unit = match rest.as_bytes().last()? {
+            b's' => 1,
+            b'm' => 60,
+            b'h' => 3_600,
+            _ => return None,
+        };
+        let digits = &rest[..rest.len() - 1];
+        if digits.is_empty()
+            || digits.len() > 10
+            || !digits.bytes().all(|byte| byte.is_ascii_digit())
+            || (digits.len() > 1 && digits.starts_with('0'))
+        {
+            return None;
+        }
+        let magnitude = digits.parse::<i64>().ok()?.checked_mul(unit)?;
+        (magnitude <= Self::MAX_OFFSET_SECONDS).then_some(Self {
+            offset_seconds: sign * magnitude,
+        })
+    }
+
+    /// Whether `text` is written as an attempt at the operand — `now` followed by nothing, a space
+    /// or a sign — whether or not it parses. What a refusal uses to name the spellings rather than
+    /// ask for an RFC 3339 instant.
+    pub fn mentions(text: &str) -> bool {
+        text.strip_prefix(Self::KEYWORD)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '+', '-']))
+    }
+
+    /// The signed offset from the current time, in seconds.
+    #[must_use]
+    pub fn offset_seconds(self) -> i64 {
+        self.offset_seconds
+    }
+
+    /// The instant this operand names when the current time is `now`, or `None` past the years an
+    /// RFC 3339 `date-time` spells.
+    #[must_use]
+    pub fn at(self, now: Rfc3339Instant) -> Option<Rfc3339Instant> {
+        now.plus_seconds(self.offset_seconds).filter(|instant| {
+            (FIRST_SPELLED_SECOND..=LAST_SPELLED_SECOND).contains(&instant.seconds)
+        })
     }
 }
 

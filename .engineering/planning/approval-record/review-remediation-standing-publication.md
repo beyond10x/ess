@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: approval-record:review-remediation-standing-publication
 kind: approval-record
 status: approved
@@ -7,6 +7,8 @@ title: Standing publication and cleanup approval for green remediation waves
 relations:
 - decides: epic:review-boundary-remediation
 revision: 2
+transitions:
+- {from: "draft", to: "approved", at: "2026-09-05T10:53:47Z", actor: "human:timo", revision: 2, imported: true}
 ---
 ## Authorization
 

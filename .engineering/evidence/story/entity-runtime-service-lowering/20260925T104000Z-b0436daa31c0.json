@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-25T10:40:00Z",
+  "actor": "human:timo",
+  "artifact": "story:entity-runtime-service-lowering",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess 0.31.0 release gate (ess#71, f7de9f82a): task check, site-build, site-lab, Rust 1.85 check",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.31.0"
+  }
+}

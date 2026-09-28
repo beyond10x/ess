@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:oci-component-release
 kind: story
 status: implemented
@@ -23,6 +23,10 @@ scope:
 - confidence: cited
   path: website/docs
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T01:00:55Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T01:00:55Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-04T01:18:14Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # Story: Execute and compose OCI component releases
 

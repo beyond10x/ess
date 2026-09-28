@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:go-normalization-pattern-semantics
 kind: story
 status: active
@@ -29,6 +29,9 @@ scope:
 - confidence: cited
   path: website/docs/guides/generate-artifacts.md
 revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T07:58:25Z", actor: "agent:specification-planner", revision: 9, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T07:58:25Z", actor: "agent:specification-planner", revision: 10, imported: true}
 ---
 ## Evidence
 

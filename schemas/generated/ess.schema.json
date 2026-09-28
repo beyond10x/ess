@@ -215,7 +215,7 @@
       ]
     },
     "BindingFailure": {
-      "description": "What happens when the invoked command does not run: `retry`, `drop`, or an `escalate:` block naming the event the escalation emits.",
+      "description": "What happens when the invoked command does not run: `retry`, `drop`, an `escalate:` block naming the event the escalation emits, or a `retry:` block stating its attempts and final refusals (ess/16).",
       "oneOf": [
         {
           "$ref": "#/definitions/Failure"
@@ -228,6 +228,18 @@
           "properties": {
             "escalate": {
               "$ref": "#/definitions/RawEscalation"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "retry"
+          ],
+          "properties": {
+            "retry": {
+              "$ref": "#/definitions/RetryBound"
             }
           },
           "additionalProperties": false
@@ -1184,6 +1196,35 @@
         }
       ]
     },
+    "Paging": {
+      "description": "How a view's rows are paged: which declared parameters carry the page and its size, how pages are numbered, and whether the answer carries the filtered count.",
+      "type": "object",
+      "required": [
+        "page",
+        "size"
+      ],
+      "properties": {
+        "first_page": {
+          "description": "The number of the first page: `0` (the default) or `1`.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "page": {
+          "description": "The declared parameter that selects the page.",
+          "type": "string"
+        },
+        "size": {
+          "description": "The declared parameter that bounds how many rows a page holds.",
+          "type": "string"
+        },
+        "total": {
+          "description": "Whether the answer carries the number of rows the filter admits, beside the page.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "Period": {
       "description": "Positive, whole seconds, written `PT<seconds>S`; unlike elapsed observations, a period cannot be zero.",
       "type": "string",
@@ -1391,6 +1432,14 @@
         "name"
       ],
       "properties": {
+        "attributes": {
+          "description": "What its credential carries about it (ess/16).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        },
         "may": {
           "description": "The commands it may invoke.\n\nAbsent means it may invoke none, which is a legitimate thing to say: an actor that only observes still belongs in the model, because \"who is in this picture\" is part of what the specification describes.",
           "default": [],
@@ -1414,6 +1463,51 @@
           "allOf": [
             {
               "$ref": "#/definitions/Naming"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawAffect": {
+      "description": "One `affects:` entry as written.",
+      "type": "object",
+      "required": [
+        "entity",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows change.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "moves": {
+          "description": "Read so it can be refused by name: a move inside `affects:` is not in this cut.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sets": {
+          "description": "What every selected row comes to hold.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/RawPayloadSource"
+          }
+        },
+        "where": {
+          "description": "The rows selected, over the entity's fields, `input.` and `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
             }
           ]
         }
@@ -1622,6 +1716,20 @@
               "$ref": "#/definitions/RawTrigger"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawCallerSource": {
+      "description": "`{caller: <attribute>}` (ess/16, #168), written alone.\n\nRecognised by its exact shape — one key, `caller`, holding a text — so `caller` is no source keyword: any other mapping under a `caller` key is a nested mapping, as it was before `ess/16`. A document below `ess/16` whose struct happens to have this shape is read back as that nested mapping by [`read_below_ess_16`].",
+      "type": "object",
+      "required": [
+        "caller"
+      ],
+      "properties": {
+        "caller": {
+          "description": "An attribute every actor that may invoke the command declares.",
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -1942,6 +2050,20 @@
       },
       "additionalProperties": false
     },
+    "RawCountSource": {
+      "description": "`{count: changed}` as written.",
+      "type": "object",
+      "required": [
+        "count"
+      ],
+      "properties": {
+        "count": {
+          "description": "`changed`: the rows the outcome changed.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawEntitySpec": {
       "description": "An entity, as parsed.\n\nA lifecycle is required rather than defaulted. An entity with one state says so in three lines; a default would invent a state name the author never wrote, and every generated enum, diagram and stored value would then carry a word from this file rather than from the specification.",
       "type": "object",
@@ -2166,6 +2288,24 @@
         }
       ]
     },
+    "RawInstances": {
+      "description": "What `instances:` holds as written.",
+      "type": "object",
+      "required": [
+        "where"
+      ],
+      "properties": {
+        "where": {
+          "description": "The rows selected: a predicate over the entity's stored fields, with `input.` operands.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawInvocation": {
       "description": "What a binding does.",
       "type": "object",
@@ -2208,6 +2348,13 @@
             }
           ]
         },
+        "affects": {
+          "description": "Secondary effects on the rows filters select (ess/16, beyond10x/ess#175): beside one existing subject only.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RawAffect"
+          }
+        },
         "creates": {
           "description": "The entity a new instance of which this outcome brings into existence.",
           "anyOf": [
@@ -2248,6 +2395,10 @@
             }
           ]
         },
+        "existing_instance": {
+          "description": "`true` when this is the branch taken because a record already carries the identity the command's creating branch would create (ess/16, beyond10x/ess#164).\n\nThe refusal half of create-or-refuse: alone, naming its `error:`, beside a `creates:` whose identity the caller supplies. The create-or-update half is `unknown_instance: true` on the `creates:` branch itself.",
+          "type": "boolean"
+        },
         "external": {
           "description": "What outside the input decides this branch.",
           "type": [
@@ -2255,11 +2406,26 @@
             "null"
           ]
         },
+        "input_absent": {
+          "description": "`true` when this is the branch taken for a request that carries no input at all (ess/16).\n\nAn absent request body, as distinct from `{}` and from a body lacking a field (beyond10x/ess#170). Beside `unknown_instance:`, alone, naming its `error:`.",
+          "type": "boolean"
+        },
         "instance": {
           "description": "Which field carries the identity of the instance this outcome acts on.\n\nRequired beside `creates`, `moves` and `updates`, and meaningless without one. The verb decides which surface the name is read from — see [`Subject::surface`].",
           "type": [
             "string",
             "null"
+          ]
+        },
+        "instances": {
+          "description": "Every stored row a filter selects, instead of `instance:` (ess/16, beyond10x/ess#167): beside `moves:` or `updates:` only.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawInstances"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "into": {
@@ -2510,9 +2676,50 @@
           "$ref": "#/definitions/ExplicitPayloadSource"
         },
         {
+          "$ref": "#/definitions/RawRelatedSource"
+        },
+        {
+          "$ref": "#/definitions/RawCallerSource"
+        },
+        {
+          "$ref": "#/definitions/RawCountSource"
+        },
+        {
           "$ref": "#/definitions/RawNestedSources"
         }
       ]
+    },
+    "RawRelated": {
+      "description": "What `related:` holds: the field holding the other row's identity, and the field read there.",
+      "type": "object",
+      "required": [
+        "field",
+        "via"
+      ],
+      "properties": {
+        "field": {
+          "description": "A field of the entity `via` names.",
+          "type": "string"
+        },
+        "via": {
+          "description": "A field of the subject, or `input.<field>`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedSource": {
+      "description": "`{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is a mapping of its own rather than one more keyword beside the others.\n\nRecognised by its exact shape — one key, `related`, holding exactly `via` and `field` as text — and by nothing else, so `related` is no source keyword: any other mapping under a `related` key is a nested mapping, as it was before `ess/16`. A document below `ess/16` whose struct happens to have this shape is read back as that nested mapping by [`related_value::read_below_ess_16`], so no earlier document changes meaning.",
+      "type": "object",
+      "required": [
+        "related"
+      ],
+      "properties": {
+        "related": {
+          "$ref": "#/definitions/RawRelated"
+        }
+      },
+      "additionalProperties": false
     },
     "RawReplicas": {
       "description": "A replica range.",
@@ -2813,6 +3020,17 @@
             "$ref": "#/definitions/Ranking"
           }
         },
+        "paging": {
+          "description": "How its rows are paged (ess/16). Absent: every read answers every row.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Paging"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "params": {
           "description": "What the caller must supply to ask for this view.",
           "type": "array",
@@ -3072,6 +3290,30 @@
           "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
           "type": "string",
           "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RetryBound": {
+      "description": "How many attempts a `retry` makes, and which refusals end it at once.\n\nRead from a document as the block under `retry:`, and serialized the same way, so a binding that states no bound serializes exactly as it did before the block existed. The reader is written by hand so that every refusal names `retry:` — `retry: {emits: …}` is the escalation block under the wrong word, and a message naming only `emits` would not say so.",
+      "type": "object",
+      "required": [
+        "attempts"
+      ],
+      "properties": {
+        "attempts": {
+          "description": "Invocations in all, the first included. At least two: one attempt is `drop`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 2.0
+        },
+        "final": {
+          "description": "Refusals of the invoked command that end the retry at once: an outcome name, or an error the command reports. Each name at most once.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false

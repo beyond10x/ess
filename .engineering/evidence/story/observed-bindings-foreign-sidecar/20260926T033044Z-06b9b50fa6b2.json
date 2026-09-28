@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-26T03:30:44Z",
+  "actor": "human:timo",
+  "artifact": "story:observed-bindings-foreign-sidecar",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:wave0021-foreign-sidecar-adversary",
+    "review": "review-result:wave0021-foreign-sidecar-adversary",
+    "outcome": "fixed"
+  }
+}

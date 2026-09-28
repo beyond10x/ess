@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:component-declares-its-settings
 kind: story
 status: implemented
@@ -35,6 +35,10 @@ scope:
 - confidence: cited
   path: schemas/generated/ess.schema.json
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T10:25:25Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T10:25:27Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-13T08:06:53Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 # Story: a component declares its settings, and the runtime slots are derived from them
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T16:09:44Z",
+  "actor": "agent:normalization-coordinator",
+  "artifact": "release-plan:normalization-followups-020",
+  "kind": "release-plan",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS0.20.0 exactc90 release workflow and downloaded four-platform checksum verification; task release-status exit0",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/34043573262"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-09T21:59:10Z",
+  "actor": "human:timo",
+  "artifact": "task:release-0-21-0",
+  "kind": "task",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Operator requested updating CHANGELOG.md, tagging ESS and pushing the tag and main; local merge and ESS reconciliation completed first."
+  }
+}

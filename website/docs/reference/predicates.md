@@ -163,7 +163,7 @@ A compact predicate is one string. It holds a single comparison, a bare path, a 
 |---|---|---|
 | comparison | `quantity > 0` | the operator holds. The operators are `==`, `!=`, `<`, `<=`, `>`, `>=`. |
 | bare path | `gift` | the fact is present and truthy. |
-| presence, `defined` or `exists` | `defined(coupon)`, `exists(coupon)` | the fact is present. |
+| presence, `defined` or `exists` | `defined(coupon)`, `exists(coupon)` | the fact is present. From `ess/16` the fact may be an `Optional` struct, list or map; see [presence of an aggregate](#presence-of-an-optional-struct-list-or-map). |
 | absence, `missing` | `missing(coupon)` | the fact is absent. It is the same as `not defined(coupon)`. |
 | negation | `not gift`, `not defined(coupon)` | the rest of the string does not hold. |
 | constant | `always`, `true`, `never`, `false` | always, or never. |
@@ -262,6 +262,26 @@ when: coupon == null
 when: coupon == "null"
 ```
 
+### Presence of an Optional struct, list or map
+
+From `ess/16`, `defined(x)` and `missing(x)` accept any `Optional<T>`, including a struct, a list
+or a map `T`. Presence belongs to the `Optional`, not to what it holds:
+
+| The value at `x` | `defined(x)` |
+|---|---|
+| a struct, list or map, including an empty one | `true` |
+| left out, or `null` | `false` |
+
+This lets an invariant say when an optional field must be gone. For an entity whose
+`metrics: Optional<demo.queue.Metrics>` is held only while it is `Paused`, the invariant is
+`any: [state == Paused, {not: "defined(metrics)"}]`. Synthesis checks it after every branch that
+changes the entity. If an outcome leaves `Paused` without clearing `metrics`, that check fails.
+
+Below `ess/16`, `defined()` over an `Optional` aggregate is refused with
+`unsupported_format_version`. `defined()` over an aggregate that is not `Optional` is always
+present, so it is refused as a type mismatch in every format. A bare path over any aggregate is
+refused in the same way.
+
 ## Structured forms
 
 | Key | Aliases | Holds when |
@@ -333,7 +353,7 @@ A fact path used as a key constrains that fact. The value is one of three things
 | `gte` | `ge` | a scalar | the fact is greater or equal |
 | `any_of` | `in`, `one_of` | a list or one value | the fact is one of the values |
 | `none_of` | `not_in` | a list or one value | the fact is none of the values |
-| `exists` | `defined` | `true` or `false` | the fact is present, or absent for `false` |
+| `exists` | `defined` | `true` or `false` | the fact is present, or absent for `false`. From `ess/16` also over an `Optional` struct, list or map |
 | `truthy` | | any value | the fact is present and truthy |
 
 The comparison operators also accept their symbols as keys (`"=="`, `"<="`, …). A string operand
@@ -529,6 +549,40 @@ membership (`channel: [Web, Store]`), not with `>`.
 when: sku < "m"
 ```
 
+### A `Timestamp` against the current time
+
+From `format: ess/16`, a command outcome's `when:` may order a `Timestamp` input against `now`, the
+moment the implementation handles the request, moved by a whole number of seconds, minutes or hours.
+That includes the `when:` beside `when_subject_state:`, `when_state_changes:`, `when_subject:` or an
+external cause:
+
+```text
+when: starts_at < now - 60s
+when: expires_at > now + 5m
+when: {starts_at: {ge: now - 1h}}
+```
+
+`now` goes on the right of `<`, `<=`, `>` or `>=`. The offset is written `<n>s`, `<n>m` or `<n>h`
+with no leading zero; there are no days, so write `24h`. Anywhere else — an invariant, a view
+filter, a selection, a `when_subject:` predicate over stored fields — the operand is refused,
+because none of those is the guard over a request's input read while it is handled. `==` and `!=`
+against `now` are refused too: an instant is ordered against the current time, never equated with
+it. Below `ess/16` the guard is refused as
+`unsupported_format_version`. Over a `String`, `now` is still the text `now`.
+
+A generated suite witnesses such a guard a second either side of its boundary and never on it:
+`starts_at < now - 60s` is sent `now - 61s` requiring the refusal and `now - 59s` requiring the
+other branch. The suite carries each value as a `now_offset`, which the runner turns into an
+instant from the wall clock it is given when it sends the command, so a target that handles the
+request within a second decides it as required. Entity Runtime has no clock operand and refuses the
+guard (`CurrentTimeUnsupported`). A value chosen from a fixed instant the same field is also
+ordered against is sent as that instant. Synthesis refuses to witness `now` against a `Timestamp`
+inside a structure or a list element (`exists: {in: starts, as: s, that: s > now}`): a `now_offset`
+replaces a whole input field. It also refuses a field ordered against `now` and against a fixed
+instant between `2019-12-30T23:59:59Z`, the instant it decides values at, and
+`2026-09-27T00:00:00Z`: that instant lies on the other side of `now` at every run. See
+`docs/design/current-time-guards.md`.
+
 ## String operators
 
 `starts_with`, `ends_with` and `contains` test a text fact against a literal. They need
@@ -713,6 +767,17 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
+| `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. A value none of the literals leads to, such as `amount > 0.1 and amount < 0.2`, is refused too. |
+
+A refusal with a `when:` over the input is taken before any accepting branch whose guard it
+overlaps. Synthesis holds a target to that twice. An accepting branch's witness refutes every such
+refusal, with or without a default. And each such refusal is sent again at every overlap point, and
+the refusal is required there. For `closed: open == false` and `id-required: ticket_id == ""`,
+the `id-required` scenario also sends `{ticket_id: "", open: false}`. This holds for the `when:`
+beside a `when_subject:`, sent for a ticket the stored guard admits (or for no ticket, where the
+refusal reads the identity itself), and for an external branch's
+`when:`, sent without asking the provider. A branch every input of which such a refusal claims is
+refused with `ESS-SYNTH-003`, naming that refusal.
 
 ```yaml ess-check="when" ess-expect="unwitnessed:ESS-SYNTH-003"
 when: sku
@@ -762,13 +827,34 @@ invariants:
 ```
 
 A view `filter` decides which rows a scenario expects to read. After a command, a scenario always
-knows the entity's lifecycle state. A filter over a value no scenario binds, such as an entity list,
-is undecided, and synthesis refuses every scenario that reads the view with `ESS-SYNTH-005`. The
-list filters above validate but are refused this way. Filter on `state` wherever the rule allows
-it.
+knows the entity's lifecycle state, and every field the command set from values it sent, read at
+the field's declared type. A list set from the input is one of them: `tags: input.tags` sends a
+list, so `tags.count` and a quantifier over `tags` are decided, and the scenario asserts that the
+view shows the row or leaves it out.
 
-```yaml ess-check="filter" ess-expect="unwitnessed:ESS-SYNTH-005" ess-says="tags.count"
+```yaml ess-check="filter" ess-expect="synthesizes"
 filter: tags.count > 0
+```
+
+A filter over a field the creating command sets, such as `source == "web"`, is decided from the
+value the scenario sent. Where the scenario's own row does not meet it, and no row the default
+input creates ever does, the view is asserted over a row that does as well: synthesis creates one
+more instance with an input chosen toward the filter and expects the view to contain it, beside
+excluding the scenario's own row. A filter using `equals_ignore_case` or `in_ignore_case`, negated
+or not, gets one more instance in every scenario that reads the view, whatever its own row holds:
+one carrying the literal in its other ASCII case (`WEB` for `web`), asserted as the filter decides
+it. The view is expected to contain it under `equals_ignore_case` and to exclude it under
+`not: {equals_ignore_case: …}`, so an implementation that compares bytes fails either way. Where no
+creating command can produce such a row, or the view does not project the entity's identity and
+so cannot tell the rows apart, the scenario keeps what it asserts about its own row alone, and does
+not assert that such a view holds no rows once another row it admits has been created.
+
+A filter that compares a value no scenario binds, such as `note`, which no command sets, is
+undecided, and synthesis refuses every scenario that reads the view with `ESS-SYNTH-005`. Filter on
+`state` wherever the rule allows it.
+
+```yaml ess-check="filter" ess-expect="unwitnessed:ESS-SYNTH-005" ess-says="note == hello"
+filter: note == hello
 ```
 
 ## Limits

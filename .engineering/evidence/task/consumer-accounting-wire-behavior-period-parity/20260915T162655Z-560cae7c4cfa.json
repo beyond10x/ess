@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T16:26:55Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-wire-behavior-period-parity",
+  "kind": "task",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:finite-wire-adoption-audit-pass-1",
+    "reference": "omitted-member-mappings",
+    "review": "review-result:finite-wire-adoption-audit-pass-1",
+    "outcome": "fixed"
+  }
+}

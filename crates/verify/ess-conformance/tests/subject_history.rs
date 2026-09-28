@@ -100,6 +100,7 @@ fn runtime_suite() -> ess_conformance::ConformanceSuite {
             ScenarioStep::ExecuteCommand {
                 command: command.clone(),
                 actor: None,
+                caller: std::collections::BTreeMap::new(),
                 input: input.clone(),
             },
             ScenarioStep::ExpectOutcome {

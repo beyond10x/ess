@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:interpreted-target-selection
 kind: story
 status: implemented
@@ -31,6 +31,10 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/target.rs
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T10:38:54Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T10:38:55Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-11T17:10:29Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 # Story: an operator can select an interpreter target
 

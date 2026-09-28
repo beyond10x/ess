@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T10:08:33Z",
+  "actor": "human:timo",
+  "artifact": "story:review-report-reader-validation",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Implementation package tests: 238 passed; fmt and strict Clippy exit 0, before adversarial additions",
+    "reference": "ebe5e9dd7aeb1737fd7d5a2671d56824b5824eb5"
+  }
+}

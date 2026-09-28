@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T00:13:18Z",
+  "actor": "human:timo",
+  "artifact": "story:review-execution-recovery-design",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Combined ESS 37db6228da231e5d80a889d9fc9f344b5e2c5126: ten lanes exit0;1760 Rust cases; site build and planning valid",
+    "reference": "docs/plan/2026-09-06-review-boundaries-6.md"
+  }
+}

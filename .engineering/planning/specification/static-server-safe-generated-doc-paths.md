@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: specification:static-server-safe-generated-doc-paths
 kind: specification
 status: implemented
@@ -12,6 +12,10 @@ refs:
 - provider: github
   reference: beyond10x/ess#2
 revision: 4
+transitions:
+- {from: "draft", to: "in_review", at: "2026-09-03T14:44:08Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "in_review", to: "approved", at: "2026-09-03T14:44:08Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, imported: true}
+- {from: "approved", to: "implemented", at: "2026-09-03T14:45:46Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"approval":1}}, imported: true}
 ---
 # Specification: Static-server-safe generated documentation paths
 

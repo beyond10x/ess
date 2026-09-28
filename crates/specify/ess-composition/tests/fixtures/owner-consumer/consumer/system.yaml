@@ -1,0 +1,10 @@
+format: ess/1
+system: demo.consumer
+version: v1
+
+domains:
+  - demo.consumer.dashboard
+components:
+  - component: dashboard-component
+    owns:
+      domains: [demo.consumer.dashboard]

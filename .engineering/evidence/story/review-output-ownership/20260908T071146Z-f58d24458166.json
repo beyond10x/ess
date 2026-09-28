@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-08T07:11:46Z",
+  "actor": "human:timo",
+  "artifact": "story:review-output-ownership",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "static_analysis",
+    "source": "ESS0.20.0 specify validate and compile models/output-ownership; both actual0; entity/decision model only",
+    "reference": "home-path:sha256:3e68fce3dbe6086d88ff409408426d705497967328925cdf599ffe9e1f74ddaf"
+  }
+}

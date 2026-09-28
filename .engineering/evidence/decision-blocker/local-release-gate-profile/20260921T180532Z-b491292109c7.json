@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-21T18:05:32Z",
+  "actor": "human:timo",
+  "artifact": "decision-blocker:local-release-gate-profile",
+  "kind": "decision-blocker",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Operator instruction on 2026-09-21: merge and tag PR 56 after the CI-profile release exception was explained",
+    "reference": "https://github.com/beyond10x/ess/pull/56"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-13T08:53:29Z",
+  "actor": "human:timo",
+  "artifact": "story:periodic-binding-trigger-contract",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-synth --test periodic, on main 5b975c78",
+    "reference": "9572af9b; 1 passed, 0 failed"
+  }
+}

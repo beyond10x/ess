@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:runner-executable-boundary-accounting
 kind: decision-blocker
 status: cleared
@@ -7,6 +7,8 @@ title: Decide accounting for 71 unrepresentable runner model tuples
 relations:
 - blocks: task:consumer-accounting-conformance
 revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-18T08:31:00Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"approval":1}}, imported: true}
 ---
 ## Approved requirement blocked
 

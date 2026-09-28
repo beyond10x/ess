@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T13:07:04Z",
+  "actor": "human:timo",
+  "artifact": "task:verify-observed-bindings",
+  "kind": "task",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Final task check passed after exclusive observation publication; late-writer preservation regression and all 9 observed-binding integration cases passed. Existing namespace scanner overwrite and redaction tests passed unchanged.",
+    "reference": "sha256:c2ae60e6d0d8623e68ede02fdaf757c31fcb86c0065eddc496c938d6186ffa98"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T06:06:46Z",
+  "actor": "human:timo",
+  "artifact": "story:validate-go-selection-primitives",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated Go selection primitive wrapper: 1 passed, covering 12 primitive controls and invalid list tails; Decimal review correction verified",
+    "reference": "local-evidence:ess-evolution-20260910/priority-wave/runtime-gaps/integrated-predicate-selection.log"
+  }
+}

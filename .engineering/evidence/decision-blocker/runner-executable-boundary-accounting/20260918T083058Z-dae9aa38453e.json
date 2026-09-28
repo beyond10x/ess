@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-18T08:30:58Z",
+  "actor": "human:timo",
+  "artifact": "decision-blocker:runner-executable-boundary-accounting",
+  "kind": "decision-blocker",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Timo explicit operator decision in ESS evolution thread, 2026-09-18",
+    "reference": "home-path:sha256:9ca381e498e2c9e6899b53db04f4099e7ee818215f2dca8f89d38606a79fcca2"
+  }
+}

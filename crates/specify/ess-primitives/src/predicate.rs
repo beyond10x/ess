@@ -371,6 +371,72 @@ impl Operand {
     }
 }
 
+/// The instant one side of an ordering over a declared `Timestamp` names: an RFC 3339 `date-time`,
+/// or — for a literal only — the current-time operand read against the source's clock
+/// (beyond10x/ess#171). A fact is never read as `now`: a caller sending the text `now` sent no
+/// instant.
+fn instant_operand(
+    operand: &Operand,
+    text: &str,
+    facts: &dyn FactSource,
+) -> Option<crate::time::Rfc3339Instant> {
+    crate::time::Rfc3339Instant::parse_rfc3339(text).or_else(|| match operand {
+        Operand::Literal(_) => crate::time::CurrentTime::parse(text)?.at(facts.now()?),
+        Operand::Fact(_) => None,
+    })
+}
+
+/// A fact source told the current time: every read is `facts`'s, and a `now` operand is read
+/// against `now` (beyond10x/ess#171, [`crate::time::CurrentTime`]).
+///
+/// How an evaluator that decides a command guard at the moment it handles the request supplies the
+/// moment. The clock is read by the caller and handed in, so one decision is replayable.
+pub struct WithNow<'a> {
+    facts: &'a dyn FactSource,
+    now: crate::time::Rfc3339Instant,
+}
+
+impl<'a> WithNow<'a> {
+    /// `facts`, with the current time `now`.
+    pub fn new(facts: &'a dyn FactSource, now: crate::time::Rfc3339Instant) -> Self {
+        Self { facts, now }
+    }
+}
+
+impl FactSource for WithNow<'_> {
+    fn fact(&self, path: &FactPath) -> Option<FactValue> {
+        self.facts.fact(path)
+    }
+
+    fn observe(&self, path: &FactPath) -> Option<FactValue> {
+        self.facts.observe(path)
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        self.facts.present(path)
+    }
+
+    fn scales(&self) -> &Scales {
+        self.facts.scales()
+    }
+
+    fn orders_as_instant(&self, path: &FactPath) -> bool {
+        self.facts.orders_as_instant(path)
+    }
+
+    fn now(&self) -> Option<crate::time::Rfc3339Instant> {
+        Some(self.now)
+    }
+
+    fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
+        self.facts.orders_text_by_bytes(path)
+    }
+
+    fn cardinality(&self, path: &FactPath) -> Option<usize> {
+        self.facts.cardinality(path)
+    }
+}
+
 /// The unquoted operands a compact comparison refuses, because each is YAML's spelling of null.
 ///
 /// Quoted, every one of them is a text like any other: `note == "null"` compares with the four
@@ -599,12 +665,20 @@ impl FactSource for Element<'_> {
         self.inner.fact(&self.rebind(path))
     }
 
+    fn present(&self, path: &FactPath) -> bool {
+        self.inner.present(&self.rebind(path))
+    }
+
     fn scales(&self) -> &Scales {
         self.inner.scales()
     }
 
     fn orders_as_instant(&self, path: &FactPath) -> bool {
         self.inner.orders_as_instant(&self.rebind(path))
+    }
+
+    fn now(&self) -> Option<crate::time::Rfc3339Instant> {
+        self.inner.now()
     }
 
     fn orders_text_by_bytes(&self, path: &FactPath) -> bool {
@@ -681,7 +755,7 @@ impl Predicate {
             Self::Truthy(path) => facts
                 .observe(path)
                 .map_or(Truth::Unknown, |value| Truth::from_bool(value.is_truthy())),
-            Self::Defined(path) => Truth::from_bool(facts.observe(path).is_some()),
+            Self::Defined(path) => Truth::from_bool(facts.present(path)),
             Self::AnyOf { path, values } => {
                 facts.observe(path).map_or(Truth::Unknown, |observed| {
                     Truth::from_bool(values.contains(&observed))
@@ -740,10 +814,12 @@ impl Predicate {
                     .fact_path()
                     .is_some_and(|path| facts.orders_as_instant(path))
             });
-            let instant = crate::time::Rfc3339Instant::parse_rfc3339;
-            if let (true, Some(left_instant), Some(right_instant)) =
-                (declared_instant, instant(left_text), instant(right_text))
-            {
+            let instant = |operand: &Operand, text: &str| instant_operand(operand, text, facts);
+            if let (true, Some(left_instant), Some(right_instant)) = (
+                declared_instant,
+                instant(left, left_text),
+                instant(right, right_text),
+            ) {
                 return (
                     Truth::from_bool(op.accepts(left_instant.cmp(&right_instant))),
                     None,
@@ -2004,6 +2080,45 @@ mod tests {
             ("slots.1.matched", FactValue::Bool(false)),
             ("slots.1.score", FactValue::count(5)),
         ])
+    }
+
+    /// beyond10x/ess#176: a present aggregate binds no leaf at its own path, only a presence mark,
+    /// and `defined()` reads the mark; every value read still ignores it.
+    #[test]
+    fn defined_reads_a_present_aggregate_and_no_value_read_does() {
+        let mut facts = store(&[("state", FactValue::text("Running"))]);
+        facts.mark_present(FactPath::new("metrics").expect("path"));
+        assert_eq!(parse("defined(metrics)").evaluate(&facts), Truth::True);
+        assert_eq!(parse("defined(other)").evaluate(&facts), Truth::False);
+        assert_eq!(parse("metrics").evaluate(&facts), Truth::Unknown);
+        assert_eq!(facts.fact(&FactPath::new("metrics").expect("path")), None);
+        assert_eq!(
+            quantifier("any: [state == Paused, {not: 'defined(metrics)'}]").evaluate(&facts),
+            Truth::False,
+            "a running queue holding metrics breaks the #176 invariant"
+        );
+    }
+
+    #[test]
+    fn a_quantified_element_reads_presence_through_its_binder() {
+        let mut facts = store(&[
+            ("queues.count", FactValue::count(2)),
+            ("queues.1.state", FactValue::text("Running")),
+        ]);
+        facts.mark_present(FactPath::new("queues.0.metrics").expect("path"));
+        let some = quantifier("exists: {in: queues, as: q, that: 'defined(q.metrics)'}");
+        let every = quantifier("forall: {in: queues, as: q, that: 'defined(q.metrics)'}");
+        assert_eq!(some.evaluate(&facts), Truth::True);
+        assert_eq!(every.evaluate(&facts), Truth::False);
+    }
+
+    #[test]
+    fn extending_a_store_carries_its_presence_marks() {
+        let mut left = FactStore::new();
+        let mut right = FactStore::new();
+        right.mark_present(FactPath::new("metrics").expect("path"));
+        left.extend(right);
+        assert!(left.present(&FactPath::new("metrics").expect("path")));
     }
 
     #[test]

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T16:05:00Z",
+  "actor": "human:timo",
+  "artifact": "task:cache-writer-fixture-authority",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test --locked -p ess-cli --test cache_origin: 24 passed; both real writers admit private authorities and share the cache",
+    "reference": "https://github.com/beyond10x/atlas/blob/9b43684101e15eb072dec0dbaa24dafc0b6eed44/log/evidence/foundation-20260909/ess-cache-authority-tests.log"
+  }
+}

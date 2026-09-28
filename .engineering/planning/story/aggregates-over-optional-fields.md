@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:aggregates-over-optional-fields
 kind: story
 status: implemented
@@ -31,6 +31,10 @@ scope:
 - confidence: inferred
   path: schemas/generated/ess.schema.json
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T14:45:22Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T14:45:58Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T14:59:37Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Scope
 

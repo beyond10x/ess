@@ -1,11 +1,14 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:oci-component-delivery
 kind: epic
 status: active
 title: OCI-native independent component delivery
 summary: Build, bundle, cache, resolve, and reconcile independently released ESS components.
 revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T01:00:54Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T01:00:54Z", actor: "human:timo", revision: 3, imported: true}
 ---
 # Epic: OCI component delivery
 

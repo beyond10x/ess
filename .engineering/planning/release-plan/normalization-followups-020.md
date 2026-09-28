@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: release-plan:normalization-followups-020
 kind: release-plan
 status: implemented
@@ -8,6 +8,9 @@ relations:
 - depends_on: story:typescript-normalization-target
 - serves: vision:O2
 revision: 13
+transitions:
+- {from: "draft", to: "active", at: "2026-09-06T15:34:33Z", actor: "agent:normalization-coordinator", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T17:39:32Z", actor: "agent:normalization-coordinator", revision: 12, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Purpose and authority
 

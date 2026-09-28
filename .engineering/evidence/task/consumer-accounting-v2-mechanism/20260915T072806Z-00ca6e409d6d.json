@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T07:28:06Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Aggregate refused child: propagate and compare exact actual refusal, reject missing or mismatched boundary; two positive fixtures add only their authorized private refusal fields",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/correction-pass-1-evidence/exact-aggregate-refusal-stable.log",
+    "review": "review-result:consumer-accounting-code-pass-1",
+    "outcome": "fixed"
+  }
+}

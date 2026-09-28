@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T06:29:50Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test --package ess-xtask --all-targets --locked; terminal 0; 145 unit plus 70 integration passed; 3 pre-existing ignored",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/implementation-evidence/ess-xtask-suite-source-binding.log"
+  }
+}

@@ -77,7 +77,9 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState
-        | ResolvedCondition::UnknownInstance => None,
+        | ResolvedCondition::UnknownInstance
+        | ResolvedCondition::InputAbsent
+        | ResolvedCondition::ExistingInstance => None,
     }
 }
 
@@ -115,6 +117,31 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
                 | ResolvedCondition::WrongState
         )
         && (outcome.subject.is_some() || common(command).is_some())
+        && !reads_identity(command, outcome)
+}
+
+/// Whether `outcome` is an input-guarded refusal whose guard reads the identity field that names
+/// the subject (beyond10x/ess#178): `id-required: ticket_id == ""`.
+///
+/// No arranged row can be sent for it, because sending the row replaces the value its own guard
+/// admits with the row's identity. It is sent as a plain invocation, with the input its guard
+/// admits, and is taken before any row would be read.
+fn reads_identity(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    let Some(guard) = super::is_input_guarded_refusal(outcome)
+        .then(|| when(outcome))
+        .flatten()
+    else {
+        return false;
+    };
+    let Some(ResolvedInstance::Supplied { field }) =
+        common(command).map(|subject| &subject.instance)
+    else {
+        return false;
+    };
+    guard
+        .fact_paths()
+        .iter()
+        .any(|path| path.namespace() == field.name)
 }
 
 /// The subject this outcome's scenario arranges: its own, or the one its siblings name.
@@ -131,6 +158,10 @@ pub(super) fn reading<'a>(
 
 /// The branches that compete for selection: everything but the default and the families decided
 /// elsewhere.
+///
+/// An `unknown_instance:` answer is one of those families: it is taken for an identity no row
+/// carries, never for a row the arrangement built, and counting it beside the guarded branches
+/// made every row select two of them.
 fn guarded(command: &ResolvedCommand) -> impl Iterator<Item = &ResolvedOutcome> {
     command.outcomes.iter().filter(|branch| {
         !state_default(branch)
@@ -139,6 +170,9 @@ fn guarded(command: &ResolvedCommand) -> impl Iterator<Item = &ResolvedOutcome> 
                 ResolvedCondition::External { .. }
                     | ResolvedCondition::ExternalWhen { .. }
                     | ResolvedCondition::WrongState
+                    | ResolvedCondition::UnknownInstance
+                    | ResolvedCondition::InputAbsent
+                    | ResolvedCondition::ExistingInstance
             )
     })
 }
@@ -205,7 +239,7 @@ pub(super) fn row_truth(
 /// [`row_truth`], with the command's input bound under `input.` for a predicate that compares the
 /// row with it (beyond10x/ess#157). Without an input such a comparison is `Unknown`, which is what
 /// the search and the boundary goals see: the row alone does not decide it.
-fn row_truth_with(
+pub(super) fn row_truth_with(
     ir: &EssIr,
     entity: &EntityHandle,
     settled: &BTreeMap<String, super::Determined>,
@@ -289,6 +323,15 @@ impl ess_primitives::facts::FactSource for RowAndInput<'_> {
         match self.split(path) {
             Some((input, rest)) => input.fact(&rest),
             None => self.row.fact(path),
+        }
+    }
+
+    /// `defined()` over an `Optional` struct, list or map reads the presence the row or the input
+    /// recorded for it, which no fact carries (beyond10x/ess#176).
+    fn present(&self, path: &FactPath) -> bool {
+        match self.split(path) {
+            Some((input, rest)) => input.present(&rest),
+            None => self.row.present(path),
         }
     }
 
@@ -454,6 +497,14 @@ fn selects<'a>(
         }
         selected.push(branch);
     }
+    // An input-guarded refusal is taken before any accepting branch it overlaps (beyond10x/ess
+    // #178), so where one is selected the accepting branches beside it are not.
+    if selected
+        .iter()
+        .any(|branch| super::is_input_guarded_refusal(branch))
+    {
+        selected.retain(|branch| super::is_input_guarded_refusal(branch));
+    }
     let pick = match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
         [only] => Some(*only),
@@ -485,12 +536,75 @@ pub(super) fn input_selects(
             selected.push(branch);
         }
     }
+    if selected
+        .iter()
+        .any(|branch| super::is_input_guarded_refusal(branch))
+    {
+        selected.retain(|branch| super::is_input_guarded_refusal(branch));
+    }
     let pick = match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
         [only] => Some(*only),
         _ => None,
     };
     Ok(pick.is_some_and(|branch| branch.name == outcome.name))
+}
+
+/// The input a wrong-state scenario sends a command reading stored fields (beyond10x/ess#173):
+/// one the moving branch `outcome`'s own input guard admits, where it declares one, and that the
+/// input half of every other non-default branch refutes: a plain `when:` branch, and the `when:`
+/// beside a `when_subject:` one alike.
+///
+/// In a state no move of the command starts from, no branch is selected by the row — the stored
+/// facts never get a say, which is why [`selects`] answers nothing there. So the input is the one
+/// that would have reached the moving branch in a state the command runs from: its own input guard
+/// passed and no sibling's input half claimed. An input a sibling's `when:` admits would make the
+/// scenario depend on whether the implementation decides the state or that guard first, which the
+/// specification does not settle; refuting every such guard, as the default branch's input does in
+/// `plain_guards`, keeps the state the only thing the scenario varies. The row half, and a default
+/// defined against it, are the arranged row's business, and the wrong-state row leaves them
+/// undecided on purpose.
+pub(super) fn refusal_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    let guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    let own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    let siblings: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter(|other| other.name != outcome.name && !state_default(other))
+        .filter_map(|other| input_guard(&other.condition))
+        .collect();
+    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    for input in &inputs {
+        let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+        if decides(&facts, &own, true)? && decides(&facts, &siblings, false)? {
+            return Ok(input.clone());
+        }
+    }
+    let mut named = own.clone();
+    named.extend(siblings.iter().copied());
+    let rendered = match (own.is_empty(), siblings.is_empty()) {
+        (_, true) => super::rendered(&own, true),
+        (true, false) => super::rendered(&siblings, false),
+        (false, false) => format!(
+            "{} and {}",
+            super::rendered(&own, true),
+            super::rendered(&siblings, false)
+        ),
+    };
+    Err(super::unsatisfied(
+        &named,
+        rendered,
+        inputs.len().min(super::MAX_CANDIDATES),
+    ))
 }
 
 /// The stored fields `outcome`'s `sets:` fills from an input field, and the input field each reads.
@@ -956,6 +1070,70 @@ fn unarrangeable(
     None
 }
 
+/// Records, for a row no input selects `outcome` on, every input whose own stored and input guards
+/// hold of that row, and which sibling input-guarded refusal claimed it (beyond10x/ess#178). A row
+/// whose state no move of the command starts from is the wrong-state family's and is skipped.
+fn shadowed_at(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    shadow: &mut super::Shadow,
+) -> Result<(), RefusalCause> {
+    if outcome.error.is_some()
+        || ir
+            .wrong_states(command)
+            .get(&entity)
+            .is_some_and(|states| states.contains(&arrangement.state))
+    {
+        return Ok(());
+    }
+    let row_guard = stored(&outcome.condition);
+    let own_input: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
+    for input in inputs_for(ir, command, entity, arrangement)? {
+        if let Some(predicate) = &row_guard {
+            if row_truth_with(
+                ir,
+                entity,
+                &arrangement.settled,
+                predicate,
+                Some((command, &input)),
+            ) != Truth::True
+            {
+                continue;
+            }
+        }
+        let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+        if decides(&facts, &own_input, true)? {
+            shadow.record(command, outcome, &facts)?;
+        }
+    }
+    Ok(())
+}
+
+/// The stored-row search's refusal, restated as the shadow it is where every input the branch's
+/// own guards admit on the rows searched was claimed by a sibling input-guarded refusal.
+fn shadowed(
+    outcome: &ResolvedOutcome,
+    shadow: &super::Shadow,
+    cause: RefusalCause,
+) -> RefusalCause {
+    let RefusalCause::GuardUnsatisfiable { tried, .. } = &cause else {
+        return cause;
+    };
+    let row_guard = stored(&outcome.condition);
+    let mut guards: Vec<&Predicate> = row_guard.iter().collect();
+    guards.extend(input_guard(&outcome.condition));
+    match shadow.rendered(&guards) {
+        Some(predicate) => RefusalCause::GuardUnsatisfiable {
+            predicate,
+            tried: *tried,
+        },
+        None => cause,
+    }
+}
+
 /// Arrange the row the branch under test is selected for, and the input that selects it.
 pub(super) fn prepare(
     ir: &EssIr,
@@ -973,6 +1151,7 @@ pub(super) fn prepare(
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
     }
+    let mut shadow = super::Shadow::default();
     let (arrangement, input) = search(
         ir,
         entity,
@@ -980,8 +1159,15 @@ pub(super) fn prepare(
         &hints,
         Distinction::PLAIN,
         &label,
-        |node| reach_at(ir, command, outcome, entity, node),
-    )?;
+        |node| {
+            let found = reach_at(ir, command, outcome, entity, node)?;
+            if found.is_none() {
+                shadowed_at(ir, command, outcome, entity, node, &mut shadow)?;
+            }
+            Ok(found)
+        },
+    )
+    .map_err(|cause| shadowed(outcome, &shadow, cause))?;
     // A row the branch's writes would leave unchanged proves nothing about them (beyond10x/ess#161).
     // So where the plain row leaves some write unchanged, the search is asked again — under the
     // plain witness and then further ones — for a row that leaves fewer unchanged, and keeps the
@@ -1090,20 +1276,38 @@ pub(super) fn reach_state(
     .map(|(arrangement, ())| arrangement)
 }
 
-/// The immediate, unfiltered, parameterless view a stored-field arrangement is observed through:
-/// it projects the identity, `state` and every field named, each at the entity's declared type.
+/// Which assertion styles a stored-field observation may be made through.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reading {
+    /// Only an `expect` view: the observation must see the row at the moment it is made.
+    Immediate,
+    /// An `expect` view where one qualifies, and an `eventually` view where none does.
+    Settling,
+}
+
+/// The unfiltered, parameterless view a stored-field arrangement is observed through: it projects
+/// the identity, `state` and every field named, each at the entity's declared type.
+///
+/// An immediate view is preferred. Where `reading` allows it and no immediate view qualifies, an
+/// `eventual` one does (beyond10x/ess#172). [`require`] puts that requirement in an `eventually`
+/// block, which waits until the projection shows the identity, the state and every fact named at
+/// the values the arrangement's last step left, instead of racing it. What that proves is that the
+/// implementation applied those values; no step of the scenario writes the row between that
+/// observation and the command, so they are what the command reads. It proves nothing about a
+/// row that did not move: a projection that is behind shows the old row too, which is why a
+/// refusal's unchanged row is read with [`Reading::Immediate`] only ([`observe_unchanged`]).
 fn observer<'ir>(
     ir: &'ir EssIr,
     entity: &EntityHandle,
     fields: &BTreeSet<String>,
+    reading: Reading,
 ) -> Option<&'ir ess_compiler::ir::ResolvedView> {
     let declared = ir.entity(entity);
-    ir.views().values().find(|view| {
+    let projects = |view: &&ess_compiler::ir::ResolvedView| {
         !view.is_aggregate()
             && view.source == *entity
-            && view.params.is_empty()
+            && super::paging::read_whole(view)
             && view.filter.is_none()
-            && view.assertion_style == AssertionStyle::Expect
             && view
                 .field(&declared.identity.name)
                 .is_some_and(|f| f.type_ref == declared.identity.type_ref)
@@ -1120,22 +1324,48 @@ fn observer<'ir>(
                             .is_some_and(|shown| shown.type_ref == field.type_ref)
                     })
             })
+    };
+    let styled = |style: AssertionStyle| {
+        ir.views()
+            .values()
+            .filter(projects)
+            .find(|view| view.assertion_style == style)
+    };
+    styled(AssertionStyle::Expect).or_else(|| {
+        (reading == Reading::Settling)
+            .then(|| styled(AssertionStyle::Eventually))
+            .flatten()
     })
 }
 
 /// Observe one stored fact on the arranged row. Kept for the replay family, which observes the
-/// facts one at a time.
+/// facts one at a time, and keeps its immediate witness: the eventual fallback of
+/// [`observe_fields`] belongs to subject-fact selection (beyond10x/ess#172), and a replay's
+/// observation has its own profile.
 pub(super) fn observe(
     ir: &EssIr,
     entity: &EntityHandle,
     field: &str,
     arrangement: &Arrangement,
 ) -> Result<(Vec<ScenarioStep>, ViewRef), RefusalCause> {
-    observe_fields(ir, entity, &BTreeSet::from([field.to_owned()]), arrangement)
+    let fields = BTreeSet::from([field.to_owned()]);
+    let row = expected_row(ir, entity, &fields, arrangement)?;
+    let view = observer(ir, entity, &fields, Reading::Immediate).ok_or_else(|| {
+        missing(
+            entity,
+            field,
+            "subject fact selection requires an immediate unfiltered identity/state/fact view",
+        )
+    })?;
+    Ok(required(view, row))
 }
 
 /// Require the arranged row, with every guarded field at the value the arrangement determined,
 /// before the command runs: the facts the scenario is about are observed, not assumed.
+///
+/// Also the row a moving or updating branch leaves: it arrives at a state or values it did not
+/// hold, so an `eventually` block waiting for them does not pass on a projection that has not
+/// caught up.
 pub(super) fn observe_fields(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -1143,6 +1373,44 @@ pub(super) fn observe_fields(
     arrangement: &Arrangement,
 ) -> Result<(Vec<ScenarioStep>, ViewRef), RefusalCause> {
     let label = fields.iter().cloned().collect::<Vec<_>>().join(",");
+    let row = expected_row(ir, entity, fields, arrangement)?;
+    let view = observer(ir, entity, fields, Reading::Settling).ok_or_else(|| {
+        missing(
+            entity,
+            &label,
+            "subject fact selection requires an immediate unfiltered identity/state/fact view, \
+             or an `eventual` one it waits for, and no view projects them",
+        )
+    })?;
+    Ok(required(view, row))
+}
+
+/// Require the row a refusal left where it was, through an immediate view only — or `None`.
+///
+/// Nothing moved, so there is nothing for an `eventually` block to wait for: a projection that
+/// has not caught up with a wrong change still shows the arranged row, and the check would pass on
+/// exactly the implementation it exists to catch. Where no immediate view projects the identity,
+/// the state and the fields named, the unchanged-row check is omitted rather than asserted
+/// through an `eventual` one; the scenario still asserts the refusal's outcome, its error and
+/// that no event was published. The same reason keeps [`absent`] on immediate views.
+fn observe_unchanged(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fields: &BTreeSet<String>,
+    arrangement: &Arrangement,
+) -> Result<Option<(Vec<ScenarioStep>, ViewRef)>, RefusalCause> {
+    let row = expected_row(ir, entity, fields, arrangement)?;
+    Ok(observer(ir, entity, fields, Reading::Immediate).map(|view| required(view, row)))
+}
+
+/// The row an observation of the arrangement requires: its identity, its state and every field
+/// named at the value the arrangement determined.
+fn expected_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fields: &BTreeSet<String>,
+    arrangement: &Arrangement,
+) -> Result<BTreeMap<String, ScenarioValue>, RefusalCause> {
     let declared = ir.entity(entity);
     let mut row = BTreeMap::from([
         (
@@ -1164,13 +1432,14 @@ pub(super) fn observe_fields(
         };
         row.insert(field.clone(), value.value.clone());
     }
-    let view = observer(ir, entity, fields).ok_or_else(|| {
-        missing(
-            entity,
-            &label,
-            "subject fact selection requires an immediate unfiltered identity/state/fact view",
-        )
-    })?;
+    Ok(row)
+}
+
+/// The steps requiring `row` of `view`, in the block its consistency decides.
+fn required(
+    view: &ess_compiler::ir::ResolvedView,
+    row: BTreeMap<String, ScenarioValue>,
+) -> (Vec<ScenarioStep>, ViewRef) {
     let name = ViewRef::new(view.name.clone());
     let mut steps = Vec::new();
     require(
@@ -1180,7 +1449,7 @@ pub(super) fn observe_fields(
         ViewExpectation::Contains { fields: row },
         &mut steps,
     );
-    Ok((steps, name))
+    (steps, name)
 }
 
 /// The absent-subject witness: the command sent once for an identity no row carries.
@@ -1217,15 +1486,17 @@ pub(super) fn absent(
             "the witness names no identity",
         )
     })?;
-    let view = observer(ir, &subject.entity, &BTreeSet::new()).ok_or_else(|| {
-        missing(
-            &subject.entity,
-            &field.name,
-            "subject fact selection requires an immediate unfiltered identity/state/fact view",
-        )
-    })?;
+    let view =
+        observer(ir, &subject.entity, &BTreeSet::new(), Reading::Immediate).ok_or_else(|| {
+            missing(
+                &subject.entity,
+                &field.name,
+                "subject fact selection requires an immediate unfiltered identity/state/fact view",
+            )
+        })?;
     let command_ref = CommandRef::new(command.name.clone());
     let mut steps = vec![ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
         input: supply(command, &input, None, None, &BTreeMap::new()),
@@ -1272,10 +1543,41 @@ pub(super) fn around(
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<ScenarioStep>, RefusalCause> {
     let (further, source) = boundaries(ir, command, outcome, actors, &setup.settled)?;
+    let (overlapping, overlap_source) = overlaps(ir, command, outcome, actors)?;
     let mut steps = around_row(ir, command, outcome, actors, setup, supplied)?;
     steps.extend(further);
+    steps.extend(overlapping);
     setup.source.extend(source);
+    setup.source.extend(overlap_source);
     Ok(steps)
+}
+
+/// Whether `outcome` moves or updates the row it names.
+fn moves_row(outcome: &ResolvedOutcome) -> bool {
+    outcome.subject.as_ref().is_some_and(|own| {
+        matches!(
+            own.effect,
+            ResolvedEffect::Moves { .. } | ResolvedEffect::Updates
+        )
+    })
+}
+
+/// Whether the row after the command differs from the arranged one in its state or in a field
+/// named: only then does an `eventually` block after the command wait for something a projection
+/// that is behind does not show. A move back to the state it left, or an update writing the values
+/// the row already held, is read as a refusal's row is, through [`observe_unchanged`]; the generic
+/// view assertion (`view_expectations`) drops its `eventually` block for the same row.
+fn leaves_changed(
+    before_state: Option<&super::StateName>,
+    before: &BTreeMap<String, super::Determined>,
+    after: &Arrangement,
+    fields: &BTreeSet<String>,
+) -> bool {
+    before_state.is_some_and(|state| state != &after.state)
+        || fields.iter().any(|field| {
+            before.get(field).map(|held| &held.value)
+                != after.settled.get(field).map(|held| &held.value)
+        })
 }
 
 fn around_row(
@@ -1291,13 +1593,7 @@ fn around_row(
     };
     // Only for the ess/9 predicate form: an ess/6 `{field, equals}` command keeps the suite it
     // generated before this construct, and its moving branch is observed as it always was.
-    let changes = uses_predicate(command)
-        && outcome.subject.as_ref().is_some_and(|own| {
-            matches!(
-                own.effect,
-                ResolvedEffect::Moves { .. } | ResolvedEffect::Updates
-            )
-        });
+    let changes = uses_predicate(command) && moves_row(outcome);
     if outcome.subject.is_none() {
         let (steps, source) = absent(ir, command, subject, actors)?;
         setup.steps.splice(0..0, steps);
@@ -1327,7 +1623,17 @@ fn around_row(
         source: BTreeSet::new(),
         settled: left,
     };
-    let (observed, view) = observe_fields(ir, &subject.entity, &fields, &arrangement)?;
+    // A refusal left the row where it was, and only an immediate read can say so.
+    let observation = if changes
+        && leaves_changed(setup.before.as_ref(), &setup.settled, &arrangement, &fields)
+    {
+        Some(observe_fields(ir, &subject.entity, &fields, &arrangement)?)
+    } else {
+        observe_unchanged(ir, &subject.entity, &fields, &arrangement)?
+    };
+    let Some((observed, view)) = observation else {
+        return Ok(Vec::new());
+    };
     setup.source.insert(view.into());
     Ok(observed)
 }
@@ -1500,62 +1806,191 @@ pub(super) fn boundaries(
                 reach_at(ir, command, outcome, entity, node)
             },
         );
-        let Ok((mut arrangement, input)) = found else {
+        let Ok((arrangement, input)) = found else {
             continue;
         };
         rows += 1;
-        let (observed, view) = observe_fields(ir, entity, &fields, &arrangement)?;
-        arrangement.steps.extend(observed);
-        steps.append(&mut arrangement.steps);
-        source.append(&mut arrangement.source);
-        source.insert(view.into());
-        let supplied = supply(
+        send_for_row(
+            ir,
             command,
-            &input,
-            Some(read),
-            Some(&arrangement.instance),
-            &BTreeMap::new(),
-        );
-        steps.push(ScenarioStep::ExecuteCommand {
-            command: command_ref.clone(),
-            actor: actors.get(&command.name).cloned(),
-            input: supplied.clone(),
-        });
-        steps.push(ScenarioStep::ExpectOutcome {
-            outcome: outcome_ref.clone(),
-        });
-        match &outcome.error {
-            Some(error) => steps.push(ScenarioStep::ExpectError {
-                error: super::ErrorRef::from(error),
-                fields: BTreeMap::new(),
-            }),
-            None => steps.push(ScenarioStep::ExpectNoError),
-        }
-        let mut left = arrangement.settled.clone();
-        absorb(
-            &mut left,
             outcome,
-            super::settled(ir, outcome, &supplied, &arrangement.settled),
-        );
-        if let Some(transition) = outcome
-            .subject
-            .as_ref()
-            .and_then(|own| own.effect.transition())
-        {
-            arrangement.state = transition.to.clone();
-        }
-        arrangement.settled = left;
-        let kept = fields
-            .iter()
-            .filter(|field| arrangement.settled.contains_key(*field))
-            .cloned()
-            .collect();
-        let (after, _) = observe_fields(ir, entity, &kept, &arrangement)?;
-        steps.extend(after);
+            actors,
+            read,
+            &fields,
+            arrangement,
+            &input,
+            (&mut steps, &mut source),
+        )?;
     }
     if rows > 0 {
         source.insert(command_ref.into());
         source.insert(outcome_ref.into());
+    }
+    Ok((steps, source))
+}
+
+/// The branch sent once more for a further arranged row, with what it requires, and the row
+/// observed again afterwards: as the branch left it, or unchanged.
+#[allow(clippy::too_many_arguments)]
+fn send_for_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    read: &ResolvedSubject,
+    fields: &BTreeSet<String>,
+    mut arrangement: Arrangement,
+    input: &BTreeMap<String, Node>,
+    (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
+) -> Result<(), RefusalCause> {
+    let entity = &read.entity;
+    let command_ref = CommandRef::new(command.name.clone());
+    let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    let (observed, view) = observe_fields(ir, entity, fields, &arrangement)?;
+    arrangement.steps.extend(observed);
+    steps.append(&mut arrangement.steps);
+    source.append(&mut arrangement.source);
+    source.insert(view.into());
+    let supplied = supply(
+        command,
+        input,
+        Some(read),
+        Some(&arrangement.instance),
+        &BTreeMap::new(),
+    );
+    steps.push(ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
+        command: command_ref,
+        actor: actors.get(&command.name).cloned(),
+        input: supplied.clone(),
+    });
+    steps.push(ScenarioStep::ExpectOutcome {
+        outcome: outcome_ref,
+    });
+    match &outcome.error {
+        Some(error) => steps.push(ScenarioStep::ExpectError {
+            error: super::ErrorRef::from(error),
+            fields: BTreeMap::new(),
+        }),
+        None => steps.push(ScenarioStep::ExpectNoError),
+    }
+    let held = (arrangement.state.clone(), arrangement.settled.clone());
+    let mut left = arrangement.settled.clone();
+    absorb(
+        &mut left,
+        outcome,
+        super::settled(ir, outcome, &supplied, &arrangement.settled),
+    );
+    if let Some(transition) = outcome
+        .subject
+        .as_ref()
+        .and_then(|own| own.effect.transition())
+    {
+        arrangement.state = transition.to.clone();
+    }
+    arrangement.settled = left;
+    let kept = fields
+        .iter()
+        .filter(|field| arrangement.settled.contains_key(*field))
+        .cloned()
+        .collect();
+    if leaves_changed(Some(&held.0), &held.1, &arrangement, &kept) {
+        let (after, _) = observe_fields(ir, entity, &kept, &arrangement)?;
+        steps.extend(after);
+    } else if let Some((after, _)) = observe_unchanged(ir, entity, &kept, &arrangement)? {
+        steps.extend(after);
+    }
+    Ok(())
+}
+
+/// Further rows an input-guarded refusal sent for an arranged row is witnessed on where it
+/// overlaps an accepting branch (beyond10x/ess#178): one per accepting sibling with an input half,
+/// on a row that sibling's stored guard admits, with an input both input guards admit and every
+/// other input-guarded refusal refutes. The refusal is required there, and the row is observed
+/// unchanged, so a target that reads the accepting branch's guards first fails.
+///
+/// The row-free half of the rule — a refusal over the identity, and every command reading no
+/// stored field — is `overlap_inputs` in the parent module.
+fn overlaps(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    let Some(own) = super::is_input_guarded_refusal(outcome)
+        .then(|| when(outcome))
+        .flatten()
+    else {
+        return Ok((steps, source));
+    };
+    let Some(read) = reading(command, outcome) else {
+        return Ok((steps, source));
+    };
+    let entity = &read.entity;
+    let hints = hints(command);
+    let fields = read_fields(ir, entity, &hints);
+    let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
+        .filter_map(when)
+        .collect();
+    let mut rows = 0;
+    for accepting in &command.outcomes {
+        let Some(guard) = super::accepting_input_half(accepting) else {
+            continue;
+        };
+        if rows >= MAX_BOUNDARIES {
+            break;
+        }
+        let row_guard = stored(&accepting.condition);
+        // Numbered past every row `boundaries` can arrange, so no instance name is bound twice.
+        let distinction = Distinction::further(MAX_BOUNDARIES + rows + 1);
+        let found = search(ir, entity, actors, &hints, distinction, "overlap", |node| {
+            for input in inputs_for(ir, command, entity, node)? {
+                let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+                if !decides(&facts, &[own, guard], true)? || !decides(&facts, &refusals, false)? {
+                    continue;
+                }
+                if let Some(predicate) = &row_guard {
+                    if row_truth_with(
+                        ir,
+                        entity,
+                        &node.settled,
+                        predicate,
+                        Some((command, &input)),
+                    ) != Truth::True
+                    {
+                        continue;
+                    }
+                }
+                if selects(ir, command, entity, node, &input)?
+                    .is_some_and(|branch| branch.name == outcome.name)
+                {
+                    return Ok(Some(input));
+                }
+            }
+            Ok(None)
+        });
+        let Ok((arrangement, input)) = found else {
+            continue;
+        };
+        rows += 1;
+        send_for_row(
+            ir,
+            command,
+            outcome,
+            actors,
+            read,
+            &fields,
+            arrangement,
+            &input,
+            (&mut steps, &mut source),
+        )?;
+    }
+    if rows > 0 {
+        let command_ref = CommandRef::new(command.name.clone());
+        source.insert(OutcomeRef::new(command_ref.clone(), outcome.name.clone()).into());
+        source.insert(command_ref.into());
     }
     Ok((steps, source))
 }
@@ -1646,7 +2081,7 @@ fn preserve(
     for view in ir.views().values().filter(|view| {
         !view.is_aggregate()
             && view.source == subject.entity
-            && view.params.is_empty()
+            && super::paging::read_whole(view)
             && setup.after.as_ref().is_some_and(|state| {
                 shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
             })
@@ -1800,7 +2235,7 @@ fn eventual_observation(
     for view in ir.views().values().filter(|view| {
         !view.is_aggregate()
             && view.source == subject.entity
-            && view.params.is_empty()
+            && super::paging::read_whole(view)
             && view.assertion_style == AssertionStyle::Eventually
             && shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
             && view

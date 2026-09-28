@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-04T03:02:36Z",
+  "actor": "human:timo",
+  "artifact": "story:helm-secret-slot-defaults",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check",
+    "reference": "Taskfile.yml"
+  }
+}

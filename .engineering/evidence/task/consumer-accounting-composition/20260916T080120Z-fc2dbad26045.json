@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T08:01:20Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-composition",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Original S6 package, generated transport, strict Clippy/fmt and three actual red/restored controls; claim admission pending",
+    "reference": "local-evidence/consumer-accounting-composition/execution/implementation-result.md"
+  }
+}

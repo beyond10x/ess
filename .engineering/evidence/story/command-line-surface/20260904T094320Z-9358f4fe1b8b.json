@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-04T09:43:20Z",
+  "actor": "human:timo",
+  "artifact": "story:command-line-surface",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check (ESS offline gate: fmt-check, clippy, workspace tests, rustdoc, command smoke tests, dependency boundary, projection-check, release-check) exit 0 at 0.14.0"
+  }
+}

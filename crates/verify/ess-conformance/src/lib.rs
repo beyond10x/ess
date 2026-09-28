@@ -123,23 +123,30 @@
 //! * **A constraint solver, still.** §11 names one as a later extension, and nothing in the fault
 //!   matrix needed it.
 
+pub mod absent_input;
 pub mod accessor;
 mod accessor_types;
 pub mod admission;
 pub mod aggregate;
+pub mod aggregate_delta;
 pub mod authored;
+pub mod bounded_retry;
+pub mod caller_values;
 mod count_json;
 pub mod counts;
 pub mod coverage;
 pub mod coverage_build;
 pub mod decision;
+pub mod defined_aggregates;
 pub mod evidence;
 pub mod faulty;
 pub mod fixtures;
 pub mod go;
 pub mod input;
 pub mod interpret;
+pub mod leaf_payloads;
 pub mod mutate;
+pub mod now_offset;
 pub mod outcome_shapes;
 pub mod periodic;
 pub mod presence;
@@ -159,6 +166,7 @@ pub mod target;
 pub mod text_match_format;
 pub mod ts;
 mod typed_fields;
+pub mod view_paging;
 pub mod web;
 pub mod web_replay;
 pub mod witness;

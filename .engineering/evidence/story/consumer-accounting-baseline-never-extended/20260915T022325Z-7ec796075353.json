@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T02:23:25Z",
+  "actor": "human:timo",
+  "artifact": "story:consumer-accounting-baseline-never-extended",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Root accepted the independently reviewed design without policy changes; finite implementation scope recorded",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/implementation-scope-result.md",
+    "review": "review-result:consumer-accounting-applicability-pass-1",
+    "outcome": "no-op"
+  }
+}

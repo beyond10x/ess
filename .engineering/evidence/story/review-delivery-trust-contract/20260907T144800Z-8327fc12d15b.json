@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T14:48:00Z",
+  "actor": "human:timo",
+  "artifact": "story:review-delivery-trust-contract",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Complete 11-lane integration gate at b11d36ee02cbf18f123658203578a888f56df3e3; 2205 passed, 0 failed, 0 ignored",
+    "reference": "home-path:sha256:ec12074807d891ec71efa60c81eb3a8cd412e4668913bbd1aea05367945af4df"
+  }
+}

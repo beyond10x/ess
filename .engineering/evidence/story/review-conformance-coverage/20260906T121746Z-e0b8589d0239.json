@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-06T12:17:46Z",
+  "actor": "human:timo",
+  "artifact": "story:review-conformance-coverage",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-conformance-coverage-binding-review-pass-2",
+    "review": "review-result:ess-conformance-coverage-binding-review-pass-2",
+    "outcome": "fixed"
+  }
+}

@@ -59,6 +59,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use ess_compiler::ir::EssIr;
@@ -154,7 +155,20 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::presence::used_by(self) {
+        self.provenance.suite_version = if crate::leaf_payloads::used_by(self)
+            || crate::absent_input::used_by(self)
+            || crate::aggregate_delta::used_by(self)
+            || crate::now_offset::used_by(self)
+            || crate::caller_values::used_by(self)
+            || crate::view_paging::used_by(self)
+            || crate::bounded_retry::used_by(self)
+        {
+            SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::leaf_payloads::ORDINARY
+            ))
+            .expect("constant suite version")
+        } else if crate::presence::used_by(self) {
             SuiteFormat::parse(&format!("ess-conformance/{}", crate::presence::ORDINARY))
                 .expect("constant suite version")
         } else if crate::outcome_shapes::used_by(self) {
@@ -188,6 +202,25 @@ impl ConformanceSuite {
         } else {
             SuiteFormat::CURRENT
         };
+    }
+
+    /// [`select_fresh_format`](Self::select_fresh_format), with the constructs only the model can
+    /// recognise: a view predicate reading `defined()` or `missing()` over an `Optional` aggregate
+    /// selects suite/[`ORDINARY`](crate::defined_aggregates::ORDINARY) (beyond10x/ess#176).
+    ///
+    /// Every caller that assembles a fresh suite from a model calls this one, so that a later
+    /// selection over the same suite cannot lower the number again.
+    pub fn select_fresh_format_for(&mut self, ir: &ess_compiler::EssIr) {
+        self.select_fresh_format();
+        if self.provenance.suite_version.major() < crate::defined_aggregates::ORDINARY
+            && crate::defined_aggregates::used_by(ir, self)
+        {
+            self.provenance.suite_version = SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::defined_aggregates::ORDINARY
+            ))
+            .expect("constant suite version");
+        }
     }
 
     pub(crate) fn requires_preservation_format(&self) -> bool {
@@ -389,7 +422,8 @@ impl SuiteProvenance {
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -919,6 +953,14 @@ pub enum BindingAspect {
     Delivery,
     /// The command does not run, and the declared failure policy is observable (§18).
     OnFailure,
+    /// A bounded retry answered with a `final` refusal makes exactly one attempt (suite/26,
+    /// [`crate::bounded_retry`]).
+    ///
+    /// Not in [`ALL`](Self::ALL): it is a claim only a binding whose `retry:` names `final`
+    /// refusals makes, so no other binding has it to prove or refuse. The synthesis that walks
+    /// [`ALL`](Self::ALL) produces it beside the four for exactly those bindings, as a scenario or
+    /// as a named refusal.
+    FinalFailure,
 }
 
 impl BindingAspect {
@@ -947,6 +989,7 @@ impl BindingAspect {
             Self::Mapping => "mapping",
             Self::Delivery => "delivery",
             Self::OnFailure => "on-failure",
+            Self::FinalFailure => "final-failure",
         }
     }
 
@@ -957,6 +1000,7 @@ impl BindingAspect {
             "mapping" => Ok(Self::Mapping),
             "delivery" => Ok(Self::Delivery),
             "on-failure" => Ok(Self::OnFailure),
+            "final-failure" => Ok(Self::FinalFailure),
             _ => Err(()),
         }
     }
@@ -965,7 +1009,9 @@ impl BindingAspect {
     fn expected() -> String {
         Self::ALL
             .iter()
-            .map(|(_, written)| format!("`{written}`"))
+            .map(|(_, written)| *written)
+            .chain([Self::FinalFailure.written()])
+            .map(|written| format!("`{written}`"))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -1460,6 +1506,16 @@ pub enum ScenarioValue {
         /// The field of that event's payload.
         field: String,
     },
+    /// An instant `seconds` from the moment the runner first sends it in this scenario
+    /// (beyond10x/ess#171, suite/26): the value a guard over the current time is witnessed with.
+    ///
+    /// The runner resolves it from its wall clock when the first step naming it runs, and every
+    /// later one with the same number in the scenario reads the same instant, so a row read back
+    /// afterwards is required to hold what was sent. [`crate::now_offset`] is the authority.
+    NowOffset {
+        /// Seconds after (before, when negative) the moment of sending.
+        seconds: i64,
+    },
 }
 
 impl ScenarioValue {
@@ -1489,7 +1545,8 @@ impl ScenarioValue {
             | Self::Instance { .. }
             | Self::Observed { .. }
             | Self::ObservedAccessor { .. }
-            | Self::ObservedSelection { .. } => None,
+            | Self::ObservedSelection { .. }
+            | Self::NowOffset { .. } => None,
         }
     }
 }
@@ -1859,6 +1916,13 @@ pub enum ScenarioStep {
     ConfigureExternalOutcome {
         /// The outcome the adapter must produce next.
         force: OutcomeRef,
+        /// How many invocations in a row it must produce it for, where more than the next one
+        /// (suite/26, [`crate::bounded_retry`]).
+        ///
+        /// A bounded retry is witnessed by failing every attempt it makes; forcing only the first
+        /// would let the second succeed, which proves nothing about the bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        times: Option<NonZeroU32>,
     },
     /// Invoke a command (§9).
     ExecuteCommand {
@@ -1867,6 +1931,10 @@ pub enum ScenarioStep {
         /// As whom, where the specification grants commands to actors.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         actor: Option<ActorRef>,
+        /// The attributes the caller it is sent as carries (suite/26, [`crate::caller_values`]):
+        /// empty where the actor declares none.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        caller: BTreeMap<String, Node>,
         /// The input, by declared field name.
         ///
         /// A [`ScenarioValue`] per field: either a [`Node`] tree — the workspace's one
@@ -1877,6 +1945,23 @@ pub enum ScenarioStep {
         /// it is a second case rather than a special [`Node`].
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         input: BTreeMap<String, ScenarioValue>,
+    },
+    /// Invoke a command with no input at all (suite/26, `input_absent:`).
+    ///
+    /// Not [`ExecuteCommand`](Self::ExecuteCommand) with an empty input: that step sends `{}`, and
+    /// an implementation may answer an absent request body differently from an empty one
+    /// (beyond10x/ess#170). A step of its own, so a reader older than suite/26 refuses it rather
+    /// than sending `{}` in its place. Every assertion after it reads its result, as after
+    /// [`ExecuteCommand`](Self::ExecuteCommand).
+    ExecuteCommandWithoutInput {
+        /// Which command.
+        command: CommandRef,
+        /// As whom, where the specification grants commands to actors.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<ActorRef>,
+        /// The attributes the caller it is sent as carries (suite/26, [`crate::caller_values`]).
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        caller: BTreeMap<String, Node>,
     },
     /// Require that the command took this declared branch (§10).
     ///
@@ -2033,6 +2118,14 @@ pub enum ScenarioStep {
         /// claim the specification makes about this input.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         input: BTreeMap<String, ScenarioValue>,
+        /// Exactly how many such invocations there must be, where the number is the claim
+        /// (suite/26, [`crate::bounded_retry`]).
+        ///
+        /// Absent, one matching invocation is enough, as it always was. Present, it is the attempt
+        /// count of a bounded retry: `attempts` when every attempt fails with a retried refusal,
+        /// and one when the refusal is final.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<NonZeroU32>,
     },
     /// Read a view (§14).
     ///
@@ -2375,6 +2468,59 @@ pub enum ViewExpectation {
         /// has a row at that position, which is a claim [`Counts`](Self::Counts) makes better.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         fields: BTreeMap<String, ScenarioValue>,
+    },
+    /// The view's one row changed, since the [`SnapshotView`](ScenarioStep::SnapshotView) of it,
+    /// by exactly these amounts (suite/26, [`crate::aggregate_delta`]).
+    ///
+    /// The claim an ungrouped aggregate view with no parameter admits on a shared target (§8): its
+    /// one row is over rows other users made too, so its absolute value is theirs to decide, and
+    /// the change is the scenario's own. Both the snapshot and this read must hold exactly one
+    /// row. Each amount is a number, compared exactly.
+    ///
+    /// A field is absent over no row only where the function makes it so — a skipping `sum`
+    /// (`skip_absent: true`) over no present value. Such a field is listed in
+    /// [`absent_is_zero`](Self::ChangedBy::absent_is_zero), and its absent value reads as zero.
+    /// Every other field — a `count`, a `sum` over a required input — is `0` over no row, so its
+    /// value absent on either read fails the expectation.
+    ChangedBy {
+        /// The fields to compare, by name, and the amount each must have changed by.
+        fields: BTreeMap<String, Node>,
+        /// The fields of [`fields`](Self::ChangedBy::fields) whose absent value reads as zero.
+        #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+        absent_is_zero: BTreeSet<String>,
+    },
+    /// The read was one page of a paged view, and it holds what that page must (suite/26,
+    /// [`crate::view_paging`]).
+    ///
+    /// `page` and `size` are what the read before it sent in the view's paging parameters. The
+    /// page holds exactly [`rows`](Self::Page::rows) rows; where the view declares `total: true`,
+    /// the answer carries a total of at least [`total_at_least`](Self::Page::total_at_least); and
+    /// where [`follows`](Self::Page::follows) is present, the page continues the one this run
+    /// snapshotted of the view: its rows are in the declared order, none ranks before the
+    /// snapshot's last row, and none carries the identity of a snapshot row.
+    ///
+    /// Each claim holds on a target §8 permits to be shared: rows another user made can only add to
+    /// the total and push rows further back, and never shorten a page the scenario's own rows fill
+    /// or reorder two pages of one order.
+    Page {
+        /// The page the read asked for, as the view numbers its pages.
+        page: u64,
+        /// The most rows the read asked a page to hold.
+        size: u64,
+        /// How many rows the page holds: exactly, or at least where
+        /// [`at_least`](Self::Page::at_least) is set.
+        rows: usize,
+        /// `rows` is a floor, not an exact length: the page holds at least `rows` rows and at most
+        /// `size`. A page larger than every row the scenario made is the last page on a target
+        /// nobody else writes to, and one that answers no partial last page answers none of it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        at_least: bool,
+        /// The fewest rows the answer's total may count. Absent: the total is not asserted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total_at_least: Option<u64>,
+        /// The page continues the snapshot of the one before it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        follows: Option<crate::view_paging::Follows>,
     },
 }
 
@@ -2791,12 +2937,14 @@ mod tests {
             "ess-conformance/23",
             "ess-conformance/24",
             "ess-conformance/25",
+            "ess-conformance/26",
+            "ess-conformance/27",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/26").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/28").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

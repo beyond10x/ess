@@ -181,20 +181,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=25) {
+    if !matches!(version.major(), 1..=27) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–25",
+            "execution readers admit suite majors 1–27",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23 and suite/25",
+            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23, suite/25 and suite/27",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -282,6 +282,20 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
             "observed" => {
                 v.closed(&["kind", "event", "field"], &[])?;
             }
+            "now_offset" if major >= crate::now_offset::ORDINARY => {
+                let fields = v.closed(&["kind", "seconds"], &[])?;
+                let seconds: i64 = serde_json::from_str(&fields["seconds"].raw)
+                    .map_err(|error| v.error("InvalidNowOffset", error.to_string()))?;
+                if seconds.unsigned_abs() > crate::now_offset::MAX_SECONDS.unsigned_abs() {
+                    return Err(v.error(
+                        "InvalidNowOffset",
+                        format!(
+                            "now_offset exceeds {} seconds either way",
+                            crate::now_offset::MAX_SECONDS
+                        ),
+                    ));
+                }
+            }
             _ => return Err(v.error("UnsupportedScenarioValue", tag)),
         }
     }
@@ -328,6 +342,12 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
     if major < 2 && matches!(tag, "counts" | "at") {
         return Err(value.error("UnsupportedVocabulary", "expectation requires suite/2"));
     }
+    if crate::aggregate_delta::needs_newer(tag, major) {
+        return Err(value.error("UnsupportedVocabulary", crate::aggregate_delta::REQUIRES));
+    }
+    if crate::view_paging::needs_newer(tag, major) {
+        return Err(value.error("UnsupportedVocabulary", crate::view_paging::REQUIRES));
+    }
     match tag {
         "contains" | "excludes" => {
             let f = value.closed(&["expect", "fields"], &[])?;
@@ -364,10 +384,13 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 values(v, major, false)?;
             }
         }
+        "changed_by" => crate::aggregate_delta::admit_json(value)?,
+        "page" => crate::view_paging::admit_json(value)?,
         _ => return Err(value.error("UnsupportedViewExpectation", tag)),
     }
     Ok(())
 }
+#[allow(clippy::too_many_lines)]
 fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     let object = value.object()?;
     let tag = object
@@ -385,10 +408,14 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < crate::fixtures::ORDINARY
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
         || crate::outcome_shapes::needs_newer(tag, major)
+        || crate::absent_input::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
     let (required, optional): (&[&str], &[&str]) = match tag {
+        _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
+            crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
+        }
         "resolve_fixtures" => (&["step", "fixtures"], &[]),
         "expect_event_values" => (&["step", "event", "payload"], &["shape"]),
         "establish_entity" => (
@@ -404,7 +431,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "snapshot_complete_subject" if major >= 12 => (&["step", "view", "subject", "shape"], &[]),
         "expect_complete_subject_unchanged" if major >= 12 => (&["step", "view"], &[]),
         "configure_external_outcome" => (&["step", "force"], &[]),
-        "execute_command" => (&["step", "command"], &["actor", "input"]),
+        "execute_command" => (&["step", "command"], &["actor", "caller", "input"]),
+        "execute_command_without_input" => (&["step", "command"], &["actor", "caller"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
@@ -451,9 +479,11 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "force" | "outcome" => {
                 field.closed(&["command", "outcome"], &[])?;
             }
+            "times" | "count" => crate::bounded_retry::admit_positive(&field.raw)
+                .map_err(|reason| field.error("InvalidRepetition", reason))?,
             "input" | "params" | "subject" => values(field, major, tag == "expect_invocation")?,
             "identity" => field.payload()?,
-            "fields" | "payload" => {
+            "fields" | "payload" | "caller" => {
                 field.object()?;
                 field.payload()?;
             }
@@ -500,6 +530,13 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::fixtures::admit_format(suite)?;
+    crate::absent_input::admit_format(suite)?;
+    crate::leaf_payloads::admit_format(suite)?;
+    crate::aggregate_delta::admit_format(suite)?;
+    crate::view_paging::admit_format(suite)?;
+    crate::now_offset::admit_format(suite)?;
+    crate::caller_values::admit_format(suite)?;
+    crate::bounded_retry::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;

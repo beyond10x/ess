@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T02:27:32Z",
+  "actor": "human:timo",
+  "artifact": "story:authored-entity-state-arrangement",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Root:65 authored cases passed including3 prior red cases; strict scoped Clippy passed",
+    "reference": "4d719e7f",
+    "review": "review-result:entity-arrangement-coordinator-review",
+    "outcome": "fixed"
+  }
+}

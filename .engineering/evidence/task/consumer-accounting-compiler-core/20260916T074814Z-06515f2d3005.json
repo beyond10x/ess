@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-16T07:48:14Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-compiler-core",
+  "kind": "task",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:compiler-accounting-source-claim-pass-1",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s4-adoption/accepted-source-result.md#F2",
+    "review": "review-result:compiler-accounting-source-claim-pass-1",
+    "outcome": "fixed"
+  }
+}

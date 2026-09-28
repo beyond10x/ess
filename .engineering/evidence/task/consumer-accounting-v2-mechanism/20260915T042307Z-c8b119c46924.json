@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T04:23:07Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Production AST body-probe red101; normal on-disk mutation refused1; restored exact native acquisition8/8; overall accounting remains refused1 for absent reconciliation",
+    "reference": "crates/edge/ess-xtask/src/consumer_coverage/accounting_v2_tests.rs",
+    "review": "review-result:consumer-accounting-acquisition-source-inspection",
+    "outcome": "fixed"
+  }
+}

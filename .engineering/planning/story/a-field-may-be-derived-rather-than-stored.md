@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-field-may-be-derived-rather-than-stored
 kind: story
 status: archived
@@ -7,6 +7,8 @@ title: A field may be derived rather than stored
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-14T22:49:41Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## The gap
 

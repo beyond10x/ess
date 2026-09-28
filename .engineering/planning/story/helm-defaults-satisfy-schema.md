@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:helm-defaults-satisfy-schema
 kind: story
 status: implemented
@@ -17,6 +17,10 @@ scope:
 - confidence: cited
   path: crates/generate/ess-deployment/tests/deployment.rs
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T01:42:36Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T01:42:40Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-04T01:44:30Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # Story: Generate Helm defaults that satisfy their schema
 

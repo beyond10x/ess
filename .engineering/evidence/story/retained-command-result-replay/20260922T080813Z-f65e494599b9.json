@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-22T08:08:13Z",
+  "actor": "agent:codex-ekr-completion-20260922",
+  "artifact": "story:retained-command-result-replay",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:retained-replay-source-r2",
+    "reference": ".engineering/reviews/ekr-retained-replay-source-r2.md",
+    "review": "review-result:retained-replay-source-r2",
+    "outcome": "no-op"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-04T01:16:08Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-first-level-is-the-four-areas",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check in worktree wt-6cb2ff14f31d on d2f6489: exit 0, 1330 tests; 33 leaves, 33 flat aliases; agentide vectors byte-identical"
+  }
+}

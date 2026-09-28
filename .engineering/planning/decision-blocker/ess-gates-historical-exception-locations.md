@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:ess-gates-historical-exception-locations
 kind: decision-blocker
 status: cleared
@@ -7,6 +7,8 @@ title: Resolve exact historical journal exception locations before publication
 relations:
 - blocks: story:ess-evolution-preservation-gate
 revision: 2
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-10T11:51:31Z", actor: "agent:ess-evolution-integration", revision: 2, imported: true}
 ---
 ## Decision required
 The newly installed b10x-gates commit hook refuses three personal-paths findings in unchanged historical planning journal records. The configured adoption baseline is published main 24d2fe714958c8cde63ea78122c31e28bcc682bc. Its journal lines 1980, 1981 and 1982 have byte-identical content hashes to already enrolled historical exceptions at lines 1985, 1986 and 1987. The scanner binds both content hash and line number. New personal evidence paths in this follow-up were removed by replaying unpublished planning changes through AEP with portable references; a subsequent commit attempt now reports only these three historical findings.

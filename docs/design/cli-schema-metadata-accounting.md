@@ -312,3 +312,20 @@ Review updates only the three existing RootDefinitionsContainer shape pins. The 
 literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
 unchanged, and no invocation guard in `macro-guards.json` moves. This review grants no new
 exemption or runtime conformance claim.
+
+## Source format ess/16 schema review — 2026-09-28
+
+Source format `ess/16` adds the round-3 retrofit constructs (beyond10x/ess#162–#179): literal
+fallbacks after `else:`, `defined()` over optional aggregates, `input_absent:`, `related:` value
+sources, the current-time operand, existence-selected outcomes, actor `attributes:` and `caller`
+reads, bounded binding retries, view `paging:`, and set effects (`instances:`, `affects:`,
+`{count: changed}`), so the generated source schema gains those shapes. None of the changes makes
+the three CLI pipelines consumers of the generated schema document.
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `5c5f37373baa61bfe7985de37eba59e46c20aa2347bac81c0da1294a50c6cdbc`
+to `418c5bf5f5e61b9cc241cd0abfad314e6a0ffa5fec183afaa346e27a0f703edb`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged, and no invocation guard in `macro-guards.json` moves. This review grants no new
+exemption or runtime conformance claim.

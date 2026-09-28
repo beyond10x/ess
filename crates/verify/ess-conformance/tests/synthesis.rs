@@ -329,6 +329,7 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::EstablishEntity { .. } => "establish entity",
             ScenarioStep::ConfigureExternalOutcome { .. } => "inject",
             ScenarioStep::ExecuteCommand { .. } => "execute",
+            ScenarioStep::ExecuteCommandWithoutInput { .. } => "execute without input",
             ScenarioStep::ExpectOutcome { .. } => "outcome",
             ScenarioStep::ExpectError { .. } => "error",
             ScenarioStep::ExpectEvent { .. } => "event",
@@ -1937,6 +1938,7 @@ fn a_binding_mapping_names_the_source_the_document_wrote_and_not_its_same_typed_
                 binding,
                 command,
                 input,
+                ..
             } => Some((binding.to_string(), command.to_string(), input.clone())),
             _ => None,
         })

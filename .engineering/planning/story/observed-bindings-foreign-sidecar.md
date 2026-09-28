@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:observed-bindings-foreign-sidecar
 kind: story
 status: implemented
@@ -10,6 +10,10 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/observed_bindings.rs
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-26T00:24:48Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-26T00:26:29Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-26T03:25:50Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # A binding document can acknowledge a container ESS does not realize
 

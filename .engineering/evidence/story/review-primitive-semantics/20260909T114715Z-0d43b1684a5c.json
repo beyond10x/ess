@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T11:47:15Z",
+  "actor": "human:timo",
+  "artifact": "story:review-primitive-semantics",
+  "kind": "story",
+  "revision": 47,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check, every lane run individually on wave/review-boundaries-21 at edaf29a2 after merging main (19de6406, d77ba7bb): 11 lanes exit 0, test 217 lanes 2561 passed 0 failed, consumer-check BaselineUnknown 157677 Supported 54, fuzz-check 25 replay cases; task site-build exit 0",
+    "reference": "docs/plan/2026-09-09-review-boundaries-21.md"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T23:17:39Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:source-pinned-data-normalization",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Final normalization/2 checkpoint: CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 task check; CARGO_BUILD_JOBS=4 task site-build; both exit 0",
+    "reference": "crates/generate/schema-contract/tests/normalization_v2.rs"
+  }
+}

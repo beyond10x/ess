@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:structured-ring-is-refused-by-two-passes
 kind: story
 status: implemented
@@ -13,6 +13,10 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/command.rs
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T03:12:29Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T03:12:30Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-12T04:17:16Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding
 

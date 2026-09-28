@@ -287,6 +287,11 @@ impl<'a> Emit<'a> {
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
     crate::failure::json(ir, plan, crate::Target::Go)?;
+    crate::failure::input_absent(ir, plan, crate::Target::Go)?;
+    crate::existence::refuse(ir, plan, crate::Target::Go)?;
+    crate::set_effects::refuse(ir, plan, crate::Target::Go)?;
+    crate::paging::refuse(ir, plan, crate::Target::Go)?;
+    crate::failure::retry_bound(ir, plan, crate::Target::Go)?;
     type_owners(ir, plan)?;
     let refusals = TargetRefusals::of(ir, plan);
     let layout = Layout::of(ir, plan, &refusals);

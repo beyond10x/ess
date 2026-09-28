@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:refuse-misparsed-predicate-disjunctions
 kind: story
 status: implemented
@@ -43,6 +43,10 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/quoted_predicates.rs
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T06:21:00Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T06:21:00Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-11T06:21:01Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Outcome
 

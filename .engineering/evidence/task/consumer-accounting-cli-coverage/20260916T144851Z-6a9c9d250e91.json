@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T14:48:51Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-cli-coverage",
+  "kind": "task",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "S8 complete ess-cli package/actual Firefox/strict Clippy/scoped format at reviewed source9ca249d4",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s8/correction-1/correction-result.md"
+  }
+}

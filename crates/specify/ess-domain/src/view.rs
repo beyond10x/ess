@@ -48,6 +48,9 @@ use ess_primitives::predicate::Predicate;
 use crate::name::{Naming, QualifiedName};
 use crate::types::{Field, Primitive, TypeBody, TypeRef, TypeRegistry, MAX_TYPE_DEPTH};
 
+mod paging;
+pub use paging::Paging;
+
 /// How soon a view reflects a command that has already returned.
 ///
 /// This decides whether a generated scenario asserts the view with `expect` or with `eventually` —
@@ -875,6 +878,9 @@ pub struct ViewSpec {
     /// specification that made every one of them declare an order would be inventing a promise the
     /// implementation never made.
     pub order_by: Vec<Ranking>,
+    /// How its rows are paged, where they are (ess/16, [`Paging`]). `None`: every read answers
+    /// every row the filter admits.
+    pub paging: Option<Paging>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// What it is called on the wire and shown as.
@@ -1091,6 +1097,7 @@ impl ViewSpec {
             }
             read_params = checked.parameters;
         }
+        errors.extend(self.validate_paging(types, &read_params));
         errors.extend(self.validate_params(&read_params));
         errors.extend(self.validate_order(projected_fields));
         errors.extend(self.validate_grouping(types));
@@ -1557,6 +1564,8 @@ impl ViewSpec {
             .map(|field| field.name.as_str())
             .collect();
         let read: BTreeSet<&str> = read.iter().map(String::as_str).collect();
+        // What `paging:` reads is observable without a filter reading it (ess/16).
+        let read: BTreeSet<&str> = read.union(&self.paging_params()).copied().collect();
 
         for name in declared.difference(&read) {
             errors.push(
@@ -1615,6 +1624,9 @@ pub struct RawViewSpec {
     /// The order the rows are ranked in, most significant key first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_by: Vec<Ranking>,
+    /// How its rows are paged (ess/16). Absent: every read answers every row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paging: Option<Paging>,
     /// How soon it reflects a command that has already returned. Defaults to `eventual`.
     #[serde(default)]
     pub consistency: Consistency,
@@ -1695,6 +1707,7 @@ impl TryFrom<RawViewSpec> for ViewSpec {
             filter: raw.filter,
             aggregation,
             order_by: raw.order_by,
+            paging: raw.paging,
             consistency: raw.consistency,
             naming: raw.naming,
         };
@@ -1729,6 +1742,7 @@ impl From<ViewSpec> for RawViewSpec {
             filter: view.filter,
             group_by,
             order_by: view.order_by,
+            paging: view.paging,
             consistency: view.consistency,
             naming: view.naming,
         }

@@ -238,7 +238,7 @@ fn finish_inventory(
     );
     classify(&mut inventory, &owners, &rejected_needs);
     inventory.sort_and_count()?;
-    suite.provenance.suite_version = coverage_version(&suite, &inventory);
+    suite.provenance.suite_version = coverage_version(ir, &suite, &inventory);
     let original = coverage::suite_document(&suite, &inventory)?;
     AdmittedInput::from_suite(AdmittedSuite::from_json(&original)?)
 }
@@ -475,10 +475,24 @@ fn authored_refusal(
 }
 
 fn coverage_version(
+    ir: &EssIr,
     suite: &crate::ConformanceSuite,
     inventory: &Inventory,
 ) -> crate::scenario::SuiteFormat {
-    crate::scenario::SuiteFormat::parse(if crate::presence::used_by(suite) {
+    // The round-3 pair: per-leaf struct values, and presence of an `Optional` aggregate, which only
+    // the model can recognise.
+    let round_three = crate::leaf_payloads::used_by(suite)
+        || crate::defined_aggregates::used_by(ir, suite)
+        || crate::absent_input::used_by(suite)
+        || crate::aggregate_delta::used_by(suite)
+        || crate::now_offset::used_by(suite)
+        || crate::caller_values::used_by(suite)
+        || crate::view_paging::used_by(suite)
+        || crate::bounded_retry::used_by(suite)
+        || crate::bounded_retry::refused_in(inventory);
+    crate::scenario::SuiteFormat::parse(if round_three {
+        "ess-conformance/27"
+    } else if crate::presence::used_by(suite) {
         "ess-conformance/25"
     } else if crate::outcome_shapes::used_by(suite) {
         "ess-conformance/23"

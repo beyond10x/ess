@@ -955,6 +955,9 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             ));
         }
         about.prose(order_sentence(view));
+        if let Some(paging) = paging_sentence(view) {
+            about.prose(paging);
+        }
         about.prose(consistency_sentence(view.consistency));
         about.sentence(assertion_sentence(view.assertion_style));
         under.push(section(
@@ -1039,6 +1042,15 @@ fn actors_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
         let mut about = Blocks::new();
         about.prose(naming_sentence(&actor.naming, &actor.name));
         about.prose(grants_sentence(ir, domain, actor));
+        // ess/16 (#168): what the credential carries, which a command it invokes may read.
+        if !actor.attributes.is_empty() {
+            about.sentence("Its credential carries:");
+            about.push(bullets(actor.attributes.iter().map(field_bullet).collect()));
+            about.sentence(
+                "A command it invokes reads these as `{caller: …}` or `caller.…`, never from its \
+                 input: the credential is their authority, not the caller.",
+            );
+        }
         under.push(section(
             3,
             vec![Inline::code(relative(&actor.name, &domain.name))],
@@ -1412,9 +1424,12 @@ fn outcome_prose(
         out.push(Inline::text("It returns the exact retained result of "));
         out.push(Inline::code(replay.origin.to_string()));
         out.push(Inline::text(" without an error, event, or subject change."));
+    } else if let Some(set) = &outcome.instances {
+        out.extend(crate::set_effects::set_sentence(ir, set));
     } else {
         out.extend(effect_sentence(ir, outcome.subject.as_ref()));
     }
+    out.extend(crate::set_effects::affects_sentences(ir, outcome));
     if let Some(error) = &outcome.error {
         let reported = ir.error(error);
         out.push(Inline::text(" It reports "));
@@ -1676,10 +1691,38 @@ fn condition_sentence(
             ));
             out
         }
-        ResolvedCondition::UnknownInstance => vec![Inline::text(
-            "Taken when the identity the command names is one no record carries, before any other \
-             answer for it.",
+        ResolvedCondition::UnknownInstance => {
+            vec![Inline::text(unknown_instance_sentence(command))]
+        }
+        ResolvedCondition::InputAbsent => vec![Inline::text(
+            "Taken when the request carries no input at all — an absent body, not an empty one — \
+             before any input field is read.",
         )],
+        ResolvedCondition::ExistingInstance => vec![Inline::text(EXISTING_INSTANCE)],
+    }
+}
+
+/// The sentence for an `existing_instance:` branch (ess/16). An input-guarded refusal is answered
+/// first (`docs/design/outcome-shapes.md`, the precedence #178 fixed for accepting branches).
+const EXISTING_INSTANCE: &str = "Taken when a record already carries the identity the command's \
+     creating branch would create, and no input-guarded refusal applies.";
+
+/// The sentence for an `unknown_instance:` branch. On a creation (ess/16, create-or-update) an
+/// input-guarded refusal is answered first; the ess/15 refusal or no-op is the first answer.
+fn unknown_instance_sentence(command: &ResolvedCommand) -> &'static str {
+    let creates = command.outcomes.iter().any(|outcome| {
+        outcome.condition == ResolvedCondition::UnknownInstance
+            && outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.effect == ess_compiler::ir::ResolvedEffect::Creates)
+    });
+    if creates {
+        "Taken when no record carries the identity the command names, and no input-guarded \
+         refusal applies; it creates that record."
+    } else {
+        "Taken when the identity the command names is one no record carries, before any other \
+         answer for it."
     }
 }
 
@@ -1709,6 +1752,13 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         }
         TestStrategy::SendUnknownIdentity => {
             "A test reaches it by sending an identity no record carries, arranging nothing."
+        }
+        TestStrategy::SendNoInput => {
+            "A test reaches it by sending the command with no input at all, arranging nothing."
+        }
+        TestStrategy::SendExistingIdentity => {
+            "A test reaches it by sending the command twice with one identity: the first call \
+             creates the record, the second is answered by this branch."
         }
     }
 }
@@ -1794,6 +1844,33 @@ fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
                  an event here would make this a notification, which is a different decision.",
             ),
         ],
+        ResolvedFailure::BoundedRetry { bound } => {
+            let mut out = vec![
+                Inline::text("When it fails it is "),
+                Inline::Strong {
+                    text: vec![Inline::text("retried")],
+                },
+                Inline::text(format!(
+                    " up to {} attempts in all, the first included",
+                    bound.attempts
+                )),
+            ];
+            if !bound.final_outcomes.is_empty() {
+                out.push(Inline::text(", except that "));
+                for (index, outcome) in bound.final_outcomes.iter().enumerate() {
+                    if index > 0 {
+                        out.push(Inline::text(" or "));
+                    }
+                    out.push(Inline::code(outcome.to_string()));
+                }
+                out.push(Inline::text(" ends it at once"));
+            }
+            out.push(Inline::text(
+                ". After the last attempt the work is lost, and nothing is published: the bound is \
+                 observable as the number of invocations of the command.",
+            ));
+            out
+        }
     }
 }
 
@@ -2714,6 +2791,9 @@ fn failure_label(ir: &EssIr, binding: &ResolvedBinding) -> String {
             format!("escalated to a person, emitting {}", ir.event(emits).name)
         }
         ResolvedFailure::Drop => "dropped: the work is lost".to_owned(),
+        ResolvedFailure::BoundedRetry { bound } => {
+            format!("retried up to {} attempts, then dropped", bound.attempts)
+        }
     }
 }
 
@@ -3057,6 +3137,40 @@ fn slug(heading: &str) -> String {
         }
     }
     out
+}
+
+/// What a paged view's page and size select, and whether the answer carries a total (`paging:`,
+/// ess/16, beyond10x/ess#174). `None` for a view that is not paged, whose page keeps its bytes.
+fn paging_sentence(view: &ResolvedView) -> Option<Vec<Inline>> {
+    let paging = view.paging.as_ref()?;
+    let start = if paging.first_page == 0 {
+        format!("{} * {}", paging.page, paging.size)
+    } else {
+        format!(
+            "({} - {}) * {}",
+            paging.page, paging.first_page, paging.size
+        )
+    };
+    let mut out = vec![
+        Inline::text("It is paged: "),
+        Inline::code(paging.page.clone()),
+        Inline::text(" and "),
+        Inline::code(paging.size.clone()),
+        Inline::text(" select "),
+        Inline::code(paging.size.clone()),
+        Inline::text(" rows of that order starting at "),
+        Inline::code(start),
+        Inline::text(format!(
+            ", pages numbered from {}, and a read that sends neither answers every row.",
+            paging.first_page
+        )),
+    ];
+    if paging.total {
+        out.push(Inline::text(
+            " The answer carries the number of rows the filter admits.",
+        ));
+    }
+    Some(out)
 }
 
 #[cfg(test)]

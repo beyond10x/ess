@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T08:50:12Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-composition",
+  "kind": "task",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "S6 correction: target57/package69/18generatedRustlanes/Clippy/fmt0, four controls red101/restored0",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s6/correction-1/correction-result.md"
+  }
+}

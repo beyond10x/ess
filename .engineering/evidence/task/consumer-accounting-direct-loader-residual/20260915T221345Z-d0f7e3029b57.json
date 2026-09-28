@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T22:13:45Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-direct-loader-residual",
+  "kind": "task",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Nine exact native loader cases passed; 687 adopted claims; composed CLI/domain/service scoped checks passed; zero qualified cells pending full matrix",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s1-adoption/acceptance.md"
+  }
+}

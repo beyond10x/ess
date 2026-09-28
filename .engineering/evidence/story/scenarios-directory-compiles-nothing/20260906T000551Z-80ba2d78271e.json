@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-06T00:05:51Z",
+  "actor": "human:timo",
+  "artifact": "story:scenarios-directory-compiles-nothing",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:review-boundaries-6-scenarios-adversary-pass-1",
+    "review": "review-result:review-boundaries-6-scenarios-adversary-pass-1",
+    "outcome": "no-op"
+  }
+}

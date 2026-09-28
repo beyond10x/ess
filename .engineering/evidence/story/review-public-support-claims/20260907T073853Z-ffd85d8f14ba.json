@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T07:38:53Z",
+  "actor": "human:timo",
+  "artifact": "story:review-public-support-claims",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated 57e242e8a0eaa721968c3970099b4bc561cb91aa: 11 lanes zero, 2110 workspace cases, exact CI and Atlas34094924671 delivery, Website99 cases, 7 live byte matches",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/34094711588"
+  }
+}

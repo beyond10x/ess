@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T07:59:53Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Correction after code pass 2: exact manifest-binding regression red101 then green0; complete ess-xtask218passed/0failed/3pre-existing ignored; strict package Clippy0 and package fmt0; full parent gate not claimed",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/correction-pass-2-evidence"
+  }
+}

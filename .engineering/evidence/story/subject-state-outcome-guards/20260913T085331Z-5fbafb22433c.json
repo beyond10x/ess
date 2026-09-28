@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-13T08:53:31Z",
+  "actor": "human:timo",
+  "artifact": "story:subject-state-outcome-guards",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-domain --test subject_state --test subject_state_adversary, on main 5b975c78",
+    "reference": "9572af9b; 7 and 2 passed, 0 failed"
+  }
+}

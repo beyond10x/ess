@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T03:35:27Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Root adopted 122 independently reviewed OwnedHelper additions and removed exactly 11 stale classifications; other entries and frozen baseline unchanged; compiled extraction remains pending",
+    "reference": "crates/edge/ess-xtask/src/consumer_coverage/entry-classifications.json",
+    "review": "review-result:consumer-accounting-entry-authority-pass-1",
+    "outcome": "fixed"
+  }
+}

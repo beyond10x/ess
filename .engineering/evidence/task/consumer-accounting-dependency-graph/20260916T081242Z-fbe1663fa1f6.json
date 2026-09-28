@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T08:12:42Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-dependency-graph",
+  "kind": "task",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Finite review1 correction: 32 graph cases, full compiler166pass3pre-existingignored, strict Clippy/fmt0, graph unchanged",
+    "reference": "local-evidence/dependency-graph/correction-1/correction-result.md"
+  }
+}

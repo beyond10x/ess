@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:ess-evolution-preservation-gate
 kind: story
 status: implemented
@@ -20,6 +20,10 @@ scope:
 - confidence: cited
   path: docs/design/ess-evolution/feature-preservation.md
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-10T11:51:26Z", actor: "agent:ess-evolution-integration", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-10T11:51:27Z", actor: "agent:ess-evolution-integration", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-10T11:51:29Z", actor: "agent:ess-evolution-integration", revision: 7, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Context
 The reviewed evolution candidate adds a 96-consumer feature-preservation mapping with 479 reviewed requirement references. crates/edge/ess-xtask/src/consumer_coverage/mod.rs::check_at currently never loads that mapping. Manual review proved equality with profiles.json and reviewed-candidates.json, but future drift would not fail the existing consumer gate.

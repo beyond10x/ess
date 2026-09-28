@@ -1,0 +1,47 @@
+domain: demo.consumer.dashboard
+
+types:
+  - name: demo.consumer.dashboard.AgentRef
+    kind: newtype
+    of: Uuid
+  - name: demo.consumer.dashboard.Availability
+    kind: enum
+    variants: [Online, Away]
+  - name: demo.consumer.dashboard.AgentStatus
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: availability, type: demo.consumer.dashboard.Availability }
+      - { name: note, type: Optional<String> }
+      - { name: since, type: Optional<Timestamp> }
+  - name: demo.consumer.dashboard.RenamedStatus
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: availability, type: demo.consumer.dashboard.Availability }
+      - { name: note, type: Optional<String> }
+      - { name: updated_at, type: Timestamp }
+  - name: demo.consumer.dashboard.MistypedStatus
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: availability, type: demo.consumer.dashboard.Availability }
+      - { name: note, type: Optional<String> }
+      - { name: since, type: String }
+  - name: demo.consumer.dashboard.RequiredNoteStatus
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: availability, type: demo.consumer.dashboard.Availability }
+      - { name: note, type: String }
+      - { name: since, type: Timestamp }
+  - name: demo.consumer.dashboard.WiderAvailability
+    kind: enum
+    variants: [Online, Away, Busy]
+  - name: demo.consumer.dashboard.WiderStatus
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: availability, type: demo.consumer.dashboard.WiderAvailability }
+      - { name: note, type: Optional<String> }
+      - { name: since, type: Timestamp }

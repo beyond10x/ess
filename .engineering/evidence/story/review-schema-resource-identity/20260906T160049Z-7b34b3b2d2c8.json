@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T16:00:49Z",
+  "actor": "human:timo",
+  "artifact": "story:review-schema-resource-identity",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "All10 gate commands returned0 on final published239996d;2018workspace cases passed0failedignored after incoming0.20 preparation",
+    "reference": "verification-report:review-boundaries-10-versioned-source"
+  }
+}

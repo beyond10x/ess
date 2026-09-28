@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-schema-resource-identity
 kind: story
 status: implemented
@@ -29,6 +29,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 18
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T15:55:06Z", actor: "human:timo", revision: 10, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T15:55:07Z", actor: "human:timo", revision: 11, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T15:55:20Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Finding and source
 

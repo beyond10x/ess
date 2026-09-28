@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T04:12:09Z",
+  "actor": "human:timo",
+  "artifact": "release-plan:adopter-priority-wave-20260911",
+  "kind": "release-plan",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Merged scoped strict Clippy across seven affected packages and all targets passed; formatting passed; documentation site-build passed",
+    "reference": "local-evidence:priority-wave/gap-scoping/combined-clippy-verified.log"
+  }
+}

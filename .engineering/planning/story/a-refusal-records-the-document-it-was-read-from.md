@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-refusal-records-the-document-it-was-read-from
 kind: story
 status: draft

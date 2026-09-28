@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:enum-variant-in-an-entity-invariant
 kind: story
 status: implemented
@@ -23,6 +23,10 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/tests/expression.rs
 revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T04:18:24Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T04:18:25Z", actor: "human:timo", revision: 8, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-12T10:21:10Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## What is wrong
 

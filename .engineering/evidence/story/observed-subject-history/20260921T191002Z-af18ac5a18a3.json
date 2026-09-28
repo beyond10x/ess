@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-21T19:10:02Z",
+  "actor": "human:timo",
+  "artifact": "story:observed-subject-history",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact-tag release gate, native packages, browser lab and published archive verification",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/35639713420"
+  }
+}

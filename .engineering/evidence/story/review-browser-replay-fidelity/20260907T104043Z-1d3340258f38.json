@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T10:40:43Z",
+  "actor": "human:timo",
+  "artifact": "story:review-browser-replay-fidelity",
+  "kind": "story",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Complete task check lanes plus task site-build and AEP validation; run_integration_gate_v1.py at 3408bbf049d10215487c50f6f7b5597486b14127: all eleven exits zero, 2155 tests passed",
+    "reference": "home-path:sha256:a9c1df0abce68c6ced951c4dbf8dd743c4c82ad81d386719884573f50a440f75"
+  }
+}

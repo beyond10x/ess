@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-secret-sanitization
 kind: story
 status: implemented
@@ -14,6 +14,10 @@ scope:
 - confidence: cited
   path: crates/infra/ess-kubernetes
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T07:55:28Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T09:35:39Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T10:28:39Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2,"review_outcome":1}}, imported: true}
 ---
 ## Finding and source
 

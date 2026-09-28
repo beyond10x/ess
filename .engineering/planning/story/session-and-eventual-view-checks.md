@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:session-and-eventual-view-checks
 kind: story
 status: draft

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-unchanged-behavior-admission
 kind: task
 status: active
@@ -8,6 +8,9 @@ relations:
 - decomposes: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T16:54:44Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T16:54:46Z", actor: "human:timo", revision: 4, imported: true}
 ---
 ## Required outcome
 

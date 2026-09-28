@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-03T23:05:55Z",
+  "actor": "human:timo",
+  "artifact": "story:crates-under-area-directories",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check after rebase onto origin/main ad87982 (0.11.0), commit efcb704: exit 0, 1318 tests"
+  }
+}

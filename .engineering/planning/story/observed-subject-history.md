@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:observed-subject-history
 kind: story
 status: implemented
@@ -29,6 +29,10 @@ scope:
 - confidence: cited
   path: website/docs/reference
 revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-21T15:34:31Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-21T15:34:32Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-21T19:10:04Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Goal
 Represent session-owned history independently of lifecycle state. A completed repeat command may be silent while its declared subject remains unchanged.

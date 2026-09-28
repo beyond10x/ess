@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:relations-in-the-domain-model
 kind: story
 status: implemented
@@ -13,6 +13,10 @@ relations:
 - decomposes: epic:entity-relations
 - depends_on: story:relations-design-page
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-02T22:54:46Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-02T22:54:46Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-02T22:54:47Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # Story: An entity's relations are typed, resolved and refused like its fields
 

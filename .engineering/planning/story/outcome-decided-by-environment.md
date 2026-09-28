@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:outcome-decided-by-environment
 kind: story
 status: draft

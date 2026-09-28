@@ -1,0 +1,316 @@
+//! `ess-composition/2` type conformance: a consumer's local type against an imported one.
+//!
+//! The comparison is structural, because the two ends live in different compiled models and share
+//! no handle. Two named types conform when they have the same kind and:
+//!
+//! * structs have the same field names, each with the same wire name and a conforming type, and
+//!   the same `presence` where both ends are `Optional`;
+//! * newtypes wrap conforming representations;
+//! * enums have the same variant names, each with the same wire spelling;
+//! * unions have the same tag and the same variant names, each with a conforming shape.
+//!
+//! Primitives, lists and maps must match exactly. The one tolerance is the one a reader of the
+//! imported type can afford: where the imported value is required the local one may be
+//! `Optional`, at any position. The reverse, a local value required where the imported one may be
+//! absent, is drift. Newtype alphabets, prefixes and invariants, struct invariants and display
+//! names are not
+//! compared. A pair of named types already on the current path is taken as conforming, so recursive
+//! shapes terminate.
+
+use std::collections::BTreeSet;
+
+use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedType, ResolvedTypeRef};
+use ess_compiler::refs::EssSemanticRef;
+use ess_compiler::EssIr;
+use ess_domain::name::QualifiedName;
+use ess_domain::types::{EnumVariant, Presence};
+
+use crate::{Admission, CompositionCode, CompositionDiagnostic, CompositionSpec, TypeConformance};
+
+/// Admits both ends of every assertion and compares their shapes.
+pub(crate) fn resolve_conformances(
+    specification: &CompositionSpec,
+    admission: &Admission<'_, '_>,
+    diagnostics: &mut Vec<CompositionDiagnostic>,
+) -> BTreeSet<TypeConformance> {
+    let mut conformances = BTreeSet::new();
+    for asserted in specification.conformances() {
+        let local = admission.admit(
+            &asserted.local.service,
+            &EssSemanticRef::from(asserted.local.declared.clone()),
+            diagnostics,
+        );
+        let imported = admission.admit(
+            &asserted.conforms_to.service,
+            &EssSemanticRef::from(asserted.conforms_to.declared.clone()),
+            diagnostics,
+        );
+        let (Some(local_ir), Some(imported_ir)) = (local, imported) else {
+            continue;
+        };
+        let mut comparison = Comparison {
+            local: local_ir,
+            imported: imported_ir,
+            visiting: BTreeSet::new(),
+            drifts: Vec::new(),
+        };
+        comparison.named(
+            "",
+            asserted.local.declared.name(),
+            asserted.conforms_to.declared.name(),
+        );
+        if comparison.drifts.is_empty() {
+            conformances.insert(asserted.clone());
+        } else {
+            diagnostics.push(CompositionDiagnostic::new(
+                CompositionCode::TypeConformanceDrift,
+                Some(asserted.local.service.clone()),
+                format!(
+                    "`{}` type `{}` does not conform to `{}` type `{}`: {}",
+                    asserted.local.service,
+                    asserted.local.declared,
+                    asserted.conforms_to.service,
+                    asserted.conforms_to.declared,
+                    comparison.drifts.join("; ")
+                ),
+            ));
+        }
+    }
+    conformances
+}
+
+/// One structural walk over a local and an imported model.
+struct Comparison<'ir> {
+    local: &'ir EssIr,
+    imported: &'ir EssIr,
+    /// Named-type pairs on the current path, so a recursive shape terminates while a pair reached
+    /// through two fields is compared, and reported, at each.
+    visiting: BTreeSet<(QualifiedName, QualifiedName)>,
+    /// Every difference found, each naming the field path where it sits.
+    drifts: Vec<String>,
+}
+
+impl Comparison<'_> {
+    fn named(&mut self, path: &str, local: &QualifiedName, imported: &QualifiedName) {
+        let pair = (local.clone(), imported.clone());
+        if !self.visiting.insert(pair.clone()) {
+            return;
+        }
+        if let (Some(local_type), Some(imported_type)) = (
+            self.local.types().get(local),
+            self.imported.types().get(imported),
+        ) {
+            // Both ends were resolved by admission and every nested handle is total.
+            self.bodies(path, local_type, imported_type);
+        }
+        self.visiting.remove(&pair);
+    }
+
+    /// A shared field's wire name, and its presence where both ends are `Optional`.
+    fn field_naming(
+        &mut self,
+        at: &str,
+        own: &ResolvedField,
+        field: &ResolvedField,
+        imported: &QualifiedName,
+    ) {
+        let own_wire = own.naming.wire.as_deref().unwrap_or(&own.name);
+        let their_wire = field.naming.wire.as_deref().unwrap_or(&field.name);
+        if own_wire != their_wire {
+            self.drifts.push(format!(
+                "field `{at}`: wire name `{own_wire}` where `{imported}` has `{their_wire}`"
+            ));
+        }
+        if matches!(own.type_ref, ResolvedTypeRef::Optional { .. })
+            && matches!(field.type_ref, ResolvedTypeRef::Optional { .. })
+            && own.naming.presence != field.naming.presence
+        {
+            self.drifts.push(format!(
+                "field `{at}`: presence {} where `{imported}` has {}",
+                presence(own.naming.presence),
+                presence(field.naming.presence)
+            ));
+        }
+    }
+
+    fn bodies(&mut self, path: &str, local: &ResolvedType, imported: &ResolvedType) {
+        match (&local.body, &imported.body) {
+            (
+                ResolvedBody::Struct { fields: mine, .. },
+                ResolvedBody::Struct { fields: theirs, .. },
+            ) => {
+                for field in theirs {
+                    let at = join(path, &field.name);
+                    match mine.iter().find(|candidate| candidate.name == field.name) {
+                        None => self.drifts.push(format!(
+                            "field `{at}`: `{}` declares it and `{}` does not",
+                            imported.name, local.name
+                        )),
+                        Some(own) => {
+                            self.field_naming(&at, own, field, &imported.name);
+                            self.references(&at, &own.type_ref, &field.type_ref);
+                        }
+                    }
+                }
+                for field in mine {
+                    if !theirs.iter().any(|candidate| candidate.name == field.name) {
+                        self.drifts.push(format!(
+                            "field `{}`: `{}` declares it and `{}` does not",
+                            join(path, &field.name),
+                            local.name,
+                            imported.name
+                        ));
+                    }
+                }
+            }
+            (ResolvedBody::Newtype { of: mine, .. }, ResolvedBody::Newtype { of: theirs, .. }) => {
+                self.references(path, mine, theirs);
+            }
+            (ResolvedBody::Enum { variants: mine }, ResolvedBody::Enum { variants: theirs }) => {
+                let mine: BTreeSet<_> = mine.iter().map(variant_spelling).collect();
+                let theirs: BTreeSet<_> = theirs.iter().map(variant_spelling).collect();
+                if mine != theirs {
+                    self.drifts.push(format!(
+                        "{}: variants {} where `{}` has {}",
+                        at(path),
+                        names(&mine),
+                        imported.name,
+                        names(&theirs)
+                    ));
+                }
+            }
+            (
+                ResolvedBody::Union {
+                    tag: my_tag,
+                    variants: mine,
+                },
+                ResolvedBody::Union {
+                    tag: their_tag,
+                    variants: theirs,
+                },
+            ) => {
+                if my_tag != their_tag {
+                    self.drifts.push(format!(
+                        "{}: tag `{my_tag}` where `{}` has `{their_tag}`",
+                        at(path),
+                        imported.name
+                    ));
+                }
+                let my_names: BTreeSet<_> = mine.keys().cloned().collect();
+                let their_names: BTreeSet<_> = theirs.keys().cloned().collect();
+                if my_names == their_names {
+                    for (name, shape) in mine {
+                        self.references(&join(path, name), shape, &theirs[name]);
+                    }
+                } else {
+                    self.drifts.push(format!(
+                        "{}: variants {} where `{}` has {}",
+                        at(path),
+                        names(&my_names),
+                        imported.name,
+                        names(&their_names)
+                    ));
+                }
+            }
+            _ => self.drifts.push(format!(
+                "{}: `{}` is {} where `{}` is {}",
+                at(path),
+                local.name,
+                kind(&local.body),
+                imported.name,
+                kind(&imported.body)
+            )),
+        }
+    }
+
+    fn references(&mut self, path: &str, local: &ResolvedTypeRef, imported: &ResolvedTypeRef) {
+        match (local, imported) {
+            (ResolvedTypeRef::Optional { of: mine }, ResolvedTypeRef::Optional { of: theirs })
+            | (ResolvedTypeRef::List { of: mine }, ResolvedTypeRef::List { of: theirs }) => {
+                self.references(path, mine, theirs);
+            }
+            // The tolerance: a reader may treat a required value as optional.
+            (ResolvedTypeRef::Optional { of: mine }, theirs) => self.references(path, mine, theirs),
+            (
+                ResolvedTypeRef::Primitive { name: mine },
+                ResolvedTypeRef::Primitive { name: theirs },
+            ) if mine == theirs => {}
+            (
+                ResolvedTypeRef::Map {
+                    key: my_key,
+                    value: mine,
+                },
+                ResolvedTypeRef::Map {
+                    key: their_key,
+                    value: theirs,
+                },
+            ) if my_key == their_key => self.references(path, mine, theirs),
+            (
+                ResolvedTypeRef::Declared { name: mine },
+                ResolvedTypeRef::Declared { name: theirs },
+            ) => {
+                self.named(path, mine.name(), theirs.name());
+            }
+            _ => self.drifts.push(format!(
+                "{}: `{}` where the imported type has `{}`",
+                at(path),
+                render(local),
+                render(imported)
+            )),
+        }
+    }
+}
+
+fn join(path: &str, name: &str) -> String {
+    if path.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{path}.{name}")
+    }
+}
+
+/// Where a drift sits: its field path, or the asserted type itself.
+fn at(path: &str) -> String {
+    if path.is_empty() {
+        "the type itself".to_owned()
+    } else {
+        format!("field `{path}`")
+    }
+}
+
+fn names(values: &BTreeSet<String>) -> String {
+    let listed: Vec<_> = values.iter().map(|value| format!("`{value}`")).collect();
+    format!("[{}]", listed.join(", "))
+}
+
+fn kind(body: &ResolvedBody) -> &'static str {
+    match body {
+        ResolvedBody::Newtype { .. } => "a newtype",
+        ResolvedBody::Struct { .. } => "a struct",
+        ResolvedBody::Enum { .. } => "an enum",
+        ResolvedBody::Union { .. } => "a union",
+    }
+}
+
+fn render(type_ref: &ResolvedTypeRef) -> String {
+    match type_ref {
+        ResolvedTypeRef::Primitive { name } => name.to_string(),
+        ResolvedTypeRef::Declared { name } => name.name().to_string(),
+        ResolvedTypeRef::Optional { of } => format!("Optional<{}>", render(of)),
+        ResolvedTypeRef::List { of } => format!("List<{}>", render(of)),
+        ResolvedTypeRef::Map { key, value } => format!("Map<{key}, {}>", render(value)),
+    }
+}
+
+/// A variant as a reader sees it: its name, and its wire spelling when that differs.
+fn variant_spelling(variant: &EnumVariant) -> String {
+    if variant.wire() == variant.name {
+        variant.name.clone()
+    } else {
+        format!("{} (wire `{}`)", variant.name, variant.wire())
+    }
+}
+
+fn presence(value: Option<Presence>) -> String {
+    value.map_or_else(|| "unstated".to_owned(), |value| format!("`{value}`"))
+}

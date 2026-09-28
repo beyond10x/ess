@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: resource-blocker:review-wave-storage-capacity
 kind: resource-blocker
 status: cleared
@@ -9,6 +9,8 @@ relations:
 - blocks: story:review-report-reader-validation
 withholds: test_result
 revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-05T10:14:46Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Withheld verifier and observed condition
 

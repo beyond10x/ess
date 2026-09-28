@@ -1,0 +1,56 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.ledger
+types:
+  - {name: demo.ledger.OrderId, kind: newtype, of: String}
+errors:
+  - name: demo.ledger.Unknown
+    summary: The ledger does not know the order.
+    fields: []
+  - name: demo.ledger.Unavailable
+    summary: The ledger could not answer this time.
+    fields: []
+events:
+  - name: demo.ledger.OrderPlaced
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+  - name: demo.ledger.Recorded
+    fields:
+      - {name: order_id, type: demo.ledger.OrderId}
+actors:
+  - {name: demo.ledger.Clerk, may: [demo.ledger.Place, demo.ledger.Record]}
+commands:
+  - name: demo.ledger.Place
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: placed
+        emits: [demo.ledger.OrderPlaced]
+        payload:
+          demo.ledger.OrderPlaced: {order_id: input.order_id}
+  - name: demo.ledger.Record
+    input:
+      - {name: order_id, type: demo.ledger.OrderId}
+    outcomes:
+      - name: recorded
+        emits: [demo.ledger.Recorded]
+        payload:
+          demo.ledger.Recorded: {order_id: input.order_id}
+      - name: unavailable
+        external: the ledger answers a server error
+        error: demo.ledger.Unavailable
+      - name: rejected
+        external: the ledger answers a client error
+        error: demo.ledger.Unknown
+bindings:
+  - id: notify-ledger
+    when:
+      event: demo.ledger.OrderPlaced
+    invoke:
+      command: demo.ledger.Record
+    mapping:
+      order_id: event.order_id
+    delivery: at_least_once
+    on_failure:
+      retry: {attempts: 3, final: [demo.ledger.Unknown]}

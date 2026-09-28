@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T00:03:04Z",
+  "actor": "human:timo",
+  "artifact": "story:binding-mapping-bounded-accessor",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:priority-accessor-design-pass1-20260911",
+    "reference": "local-evidence:priority-wave/accessor/correction-report.md",
+    "review": "review-result:priority-accessor-design-pass1-20260911",
+    "outcome": "fixed"
+  }
+}

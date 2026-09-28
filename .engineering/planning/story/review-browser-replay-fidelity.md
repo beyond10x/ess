@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-browser-replay-fidelity
 kind: story
 status: implemented
@@ -28,6 +28,10 @@ scope:
 - confidence: cited
   path: docs/design/review-replay-subset.md
 revision: 19
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-07T08:33:21Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-07T08:33:23Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-07T10:51:00Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 ## Finding and source
 

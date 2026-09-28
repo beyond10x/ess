@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-16T08:12:40Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-dependency-graph",
+  "kind": "task",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Correction report3c6fd397 finding 4",
+    "reference": "local-evidence/dependency-graph/correction-1/correction-result.md",
+    "review": "review-result:dependency-graph-source-claim-pass-1",
+    "outcome": "fixed"
+  }
+}

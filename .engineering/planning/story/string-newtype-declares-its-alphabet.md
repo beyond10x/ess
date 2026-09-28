@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:string-newtype-declares-its-alphabet
 kind: story
 status: active
@@ -7,6 +7,9 @@ title: A String newtype can declare its character set
 relations:
 - serves: vision:O2
 revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-26T02:35:28Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-26T02:36:25Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Outcome
 

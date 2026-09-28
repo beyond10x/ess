@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:model-binary64-fields
 kind: story
 status: implemented
@@ -194,6 +194,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T09:18:55Z", actor: "human:timo", revision: 8, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T09:18:56Z", actor: "human:timo", revision: 9, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T11:36:35Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 ## Evidence
 

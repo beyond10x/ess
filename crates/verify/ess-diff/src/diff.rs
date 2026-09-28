@@ -986,6 +986,8 @@ fn written_condition(condition: &ResolvedCondition) -> String {
         ResolvedCondition::External { cause } => format!("external: {cause}"),
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
         ResolvedCondition::UnknownInstance => "unknown-instance".to_owned(),
+        ResolvedCondition::InputAbsent => "input-absent".to_owned(),
+        ResolvedCondition::ExistingInstance => "existing-instance".to_owned(),
     }
 }
 
@@ -1048,7 +1050,10 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
                 other @ (ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
-                | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }) => other.describe(),
+                | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
                 .conversion
@@ -1119,6 +1124,22 @@ fn written_failure(binding: &ResolvedBinding) -> String {
         ess_compiler::ir::ResolvedFailure::Drop => "drop".to_owned(),
         ess_compiler::ir::ResolvedFailure::Escalate { emits } => {
             format!("escalate, publishing `{}`", EventRef::from(emits))
+        }
+        ess_compiler::ir::ResolvedFailure::BoundedRetry { bound } => {
+            let finals: Vec<String> = bound
+                .final_outcomes
+                .iter()
+                .map(|outcome| format!("`{outcome}`"))
+                .collect();
+            if finals.is_empty() {
+                format!("retry, {} attempts", bound.attempts)
+            } else {
+                format!(
+                    "retry, {} attempts, final {}",
+                    bound.attempts,
+                    finals.join(", ")
+                )
+            }
         }
     }
 }
@@ -1605,6 +1626,12 @@ fn compare_views(
             after: ranking_contracts(&is.order_by),
         });
     }
+    if was.paging != is.paging {
+        push(ViewChange::PagingChanged {
+            before: was.paging.as_ref().map(paging_contract),
+            after: is.paging.as_ref().map(paging_contract),
+        });
+    }
 
     // Canonical equality over the parsed filters, `None` meaning every instance. D-1's rule again:
     // equal is silence, different is *changed*, and nothing reads the predicates further.
@@ -1789,7 +1816,7 @@ fn compare_bindings(
         });
     }
 
-    if was.failure != is.failure || was.escalation != is.escalation {
+    if was.failure != is.failure || was.escalation != is.escalation || was.retry != is.retry {
         push(BindingChange::FailureChanged {
             before: written_failure(was),
             after: written_failure(is),
@@ -1894,7 +1921,10 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 other @ (ess_compiler::ir::ResolvedPayloadValue::SubjectField { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
-                | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }) => other.describe(),
+                | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
                 .conversion
@@ -2109,6 +2139,13 @@ fn outcome_state_changes(
             after: written_sets(&new.sets),
         });
     }
+    if old.instances != new.instances || old.affects != new.affects {
+        push(CommandChange::OutcomeSetEffectChanged {
+            outcome: name.to_owned(),
+            before: written_set_effects(old),
+            after: written_set_effects(new),
+        });
+    }
     if old.refuses != new.refuses {
         push(CommandChange::OutcomeRefusesChanged {
             outcome: name.to_owned(),
@@ -2145,6 +2182,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "source",
                     "filter",
                     "order_by",
+                    "paging",
                     "consistency",
                     "assertion_style",
                 ],
@@ -2160,6 +2198,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                 "delivery",
                 "failure",
                 "escalation",
+                "retry",
             ],
         ),
         "components" => remove_keys(
@@ -2218,6 +2257,8 @@ fn residual_command(declaration: &mut serde_json::Value) {
                         "refuses",
                         "summary",
                         "sets",
+                        "instances",
+                        "affects",
                     ],
                 );
             });
@@ -2282,4 +2323,36 @@ fn outcome_payload_change(
             after,
         }
     }
+}
+
+fn paging_contract(paging: &ess_domain::view::Paging) -> crate::change::PagingContract {
+    crate::change::PagingContract {
+        page: paging.page.clone(),
+        size: paging.size.clone(),
+        first_page: paging.first_page,
+        total: paging.total,
+    }
+}
+
+/// A branch's set effects (ess/16), one line per construct: `instances:` with its verb and filter,
+/// then each `affects:` entry with its filter and what it sets.
+fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(set) = &outcome.instances {
+        lines.push(format!(
+            "{} every `{}` where `{}`",
+            set.effect.verb(),
+            set.entity.name(),
+            set.filter
+        ));
+    }
+    for affect in &outcome.affects {
+        lines.push(format!(
+            "affects every `{}` where `{}`: {}",
+            affect.entity.name(),
+            affect.filter,
+            written_sets(&affect.sets).join(", ")
+        ));
+    }
+    lines
 }

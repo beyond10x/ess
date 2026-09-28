@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-15T14:37:05Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-aggregate-reference-closure",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:aggregate-reference-design-pass-1",
+    "review": "review-result:aggregate-reference-design-pass-1",
+    "outcome": "fixed"
+  }
+}

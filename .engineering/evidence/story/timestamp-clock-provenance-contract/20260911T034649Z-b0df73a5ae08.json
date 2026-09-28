@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T03:46:49Z",
+  "actor": "human:timo",
+  "artifact": "story:timestamp-clock-provenance-contract",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Go observation requests now copy origin requirements before callbacks; retained exact regression now rejects undeclared origin with and without request mutation, preserving runner requirements.",
+    "reference": "local-evidence:priority-wave/clock/correction-report-public.md",
+    "review": "review-result:clock-provenance-implementation-adversary-1",
+    "outcome": "fixed"
+  }
+}

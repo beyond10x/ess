@@ -13,7 +13,7 @@
 //! than to an arbitrary lexicographic answer.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 use std::sync::OnceLock;
@@ -1159,6 +1159,19 @@ pub trait FactSource {
         }
     }
 
+    /// Whether a value is present at `path`: what `defined(path)` reads.
+    ///
+    /// A leaf is present when [`Self::observe`] reads it. A struct, list, map, union or `Json`
+    /// value binds no fact at its own path — only its leaves, and a list its `count` — so a source
+    /// that flattens one records its presence separately, and a present aggregate is present even
+    /// when it is empty (beyond10x/ess#176). `null` and a left-out member are absent.
+    ///
+    /// The default reads leaves only, which is right for every source that holds no aggregate. A
+    /// source wrapping another forwards this with the path it would forward to [`Self::fact`].
+    fn present(&self, path: &FactPath) -> bool {
+        self.observe(path).is_some()
+    }
+
     /// The ordered scales available for non-numeric comparison.
     fn scales(&self) -> &Scales {
         Scales::empty()
@@ -1171,6 +1184,15 @@ pub trait FactSource {
     /// every existing source keeps ordering text by its scales alone.
     fn orders_as_instant(&self, _path: &FactPath) -> bool {
         false
+    }
+
+    /// The current time, which a `now` operand in an ordering over a declared `Timestamp` is read
+    /// against (beyond10x/ess#171, [`crate::time::CurrentTime`]).
+    ///
+    /// `None` by default: a source that is not told the time has none, and such a comparison stays
+    /// `Unknown`, as it was before the operand existed. A source wrapping another forwards it.
+    fn now(&self) -> Option<crate::time::Rfc3339Instant> {
+        None
     }
 
     /// Whether the text at `path`, where no declared scale orders it, is ordered by its UTF-8
@@ -1240,6 +1262,12 @@ pub struct FactStore {
     /// facts, not a fact, so it is never serialised.
     #[serde(skip)]
     text_by_bytes: bool,
+    /// The paths holding a present aggregate — a struct, list, map, union or `Json` value — which
+    /// binds no fact of its own. What [`FactSource::present`] reads besides the bound facts
+    /// (beyond10x/ess#176). Serialised only when there is one, so a store without any keeps its
+    /// bytes.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    present: BTreeSet<FactPath>,
 }
 
 /// Whether a scale set is empty, for output suppression.
@@ -1274,9 +1302,16 @@ impl FactStore {
         self.facts.entry(path).or_insert_with(|| value.into());
     }
 
-    /// Absorbs every fact from `other`, overwriting on conflict.
+    /// Records that a struct, list, map, union or `Json` value is present at `path`, which binds no
+    /// fact of its own; see [`FactSource::present`].
+    pub fn mark_present(&mut self, path: FactPath) {
+        self.present.insert(path);
+    }
+
+    /// Absorbs every fact and presence mark from `other`, overwriting on conflict.
     pub fn extend(&mut self, other: Self) {
         self.facts.extend(other.facts);
+        self.present.extend(other.present);
     }
 
     /// Absorbs facts from an iterator.
@@ -1320,6 +1355,10 @@ impl FactSource for FactStore {
         self.facts.get(path).cloned()
     }
 
+    fn present(&self, path: &FactPath) -> bool {
+        self.present.contains(path) || self.observe(path).is_some()
+    }
+
     fn scales(&self) -> &Scales {
         &self.scales
     }
@@ -1335,6 +1374,7 @@ impl FromIterator<(FactPath, FactValue)> for FactStore {
             facts: iter.into_iter().collect(),
             scales: Scales::default(),
             text_by_bytes: false,
+            present: BTreeSet::new(),
         }
     }
 }

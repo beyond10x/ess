@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:reusable-service-contract
 kind: story
 status: implemented
@@ -21,6 +21,10 @@ scope:
 - confidence: cited
   path: docs/design/models/service-contract
 revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T18:08:56Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T18:08:58Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-25T17:33:53Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 ## Outcome
 

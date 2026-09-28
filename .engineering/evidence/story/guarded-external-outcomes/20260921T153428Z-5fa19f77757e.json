@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-21T15:34:28Z",
+  "actor": "human:timo",
+  "artifact": "story:guarded-external-outcomes",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Semantic integration cases and emitted Go/TypeScript mutation checks; downstream named passes retained; consumer accounting remains refused",
+    "reference": "docs/conformance-core-checkpoint-2026-09-21.md"
+  }
+}

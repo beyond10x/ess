@@ -263,6 +263,11 @@ fn check(
 ) -> ValidationErrors {
     let owner = site.render();
     let mut errors = ValidationErrors::new();
+    // A predicate reading the caller (ess/16) is checked whole by `caller_value`, which has the
+    // actors in hand.
+    if super::caller_value::reads_caller(predicate, &entity.fields) {
+        return errors;
+    }
     let admits_input = types
         .format()
         .is_none_or(|format| format.major() >= crate::system::FormatVersion::V15.major());
@@ -334,6 +339,8 @@ fn validate_partition(
                         | OutcomeCondition::ExternalWhen { .. }
                         | OutcomeCondition::WrongState
                         | OutcomeCondition::UnknownInstance
+                        | OutcomeCondition::InputAbsent
+                        | OutcomeCondition::ExistingInstance
                 )
         })
         .collect();

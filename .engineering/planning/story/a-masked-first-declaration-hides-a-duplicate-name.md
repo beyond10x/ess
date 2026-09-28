@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-masked-first-declaration-hides-a-duplicate-name
 kind: story
 status: implemented
@@ -26,6 +26,10 @@ scope:
 - confidence: cited
   path: docs/design/review-typed-diagnostics.md
 revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T10:24:28Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T10:24:30Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-13T08:06:51Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 # A masked first declaration hides a duplicate name
 

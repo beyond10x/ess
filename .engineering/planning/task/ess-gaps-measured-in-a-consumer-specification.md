@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:ess-gaps-measured-in-a-consumer-specification
 kind: task
 status: implemented
@@ -11,6 +11,10 @@ relations:
 - serves: vision:O2
 - decomposes: initiative:ess-evolution
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T06:20:39Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T06:20:39Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-11T06:20:39Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"approval":1,"review_outcome":1}}, imported: true}
 ---
 ## What this is
 

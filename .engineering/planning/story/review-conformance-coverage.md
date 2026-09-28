@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-conformance-coverage
 kind: story
 status: implemented
@@ -33,6 +33,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 24
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T19:14:29Z", actor: "human:timo", revision: 20, decided_on: {"recorded":{"review_outcome":4}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T19:14:31Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"review_outcome":4}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T22:12:33Z", actor: "human:timo", revision: 23, decided_on: {"recorded":{"test_result":2,"review_outcome":5}}, imported: true}
 ---
 ## Finding and source
 

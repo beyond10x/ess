@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T17:25:23Z",
+  "actor": "agent:normalization-coordinator",
+  "artifact": "release-plan:normalization-followups-020",
+  "kind": "release-plan",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Released consumer specification, native qualification and Pages pipeline 408030",
+    "reference": "consumer-commit:6e7b12a9b830a3882788ae9b79e2f7befffaf660;pipeline:408030"
+  }
+}

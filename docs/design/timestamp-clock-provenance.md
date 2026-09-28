@@ -19,6 +19,9 @@ independently observed fixed offset. Unix seconds are exact signed integers in
 0–253402300799; normalized milliseconds must remain in 0–253402300799999.
 No leap seconds, timezone database, host timezone, current-time fallback or calendar
 arithmetic is inferred. Malformed, out-of-range and unobserved inputs refuse.
+A guard's current-time operand (`starts_at < now - 60s`, `ess/16`) is not a reading and not
+a fallback: its clock is handed to the evaluator, and the conformance runner resolves it from
+its wall clock (`current-time-guards.md`).
 
 The adapter supplies observed source process instance and epoch, actual origin and
 formatter mode, scoped to the current scenario correlation and an existing event

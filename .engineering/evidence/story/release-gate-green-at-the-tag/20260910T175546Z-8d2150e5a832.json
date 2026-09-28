@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-10T17:55:46Z",
+  "actor": "human:timo",
+  "artifact": "story:release-gate-green-at-the-tag",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check SKIP_CONSUMER_CHECKS=true on the 0.22.1 tree, exit 0 (logs ess-gate-2/3)"
+  }
+}

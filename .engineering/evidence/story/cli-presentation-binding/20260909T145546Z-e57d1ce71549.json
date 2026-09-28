@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-09T14:55:46Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-presentation-binding",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:cli-coverage-applicability-20260909",
+    "reference": "docs/design/cli-consumer-pipeline-coverage.md",
+    "review": "review-result:cli-coverage-applicability-20260909",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-07T05:26:35Z",
+  "actor": "human:timo",
+  "artifact": "story:review-public-support-claims",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:public-support-source-pass1",
+    "reference": "b5908e77a7fa8eafe5f8e387db431c967634cb67",
+    "review": "review-result:public-support-source-pass1",
+    "outcome": "fixed"
+  }
+}

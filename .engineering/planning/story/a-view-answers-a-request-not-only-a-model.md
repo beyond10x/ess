@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-view-answers-a-request-not-only-a-model
 kind: story
 status: archived
@@ -7,6 +7,8 @@ title: A view answers a request, not only a model
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-14T22:49:59Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## The gap
 

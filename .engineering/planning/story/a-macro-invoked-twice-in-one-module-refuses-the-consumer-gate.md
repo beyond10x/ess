@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-macro-invoked-twice-in-one-module-refuses-the-consumer-gate
 kind: story
 status: active
@@ -14,6 +14,9 @@ scope:
 - confidence: cited
   path: crates/edge/ess-xtask/src/consumer_coverage/tests.rs
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T10:24:23Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T10:24:25Z", actor: "human:timo", revision: 6, imported: true}
 ---
 # A macro invoked twice in one module refuses the consumer gate
 

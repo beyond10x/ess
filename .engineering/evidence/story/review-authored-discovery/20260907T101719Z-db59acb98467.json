@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-07T10:17:19Z",
+  "actor": "human:timo",
+  "artifact": "story:review-authored-discovery",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:authored-discovery-binding-pass1",
+    "reference": "home-path:sha256:4be7ee60ed8ed31e99adcb29abcab996e493792922a11a957e79bf68d9f56c0f",
+    "review": "review-result:authored-discovery-binding-pass1",
+    "outcome": "no-op"
+  }
+}

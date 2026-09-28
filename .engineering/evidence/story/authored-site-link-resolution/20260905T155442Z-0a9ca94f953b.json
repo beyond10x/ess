@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T15:54:42Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:authored-site-link-resolution",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from ddbe42a: task check (exit 0), including authored_site and output_containment integration tests; task site-build (exit 0); browser local-link verification passed",
+    "reference": "https://github.com/beyond10x/ess/blob/ddbe42ae92abf36ed7a8229db9e585eefa443bf7/.engineering/planning/journal.jsonl"
+  }
+}

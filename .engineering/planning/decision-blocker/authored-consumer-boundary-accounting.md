@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:authored-consumer-boundary-accounting
 kind: decision-blocker
 status: cleared
@@ -7,6 +7,8 @@ title: Decide exact accounting for unreachable authored-consumer model pairs
 relations:
 - blocks: task:consumer-accounting-authored-boundaries
 revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-16T00:01:03Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Approved requirement blocked
 

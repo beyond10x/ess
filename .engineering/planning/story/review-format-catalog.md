@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-format-catalog
 kind: story
 status: implemented
@@ -22,6 +22,10 @@ scope:
 - confidence: cited
   path: website/sidebars.ts
 revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T18:33:23Z", actor: "human:timo", revision: 9, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T18:35:06Z", actor: "human:timo", revision: 10, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T00:03:55Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 ## Finding and source
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T10:26:15Z",
+  "actor": "human:timo",
+  "artifact": "story:review-report-reader-validation",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated task check: 1438 passed, 0 failed, 0 ignored; all eight step exits 0; task site-build exit 0",
+    "reference": "aefdc330089fd9a96baf39179857a84686efa944"
+  }
+}

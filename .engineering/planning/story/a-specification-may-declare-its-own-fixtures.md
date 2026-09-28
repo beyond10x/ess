@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-specification-may-declare-its-own-fixtures
 kind: story
 status: archived
@@ -7,6 +7,8 @@ title: A specification may declare its own fixtures
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-14T22:49:55Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## The gap
 

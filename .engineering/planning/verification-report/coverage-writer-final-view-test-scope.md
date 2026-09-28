@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: verification-report:coverage-writer-final-view-test-scope
 kind: verification-report
 status: draft

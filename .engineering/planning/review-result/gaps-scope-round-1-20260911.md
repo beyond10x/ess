@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: review-result:gaps-scope-round-1-20260911
 kind: review-result
 status: active

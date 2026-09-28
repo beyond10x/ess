@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:the-unread-tree-bullet-is-read-whole
 kind: story
 status: draft

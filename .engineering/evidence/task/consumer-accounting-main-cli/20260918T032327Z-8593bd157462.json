@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-18T03:23:27Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-main-cli",
+  "kind": "task",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Original final whole S9 review2: affected actual Go Firefox release45, regressions, finite-ledger, strict and scoped format; canonical1908-source equality",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s9/source-adoption/receipt.md"
+  }
+}

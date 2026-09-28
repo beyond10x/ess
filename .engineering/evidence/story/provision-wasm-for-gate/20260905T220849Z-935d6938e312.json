@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T22:08:49Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:provision-wasm-for-gate",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Published Wave 5 CI failed: six feasibility cases hit rustc E0463 because the wasm32-unknown-unknown standard library is not installed; repository gate exit 201",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/33994909604"
+  }
+}

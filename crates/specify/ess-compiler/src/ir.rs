@@ -84,7 +84,7 @@ use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::refs::Refs;
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
-use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Ranking};
+use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Paging, Ranking};
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
@@ -645,6 +645,14 @@ pub enum ResolvedCondition {
     /// `unknown_instance:`). Answered before a declared external not-found refusal and before
     /// [`WrongState`](Self::WrongState).
     UnknownInstance,
+    /// Taken when the request carries no input at all (ess/16, `input_absent:`): an absent
+    /// request body, not `{}`. Answered before any input field is read.
+    InputAbsent,
+    /// Taken when a record already carries the identity the command's creating branch would
+    /// create (ess/16, `existing_instance:`): the refusal half of create-or-refuse. An input-guarded
+    /// refusal (`when:` with an `error:`) is answered first; only a request none claims is answered
+    /// by existence (`docs/design/outcome-shapes.md`, "Precedence").
+    ExistingInstance,
 }
 
 /// What one outcome does to the entity it acts on, resolved.
@@ -873,6 +881,50 @@ pub struct ResolvedOutcome {
     /// Empty is the common case and a statement, not a gap, exactly as for `payload`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sets: Vec<ResolvedPayloadField>,
+    /// Whether the authenticated caller decides the branch (ess/16, beyond10x/ess#168): its guard
+    /// reads `caller.<attribute>` in `when:` or `when_subject:`, or it is an unguarded refusal
+    /// after an accepting branch whose guard does. A refusal decided so is answered as forbidden
+    /// rather than as a bad request. Left out of the document when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub decided_by_caller: bool,
+    /// The rows a `moves:` or `updates:` branch changes by a filter rather than by an input
+    /// (ess/16, beyond10x/ess#167, `instances:`); [`Self::subject`] is `None` beside it. Left out
+    /// of the document otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<ResolvedSetSubject>,
+    /// Secondary effects on the rows filters select (ess/16, beyond10x/ess#175, `affects:`), in the
+    /// order written. Left out of the document when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affects: Vec<ResolvedAffect>,
+}
+
+/// Every stored row of an entity a filter selects, and what a set outcome does to each (ess/16).
+///
+/// A `moves:` takes the selected rows resting in the transition's `from` states and skips the
+/// others; an `updates:` changes every selected row. The outcome's own
+/// [`sets`](ResolvedOutcome::sets) apply to each changed row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedSetSubject {
+    /// The entity whose rows change.
+    pub entity: EntityHandle,
+    /// [`ResolvedEffect::Moves`] or [`ResolvedEffect::Updates`].
+    #[serde(flatten)]
+    pub effect: ResolvedEffect,
+    /// The rows selected: the entity's stored fields, with `input.<field>` operands.
+    pub filter: Predicate,
+}
+
+/// One `affects:` entry (ess/16): every row of an entity its filter selects comes to hold what its
+/// `sets:` say. Where the entity is the subject's, the subject is not among the rows.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAffect {
+    /// The entity whose rows change.
+    pub entity: EntityHandle,
+    /// The rows selected: the entity's stored fields, `input.<field>` and `subject.<field>` — the
+    /// subject as it was before the outcome.
+    pub filter: Predicate,
+    /// What every selected row comes to hold, in the entity's declaration order.
+    pub sets: Vec<ResolvedPayloadField>,
 }
 
 /// Where a determined payload field's value comes from, resolved.
@@ -927,18 +979,91 @@ pub enum ResolvedPayloadValue {
         /// The amount, as canonical text.
         by: String,
     },
-    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14).
+    /// The optional input when the caller sent it, otherwise implementation-generated (ess/14) or
+    /// the literal written after `else:` (ess/16).
     InputOrGenerated {
         /// The input field read.
         field: String,
         /// Its resolved type, `Optional<…>`.
         type_ref: ResolvedTypeRef,
+        /// The fallback literal, as [`Literal`](Self::Literal) carries one: checked by `ess-domain`
+        /// against the target's type. Absent for `{generated: true}`, which keeps the bytes an
+        /// `ess/14` document compiled to.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        otherwise: Option<String>,
     },
     /// One source per field of a struct-typed target, in the struct's declaration order (ess/14).
     Struct {
         /// The struct's fields.
         fields: Vec<ResolvedPayloadField>,
     },
+    /// A field of the row another row references, as it was immediately before this outcome
+    /// (ess/16, beyond10x/ess#166): `{related: {via: customer_id, field: region}}`.
+    RelatedField {
+        /// Where the other row's identity is read.
+        via: ResolvedRelatedVia,
+        /// The entity `via` names.
+        entity: EntityHandle,
+        /// The field of that entity read.
+        field: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// An attribute of the authenticated caller (ess/16, beyond10x/ess#168): `{caller:
+    /// account_id}`. Every actor that may invoke the command declares it, at this type.
+    CallerAttribute {
+        /// The actor attribute read.
+        attribute: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
+    /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
+    ChangedCount,
+}
+
+/// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "from", rename_all = "snake_case")]
+pub enum ResolvedRelatedVia {
+    /// A field of the addressed entity, as it was immediately before the outcome.
+    Subject {
+        /// The entity field.
+        field: String,
+        /// Its resolved type: the referenced entity's identity.
+        type_ref: ResolvedTypeRef,
+    },
+    /// A field of the command's input.
+    Input {
+        /// The input field.
+        field: String,
+        /// Its resolved type: the referenced entity's identity.
+        type_ref: ResolvedTypeRef,
+    },
+}
+
+impl ResolvedRelatedVia {
+    /// The field read, without its prefix.
+    pub fn field(&self) -> &str {
+        match self {
+            Self::Subject { field, .. } | Self::Input { field, .. } => field,
+        }
+    }
+
+    /// The field's type.
+    pub fn type_ref(&self) -> &ResolvedTypeRef {
+        match self {
+            Self::Subject { type_ref, .. } | Self::Input { type_ref, .. } => type_ref,
+        }
+    }
+}
+
+impl fmt::Display for ResolvedRelatedVia {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Subject { field, .. } => write!(f, "subject.{field}"),
+            Self::Input { field, .. } => write!(f, "input.{field}"),
+        }
+    }
 }
 
 impl ResolvedPayloadValue {
@@ -951,10 +1076,24 @@ impl ResolvedPayloadValue {
             Self::Generated => "implementation-generated".to_owned(),
             Self::Cleared => "cleared".to_owned(),
             Self::SubjectField { field, .. } => format!("subject.{field} before the outcome"),
+            Self::RelatedField {
+                via, entity, field, ..
+            } => format!("{}.{field} of the row {via} names", entity.name()),
+            Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
+            Self::ChangedCount => "how many rows the outcome changed".to_owned(),
             Self::Increment { by } => format!("its previous value plus {by}"),
-            Self::InputOrGenerated { field, .. } => {
+            Self::InputOrGenerated {
+                field,
+                otherwise: None,
+                ..
+            } => {
                 format!("input.{field}, else implementation-generated")
             }
+            Self::InputOrGenerated {
+                field,
+                otherwise: Some(value),
+                ..
+            } => format!("input.{field}, else \"{value}\""),
             Self::Struct { fields } => format!(
                 "{{{}}}",
                 fields
@@ -1269,6 +1408,13 @@ pub struct ResolvedView {
     /// never shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_by: Vec<Ranking>,
+    /// How its rows are paged, where they are (ess/16, `docs/design/view-paging.md`).
+    ///
+    /// Omitted when `None`, so the IR bytes and digest of every model without a paged view are
+    /// unchanged. Both parameters it names are in [`Self::params`], and every key of
+    /// [`Self::order_by`] is what a page slices.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paging: Option<Paging>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// The block a generated scenario must assert this view in.
@@ -1443,6 +1589,11 @@ pub struct ResolvedActor {
     pub may: BTreeSet<CommandHandle>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// What its credential carries about it (ess/16, beyond10x/ess#168), each type resolved.
+    ///
+    /// Left out of the document when empty, so a model without them keeps its bytes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attributes: Vec<ResolvedField>,
 }
 
 impl ResolvedActor {
@@ -1621,6 +1772,12 @@ pub struct ResolvedBinding {
     /// asserts and what shape the assertion has.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub escalation: Option<EventHandle>,
+    /// The bound a [`Failure::Retry`] states, resolved against the invoked command (ess/16).
+    ///
+    /// `None` for a retry with no count, and for every other policy. [`Self::on_failure`] pairs
+    /// it with the word, so a projection reads [`ResolvedFailure::BoundedRetry`] rather than this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry: Option<ResolvedRetryBound>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1628,6 +1785,39 @@ pub struct ResolvedBinding {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// How many attempts a bounded retry makes, and which of the invoked command's outcomes end it at
+/// once (ess/16, beyond10x/ess#165).
+///
+/// The document's `final:` names an outcome or the error it reports; here each is resolved to the
+/// outcomes of the invoked command it stands for, in the command's declaration order, so a reader
+/// asks [`is_final`](Self::is_final) about an outcome rather than re-reading names.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRetryBound {
+    /// Invocations in all, the first included. At least two.
+    pub attempts: u32,
+    /// The invoked command's outcomes that end the retry at once.
+    #[serde(rename = "final", skip_serializing_if = "Vec::is_empty")]
+    pub final_outcomes: Vec<OutcomeName>,
+}
+
+impl ResolvedRetryBound {
+    /// The bound as `command` reads it.
+    pub fn resolve(
+        bound: &ess_domain::binding::retry::RetryBound,
+        command: &ess_domain::command::CommandSpec,
+    ) -> Self {
+        Self {
+            attempts: bound.attempts,
+            final_outcomes: bound.final_outcomes(command).into_iter().cloned().collect(),
+        }
+    }
+
+    /// Whether `outcome` ends the retry at once.
+    pub fn is_final(&self, outcome: &OutcomeName) -> bool {
+        self.final_outcomes.contains(outcome)
+    }
 }
 
 /// What happens when a binding's command does not run, with whatever that publishes.
@@ -1655,6 +1845,16 @@ pub enum ResolvedFailure<'a> {
     /// Publishes nothing, deliberately: an event here would make it a notification, which is a
     /// different decision with a different word.
     Drop,
+    /// Try again up to a stated number of attempts, stop at once on a final refusal, and then
+    /// give up silently (ess/16).
+    ///
+    /// A policy of its own rather than a field beside [`Retry`](Self::Retry), so that a projection
+    /// matching this enum cannot render a bound as "retried on whatever schedule the transport
+    /// provides" by leaving an arm out.
+    BoundedRetry {
+        /// The attempts and the final outcomes.
+        bound: &'a ResolvedRetryBound,
+    },
 }
 
 impl ResolvedBinding {
@@ -1668,7 +1868,10 @@ impl ResolvedBinding {
     /// the same wording, as the handle accessors above.
     pub fn on_failure(&self) -> ResolvedFailure<'_> {
         match self.failure {
-            Failure::Retry => ResolvedFailure::Retry,
+            Failure::Retry => match &self.retry {
+                None => ResolvedFailure::Retry,
+                Some(bound) => ResolvedFailure::BoundedRetry { bound },
+            },
             Failure::Drop => ResolvedFailure::Drop,
             Failure::Escalate => {
                 let Some(emits) = &self.escalation else {
@@ -1985,6 +2188,23 @@ impl EssIr {
     /// Every resolved command, by name.
     pub fn commands(&self) -> &BTreeMap<QualifiedName, ResolvedCommand> {
         &self.commands
+    }
+    /// This IR with every command passed through `rewrite`, and nothing else changed.
+    ///
+    /// For a consumer that reads the model under one fixed choice it cannot otherwise express —
+    /// conformance synthesis reads each caller attribute as the value one chosen caller carries
+    /// (ess/16, beyond10x/ess#168). The result is a view for that consumer, not a compilation: no
+    /// reference is re-resolved, so `rewrite` may change values and guards but not names.
+    #[must_use]
+    pub fn with_commands_rewritten(
+        &self,
+        rewrite: impl Fn(&ResolvedCommand) -> ResolvedCommand,
+    ) -> Self {
+        let mut rewritten = self.clone();
+        for command in rewritten.commands.values_mut() {
+            *command = rewrite(command);
+        }
+        rewritten
     }
     /// Every resolved event, by name.
     pub fn events(&self) -> &BTreeMap<QualifiedName, ResolvedEvent> {

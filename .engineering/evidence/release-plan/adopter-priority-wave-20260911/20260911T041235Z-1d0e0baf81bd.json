@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T04:12:35Z",
+  "actor": "human:timo",
+  "artifact": "release-plan:adopter-priority-wave-20260911",
+  "kind": "release-plan",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Final source schema regenerated; normative projections reported zero changed and zero retired; generated support block unchanged",
+    "reference": "local-evidence:priority-wave/gap-scoping/final-generate.log"
+  }
+}

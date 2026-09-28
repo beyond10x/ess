@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:binary64-structural-codecs
 kind: story
 status: implemented
@@ -42,6 +42,10 @@ scope:
 - confidence: cited
   path: docs/design/model-binary64.md
 revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T11:40:48Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T11:40:48Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T13:24:16Z", actor: "agent:normalization-coordinator", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 ## Outcome
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-10T23:42:47Z",
+  "actor": "human:timo",
+  "artifact": "story:output-ownership-tolerates-platform-xattrs",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact landed xattr policy: three existing targeted tests, exit 0; implementation and main ancestry verified",
+    "reference": "local-evidence:ess-evolution-20260910/priority-wave/xattrs/report.md"
+  }
+}

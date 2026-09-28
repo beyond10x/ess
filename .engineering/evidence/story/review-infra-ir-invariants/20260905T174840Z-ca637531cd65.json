@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T17:48:40Z",
+  "actor": "human:timo",
+  "artifact": "story:review-infra-ir-invariants",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check (all eight underlying steps), task site-build; clean ESS acb7859e3202ffdc1ca840dde67f7ca4da33c746",
+    "reference": ".engineering/planning/verification-report/review-boundaries-4-integrated.md"
+  }
+}

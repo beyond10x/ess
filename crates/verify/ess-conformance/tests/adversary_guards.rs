@@ -5,6 +5,7 @@
 use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
+use ess_conformance::scenario::ViewExpectation;
 use ess_conformance::{synthesize, ConformanceScenario, ScenarioStep, ScenarioValue};
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
@@ -186,7 +187,6 @@ views:
 /// view at all, some row it asserts must carry the literal in another ASCII case — otherwise a
 /// target filtering byte for byte passes every scenario. Where it asserts nothing, it says so.
 #[test]
-#[ignore = "story:view-filters-witnessed-on-matching-rows: view-filter synthesis asserts only non-matching rows (pre-existing)"]
 fn adv_a_folded_view_filter_is_witnessed_on_a_case_changed_row_or_refused() {
     let synthesis = synthesize(&compiled(FILTERED));
     let mut asserted = false;
@@ -227,6 +227,98 @@ fn adv_a_folded_view_filter_is_witnessed_on_a_case_changed_row_or_refused() {
             "the filtered view is asserted only over rows {texts:?}: a byte-wise filter passes"
         );
     }
+}
+
+/// The `source` each row asserted `Contains` in `view` was created with, per scenario: the text the
+/// `demo.orders.Place` that produced the instance the assertion names was sent.
+fn contained_sources(
+    synthesis: &ess_conformance::synthesize::Synthesis,
+    view: &str,
+) -> Vec<String> {
+    let mut found = Vec::new();
+    for scenario in synthesis.suite.scenarios.values() {
+        for step in &scenario.steps {
+            let expectation = match step {
+                ScenarioStep::ExpectView {
+                    view: name,
+                    expectation,
+                }
+                | ScenarioStep::EventuallyView {
+                    view: name,
+                    expectation,
+                    ..
+                } if name.to_string() == view => expectation,
+                _ => continue,
+            };
+            let ViewExpectation::Contains { fields } = expectation else {
+                continue;
+            };
+            let Some(ScenarioValue::Instance { instance }) = fields.get("order_id") else {
+                continue;
+            };
+            let captured = scenario.steps.iter().position(|step| {
+                matches!(step, ScenarioStep::CaptureInstance { instance: named, .. } if named == instance)
+            });
+            let sent = captured.and_then(|at| {
+                scenario.steps[..at]
+                    .iter()
+                    .rev()
+                    .find_map(|step| match step {
+                        ScenarioStep::ExecuteCommand { command, input, .. }
+                            if command.to_string() == "demo.orders.Place" =>
+                        {
+                            match input.get("source").and_then(ScenarioValue::as_literal) {
+                                Some(Node::Text(text)) => Some(text.clone()),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    })
+            });
+            if let Some(text) = sent {
+                found.push(text);
+            }
+        }
+    }
+    found
+}
+
+/// The control for the fold case above (story:view-filters-witnessed-on-matching-rows): a view
+/// filtered by plain equality is asserted `Contains` over a row the filter matches — the row a
+/// `demo.orders.Place` sent `web` — and not only `Excludes` over the row the plain witness makes.
+/// A target that ignores the filter, or refuses every row, passes a suite without one.
+#[test]
+fn an_equality_filtered_view_is_asserted_over_a_row_its_filter_matches() {
+    let text = FILTERED.replace(
+        "filter: {source: {equals_ignore_case: web}}",
+        "filter: 'source == \"web\"'",
+    );
+    assert_ne!(text, FILTERED);
+    let synthesis = synthesize(&compiled(&text));
+    let sources = contained_sources(&synthesis, "demo.orders.Web");
+    assert!(
+        sources.iter().any(|text| text == "web"),
+        "no row the filter matches is asserted in the view: {sources:?}, refusals {:?}",
+        synthesis
+            .refusals
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// The fold case, asserted the way the control is: the row asserted `Contains` was sent the
+/// literal in another ASCII case, so a target filtering byte for byte drops it and fails.
+#[test]
+fn a_folded_view_filter_is_asserted_over_a_case_changed_matching_row() {
+    let synthesis = synthesize(&compiled(FILTERED));
+    let sources = contained_sources(&synthesis, "demo.orders.Web");
+    assert!(
+        sources
+            .iter()
+            .any(|text| text.eq_ignore_ascii_case("web") && text != "web"),
+        "no case-changed matching row is asserted in the view: {sources:?}"
+    );
 }
 
 /// A fold under `when_subject` is decided on the arranged row, so the row must be created with the

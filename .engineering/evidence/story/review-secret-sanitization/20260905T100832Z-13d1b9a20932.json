@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T10:08:32Z",
+  "actor": "human:timo",
+  "artifact": "story:review-secret-sanitization",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Implementation package tests: 5 passed; fmt and strict Clippy exit 0, before adversarial additions",
+    "reference": "4851c9301a06a9557a36b23086aeee48ded26b03"
+  }
+}

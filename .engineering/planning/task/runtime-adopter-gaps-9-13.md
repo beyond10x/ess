@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:runtime-adopter-gaps-9-13
 kind: task
 status: implemented
@@ -11,6 +11,10 @@ relations:
 - informed_by: task:ess-gaps-measured-in-a-consumer-specification
 - serves: vision:O2
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T06:20:52Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T06:20:52Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-24T15:00:24Z", actor: "human:timo", revision: 4, imported: true}
 ---
 ## Outcome and standing authorization
 

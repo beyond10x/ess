@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-13T08:06:42Z",
+  "actor": "human:timo",
+  "artifact": "story:a-masked-first-declaration-hides-a-duplicate-name",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:wave25-unit2-handback",
+    "reference": "0321f0f2",
+    "review": "review-result:wave25-unit2-handback",
+    "outcome": "fixed"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:external-mutation-explorer-and-toolchain
 kind: story
 status: archived
@@ -28,6 +28,8 @@ scope:
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/mutation_audit.rs
 revision: 6
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-27T07:49:45Z", actor: "human:timo", revision: 6, imported: true}
 ---
 ## Scope
 

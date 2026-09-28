@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-semantic-diff-coverage
 kind: story
 status: implemented
@@ -41,6 +41,10 @@ scope:
 - confidence: cited
   path: generated/site
 revision: 26
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T14:42:51Z", actor: "human:timo", revision: 19, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T14:46:59Z", actor: "human:timo", revision: 20, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T17:59:25Z", actor: "human:timo", revision: 26, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding and source
 
