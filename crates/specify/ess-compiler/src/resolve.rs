@@ -498,16 +498,38 @@ impl<'a> Locator<'a> {
     }
 
     /// A span for `path`, located at the first needle that occurs exactly once.
+    ///
+    /// A trailing-key guess (`<last>:`, see [`whole_name_matters`]) counts only when its one
+    /// occurrence lies inside the block of the declaration the path names — the first declaration
+    /// needle that is itself unique. A guess is allowed to be wrong, and a wrong guess that happens
+    /// to be unique lands on some other construct's line, possibly in another file, possibly one
+    /// that was never refused. Requiring it to sit under the refused declaration is what keeps a
+    /// refusal from being cited anywhere else; with no declaration located, a guess is never
+    /// reported, because nothing says where it would have had to be.
     pub fn span(&self, path: impl Into<String>, needles: &[String]) -> Span {
         let path = path.into();
+        let declaration = needles
+            .iter()
+            .filter(|needle| whole_name_matters(needle))
+            .find_map(|needle| self.unique(needle));
         for needle in needles {
-            if let Some((source, location)) = self.unique(needle) {
-                return Span {
-                    source,
-                    path,
-                    located: Some(location),
-                };
+            let Some((source, location)) = self.unique(needle) else {
+                continue;
+            };
+            if !whole_name_matters(needle)
+                && !declaration
+                    .as_ref()
+                    .is_some_and(|(declared_in, declared_at)| {
+                        *declared_in == source && self.encloses(declared_in, *declared_at, location)
+                    })
+            {
+                continue;
             }
+            return Span {
+                source,
+                path,
+                located: Some(location),
+            };
         }
         Span {
             source: Source::DOCUMENT.to_owned(),
@@ -528,6 +550,29 @@ impl<'a> Locator<'a> {
             .borrow_mut()
             .insert(needle.to_owned(), answer.clone());
         answer
+    }
+
+    /// Whether `at` lies in the block the declaration at `declared` opens, in file `label`.
+    ///
+    /// The block is every line after the declaration's own, up to the first non-blank,
+    /// non-comment line indented less than the declaration's key — for `  - name: X` at column 5,
+    /// its siblings `outcomes:`, `input:` sit at indent 4 and belong to it, and the next
+    /// `  - name: Y` at indent 2 ends it.
+    fn encloses(&self, label: &str, declared: Location, at: Location) -> bool {
+        let Some(text) = self.sources.get(label) else {
+            return false;
+        };
+        if at.line <= declared.line {
+            return false;
+        }
+        let indent = declared.column - 1;
+        text.lines()
+            .skip(declared.line)
+            .take(at.line - declared.line)
+            .all(|line| {
+                let body = line.trim_start_matches(' ');
+                body.is_empty() || body.starts_with('#') || line.len() - body.len() >= indent
+            })
     }
 
     /// [`Self::unique`], actually reading the files.
@@ -569,15 +614,15 @@ impl<'a> Locator<'a> {
 ///   [`whole_name`] tests for. Requiring one would discard correct matches.
 ///
 /// What the exemption does *not* buy is safety, and an earlier version of this comment said it did.
-/// A guess that happens to occur exactly once **is** reported as a line, and the line may belong to
-/// something that was never refused. That is true here and on the base commit alike — `filed:` has
-/// never been narrowed, so both take the identical path for it — and it is carried by
-/// `story:a-wrong-trailing-key-guess-is-reported-as-a-line` and measured by
-/// `tests/trailing_key_guess_citations.rs`, not by this exemption. What the exemption *does* buy is
-/// that the filter cannot make it worse: [`whole_name`] only ever removes matches, and removing a
-/// match can only move a needle towards being unique, which is towards being reported.
+/// A guess that happens to occur exactly once used to be reported as a line, and the line could
+/// belong to something that was never refused. Safety comes from [`Locator::span`] instead, which
+/// reports a guess only inside the block of the declaration the path names
+/// (`story:a-wrong-trailing-key-guess-is-reported-as-a-line`, measured by
+/// `tests/trailing_key_guess_citations.rs`). What the exemption *does* buy is that the filter
+/// cannot make a guess more eager: [`whole_name`] only ever removes matches, and removing a match
+/// can only move a needle towards being unique, which is towards being reported.
 ///
-/// Adversary pass 1, F1, is what that costs. An outcome is written `- name: filed` and never
+/// Adversary pass 1, F1, is what that cost before the block check. An outcome is written `- name: filed` and never
 /// `filed:`, so the needle `filed:` for `command.shop.probe.Doit.outcomes.filed` cannot match its
 /// own target; it matched a second command's payload key in a second file, and what kept that quiet
 /// was `filed:` also occurring inside `refiled:`. Narrowed, the guess became unique and the refusal
@@ -934,11 +979,13 @@ const STRUCTURAL: &[&str] = &[
 /// wrong guess that happens to occur once is reported, and the line it reports can belong to a
 /// declaration that was never refused.
 ///
-/// It bites for every `command.*.outcomes.<name>` refusal, because an outcome is written
-/// `- name: <x>` and never `<x>:`, so the first needle tried can never match its own target and any
-/// match it does find is wrong by construction.
-/// `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries it;
-/// `tests/trailing_key_guess_citations.rs` measures it, on this commit and on the base alike.
+/// It bit every `command.*.outcomes.<name>` refusal, because an outcome is written `- name: <x>`
+/// and never `<x>:`, so the first needle tried can never match its own target and any match it
+/// does find is wrong by construction. The needles are unchanged; [`Locator::span`] now reports a
+/// guess only when its one occurrence lies inside the block of the declaration the later needles
+/// locate, so a wrong guess falls through to that declaration
+/// (`story:a-wrong-trailing-key-guess-is-reported-as-a-line`,
+/// `tests/trailing_key_guess_citations.rs`).
 fn needles_for(location: &str) -> Vec<String> {
     let tokens: Vec<&str> = location
         .split(['.', ' ', '[', ']'])
@@ -4813,14 +4860,14 @@ mod tests {
     ///   unnarrowed one counts both and reports nothing. This is the state that distinguishes the
     ///   two kinds, and it is all this check used to build.
     /// * **One match** — the needle written once, on line 2, under an unrelated line. Narrowing
-    ///   changes nothing here, so both kinds report line 2. It is built because it is the *only*
-    ///   state in which the key-needle exemption is unsafe, and a check that certifies the
-    ///   exemption while never constructing it certifies nothing. What it records is the defect,
-    ///   not a guarantee: a trailing-key guess that occurs exactly once is reported as a line
-    ///   whether or not the author ever wrote that key, and the assertion below says so.
-    ///   `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries it, and
-    ///   `tests/trailing_key_guess_citations.rs` measures the consequence on real documents. When
-    ///   that story lands this assertion goes red, which is the point of writing it down.
+    ///   changes nothing here. It is built because it is the *only* state in which the key-needle
+    ///   exemption would be unsafe, and a check that certifies the exemption while never
+    ///   constructing it certifies nothing. A declaration needle reports line 2. The key guess
+    ///   reports nothing: [`Locator::span`] reports a guess only inside the block of the
+    ///   declaration the path names, and here no declaration is located at all. Before
+    ///   `story:a-wrong-trailing-key-guess-is-reported-as-a-line` this state reported line 2 for
+    ///   both kinds; `tests/trailing_key_guess_citations.rs` measures the consequence on real
+    ///   documents.
     ///
     /// Asserting the *kind* as well as the effect is what makes this a class check: a third needle
     /// shape fails the first assertion rather than silently inheriting whichever side the code
@@ -4869,19 +4916,18 @@ mod tests {
                 }
 
                 // The one-match state. For a declaration needle this is the ordinary case. For the
-                // key guess it is the unsafe one: `unrelated:` is not what the path names, and the
-                // needle is reported anyway because it is the only match in the document.
+                // key guess it is the unsafe one: `unrelated:` is not what the path names, and a
+                // guess under no located declaration says nothing about where the refusal is.
                 let one = line_of(format!("unrelated: value\n{needle} value\n"));
                 assert_eq!(
                     one.located.map(|located| located.line),
-                    Some(2),
-                    "a single match is reported as a line regardless of kind; for `{needle}` that \
-                     is {}: {one}",
+                    if names_a_declaration { Some(2) } else { None },
+                    "for `{needle}` a single match is {}: {one}",
                     if names_a_declaration {
-                        "the declaration the path names"
+                        "the declaration the path names, and is reported"
                     } else {
-                        "a guess at a key the author may never have written — \
-                         `story:a-wrong-trailing-key-guess-is-reported-as-a-line`"
+                        "a guess at a key the author may never have written, under no located \
+                         declaration, and is not reported"
                     }
                 );
             }
