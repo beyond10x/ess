@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T10:56:10Z",
+  "actor": "human:timo",
+  "artifact": "story:a-field-constrained-by-a-charset-publishes-that-charset",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "jq on schemas/generated/ess.schema.json: base b5c53e8a1 publishes RawCommandLineSurface.binary, RawCommandGroup.name, RawComponentSpec.name, RawBindingSpec.name, Transition.name, Selection/SelectionInput.name as bare strings; unit 0d18222c5d publishes each pattern; cargo test -p ess-domain --test published_charsets ok 9 passed",
+    "reference": "~/.cache/ess-wave-c1/charset/red.log vs ~/.cache/ess-wave-c1/charset/r1-after.log"
+  }
+}

@@ -329,3 +329,30 @@ Review updates only the three existing RootDefinitionsContainer shape pins. The 
 literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
 unchanged, and no invocation guard in `macro-guards.json` moves. This review grants no new
 exemption or runtime conformance claim.
+
+## Published name charsets review — 2026-09-28
+
+The schema publishes the charset its parser or validator already applies to ten name positions
+that were bare strings (story:a-field-constrained-by-a-charset-publishes-that-charset). No
+document ESS reads is refused by the new schema, and no source format moves: every pattern is the
+constructor's own rule, reached for every document carrying the field, and
+`crates/specify/ess-domain/tests/published_charsets.rs` holds each literal to its constructor.
+None of the changes makes the three CLI pipelines consumers of the generated schema document.
+
+The new definitions descendants, each an ordinary obligation of the container:
+
+- `RawComponentSpec/properties/name/pattern`, `RawCommandLineSurface/properties/binary/pattern`,
+  `RawCommandGroup/properties/name/pattern`, `RawBindingSpec/properties/name/pattern`
+- `RawTopology/properties/workloads/propertyNames` and its `$ref` to `ComponentName`
+- `Transition/properties/name/pattern`
+- `Selection/properties/name/pattern`, `SelectionInput/properties/name/pattern`,
+  `SelectionMapping/properties/selection/pattern`, `SelectionMapping/properties/path/items/pattern`
+
+The unchanged wire extractor measured the definitions-container shape changing
+from `67cf32cd0fc7ed79decfa8546026ec1ed9c08f2f18c4827d8629b4c645cd03c7` (the pin the direct-return
+change left, which recorded no section here)
+to `93c20ba230f683c90217723b1ad9daff812c57a10696cd60177924c103c5a774`.
+Review updates only the three existing RootDefinitionsContainer shape pins. The root dialect, six
+literal relationships, consumer profiles, guard source, baseline and behavioral accounting remain
+unchanged, and no invocation guard in `macro-guards.json` moves: the change adds no refusal code.
+This review grants no new exemption or runtime conformance claim.

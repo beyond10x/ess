@@ -12,7 +12,7 @@
 //! every row without being checked — a wrong verdict caused by the age of the tool. Such a suite is
 //! written in ordinary suite/[`ORDINARY`] or coverage suite/[`COVERAGE`], the pair
 //! [`leaf_payloads`](crate::leaf_payloads) registers, and a reader that checks the number first
-//! refuses it instead. The Go and TypeScript runtimes refuse these majors by version.
+//! refuses it instead. The Go and TypeScript runtimes execute these majors too (beyond10x/ess#188).
 //!
 //! Whether a path is an aggregate is a fact about the model, not the suite: `defined(metrics)`
 //! reads the same over an `Optional<Integer>`, which every runner binds, and that suite keeps its

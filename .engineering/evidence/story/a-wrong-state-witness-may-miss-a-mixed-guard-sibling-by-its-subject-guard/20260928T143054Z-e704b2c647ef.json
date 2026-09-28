@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T14:30:54Z",
+  "actor": "human:timo",
+  "artifact": "story:a-wrong-state-witness-may-miss-a-mixed-guard-sibling-by-its-subject-guard",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --test mixed_guard_wrong_state: base a4b422e7e 2 passed 3 failed (ESS-SYNTH-003 no candidate of the 2 tried satisfies none of: token != \"\", token == \"\"); unit 8f5c3022b: 8 passed; adversary pass 1 7/7",
+    "reference": "~/.cache/ess-wave-c1/mixedguard/full3.log"
+  }
+}

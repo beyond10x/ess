@@ -21,7 +21,10 @@ import {
   compare,
   countCanonical,
   describeRow,
+  asJSON,
   equal,
+  exactDecimal,
+  exactNumbers,
   exactInteger,
   goMarshal,
   holds,
@@ -40,6 +43,7 @@ import {
   scenarioIdentity,
   strictJSON,
   unsupported,
+  UNEXECUTED_STEPS,
   writeReport,
 } from './runtime.js';
 import type {
@@ -100,35 +104,51 @@ class Recorder implements TestScope {
 
 const digest = 'a'.repeat(64);
 
-test('retained-result envelopes and mislabeled steps refuse before target callbacks', async () => {
+// Suites 12–17 carry retained results, string operators and aggregate views, and every later major
+// implies them, so this runtime admits and runs them (beyond10x/ess#188). What stays refused is the
+// construct in a forged older envelope: refused by its version, before any target callback.
+test('suites 12 to 17 are admitted and each is run only with an explicit report format', async () => {
+  for (const major of [12, 13, 14, 15, 16, 17]) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = `ess-conformance/${major}`;
+    if (major % 2 === 1) {
+      // A coverage major carries its inventory; its absence is refused on its own.
+      assert.throws(() => admitSuiteDocument(JSON.stringify(raw), false), /coverage is required/);
+      continue;
+    }
+    assert.equal(
+      admitSuiteDocument(JSON.stringify(raw), false).provenance.suite_version,
+      `ess-conformance/${major}`,
+    );
+    await assert.rejects(
+      runWith(new Recorder('report'), () => ({}) as Target, JSON.stringify(raw)),
+      /require explicit ESS_REPORT_FORMAT=2/,
+    );
+  }
+});
+
+test('retained-result steps in a forged older envelope refuse before target callbacks', async () => {
   let callbacks = 0;
   const target = (): Target => {
     callbacks += 1;
     throw new Error('target must not be constructed');
   };
-  for (const major of [12, 13]) {
-    const raw = JSON.parse(suiteText());
-    raw.provenance.suite_version = `ess-conformance/${major}`;
-    await assert.rejects(
-      runWith(new Recorder('retained'), target, JSON.stringify(raw)),
-      /unsupported suite version/,
-    );
-  }
-  for (const step of ['capture_command_result', 'expect_replay_result', 'expect_no_events']) {
+  for (const [step, reason] of [
+    ['capture_command_result', /retained results require suite\/12 or \/13/],
+    ['expect_replay_result', /retained results require suite\/12 or \/13/],
+    ['expect_no_events', /`expect_no_events` requires suite\/12 or \/13/],
+  ] as const) {
     const raw = JSON.parse(suiteText());
     raw.provenance.suite_version = 'ess-conformance/10';
     raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push({ step });
-    await assert.rejects(
-      runWith(new Recorder('retained'), target, JSON.stringify(raw)),
-      /unsupported step/,
-    );
+    await assert.rejects(runWith(new Recorder('retained'), target, JSON.stringify(raw)), reason);
   }
   assert.equal(callbacks, 0);
 });
 
-// String operators (beyond10x/ess#95) are not a TypeScript lane: the suites that carry one are
-// refused by their version, and a forged older suite carrying one is refused by the operator.
-test('string-operator suites and forged older ones refuse before target callbacks', async () => {
+// String operators (beyond10x/ess#95) are suite/14 vocabulary: a forged older suite carrying one is
+// refused by its version, as the Rust reader refuses it.
+test('string operators in a forged older envelope refuse before target callbacks', async () => {
   let callbacks = 0;
   const target = (): Target => {
     callbacks += 1;
@@ -139,15 +159,6 @@ test('string-operator suites and forged older ones refuse before target callback
     view: 'billing.Invoices',
     expectation: { expect: 'satisfies', predicate: { not: { customer: { starts_with: '+44' } } } },
   };
-  for (const major of [14, 15]) {
-    const raw = JSON.parse(suiteText());
-    raw.provenance.suite_version = `ess-conformance/${major}`;
-    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push(satisfies);
-    await assert.rejects(
-      runWith(new Recorder('strings'), target, JSON.stringify(raw)),
-      /unsupported suite version "ess-conformance\/1[45]"/,
-    );
-  }
   for (const operator of ['starts_with', 'ends_with', 'contains']) {
     const raw = JSON.parse(suiteText());
     raw.provenance.suite_version = 'ess-conformance/10';
@@ -157,29 +168,21 @@ test('string-operator suites and forged older ones refuse before target callback
     });
     await assert.rejects(
       runWith(new Recorder('strings'), target, JSON.stringify(raw)),
-      new RegExp(`unknown predicate constraint operator "${operator}"`),
+      /string predicate operators require suite\/14 or \/15/,
     );
   }
   assert.equal(callbacks, 0);
 });
 
-// Aggregate views (beyond10x/ess#96) are not a TypeScript lane either: their suites are refused by
-// their version, and a forged older suite carrying an aggregate scenario is refused by its id.
-test('aggregate suites and forged older ones refuse before target callbacks', async () => {
+// An aggregate scenario (beyond10x/ess#96) is suite/16 vocabulary: a forged older suite carrying one
+// is refused by its id, and from suite/16 on the id is well formed.
+test('aggregate scenarios in a forged older envelope refuse before target callbacks', async () => {
   let callbacks = 0;
   const target = (): Target => {
     callbacks += 1;
     throw new Error('target must not be constructed');
   };
   const scenario = JSON.parse(suiteText()).scenarios['billing.CreateInvoice/outcome/created'];
-  for (const major of [16, 17]) {
-    const raw = JSON.parse(suiteText());
-    raw.provenance.suite_version = `ess-conformance/${major}`;
-    await assert.rejects(
-      runWith(new Recorder('aggregates'), target, JSON.stringify(raw)),
-      /unsupported suite version "ess-conformance\/1[67]"/,
-    );
-  }
   const forged = JSON.parse(suiteText());
   forged.scenarios['billing.Invoices/aggregate'] = scenario;
   await assert.rejects(
@@ -187,10 +190,71 @@ test('aggregate suites and forged older ones refuse before target callbacks', as
     /aggregate views require suite\/16 or \/17/,
   );
   assert.throws(
-    () => scenarioIdentity('billing.Invoices/aggregate'),
+    () => scenarioIdentity('billing.Invoices/aggregate', 15),
     /aggregate views require suite\/16 or \/17/,
   );
+  assert.doesNotThrow(() => scenarioIdentity('billing.Invoices/aggregate', 16));
   assert.equal(callbacks, 0);
+});
+
+// A construct this runtime cannot execute, from suite/12 on, refuses the one scenario carrying it
+// by name and runs every other (beyond10x/ess#188); below suite/12 it refuses the suite, as it
+// always did. `UNEXECUTED_STEPS` is empty today, so the case registers a construct of its own.
+test('a construct refused by name skips its scenario, and only it', async () => {
+  UNEXECUTED_STEPS['future_step'] = { major: 26, what: 'a step from a later build' };
+  try {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = 'ess-conformance/26';
+    // Two scenarios: the one that runs, and the one carrying the construct.
+    delete raw.scenarios['billing.CreateInvoice/outcome/refused'];
+    delete raw.scenarios['billing.CreateInvoice/outcome/unanswered'];
+    raw.scenarios['billing.CreateInvoice/outcome/deferred'] = {
+      purpose: 'A scenario carrying a construct this runtime does not execute',
+      source: [],
+      steps: [
+        ...raw.scenarios['billing.CreateInvoice/outcome/created'].steps,
+        { step: 'future_step' },
+      ],
+    };
+    const suite = admitSuiteDocument(JSON.stringify(raw), false);
+    assert.match(
+      suite.scenarios['billing.CreateInvoice/outcome/deferred']?.refused ?? '',
+      /step 2: the `future_step` step \(a step from a later build\)/,
+    );
+    assert.equal(suite.scenarios['billing.CreateInvoice/outcome/created']?.refused, undefined);
+
+    const recorder = new Recorder('refused');
+    let commands = 0;
+    const target = (): Target =>
+      ({
+        identity: () => ({ name: 'refusal', version: '1' }),
+        beginScenario: () => {},
+        endScenario: () => {},
+        executeCommand: () => {
+          commands += 1;
+          return { outcome: 'created' };
+        },
+      }) as unknown as Target;
+    const previous = process.env.ESS_REPORT_FORMAT;
+    process.env.ESS_REPORT_FORMAT = '2';
+    try {
+      await runWith(recorder, target, JSON.stringify(raw));
+    } finally {
+      if (previous === undefined) delete process.env.ESS_REPORT_FORMAT;
+      else process.env.ESS_REPORT_FORMAT = previous;
+    }
+    assert.deepEqual(recorder.verdicts(), ['passed', 'skipped']);
+    assert.match(recorder.children[1]?.skipped ?? '', /does not execute step 2: the `future_step`/);
+    assert.equal(commands, 1, 'the refused scenario reached no target callback');
+
+    raw.provenance.suite_version = 'ess-conformance/10';
+    assert.throws(
+      () => admitSuiteDocument(JSON.stringify(raw), false),
+      /deferred: unsupported step future_step/,
+    );
+  } finally {
+    delete UNEXECUTED_STEPS['future_step'];
+  }
 });
 
 function suiteText(): string {
@@ -688,4 +752,123 @@ test('the marshaller sorts object keys and escapes as Go does', () => {
   assert.equal(goMarshal({ b: 1, a: '<&>' }, true), '{"a":"\\u003c\\u0026\\u003e","b":1}');
   assert.equal(goMarshal({ b: 1, a: '<&>' }, false), '{"a":"<&>","b":1}');
   assert.equal(goMarshal(' '), '"\\u2028"');
+});
+
+// Target answers are read as JSON reads them (beyond10x/ess#188): a key holding `undefined` is
+// absent, an `undefined` list item is null, and a JsonNumber passes untouched.
+test('asJSON reads a target answer as JSON does', () => {
+  const exact = new JsonNumber('9007199254740993');
+  assert.deepEqual(asJSON({ a: undefined, b: null, c: [undefined, { d: undefined }], e: exact }), {
+    b: null,
+    c: [null, {}],
+    e: exact,
+  });
+  assert.equal(Object.hasOwn(asJSON({ a: undefined }) as object, 'a'), false);
+});
+
+// Everything is read exactly as `JSON.parse(JSON.stringify(x))` reads it, with two documented
+// exceptions that keep a number exact: a JsonNumber passes as is, and a BigInt — which
+// JSON.stringify refuses — becomes the JsonNumber of its digits.
+test('asJSON is JSON.stringify then JSON.parse, JsonNumber and BigInt aside', () => {
+  class Row {
+    id = 'a';
+    note: unknown = undefined;
+    hidden = (): number => 1;
+    get computed(): number {
+      return 2;
+    }
+  }
+  class Answer {
+    readonly rows: unknown[];
+    constructor(rows: unknown[]) {
+      this.rows = rows;
+    }
+  }
+  const withToJSON = { toJSON: (key: string) => ({ key, via: 'toJSON' }) };
+  const holey: unknown[] = [1, , 3]; // eslint-disable-line no-sparse-arrays
+  const inherited = Object.create({ inheritedKey: 1 }) as { own?: number };
+  inherited.own = 2;
+  const hiddenKey = {};
+  Object.defineProperty(hiddenKey, 'secret', { value: 1, enumerable: false });
+  const table: unknown[] = [
+    null,
+    true,
+    'text',
+    0,
+    -0,
+    1.5,
+    NaN,
+    Infinity,
+    -Infinity,
+    [undefined, () => 1, Symbol('s'), 4],
+    holey,
+    { a: undefined, b: () => 1, c: Symbol('s'), d: 4, [Symbol('k')]: 5 },
+    new Row(),
+    new Answer([{ id: 'a', note: undefined }, new Row()]),
+    { at: new Date(Date.UTC(2026, 0, 1)) },
+    [new Date(0)],
+    { map: new Map([['k', 1]]), set: new Set([1]) },
+    new Map([['k', 1]]),
+    { nested: withToJSON, list: [withToJSON] },
+    // eslint-disable-next-line no-new-wrappers
+    [new Number(3), new String('s'), new Boolean(false)],
+    inherited,
+    hiddenKey,
+    { deep: { deeper: [{ gone: undefined, kept: null }] } },
+  ];
+  for (const [index, value] of table.entries()) {
+    assert.deepStrictEqual(asJSON(value), JSON.parse(JSON.stringify(value)), `table row ${index}`);
+  }
+  // `undefined`, a function and a symbol at the top are no JSON at all.
+  for (const value of [undefined, () => 1, Symbol('s')]) {
+    assert.equal(asJSON(value), undefined);
+    assert.equal(JSON.stringify(value), undefined);
+  }
+  // Exception two: JSON.stringify refuses a BigInt, and asJSON reads it as its exact digits, at any
+  // depth, and through a toJSON that answers one.
+  assert.throws(() => JSON.stringify({ n: 1n }), TypeError);
+  assert.deepStrictEqual(asJSON({ n: 9007199254740993n, list: [-2n] }), {
+    n: new JsonNumber('9007199254740993'),
+    list: [new JsonNumber('-2')],
+  });
+  assert.deepStrictEqual(asJSON({ toJSON: () => 7n }), new JsonNumber('7'));
+  // A cycle throws, as it does in JSON.stringify.
+  const cycle: { self?: unknown } = {};
+  cycle.self = cycle;
+  assert.throws(() => JSON.stringify(cycle), TypeError);
+  assert.throws(() => asJSON(cycle), TypeError);
+  // A value reached twice, but not through itself, is no cycle.
+  const shared = { id: 1 };
+  assert.deepStrictEqual(asJSON([shared, shared]), [{ id: 1 }, { id: 1 }]);
+});
+
+// A JsonNumber a target forwards with JSON.stringify is written as its digits.
+test('JsonNumber serializes as the number it spells', () => {
+  const big = new JsonNumber('9007199254740993');
+  const written = JSON.stringify({ n: big, m: new JsonNumber('1.5') });
+  if (typeof (JSON as { rawJSON?: unknown }).rawJSON === 'function') {
+    assert.equal(written, '{"n":9007199254740993,"m":1.5}');
+  } else {
+    assert.equal(written, '{"n":"9007199254740993","m":1.5}');
+  }
+});
+
+// Exponent spellings are the decimals they denote, as `Number::exact_text` spells them, and a
+// value past the `i128` units the Rust arithmetic keeps has no exact spelling.
+test('exactDecimal expands exponent spellings and bounds the units', () => {
+  assert.deepEqual(exactDecimal(0.0000001), [1n, 7]);
+  assert.deepEqual(exactDecimal(new JsonNumber('1e21')), [10n ** 21n, 0]);
+  assert.deepEqual(exactDecimal(new JsonNumber('1.50')), [15n, 1]);
+  assert.deepEqual(exactDecimal(new JsonNumber('-2.5E-3')), [-25n, 4]);
+  assert.equal(exactDecimal(new JsonNumber('1e40')), null);
+  assert.equal(exactDecimal('1'), null);
+});
+
+// A literal stays exactly the number written: a JS number only where it is that number.
+test('exactNumbers keeps an integer past 2^53 exact and plain numbers plain', () => {
+  const big = new JsonNumber('9007199254740993');
+  assert.equal(exactNumbers(big), big);
+  assert.equal(exactNumbers(new JsonNumber('9007199254740992')), 9007199254740992);
+  assert.equal(exactNumbers(new JsonNumber('1.666667')), 1.666667);
+  assert.deepEqual(exactNumbers({ n: [new JsonNumber('3')] }), { n: [3] });
 });

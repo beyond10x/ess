@@ -105,8 +105,8 @@ A suite with a `caller` takes `ess-conformance/26` (ordinary) or `/27` (coverage
 `leaf_payloads` registered; `caller_values` is the construct module (`used_by`, `admit_format`), and
 admission refuses the key below /26 (`UnsupportedVocabulary`). An older reader would ignore the field
 and send every command as whoever it is configured to be, asserting the refusal and the account
-against the wrong caller. The Go and TypeScript runtimes refuse /26–/27 by version, so they need no
-execution support.
+against the wrong caller. The Go and TypeScript runtimes execute /26–/27
+(beyond10x/ess#188).
 
 ### Synthesis
 

@@ -60,19 +60,31 @@ import {
   parseOperand,
   TruthTrue,
   TruthUnknown,
+  TEXT_OPERATORS,
 } from './predicate.js';
 import type { FactSource, Predicate } from './predicate.js';
 import { admitReading, expectReadingOrder } from './reading.js';
 import type { ReadingReference } from './reading.js';
 import {
   admitResponse,
+  admitRetainedCapture,
+  decodeRetainedCapture,
+  retainedResult,
+  admitSubjectRow,
+  admitSubjectShape,
+  decodeSubjectShape,
   decodeResponseObservation,
   expectResponsePayload,
   responsePrimitiveAdmits,
   responseEqual,
   snapshotResponseResult,
 } from './response.js';
-import type { ResponseObservation } from './response.js';
+import type {
+  ResponseObservation,
+  RetainedCapture,
+  RetainedResult,
+  SubjectShape,
+} from './response.js';
 import {
   admitFixtures,
   admitFixtureSteps,
@@ -93,6 +105,16 @@ import type { FixtureContract } from './fixtures.js';
  * the specification asked for.
  */
 export type Node = any;
+
+/**
+ * RequestValue is a value the runtime sends a target in a request: a `Node`, where any number the
+ * suite writes that a binary64 cannot hold exactly — an integer past 2^53, a decimal with more
+ * places than a binary64 keeps — is a `JsonNumber` carrying its digits, never a rounded `number`
+ * (beyond10x/ess#188). It can occur at any depth of `CommandRequest.input` and `.caller`,
+ * `AbsentInputRequest.caller`, `EntitySetupRequest.identity` and `.fields`, and `ViewRequest.params`.
+ * `String(value)` and `JSON.stringify` write its digits; `Number(value)` is the rounded image.
+ */
+export type RequestValue = Node | JsonNumber;
 
 /** Row is one row of a view: a value per projected field name. */
 export type Row = { [field: string]: Node };
@@ -117,6 +139,24 @@ export class JsonNumber {
 
   valueOf(): number {
     return Number(this.raw);
+  }
+
+  /**
+   * toJSON is what `JSON.stringify` writes for this number, so a target that forwards a request
+   * with it sends a number and not `{"raw": …}`. Where the runtime has `JSON.rawJSON` (Node 21 and
+   * later) it is the token itself, digit for digit, as a JSON number. Without it: the number, where
+   * a binary64 holds exactly the value written, and otherwise the digits as a JSON string — a
+   * string keeps the value where a number would silently round it.
+   */
+  toJSON(): unknown {
+    const raw = (JSON as { rawJSON?: (text: string) => unknown }).rawJSON;
+    if (typeof raw === 'function') {
+      return raw(this.raw);
+    }
+    const plain = Number(this.raw);
+    return Number.isFinite(plain) && sameDecimal(exactDecimal(this), exactDecimal(plain))
+      ? plain
+      : this.raw;
   }
 
   /** The binary64 image of the token, and whether it has one. */
@@ -193,6 +233,27 @@ export function isUnsupported(error: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * ConstructRefusal is admission's answer to a well-formed construct this runtime does not execute.
+ *
+ * From suite/12 on it refuses the one scenario that carries the construct, by name, and leaves every
+ * other scenario to run: a suite version implies every construct below it, so refusing the whole
+ * envelope for one construct refused every scenario a release could synthesize (beyond10x/ess#188).
+ * Below suite/12 it keeps refusing the suite, which is what those envelopes always did.
+ */
+export class ConstructRefusal extends Error {}
+
+/** refuseConstruct throws a ConstructRefusal naming what is not executed here. */
+export function refuseConstruct(reason: string): never {
+  throw new ConstructRefusal(reason);
+}
+
+/**
+ * The first suite major whose constructs this runtime refuses per scenario, not per suite: the
+ * first major beyond10x/ess#188 made this runtime admit.
+ */
+export const PER_SCENARIO_REFUSAL = 12;
 
 /** errorText is `%v` on an error: what the message says, whatever was thrown. */
 export function errorText(error: unknown): string {
@@ -683,6 +744,32 @@ export function deepEqual(left: Node, right: Node): boolean {
 }
 
 /** plainNumbers is what `json.Unmarshal` without `UseNumber` leaves behind: binary64, everywhere. */
+/**
+ * exactNumbers is `plainNumbers` for a value a suite asserts or sends: a number becomes a JS number
+ * only where that number is exactly the one written, and stays a `JsonNumber` otherwise — an
+ * integer past 2^53, or a decimal with more places than a binary64 keeps. Rounding it would compare,
+ * and send, a value nobody wrote.
+ */
+export function exactNumbers(value: Node): Node {
+  if (value instanceof JsonNumber) {
+    const plain = Number(value.raw);
+    return Number.isFinite(plain) && sameDecimal(exactDecimal(value), exactDecimal(plain))
+      ? plain
+      : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(exactNumbers);
+  }
+  if (isObject(value)) {
+    const result: { [key: string]: Node } = {};
+    for (const key of Object.keys(value)) {
+      result[key] = exactNumbers(value[key]);
+    }
+    return result;
+  }
+  return value;
+}
+
 export function plainNumbers(value: Node): Node {
   if (value instanceof JsonNumber) {
     return Number(value.raw);
@@ -730,12 +817,8 @@ export function suiteReference(value: Node): void {
   const reference = closed(value, 'version digest_profile digest', '');
   const digest = reference.digest;
   if (
-    (reference.version !== 'ess-conformance/5' &&
-      reference.version !== 'ess-conformance/7' &&
-      reference.version !== 'ess-conformance/9' &&
-      reference.version !== 'ess-conformance/11' &&
-      reference.version !== 'ess-conformance/19' &&
-      reference.version !== 'ess-conformance/21') ||
+    typeof reference.version !== 'string' ||
+    !coverageMajor(SUITE_MAJORS[reference.version] ?? 0) ||
     reference.digest_profile !== 'sha256-json-bytes/1' ||
     typeof digest !== 'string' ||
     !digest.startsWith('sha256:') ||
@@ -758,7 +841,7 @@ export function orderedIDs(value: Node): string[] {
   const result: string[] = [];
   for (const item of values) {
     const id = text(item);
-    scenarioIdentity(id);
+    scenarioIdentity(id, inventoryMajor);
     if (result.length > 0 && !goLess(itemAt(result, result.length - 1), id)) {
       throw coverageError();
     }
@@ -827,7 +910,7 @@ export function nullableID(value: Node): void {
   if (isNil(value)) {
     return;
   }
-  scenarioIdentity(text(value));
+  scenarioIdentity(text(value), inventoryMajor);
 }
 
 export function originIncludes(selection: { [key: string]: Node }, origin: Node): boolean {
@@ -1078,7 +1161,25 @@ export function checkedRefusal(
   return refusal;
 }
 
+/**
+ * The major of the suite whose coverage inventory is being admitted, so a scenario id the
+ * inventory names is read in that suite's vocabulary. 21 outside an admission: the newest major
+ * whose ids are the ids every earlier one had.
+ */
+let inventoryMajor = 21;
+
 export function admitCoverage(root: { [key: string]: Node }): void {
+  const previous = inventoryMajor;
+  const held = isObject(root.provenance) ? root.provenance.suite_version : undefined;
+  inventoryMajor = typeof held === 'string' ? (SUITE_MAJORS[held] ?? 21) : 21;
+  try {
+    admitCoverageInventory(root);
+  } finally {
+    inventoryMajor = previous;
+  }
+}
+
+function admitCoverageInventory(root: { [key: string]: Node }): void {
   const coverage = closed(
     root.coverage,
     'selection knowledge generated authored outside refused authored_sources counts',
@@ -1639,7 +1740,7 @@ export function scenarioMeaning(value: Node): Node {
         default:
           break;
       }
-      if (isObject(expected.fields)) {
+      if (isObject(expected.fields) && expected.expect !== 'changed_by') {
         expected.fields = valuesMeaning(expected.fields as { [key: string]: Node });
       }
       if (Object.prototype.hasOwnProperty.call(expected, 'predicate')) {
@@ -1794,6 +1895,13 @@ export interface Target {
   executeCommand(request: CommandRequest): Answer<CommandResult>;
 
   /**
+   * executeCommandWithoutInput invokes one command with no input at all (suite/26,
+   * `input_absent:`). Optional: a target that does not define it, or throws ErrUnsupported, has the
+   * one scenario that needs it reported unsupported — never passed.
+   */
+  executeCommandWithoutInput?(request: AbsentInputRequest): Answer<CommandResult>;
+
+  /**
    * queryView reads one view at the consistency the request demands. A read_your_writes view must
    * show the command that just returned, and the target blocks until it can.
    */
@@ -1807,6 +1915,15 @@ export interface Target {
 
   /** configureExternalOutcome forces an outcome declared `external:` to take a named branch. */
   configureExternalOutcome(control: ExternalOutcomeControl): Answer<void>;
+
+  /**
+   * configureExternalOutcomeRepeatedly forces the branch on the next `times` invocations of the
+   * command, and then lapses (suite/26, a bounded retry). Optional: a target that does not define
+   * it has the one scenario that needs it reported unsupported, never passed on one failure.
+   */
+  configureExternalOutcomeRepeatedly?(
+    control: ExternalOutcomeControl & { times: number },
+  ): Answer<void>;
 
   /**
    * redeliverEvent delivers an event a second time. The only way to perform the claim
@@ -1836,8 +1953,8 @@ export interface EntitySetupTarget {
 /** EntitySetupRequest is literal fixture state, not a trusted model-validation certificate. */
 export interface EntitySetupRequest {
   entity: string;
-  identity: Node;
-  fields: { [field: string]: Node };
+  identity: RequestValue;
+  fields: { [field: string]: RequestValue };
   state: string;
   correlation: string;
 }
@@ -1860,15 +1977,37 @@ export interface ScenarioContext {
 export interface CommandRequest {
   command: string;
   actor: string;
-  input: { [field: string]: Node };
+  input: { [field: string]: RequestValue };
   correlation: string;
+  /**
+   * The attribute values of the caller to send it as, where its actor declares any (suite/26,
+   * beyond10x/ess#168); unset otherwise. The target sends the command authenticated as a caller
+   * carrying exactly these, or throws ErrUnsupported — never the command sent as someone else.
+   */
+  caller?: { [attribute: string]: RequestValue };
+}
+
+/**
+ * AbsentInputRequest is one command invocation with no input document at all — an absent request
+ * body, not `{}` (suite/26, beyond10x/ess#170).
+ */
+export interface AbsentInputRequest {
+  command: string;
+  actor: string;
+  correlation: string;
+  /** As `CommandRequest.caller`. */
+  caller?: { [attribute: string]: RequestValue };
 }
 
 /** CommandResult is what one command did. */
 export interface CommandResult {
   /** The actual returned, declared command response. */
   response?: { [field: string]: Node } | undefined;
-  /** The branch it took, empty when it refused. */
+  /**
+   * The name of the branch it took.
+   * A refusal takes a branch too: return the refusing outcome's name here, beside `error`, because
+   * the runner compares `outcome` for a refusal exactly as for any other branch.
+   */
   outcome?: string | undefined;
   /** The declared error it refused with, empty when it did not. */
   error?: string | undefined;
@@ -1907,7 +2046,7 @@ export interface ViewRequest {
    * the implementation cannot answer without them, and the runner refuses to send a request with a
    * parameter it could not resolve rather than reading a different set of rows.
    */
-  params: { [parameter: string]: Node };
+  params: { [parameter: string]: RequestValue };
   /** The consistency token the read must reflect, empty for a current read. */
   atLeast: string;
   correlation: string;
@@ -1917,6 +2056,11 @@ export interface ViewRequest {
 /** ViewResult is what a view holds. */
 export interface ViewResult {
   rows?: Row[] | undefined;
+  /**
+   * How many rows the view's filter admits, for a paged view that declares `total: true`
+   * (suite/26, beyond10x/ess#174). Unset where the target reports none.
+   */
+  total?: number | undefined;
 }
 
 /** InvocationObservationRequest asks what one binding invoked. */
@@ -2153,6 +2297,11 @@ export interface Suite {
   document: { [key: string]: Node };
   /** The coverage inventory, for the suite versions that carry one. */
   coverage?: { [key: string]: Node };
+  /**
+   * The scenarios refused by name at admission (suite/22 and later), each with the construct this
+   * runtime does not execute. Every one is reported skipped with that reason; none is run.
+   */
+  refused?: { [id: string]: string };
 }
 
 /**
@@ -2173,6 +2322,8 @@ export interface Provenance {
 export interface Scenario {
   purpose: string;
   steps: Step[];
+  /** Why admission refused this scenario by name, when it did. It is skipped, never run. */
+  refused?: string;
 }
 
 /**
@@ -2195,6 +2346,16 @@ export interface Step {
   command: string;
   actor: string;
   input?: { [field: string]: Value };
+  /** The caller's attribute values a command is sent as (suite/26). */
+  caller?: { [attribute: string]: Node };
+  /** The complete row schema a `snapshot_complete_subject` holds its subject to (suite/12). */
+  subjectShape?: SubjectShape;
+  /** The retained-result observation a capture or a replay step compares under (suite/12). */
+  capture?: RetainedCapture;
+  /** How many invocations in a row a forced outcome holds for (suite/26); unset, the next one. */
+  times?: number;
+  /** Exactly how many matching invocations there must be (suite/26); unset, at least one. */
+  count?: number;
   outcome?: OutcomeRef;
   force?: OutcomeRef;
   event: string;
@@ -2241,6 +2402,11 @@ export interface Held {
   variants?: string[];
   /** Whether the declaration permits the path to carry nothing. It excuses absence, not the value. */
   optional?: boolean;
+  /**
+   * How an absent value is spelled, where the leaf's field declares it (suite/24): `null_when_absent`
+   * or `omitted_when_absent`. Unset admits both spellings.
+   */
+  presence?: string;
 }
 
 /** OutcomeRef names one branch of one command. */
@@ -2259,6 +2425,8 @@ export interface Value {
   instance?: string;
   event?: string;
   field?: string;
+  /** A `now_offset`'s seconds from the moment of sending (suite/26). */
+  seconds?: number;
 }
 
 /**
@@ -2276,6 +2444,25 @@ export interface Expectation {
   at_least?: number;
   at_most?: number;
   position?: Position;
+  /** `changed_by` (suite/26): the amount each field must have moved by since the view snapshot. */
+  changes?: { [field: string]: Node };
+  /** `changed_by`: the fields whose absent value reads as zero. */
+  absent_is_zero?: string[];
+  /** `page` (suite/26): the page of a paged view the read must be. */
+  paged?: PageExpectation;
+}
+
+/** One page of a paged view (suite/26, beyond10x/ess#174), as a `page` expectation requires it. */
+export interface PageExpectation {
+  page: number;
+  size: number;
+  /** How many rows the page holds: exactly, or at least where `atLeast` is set. */
+  rows: number;
+  atLeast: boolean;
+  /** The fewest rows the answer's total may count; unset, the total is not asserted. */
+  totalAtLeast?: number;
+  /** How the page continues the snapshot of the one before it. */
+  follows?: { orderBy: string[]; distinctBy: string[] };
 }
 
 /**
@@ -2348,18 +2535,8 @@ export async function runWith(
     throw new Error(`suite admission: ${errorText(error)}`);
   }
   const version = suite.provenance.suite_version;
-  if (
-    (version === 'ess-conformance/8' ||
-      version === 'ess-conformance/9' ||
-      version === 'ess-conformance/10' ||
-      version === 'ess-conformance/11' ||
-      version === 'ess-conformance/18' ||
-      version === 'ess-conformance/19' ||
-      version === 'ess-conformance/20' ||
-      version === 'ess-conformance/21') &&
-    config.version !== '2'
-  ) {
-    throw new Error('suite/8 and /9 require explicit ESS_REPORT_FORMAT=2 before execution');
+  if ((SUITE_MAJORS[version] ?? 0) >= 8 && config.version !== '2') {
+    throw new Error('suite/8 through /27 require explicit ESS_REPORT_FORMAT=2 before execution');
   }
   if (
     (version === 'ess-conformance/5' ||
@@ -2402,6 +2579,23 @@ export async function runWith(
   let terminated = 0;
   for (const id of ids) {
     const scenario = suite.scenarios[id] as Scenario;
+    const refusal = scenario.refused;
+    if (refusal !== undefined) {
+      // Refused by name at admission: reported skipped with the construct, and never run, so no
+      // target callback sees a step this runtime would have misread.
+      let reached = false;
+      await t.test(id, (subtest: TestScope) => {
+        reached = true;
+        subtest.skip(`this generated runner does not execute ${refusal}`);
+      });
+      if (reached) {
+        terminated += 1;
+      }
+      if (config.version === '1' || reached) {
+        results.push({ id, status: statusSkipped });
+      }
+      continue;
+    }
     let status = statusPassed;
     let terminal = false;
     await t.test(id, async (subtest: TestScope) => {
@@ -2506,8 +2700,45 @@ export function accountForEveryScenario(suite: Suite, terminated: number): Error
   );
 }
 
-/** reportNow is the one place in this file that knows what time it is. */
+/** reportNow is the one place in this file that knows what time it is for the report. */
 export let reportNow: () => number = () => Date.now();
+
+/**
+ * wallNow is the clock a `now_offset` is resolved against (suite/26, beyond10x/ess#171): the
+ * machine's, which is the clock an implementation deciding `starts_at < now - 60s` reads. The only
+ * other place this file reads a clock.
+ */
+export let wallNow: () => number = () => Date.now();
+
+/** setWallNow replaces the `now_offset` wall clock, for a case that holds both sides fixed. */
+export function setWallNow(clock: () => number): void {
+  wallNow = clock;
+}
+
+/**
+ * rfc3339Seconds spells a whole second since the epoch as an RFC 3339 `date-time` in UTC, without
+ * a fraction, as the Rust runner's `to_rfc3339` does — or undefined outside the four-digit years
+ * RFC 3339 spells.
+ */
+export function rfc3339Seconds(seconds: number): string | undefined {
+  if (!Number.isSafeInteger(seconds) || seconds < -62_167_219_200 || seconds > 253_402_300_799) {
+    return undefined;
+  }
+  const spelled = new Date(seconds * 1000).toISOString();
+  return `${spelled.slice(0, 19)}Z`;
+}
+
+/** The scenario values a view expectation carries, where `now_offset` may sit. */
+function expectationValues(expectation: Expectation | undefined): { [field: string]: Value } {
+  switch (expectation?.expect) {
+    case 'contains':
+    case 'excludes':
+    case 'at':
+      return expectation.fields ?? {};
+    default:
+      return {};
+  }
+}
 
 /** writeReport writes the run's report where ESS_REPORT_OUT names, and nowhere when it is unset. */
 export function writeReport(
@@ -2591,6 +2822,123 @@ export interface ObservedCommandResult {
   directEvents: ObservedEvent[];
 }
 
+/**
+ * asJSON is a value a target answered, as JSON reads it: exactly `JSON.parse(JSON.stringify(value))`,
+ * with two exceptions, both so a number keeps its exact digits — a `JsonNumber` passes as is, and a
+ * `BigInt` becomes the `JsonNumber` of its decimal digits where `JSON.stringify` would throw. A
+ * target called directly has no JSON wire, and a `BigInt` is how it states an exact integer; the
+ * clock-reading arm reads one (`reading.ts`). Otherwise it is what every wire, `goMarshal` and the
+ * Rust runner see (beyond10x/ess#188):
+ *
+ *   * `toJSON` is called where a value has one, with its key, so a `Date` is its ISO text;
+ *   * a `Number`, `String` or `Boolean` object is its primitive, and a non-finite number `null`;
+ *   * every other object — a class instance, a `Map`, a `Set` — is rebuilt from its own enumerable
+ *     string keys, so a `Map` or a `Set` is `{}`;
+ *   * `undefined`, a function or a symbol is dropped from an object, and is `null` in a list, as
+ *     is a hole;
+ *   * a cycle throws a `TypeError`, as `JSON.stringify` does.
+ */
+export function asJSON(value: Node): Node {
+  return jsonValue(value, '', new Set<object>());
+}
+
+function jsonValue(held: Node, key: string, open: Set<object>): Node {
+  let value: Node = held;
+  if (value instanceof JsonNumber) {
+    return value;
+  }
+  if (typeof value === 'bigint') {
+    return new JsonNumber(value.toString());
+  }
+  if (typeof value === 'object' && value !== null) {
+    const toJSON: unknown = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === 'function') {
+      value = toJSON.call(value, key) as Node;
+      if (value instanceof JsonNumber) {
+        return value;
+      }
+    }
+  }
+  if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+    value = value.valueOf();
+  }
+  // A `BigInt` a `toJSON` answered, or a `BigInt` object, is the same exact integer.
+  if (typeof value === 'bigint' || value instanceof BigInt) {
+    return new JsonNumber(value.valueOf().toString());
+  }
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
+      return value;
+    case 'number':
+      // `JSON.stringify` writes `-0` as `0` and a non-finite number as `null`.
+      return Number.isFinite(value) ? value + 0 : null;
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+      return undefined;
+    default:
+      break;
+  }
+  if (value === null) {
+    return null;
+  }
+  const object = value as object;
+  if (open.has(object)) {
+    throw new TypeError('Converting circular structure to JSON');
+  }
+  open.add(object);
+  try {
+    if (Array.isArray(object)) {
+      const list: Node[] = [];
+      for (let index = 0; index < object.length; index += 1) {
+        const item = jsonValue(object[index], String(index), open);
+        list.push(item === undefined ? null : item);
+      }
+      return list;
+    }
+    const result: { [key: string]: Node } = {};
+    for (const field of Object.keys(object)) {
+      const item = jsonValue((object as { [key: string]: Node })[field], field, open);
+      if (item !== undefined) {
+        result[field] = item;
+      }
+    }
+    return result;
+  } finally {
+    open.delete(object);
+  }
+}
+
+/**
+ * readAsJSON is the boundary between a target and this runtime: every answer a target method
+ * returns, resolved or not, is read through `asJSON` once, here, so no reader of it has to tell an
+ * own property holding `undefined` from an absent one (beyond10x/ess#188). Methods are called on
+ * the target itself, so a class with private fields keeps working, and a method it does not define
+ * stays undefined, which is how optional capabilities are discovered.
+ */
+export function readAsJSON<T extends object>(target: T): T {
+  return new Proxy(target, {
+    get(held, key) {
+      const member = Reflect.get(held, key, held);
+      if (typeof member !== 'function') {
+        return member;
+      }
+      return (...args: unknown[]): unknown => {
+        const answer: unknown = Reflect.apply(member, held, args);
+        if (
+          answer !== null &&
+          typeof answer === 'object' &&
+          typeof (answer as { then?: unknown }).then === 'function'
+        ) {
+          return (answer as Promise<Node>).then(asJSON);
+        }
+        return asJSON(answer as Node);
+      };
+    },
+  });
+}
+
 function normalizeResult(result: CommandResult | undefined): ObservedCommandResult {
   return {
     response: result?.response,
@@ -2632,11 +2980,24 @@ export class ScenarioRun {
   /** What the most recent command did, for the assertions that read it. */
   last: ObservedCommandResult = normalizeResult(undefined);
   lastCommand = '';
+  /** The input and actor of the last command, as sent, which a retained replay repeats. */
+  lastInput: { [field: string]: Node } | undefined;
+  lastActor = '';
+  /** Retained original results, by snapshot name (suite/12). */
+  readonly retained = new Map<string, RetainedResult>();
   snapshots = new Map<string, { identity: { [field: string]: Node }; row: string }>();
+  /** The complete row schema of each view's complete subject snapshot (suite/12). */
+  readonly completeShapes = new Map<string, SubjectShape>();
+  /** Every row of a view, captured by `snapshot_view` (suite/22). */
+  viewSnapshots = new Map<string, Row[]>();
+  /** The instant each `now_offset` of this scenario resolved to, by its seconds (suite/26). */
+  readonly nowFixed = new Map<number, string>();
   /** The token the last command returned, for a read_your_writes query. */
   consistency = '';
   /** What the last query_view returned, for the expect_view after it. */
   lastView: Row[] = [];
+  /** The total the last read carried, for a paged view (suite/26). */
+  lastTotal: number | undefined;
   /** Which view lastView came from. */
   queried = '';
   /** What this scenario has come to so far: passed until a step fails or skips. */
@@ -2651,7 +3012,7 @@ export class ScenarioRun {
 
   constructor(t: TestScope, target: Target, harness: Harness, correlation: string) {
     this.t = t;
-    this.target = target;
+    this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
   }
@@ -2720,6 +3081,7 @@ export class ScenarioRun {
    * and running them produces a second failure about the first one's cause.
    */
   async step(index: number, step: Step): Promise<boolean> {
+    this.fixNow(step);
     switch (step.step) {
       case 'resolve_fixtures':
         return this.fail(index, 'fixture resolution must precede scenario activity');
@@ -2736,12 +3098,34 @@ export class ScenarioRun {
       case 'establish_entity':
         return this.establishEntity(index, step);
       case 'execute_command':
+      case 'execute_command_without_input':
         return this.executeCommand(index, step);
       case 'expect_outcome':
         return this.expectOutcome(index, step);
       case 'snapshot_subject':
       case 'expect_subject_unchanged':
+      case 'snapshot_complete_subject':
+      case 'expect_complete_subject_unchanged':
         return this.snapshotSubject(index, step);
+      case 'capture_command_result':
+        return retainedResult(this, index, step.capture, true);
+      case 'expect_replay_result':
+        return retainedResult(this, index, step.capture, false);
+      case 'expect_no_events':
+        // The preceding command published no direct event of any name — the Rust runner's rule.
+        if (!this.lastCommand || this.last.directEvents.length > 0) {
+          return this.fail(
+            index,
+            'a preceding command with zero direct events: missing command or new events',
+          );
+        }
+        return true;
+      case 'expect_subject_absent':
+        return this.expectSubjectAbsent(index, step);
+      case 'snapshot_view':
+        return this.snapshotView(index, step);
+      case 'expect_view_unchanged':
+        return this.expectViewUnchanged(index, step);
       case 'expect_no_error':
         if (!this.lastCommand)
           return this.fail(index, 'no command preceded the no-error assertion');
@@ -2792,22 +3176,50 @@ export class ScenarioRun {
   }
 
   async executeCommand(index: number, step: Step): Promise<boolean> {
-    const input = this.resolveAll(index, step.input);
+    // `execute_command_without_input` (suite/26, beyond10x/ess#170) sends no input document at
+    // all, which an implementation may answer differently from `{}`, so it is its own method.
+    const withoutInput = step.step === 'execute_command_without_input';
+    const input = withoutInput ? {} : this.resolveAll(index, step.input);
     if (input === null) {
       return false;
     }
+    // The caller a command is sent as (suite/26, beyond10x/ess#168): set only where its actor
+    // declares attributes, as the Rust runner's `sent_as` does.
+    const caller =
+      step.caller !== undefined && Object.keys(step.caller).length > 0 ? step.caller : undefined;
     let result: CommandResult;
     try {
-      result = await this.target.executeCommand({
-        command: step.command,
-        actor: step.actor,
-        input,
-        correlation: this.correlation,
-      });
+      if (withoutInput) {
+        if (typeof this.target.executeCommandWithoutInput !== 'function') {
+          throw unsupported('this target cannot send a command without an input document');
+        }
+        const request: AbsentInputRequest = {
+          command: step.command,
+          actor: step.actor,
+          correlation: this.correlation,
+        };
+        if (caller !== undefined) {
+          request.caller = caller;
+        }
+        result = await this.target.executeCommandWithoutInput(request);
+      } else {
+        const request: CommandRequest = {
+          command: step.command,
+          actor: step.actor,
+          input,
+          correlation: this.correlation,
+        };
+        if (caller !== undefined) {
+          request.caller = caller;
+        }
+        result = await this.target.executeCommand(request);
+      }
     } catch (error) {
       if (isUnsupported(error)) {
         this.skip(
-          `step ${index}: the target does not expose \`${step.command}\`: ${errorText(error)}`,
+          withoutInput
+            ? `step ${index}: the target cannot invoke \`${step.command}\` with no input: ${errorText(error)}`
+            : `step ${index}: the target does not expose \`${step.command}\`: ${errorText(error)}`,
         );
       }
       return this.fail(index, `executing \`${step.command}\`: ${errorText(error)}`);
@@ -2823,6 +3235,8 @@ export class ScenarioRun {
     this.consistency = normalized.consistency;
     this.last = normalized;
     this.lastCommand = step.command;
+    this.lastInput = withoutInput ? undefined : input;
+    this.lastActor = step.actor;
     // Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
     // command.
     this.observed = {};
@@ -3012,6 +3426,7 @@ export class ScenarioRun {
       return this.fail(index, `querying \`${step.view}\`: ${errorText(error)}`);
     }
     this.lastView = result?.rows ?? [];
+    this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
     this.queried = step.view;
     return true;
   }
@@ -3019,7 +3434,17 @@ export class ScenarioRun {
   snapshotSubject(index: number, step: Step): boolean {
     if (this.queried !== step.view)
       return this.fail(index, `subject snapshot requires a preceding query of ${step.view}`);
-    const capture = step.step === 'snapshot_subject';
+    const capture = step.step === 'snapshot_subject' || step.step === 'snapshot_complete_subject';
+    // A complete snapshot (suite/12) also holds the row to its complete declared schema, before
+    // the capture and again before the comparison — the Rust runner's `snapshot_subject` with a
+    // shape.
+    if (step.step === 'snapshot_complete_subject' && step.subjectShape !== undefined) {
+      this.completeShapes.set(step.view, step.subjectShape);
+    }
+    const shape =
+      step.step === 'snapshot_complete_subject' || step.step === 'expect_complete_subject_unchanged'
+        ? this.completeShapes.get(step.view)
+        : undefined;
     const previous = this.snapshots.get(step.view);
     const identity = capture ? this.resolveAll(index, step.subject) : previous?.identity;
     if (!identity || Object.keys(identity).length === 0)
@@ -3030,6 +3455,19 @@ export class ScenarioRun {
         index,
         `subject snapshot ${step.view} matched ${rows.length} rows, want exactly one`,
       );
+    if (shape !== undefined) {
+      try {
+        // Through its own encoding, so every number is read as the digits the row carries, as a
+        // returned response is.
+        admitSubjectRow(shape, strictJSON(goMarshal(rows[0]!)) as Row);
+      } catch (error) {
+        return this.fail(
+          index,
+          `complete subject snapshot ${step.view}: an actual row satisfying its complete ` +
+            `declared shape; ${errorText(error)}`,
+        );
+      }
+    }
     if (capture) {
       this.snapshots.set(step.view, { identity, row: goMarshal(rows[0]!) });
       return true;
@@ -3039,6 +3477,76 @@ export class ScenarioRun {
         index,
         `subject changed in ${step.view}: before=${previous!.row} after=${goMarshal(rows[0]!)}`,
       );
+    return true;
+  }
+
+  /**
+   * The removed subject is in no row of the view just queried (suite/22, `deletes:`). Selected by
+   * identity exactly as a subject snapshot selects one.
+   */
+  expectSubjectAbsent(index: number, step: Step): boolean {
+    if (this.queried !== step.view) {
+      return this.fail(
+        index,
+        `\`expect_subject_absent\` requires a preceding query of ${step.view}`,
+      );
+    }
+    const identity = this.resolveAll(index, step.subject);
+    if (identity === null) {
+      return false;
+    }
+    if (Object.keys(identity).length === 0) {
+      return this.fail(index, 'empty subject identity');
+    }
+    const remaining = this.lastView.filter((row) =>
+      Object.keys(identity).every(
+        (field) =>
+          Object.prototype.hasOwnProperty.call(row, field) && equal(row[field], identity[field]),
+      ),
+    ).length;
+    if (remaining !== 0) {
+      return this.fail(
+        index,
+        `no row of \`${step.view}\` may carry ${describe(identity)}, which the command removed; ` +
+          `${remaining} row(s) still carry it`,
+      );
+    }
+    return true;
+  }
+
+  /** Captures every row of the view just queried (suite/22, `accepts: nothing`). */
+  snapshotView(index: number, step: Step): boolean {
+    if (this.queried !== step.view) {
+      return this.fail(index, `\`snapshot_view\` requires a preceding query of ${step.view}`);
+    }
+    this.viewSnapshots.set(step.view, [...this.lastView]);
+    return true;
+  }
+
+  /**
+   * The view just queried holds exactly the rows its snapshot held, in any order (suite/22): the
+   * same multiset, so a row added, removed or changed is each a failure.
+   */
+  expectViewUnchanged(index: number, step: Step): boolean {
+    const before = this.viewSnapshots.get(step.view);
+    if (before === undefined) {
+      return this.fail(index, 'no view snapshot preceded this assertion');
+    }
+    if (this.queried !== step.view) {
+      return this.fail(
+        index,
+        `\`expect_view_unchanged\` requires a preceding query of ${step.view}`,
+      );
+    }
+    const canonical = (rows: Row[]): string =>
+      JSON.stringify(sortStrings(rows.map((row) => goMarshal(row))));
+    if (canonical(before) !== canonical(this.lastView)) {
+      return this.fail(
+        index,
+        `\`${step.view}\` held ${before.length} row(s) before a command that changes nothing, and ` +
+          `holds ${this.lastView.length} row(s) after it, not the same ones`,
+      );
+    }
     return true;
   }
 
@@ -3069,6 +3577,7 @@ export class ScenarioRun {
           return this.fail(index, `querying \`${step.view}\`: ${errorText(error)}`);
         }
         this.lastView = result?.rows ?? [];
+        this.lastTotal = typeof result?.total === 'number' ? result.total : undefined;
         this.queried = step.view;
       }
       const [held, reason, undecidable] = this.decide(index, step);
@@ -3179,6 +3688,123 @@ export class ScenarioRun {
       }
       case 'ranked':
         return ranked(step.view, expectation.order_by ?? [], this.lastView);
+      case 'page': {
+        // One page of a paged view (suite/26, beyond10x/ess#174) — the Rust runner's `page_of`.
+        const required = expectation.paged;
+        if (required === undefined) {
+          return [false, 'the suite names no page, which is a generator defect', true];
+        }
+        let before: Row[] | undefined;
+        if (required.follows !== undefined) {
+          before = this.viewSnapshots.get(step.view);
+          if (before === undefined) {
+            return [false, 'no view snapshot of the page before preceded this continuation', true];
+          }
+        }
+        const wrong: string[] = [];
+        const held = this.lastView.length;
+        if (required.atLeast && (held < required.rows || held > required.size)) {
+          wrong.push(
+            `the page holds ${held} row(s), and a page of size ${required.size} holds at least ` +
+              `${required.rows} here`,
+          );
+        } else if (!required.atLeast && held !== required.rows) {
+          wrong.push(
+            `the page holds ${held} row(s), and a page of size ${required.size} holds ` +
+              `${required.rows} here`,
+          );
+        }
+        if (required.totalAtLeast !== undefined) {
+          const total = this.lastTotal;
+          if (total === undefined) {
+            wrong.push('the answer carries no total, and the view declares `total: true`');
+          } else if (total < required.totalAtLeast) {
+            wrong.push(
+              `the total is ${total}, fewer than the ${required.totalAtLeast} rows this scenario ` +
+                'put in the view',
+            );
+          } else if (total < held) {
+            wrong.push(`the total is ${total}, fewer than the ${held} rows the page itself holds`);
+          }
+        }
+        if (required.follows !== undefined && before !== undefined) {
+          // The snapshot's last row, then this page's rows: one run of the declared order.
+          const continued = [...before.slice(-1), ...this.lastView];
+          const [inOrder, reason, undecidable] = ranked(
+            step.view,
+            required.follows.orderBy,
+            continued,
+          );
+          if (undecidable) {
+            return [false, reason, true];
+          }
+          if (!inOrder) {
+            wrong.push(
+              `the page does not continue the one before it in the declared order: ${reason}`,
+            );
+          }
+          const distinct = required.follows.distinctBy;
+          if (distinct.length > 0) {
+            for (const row of this.lastView) {
+              const again = before.some((earlier) =>
+                distinct.every(
+                  (field) =>
+                    Object.prototype.hasOwnProperty.call(earlier, field) &&
+                    Object.prototype.hasOwnProperty.call(row, field) &&
+                    equal(earlier[field], row[field]),
+                ),
+              );
+              if (again) {
+                wrong.push(`${describeRow(row)} was on the page before it as well`);
+              }
+            }
+          }
+        }
+        return wrong.length === 0 ? [true, '', false] : [false, wrong.join('; '), false];
+      }
+      case 'changed_by': {
+        // The view's one row moved by exactly the stated amounts since its snapshot (suite/26,
+        // beyond10x/ess#148) — the Rust runner's `changed_by`, rule for rule.
+        const before = this.viewSnapshots.get(step.view);
+        if (before === undefined) {
+          return [false, 'no view snapshot preceded this assertion', true];
+        }
+        if (before.length !== 1 || this.lastView.length !== 1) {
+          return [
+            false,
+            `the snapshot held ${before.length} row(s) and this read ${this.lastView.length}; an ` +
+              'ungrouped aggregate view holds one',
+            false,
+          ];
+        }
+        const [earlier, later] = [before[0] as Row, this.lastView[0] as Row];
+        const zero = new Set(expectation.absent_is_zero ?? []);
+        const wrong: string[] = [];
+        for (const field of sortStrings(Object.keys(expectation.changes ?? {}))) {
+          const expected = (expectation.changes ?? {})[field];
+          const was = Object.prototype.hasOwnProperty.call(earlier, field) ? earlier[field] : null;
+          const now = Object.prototype.hasOwnProperty.call(later, field) ? later[field] : null;
+          if (!zero.has(field) && (isNil(was) || isNil(now))) {
+            wrong.push(
+              `\`${field}\` was read as ${render(was)} and then ${render(now)}; it is never ` +
+                'absent: over no row it is 0',
+            );
+            continue;
+          }
+          const moved = aggregateChange(was, now);
+          if (moved === null) {
+            wrong.push(
+              `\`${field}\` was read as ${render(was)} and then ${render(now)}, which are not ` +
+                'both numbers',
+            );
+          } else if (!sameDecimal(moved, exactDecimal(expected))) {
+            wrong.push(
+              `\`${field}\` changed by ${spellDecimal(moved)} (${render(was)} → ${render(now)})`,
+            );
+          }
+        }
+        return wrong.length === 0 ? [true, '', false] : [false, wrong.join('; '), false];
+      }
       case 'at': {
         // A position in an unordered view names a different row on every read, and calling
         // whichever one came back "the first" is a coin toss reported as a check.
@@ -3233,6 +3859,9 @@ export class ScenarioRun {
   }
 
   async expectInvocation(index: number, step: Step): Promise<boolean> {
+    if (step.count !== undefined) {
+      return this.expectInvocationCount(index, step, step.count);
+    }
     let invocations: Invocation[];
     try {
       invocations =
@@ -3285,6 +3914,68 @@ export class ScenarioRun {
     );
   }
 
+  /**
+   * Exactly `count` matching invocations (suite/26, a bounded retry's attempts), observed for the
+   * step's whole eventual window: above the count fails at once, and the count must still hold when
+   * the budget is spent — the Rust runner's `expect_invocation_count`.
+   */
+  async expectInvocationCount(index: number, step: Step, count: number): Promise<boolean> {
+    const want: { [field: string]: Node } = {};
+    const absent: string[] = [];
+    for (const [field, written] of Object.entries(step.input ?? {})) {
+      let node: Node;
+      let present: boolean;
+      try {
+        [node, present] = this.resolveAccessorExpected(written);
+      } catch (error) {
+        return this.fail(index, `\`${field}\`: ${errorText(error)}`);
+      }
+      if (present) {
+        want[field] = node;
+      } else {
+        absent.push(field);
+      }
+    }
+    const deadline = this.harness.deadline();
+    let matching = 0;
+    let seen: Invocation[] = [];
+    for (let attempt = 0; attempt < deadline.attempts; attempt += 1) {
+      try {
+        seen =
+          (await this.target.observeInvocations({
+            binding: step.binding,
+            command: step.command,
+            correlation: this.correlation,
+            deadline: { attempts: deadline.attempts - attempt },
+          })) ?? [];
+      } catch (error) {
+        if (isUnsupported(error)) {
+          this.skip(
+            `step ${index}: the target does not expose what \`${step.binding}\` invoked: ${errorText(error)}`,
+          );
+        }
+        return this.fail(index, `observing \`${step.binding}\`: ${errorText(error)}`);
+      }
+      matching = seen.filter(
+        (invocation) =>
+          invocation.command === step.command &&
+          matches(invocation.input, want) &&
+          absent.every((field) => !Object.prototype.hasOwnProperty.call(invocation.input, field)),
+      ).length;
+      if (matching > count) {
+        break;
+      }
+    }
+    if (matching !== count) {
+      return this.fail(
+        index,
+        `exactly ${count} invocation(s) of \`${step.command}\` by \`${step.binding}\` with ` +
+          `${describe(want)}; ${matching} matching invocation(s) of ${seen.length}`,
+      );
+    }
+    return true;
+  }
+
   async redeliver(index: number, step: Step): Promise<boolean> {
     try {
       await this.target.redeliverEvent({ event: step.event, correlation: this.correlation });
@@ -3303,15 +3994,30 @@ export class ScenarioRun {
     if (step.force === undefined) {
       return this.fail(index, 'the suite names no outcome to force, which is a generator defect');
     }
+    const control: ExternalOutcomeControl = {
+      command: step.force.command,
+      outcome: step.force.outcome,
+      correlation: this.correlation,
+    };
     try {
-      await this.target.configureExternalOutcome({
-        command: step.force.command,
-        outcome: step.force.outcome,
-        correlation: this.correlation,
-      });
+      if (step.times === undefined) {
+        await this.target.configureExternalOutcome(control);
+      } else {
+        // A bounded retry fails every attempt it makes (suite/26, beyond10x/ess#165); forcing the
+        // first only would let the second succeed, so a target without the control is unsupported.
+        if (typeof this.target.configureExternalOutcomeRepeatedly !== 'function') {
+          throw unsupported('this target forces an external outcome on the next invocation only');
+        }
+        await this.target.configureExternalOutcomeRepeatedly({ ...control, times: step.times });
+      }
     } catch (error) {
       if (isUnsupported(error)) {
-        this.skip(`step ${index}: the target cannot force \`${step.force.outcome}\``);
+        this.skip(
+          step.times === undefined
+            ? `step ${index}: the target cannot force \`${step.force.outcome}\``
+            : `step ${index}: the target cannot force \`${step.force.outcome}\` on the next ` +
+                `${step.times} invocations: ${errorText(error)}`,
+        );
       }
       return this.fail(index, `forcing \`${step.force.outcome}\`: ${errorText(error)}`);
     }
@@ -3529,6 +4235,65 @@ export class ScenarioRun {
     throw new SkipSignal(message);
   }
 
+  /**
+   * fixNow resolves every `now_offset` a step names that no earlier step of the scenario fixed,
+   * against one reading of the wall clock rounded up to a whole second (suite/26,
+   * beyond10x/ess#171) — the Rust runner's `Resolved::fix`, over the same places in a step.
+   */
+  fixNow(step: Step): void {
+    const pending: number[] = [];
+    const visit = (values: { [field: string]: Value } | undefined): void => {
+      for (const value of Object.values(values ?? {})) {
+        const seconds = value.seconds ?? 0;
+        if (
+          value.kind === 'now_offset' &&
+          !this.nowFixed.has(seconds) &&
+          !pending.includes(seconds)
+        ) {
+          pending.push(seconds);
+        }
+      }
+    };
+    switch (step.step) {
+      case 'execute_command':
+      case 'expect_invocation':
+        visit(step.input);
+        break;
+      case 'expect_event_values':
+        visit(step.payload as { [field: string]: Value } | undefined);
+        break;
+      case 'snapshot_subject':
+      case 'snapshot_complete_subject':
+      case 'expect_subject_absent':
+        visit(step.subject);
+        break;
+      case 'query_view':
+      case 'expect_halt':
+      case 'eventually_halt':
+        visit(step.params);
+        break;
+      case 'eventually_view':
+        visit(step.params);
+        visit(expectationValues(step.expectation));
+        break;
+      case 'expect_view':
+        visit(expectationValues(step.expectation));
+        break;
+      default:
+        break;
+    }
+    if (pending.length === 0) {
+      return;
+    }
+    const now = Math.ceil(wallNow() / 1000);
+    for (const seconds of pending) {
+      const spelled = rfc3339Seconds(now + seconds);
+      if (spelled !== undefined) {
+        this.nowFixed.set(seconds, spelled);
+      }
+    }
+  }
+
   /** resolveAll resolves every value a step carries against what this run has bound. */
   resolveAll(
     index: number,
@@ -3556,6 +4321,15 @@ export class ScenarioRun {
         return copyFixtureValue(this.fixtures[value.fixture as string]);
       case 'literal':
         return value.value;
+      case 'now_offset': {
+        const fixed = this.nowFixed.get(value.seconds ?? 0);
+        if (fixed === undefined) {
+          throw new Error(
+            `now_offset ${String(value.seconds)} names no instant the runner's wall clock can spell`,
+          );
+        }
+        return fixed;
+      }
       case 'instance': {
         if (!Object.prototype.hasOwnProperty.call(this.instances, value.instance as string)) {
           throw new Error(`nothing bound the instance \`${String(value.instance)}\``);
@@ -3598,18 +4372,18 @@ export class ScenarioRun {
       }
       throw new Error('selection event was not observed');
     }
-    if (value.kind !== 'observed_accessor') {
-      return [this.resolve(value), true];
-    }
-    if (value.accessor === undefined) {
-      throw new Error('missing accessor plan');
-    }
-    for (const event of this.seen) {
-      if (event.event === value.event) {
-        return value.accessor.evaluate(event.payload);
+    if (value.kind === 'observed_accessor') {
+      if (value.accessor === undefined) {
+        throw new Error('missing accessor plan');
       }
+      for (const event of this.seen) {
+        if (event.event === value.event) {
+          return value.accessor.evaluate(event.payload);
+        }
+      }
+      throw new Error('accessor event was not observed');
     }
-    throw new Error('accessor event was not observed');
+    return [this.resolve(value), true];
   }
 
   async checkPeriodic(index: number, step: Step): Promise<boolean> {
@@ -3644,10 +4418,23 @@ export class ScenarioRun {
  *
  * A subset, not an equality: a row carries what the view projects, and a scenario names the fields
  * that identify the instance it is about.
+ *
+ * A wanted key may be the dotted path of one leaf inside a struct field — `lead.number`, suite/26
+ * (beyond10x/ess#179). A field name holds no dot, so an older suite reads exactly as before. A path
+ * that finds nothing, because the leaf or a struct above it was not written or is null, is the leaf
+ * holding nothing, which is what a wanted `null` asks about. The Rust runner's `matches` and
+ * `carried_at`, rule for rule.
  */
 export function matches(row: { [field: string]: Node }, want: { [field: string]: Node }): boolean {
   for (const field of Object.keys(want)) {
-    if (!Object.prototype.hasOwnProperty.call(row, field) || !equal(row[field], want[field])) {
+    const [value, reach] = lookup(row, field);
+    if (reach !== 'value') {
+      if (field.includes('.') && isNil(want[field])) {
+        continue;
+      }
+      return false;
+    }
+    if (!equal(value, want[field])) {
       return false;
     }
   }
@@ -3702,6 +4489,94 @@ export function equal(left: Node, right: Node): boolean {
     return true;
   }
   return false;
+}
+
+/** An exact decimal: `units × 10^-scale`. */
+export type Decimal = [bigint, number];
+
+/** The range of the Rust aggregate arithmetic's units (`i128`). */
+const I128_MAX = 2n ** 127n - 1n;
+const I128_MIN = -(2n ** 127n);
+
+/** A decimal whose units fit the Rust arithmetic, or null: `aggregate::exact` over-/underflows. */
+function withinI128(decimal: Decimal): Decimal | null {
+  return decimal[0] > I128_MAX || decimal[0] < I128_MIN ? null : decimal;
+}
+
+/**
+ * exactDecimal reads a number as the exact decimal it denotes, or null for anything else.
+ *
+ * An exponent spelling — `1e-7`, which is what `String(0.0000001)` is, and `1e21` — is expanded
+ * into the plain decimal it denotes, as Rust's `Number::exact_text` spells every number. A value
+ * whose units leave the `i128` range the Rust arithmetic keeps is null, as it has no exact decimal
+ * spelling there either (`aggregate_delta::defect`).
+ */
+export function exactDecimal(value: Node): Decimal | null {
+  let spelled: string;
+  if (value instanceof JsonNumber) {
+    spelled = value.raw;
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    spelled = String(value);
+  } else if (typeof value === 'bigint') {
+    spelled = value.toString();
+  } else {
+    return null;
+  }
+  const parts = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/.exec(spelled);
+  if (parts === null) {
+    return null;
+  }
+  const fraction = parts[3] ?? '';
+  const exponent = Number(parts[4] ?? '0');
+  // Past this no units fit `i128` anyway, and the power would be a needless giant.
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 1024) {
+    return null;
+  }
+  let units = BigInt(`${parts[2]}${fraction}`);
+  let scale = fraction.length - exponent;
+  if (scale < 0) {
+    units *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  // One spelling per value: no trailing zeroes past the point.
+  while (scale > 0 && units % 10n === 0n) {
+    units /= 10n;
+    scale -= 1;
+  }
+  return withinI128([parts[1] === '-' ? -units : units, scale]);
+}
+
+/** How much a numeric aggregate moved, exactly, an absent value reading as zero; null otherwise. */
+export function aggregateChange(before: Node, after: Node): Decimal | null {
+  const read = (value: Node): Decimal | null => (isNil(value) ? [0n, 0] : exactDecimal(value));
+  const [was, now] = [read(before), read(after)];
+  if (was === null || now === null) {
+    return null;
+  }
+  const scale = Math.max(was[1], now[1]);
+  const widen = ([units, own]: Decimal): bigint => units * 10n ** BigInt(scale - own);
+  return withinI128([widen(now) - widen(was), scale]);
+}
+
+/** Whether two exact decimals are one value, whatever their spelling (`5`, `5.0`). */
+export function sameDecimal(left: Decimal | null, right: Decimal | null): boolean {
+  if (left === null || right === null) {
+    return false;
+  }
+  const scale = Math.max(left[1], right[1]);
+  return left[0] * 10n ** BigInt(scale - left[1]) === right[0] * 10n ** BigInt(scale - right[1]);
+}
+
+/** spellDecimal spells an exact decimal without trailing zeroes, for a diagnostic. */
+export function spellDecimal([units, scale]: Decimal): string {
+  const negative = units < 0n;
+  const digits = (negative ? -units : units).toString().padStart(scale + 1, '0');
+  let spelled =
+    scale === 0 ? digits : `${digits.slice(0, digits.length - scale)}.${digits.slice(-scale)}`;
+  if (scale > 0) {
+    spelled = spelled.replace(/0+$/, '').replace(/\.$/, '');
+  }
+  return `${negative ? '-' : ''}${spelled}`;
 }
 
 export function asNumber(value: Node): [number, boolean] {
@@ -3846,13 +4721,21 @@ export function holds(payload: { [field: string]: Node }, shape: { [path: string
       // contradicts the declaration whatever the leaf permits.
       return `\`${at}\` holds ${render(value)}, so \`${path}\` is not there to read`;
     }
+    // A presence policy (suite/24, beyond10x/ess#139) holds an absent value to one spelling: a
+    // `null_when_absent` field is never left out, an `omitted_when_absent` one never sent as null.
     if (state === 'absent') {
+      if (expected.presence === 'null_when_absent') {
+        return `left out \`${path}\`, which is declared null_when_absent`;
+      }
       if (expected.optional === true) {
         continue;
       }
       return `did not carry \`${path}\``;
     }
     if (isNil(value) && expected.optional === true) {
+      if (expected.presence === 'omitted_when_absent') {
+        return `sent \`${path}\` as null, which is declared omitted_when_absent`;
+      }
       continue;
     }
     switch (expected.holds) {
@@ -4251,7 +5134,7 @@ export function name(value: Node, kebab: boolean): void {
   }
 }
 
-export function scenarioIdentity(id: string): void {
+export function scenarioIdentity(id: string, major = 21): void {
   const parts = id.split('/');
   const segment = (index: number): string => parts[index] ?? '';
   let valid = false;
@@ -4262,12 +5145,22 @@ export function scenarioIdentity(id: string): void {
   } else if (parts.length === 3 && segment(1) === 'authored') {
     valid = q(segment(0)) && k(segment(2));
   } else if (parts.length === 3 && segment(1) === 'binding') {
+    if (segment(2) === 'final-failure' && major < 26) {
+      throw new Error('a final-failure binding scenario requires suite/26 or /27');
+    }
     valid =
       k(segment(0)) &&
       (segment(2) === 'delivery' ||
         segment(2) === 'flow' ||
         segment(2) === 'mapping' ||
-        segment(2) === 'on-failure');
+        segment(2) === 'on-failure' ||
+        segment(2) === 'final-failure');
+  } else if (parts.length === 2 && segment(1) === 'aggregate' && q(segment(0))) {
+    // An aggregate scenario (beyond10x/ess#96) is suite/16 vocabulary and every later major's.
+    if (major < 16) {
+      throw new Error('aggregate views require suite/16 or /17');
+    }
+    valid = true;
   } else if (
     parts.length === 5 &&
     segment(1) === 'state' &&
@@ -4281,10 +5174,6 @@ export function scenarioIdentity(id: string): void {
     valid = q(segment(0)) && q(segment(3)) && k(segment(4));
   } else if (parts.length === 5 && segment(1) === 'invariant' && segment(2) === 'at') {
     valid = q(segment(0)) && q(segment(3)) && segment(4) !== '';
-  } else if (parts.length === 2 && segment(1) === 'aggregate' && q(segment(0))) {
-    // An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17, which this runtime
-    // refuses as whole envelopes; every suite it admits is older, so the id is refused by name.
-    throw new Error('aggregate views require suite/16 or /17');
   }
   if (!valid) {
     throw new Error(`malformed scenario ID ${quoteGo(id)}`);
@@ -4305,11 +5194,41 @@ const SUITE_MAJORS: { [version: string]: number } = {
   'ess-conformance/9': 9,
   'ess-conformance/10': 10,
   'ess-conformance/11': 11,
+  // Retained replay, text-match operators and aggregate views (0.30–0.33): every later major
+  // implies them, and a specification whose newest construct is one of them synthesizes one of
+  // these (beyond10x/ess#188).
+  'ess-conformance/12': 12,
+  'ess-conformance/13': 13,
+  'ess-conformance/14': 14,
+  'ess-conformance/15': 15,
+  'ess-conformance/16': 16,
+  'ess-conformance/17': 17,
   'ess-conformance/18': 18,
   'ess-conformance/19': 19,
   'ess-conformance/20': 20,
   'ess-conformance/21': 21,
+  // 0.37.0 outcome shapes and presence, 0.38.0 the round-3 pair (beyond10x/ess#188). A construct
+  // of these this runtime does not execute refuses its scenario, by name, and nothing else.
+  'ess-conformance/22': 22,
+  'ess-conformance/23': 23,
+  'ess-conformance/24': 24,
+  'ess-conformance/25': 25,
+  'ess-conformance/26': 26,
+  'ess-conformance/27': 27,
 };
+
+/** The suite majors that carry a coverage inventory, each beside the ordinary major below it. */
+const COVERAGE_MAJORS = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]);
+
+/** coverageMajor reports whether a suite major carries a coverage inventory. */
+export function coverageMajor(major: number): boolean {
+  return COVERAGE_MAJORS.has(major);
+}
+
+/** The suite versions this runtime admits, for the admission guard over both runtimes. */
+export function admittedSuiteVersions(): string[] {
+  return Object.keys(SUITE_MAJORS);
+}
 
 export function admitSuite(raw: string): Suite {
   return admitSuiteDocument(raw, false);
@@ -4330,10 +5249,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     throw new Error(`unsupported suite version ${quoteGo(version)}`);
   }
   const carriesCoverage = Object.prototype.hasOwnProperty.call(root, 'coverage');
-  if (
-    carriesCoverage !==
-    (major === 5 || major === 7 || major === 9 || major === 11 || major === 19 || major === 21)
-  ) {
+  if (carriesCoverage !== coverageMajor(major)) {
     throw new Error('coverage is required exactly for suite/5, suite/7, suite/9 and suite/11');
   }
   for (const key of ['system', 'specification_version', 'spec_digest', 'contract_digest']) {
@@ -4352,8 +5268,11 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
   if (!isObject(scenarios)) {
     throw new Error('scenarios must be an object');
   }
+  // Scenarios refused by name, with the construct that refused each. Only from suite/22: below it
+  // a refusal refuses the suite, as it always did.
+  const refused: { [id: string]: string } = {};
   for (const id of Object.keys(scenarios)) {
-    scenarioIdentity(id);
+    scenarioIdentity(id, major);
     const scenario = closed(scenarios[id], 'purpose steps source', '');
     const purpose = text(scenario.purpose);
     if (purpose.trim() === '' || [...purpose].length > 200) {
@@ -4366,24 +5285,30 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
       }
     }
     const steps = array(scenario.steps);
-    for (const step of steps) {
+    for (const [position, step] of steps.entries()) {
       try {
         admitStep(step, major);
       } catch (error) {
+        if (error instanceof ConstructRefusal && major >= PER_SCENARIO_REFUSAL) {
+          refused[id] ??= `step ${position}: ${error.message}`;
+          continue;
+        }
         throw new Error(`${id}: ${errorText(error)}`);
       }
     }
-    try {
-      admitEntitySetups(steps);
-      admitFixtureSteps(steps);
-    } catch (error) {
-      throw new Error(`${id}: ${errorText(error)}`);
+    if (!Object.prototype.hasOwnProperty.call(refused, id)) {
+      try {
+        admitEntitySetups(steps);
+        admitFixtureSteps(steps);
+      } catch (error) {
+        throw new Error(`${id}: ${errorText(error)}`);
+      }
     }
     for (const source of array(scenario.source)) {
       admitReference(source);
     }
   }
-  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 19 || major === 21) {
+  if (coverageMajor(major)) {
     const coverage = root.coverage as { [key: string]: Node };
     if (Array.isArray(coverage.refused)) {
       for (const item of coverage.refused as Node[]) {
@@ -4427,8 +5352,9 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     scenarios: {},
     original: raw,
     document: root,
+    refused,
   };
-  if (major === 5 || major === 7 || major === 9 || major === 11 || major === 19 || major === 21) {
+  if (coverageMajor(major)) {
     suite.coverage = root.coverage as { [key: string]: Node };
     // Original admission includes parents which will never execute. Retain their exact unsigned
     // metadata independently of the narrower execution view.
@@ -4440,7 +5366,7 @@ export function admitSuiteDocument(raw: string, explicit: boolean): Suite {
     }
     return suite;
   }
-  suite.scenarios = decodeScenarios(scenarios);
+  suite.scenarios = decodeScenarios(scenarios, refused);
   return suite;
 }
 
@@ -4450,7 +5376,10 @@ export function executionSuite(suite: Suite): Suite {
     try {
       return {
         ...suite,
-        scenarios: decodeScenarios(suite.document.scenarios as { [key: string]: Node }),
+        scenarios: decodeScenarios(
+          suite.document.scenarios as { [key: string]: Node },
+          suite.refused ?? {},
+        ),
       };
     } catch (error) {
       throw new Error(`exact selected metadata exceeds the execution view: ${errorText(error)}`);
@@ -4481,7 +5410,8 @@ export function executionIntegers(scenarios: { [key: string]: Node }): void {
       }
       if (isObject(step.expectation)) {
         const expectation = step.expectation as { [key: string]: Node };
-        for (const field of ['at_least', 'at_most']) {
+        // A `page` expectation's `at_least` is a flag, not a count (suite/26).
+        for (const field of expectation.expect === 'page' ? [] : ['at_least', 'at_most']) {
           if (!isNil(expectation[field])) {
             fields[`expectation.${field}`] = expectation[field];
           }
@@ -4510,14 +5440,23 @@ export function executionIntegers(scenarios: { [key: string]: Node }): void {
 
 // ---- the typed view a scenario is walked through --------------------------------------------------
 
-function decodeScenarios(scenarios: { [key: string]: Node }): { [id: string]: Scenario } {
+function decodeScenarios(
+  scenarios: { [key: string]: Node },
+  refused: { [id: string]: string },
+): { [id: string]: Scenario } {
   const result: { [id: string]: Scenario } = {};
   for (const id of Object.keys(scenarios)) {
     const scenario = scenarios[id] as { [key: string]: Node };
-    result[id] = {
-      purpose: (scenario.purpose as string) ?? '',
-      steps: (scenario.steps as Node[]).map(decodeStep),
-    };
+    const refusal = refused[id];
+    // A refused scenario is never walked, so its steps are not decoded: the construct that refused
+    // it is one the decoder does not know either.
+    result[id] =
+      refusal === undefined
+        ? {
+            purpose: (scenario.purpose as string) ?? '',
+            steps: (scenario.steps as Node[]).map(decodeStep),
+          }
+        : { purpose: (scenario.purpose as string) ?? '', steps: [], refused: refusal };
   }
   return result;
 }
@@ -4542,7 +5481,7 @@ function decodeValues(value: Node): { [field: string]: Value } | undefined {
     const decoded: Value = { kind: written.kind as string };
     if (Object.hasOwn(written, 'fixture')) decoded.fixture = written.fixture as string;
     if (Object.prototype.hasOwnProperty.call(written, 'value')) {
-      decoded.value = plainNumbers(written.value);
+      decoded.value = exactNumbers(written.value);
     }
     if (Object.prototype.hasOwnProperty.call(written, 'instance')) {
       decoded.instance = written.instance as string;
@@ -4552,6 +5491,9 @@ function decodeValues(value: Node): { [field: string]: Value } | undefined {
     }
     if (Object.prototype.hasOwnProperty.call(written, 'field')) {
       decoded.field = written.field as string;
+    }
+    if (Object.prototype.hasOwnProperty.call(written, 'seconds')) {
+      decoded.seconds = decodeNumber(written.seconds);
     }
     if (Object.prototype.hasOwnProperty.call(written, 'accessor')) {
       decoded.accessor = new AccessorObservation(
@@ -4571,6 +5513,31 @@ function decodeExpectation(value: Node): Expectation | undefined {
     return undefined;
   }
   const expectation: Expectation = { expect: value.expect as string };
+  if (expectation.expect === 'page') {
+    const follows = isObject(value.follows) ? value.follows : undefined;
+    expectation.paged = {
+      page: decodeNumber(value.page),
+      size: decodeNumber(value.size),
+      rows: decodeNumber(value.rows),
+      atLeast: value.at_least === true,
+      ...(isNil(value.total_at_least) ? {} : { totalAtLeast: decodeNumber(value.total_at_least) }),
+      ...(follows === undefined
+        ? {}
+        : {
+            follows: {
+              orderBy: array(follows.order_by).map((item) => item as string),
+              distinctBy: array(follows.distinct_by ?? []).map((item) => item as string),
+            },
+          }),
+    };
+    return expectation;
+  }
+  if (expectation.expect === 'changed_by') {
+    // Plain amounts, kept as written: a change is compared exactly, never through a binary64.
+    expectation.changes = { ...(value.fields as { [field: string]: Node }) };
+    expectation.absent_is_zero = array(value.absent_is_zero ?? []).map((item) => item as string);
+    return expectation;
+  }
   const fields = decodeValues(value.fields);
   if (fields !== undefined) {
     expectation.fields = fields;
@@ -4617,6 +5584,9 @@ function decodeShape(value: Node): { [path: string]: Held } | undefined {
     if (Object.prototype.hasOwnProperty.call(leaf, 'optional')) {
       held.optional = leaf.optional === true;
     }
+    if (typeof leaf.presence === 'string') {
+      held.presence = leaf.presence;
+    }
     result[path] = held;
   }
   return result;
@@ -4629,7 +5599,7 @@ function decodeStep(value: Node): Step {
   const step: Step = {
     order: label('order'),
     identity: Object.prototype.hasOwnProperty.call(written, 'identity')
-      ? plainNumbers(written.identity)
+      ? exactNumbers(written.identity)
       : undefined,
     state: label('state'),
     step: label('step'),
@@ -4647,14 +5617,23 @@ function decodeStep(value: Node): Step {
     after: decodeNumber(written.after),
   };
   if (Object.prototype.hasOwnProperty.call(written, 'fields')) {
-    step.fields = plainNumbers(written.fields) as { [field: string]: Node };
+    step.fields = exactNumbers(written.fields) as { [field: string]: Node };
   }
   if (Object.prototype.hasOwnProperty.call(written, 'payload')) {
-    step.payload = plainNumbers(written.payload) as { [field: string]: Node };
+    step.payload = exactNumbers(written.payload) as { [field: string]: Node };
   }
   const input = decodeValues(written.input);
   if (input !== undefined) {
     step.input = input;
+  }
+  if (isObject(written.caller)) {
+    step.caller = exactNumbers(written.caller) as { [attribute: string]: Node };
+  }
+  if (!isNil(written.times)) {
+    step.times = decodeNumber(written.times);
+  }
+  if (!isNil(written.count)) {
+    step.count = decodeNumber(written.count);
   }
   const subject = decodeValues(written.subject);
   if (subject !== undefined) step.subject = subject;
@@ -4662,9 +5641,16 @@ function decodeStep(value: Node): Step {
   if (params !== undefined) {
     step.params = params;
   }
-  const shape = decodeShape(written.shape);
-  if (shape !== undefined) {
-    step.shape = shape;
+  if (isObject(written.capture)) {
+    step.capture = decodeRetainedCapture(written.capture);
+  }
+  if (step.step === 'snapshot_complete_subject') {
+    step.subjectShape = decodeSubjectShape(plainNumbers(written.shape));
+  } else {
+    const shape = decodeShape(written.shape);
+    if (shape !== undefined) {
+      step.shape = shape;
+    }
   }
   const expectation = decodeExpectation(written.expectation);
   if (expectation !== undefined) {
@@ -4738,6 +5724,9 @@ export function admitOutcome(value: Node): void {
   name(outcome.outcome, true);
 }
 
+/** The largest `now_offset` a suite may carry either way: `now_offset::MAX_SECONDS` in Rust. */
+const NOW_OFFSET_MAX_SECONDS = 6_311_520_000;
+
 export function admitValues(value: Node, major: number, accessors: boolean): void {
   if (!isObject(value)) {
     throw new Error('values must be an object');
@@ -4789,6 +5778,22 @@ export function admitValues(value: Node, major: number, accessors: boolean): voi
         name(written.event, false);
         text(written.field);
         break;
+      case 'now_offset': {
+        // An instant relative to the moment of sending (beyond10x/ess#171), suite/26 vocabulary.
+        if (major < 26) {
+          throw new Error(`unsupported scenario value ${kind}`);
+        }
+        closed(written, 'kind seconds', '');
+        const seconds = written.seconds;
+        const digits = seconds instanceof JsonNumber ? seconds.raw : String(seconds);
+        if (!/^-?(0|[1-9][0-9]*)$/.test(digits)) {
+          throw new Error('now_offset seconds must be a whole number');
+        }
+        if (Math.abs(Number(digits)) > NOW_OFFSET_MAX_SECONDS) {
+          throw new Error(`now_offset exceeds ${NOW_OFFSET_MAX_SECONDS} seconds either way`);
+        }
+        break;
+      }
       default:
         throw new Error(`unsupported scenario value ${kind}`);
     }
@@ -4815,7 +5820,14 @@ export function admitPayload(value: Node): void {
   }
 }
 
-export function admitShape(value: Node): void {
+/** admitPresence admits one of the two presence policies a field may declare (suite/24). */
+export function admitPresence(value: Node): void {
+  if (value !== 'null_when_absent' && value !== 'omitted_when_absent') {
+    throw new Error('presence must be null_when_absent or omitted_when_absent');
+  }
+}
+
+export function admitShape(value: Node, major = 21): void {
   if (!isObject(value)) {
     throw new Error('shape must be an object');
   }
@@ -4840,7 +5852,13 @@ export function admitShape(value: Node): void {
       default:
         throw new Error('unsupported holds');
     }
-    closed(leaf, required, 'optional');
+    if (Object.prototype.hasOwnProperty.call(leaf, 'presence')) {
+      if (major < 24) {
+        throw new Error('field presence policies require suite/24 or /25');
+      }
+      admitPresence(leaf.presence);
+    }
+    closed(leaf, required, 'optional presence');
     if (
       Object.prototype.hasOwnProperty.call(leaf, 'optional') &&
       typeof leaf.optional !== 'boolean'
@@ -4868,6 +5886,51 @@ export function admitShape(value: Node): void {
       }
     }
   }
+}
+
+/** admitRanking admits one `order_by` key: a field, and optionally a direction. */
+export function admitRanking(rank: Node): void {
+  const words = goFields(text(rank));
+  if (words.length < 1 || words.length > 2) {
+    throw new Error('invalid ranking');
+  }
+  if (words.length === 2) {
+    switch (words[1]) {
+      case 'asc':
+      case 'ascending':
+      case 'desc':
+      case 'descending':
+        break;
+      default:
+        throw new Error('invalid ranking direction');
+    }
+  }
+}
+
+/**
+ * pageDefect says why a page expectation is no claim, or '' when it is one — `view_paging::defect`
+ * in Rust: a size of zero asks for nothing, a page longer than its size no target can answer, a
+ * total below the page's own rows is no floor, and a continuation with no order compares nothing.
+ */
+export function pageDefect(
+  size: bigint,
+  rows: bigint,
+  totalAtLeast: bigint | undefined,
+  unorderedContinuation: boolean,
+): string {
+  if (size === 0n) {
+    return 'a page of size 0 holds no row whatever the target does';
+  }
+  if (rows > size) {
+    return `a page of size ${size} cannot hold ${rows} rows, so no target can satisfy it`;
+  }
+  if (totalAtLeast !== undefined && totalAtLeast < rows) {
+    return `a total of at least ${totalAtLeast} is less than the ${rows} rows the page itself holds`;
+  }
+  if (unorderedContinuation) {
+    return 'a page continues another only in a declared order, and names none';
+  }
+  return '';
 }
 
 export function admitExpectation(value: Node, major: number): void {
@@ -4898,6 +5961,67 @@ export function admitExpectation(value: Node, major: number): void {
       required += ' order_by position';
       optional = 'fields';
       break;
+    case 'changed_by': {
+      // The change in an ungrouped aggregate (beyond10x/ess#148), suite/26 vocabulary: plain
+      // numbers by field, not scenario values, and the fields whose absence reads as zero.
+      if (major < 26) {
+        throw new Error('a `changed_by` view expectation requires suite/26 or /27');
+      }
+      closed(value, 'expect fields', 'absent_is_zero');
+      const fields = value.fields;
+      if (!isObject(fields) || Object.keys(fields).length === 0) {
+        throw new Error('a change that names no field asserts nothing');
+      }
+      // `aggregate_delta::defect`, rule for rule: a number, with an exact decimal spelling.
+      for (const [field, amount] of Object.entries(fields)) {
+        if (!(amount instanceof JsonNumber) && typeof amount !== 'number') {
+          throw new Error(`the change of \`${field}\` is not a number`);
+        }
+        if (exactDecimal(amount) === null) {
+          throw new Error(`the change of \`${field}\` has no exact decimal spelling`);
+        }
+      }
+      for (const field of array(value.absent_is_zero ?? [])) {
+        if (!Object.prototype.hasOwnProperty.call(fields, text(field))) {
+          throw new Error(`absent_is_zero names \`${String(field)}\`, which the change does not`);
+        }
+      }
+      return;
+    }
+    case 'page': {
+      // One page of a paged view (beyond10x/ess#174), suite/26 vocabulary.
+      if (major < 26) {
+        throw new Error('a `page` view expectation requires suite/26 or /27');
+      }
+      closed(value, 'expect page size rows', 'at_least total_at_least follows');
+      unsigned(value.page);
+      const size = unsigned(value.size);
+      const rows = unsigned(value.rows);
+      if (
+        Object.prototype.hasOwnProperty.call(value, 'at_least') &&
+        typeof value.at_least !== 'boolean'
+      ) {
+        throw new Error('at_least must be boolean');
+      }
+      const total = isNil(value.total_at_least) ? undefined : unsigned(value.total_at_least);
+      let unordered = false;
+      if (Object.prototype.hasOwnProperty.call(value, 'follows') && !isNil(value.follows)) {
+        const follows = closed(value.follows, 'order_by', 'distinct_by');
+        const order = array(follows.order_by);
+        for (const rank of order) {
+          admitRanking(rank);
+        }
+        for (const field of array(follows.distinct_by ?? [])) {
+          text(field);
+        }
+        unordered = order.length === 0;
+      }
+      const defect = pageDefect(size, rows, total, unordered);
+      if (defect !== '') {
+        throw new Error(defect);
+      }
+      return;
+    }
     default:
       throw new Error(`unknown expectation ${tag}`);
   }
@@ -4912,21 +6036,7 @@ export function admitExpectation(value: Node, major: number): void {
   }
   if (Object.prototype.hasOwnProperty.call(value, 'order_by')) {
     for (const rank of array(value.order_by)) {
-      const words = goFields(text(rank));
-      if (words.length < 1 || words.length > 2) {
-        throw new Error('invalid ranking');
-      }
-      if (words.length === 2) {
-        switch (words[1]) {
-          case 'asc':
-          case 'ascending':
-          case 'desc':
-          case 'descending':
-            break;
-          default:
-            throw new Error('invalid ranking direction');
-        }
-      }
+      admitRanking(rank);
     }
   }
   if (Object.prototype.hasOwnProperty.call(value, 'position')) {
@@ -5097,6 +6207,12 @@ export function admitPredicateConstraint(value: Node): void {
             throw new Error(`predicate ${operator} takes a string`);
           }
           break;
+        case 'starts_with':
+        case 'ends_with':
+        case 'contains':
+          // A string operator (beyond10x/ess#95): one scalar, kept verbatim, as Rust parses it.
+          admitPredicateScalar(operand);
+          break;
         case 'in_ignore_case':
           // A JSON list of strings; a scalar is not a one-element list here.
           if (!Array.isArray(operand) || !operand.every((item) => typeof item === 'string')) {
@@ -5111,6 +6227,18 @@ export function admitPredicateConstraint(value: Node): void {
   }
   admitPredicateScalar(value);
 }
+
+/**
+ * Steps the Rust reference runner executes and this runtime does not, with the major that
+ * introduced each. In a suite/12 or later envelope each refuses its scenario by name; in an older
+ * one it stays an unknown step, as it always was.
+ *
+ * Empty since beyond10x/ess#188: every step tag the Rust `ScenarioStep` has, up to suite/27, is
+ * executed here. A step Rust gains before this runtime ports it belongs here, never in the
+ * `default` branch of `admitStep`, which refuses the whole suite —
+ * `tests/typescript_suite_versions.rs` holds every Rust step tag to one or the other.
+ */
+export const UNEXECUTED_STEPS: { [tag: string]: { major: number; what: string } } = {};
 
 export function admitStep(value: Node, major: number): void {
   if (!isObject(value)) {
@@ -5155,10 +6283,19 @@ export function admitStep(value: Node, major: number): void {
       break;
     case 'configure_external_outcome':
       required += ' force';
+      // `times` (beyond10x/ess#165) is suite/26 vocabulary; below it the key is unknown.
+      optional = major >= 26 ? 'times' : '';
       break;
     case 'execute_command':
       required += ' command';
-      optional = 'actor input';
+      optional = 'actor input caller';
+      break;
+    case 'execute_command_without_input':
+      if (major < 26) {
+        throw new Error('a command invoked with no input requires suite/26 or /27');
+      }
+      required += ' command';
+      optional = 'actor caller';
       break;
     case 'expect_outcome':
       required += ' outcome';
@@ -5173,6 +6310,35 @@ export function admitStep(value: Node, major: number): void {
       break;
     case 'expect_no_error':
       if (major < 10) throw new Error('no-error assertions require suite/10 or /11');
+      break;
+    case 'expect_no_events':
+      if (major < 12) throw new Error('`expect_no_events` requires suite/12 or /13');
+      break;
+    case 'snapshot_complete_subject':
+      if (major < 12) throw new Error('complete subject snapshots require suite/12 or /13');
+      required += ' view subject shape';
+      break;
+    case 'capture_command_result':
+    case 'expect_replay_result':
+      if (major < 12) throw new Error('retained results require suite/12 or /13');
+      required += ' capture';
+      break;
+    case 'expect_complete_subject_unchanged':
+      if (major < 12) throw new Error('complete subject snapshots require suite/12 or /13');
+      required += ' view';
+      break;
+    case 'expect_subject_absent':
+      if (major < 22) {
+        throw new Error('subject absence and whole-view preservation require suite/22 or /23');
+      }
+      required += ' view subject';
+      break;
+    case 'snapshot_view':
+    case 'expect_view_unchanged':
+      if (major < 22) {
+        throw new Error('subject absence and whole-view preservation require suite/22 or /23');
+      }
+      required += ' view';
       break;
     case 'expect_error':
       required += ' error';
@@ -5192,7 +6358,8 @@ export function admitStep(value: Node, major: number): void {
       break;
     case 'expect_invocation':
       required += ' binding command';
-      optional = 'input';
+      // `count` (beyond10x/ess#165) is suite/26 vocabulary; below it the key is unknown.
+      optional = major >= 26 ? 'input count' : 'input';
       break;
     case 'query_view':
       required += ' view';
@@ -5232,8 +6399,16 @@ export function admitStep(value: Node, major: number): void {
       required += ' view after';
       optional = 'params';
       break;
-    default:
+    default: {
+      const known = major >= PER_SCENARIO_REFUSAL ? UNEXECUTED_STEPS[tag] : undefined;
+      if (known !== undefined && Object.prototype.hasOwnProperty.call(UNEXECUTED_STEPS, tag)) {
+        if (major < known.major) {
+          throw new Error(`\`${tag}\` requires suite/${known.major} or /${known.major + 1}`);
+        }
+        refuseConstruct(`the \`${tag}\` step (${known.what})`);
+      }
       throw new Error(`unsupported step ${tag}`);
+    }
   }
   closed(value, required, optional);
   for (const key of Object.keys(value)) {
@@ -5243,7 +6418,7 @@ export function admitStep(value: Node, major: number): void {
         admitFixtures(held);
         break;
       case 'response':
-        admitResponse(held);
+        admitResponse(held, major);
         break;
       case 'check':
         admitPeriodic(held);
@@ -5290,6 +6465,16 @@ export function admitStep(value: Node, major: number): void {
       case 'identity':
         admitPayload(held);
         break;
+      case 'caller':
+        // A mapping of attribute values (beyond10x/ess#168), vocabulary of suite/26 and later.
+        if (major < 26) {
+          throw new Error('caller attribute values require suite/26 or /27');
+        }
+        if (!isObject(held)) {
+          throw new Error('caller must be an object');
+        }
+        admitPayload(held);
+        break;
       case 'field':
         text(held);
         break;
@@ -5309,8 +6494,15 @@ export function admitStep(value: Node, major: number): void {
         }
         admitPayload(held);
         break;
+      case 'capture':
+        admitRetainedCapture(held);
+        break;
       case 'shape':
-        admitShape(held);
+        if (tag === 'snapshot_complete_subject') {
+          admitSubjectShape(held);
+          break;
+        }
+        admitShape(held, major);
         break;
       case 'expectation':
         admitExpectation(held, major);
@@ -5320,6 +6512,15 @@ export function admitStep(value: Node, major: number): void {
         const n = unsigned(held);
         if (key === 'elapsed' && n > 4294967295n) {
           throw new Error('elapsed exceeds u32');
+        }
+        break;
+      }
+      case 'times':
+      case 'count': {
+        // A bounded retry's repeated forcing and attempt count: a non-zero u32.
+        const n = unsigned(held);
+        if (n === 0n || n > 4294967295n) {
+          throw new Error(`${key} must be a whole number from 1 to 4294967295`);
         }
         break;
       }
@@ -5388,6 +6589,8 @@ export function admitEntitySetups(steps: Node[]): void {
       case 'expect_outcome':
       case 'expect_no_error':
       case 'expect_subject_unchanged':
+      case 'expect_subject_absent':
+      case 'expect_view_unchanged':
       case 'expect_error':
       case 'expect_event':
       case 'expect_no_event':
@@ -8402,6 +9605,9 @@ export function admitPredicateVersion(value: Node, major: number): void {
   if (major < 20 && predicateUsesCaseFold(value)) {
     throw new Error('case-insensitive text operators require suite/20 or /21');
   }
+  if (major < 14 && predicateUsesOperator(value, TEXT_OPERATORS)) {
+    throw new Error('string predicate operators require suite/14 or /15');
+  }
   if (major < 8 && predicateNeedsLosslessReader(value)) {
     throw new Error('normalized structured comparison operands require suite/8 or /9');
   }
@@ -8409,8 +9615,13 @@ export function admitPredicateVersion(value: Node, major: number): void {
 
 /** Whether admitted predicate grammar carries a case-insensitive operator (beyond10x/ess#140). */
 export function predicateUsesCaseFold(value: Node): boolean {
+  return predicateUsesOperator(value, ['equals_ignore_case', 'in_ignore_case']);
+}
+
+/** Whether admitted predicate grammar carries any of `operators` on a leaf, at any depth. */
+export function predicateUsesOperator(value: Node, operators: readonly string[]): boolean {
   if (Array.isArray(value)) {
-    return value.some(predicateUsesCaseFold);
+    return value.some((child) => predicateUsesOperator(child, operators));
   }
   if (!isObject(value)) {
     return false;
@@ -8426,19 +9637,19 @@ export function predicateUsesCaseFold(value: Node): boolean {
       case 'none':
       case 'none_of_these':
       case 'not':
-        if (predicateUsesCaseFold(child)) return true;
+        if (predicateUsesOperator(child, operators)) return true;
         break;
       case 'forall':
       case 'exists':
-        if (isObject(child) && predicateUsesCaseFold((child as { [key: string]: Node }).that)) {
+        if (
+          isObject(child) &&
+          predicateUsesOperator((child as { [key: string]: Node }).that, operators)
+        ) {
           return true;
         }
         break;
       default:
-        if (
-          isObject(child) &&
-          (Object.hasOwn(child, 'equals_ignore_case') || Object.hasOwn(child, 'in_ignore_case'))
-        ) {
+        if (isObject(child) && operators.some((operator) => Object.hasOwn(child, operator))) {
           return true;
         }
         break;

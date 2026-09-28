@@ -13,8 +13,10 @@
 //! It is *not* the one `needles_for` used to make — that guessing wrongly is safe because a wrong
 //! guess will not be unique. Uniqueness belongs to the documents, not to the needle; adversary
 //! pass 2, A3, built the one-match document and got a wrong citation. That claim is gone from
-//! `resolve.rs`, `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries the behaviour,
-//! and `tests/trailing_key_guess_citations.rs` measures it.
+//! `resolve.rs`; `story:a-wrong-trailing-key-guess-is-reported-as-a-line` closed the behaviour —
+//! no guess for an element of a `- name:` list such as `outcomes`, and any other guess reported
+//! only inside the located declaration's list item — and `tests/trailing_key_guess_citations.rs`
+//! measures it.
 //!
 //! One case here is `#[ignore]`d against a filed story and names it at the attribute. A second was,
 //! until `story:a-masked-first-declaration-hides-a-duplicate-name` landed and it began to pass.
@@ -133,22 +135,21 @@ fn line_ending_with(text: &str, needle: &str) -> usize {
 
 /// A refusal about a command in one file is cited against that file, not against another.
 ///
-/// `needles_from_tokens` offers the trailing key first, so the refusal at
-/// `command.shop.probe.Doit.outcomes.filed` is searched for as `filed:` before it is searched for
-/// as `name: shop.probe.Doit`. An outcome is never *written* `filed:` — it is written
-/// `- name: filed` — so that first needle is a guess that cannot match the thing it is guessing at.
+/// `needles_from_tokens` used to offer the trailing key first, so the refusal at
+/// `command.shop.probe.Doit.outcomes.filed` was searched for as `filed:` before
+/// `name: shop.probe.Doit`. An outcome is never *written* `filed:` — it is written
+/// `- name: filed` — so that needle was a guess that could not match the thing it guessed at.
 ///
-/// Here the guess is not unique: `filed:` occurs twice as a raw substring, once as
+/// Here the guess was not unique: `filed:` occurs twice as a raw substring, once as
 /// `shop.probe.Other`'s payload target and once inside `refiled:` on the line below it. Two matches
-/// is no line, so the search falls through to `name: shop.probe.Doit`, which is unique and correct.
-/// That is the whole reason this case is green, and it is a property of *this document* — the
-/// adversary's `tests/trailing_key_guess_citations.rs` deletes the `refiled` field and gets the
-/// wrong file.
+/// is no line, so the search fell through to `name: shop.probe.Doit`. That was the whole reason
+/// this case was green, a property of *this document*: the adversary's
+/// `tests/trailing_key_guess_citations.rs` deleted the `refiled` field and got the wrong file.
+/// Since `story:a-wrong-trailing-key-guess-is-reported-as-a-line` no guess is built for an
+/// element of `outcomes`, so the declaration needle answers regardless of the raw counts.
 ///
-/// F1 was the same needle narrowed. `whole_name_matters` exempts it now, so `whole_name` is not
-/// applied to it and the raw count is what decides; the two raw counts are asserted first so the
-/// case says which count it is standing on rather than leaving a reader to assume the filter did
-/// it.
+/// F1 was the same needle narrowed. The two raw counts are still asserted first, as the premise
+/// that made the pre-story search fall through.
 #[test]
 fn a_refusal_is_cited_against_the_file_the_refused_command_is_declared_in() {
     let files = [("a.yaml", DOIT), ("b.yaml", OTHER)];

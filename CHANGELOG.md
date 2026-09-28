@@ -2,6 +2,102 @@
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-09-28
+
+### Added
+
+- **`ess-composition/3`: reader-side conformance (#191).** A `conformances:` entry may carry
+  `reader: true`, asserting that the consumer's type reads every value the imported type allows.
+  Beyond the `/2` rule it may read an imported newtype, through any chain, as what it wraps; an
+  enum as `String` (`Optional<String>` where the imported enum is optional); enum variants by wire
+  name, with every imported wire name present; a value that is always a JSON object (a struct, or a
+  map with `String` keys) as `Map<String, Json>`; and a subset of a struct's fields, where an extra
+  local field is compared with the imported field sharing its wire name, omitted or not, and one
+  that meets none is `Optional` and not `null_when_absent`. Anything that could reject an imported
+  value stays `type_conformance_drift`: a different primitive, a missing wire name, a local field
+  required where the imported one may be absent, `Json` read as any map (it may be an array or a
+  scalar), an extra field reading an imported key as another type. `reader: true` also asserts
+  that the consumer's reader ignores keys it does not declare; ESS-generated closed types
+  (`additionalProperties: false`, `deny_unknown_fields`) do not, so a consumer reading through
+  them must not use `reader` for a field subset. An entry without `reader` is compared exactly as
+  before. A `/1` or `/2` document carrying `reader`, whatever its value (`null` included), is
+  refused as `unsupported_format`; `/2` documents keep their meaning and their authored, compiled
+  and client-plan bytes.
+
+### Changed
+
+- The generated Go and TypeScript packages grow the target surface the new suite versions need:
+  Go `CommandRequest.Caller`, `ViewResult.Total` and the optional `AbsentInputTarget` and
+  `RepeatedOutcomeTarget`; TypeScript optional `executeCommandWithoutInput` and
+  `configureExternalOutcomeRepeatedly`, `CommandRequest.caller` and `ViewResult.total`. A target
+  without an optional method has the scenarios that need it reported skipped (unsupported), never
+  passed. Request values past 2^53 reach a TypeScript target as a `JsonNumber` (`RequestValue`),
+  and a TypeScript target's answers are read as `JSON.stringify` reads them.
+
+### Fixed
+
+- The generated Go and TypeScript runtimes run every suite version the same release synthesizes,
+  `ess-conformance/22` to `/27` included (TypeScript also `/12` to `/17`), instead of refusing it
+  with `suite admission: unsupported suite version` and zero verdicts (#188). An unchanged
+  specification whose nested `sets:` struct has one generated leaf synthesizes `/26`, and ran on
+  0.36.0 but not on 0.38.0 or 0.39.0. The runtimes now execute dotted-leaf payload and row values,
+  subject absence and whole-view preservation, presence policies on payload leaves and response
+  fields, a command sent with no input, `caller`, `now_offset`, `changed_by`, `page` with a view
+  total, bounded retries (`times`, `count`, `final-failure`) and `defined()` over `Optional`
+  aggregates, and give the Rust runner's verdict per scenario on the repository's fixtures. The Go
+  runtime now also holds an eventually observed event to its payload and shape, a named event
+  value or dotted leaf to being carried, and list, map and union leaves to their types. A test
+  fails if the synthesizer can write a suite version either runtime does not admit.
+- The generated Go and TypeScript conformance packages describe what their runner does
+  (#186). `CommandResult.Outcome` (`outcome` in TypeScript) now says a refusal returns the
+  refusing outcome's name, which the runner has always compared. For suites at
+  `ess-conformance/5` and later, the package README's run instructions state that the runner
+  executes only with `ESS_REPORT_FORMAT=2` and stops before the first scenario without it. The
+  TypeScript runner's refusal names the actual rule. `ess verify conform synthesize --target
+  go|typescript` refuses a suite version its generated runner would refuse at admission instead of
+  writing a package that cannot run, and `--help` no longer says `--target ir` writes
+  `ess-conformance/1`.
+- A name written as two different kinds (a command and an event, say), or a type name written
+  twice, is now refused as a duplicate even when one of the declarations fails its own conversion
+  or sits in a file with no `domain:`. Before, the refusal appeared only once both copies were
+  sound and in a domain, so fixing one error revealed a second fault that had been there all along.
+- Every extra writing of a name is refused exactly once. Two sound copies of one kind were refused
+  twice, once per reporter; the second refusal is gone. The remaining refusal's hint names the file
+  that wrote the name first when that is another file, and both domains when the copies are filed
+  under different ones.
+- A repeated name filed under a domain that cannot hold it is now refused for that as well, rather
+  than only after the duplicate is removed.
+- The document schema publishes the charset ESS already enforces on ten name positions that were a
+  bare `type: string`: component, command-line binary, command-group and binding names, topology
+  workload keys, transition names, selection input and selector names, and a selection mapping's
+  selector and path. A schema-aware editor now refuses the spellings `ess validate` already
+  refused (for example `Invoice_Service` or `serve--hosted`); no document that validated before is
+  refused now, so no format version changes.
+- A refusal is no longer cited at a line belonging to another construct when the trailing-key
+  guess for its path (`<last>:`) happens to occur exactly once elsewhere. No guess is built for an
+  element of a list written `- name: <x>` (`outcomes`, `input`, `fields`, `params`, `response`,
+  actor `attributes`, entity `relations`; a system precondition's `input` map keeps its guess),
+  and once the refused declaration is located, any other guess is reported only inside that
+  declaration's list item. Relation, attribute and response refusals are now cited at the entity,
+  actor or command they belong to. Paths with no declaration needle, such as
+  `topology.workloads.<component>`, are still cited at their key.
+- The Go and TypeScript concurrent explorers record view reads: they draw reads from the seed beside
+  commands (a specification with no views draws exactly as before), send each client's last command
+  token on `read_your_writes` reads, and write the answer's row identities as `rows` on a returned
+  read, so `check-history` judges stale reads and phantom rows. A read keeps every row it answered,
+  less at most one unnamed row per lost creation of the view's entity invoked before it returned.
+- `ess-history-adapter/1` is specified in `models/recorded-log-adapter/` and published as
+  `schemas/ess-history-adapter.schema.json`, which admits exactly what `import-history` reads; the
+  reader refuses every spelling the model does not declare (YAML local tags, arrays and nulls in
+  JSON, a field or completion word written twice).
+- `verify conform synthesize` writes the `state/<S>/refuses/<command>` scenario for a command whose
+  sibling branch combines `when:` over the input with `when_subject:` over the subject (#192): a
+  guarded branch is selected in any state before `wrong_state:` applies, so the witness misses an
+  input-only branch through its input, a branch guarded by the stored row alone through the row,
+  and a branch needing both through either. Complementary input guards on two siblings no longer
+  refuse the scenario with ESS-SYNTH-003; where no row refutes every stored guard, it is refused
+  naming the input and stored guards.
+
 ## [0.39.0] — 2026-09-28
 
 ### Added

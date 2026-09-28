@@ -145,8 +145,7 @@ sends them as query parameters without knowing what they mean. Only the total ne
 and `oracle-fixture` targets in `reference.rs` answer no paged view, and the `interpreted` target
 answers nothing).
 
-The Go and TypeScript runtimes refuse `/26` and `/27` by version, so they need no execution support
-for the expectation.
+The Go and TypeScript runtimes execute the expectation at `/26` and `/27` (beyond10x/ess#188).
 
 ### Stated limits
 

@@ -13,8 +13,8 @@
 //! implies every major below it. The number moves because of what an older reader does with the
 //! key: it looks for a top-level field named `lead.number`, finds none, and fails a conforming
 //! implementation — a wrong verdict caused by the age of the tool. A reader that checks this
-//! number first refuses the suite instead. The Go and TypeScript runtimes refuse these majors by
-//! version.
+//! number first refuses the suite instead. The Go and TypeScript runtimes execute these majors
+//! too (beyond10x/ess#188).
 //!
 //! These two majors are the round-3 pair: every later round-3 suite construct shares them. The
 //! second is presence of an `Optional` aggregate ([`defined_aggregates`](crate::defined_aggregates)),

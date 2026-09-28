@@ -1397,7 +1397,7 @@ types:
 keeps it optional and not nullable, which is what an `Optional` field without a policy already
 publishes. A suite carries the policy on the field's payload leaf, so an implementation that sends
 `null` for `discount_code` or leaves `partner_ref` out fails; such a suite is written as
-`ess-conformance/24` (or `/25` with coverage), which the Go and TypeScript runners refuse by version.
+`ess-conformance/24` (or `/25` with coverage), which the Go and TypeScript runners execute from 0.40.0.
 `presence:` on a required field, or in a command's, event's or type's own `naming:`, is refused.
 
 ## Three layers above the domains
@@ -1528,5 +1528,5 @@ display names and identical keys in separate objects do not conflict.
 
 * [Verify an implementation](./verify-conformance.md) — generate the suite this specification
   obliges, run it, and turn the result into evidence.
-* [A specification and its contracts](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) — the billing
+* [The billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) — the billing
   example's source next to its generated output.

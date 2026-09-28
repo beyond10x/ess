@@ -269,11 +269,37 @@ and that check is omitted where no immediate view projects it. The scenario stil
 outcome, the error and that no event was published. `unknown_instance:` does not compete for
 selection beside the guarded branches.
 
-**Wrong state.** In a state no move of the command starts from, the stored fields select nothing.
-The `state/<S>/refuses/<command>` scenario sends an input the moving branch's own input guard
-admits and the `when:` of every other non-default branch refutes, chosen in
-`subject_fact::refusal_input` (beyond10x/ess#173), so an input-guarded refusal cannot
-answer in the state's place.
+**Wrong state.** A guarded branch is selected in any state, before `wrong_state:` applies: the
+stored fields select a branch in a state no move of the command starts from, exactly as they do in
+one it does start from. Entity Runtime orders branches that way (input-guarded refusals, the other
+guarded branches, the default, `wrong_state` last). So the `state/<S>/refuses/<command>` scenario
+misses every sibling, chosen in `subject_fact::refusal_witness` (beyond10x/ess#173, #192):
+
+- a branch guarded by its input alone, a plain `when:` or an input-guarded refusal, is missed only
+  through its input;
+- a branch guarded by the stored row alone (`held: when_subject: history == Pending`) is missed
+  only through the row, which must decide its guard false;
+- a branch that needs both, a `when:` beside a `when_subject:`, is missed through either: its input
+  half refuted, or its subject half decided false by the row.
+
+A stored-guarded sibling that moves the subject along a transition not starting from `<S>` needs no
+refuting while its guard decides true or false on the row. Selected or not, a move from a state it
+does not leave is the wrong-state answer, so the row the `rush` move itself left in `Rushed` can
+serve even though `rushed`'s guard still holds on it. A guard that is unknown on the row (it reads an
+optional field no creation fills) stops selection before the wrong-state answer; that case, and a
+moving branch whose own stored guard the row rejects, are not yet handled
+(`story:wrong-state-witness-unknown-and-own-stored-guards`).
+
+The input is one the moving branch's own input guard admits. A candidate refuting every input half
+is preferred; only where none exists does the witness rely on the row for a mixed branch. For
+`already-confirmed: history == Confirmed, token != ""` beside `token-required: token == ""` it sends
+`token != ""` to a row whose `history` is not `Confirmed`. The row is the ordinary arrangement for
+`<S>` where it serves. Otherwise it is the first row in `<S>` that the declared drivers leave,
+found by the search above and steered by the command's own stored guards. Every stored guard the
+witness relies on the row for is observed before the command, through the view **Observation**
+names. Where no reachable row in `<S>` refutes every such guard, the scenario is refused with
+ESS-SYNTH-003 naming the input and stored guards. It is never written to depend on which branch an
+implementation decides first.
 
 **The witness for `refused-overweight`**, in the suite's own step vocabulary:
 

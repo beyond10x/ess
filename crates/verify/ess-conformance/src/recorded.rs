@@ -29,6 +29,9 @@
 //! The document's `seed` is not a property of a recorded log at all; it is written 0 and reported
 //! as a gap with no line. The completion is read through the adapter's own `values` map from the
 //! log's word to `Returned` or `Indeterminate`; a word it does not map is refused, not interpreted.
+//! A word is a string or an integer ([`Words`]): a string word maps a log string, an integer word
+//! (a YAML integer key such as `200`) maps a log integer, so HTTP statuses can be mapped, and
+//! neither maps the other. A JSON object's keys are strings, so a JSON adapter maps strings only.
 //!
 //! **A history imported with gaps carries `seed` 0 and generated identities by construction**, and
 //! the document itself cannot say which values were carried and which were not: the gaps
@@ -96,9 +99,9 @@ pub enum Absent {
     Absent,
 }
 
-/// Where one field sits in a log line.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
+/// Where one field sits in a log line: the word `absent` or `{ pointer: /… }`, and no other
+/// spelling. Read by `absent_or`, not `#[serde(untagged)]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldSource {
     /// The log does not carry it.
     Absent(Absent),
@@ -110,6 +113,61 @@ fn absent() -> FieldSource {
     FieldSource::Absent(Absent::Absent)
 }
 
+/// A source as its author wrote it: the word `absent`, or a mapping.
+enum Plain<T> {
+    Absent(Absent),
+    Given(T),
+}
+
+/// Reads a source from exactly the two spellings `ess-history-adapter/1` declares: a string, which
+/// must be `absent`, or a mapping, which must be a `T`.
+///
+/// `#[serde(untagged)]` is not used because serde buffers an untagged value first, and a buffered
+/// value is read more loosely than the document declares: a unit value also as the one-key
+/// mapping `{absent: null}`, and a struct also as a list of its fields (`["/a"]`). This reads the
+/// value in place instead, so every other shape is refused where it stands, and the refusal
+/// carries its path in the document (`fields.client`).
+fn absent_or<'de, D, T>(deserializer: D, shape: &'static str) -> Result<Plain<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    deserializer.deserialize_any(AbsentOr {
+        shape,
+        given: std::marker::PhantomData,
+    })
+}
+
+struct AbsentOr<T> {
+    shape: &'static str,
+    given: std::marker::PhantomData<T>,
+}
+
+impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for AbsentOr<T> {
+    type Value = Plain<T>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "`absent` or {}", self.shape)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        Absent::deserialize(serde::de::value::StrDeserializer::<E>::new(value)).map(Plain::Absent)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        T::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(Plain::Given)
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match absent_or(deserializer, "`{ pointer: /… }`")? {
+            Plain::Absent(absent) => Self::Absent(absent),
+            Plain::Given(pointer) => Self::Pointer(pointer),
+        })
+    }
+}
+
 /// `{ pointer: /a/b }`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -118,14 +176,25 @@ pub struct Pointer {
     pub pointer: String,
 }
 
-/// Where the completion sits, and what each of the log's words for it means.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
+/// Where the completion sits, and what each of the log's words for it means: the word `absent` or
+/// `{ pointer: /…, values: {…} }`, and no other spelling. Read by `absent_or`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionSource {
     /// The log does not carry it.
     Absent(Absent),
     /// It is at this pointer, written as one of these words.
     Mapped(MappedCompletion),
+}
+
+impl<'de> Deserialize<'de> for CompletionSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(
+            match absent_or(deserializer, "`{ pointer: /…, values: {…} }`")? {
+                Plain::Absent(absent) => Self::Absent(absent),
+                Plain::Given(mapped) => Self::Mapped(mapped),
+            },
+        )
+    }
 }
 
 /// `{ pointer: /a/b, values: { ok: Returned, timeout: Indeterminate } }`.
@@ -135,7 +204,122 @@ pub struct MappedCompletion {
     /// An RFC 6901 JSON pointer into one log line.
     pub pointer: String,
     /// The log's word for each completion.
-    pub values: BTreeMap<String, Completion>,
+    pub values: Words<Completion>,
+}
+
+/// What each of a log's words means, where a word is a string or an integer.
+///
+/// A string word maps a log value that is that string; an integer word (a YAML integer key, as in
+/// `200: Returned`) maps a log value that is that integer, so an HTTP status can be mapped. Neither
+/// maps the other: the string `"200"` is not the number 200. A word is written once, whichever
+/// kind: an adapter mapping both `"200"` and `200` is refused. A JSON object's keys are strings,
+/// so a JSON adapter maps string words only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Words<T> {
+    /// By spelling: the kind the adapter wrote the word as, and what it means.
+    entries: BTreeMap<String, (WordKind, T)>,
+}
+
+/// How an adapter wrote a word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordKind {
+    /// A string, mapping log strings.
+    Text,
+    /// An integer, mapping log integers.
+    Integer,
+}
+
+impl<T> Words<T> {
+    /// What the word spelled `word` means, whichever kind the adapter wrote it as.
+    pub fn get(&self, word: &str) -> Option<&T> {
+        self.entries.get(word).map(|(_, meaning)| meaning)
+    }
+
+    /// The kind the adapter wrote the word spelled `word` as.
+    pub fn kind(&self, word: &str) -> Option<WordKind> {
+        self.entries.get(word).map(|(kind, _)| *kind)
+    }
+
+    /// What a log value means: a string through a string word, an integer through an integer
+    /// word, and nothing else.
+    pub fn meaning(&self, value: &Value) -> Option<&T> {
+        let (spelling, kind) = match value {
+            Value::String(text) => (text.clone(), WordKind::Text),
+            Value::Number(number) => (
+                number
+                    .as_u64()
+                    .map(|integer| integer.to_string())
+                    .or_else(|| number.as_i64().map(|integer| integer.to_string()))?,
+                WordKind::Integer,
+            ),
+            _ => return None,
+        };
+        self.entries
+            .get(&spelling)
+            .filter(|(written, _)| *written == kind)
+            .map(|(_, meaning)| meaning)
+    }
+}
+
+/// One key of `values`, as written.
+struct WordKey(String, WordKind);
+
+impl<'de> Deserialize<'de> for WordKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Key;
+        impl serde::de::Visitor<'_> for Key {
+            type Value = WordKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a word: a string or an integer")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<WordKey, E> {
+                Ok(WordKey(value.to_owned(), WordKind::Text))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<WordKey, E> {
+                Ok(WordKey(value.to_string(), WordKind::Integer))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<WordKey, E> {
+                Ok(WordKey(value.to_string(), WordKind::Integer))
+            }
+        }
+        deserializer.deserialize_any(Key)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Words<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Map<T>(std::marker::PhantomData<T>);
+        impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Map<T> {
+            type Value = Words<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a mapping from each of the log's words to a completion")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Words<T>, A::Error> {
+                let mut entries = BTreeMap::new();
+                while let Some(WordKey(spelling, kind)) = map.next_key()? {
+                    let meaning = map.next_value()?;
+                    if entries.contains_key(&spelling) {
+                        return Err(serde::de::Error::custom(format!(
+                            "the word `{spelling}` is mapped twice (a string and an integer \
+                             spelled alike are one word)"
+                        )));
+                    }
+                    entries.insert(spelling, (kind, meaning));
+                }
+                Ok(Words { entries })
+            }
+        }
+        deserializer.deserialize_map(Map(std::marker::PhantomData))
+    }
 }
 
 /// One source per [`Operation`](crate::history::Operation) field. Every field but `rows` must be
@@ -368,17 +552,55 @@ impl std::error::Error for ImportRefusal {}
 
 /// Reads an `ess-history-adapter/1` document, written as YAML or JSON.
 ///
+/// A document whose first non-whitespace character is `{` is first read as JSON, straight into the
+/// typed [`Adapter`], so it means what it means to every JSON reader: a surrogate-pair escape is
+/// its character, and a field or a word written twice is refused. If it is not JSON at all (a
+/// syntax error, such as the unquoted keys of YAML flow style), it is read as YAML, like every
+/// other document.
+///
+/// YAML's core-schema tags (`!!str`, `!!int`) are standard YAML and resolve to the plain value they
+/// name. Any other tag (`!x`, `!Returned`, `!<x>`) is refused with its path: the format declares
+/// none, and a tag is how YAML spells an enum value serde would otherwise accept.
+///
 /// # Errors
 ///
-/// [`ImportRefusal::Adapter`] for an unknown or undeclared field, another format, or a pointer that
-/// does not start with `/`.
+/// [`ImportRefusal::Adapter`] for a document that does not parse, a local YAML tag, an unknown,
+/// undeclared or repeated field, another format, a word mapped twice, or a pointer that does not
+/// start with `/`.
 pub fn adapter(text: &str) -> Result<Adapter, ImportRefusal> {
-    let adapter: Adapter = serde_yaml::from_str(text).map_err(|error| ImportRefusal::Adapter {
-        detail: format!(
-            "{error}; each field is `absent` or `{{ pointer: /… }}`, and `completion` also \
-             takes `values`"
-        ),
-    })?;
+    let malformed = |detail: String| ImportRefusal::Adapter { detail };
+    let shape = "each field is `absent` or `{ pointer: /… }`, and `completion` also takes `values`";
+    let adapter = match json_adapter(text) {
+        Some(Ok(adapter)) => {
+            // Read straight into the typed adapter, the JSON reader also takes serde's other
+            // spellings: a struct as a list of its fields, a unit value as `{"Returned": null}`.
+            // No place in the format holds a list or a null, so neither is admitted anywhere.
+            let document: Value = serde_json::from_str(text).map_err(|error| {
+                malformed(format!("{error}; a document the JSON reader read is JSON"))
+            })?;
+            if let Some((path, what)) = first_list_or_null(&document, "") {
+                return Err(malformed(format!(
+                    "`{path}`: {what} is not part of {ADAPTER_FORMAT}; {shape}"
+                )));
+            }
+            adapter
+        }
+        Some(Err(error)) => {
+            // The JSON reader decides, but names no path; the same text read as YAML names one
+            // where the YAML reader refuses it too, so both are given.
+            let detail = match yaml_adapter(text).and_then(checked) {
+                Err(yaml) => format!("{error} (read as YAML: {yaml})"),
+                Ok(_) => error.to_string(),
+            };
+            return Err(malformed(format!("{detail}; {shape}")));
+        }
+        None => yaml_adapter(text).map_err(|detail| malformed(format!("{detail}; {shape}")))?,
+    };
+    checked(adapter).map_err(malformed)
+}
+
+/// `adapter` if every pointer it declares starts with `/`.
+fn checked(adapter: Adapter) -> Result<Adapter, String> {
     let fields = &adapter.fields;
     let pointers = [
         ("operation_id", &fields.operation_id),
@@ -401,12 +623,106 @@ pub fn adapter(text: &str) -> Result<Adapter, ImportRefusal> {
     });
     for (field, pointer) in pointers {
         if !pointer.starts_with('/') {
-            return Err(ImportRefusal::Adapter {
-                detail: format!("`{field}`: the pointer `{pointer}` does not start with `/`"),
-            });
+            return Err(format!(
+                "`fields.{field}`: the pointer `{pointer}` does not start with `/`"
+            ));
         }
     }
     Ok(adapter)
+}
+
+/// The adapter a `{`-leading document means as JSON, or `None` where it is not one: another first
+/// character, or a JSON syntax error (YAML flow style is not JSON). A JSON data error — an unknown,
+/// missing or repeated field, a word mapped twice — is the JSON reader's refusal.
+fn json_adapter(text: &str) -> Option<Result<Adapter, serde_json::Error>> {
+    if !text.trim_start().starts_with('{') {
+        return None;
+    }
+    match serde_json::from_str(text) {
+        Err(error)
+            if matches!(
+                error.classify(),
+                serde_json::error::Category::Syntax | serde_json::error::Category::Eof
+            ) =>
+        {
+            None
+        }
+        read => Some(read),
+    }
+}
+
+/// The path of the first list or `null` in a JSON document, and which it is.
+fn first_list_or_null(value: &Value, path: &str) -> Option<(String, &'static str)> {
+    let at = || {
+        if path.is_empty() {
+            "the document".to_owned()
+        } else {
+            path.to_owned()
+        }
+    };
+    match value {
+        Value::Array(_) => Some((at(), "a list")),
+        Value::Null => Some((at(), "`null`")),
+        Value::Object(members) => members.iter().find_map(|(key, member)| {
+            let here = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
+            first_list_or_null(member, &here)
+        }),
+        _ => None,
+    }
+}
+
+/// The adapter a YAML document means, refusing any tag the YAML reader keeps (every tag but YAML's
+/// own core-schema tags, which it resolves to the plain value) with its path.
+fn yaml_adapter(text: &str) -> Result<Adapter, String> {
+    let document: serde_yaml::Value =
+        serde_yaml::from_str(text).map_err(|error| error.to_string())?;
+    if let Some((path, tag)) = first_tag(&document, "") {
+        return Err(format!(
+            "`{path}`: the YAML tag `{tag}` is not part of {ADAPTER_FORMAT}"
+        ));
+    }
+    serde_yaml::from_str(text).map_err(|error| error.to_string())
+}
+
+/// The path and tag of the first YAML tag in `value`, on a key or a value.
+fn first_tag(value: &serde_yaml::Value, path: &str) -> Option<(String, String)> {
+    let here = |segment: &str| {
+        if path.is_empty() {
+            segment.to_owned()
+        } else {
+            format!("{path}.{segment}")
+        }
+    };
+    match value {
+        serde_yaml::Value::Tagged(tagged) => Some((
+            if path.is_empty() {
+                "the document".to_owned()
+            } else {
+                path.to_owned()
+            },
+            tagged.tag.to_string(),
+        )),
+        serde_yaml::Value::Mapping(members) => members.iter().find_map(|(key, member)| {
+            let segment = match key {
+                serde_yaml::Value::String(text) => text.clone(),
+                serde_yaml::Value::Number(number) => number.to_string(),
+                serde_yaml::Value::Tagged(tagged) => {
+                    return Some((here("<key>"), tagged.tag.to_string()));
+                }
+                other => format!("{other:?}"),
+            };
+            first_tag(member, &here(&segment))
+        }),
+        serde_yaml::Value::Sequence(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| first_tag(item, &format!("{path}[{index}]"))),
+        _ => None,
+    }
 }
 
 /// One line's value at `source`, or `None` where the adapter declares it absent, the pointer
@@ -521,7 +837,7 @@ fn carried(line: usize, value: &Value, fields: &Fields) -> Result<Carried, Impor
             match value.pointer(&mapped.pointer).filter(|it| !it.is_null()) {
                 None => None,
                 Some(word) => {
-                    let found = word.as_str().and_then(|word| mapped.values.get(word));
+                    let found = mapped.values.meaning(word);
                     Some(*found.ok_or_else(|| {
                         wrong(
                             "completion",

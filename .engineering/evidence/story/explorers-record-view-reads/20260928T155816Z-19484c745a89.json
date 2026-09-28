@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T15:58:16Z",
+  "actor": "human:timo",
+  "artifact": "story:explorers-record-view-reads",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check steps on integrate/ess-next 570044d06: fmt-check, clippy, doc-check, example-check, projection-check, support-check, fuzz-check, release-check, action-check exit 0; test 8006 passed, 2 failed (ess-xtask consumer_coverage tree digests disturbed by a commit made during the run; 334/334 ess-xtask green on rerun)",
+    "reference": "~/.cache/ess-wave-c1/int/gate.log, test2.log"
+  }
+}

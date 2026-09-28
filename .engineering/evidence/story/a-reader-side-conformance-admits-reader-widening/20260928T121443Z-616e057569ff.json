@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T12:14:43Z",
+  "actor": "human:timo",
+  "artifact": "story:a-reader-side-conformance-admits-reader-widening",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-composition --test owner_types: base 0316f4574 has no /3 reader (the five widening cases do not compile: READER_COMPOSITION_FORMAT, for_reader unresolved); unit 5994d2b00: owner_types 27 passed, adversary passes 12 + 15 passed",
+    "reference": "~/.cache/ess-wave-c1/reader/red-compile.log vs ~/.cache/ess-wave-c1/reader/r2-gate.log"
+  }
+}

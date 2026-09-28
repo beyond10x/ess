@@ -120,7 +120,10 @@ use crate::types::{TypeBody, TypeRef};
 #[serde(deny_unknown_fields)]
 pub struct RawComponentSpec {
     /// Its name — a single segment, like `invoice-service`.
+    // `ComponentName::PATTERN`, published so an editor refuses what `ComponentName::new` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
     #[serde(alias = "component")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
     pub name: String,
     /// The domains it owns.
     #[serde(default)]
@@ -319,6 +322,9 @@ pub struct RawComponentSurface {
 #[serde(deny_unknown_fields)]
 pub struct RawCommandLineSurface {
     /// What the binary is called, as typed.
+    // `CliName::PATTERN`, published so an editor refuses what `CliName::new` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
     pub binary: String,
     /// Commands that sit at the top level, under no group.
     #[serde(default)]
@@ -336,6 +342,9 @@ pub struct RawCommandLineSurface {
 #[serde(deny_unknown_fields)]
 pub struct RawCommandGroup {
     /// The word, as typed.
+    // `CliName::PATTERN`, published so an editor refuses what `CliName::new` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"))]
     pub name: String,
     /// What the group is, in one line. Becomes the group's `--help` text.
     #[serde(default)]

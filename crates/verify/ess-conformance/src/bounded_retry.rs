@@ -15,8 +15,8 @@
 //! round-3 pair [`crate::leaf_payloads`] registered. The number moves because of what an older
 //! reader does with the fields: it forces one failure instead of `times`, and reads a count as "at
 //! least one", so it passes a sender that retries forever — a wrong verdict caused by the age of the
-//! tool. The Go and TypeScript runtimes refuse these majors by version, so they need no execution
-//! support for either field.
+//! tool. The Go and TypeScript runtimes execute both fields
+//! too (beyond10x/ess#188).
 
 use crate::admission::AdmissionError;
 use crate::scenario::{BindingAspect, ConformanceSuite, ScenarioId, ScenarioStep};

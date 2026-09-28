@@ -2,14 +2,30 @@
 format: aep.planning-md/3
 id: story:a-wrong-trailing-key-guess-is-reported-as-a-line
 kind: story
-status: draft
+status: implemented
 title: A wrong trailing-key guess is reported as a line
+relations:
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: cited
+  path: crates/specify/ess-compiler/tests/locator_citations.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/trailing_key_guess_adversary.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/trailing_key_guess_adversary_pass2.rs
+- confidence: cited
   path: crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs
-revision: 3
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/trailing_key_guess_named_lists.rs
+- confidence: cited
+  path: docs/design/review-typed-diagnostics.md
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T10:14:57Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-09-28T10:14:58Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:13Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":6,"verification":1}}}
 ---
 # A wrong trailing-key guess is reported as a line
 
@@ -52,6 +68,9 @@ is not tried, or its match is not reported as that refusal's line.
 
 ## Scope
 
-- `crates/specify/ess-compiler/src/resolve.rs` — `cited`
-- `crates/specify/ess-compiler/tests/` — `cited`; the red case lives on
-  `impl/enum-variant-in-an-entity-invariant` and is pinned there as a known defect naming this story
+Re-derived 2026-09-28 by `story-scoper`; corrected at close of wave correctness-1 from the implementor's reports (merge `b0c89d384`).
+
+- **Landed in:** `crates/specify/ess-compiler/src/resolve.rs` (`Locator::span`/`encloses`, `NAMED_LISTS`, `MAPS_UNDER`, `STRUCTURAL`) — cited
+- **Tests:** `trailing_key_guess_citations.rs` (1 → 3), `trailing_key_guess_adversary.rs` (5), `trailing_key_guess_adversary_pass2.rs` (3), `trailing_key_guess_named_lists.rs` (2); `locator_citations.rs` doc comments — cited
+- **Docs:** `docs/design/review-typed-diagnostics.md` — cited
+- **Correction:** the fix went in `Locator::span`, not `needles_from_tokens` alone; the unit test at `resolve.rs:~4880` changed and the scope had not named it

@@ -802,18 +802,74 @@ fn names_something_undeclared(declared: &NamedType, registry: &TypeRegistry) -> 
 
 /// Who declared a name, and from where.
 #[derive(Debug, Clone)]
-struct Claim {
+pub(crate) struct Claim {
     source: Source,
     owner: Option<QualifiedName>,
     kind: MemberKind,
 }
 
 impl Claim {
+    /// A declaration of a name as `kind`, in `source`, owned by `owner` or by the system itself.
+    pub(crate) fn new(source: &Source, owner: Option<&QualifiedName>, kind: MemberKind) -> Self {
+        Self {
+            source: source.clone(),
+            owner: owner.cloned(),
+            kind,
+        }
+    }
+
+    /// The kind this claim declares its name as.
+    pub(crate) fn kind(&self) -> MemberKind {
+        self.kind
+    }
+
+    /// The source that carries the declaration.
+    pub(crate) fn source(&self) -> &Source {
+        &self.source
+    }
+
+    /// The domain that claims the name, or `None` when it is the system's.
+    pub(crate) fn owner(&self) -> Option<&QualifiedName> {
+        self.owner.as_ref()
+    }
+
     /// How the claimant reads in a message.
     fn owner_label(&self) -> String {
         self.owner.as_ref().map_or_else(
             || "the system itself".to_owned(),
             |owner| format!("`{owner}`"),
+        )
+    }
+
+    /// The refusal of `second`, a later claim to the `name` this one already holds.
+    ///
+    /// One sentence for one fault, whichever reporter finds it: [`Assembly::claim`] for parts
+    /// merged directly, and `spec.rs`'s `Collected::write` for a specification's documents, which
+    /// hands the assembly one copy of each name and refuses the rest itself, converted or not.
+    pub(crate) fn refuse(&self, name: &QualifiedName, second: &Self) -> ValidationError {
+        let (first, claim) = (self, second);
+        let (source, kind) = (&claim.source, claim.kind);
+        let location = claim.owner.as_ref().map_or_else(
+            || format!("system.{}", kind.field()),
+            |owner| format!("domain {}.{}", owner, kind.field()),
+        );
+        let message = if first.source == claim.source {
+            format!(
+                "`{name}` is declared twice in `{source}`, as a {} and as a {kind}",
+                first.kind
+            )
+        } else {
+            format!(
+                "`{name}` is declared in `{}` and in `{source}`",
+                first.source
+            )
+        };
+        ValidationError::new(ValidationCode::DuplicateDeclaration, location, message).with_hint(
+            format!(
+                "claimed by {} and by {}; a name has exactly one owner",
+                first.owner_label(),
+                claim.owner_label()
+            ),
         )
     }
 }
@@ -1008,8 +1064,10 @@ impl Assembly {
             source,
         );
         self.absorb_names(position, domain.events, MemberKind::Event, &owner, source);
-        self.absorb_names(position, domain.views, MemberKind::View, &owner, source);
+        // Errors before views: the order `spec.rs`'s `Collected` reads them in, so a name written as
+        // both is refused against the same first copy whichever copy converts.
         self.absorb_names(position, domain.errors, MemberKind::Error, &owner, source);
+        self.absorb_names(position, domain.views, MemberKind::View, &owner, source);
         self.absorb_names(position, domain.actors, MemberKind::Actor, &owner, source);
     }
 
@@ -1051,39 +1109,12 @@ impl Assembly {
         owner: Option<&QualifiedName>,
         source: &Source,
     ) -> bool {
-        let claim = Claim {
-            source: source.clone(),
-            owner: owner.cloned(),
-            kind,
-        };
+        let claim = Claim::new(source, owner, kind);
         let Some(first) = self.claims.get(name) else {
             self.claims.insert(name.clone(), claim);
             return true;
         };
-
-        let location = owner.map_or_else(
-            || format!("system.{}", kind.field()),
-            |owner| format!("domain {}.{}", owner, kind.field()),
-        );
-        let message = if first.source == claim.source {
-            format!(
-                "`{name}` is declared twice in `{source}`, as a {} and as a {kind}",
-                first.kind
-            )
-        } else {
-            format!(
-                "`{name}` is declared in `{}` and in `{source}`",
-                first.source
-            )
-        };
-        self.errors.push(
-            ValidationError::new(ValidationCode::DuplicateDeclaration, location, message)
-                .with_hint(format!(
-                    "claimed by {} and by {}; a name has exactly one owner",
-                    first.owner_label(),
-                    claim.owner_label()
-                )),
-        );
+        self.errors.push(first.refuse(name, &claim));
         false
     }
 }

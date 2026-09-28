@@ -132,7 +132,7 @@ a correct implementation: the suite's claim is bounded by that second, and it sa
 |---|---|
 | source | `ess/16`; no IR shape change |
 | suite | `ess-conformance/26` and `/27`, the round-3 pair `leaf_payloads.rs` registers, for any suite carrying a `now_offset` (`now_offset.rs`: `ORDINARY`, `COVERAGE`, `used_by`, `admit_format`). Admission reads `{kind: now_offset, seconds}` from /26, bounded at twice the largest offset; below /26 the kind is `UnsupportedScenarioValue`. A suite without one keeps its format and bytes. |
-| Go and TypeScript runtimes | refuse /26 and /27 by version, so they need no resolution of their own |
+| Go and TypeScript runtimes | execute /26 and /27 and resolve `now_offset` as the Rust runner does (beyond10x/ess#188) |
 
 ## Entity Runtime and generated targets
 

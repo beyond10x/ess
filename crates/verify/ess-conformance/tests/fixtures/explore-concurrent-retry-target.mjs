@@ -54,8 +54,12 @@ export function newRetryTarget(mutant) {
     beginScenario: () => reset(),
     endScenario: () => reset(),
     executeCommand,
-    queryView: () => {
-      throw unsupported('no views');
+    // `Records` is every record, in the order it was created.
+    queryView: ({ view }) => {
+      if (view !== 'retry.core.Records') throw unsupported(`${view} is not a view of explore-retry`);
+      const rows = [];
+      for (let n = 1; n <= records; n += 1) rows.push({ record_id: id(2 * n - 1) });
+      return { rows };
     },
     observeEvents: () => [],
     configureExternalOutcome: () => {

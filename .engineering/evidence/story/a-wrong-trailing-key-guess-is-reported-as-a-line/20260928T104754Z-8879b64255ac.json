@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T10:47:54Z",
+  "actor": "human:timo",
+  "artifact": "story:a-wrong-trailing-key-guess-is-reported-as-a-line",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-compiler --test trailing_key_guess_citations -- --include-ignored (base b5c53e8a1: FAILED at :215 cites b.yaml; unit c1ad14182: ok 3 passed)",
+    "reference": "~/.cache/ess-wave-c1/trailing/red.txt vs ~/.cache/ess-wave-c1/trailing/r2-run.txt"
+  }
+}

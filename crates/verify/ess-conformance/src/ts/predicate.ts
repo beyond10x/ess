@@ -248,6 +248,10 @@ export class Predicate {
         const word = this.kind === 'none_of' ? ' not in [' : ' in [';
         return `${this.path}${word}${parts.join(', ')}]`;
       }
+      case 'starts_with':
+      case 'ends_with':
+      case 'contains':
+        return `${this.path} ${this.kind} ${render(this.values[0])}`;
       case 'equals_ignore_case':
       case 'in_ignore_case': {
         const parts = this.values.map((value) => quoteGo(String(value)));
@@ -303,6 +307,10 @@ export class Predicate {
       case 'equals_ignore_case':
       case 'in_ignore_case':
         return this.foldMatch(source);
+      case 'starts_with':
+      case 'ends_with':
+      case 'contains':
+        return this.textMatch(source);
       case 'forall':
       case 'exists':
         return this.quantify(source);
@@ -323,6 +331,27 @@ export class Predicate {
     return truthOf(
       this.values.some((literal) => typeof literal === 'string' && asciiEqualFold(value, literal)),
     );
+  }
+
+  /**
+   * A string operator (beyond10x/ess#95): the text begins with, ends with or contains the literal,
+   * case-sensitively and with no normalisation — `TextOp::holds` in Rust. Code-unit matching agrees
+   * with byte matching for any two well-formed strings. Unbound is Unknown, as for the fold above;
+   * a value or a literal that is not text is False.
+   */
+  textMatch(source: FactSource): Truth {
+    const [value, ok] = readLeaf(source, this.path);
+    if (!ok || value === null || value === undefined) return TruthUnknown;
+    const literal = this.values[0];
+    if (typeof value !== 'string' || typeof literal !== 'string') return TruthFalse;
+    switch (this.kind) {
+      case 'starts_with':
+        return truthOf(value.startsWith(literal));
+      case 'ends_with':
+        return truthOf(value.endsWith(literal));
+      default:
+        return truthOf(value.includes(literal));
+    }
   }
 
   /** The Go method of the same name; `compare` below it is the runtime's ordering function. */
@@ -507,6 +536,9 @@ export function parseQuantifier(kind: string, value: Node): Predicate {
 // randomised per run. An object preserves insertion order, so this list is that choice made once:
 // the first spelling present wins, in the order Go writes them. A single-operator constraint —
 // every one a synthesized suite carries — parses identically either way.
+/** The string operators of suite/14, one spelling each (beyond10x/ess#95). */
+export const TEXT_OPERATORS = ['starts_with', 'ends_with', 'contains'] as const;
+
 const comparisonOperators: [string, string][] = [
   ['eq', '=='],
   ['equals', '=='],
@@ -540,6 +572,13 @@ export function parseConstraint(path: string, value: Node): Predicate {
       const listed = value[key];
       if (!Array.isArray(listed)) throw new Error(`\`${key}\` takes a list`);
       return new Predicate({ kind: key, path, values: listed });
+    }
+  }
+  // The string operators (beyond10x/ess#95, suite/14): one literal, read verbatim — `"+44"` stays
+  // text and `"a.b"` is no fact path — and kept whatever its type, so a number never matches.
+  for (const key of TEXT_OPERATORS) {
+    if (Object.hasOwn(value, key)) {
+      return new Predicate({ kind: key, path, values: [value[key] ?? null] });
     }
   }
   // The case-insensitive operators (beyond10x/ess#140), operands verbatim as Go reads them.

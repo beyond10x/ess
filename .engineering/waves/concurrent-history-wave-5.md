@@ -52,3 +52,7 @@ Triple per unit: worktree `ess-chc-<unit>`, build dir `~/.cache/b10x-target/ess-
 One commit per unit, their merges into `integrate/concurrent-history`, the store commits (scope,
 activation, reviews, evidence, close) and this page. The PR and release are the goal's, not this
 wave's.
+
+## Closed into integrate/ess-next (2026-09-28 15:49, ess session)
+
+The concurrent-history session closed and handed this wave over (`~/.cache/ess-chc/HANDOFF-to-ess.md`). Both unit branches were merged onto integrate/ess-next in a separate tree (`integrate/wave5-onto-ess-next`, 09361b28e), one type narrowing was needed in `explore.ts` after meeting the runtime-parity TypeScript runtime (4360cc817), and the result merged as 0777c0f26. On that merge: recorded_adapter_documents 9, recorded_adapter_adversary 5, recorded_adapter_adversary_pass2 6, explore_concurrent 22, explore_concurrent_reads_adversary 5, explore_concurrent_reads_adversary_2 3, adapter_model 21, ess_history_adapter_schema 1, runtime_suite_admission 3, typescript_runtime 4 — all exit 0; workspace clippy exit 0. Review-results adversary-chc-{adapter,reads}-pass-{1,2} recorded with 15 outcomes fixed. Stories move to implemented with the ess-next release gate.

@@ -6979,11 +6979,19 @@ fn refusal_arrangement(
     // A command reading stored fields selects no branch from a state it does not run from, so the
     // input is chosen for what it alone decides rather than asked of `reach`, whose stateless arm
     // has no guard to offer a subject-fact branch (beyond10x/ess#173).
-    let input = if subject_fact::uses(attempt.command) && !has_subject_guards(attempt.command) {
-        subject_fact::refusal_input(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?
-    } else {
-        reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?
-    };
+    if subject_fact::uses(attempt.command) && !has_subject_guards(attempt.command) {
+        return subject_fact::refusal_witness(
+            ir,
+            handle,
+            state,
+            actors,
+            arrangement,
+            attempt.command,
+            attempt.outcome,
+            Distinction::PLAIN,
+        );
+    }
+    let input = reach(ir, attempt.command, attempt.outcome, Distinction::PLAIN)?;
     Ok((arrangement, input))
 }
 

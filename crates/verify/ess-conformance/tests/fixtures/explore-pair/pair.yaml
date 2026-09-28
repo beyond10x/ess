@@ -1,0 +1,60 @@
+format: ess/7
+system: pair
+version: v1
+domain: pair.core
+entities:
+  - name: pair.core.Box
+    identity: {name: box_id, type: Uuid}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+  - name: pair.core.Crate
+    identity: {name: crate_id, type: Uuid}
+    fields:
+      - {name: label, type: String}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+commands:
+  - name: pair.core.OpenBox
+    input: [{name: label, type: String}]
+    outcomes:
+      - name: opened
+        creates: pair.core.Box
+        instance: box_id
+        sets: {label: input.label}
+        emits: [pair.core.BoxOpened]
+        payload:
+          pair.core.BoxOpened:
+            box_id: {generated: true}
+  - name: pair.core.OpenCrate
+    input: [{name: label, type: String}]
+    outcomes:
+      - name: opened
+        creates: pair.core.Crate
+        instance: crate_id
+        sets: {label: input.label}
+        emits: [pair.core.CrateOpened]
+        payload:
+          pair.core.CrateOpened:
+            crate_id: {generated: true}
+events:
+  - name: pair.core.BoxOpened
+    fields: [{name: box_id, type: Uuid}]
+  - name: pair.core.CrateOpened
+    fields: [{name: crate_id, type: Uuid}]
+views:
+  - name: pair.core.Boxes
+    source: pair.core.Box
+    consistency: read_your_writes
+    fields:
+      - {name: box_id, type: Uuid}
+  - name: pair.core.Crates
+    source: pair.core.Crate
+    consistency: read_your_writes
+    fields:
+      - {name: crate_id, type: Uuid}

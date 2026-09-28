@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-28T14:30:51Z",
+  "actor": "human:timo",
+  "artifact": "story:a-wrong-state-witness-may-miss-a-mixed-guard-sibling-by-its-subject-guard",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-n-mixedguard-pass-2",
+    "review": "review-result:adversary-n-mixedguard-pass-2",
+    "outcome": "no-op"
+  }
+}

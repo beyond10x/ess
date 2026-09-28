@@ -69,6 +69,7 @@ pub const PACKAGE: &str = "essconform";
 /// and the only file that moves is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     crate::direct_response::refuse_generation(suite, "TypeScript")?;
+    crate::go::refuse_unadmitted(suite, "TypeScript")?;
     let json = suite.to_canonical_json()?;
     let mut files = sources(RUNTIME_TS.to_owned());
     files.push(file("suite.json", json));
@@ -204,6 +205,13 @@ throws `unsupported` is left out, and `assertConcurrent` fails on it unless `{ a
 accepts it. `clients` outside 2 to 4 is refused. `Unknown` fails `assertConcurrent` as a violation
 does.
 
+A client's call may also be a read of one of the specification's views, drawn from the seed beside
+the commands. A read of a `read_your_writes` view demands the token the client's own last answered
+command returned (`atLeast`); a read of an `eventual` view demands none. The view is asked at the
+read's return instant, and the identity of each row it answered is written as `rows`, so `ess`
+holds the target to each view's declared consistency. A view that throws `unsupported` is left out
+as a command is.
+
 `{ inject: true }` injects every fault the specification declares, and no other: a second delivery
 (`redeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the same request
 sent again, written with `retry_of` naming the first, for a command declaring `replays:`; and an
@@ -220,6 +228,7 @@ pub fn emit_input(
 ) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
     crate::direct_response::refuse_generation(suite.suite(), "TypeScript")?;
+    crate::go::refuse_unadmitted(suite.suite(), "TypeScript")?;
     let mut files = sources(RUNTIME_TS.replace(SUITE_DOCUMENT, INPUT_DOCUMENT));
     files.push(file("suite.json", suite.original_json().into()));
     files.push(file("input.json", input.document().to_canonical_json()?));
@@ -464,6 +473,19 @@ interface beside `Target` whose method answers with `ClockReadingEvidence`: the 
 observed for one occurrence, which the runtime compares rather than recomputes. Both are reachable
 from this package's entry point; implement it where the specification declares one.
 
+## Numbers a binary64 cannot hold
+
+A value the runtime sends you — a command's `input` and `caller`, an entity setup's `identity` and
+`fields`, a view's `params` — is plain JSON data, except for one kind of number. A number the suite
+writes that a binary64 cannot hold exactly, an integer past 2^53 or a decimal with more places than
+a binary64 keeps, arrives as a `JsonNumber` carrying its digits (`RequestValue` in the types), never
+as a rounded `number`. `String(value)` gives the digits and `Number(value)` the rounded image.
+`JSON.stringify` writes it as a number, digit for digit, on Node 21 and later (`JSON.rawJSON`); on
+Node 20 it writes a `number` where that is exact and otherwise the digits as a JSON string, because a
+string keeps the value where a number would silently round it. Answer such a value with a
+`JsonNumber` or a `BigInt`; your answers are read as `JSON.stringify` reads them, except that a
+`JsonNumber` is kept exact and a `BigInt` is read as the `JsonNumber` of its digits.
+
 ## What to throw when you cannot answer
 
 `ErrUnsupported`, not an ordinary error. A scenario whose semantic the implementation does not
@@ -498,14 +520,25 @@ ESS_REPORT_OUT=$PWD/report.json npm test
         version = provenance.specification_version,
         digest = provenance.spec_digest,
     );
-    if provenance.suite_version.major() >= 5 {
-        readme.replace(
-            "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the",
-            "Select `ESS_REPORT_FORMAT=2` explicitly before execution. Set `ESS_REPORT_OUT` to a file path\nand `run` writes an `ess-conformance-report/2` there when the",
-        ).replace(
-            "ESS_REPORT_OUT=$PWD/report.json npm test",
-            "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test",
-        )
+    if crate::go::requires_report_format_2(provenance.suite_version) {
+        readme
+            .replace(
+                "```console\nnpm install\nnpm test\n```\n\n",
+                &crate::go::report_format_requirement(
+                    provenance.suite_version,
+                    "run",
+                    &["npm install"],
+                    "npm test",
+                ),
+            )
+            .replace(
+                "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the",
+                "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/2` there when the",
+            )
+            .replace(
+                "ESS_REPORT_OUT=$PWD/report.json npm test",
+                "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test",
+            )
     } else {
         readme
     }

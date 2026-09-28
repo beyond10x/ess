@@ -127,8 +127,8 @@ preconditions are still synthesized as commands.
 - Source `ess/15`: `into:`, `deletes:`, `unknown_instance:`, `accepts: nothing`,
   `preconditions:`. Each refused below `ess/15`.
 - Suite: `deletes:` needs an absence expectation and `accepts: nothing` an all-views-unchanged
-  expectation. Both take a new ordinary/coverage suite pair; Rust, Go and TypeScript readers refuse
-  them by version until they evaluate them.
+  expectation. Both take a new ordinary/coverage suite pair; Rust, Go and TypeScript readers
+  evaluate them (Go and TypeScript since beyond10x/ess#188).
 - `ess-diff`: effect changes gain `CreationStateChanged`, and the new effect and markers are
   reported as outcome changes.
 
@@ -201,8 +201,7 @@ of ignoring an unknown field and sending `{}`, and adding a field to `execute_co
 touched every construction site of that step in synthesis. A suite carrying it takes the round-3
 pair, `ess-conformance/26` (ordinary) and `/27` (coverage)
 (`crates/verify/ess-conformance/src/absent_input.rs`); a suite without it keeps its format and
-bytes. The Go and TypeScript runtimes refuse `/26` and `/27` by version, so they need no execution
-support for the step, and their explorers already exclude a command whose condition kind they do
+bytes. The Go and TypeScript runtimes execute the step at `/26` and `/27` (beyond10x/ess#188), and their explorers already exclude a command whose condition kind they do
 not know.
 
 A target answers the step through `ConformanceTarget::execute_command_without_input`, which takes

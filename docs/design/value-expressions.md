@@ -147,7 +147,7 @@ generated leaf is not asserted; the payload shape is**: no view expectation can 
 
 Suites carrying such a leaf take `ess-conformance/26` (ordinary) and `/27` (coverage), the round-3
 pair: an older reader would look for a top-level field named `lead.number` and fail a conforming
-implementation. The Go and TypeScript runtimes refuse both by version. A suite without a partly
+implementation. The Go and TypeScript runtimes execute both (beyond10x/ess#188). A suite without a partly
 determined struct keeps its earlier format and bytes.
 
 ### E6 — `input.<field>` in a `when_subject` predicate (#157, `ess/15`)

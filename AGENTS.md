@@ -275,6 +275,12 @@ site validation or release artifacts. Commit/publish paths require no Atlas chec
 main or organization-wide admission. Atlas documentation validation and Website publication remain
 separate from ordinary source publication.
 
+`b10x-gates bot` runs only `commit`, `tag`, `push` and `fetch`. Merge a branch with
+`git merge --no-ff --no-commit <branch>`, then `b10x-gates --repository beyond10x/ess bot -- commit
+-F <message-file>`. `publish` accepts branch refs only (`--remote-ref refs/heads/<branch>`, after
+`check --receipt <file>`); push a release tag with `b10x-gates --repository beyond10x/ess bot -- push
+origin refs/tags/<version>`.
+
 - Use conventional prefixes and a body explaining what changed and why.
 - Use organization bot tooling outside this public repository for commits and pushes.
 - Never commit credentials, tokens, kubeconfigs, or unsanitized observations.

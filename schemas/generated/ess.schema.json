@@ -1659,7 +1659,8 @@
         },
         "name": {
           "description": "Its identifier, unique in the system.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
         },
         "naming": {
           "description": "What it is called on the wire and shown as.",
@@ -1751,7 +1752,8 @@
         },
         "name": {
           "description": "The word, as typed.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
         },
         "summary": {
           "description": "What the group is, in one line. Becomes the group's `--help` text.",
@@ -1781,7 +1783,8 @@
       "properties": {
         "binary": {
           "description": "What the binary is called, as typed.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
         },
         "commands": {
           "description": "Commands that sit at the top level, under no group.",
@@ -1966,7 +1969,8 @@
         },
         "name": {
           "description": "Its name — a single segment, like `invoice-service`.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
         },
         "naming": {
           "description": "What it is called on the wire and shown as.",
@@ -2862,6 +2866,9 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/RawWorkload"
+          },
+          "propertyNames": {
+            "$ref": "#/definitions/ComponentName"
           }
         }
       },
@@ -3352,7 +3359,8 @@
         },
         "name": {
           "description": "Unique local selector identity.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false
@@ -3380,7 +3388,8 @@
         },
         "name": {
           "description": "Binding-local identity.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false
@@ -3395,11 +3404,13 @@
         "path": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
           }
         },
         "selection": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false
@@ -3428,7 +3439,8 @@
         },
         "name": {
           "description": "Its own name, such as `IssueInvoice`.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
         },
         "to": {
           "description": "The state it ends in.",

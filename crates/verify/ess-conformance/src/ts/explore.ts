@@ -54,7 +54,15 @@ import {
   sortStrings,
   strictJSON,
 } from './runtime.js';
-import type { Answer, CommandRequest, CommandResult, Node, Row, Target } from './runtime.js';
+import type {
+  Answer,
+  CommandRequest,
+  CommandResult,
+  Node,
+  Row,
+  Target,
+  ViewRequest,
+} from './runtime.js';
 
 /** What one exploration is asked to do. */
 export interface ExploreOptions {
@@ -1525,6 +1533,18 @@ export function assertExplored(result: ExploreResult, options: AssertOptions = {
 // answer. Each move is awaited before the next is drawn, so one seed writes one history, byte for
 // byte, and the Go port writes the same bytes.
 //
+// A client's call may be a read of one of the specification's views, drawn from the seed beside the
+// commands. A client keeps the consistency token its own last answered command returned, and a read
+// of a `read_your_writes` view demands it (`atLeast`); a read of an `eventual` view demands none.
+// The view is asked at the read's return instant, and what it answered is written as `rows`: the
+// identity of each row, in the order answered, read off the field that carries the identity of the
+// entity the view projects. A read's `outcome` is `read` and its `subject_key` is empty. A read is
+// written without `rows`, which `ess` lists as not judged, when one of its rows does not carry that
+// identity as text. For each creation of that entity invoked before the read returned that never
+// answered, one row no written operation names is left out of `rows`, the first in answer order:
+// it may be what that creation made, which the checker could only read as shown before anyone
+// asked for it. Every other row is written and judged.
+//
 // With `inject`, every fault the specification declares is injected, and no other: a second
 // delivery for each `delivery: at_least_once` binding, a client retry for each command declaring
 // `replays:`, and a delayed or unanswered answer for each command declaring another `external:`
@@ -1620,9 +1640,9 @@ export interface ConcurrentResult {
   /** The calls, across every history, that never answered and were written `Indeterminate`. */
   indeterminate: number;
   /**
-   * Every command the target threw `unsupported` for, and why, in the order found. The command is still
-   * drawn in every seed, so a seed's history does not depend on the seeds before it, but its calls
-   * are not written.
+   * Every command or view the target threw `unsupported` for, and why, in the order found. It is
+   * still drawn in every seed, so a seed's history does not depend on the seeds before it, but its
+   * calls are not written.
    */
   excluded: Exclusion[];
   /** `allowExcluded` from the options, so `concurrentProblem` can read it. */
@@ -1708,15 +1728,31 @@ interface Operation {
   dropped?: boolean;
   /** One more than the index of the operation this one sends again, or 0. */
   retryOf: number;
+  /** The entity a command's creating branch creates, or empty. */
+  creates: string;
+  /** The entity a read's view projects, or empty for a command. */
+  source: string;
+  /** What a returned read answered, each row's identity; absent where it records none. */
+  rows?: string[];
 }
 
 interface Flight {
-  pending: PendingCommand;
-  command: Command;
+  pending: PendingCommand | null;
+  command: Command | null;
   index: number;
+  client: number;
   /** An injected delay (`DELAYED`) or loss (`UNANSWERED`), or 0. */
   timeout: number;
+  /** The request of a read, which is sent at the return instant; null for a command. */
+  read: ViewRequest | null;
+  /** The field a read's rows carry their identity in. */
+  identity: string;
 }
+
+/** One call of a client's workload: a command, or a read of `view`. */
+type Call =
+  | { command: Command; step: Step; view: null }
+  | { command: null; step: null; view: Node };
 
 /** A client's retry of the call it invoked last: waiting to be sent, then in flight. */
 interface Retry {
@@ -1751,6 +1787,8 @@ interface Recording {
   redeliveries: Redelivery[];
   retries: (Retry | null)[];
   injected: ConcurrentInjected;
+  /** Each client's last consistency token, empty until one of its commands answers one. */
+  tokens: string[];
 }
 
 /** Moves the injections' SplitMix64 sequence away from the schedule's, as `ess` does. */
@@ -1816,6 +1854,10 @@ function reserve(h: Recording, client: number, command: Command, step: Step): nu
   if (supplied !== undefined) {
     subject = subjectKey(readPath(step.input, String(supplied.subject?.instance?.field?.name)));
   }
+  let creates = '';
+  for (const outcome of list(command.node.outcomes)) {
+    if (outcome.subject?.effect === 'creates') creates = String(outcome.subject.entity);
+  }
   h.clock += 1;
   const index = h.operations.length;
   h.operations.push({
@@ -1824,8 +1866,110 @@ function reserve(h: Recording, client: number, command: Command, step: Step): nu
     subjectKey: subject,
     invokedAt: h.clock,
     retryOf: 0,
+    creates,
+    source: '',
   });
   return index;
+}
+
+/**
+ * Reserves a read of `view`: its request demands the client's last token where the view is
+ * `read_your_writes`, and is sent when the read returns.
+ */
+function invokeRead(h: Recording, client: number, view: Node): Flight {
+  const name = String(view.name);
+  const entity = h.ir.entities?.[view.source] ?? {};
+  const atLeast = view.consistency === 'read_your_writes' ? (h.tokens[client] as string) : '';
+  h.clock += 1;
+  const index = h.operations.length;
+  h.operations.push({
+    client,
+    command: name,
+    subjectKey: '',
+    invokedAt: h.clock,
+    retryOf: 0,
+    creates: '',
+    source: String(entity.name ?? ''),
+  });
+  const read: ViewRequest = {
+    view: name,
+    params: {},
+    atLeast,
+    correlation: `${h.correlation}-${index + 1}`,
+    deadline: { attempts: 1 },
+  };
+  return {
+    pending: null,
+    command: null,
+    index,
+    client,
+    timeout: 0,
+    read,
+    identity: String(entity.identity?.name ?? ''),
+  };
+}
+
+/** Asks the view, at the read's return instant, and writes what it answered. */
+async function completeRead(h: Recording, flight: Flight): Promise<void> {
+  const operation = h.operations[flight.index] as Operation;
+  let rows: Row[];
+  try {
+    rows = (await h.target.queryView(flight.read as ViewRequest)).rows ?? [];
+  } catch (error) {
+    h.clock += 1;
+    if (isUnsupported(error)) {
+      operation.dropped = true;
+      if (!h.unsupported.some((known) => known.subject === operation.command)) {
+        h.unsupported.push({
+          subject: operation.command,
+          reason: `the target does not expose it: ${errorText(error)}`,
+        });
+      }
+      return;
+    }
+    if (isIndeterminate(error)) {
+      h.indeterminate += 1;
+      return;
+    }
+    throw new Error(`reading \`${operation.command}\` failed: ${errorText(error)}`);
+  }
+  h.clock += 1;
+  operation.returnedAt = h.clock;
+  operation.outcome = 'read';
+  const ids: string[] = [];
+  for (const row of rows) {
+    const id = row[flight.identity];
+    if (typeof id !== 'string') return;
+    ids.push(id);
+  }
+  operation.rows = ids;
+}
+
+/**
+ * The rows a read is written with: every row it answered, in order, less one row no written
+ * operation names for each creation of the view's entity that was invoked before the read returned
+ * and never answered. Such a row may be the instance that creation made, which the checker could
+ * only read as shown before anyone asked for it; the first such rows in answer order are the ones
+ * left out. A named row is always written, and an unnamed row no unanswered creation can account
+ * for is written and is the future read it looks like.
+ */
+function writtenRows(read: Operation, subjects: Set<string>, kept: Operation[]): string[] {
+  let lost = kept.filter(
+    (operation) =>
+      operation.returnedAt === undefined &&
+      operation.subjectKey === '' &&
+      operation.creates === read.source &&
+      operation.invokedAt < (read.returnedAt as number),
+  ).length;
+  const written: string[] = [];
+  for (const row of read.rows ?? []) {
+    if (!subjects.has(row) && lost > 0) {
+      lost -= 1;
+      continue;
+    }
+    written.push(row);
+  }
+  return written;
 }
 
 async function send(h: Recording, request: CommandRequest): Promise<PendingCommand> {
@@ -1867,7 +2011,15 @@ async function invokeCall(
       if (drawn === 2) timeout = UNANSWERED;
     }
   }
-  return { pending: await send(h, request), command, index, timeout };
+  return {
+    pending: await send(h, request),
+    command,
+    index,
+    client,
+    timeout,
+    read: null,
+    identity: '',
+  };
 }
 
 /** Sends a client's retry: the request it sent, unchanged, as a new operation. */
@@ -1876,7 +2028,15 @@ async function invokeRetry(h: Recording, client: number, retry: Retry): Promise<
   const index = reserve(h, client, retry.command, retry.step);
   (h.operations[index] as Operation).retryOf = retry.original + 1;
   bump(h.injected.retries, retry.command.name);
-  return { pending: await send(h, request), command: retry.command, index, timeout: 0 };
+  return {
+    pending: await send(h, request),
+    command: retry.command,
+    index,
+    client,
+    timeout: 0,
+    read: null,
+    identity: '',
+  };
 }
 
 /**
@@ -1937,24 +2097,30 @@ async function completeCall(
   h: Recording,
   flight: Flight,
 ): Promise<{ id: string; entity: string } | null> {
+  if (flight.read !== null) {
+    await completeRead(h, flight);
+    return null;
+  }
+  const command = flight.command as Command;
+  const pending = flight.pending as PendingCommand;
   if (flight.timeout === UNANSWERED) {
     // The client stops waiting, and the target never executes the call.
     h.clock += 1;
     h.indeterminate += 1;
-    bump(h.injected.unanswered, flight.command.name);
+    bump(h.injected.unanswered, command.name);
     return null;
   }
   let result: CommandResult;
   try {
-    result = await flight.pending.complete();
+    result = await pending.complete();
   } catch (error) {
     h.clock += 1;
     const operation = h.operations[flight.index] as Operation;
     if (isUnsupported(error)) {
       operation.dropped = true;
-      if (!h.unsupported.some((known) => known.subject === flight.command.name)) {
+      if (!h.unsupported.some((known) => known.subject === command.name)) {
         h.unsupported.push({
-          subject: flight.command.name,
+          subject: command.name,
           reason: `the target does not expose it: ${errorText(error)}`,
         });
       }
@@ -1964,23 +2130,26 @@ async function completeCall(
       h.indeterminate += 1;
       return null;
     }
-    throw new Error(`\`${flight.command.name}\` failed: ${errorText(error)}`);
+    throw new Error(`\`${command.name}\` failed: ${errorText(error)}`);
   }
   h.clock += 1;
   const operation = h.operations[flight.index] as Operation;
   const taken = result.outcome ?? '';
   queueRedeliveries(h, result);
-  const created = createdBy(flight.command, result);
+  const created = createdBy(command, result);
   if (flight.timeout === DELAYED) {
     // Executed, and answered after the client stopped waiting: written `Indeterminate`, with the
     // instance the late answer named, so a read showing it is not a read of nothing.
     h.indeterminate += 1;
-    bump(h.injected.delayed, flight.command.name);
-    bump(h.injected.reached, `${flight.command.name}/${taken}`);
+    bump(h.injected.delayed, command.name);
+    bump(h.injected.reached, `${command.name}/${taken}`);
     if (operation.subjectKey === '' && created !== null) operation.subjectKey = created.id;
     return null;
   }
-  if (operation.retryOf !== 0) bump(h.injected.reached, `${flight.command.name}/${taken}`);
+  if (operation.retryOf !== 0) bump(h.injected.reached, `${command.name}/${taken}`);
+  if (typeof result.consistency === 'string' && result.consistency !== '') {
+    h.tokens[flight.client] = result.consistency;
+  }
   operation.returnedAt = h.clock;
   operation.outcome = taken === '' ? UNDECLARED : taken;
   if (created === null) return null;
@@ -2015,35 +2184,41 @@ function historyText(
   // Where each written operation stands among the written ones, from 1, for a retry naming it.
   const position = new Map<number, number>();
   let kept = 0;
+  // Every subject a written operation names.
+  const subjects = new Set<string>();
   operations.forEach((operation, index) => {
     if (operation.dropped !== true) {
       kept += 1;
       position.set(index, kept);
+      if (operation.subjectKey !== '') subjects.add(operation.subjectKey);
     }
   });
-  const written = operations
-    .filter((operation) => operation.dropped !== true)
-    .map((operation, index) => {
-      const members: [string, string][] = [
-        ['operation_id', quote(uuidOf(BigInt(index) + 1n))],
-        ['client', String(operation.client)],
-        ['command', quote(operation.command)],
-        ['subject_key', quote(operation.subjectKey)],
-        ['invoked_at', String(operation.invokedAt)],
-      ];
-      if (operation.returnedAt !== undefined && operation.outcome !== undefined) {
-        members.push(['returned_at', String(operation.returnedAt)]);
-        members.push(['completion', quote('Returned')]);
-        members.push(['outcome', quote(operation.outcome)]);
-      } else {
-        members.push(['completion', quote('Indeterminate')]);
+  const keptOperations = operations.filter((operation) => operation.dropped !== true);
+  const written = keptOperations.map((operation, index) => {
+    const members: [string, string][] = [
+      ['operation_id', quote(uuidOf(BigInt(index) + 1n))],
+      ['client', String(operation.client)],
+      ['command', quote(operation.command)],
+      ['subject_key', quote(operation.subjectKey)],
+      ['invoked_at', String(operation.invokedAt)],
+    ];
+    if (operation.returnedAt !== undefined && operation.outcome !== undefined) {
+      members.push(['returned_at', String(operation.returnedAt)]);
+      members.push(['completion', quote('Returned')]);
+      members.push(['outcome', quote(operation.outcome)]);
+      if (operation.rows !== undefined) {
+        const rows = writtenRows(operation, subjects, keptOperations);
+        members.push(['rows', `[${rows.map(quote).join(',')}]`]);
       }
-      const original = position.get(operation.retryOf - 1);
-      if (operation.retryOf !== 0 && original !== undefined) {
-        members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
-      }
-      return jsonObject(members);
-    });
+    } else {
+      members.push(['completion', quote('Indeterminate')]);
+    }
+    const original = position.get(operation.retryOf - 1);
+    if (operation.retryOf !== 0 && original !== undefined) {
+      members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
+    }
+    return jsonObject(members);
+  });
   return jsonObject([
     ['format', quote('ess-history/1')],
     ['history_id', quote(uuidOf(BigInt(seed) & 0xffffffffffffn))],
@@ -2085,6 +2260,7 @@ async function recordHistory(
       redeliveries: [],
       retries: Array.from({ length: clients }, () => null),
       injected: newInjected(),
+      tokens: Array.from({ length: clients }, () => ''),
     };
     const model = new Model();
 
@@ -2100,16 +2276,22 @@ async function recordHistory(
       if (created !== null) model.of(created.entity).push({ id: created.id, fields: {} });
     }
 
-    // The workload: each client's calls, drawn against the subjects the prefix created.
-    const workload: { command: Command; step: Step }[][] = [];
+    // The workload: each client's calls, drawn against the subjects the prefix created. A call is
+    // one of the commands or a read of one of the views, each as likely as another.
+    const workload: Call[][] = [];
     for (let client = 0; client < clients; client += 1) {
-      const own: { command: Command; step: Step }[] = [];
+      const own: Call[] = [];
       for (let call = 0; call < calls; call += 1) {
         for (let attempt = 0; attempt < ATTEMPTS_PER_STEP; attempt += 1) {
-          const command = rng.pick(p.commands);
+          const choice = rng.int(0, p.commands.length + p.views.length - 1);
+          if (choice >= p.commands.length) {
+            own.push({ command: null, step: null, view: p.views[choice - p.commands.length] });
+            break;
+          }
+          const command = p.commands[choice] as Command;
           const step = draw(command, rng, model);
           if (step !== null) {
-            own.push({ command, step });
+            own.push({ command, step, view: null });
             break;
           }
         }
@@ -2153,11 +2335,12 @@ async function recordHistory(
         await completeCall(h, flight);
         flying[client] = null;
       } else {
-        const call = (workload[client] as { command: Command; step: Step }[])[
-          next[client] as number
-        ] as { command: Command; step: Step };
+        const call = (workload[client] as Call[])[next[client] as number] as Call;
         next[client] = (next[client] as number) + 1;
-        flying[client] = await invokeCall(h, client, call.command, call.step);
+        flying[client] =
+          call.view !== null
+            ? invokeRead(h, client, call.view)
+            : await invokeCall(h, client, call.command as Command, call.step as Step);
       }
     }
     return [historyText(digest, seed, clients, h.operations), h];

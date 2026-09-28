@@ -173,7 +173,7 @@ The suite carries two new step fields: `configure_external_outcome.times` (force
 and a `final-failure` id, take `ess-conformance/26` (`/27` for coverage,
 [`bounded_retry.rs`](../../crates/verify/ess-conformance/src/bounded_retry.rs)); an older reader
 would force one failure and read a count as "at least one", passing a sender that retries forever.
-The Go and TypeScript runtimes refuse /26–/27 by version, so they need no execution support.
+The Go and TypeScript runtimes execute /26–/27 (beyond10x/ess#188).
 `ConformanceTarget::configure_external_outcome_repeatedly` defaults to `unsupported`, so a target
 written before it reports that one scenario `unsupported` rather than passing it.
 

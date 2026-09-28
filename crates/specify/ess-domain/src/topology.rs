@@ -38,8 +38,20 @@ use crate::component::ComponentName;
 #[serde(deny_unknown_fields)]
 pub struct RawTopology {
     /// One entry per component that runs.
+    // Keyed by `ComponentName::PATTERN`, published as `propertyNames` so an editor refuses the key
+    // `ComponentName::new` refuses in `Topology::try_from`.
     #[serde(default)]
+    #[schemars(schema_with = "workloads_schema")]
     pub workloads: BTreeMap<String, RawWorkload>,
+}
+
+/// A map of workloads whose keys carry the component-name charset.
+fn workloads_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema =
+        <BTreeMap<String, RawWorkload> as schemars::JsonSchema>::json_schema(generator)
+            .into_object();
+    schema.object().property_names = Some(Box::new(generator.subschema_for::<ComponentName>()));
+    schema.into()
 }
 
 /// One workload, as a document says it.

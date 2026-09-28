@@ -8,8 +8,18 @@ scope:
 - confidence: cited
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: cited
+  path: crates/specify/ess-compiler/tests/locator_citations.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/entity.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/spec.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/system.rs
+- confidence: cited
   path: crates/specify/ess-primitives/src/error.rs
-revision: 3
+- confidence: inferred
+  path: docs/design/review-typed-diagnostics.md
+revision: 9
 ---
 # A refusal records the document it was read from
 
@@ -35,8 +45,17 @@ from, without searching for the name, including when the same name is declared i
 
 ## Scope
 
-- `crates/specify/ess-primitives/src/error.rs` — `cited`
-- `crates/specify/ess-compiler/src/resolve.rs` — `cited`
-- every construction site of `ValidationError` — `inferred`, count not established
+Re-derived 2026-09-28 by `story-scoper` on `46e367ab2`. Each line **cited** or **inferred**.
 
-Blast radius is larger than one package. Not a wave candidate until it is scoped.
+- **Status:** open — ignored acceptance test `crates/specify/ess-compiler/tests/locator_citations.rs:251` fails at `:267` (`<document>` ≠ `dup_a.yaml`), run 2026-09-28 — cited
+- **Files:** `crates/specify/ess-primitives/src/error.rs:679` `SyntaxSpan`, `:693` `Site.span`, `:705` `ValidationError`, `:782` `at_span` — cited (story's `:663` stale)
+- **Files:** `crates/specify/ess-compiler/src/resolve.rs:463` `Locator` (`<document>` fallback), `:667` `bridge`, `:704` `span_of_site` — cited (story's `:427` stale)
+- **Tests:** `crates/specify/ess-compiler/tests/locator_citations.rs:187-270` — un-ignore the acceptance test — cited
+- **Symbols:** `SyntaxSpan::source`, `Site`, `ValidationError::at_span` (0 production callers), `Locator::span`, `bridge` — cited
+- **Also likely:** `crates/specify/ess-domain/src/system.rs:301` `SpecPart.source`, `:823` `Assembly.claims` — inferred
+- **Also likely:** `crates/specify/ess-domain/src/spec.rs:244` `Specification::assemble`; `entity.rs:863` invariant refusal location string — inferred
+- **Not required:** rewriting ~262 `ValidationError` construction sites; a declaration→source map consulted by the bridge may suffice — inferred design
+- **Documents:** `docs/design/review-typed-diagnostics.md` if the design is recorded — inferred
+- **Confidence:** medium — defect and test cited; plumbing design unmade
+- **Would collide with:** units touching `resolve.rs` bridge, `error.rs` `Site`, or `system.rs` `Assembly` — inferred
+- **Safety fact:** `Site` is `#[serde(skip)]` (`error.rs:723-731`), so a source on it changes no serialized bytes — inferred

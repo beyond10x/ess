@@ -3,21 +3,39 @@
 //
 // `explore_concurrent_billing_target.go` is the same target in Go, line for line: the two lanes'
 // histories are compared byte for byte, so both mint the same identities in the same order. It has
-// no `invokeCommand`, so every call takes effect at its return instant.
+// no `invokeCommand`, so every call takes effect at its return instant. Both views answer from the
+// current invoices, which is what `read_your_writes` and `eventual` both allow.
+//
+// The mutant `double-apply` (the argument, or `ESS_EXPLORE_MUTANT`) applies the creation an
+// `InvoiceCreated` announces again when the event is delivered a second time: an invoice nobody
+// created, which only a read of a view shows.
 
 import { unsupported } from './dist/index.js';
 
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const positive = (input) => typeof input.amount?.amount === 'number' && input.amount.amount > 0;
 
-export function newBillingTarget() {
+export function newBillingTarget(mutant = '') {
+  if (mutant === '') mutant = process.env.ESS_EXPLORE_MUTANT ?? '';
+  // Every invoice's state, in the order it was created.
   let invoices = new Map();
   let created = 0;
   let sent = 0;
+  // The input of the last `CreateInvoice` that created an invoice.
+  let creation = null;
   const reset = () => {
     invoices = new Map();
     created = 0;
     sent = 0;
+    creation = null;
+  };
+  // Mints an invoice in `Draft` from `input`.
+  const create = (input) => {
+    created += 1;
+    const minted = id(created);
+    invoices.set(minted, 'Draft');
+    creation = input;
+    return minted;
   };
 
   return {
@@ -40,9 +58,7 @@ export function newBillingTarget() {
       switch (command) {
         case 'billing.invoice.CreateInvoice': {
           if (!positive(input)) return { outcome: 'rejected', error: 'billing.invoice.InvalidAmount' };
-          created += 1;
-          const minted = id(created);
-          invoices.set(minted, 'Draft');
+          const minted = create(input);
           return {
             outcome: 'accepted',
             directEvents: [
@@ -89,17 +105,29 @@ export function newBillingTarget() {
       }
     },
 
-    queryView: () => {
-      throw unsupported('no views');
+    // `InvoiceById` is every invoice and `OutstandingInvoices` the issued ones, in the order they
+    // were created.
+    queryView({ view }) {
+      const outstanding = view === 'billing.invoice.OutstandingInvoices';
+      if (!outstanding && view !== 'billing.invoice.InvoiceById') {
+        throw unsupported(`${view} is not a view of examples/billing`);
+      }
+      const rows = [];
+      for (const [invoice, state] of invoices) {
+        if (!outstanding || state === 'Issued') rows.push({ invoice_id: invoice });
+      }
+      return { rows };
     },
     observeEvents: () => [],
     configureExternalOutcome: () => {
       throw unsupported('no external outcome');
     },
     // `InvoiceCreated` again reaches `notify-on-invoice-created`, whose mail this target does not
-    // model, so nothing changes; any other event it has no binding for.
+    // model, so nothing changes; any other event it has no binding for. Under `double-apply` the
+    // creation it announces is applied again.
     redeliverEvent({ event }) {
       if (event !== 'billing.invoice.InvoiceCreated') throw unsupported(`no binding reacts to ${event}`);
+      if (mutant === 'double-apply' && creation !== null) create(creation);
     },
     observeInvocations: () => {
       throw unsupported('no bindings');

@@ -150,7 +150,7 @@ Everything downstream consumes the IR, and compiling the same source twice is by
 
 Every artifact carries provenance: specification version, a digest of the resolved model, and the
 digest of the model *slice* it derives from (`contract_digest`). Committed output is drift-checked
-in CI. See [the worked example](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) for real input and
+in CI. See [the billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) for real input and
 output side by side.
 
 The arrow is one-way: the typed ESS YAML is the specification, and the documentation is one

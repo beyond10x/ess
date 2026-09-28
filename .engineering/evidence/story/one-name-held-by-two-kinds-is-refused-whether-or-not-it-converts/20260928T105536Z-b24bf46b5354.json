@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T10:55:36Z",
+  "actor": "human:timo",
+  "artifact": "story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-domain --test masked_declaration_boundaries (base b5c53e8a1: two cases ignored, failing when run — CROSS_KIND/TYPE_FIRST_BROKEN not refused; unit cb525f0edf: ok 14 passed) and ess specify validate on the scoper fixtures",
+    "reference": "~/.cache/ess-wave-c1/onename/g1.log vs ~/.cache/ess-wave-c1/onename/g5.log"
+  }
+}
