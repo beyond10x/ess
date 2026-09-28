@@ -30,7 +30,7 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T11:29:55Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-09-28T11:29:56Z", actor: "human:timo", revision: 13}
@@ -54,8 +54,9 @@ field-by-field scripts remain the only check.
 ## Design (coordinator decisions, 2026-09-28)
 
 1. A per-entry `reader: true` on a `conformances:` entry, in a new source format
-   `ess-composition/3`; `/2` refuses the key as `unsupported_format_version` (the released `/2`
-   keeps its meaning and bytes). `/3` is registered in `FORMAT_RELEASES` for the next release.
+   `ess-composition/3`; `/1` and `/2` refuse an authored `reader` key whatever its value, `null`
+   included (the released `/2` keeps its meaning and bytes). `/3` is registered in `FORMAT_RELEASES`
+   for the next release.
 2. Newtype read as its primitive: through any chain of newtypes to the same primitive;
    `alphabet`/`prefix` stay uncompared (the known limit already admits a stricter consumer).
 3. Enum read as `String`: a required producer enum may be read as `String` or `Optional<String>`;
@@ -63,12 +64,9 @@ field-by-field scripts remain the only check.
 4. Variants compared by wire name: the consumer's wire set must include every producer wire name
    (a superset cannot reject a producer value); a producer variant whose wire name the consumer
    lacks is drift.
-5. JSON read as a map: admitted only when the consumer structure accepts every JSON value
-   (`Json`, or a map whose value type is `Json`); `Map<String, String>` stays drift because it
-   rejects non-string values. This departs from the issue's own example on purpose; the issue's
-   rule ("anything that could reject a producer value stays drift") decides it.
+5. JSON read as a map — revised 2026-09-28 after adversary pass 1 (`review-result:adversary-n-reader-pass-1`, F1): an object-shaped producer (a struct, or a map with `String` keys) may be read as `Map<String, Json>`; a producer `Json` (bare, or through a newtype, `Optional`, `List` or `Map`) read as a map is drift, because a map rejects arrays and scalars. The issue's `Map<String, String>` example stays drift.
 6. Field subset: the consumer may omit producer fields; a field the consumer requires that the
-   producer marks optional or lacks is drift; wire names are compared as today.
+   producer marks optional or lacks is drift; an extra consumer field is matched by wire name against every producer field, omitted or renamed ones included, and compared by type (F2). `reader: true` asserts that the consumer's reader ignores unknown fields; ESS-generated closed types (`additionalProperties: false`, `deny_unknown_fields`) do not, so a consumer reading through them must not use `reader` for a subset (F4).
 
 ## Acceptance
 

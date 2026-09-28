@@ -97,9 +97,14 @@ Left out:
 
 | unit | story | issue | worktree (managed id) | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|---|---|
-| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | implementing |
-| reader | `a-reader-side-conformance-admits-reader-widening` | #191 | `ess-n-reader` | `impl/reader-side-conformance` | `~/.cache/b10x-target/ess-n-reader` | `~/.cache/ess-wave-c1/reader` | implementing |
+| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | correction 1 (waiting on go merge) |
+| reader | `a-reader-side-conformance-admits-reader-widening` | #191 | `ess-n-reader` | `impl/reader-side-conformance` | `~/.cache/b10x-target/ess-n-reader` | `~/.cache/ess-wave-c1/reader` | adversary 2 (head d6d073d0d) |
 
 The full gate that was running on this branch (`fmt-check` 0, `clippy` 0, `test` in progress) was stopped at 99% disk use (13G free); it runs once, on the whole shared branch, after every unit has merged. Its build dir was deleted (disk back to 64G).
 
 Coordinator decisions for #191 are in the story body (per-entry `reader: true` in `ess-composition/3`; JSON only by structures that accept any JSON, so `Map<String, String>` stays drift, against the issue's example).
+- 13:50 reader: implementor green (ess-composition 43→57), committed a15c2a9cd; adversary pass 1 dispatched. Coordinator revises decision 5: Map<String, Json> admitted only for an object-shaped producer (struct, or map with String keys); a bare producer Json read as a map stays drift — routed with the adversary findings.
+- 13:50 docdrift: implementor green except the 2 Outcome-comment cases that need its runtime-go/ts patches (applied at integration after go/ts merge); committed 86ce9f8cd; adversary pass 1 dispatched. Not done by the unit: website/docs/guides/verify-conformance.md:260-264 run commands lack ESS_REPORT_FORMAT=2 (coordinator at integration).
+- 13:57 reader: adversary pass 1 red (9/12; F1 Json-as-map, F2 wire-name collision of extra fields — blockers; F3 /2 reader: null; F4 subset vs closed generated types; F5 docs), recorded review-result:adversary-n-reader-pass-1; story Design 1, 5, 6 revised; correction 1 to the same implementor.
+- 13:59 docdrift: adversary pass 1 red (F1 duplicate Running it section, F2 hard-coded version sets break against the merged runtimes — blockers; F3 run instructions for refused versions; F4 guide; F5 help; F6 TS message). Recorded review-result:adversary-n-docdrift-pass-1. Correction 1 waits for the go unit to merge; the coordinator then merges integrate/ess-next into impl/generated-docs-say-what-runs so the fix is made against the merged runtimes.
+- 14:06 reader: correction 1 green (ess-composition 69→70, adversary 12/12), committed d6d073d0d; 5 outcomes fixed; adversary pass 2 dispatched.

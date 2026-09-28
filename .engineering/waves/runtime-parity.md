@@ -32,8 +32,8 @@ wave.
 
 | unit | files | worktree (managed id) | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|---|
-| go | `src/go/runtime.go`, `replay.go`, `predicate.go`, `reading.go`, `response.go`; Go parity tests | `ess-rp-go` | `impl/runtime-parity-go` | `~/.cache/b10x-target/ess-rp-go` | `~/.cache/ess-wave-rp/go` | correction 1 |
-| ts | `src/ts/runtime.ts`, `runtime.test.ts`, `predicate.ts`, `reading.ts`, `response.ts`, `presence.test.ts`; TS parity tests | `ess-rp-ts` | `impl/runtime-parity-ts` | `~/.cache/b10x-target/ess-rp-ts` | `~/.cache/ess-wave-rp/ts` | adversary 2 pending (head cde14a7bb) |
+| go | `src/go/runtime.go`, `replay.go`, `predicate.go`, `reading.go`, `response.go`; Go parity tests | `ess-rp-go` | `impl/runtime-parity-go` | `~/.cache/b10x-target/ess-rp-go` | `~/.cache/ess-wave-rp/go` | merged into ess-next |
+| ts | `src/ts/runtime.ts`, `runtime.test.ts`, `predicate.ts`, `reading.ts`, `response.ts`, `presence.test.ts`; TS parity tests | `ess-rp-ts` | `impl/runtime-parity-ts` | `~/.cache/b10x-target/ess-rp-ts` | `~/.cache/ess-wave-rp/ts` | merged into ess-next |
 
 The admission guard test (every version synthesize can write is admitted by both runtimes) is the
 go unit's, as a Rust test under `crates/verify/ess-conformance/tests/`.
@@ -61,3 +61,9 @@ go unit's, as a Rust test under `crates/verify/ess-conformance/tests/`.
 - 13:20 ts: adversary pass 1 red (5 findings: undefined-as-present blocker, exponent decimals refuse a whole suite, big integer literals, vocabulary guard too loose); recorded review-result:adversary-rp-ts-pass-1; correction 1 to the same implementor (undecided decided in scope: undefined = absent, literals exact).
 - 13:21 go: adversary pass 1 red (F1 blocker: eventuallyEvent ignores payload/shape — reachable from every synthesized binding flow/delivery at /26; F2 event null leaf parity), recorded review-result:adversary-rp-go-pass-1; correction 1 to the same implementor.
 - 13:33 From now on every store write for runtime-parity goes to the shared tree (ess-wave-c1); integrate/runtime-parity is frozen.
+- 13:34 ts: correction 1 green (ess-conformance 1185→1191, adversary rp1 0→4), committed cde14a7bb; 5 outcomes fixed; adversary pass 2 dispatched.
+- 13:42 ts: adversary pass 2 red (class instances not read as JSON — blocker; Date/toJSON; JsonNumber handed to targets undocumented; holes/BigInt/Map note) — pass 1: 5 → pass 2: 4; recorded review-result:adversary-rp-ts-pass-2; correction 2 (last), coordinator-verified.
+- 13:47 go: correction 1 green (ess-conformance 1184→1189; adversary 4/4; new container_leaves_go), committed 77339115e; 2 outcomes fixed; adversary pass 2 dispatched. Unfixed older gaps for a story: Go expect_error ignores fields (reachable from authored scenarios; needs CommandResult.ErrorFields); response decoder refuses wire/display/summary (not reachable).
+- 13:53 ts: correction 2 green (1191→1194) + BigInt follow-up (reads as JsonNumber; clock_reading 7/7); coordinator read the diff (no assertion removed; proxy change reads the pre-toJSON value); 4 outcomes fixed; merged into integrate/ess-next.
+- 13:58 go: adversary pass 2 red (3 local parity gaps: expectEventValues null leaf, eventual attempts 8 vs ~50, r.observed append) — pass 1: 2 → pass 2: 3; recorded review-result:adversary-rp-go-pass-2; correction 2 (last), coordinator-verified.
+- 14:09 go: correction 2 green (1189→1196); coordinator applied the two clippy allows on the adversary file, read the diff (no assertion removed), clippy/fmt clean; VERIFIED (#188 reproduction red on base, verdict parity on both units); merged into integrate/ess-next.

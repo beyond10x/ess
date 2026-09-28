@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T12:09:39Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-runtimes-run-every-emitted-suite-version",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "#188 reproduction: Dialer spec (nested sets struct, one generated leaf) synthesized as ess-conformance/26 and run through the emitted Go and TypeScript packages — base: suite admission: unsupported suite version \"ess-conformance/26\", 0 verdicts; go 22e0fd222 and ts e95e35c52: verdicts equal to the Rust runner",
+    "reference": "~/.cache/ess-wave-rp/go/red-188.txt, ~/.cache/ess-wave-rp/ts/red-188.log vs tests leaf_payloads_go.rs, typescript_suite_versions.rs"
+  }
+}
