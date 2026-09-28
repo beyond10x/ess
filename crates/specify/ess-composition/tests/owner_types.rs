@@ -8,7 +8,7 @@ use ess_compiler::{compile as compile_service, EssIr};
 use ess_composition::{
     compile, CompiledService, CompositionCode, CompositionDiagnostic, CompositionDiagnostics,
     CompositionRef, CompositionSpec, EssCompositionIr, ServiceImportSpec, ServiceKey, TypeBinding,
-    TypeConformance, COMPOSITION_FORMAT, CONFORMANCE_COMPOSITION_FORMAT,
+    TypeConformance, COMPOSITION_FORMAT, CONFORMANCE_COMPOSITION_FORMAT, READER_COMPOSITION_FORMAT,
     SUPPORTED_COMPOSITION_FORMATS,
 };
 use ess_domain::component::ComponentName;
@@ -169,10 +169,11 @@ fn drift(local: &str) -> String {
 }
 
 #[test]
-fn the_composition_format_admits_both_versions() {
-    assert_eq!(SUPPORTED_COMPOSITION_FORMATS, &[1, 2]);
+fn the_composition_format_admits_every_version() {
+    assert_eq!(SUPPORTED_COMPOSITION_FORMATS, &[1, 2, 3]);
     assert_eq!(COMPOSITION_FORMAT, "ess-composition/1");
     assert_eq!(CONFORMANCE_COMPOSITION_FORMAT, "ess-composition/2");
+    assert_eq!(READER_COMPOSITION_FORMAT, "ess-composition/3");
 }
 
 #[test]
@@ -406,4 +407,298 @@ fn a_drift_inside_a_nested_named_type_names_the_field_that_reaches_it() {
         detail.contains("demo.owner.agentstatus.Availability"),
         "{detail}"
     );
+}
+
+// Reader-side conformance, `ess-composition/3` (#191): `reader: true` admits the widening a
+// consumer that only reads the owner's type off the wire may do, and nothing that could reject a
+// value the owner sends.
+
+const CALL_ID_VIEW: &str = "demo.owner.agentstatus.CallIdView";
+const CALL_STATE_VIEW: &str = "demo.owner.agentstatus.CallStateView";
+const CONTEXT_VIEW: &str = "demo.owner.agentstatus.ContextView";
+
+fn binding_pair(local: &str, imported: &str) -> (TypeBinding, TypeBinding) {
+    (
+        TypeBinding::new(key("consumer"), type_name(local)),
+        TypeBinding::new(key("owner"), type_name(imported)),
+    )
+}
+
+fn reader(local: &str, imported: &str) -> TypeConformance {
+    let (local, imported) = binding_pair(local, imported);
+    TypeConformance::for_reader(local, imported)
+}
+
+fn exact(local: &str, imported: &str) -> TypeConformance {
+    let (local, imported) = binding_pair(local, imported);
+    TypeConformance::new(local, imported)
+}
+
+fn under_v3(asserted: TypeConformance) -> Result<EssCompositionIr, CompositionDiagnostics> {
+    let models = models();
+    let specification = CompositionSpec::with_reader_conformances(
+        key("devcenter"),
+        imports(&models),
+        Vec::new(),
+        vec![asserted],
+    );
+    assert_eq!(specification.format(), READER_COMPOSITION_FORMAT);
+    compose(&models, &specification)
+}
+
+fn under_v2(asserted: TypeConformance) -> Result<EssCompositionIr, CompositionDiagnostics> {
+    let models = models();
+    let specification = CompositionSpec::with_conformances(
+        key("devcenter"),
+        imports(&models),
+        Vec::new(),
+        vec![asserted],
+    );
+    assert_eq!(specification.format(), CONFORMANCE_COMPOSITION_FORMAT);
+    compose(&models, &specification)
+}
+
+/// `reader: true` under `/3` admits the pair, and the compiled composition records it.
+fn reader_conforms(local: &str, imported: &str) {
+    let asserted = reader(local, imported);
+    let composition = under_v3(asserted.clone())
+        .unwrap_or_else(|diagnostics| panic!("{local} reads {imported}: {diagnostics}"));
+    assert_eq!(composition.format(), READER_COMPOSITION_FORMAT);
+    assert!(composition.conformances().contains(&asserted));
+    let json = composition.to_canonical_json();
+    assert!(json.contains("\"reader\": true"), "{json}");
+}
+
+/// The single diagnostic is `type_conformance_drift` naming both types; returns its detail.
+fn only_drift(result: Result<EssCompositionIr, CompositionDiagnostics>, local: &str) -> String {
+    let diagnostics = result.expect_err("a drifted local type is refused");
+    assert_eq!(
+        diagnostics
+            .as_slice()
+            .iter()
+            .map(CompositionDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CompositionCode::TypeConformanceDrift],
+        "{diagnostics}"
+    );
+    let detail = diagnostics.as_slice()[0].detail().to_owned();
+    assert!(detail.contains(local), "{detail}");
+    detail
+}
+
+fn reader_drift(local: &str, imported: &str) -> String {
+    let detail = only_drift(under_v3(reader(local, imported)), local);
+    assert!(detail.contains(imported), "{detail}");
+    detail
+}
+
+/// Without `reader: true` a widening is drift, under `/3` exactly as under `/2`.
+fn exact_drift(local: &str, imported: &str) {
+    only_drift(under_v3(exact(local, imported)), local);
+    only_drift(under_v2(exact(local, imported)), local);
+}
+
+#[test]
+fn reader_admits_a_newtype_chain_read_as_its_primitive() {
+    // `CallRef` wraps `CallId`, which wraps `String`.
+    reader_conforms("demo.consumer.dashboard.IdAsString", CALL_ID_VIEW);
+}
+
+#[test]
+fn reader_refuses_a_newtype_read_as_a_narrower_primitive() {
+    let detail = reader_drift("demo.consumer.dashboard.IdAsUuid", CALL_ID_VIEW);
+    assert!(detail.contains("field `call_id`"), "{detail}");
+    assert!(detail.contains("Uuid"), "{detail}");
+}
+
+#[test]
+fn reader_admits_an_enum_read_as_string() {
+    reader_conforms("demo.consumer.dashboard.StateAsString", CALL_STATE_VIEW);
+    reader_conforms(
+        "demo.consumer.dashboard.StateAsOptionalString",
+        CALL_STATE_VIEW,
+    );
+}
+
+#[test]
+fn reader_refuses_an_optional_enum_read_as_a_required_string() {
+    let detail = reader_drift("demo.consumer.dashboard.PreviousAsString", CALL_STATE_VIEW);
+    assert!(detail.contains("field `previous`"), "{detail}");
+    assert!(!detail.contains("field `state`"), "{detail}");
+}
+
+#[test]
+fn reader_admits_variants_compared_by_wire_name() {
+    // The owner's `in_call`/`ringing` against the consumer's `InCall`/`Ringing`/`Held`, whose
+    // wire names include every owner wire name.
+    reader_conforms("demo.consumer.dashboard.PhaseView", CALL_STATE_VIEW);
+}
+
+#[test]
+fn reader_refuses_an_enum_lacking_an_owner_wire_name() {
+    let detail = reader_drift("demo.consumer.dashboard.NarrowPhaseView", CALL_STATE_VIEW);
+    assert!(detail.contains("`ringing`"), "{detail}");
+    assert!(detail.contains("field `state`"), "{detail}");
+    assert!(detail.contains("field `previous`"), "{detail}");
+}
+
+#[test]
+fn reader_admits_json_read_as_a_map_of_json() {
+    reader_conforms("demo.consumer.dashboard.ContextAsMap", CONTEXT_VIEW);
+}
+
+#[test]
+fn reader_refuses_json_read_as_a_map_that_rejects_some_json() {
+    let detail = reader_drift("demo.consumer.dashboard.ContextAsStrings", CONTEXT_VIEW);
+    assert!(detail.contains("field `body`"), "{detail}");
+    assert!(detail.contains("Map<String, String>"), "{detail}");
+}
+
+#[test]
+fn reader_admits_a_subset_of_the_owner_fields() {
+    // `note` and `availability` are omitted; `team` is optional and the owner never sends it.
+    reader_conforms("demo.consumer.dashboard.StatusSummary", STATUS_VIEW);
+}
+
+#[test]
+fn reader_refuses_a_field_the_owner_may_omit_or_lacks() {
+    let detail = reader_drift("demo.consumer.dashboard.SummaryNoteRequired", STATUS_VIEW);
+    assert!(detail.contains("field `note`"), "{detail}");
+    let detail = reader_drift("demo.consumer.dashboard.SummaryTeamRequired", STATUS_VIEW);
+    assert!(detail.contains("field `team`"), "{detail}");
+    // A key the consumer reads as always sent, from an owner that never sends it.
+    let detail = reader_drift("demo.consumer.dashboard.SummaryTeamAlwaysSent", STATUS_VIEW);
+    assert!(detail.contains("field `team`"), "{detail}");
+    assert!(detail.contains("null_when_absent"), "{detail}");
+}
+
+#[test]
+fn without_reader_every_widening_stays_drift() {
+    for (local, imported) in [
+        ("demo.consumer.dashboard.IdAsString", CALL_ID_VIEW),
+        ("demo.consumer.dashboard.StateAsString", CALL_STATE_VIEW),
+        (
+            "demo.consumer.dashboard.StateAsOptionalString",
+            CALL_STATE_VIEW,
+        ),
+        ("demo.consumer.dashboard.PhaseView", CALL_STATE_VIEW),
+        ("demo.consumer.dashboard.ContextAsMap", CONTEXT_VIEW),
+        ("demo.consumer.dashboard.StatusSummary", STATUS_VIEW),
+    ] {
+        exact_drift(local, imported);
+    }
+    // And what conformed before still conforms under `/3`, reader or not.
+    for asserted in [
+        exact("demo.consumer.dashboard.AgentStatus", STATUS_VIEW),
+        reader("demo.consumer.dashboard.AgentStatus", STATUS_VIEW),
+    ] {
+        under_v3(asserted).expect("an exact mirror conforms under /3");
+    }
+}
+
+#[test]
+fn v2_refuses_the_reader_key() {
+    let models = models();
+    let canonical = CompositionSpec::with_reader_conformances(
+        key("devcenter"),
+        imports(&models),
+        Vec::new(),
+        vec![reader("demo.consumer.dashboard.IdAsString", CALL_ID_VIEW)],
+    )
+    .to_canonical_json();
+    assert!(canonical.contains("\"reader\": true"), "{canonical}");
+    let as_v2 = canonical.replace(READER_COMPOSITION_FORMAT, CONFORMANCE_COMPOSITION_FORMAT);
+    let diagnostics = compose(
+        &models,
+        &CompositionSpec::from_json(&as_v2).expect("the DTO reads; the compiler checks the marker"),
+    )
+    .expect_err("ess-composition/2 does not admit reader");
+    assert_eq!(
+        diagnostics
+            .as_slice()
+            .iter()
+            .map(CompositionDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CompositionCode::UnsupportedFormat],
+        "the refusal is the marker's, not a drift: {diagnostics}"
+    );
+    assert!(
+        diagnostics.as_slice()[0]
+            .detail()
+            .contains(READER_COMPOSITION_FORMAT),
+        "the refusal names the format that admits it: {diagnostics}"
+    );
+
+    // The key is `/3`'s: `/2` refuses it even when it says `false`; `/3` keeps it as written.
+    let written_false = canonical.replace("\"reader\": true", "\"reader\": false");
+    let read = CompositionSpec::from_json(&written_false).expect("the DTO reads");
+    assert!(!read.conformances()[0].reader());
+    assert_eq!(read.to_canonical_json(), written_false);
+    let diagnostics = compose(
+        &models,
+        &CompositionSpec::from_json(
+            &written_false.replace(READER_COMPOSITION_FORMAT, CONFORMANCE_COMPOSITION_FORMAT),
+        )
+        .expect("the DTO reads"),
+    )
+    .expect_err("ess-composition/2 does not admit reader, even false");
+    assert!(
+        diagnostics.contains(CompositionCode::UnsupportedFormat),
+        "{diagnostics}"
+    );
+
+    // Built through the /2 constructor, a reader entry is refused the same way.
+    let diagnostics = under_v2(reader("demo.consumer.dashboard.IdAsString", CALL_ID_VIEW))
+        .expect_err("ess-composition/2 does not admit reader");
+    assert!(
+        diagnostics.contains(CompositionCode::UnsupportedFormat),
+        "{diagnostics}"
+    );
+}
+
+#[test]
+fn v2_bytes_carry_no_reader_key() {
+    let asserted = exact("demo.consumer.dashboard.AgentStatus", STATUS_VIEW);
+    let composition = under_v2(asserted.clone()).expect("v2 composition compiles");
+    let json = composition.to_canonical_json();
+    assert!(!json.contains("reader"), "{json}");
+    let models = models();
+    let authored = CompositionSpec::with_conformances(
+        key("devcenter"),
+        imports(&models),
+        Vec::new(),
+        vec![asserted],
+    )
+    .to_canonical_json();
+    assert!(!authored.contains("reader"), "{authored}");
+}
+
+#[test]
+fn the_reader_key_reads_from_yaml() {
+    let models = models();
+    let yaml = format!(
+        "format: ess-composition/3\n\
+         composition: devcenter\n\
+         services:\n\
+         \x20 - key: owner\n\
+         \x20   system: demo.owner\n\
+         \x20   version: v1\n\
+         \x20   source_digest: {owner}\n\
+         \x20   component: status-component\n\
+         \x20 - key: consumer\n\
+         \x20   system: demo.consumer\n\
+         \x20   version: v1\n\
+         \x20   source_digest: {consumer}\n\
+         \x20   component: dashboard-component\n\
+         conformances:\n\
+         \x20 - local: {{ service: consumer, type: demo.consumer.dashboard.StatusSummary }}\n\
+         \x20   conforms_to: {{ service: owner, type: {STATUS_VIEW} }}\n\
+         \x20   reader: true\n",
+        owner = models.owner.source_digest(),
+        consumer = models.consumer.source_digest(),
+    );
+    let specification = CompositionSpec::from_yaml(&yaml).expect("the /3 composition reads");
+    assert!(specification.conformances()[0].reader());
+    let composition = compose(&models, &specification).expect("the /3 composition compiles");
+    assert_eq!(composition.conformances().len(), 1);
 }

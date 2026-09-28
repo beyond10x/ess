@@ -14,6 +14,30 @@ types:
       - { name: availability, type: demo.owner.agentstatus.Availability }
       - { name: note, type: Optional<String> }
       - { name: since, type: Timestamp }
+  - name: demo.owner.agentstatus.CallId
+    kind: newtype
+    of: String
+  - name: demo.owner.agentstatus.CallRef
+    kind: newtype
+    of: demo.owner.agentstatus.CallId
+  - name: demo.owner.agentstatus.CallState
+    kind: enum
+    variants:
+      - in_call
+      - ringing
+  - name: demo.owner.agentstatus.CallIdView
+    kind: struct
+    fields:
+      - { name: call_id, type: demo.owner.agentstatus.CallRef }
+  - name: demo.owner.agentstatus.CallStateView
+    kind: struct
+    fields:
+      - { name: state, type: demo.owner.agentstatus.CallState }
+      - { name: previous, type: Optional<demo.owner.agentstatus.CallState> }
+  - name: demo.owner.agentstatus.ContextView
+    kind: struct
+    fields:
+      - { name: body, type: Json }
 
 entities:
   - name: demo.owner.agentstatus.AgentStatus
@@ -37,6 +61,7 @@ commands:
         payload:
           demo.owner.agentstatus.StatusUpdated:
             availability: input.availability
+            agent_id: { generated: true }
 
 events:
   - name: demo.owner.agentstatus.StatusUpdated

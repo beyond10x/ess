@@ -351,6 +351,13 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 | `ess-observed-bindings/` | [0.33.0][r33] | `/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
 | `ess-composition/` | [0.38.0][r38] | `/2` lets a reference name any type the selected component's owned domains declare, and adds `conformances`: an assertion that a consumer's local type has an imported component type's shape, checked field by field, where the consumer may treat a required value as optional and nothing else may differ (`type_conformance_drift`). The client plan is unchanged. The earlier format keeps its meaning and bytes and refuses the key, even empty; an older reader refuses `/2`. |
 
+`ess-composition/3` is unreleased. A `conformances` entry may carry `reader: true`: the consumer's
+type only reads the imported one, so it may also read a newtype as what it wraps, an enum as
+`String`, enum variants by wire name, `Json` as `Map<String, Json>`, and a subset of the fields.
+Anything that could reject an imported value stays `type_conformance_drift`. An entry without
+the key is compared as before. The earlier format keeps its meaning and bytes and refuses the key,
+even `false`; an older reader refuses `/3`.
+
 ## Still at version 1
 
 Never revised, and a document that claims a higher number is refused:

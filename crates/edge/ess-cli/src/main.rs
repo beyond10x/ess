@@ -117,13 +117,13 @@ enum SpecifyCommand {
     },
     /// Compile exact component surfaces into composition IR and generated clients.
     Compose {
-        /// An `ess-composition/1` or `ess-composition/2` JSON or YAML document.
+        /// An `ess-composition/1`, `/2` or `/3` JSON or YAML document.
         #[arg(long)]
         path: PathBuf,
         /// A compiled ESS source, written `service-key=path`. Repeat for every import.
         #[arg(long = "service", value_name = "KEY=PATH", required = true)]
         services: Vec<ServiceInput>,
-        /// Where to write canonical composition IR; its format echoes the input's (`/1` or `/2`).
+        /// Where to write canonical composition IR; its format echoes the input's (`/1`–`/3`).
         #[arg(long)]
         out: Option<PathBuf>,
         /// Where to write canonical `ess-client-plan/1`.

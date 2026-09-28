@@ -45,3 +45,85 @@ types:
       - { name: availability, type: demo.consumer.dashboard.WiderAvailability }
       - { name: note, type: Optional<String> }
       - { name: since, type: Timestamp }
+  - name: demo.consumer.dashboard.IdAsString
+    kind: struct
+    fields:
+      - { name: call_id, type: String }
+  - name: demo.consumer.dashboard.IdAsUuid
+    kind: struct
+    fields:
+      - { name: call_id, type: Uuid }
+  - name: demo.consumer.dashboard.StateAsString
+    kind: struct
+    fields:
+      - { name: state, type: String }
+      - { name: previous, type: Optional<String> }
+  - name: demo.consumer.dashboard.StateAsOptionalString
+    kind: struct
+    fields:
+      - { name: state, type: Optional<String> }
+      - { name: previous, type: Optional<String> }
+  - name: demo.consumer.dashboard.PreviousAsString
+    kind: struct
+    fields:
+      - { name: state, type: String }
+      - { name: previous, type: String }
+  - name: demo.consumer.dashboard.CallPhase
+    kind: enum
+    variants:
+      - name: InCall
+        wire: in_call
+      - name: Ringing
+        wire: ringing
+      - name: Held
+        wire: held
+  - name: demo.consumer.dashboard.PhaseView
+    kind: struct
+    fields:
+      - { name: state, type: demo.consumer.dashboard.CallPhase }
+      - { name: previous, type: Optional<demo.consumer.dashboard.CallPhase> }
+  - name: demo.consumer.dashboard.NarrowPhase
+    kind: enum
+    variants:
+      - name: InCall
+        wire: in_call
+      - name: Held
+        wire: held
+  - name: demo.consumer.dashboard.NarrowPhaseView
+    kind: struct
+    fields:
+      - { name: state, type: demo.consumer.dashboard.NarrowPhase }
+      - { name: previous, type: Optional<demo.consumer.dashboard.NarrowPhase> }
+  - name: demo.consumer.dashboard.ContextAsMap
+    kind: struct
+    fields:
+      - { name: body, type: "Map<String, Json>" }
+  - name: demo.consumer.dashboard.ContextAsStrings
+    kind: struct
+    fields:
+      - { name: body, type: "Map<String, String>" }
+  - name: demo.consumer.dashboard.StatusSummary
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: since, type: Timestamp }
+      - name: team
+        type: Optional<String>
+        presence: omitted_when_absent
+  - name: demo.consumer.dashboard.SummaryNoteRequired
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: note, type: String }
+  - name: demo.consumer.dashboard.SummaryTeamRequired
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: team, type: String }
+  - name: demo.consumer.dashboard.SummaryTeamAlwaysSent
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - name: team
+        type: Optional<String>
+        presence: null_when_absent
