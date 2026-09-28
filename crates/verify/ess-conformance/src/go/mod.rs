@@ -149,7 +149,7 @@ fn with_model(files: Vec<GoArtifact>, ir: &ess_compiler::EssIr) -> Vec<GoArtifac
 const EXPLORE_GO: &str = include_str!("explore.go");
 
 /// The README section a package that carries the explorer gains.
-const EXPLORE_README: &str = r"
+const EXPLORE_README: &str = r#"
 ## Random command sequences
 
 `Explore` runs seeded random sequences of commands against fresh targets built by the same
@@ -183,7 +183,46 @@ scenario ends. `External` reports each external branch as `reached`, `unreached`
 `unarrangeable` (the target returned `ErrUnsupported` when asked to arrange it). An unarrangeable
 branch is not a disagreement and not `Unreached`; `AssertExplored` fails on it unless
 `AllowExcluded` is set. `External` is absent when the specification declares no external branch.
-";
+
+## Concurrent histories
+
+`ExploreConcurrent` drives fresh targets from two to four clients at once and writes each run as
+an `ess-history/1` document, one per seed, into `Out`. It does not judge them itself: it runs
+`ess verify conform check-history --path <Path>` on each and reports the verdict, and for a
+violation the checker's report with its shrunk history. `ess` must be on `PATH`; without it the
+call fails with `ErrNoEss`, and nothing is skipped.
+
+```go
+func TestConcurrent(t *testing.T) {
+    result, err := essconform.ExploreConcurrent(func() essconform.Target { return newTarget() },
+        essconform.ConcurrentOptions{Path: "../spec", Out: t.TempDir(), Seeds: 200})
+    if err != nil {
+        t.Fatal(err)
+    }
+    essconform.AssertConcurrent(t, result)
+}
+```
+
+Concurrency is simulated: a seed draws the workload and picks, at every tick of a logical clock,
+which client invokes its next call or receives its answer, so one seed writes one history, byte
+for byte, in Go and in TypeScript alike. A target that implements `InterleavedTarget` does part of
+a call's work at its invoke and the rest at its return; any other target does all of it at the
+return. A call that returns `ErrIndeterminate` (or wraps it, or `context.DeadlineExceeded`) is written
+`Indeterminate` and counted; any other error fails the exploration. A command answered with
+`ErrUnsupported` is left out, and `AssertConcurrent` fails on it unless
+`ConcurrentOptions{AllowExcluded: true}` accepts it. `Clients` outside 2 to 4 is refused. `Unknown`
+fails `AssertConcurrent` as a violation does.
+
+`ConcurrentOptions{Inject: true}` injects every fault the specification declares, and no other: a
+second delivery (`RedeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the
+same request sent again, written with `retry_of` naming the first, for a command declaring
+`replays:`; and an answer delayed past the client's wait or never arriving, written `Indeterminate`,
+for a command declaring another `external:` branch. Each is a move the seed schedules, and
+`ConcurrentResult.Injected` counts them by what declared them and names the branches they reached.
+Nothing is injected into the prefix, and a target restart never is: nothing declares one. Each
+call carries its own correlation, which only its retry repeats, so a target tells a retry from a new
+call of the same input by it.
+"#;
 
 /// The one file that exists only to embed the other one.
 const SUITE_GO: &str = r#"// The suite this package runs.

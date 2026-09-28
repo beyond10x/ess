@@ -1,0 +1,49 @@
+{
+  "format": "ess-history/1",
+  "history_id": "00000000-0000-4000-8000-00000000f001",
+  "spec_digest": "643b43b4a9f735e76ffe7fe685eb09cd168514390a38d263188646dd7dcec2fb",
+  "seed": 0,
+  "clients": 2,
+  "operations": [
+    {
+      "operation_id": "00000000-0000-4000-8000-000000000101",
+      "client": 0,
+      "command": "register.cell.CreateRegister",
+      "subject_key": "00000000-0000-4000-8000-00000000c0de",
+      "invoked_at": 1,
+      "returned_at": 2,
+      "completion": "Returned",
+      "outcome": "created"
+    },
+    {
+      "operation_id": "00000000-0000-4000-8000-000000000102",
+      "client": 0,
+      "command": "register.cell.WriteOne",
+      "subject_key": "00000000-0000-4000-8000-00000000c0de",
+      "invoked_at": 3,
+      "returned_at": 10,
+      "completion": "Returned",
+      "outcome": "written"
+    },
+    {
+      "operation_id": "00000000-0000-4000-8000-000000000103",
+      "client": 1,
+      "command": "register.cell.ReadOne",
+      "subject_key": "00000000-0000-4000-8000-00000000c0de",
+      "invoked_at": 4,
+      "returned_at": 5,
+      "completion": "Returned",
+      "outcome": "one"
+    },
+    {
+      "operation_id": "00000000-0000-4000-8000-000000000104",
+      "client": 1,
+      "command": "register.cell.ReadZero",
+      "subject_key": "00000000-0000-4000-8000-00000000c0de",
+      "invoked_at": 6,
+      "returned_at": 7,
+      "completion": "Returned",
+      "outcome": "zero"
+    }
+  ]
+}

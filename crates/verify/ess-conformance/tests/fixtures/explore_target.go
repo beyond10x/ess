@@ -43,6 +43,8 @@ type exploreFixtureTarget struct {
 	first     string
 	version   int
 	projected []Row
+	// completed counts the calls completed through InvokeCommand, for `answer-lost`.
+	completed int
 }
 
 func newExploreFixtureTarget(mutant, grade string) *exploreFixtureTarget {
@@ -67,6 +69,7 @@ func (t *exploreFixtureTarget) reset() {
 	t.first = ""
 	t.version = 0
 	t.projected = []Row{}
+	t.completed = 0
 }
 
 func (t *exploreFixtureTarget) row(ticket *exploreFixtureTicket) Row {
@@ -179,6 +182,44 @@ func (t *exploreFixtureTarget) ExecuteCommand(request CommandRequest) (CommandRe
 	default:
 		return CommandResult{}, exploreFixtureUnsupported{request.Command + " is not a command of explore.yaml"}
 	}
+}
+
+// exploreFixtureCall is one call in flight. Under `lost-update` a move carries the state its ticket was
+// in when the call was invoked, and acts on that state at its return: the read and the write are two
+// moves with no lock between them, so a move another client made in between is lost.
+type exploreFixtureCall struct {
+	target  *exploreFixtureTarget
+	request CommandRequest
+	read    string
+}
+
+func (t *exploreFixtureTarget) InvokeCommand(request CommandRequest) PendingCommand {
+	call := &exploreFixtureCall{target: t, request: request}
+	switch request.Command {
+	case "explore.desk.HoldTicket", "explore.desk.ReleaseTicket", "explore.desk.CloseTicket":
+		id, _ := request.Input["ticket_id"].(string)
+		if ticket := t.tickets[id]; ticket != nil && t.mutant == "lost-update" {
+			call.read = ticket.state
+		}
+	}
+	return call
+}
+
+func (c *exploreFixtureCall) Complete() (CommandResult, error) {
+	id, _ := c.request.Input["ticket_id"].(string)
+	if ticket := c.target.tickets[id]; ticket != nil && c.read != "" {
+		ticket.state = c.read
+	}
+	result, err := c.target.ExecuteCommand(c.request)
+	if err != nil {
+		return result, err
+	}
+	c.target.completed++
+	if c.target.mutant == "answer-lost" && c.target.completed%3 == 0 {
+		// The call took effect and its answer never arrived.
+		return CommandResult{}, fmt.Errorf("the answer was lost: %w", ErrIndeterminate)
+	}
+	return result, nil
 }
 
 func (t *exploreFixtureTarget) QueryView(request ViewRequest) (ViewResult, error) {
