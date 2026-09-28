@@ -7,10 +7,6 @@ title: One name held by two kinds is refused whether or not either copy converts
 relations:
 - serves: vision:O2
 scope:
-- confidence: inferred
-  path: crates/specify/ess-compiler/tests/locator_citations.rs
-- confidence: inferred
-  path: crates/specify/ess-compiler/tests/typed_diagnostics.rs
 - confidence: cited
   path: crates/specify/ess-domain/src/domain.rs
 - confidence: cited
@@ -18,8 +14,12 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/system.rs
 - confidence: cited
+  path: crates/specify/ess-domain/tests/adversary_one_name_pass1.rs
+- confidence: cited
+  path: crates/specify/ess-domain/tests/adversary_one_name_pass2.rs
+- confidence: cited
   path: crates/specify/ess-domain/tests/masked_declaration_boundaries.rs
-revision: 10
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:14:56Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-09-28T10:14:56Z", actor: "human:timo", revision: 10}
@@ -79,15 +79,9 @@ diagnostic contract for cases that are already reported today.
 
 ## Scope
 
-Re-derived 2026-09-28 by `story-scoper` on `46e367ab2`. Each line **cited** or **inferred**.
+Re-derived 2026-09-28 by `story-scoper` on `46e367ab2`; corrected at close of wave correctness-1 from the implementor's reports (merge `86b5e89c2`).
 
-- **Status:** open — `ess specify validate` 0.38.0 on fixtures from `masked_declaration_boundaries.rs`: CROSS_KIND_FIRST_BROKEN reports only ESS-COMMAND-006, TYPE_FIRST_BROKEN only ESS-TYPE-007; neither refuses the duplicate name. SOUND variants refuse (ESS-DOMAIN-006, ESS-SPEC-006) — cited (run)
-- **Primary surface:** `crates/specify/ess-domain/src/spec.rs` — `declare` `:623` keyed `(kind, name)` `:624`/`:750`; call sites `:852-:1020`; type path `:843-844` pushes only `Ok` and never calls `declare` — cited
-- **Files:** `crates/specify/ess-domain/src/system.rs:1047` `Assembly::claim`, `:479` `SystemSpec::merge` — cited (story's `:989` stale)
-- **Files:** `crates/specify/ess-domain/src/domain.rs:242` `DomainSpec::validate`, `:267` `validate_all` — cited
-- **Tests:** `crates/specify/ess-domain/tests/masked_declaration_boundaries.rs:119-123`, `:178-181` — two `#[ignore]`d cases pin this story; acceptance un-ignores them — cited
-- **Also:** `spec.rs:1588-1593` test doc and `declare` doc `:614-622` say "open"; rewrite on close — cited
-- **Also likely:** `crates/specify/ess-compiler/tests/typed_diagnostics.rs`, `locator_citations.rs` if same-kind duplicate messages change — inferred
-- **Story drift:** the doc-comment item is already done at `spec.rs:614-622` — cited
-- **Confidence:** high
-- **Safety fact:** keying by name alone changes every same-kind duplicate message (`spec.rs:640`); a pre-conversion cross-kind check must not double-report with `Assembly::claim` (`system.rs:1041-1045`) — inferred
+- **Landed in:** `crates/specify/ess-domain/src/spec.rs` (`Collected::write`, `declare_member`), `system.rs` (`Claim::refuse`, `absorb_domain` order), `domain.rs` (`DomainSpec::misplaced`) — cited
+- **Tests:** `masked_declaration_boundaries.rs` (5 → 14), `adversary_one_name_pass1.rs` (9), `adversary_one_name_pass2.rs` (7) — cited
+- **Correction:** the inferred `ess-compiler/tests/typed_diagnostics.rs` and `locator_citations.rs` were not touched — no expected message changed (was: inferred)
+- **Correction:** `domain.rs` changed for the misplaced-duplicate refusal (adversary pass 2 N3), not only read

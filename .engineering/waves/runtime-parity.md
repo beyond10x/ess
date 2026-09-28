@@ -54,3 +54,4 @@ go unit's, as a Rust test under `crates/verify/ess-conformance/tests/`.
   never the suite.
 
 ## Log
+- 13:30 operator: one shared integration branch. integrate/runtime-parity merged into integrate/ess-next (2e0960e7f); the go and ts units merge into integrate/ess-next.

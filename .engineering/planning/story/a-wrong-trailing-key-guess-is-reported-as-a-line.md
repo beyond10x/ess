@@ -10,10 +10,18 @@ scope:
 - confidence: cited
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: cited
+  path: crates/specify/ess-compiler/tests/locator_citations.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/trailing_key_guess_adversary.rs
+- confidence: cited
+  path: crates/specify/ess-compiler/tests/trailing_key_guess_adversary_pass2.rs
+- confidence: cited
   path: crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs
 - confidence: cited
+  path: crates/specify/ess-compiler/tests/trailing_key_guess_named_lists.rs
+- confidence: cited
   path: docs/design/review-typed-diagnostics.md
-revision: 7
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:14:57Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-09-28T10:14:58Z", actor: "human:timo", revision: 7}
@@ -59,13 +67,9 @@ is not tried, or its match is not reported as that refusal's line.
 
 ## Scope
 
-Re-derived 2026-09-28 by `story-scoper` on `46e367ab2`. Each line **cited** or **inferred**.
+Re-derived 2026-09-28 by `story-scoper`; corrected at close of wave correctness-1 from the implementor's reports (merge `b0c89d384`).
 
-- **Status:** open — ignored acceptance test `a_wrong_trailing_key_guess_is_not_cited_at_all` fails at `crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs:215` (cited `b.yaml:13:13`, expected `a.yaml`), run 2026-09-28 — cited
-- **Files:** `crates/specify/ess-compiler/src/resolve.rs:955` `needles_from_tokens` pushes `"{last}:"` unchecked; `:534` `Locator::scan`, `:596` `whole_name_matters` — cited (story's `:889` stale; `needles_for` now `:942`)
-- **Tests:** `crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs` — un-ignore `:206`, delete the defect-pinning case `:175` (doc `:171`) — cited
-- **Also:** doc comments `resolve.rs:571-583`, `:928-941` and `docs/design/review-typed-diagnostics.md:28` name this story as open; rewrite on landing — cited
-- **Also likely:** `resolve.rs:4726` `needle_shapes`, `:4779` unit test, if outcome-path needles change — inferred
-- **Confidence:** high
-- **Would collide with:** units touching the `Locator`/needle code in `resolve.rs` (e.g. `story:a-refusal-records-the-document-it-was-read-from`) — cited
-- **Safety fact:** both locating routes (`needles_for` :677, `needles_of_site` :713) build needles through `needles_from_tokens` — inferred
+- **Landed in:** `crates/specify/ess-compiler/src/resolve.rs` (`Locator::span`/`encloses`, `NAMED_LISTS`, `MAPS_UNDER`, `STRUCTURAL`) — cited
+- **Tests:** `trailing_key_guess_citations.rs` (1 → 3), `trailing_key_guess_adversary.rs` (5), `trailing_key_guess_adversary_pass2.rs` (3), `trailing_key_guess_named_lists.rs` (2); `locator_citations.rs` doc comments — cited
+- **Docs:** `docs/design/review-typed-diagnostics.md` — cited
+- **Correction:** the fix went in `Locator::span`, not `needles_from_tokens` alone; the unit test at `resolve.rs:~4880` changed and the scope had not named it

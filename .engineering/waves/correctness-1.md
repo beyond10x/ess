@@ -1,4 +1,4 @@
-# correctness-1
+# correctness-1 (shared branch integrate/ess-next)
 
 First wave of the ESS correctness and expressiveness plan of 2026-09-28. Operator, 2026-09-28:
 "figure out what we should do next in ESS in terms of correctness and spec expressiveness", then
@@ -26,7 +26,7 @@ Nothing else: no tag, no version bump, no release.
 
 | | |
 |---|---|
-| branch | `integrate/correctness-1` |
+| branch | `integrate/ess-next` (was `integrate/correctness-1`) |
 | base | `46e367ab2` (origin/main, ESS 0.38.0 + #184) |
 | worktree | managed `ess-wave-c1` → `~/.local/state/worktree/trees/b10x/ess/ess-wave-c1` |
 | build dir | `~/.cache/b10x-target/ess-c1-int` |
@@ -90,3 +90,16 @@ Left out:
 - 12:48 charset: correction 1 green (ess-domain 929→934, ess-xtask consumer_coverage 118→128), committed 5519a581c; 3 outcomes fixed (+1 no-op for F4); adversary pass 2 dispatched.
 - 12:50 onename: adversary pass 2 red (N1, N2, N4 introduced; N3 pre-existing note) — pass 1: 3 → pass 2: 4, carried 0; recorded review-result:adversary-c1-onename-pass-2; correction 2 (last), coordinator-verified. N4 routed: restore Collected order, change Assembly::claim order instead.
 - 12:55 onename: correction 2 green (ess-domain 936→945); coordinator read the diff (tests additions only; misplaced refusal moved byte-identical); VERIFIED; merged as 86b5e89c2. N3 fixed in-unit, no story filed.
+
+## Shared integration branch (operator, 2026-09-28)
+
+"check if there are other issues on github for ESS - add these to the current wave - do integrate all upcoming fixes under one shared integration branch". `integrate/correctness-1` is renamed `integrate/ess-next`; `integrate/runtime-parity` is merged into it (`2e0960e7f`) and its go and ts units merge here too (page: `runtime-parity.md`). Open issues at that time: #186, #188, #191 — all three are in this branch's work.
+
+| unit | story | issue | worktree (managed id) | branch | build dir | scratch | stage |
+|---|---|---|---|---|---|---|---|
+| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | implementing |
+| reader | `a-reader-side-conformance-admits-reader-widening` | #191 | `ess-n-reader` | `impl/reader-side-conformance` | `~/.cache/b10x-target/ess-n-reader` | `~/.cache/ess-wave-c1/reader` | implementing |
+
+The full gate that was running on this branch (`fmt-check` 0, `clippy` 0, `test` in progress) was stopped at 99% disk use (13G free); it runs once, on the whole shared branch, after every unit has merged. Its build dir was deleted (disk back to 64G).
+
+Coordinator decisions for #191 are in the story body (per-entry `reader: true` in `ess-composition/3`; JSON only by structures that accept any JSON, so `Map<String, String>` stays drift, against the issue's example).
