@@ -31,10 +31,13 @@ The report follows these rules:
 - Renames are not inferred. A removed declaration and an added declaration remain two changes.
 - Inputs must describe revisions of the same system. A different system identity is refused.
 
-`--format` accepts `text` or `json`. JSON output now uses **`ess-diff/2`**. The library retains
-the frozen `/1` vocabulary and reader support; explicit legacy writing refuses changes outside that
-vocabulary. The endpoint digests identify compact compiled models, not raw YAML or the pretty JSON
-shown by `ess compile`.
+`--format` accepts `text` or `json`. JSON output is **`ess-diff/2`**, as it is for this pair,
+unless the delta carries a change kind introduced later; it then takes the newest version any of its
+changes needs, up to `ess-diff/9` (see the
+[format history](../reference/spec-versions.md#ess-diff--what-moved-between-two-revisions)). The
+library retains the frozen `/1` vocabulary and reader support; explicit legacy writing refuses
+changes outside that vocabulary. The endpoint digests identify compact compiled models, not raw YAML
+or the pretty JSON shown by `ess specify compile`.
 [Delta writer](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/delta.rs),
 [comparison](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/diff.rs).
 

@@ -13,9 +13,8 @@ contracts — it is what the contracts are derived from. Everything below is cop
 repository: the source from `examples/billing/`, the output from `generated/`, kept in step by
 `cargo xtask generate --check` in CI.
 
-This page tracks the current `0.27.0` source tag. The `site` projection itself was introduced in
-`0.4.0`; entity relations and the account field visible in the current billing example shipped in
-`0.5.0`.
+The excerpts are the files on `main`. Entity relations and the account field visible in the billing
+example shipped in `0.5.0`.
 
 ## The source
 
@@ -258,21 +257,22 @@ diagram cannot show an absence, the unconnected pairs are listed, derived from t
 The same page renders the cross-context binding as a flowchart — the event, the command it invokes,
 its outcomes, and the escalation event that makes the failure path observable at all.
 
-## Static-site source
+## Static site
 
-`ess generate --kind site` renders the same model-derived pages with frontmatter and a sidebar:
+`ess generate --kind site` renders the same pages as a browsable HTML site: `index.html`, one page
+per domain, the interaction and topology pages, and a local stylesheet and diagram renderer. Every
+page opens with the same provenance as the Markdown:
 
-```yaml
----
-title: "billing v3"
-sidebar_position: 0
----
+```html
+<!--
+  generated from billing v3
+  model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
+  contract digest a21fd36f0055057629f4c235962163cdd34a3d178aa068925bcb53be623af301
+  do not edit: regenerate with `ess generate`
+-->
 ```
 
-The committed `generated/site/sidebar.json` begins with the same model and contract digests as the
-pages and orders `index`, the domain pages, interactions, and topology deterministically. This is
-the handoff to a documentation host: ESS produces Markdown and navigation data, not HTML, CSS, a
-theme, or a deployment.
+The committed pages are under `generated/site/`. ESS writes the files; hosting them is up to you.
 
 It is also not a reverse parser. The ESS YAML above is the specification; the prose in the generated
 page is one projection. Editing that prose cannot change the model, and regenerating replaces it.
@@ -280,7 +280,7 @@ page is one projection. Editing that prose cannot change the model, and regenera
 ## What is not generated
 
 Behaviour. The specification also generates its own conformance suite and the structural part of its
-implementation in three targets — but every algorithm remains a typed obligation someone implements.
+implementation in four targets — but every algorithm remains a typed obligation someone implements.
 See [Synthesize code from a specification](../guides/synthesize.md) and
 [Limitations](../status/limitations.md).
 
@@ -289,6 +289,6 @@ See [Synthesize code from a specification](../guides/synthesize.md) and
 **Sources.** `examples/billing/domains/invoice.yaml`;
 `generated/schema/commands/billing.invoice.CreateInvoice.schema.json`;
 `generated/openapi/invoice-service.yaml`; `generated/asyncapi/invoice-service.yaml`;
-`generated/docs/domains/billing-invoice.md`; `generated/site/index.md`;
-`generated/site/sidebar.json`; `Taskfile.yml` (`projection-check` and `site-lab`, which
+`generated/docs/domains/billing-invoice.md`; `generated/site/index.html`;
+`Taskfile.yml` (`projection-check` and `site-lab`, which
 builds the module the lab runs and holds its output to `website/src/pages/lab/_run.test.mjs`).

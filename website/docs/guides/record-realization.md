@@ -1,5 +1,6 @@
 ---
 title: Record a physical realization
+sidebar_position: 7
 description: Bind local, loopback, or hosted entrypoints to one exact ESS without changing EssIr.
 ---
 
