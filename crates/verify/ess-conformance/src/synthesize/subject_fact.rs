@@ -1306,7 +1306,7 @@ fn observer<'ir>(
     let projects = |view: &&ess_compiler::ir::ResolvedView| {
         !view.is_aggregate()
             && view.source == *entity
-            && view.params.is_empty()
+            && super::paging::read_whole(view)
             && view.filter.is_none()
             && view
                 .field(&declared.identity.name)
@@ -2081,7 +2081,7 @@ fn preserve(
     for view in ir.views().values().filter(|view| {
         !view.is_aggregate()
             && view.source == subject.entity
-            && view.params.is_empty()
+            && super::paging::read_whole(view)
             && setup.after.as_ref().is_some_and(|state| {
                 shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
             })
@@ -2235,7 +2235,7 @@ fn eventual_observation(
     for view in ir.views().values().filter(|view| {
         !view.is_aggregate()
             && view.source == subject.entity
-            && view.params.is_empty()
+            && super::paging::read_whole(view)
             && view.assertion_style == AssertionStyle::Eventually
             && shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
             && view

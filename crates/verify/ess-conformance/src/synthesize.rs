@@ -181,6 +181,7 @@ mod absent_input;
 mod aggregate;
 mod caller;
 mod existence;
+mod paging;
 mod related;
 mod subject_fact;
 
@@ -3478,7 +3479,7 @@ fn observe_selection_subject(
 ) -> Result<(Vec<ScenarioStep>, ViewRef), RefusalCause> {
     let entity = ir.entity(&subject.entity);
     let view = ir.views().values().find(|view| {
-        !view.is_aggregate() && view.source == subject.entity && view.params.is_empty() && view.filter.is_none()
+        !view.is_aggregate() && view.source == subject.entity && paging::read_whole(view) && view.filter.is_none()
             && view.assertion_style == AssertionStyle::Expect
             && view.field(&entity.identity.name).is_some_and(|field| field.type_ref == entity.identity.type_ref)
             && view.field(EntitySpec::STATE).is_some_and(|field| field.type_ref == entity.state_field().type_ref)
@@ -4163,6 +4164,7 @@ struct ViewAssertions {
 /// [`RefusalCause::OrderUnwitnessed`] is recorded and the order is **not** asserted: §36's rule is
 /// that a check the specification asked for and did not get is named, and this is the one shape
 /// where emitting it anyway would have been silently free.
+#[allow(clippy::too_many_lines)]
 fn view_expectations(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -4295,6 +4297,14 @@ fn view_expectations(
                 &mut out.asserted,
             );
         }
+        out.asserted.extend(paging::page_reads(
+            ir,
+            view,
+            settled,
+            *admits_subject,
+            &companions,
+            &unwitnessed,
+        ));
         out.views.insert(name);
     }
     out
@@ -4365,10 +4375,19 @@ fn arrange_ranked(
         // read only if the *caller's* parameter admits it. A row in another queue is a row this
         // query never asked for.
         let params = bound(view, beside.settled);
-        while rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
+        while rows_shown(ir, view, *admits_subject, &companions, &params)
+            < paging::rows_wanted(view)
+        {
             let distinction = beside.next(&companions);
             match arrange_beside(ir, beside.entity, view, beside.actors, distinction, &params) {
                 Ok(companion) => companions.push(companion),
+                // A paged view's further rows are for its pages; its order is witnessed by two.
+                Err(_)
+                    if rows_shown(ir, view, *admits_subject, &companions, &params)
+                        >= RANKING_ROWS =>
+                {
+                    break
+                }
                 Err(reason) => {
                     refusals.push(Refusal::about(
                         id,
@@ -5616,6 +5635,12 @@ fn arrange_toward(
             return found;
         }
     }
+    if let Some(bound) = paging::with_bound_params(view, params) {
+        let found = arrange_toward_by(ir, entity, &bound, actors, distinction, &admitted);
+        if found.is_some() {
+            return found;
+        }
+    }
     arrange_toward_by(ir, entity, view, actors, distinction, &admitted)
 }
 
@@ -5800,6 +5825,8 @@ fn bound(
 ) -> BTreeMap<String, ScenarioValue> {
     view.params
         .iter()
+        // A paging parameter is sent only by a page read (`paging::page_reads`), never by name.
+        .filter(|param| !paging::reads(view, &param.name))
         .filter_map(|param| {
             settled
                 .get(&param.name)
@@ -6582,7 +6609,7 @@ fn deletion_witness(
     let projections = row_projections(ir);
     for view in projections.get(&subject.entity).into_iter().flatten() {
         if view.consistency != ess_domain::view::Consistency::ReadYourWrites
-            || !view.params.is_empty()
+            || !paging::read_whole(view)
         {
             continue;
         }
@@ -6666,7 +6693,7 @@ fn whole_views(ir: &EssIr) -> Vec<ViewRef> {
         .values()
         .filter(|view| {
             view.consistency == ess_domain::view::Consistency::ReadYourWrites
-                && view.params.is_empty()
+                && paging::read_whole(view)
         })
         .map(|view| ViewRef::new(view.name.clone()))
         .collect()

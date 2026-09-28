@@ -46,6 +46,7 @@ pub mod clap;
 pub(crate) mod existence;
 mod failure;
 pub mod go;
+pub(crate) mod paging;
 pub mod plan;
 pub mod rust;
 mod selection;
@@ -291,6 +292,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
     failure::json(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
     existence::refuse(ir, &plan, target)?;
+    paging::refuse(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
     insert(
         &mut artifacts,

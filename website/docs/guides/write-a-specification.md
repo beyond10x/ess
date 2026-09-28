@@ -960,6 +960,44 @@ still checks each of its fields against the source entity. Compiled IR carries b
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
 
+### A view can be paged
+
+A list endpoint that answers one page of its rows at a time declares `paging:` beside its
+`order_by:`. It needs `format: ess/16`.
+
+```yaml
+views:
+  - name: demo.jobs.JobList
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    params:
+      - {name: type, type: Optional<demo.jobs.JobType>}
+      - {name: page, type: Integer}
+      - {name: size, type: Integer}
+    filter: type == param.type
+    order_by: [job_id asc]
+    paging: {page: page, size: size, total: true}
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: type, type: demo.jobs.JobType}
+```
+
+`page` and `size` name two declared parameters, each `Integer`, a newtype of it or
+`Optional<Integer>`. A paged read answers `size` rows of the rows the filter admits, in `order_by:`
+order, starting at `page * size`; `first_page: 1` numbers pages from 1, so the first row is at
+`(page - 1) * size`. With `total: true` the answer also carries how many rows the filter admits. A
+read that sends neither parameter answers every row, in order. A filter may not read a paging
+parameter, and a view without `order_by:` cannot be paged: a slice of an unordered view names no
+particular rows. Below `ess/16`, `paging:` is refused with `unsupported_format_version`.
+
+The synthesized suite arranges four rows and reads two pages of one row, two pages of two rows,
+and one page larger than all of them, which must hold at least those rows: each page holds exactly
+its size, the total is at least the rows the scenario made, and the second page
+continues the first — ranked no earlier, and not the same row. Each claim holds on a target other
+users share. A free-form filter expression the caller supplies is not something `paging:` or
+`params:` can declare; a closed set of filter fields can still be declared one optional parameter
+at a time. [Design](https://github.com/beyond10x/ess/blob/main/docs/design/view-paging.md).
+
 ### Aggregate views
 
 A read API that reports counts, sums and extremes over one entity's rows is a view with `group_by:`

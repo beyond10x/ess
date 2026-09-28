@@ -153,7 +153,10 @@ impl ConformanceTarget for Backend {
             row.insert("stamp".into(), Node::Text("2026-09-22T01:02:04Z".into()));
         }
         self.queries.set(self.queries.get() + 1);
-        Ok(SemanticViewResult { rows: vec![row] })
+        Ok(SemanticViewResult {
+            rows: vec![row],
+            total: None,
+        })
     }
     fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
         panic!("replay must never use fault injection")
@@ -927,6 +930,7 @@ impl ConformanceTarget for StateBackend {
                 ("note".into(), self.note.borrow().clone()),
                 ("state".into(), Node::Text(self.state.borrow().clone())),
             ])],
+            total: None,
         })
     }
     fn configure_external_outcome(

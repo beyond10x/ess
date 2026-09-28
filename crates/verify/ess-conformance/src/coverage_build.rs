@@ -486,7 +486,8 @@ fn coverage_version(
         || crate::absent_input::used_by(suite)
         || crate::aggregate_delta::used_by(suite)
         || crate::now_offset::used_by(suite)
-        || crate::caller_values::used_by(suite);
+        || crate::caller_values::used_by(suite)
+        || crate::view_paging::used_by(suite);
     crate::scenario::SuiteFormat::parse(if round_three {
         "ess-conformance/27"
     } else if crate::presence::used_by(suite) {

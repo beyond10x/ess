@@ -3015,6 +3015,7 @@ impl<'a> Resolver<'a> {
                     filter: view.filter,
                     aggregation,
                     order_by: view.order_by,
+                    paging: view.paging,
                     consistency: view.consistency,
                     assertion_style: view.consistency.assertion_style(),
                     naming: view.naming,

@@ -799,6 +799,14 @@ pub struct SemanticViewRequest {
 pub struct SemanticViewResult {
     /// The rows, each a value per projected field name.
     pub rows: Vec<ViewRow>,
+    /// The number of rows the view's filter admits, where the answer carried one: a view that
+    /// declares `paging: {total: true}` (ess/16, [`crate::view_paging`]) answers it beside a page.
+    ///
+    /// `None` for every other answer. The page and the size a read asks for travel as the view's
+    /// declared parameters, under their declared names, in
+    /// [`SemanticViewRequest::params`]; only the total needs a field of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 impl SemanticViewResult {
@@ -806,7 +814,15 @@ impl SemanticViewResult {
     pub fn of(rows: impl IntoIterator<Item = ViewRow>) -> Self {
         Self {
             rows: rows.into_iter().collect(),
+            total: None,
         }
+    }
+
+    /// The same answer, carrying the number of rows the view's filter admits beside them.
+    #[must_use]
+    pub fn with_total(mut self, total: u64) -> Self {
+        self.total = Some(total);
+        self
     }
 }
 

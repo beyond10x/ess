@@ -80,6 +80,9 @@ use crate::target::{
     SemanticViewResult, TargetError, ViewRow,
 };
 
+mod page;
+use page::{page_of, PageRequired};
+
 // ---- the clock -------------------------------------------------------------------------------
 
 /// The runner's source of time.
@@ -2642,6 +2645,7 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
             fields,
             absent_is_zero,
         } => changed_by(before, fields, absent_is_zero, result),
+        Required::Page(page) => page_of(page, result),
     }
 }
 
@@ -2845,12 +2849,17 @@ enum Required {
         /// The fields whose absent value reads as zero.
         absent_is_zero: BTreeSet<String>,
     },
+    /// The read was one page of a paged view (suite/26).
+    Page(PageRequired),
 }
 
 impl Required {
     /// [`Self::of`], for an expectation of `view`: a change is resolved against the snapshot this
     /// run took of that view, which only the view names.
     fn of_view(view: &ViewRef, expectation: &ViewExpectation, run: &Run) -> Result<Self, String> {
+        if let ViewExpectation::Page { .. } = expectation {
+            return PageRequired::of(view, expectation, run).map(Self::Page);
+        }
         let ViewExpectation::ChangedBy {
             fields,
             absent_is_zero,
@@ -2925,6 +2934,10 @@ impl Required {
             // Read only through `of_view`, which knows whose snapshot it is.
             ViewExpectation::ChangedBy { .. } => {
                 return Err("a change is read against a snapshot of the view it names".to_owned())
+            }
+            // Read only through `of_view`, which knows whose snapshot a continuation reads.
+            ViewExpectation::Page { .. } => {
+                return Err("a page is read against the view it names".to_owned())
             }
         })
     }
@@ -3083,6 +3096,7 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
                 .join(", ");
             format!("{view}'s one row changed since its snapshot: {amounts}")
         }
+        Required::Page(page) => page.wanted(view),
     }
 }
 

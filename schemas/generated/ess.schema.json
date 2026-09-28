@@ -1184,6 +1184,35 @@
         }
       ]
     },
+    "Paging": {
+      "description": "How a view's rows are paged: which declared parameters carry the page and its size, how pages are numbered, and whether the answer carries the filtered count.",
+      "type": "object",
+      "required": [
+        "page",
+        "size"
+      ],
+      "properties": {
+        "first_page": {
+          "description": "The number of the first page: `0` (the default) or `1`.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "page": {
+          "description": "The declared parameter that selects the page.",
+          "type": "string"
+        },
+        "size": {
+          "description": "The declared parameter that bounds how many rows a page holds.",
+          "type": "string"
+        },
+        "total": {
+          "description": "Whether the answer carries the number of rows the filter admits, beside the page.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "Period": {
       "description": "Positive, whole seconds, written `PT<seconds>S`; unlike elapsed observations, a period cannot be zero.",
       "type": "string",
@@ -2880,6 +2909,17 @@
           "items": {
             "$ref": "#/definitions/Ranking"
           }
+        },
+        "paging": {
+          "description": "How its rows are paged (ess/16). Absent: every read answers every row.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Paging"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "params": {
           "description": "What the caller must supply to ask for this view.",
