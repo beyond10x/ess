@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-suite-docs-say-what-the-runner-does
 kind: story
-status: active
+status: implemented
 title: The generated suite and synthesize --help describe what the runner does
 refs:
 - provider: github
@@ -22,10 +22,11 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T11:29:55Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-09-28T11:29:55Z", actor: "human:timo", revision: 9}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:14Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":7,"verification":1}}}
 ---
 # Story: the generated suite and `synthesize --help` describe what the runner does
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-field-constrained-by-a-charset-publishes-that-charset
 kind: story
-status: active
+status: implemented
 title: A field constrained by a charset publishes that charset
 relations:
 - serves: vision:O2
@@ -31,10 +31,11 @@ scope:
   path: docs/design/cli-schema-metadata-accounting.md
 - confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 21
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:14:57Z", actor: "human:timo", revision: 10}
 - {from: "proposed", to: "active", at: "2026-09-28T10:14:57Z", actor: "human:timo", revision: 11}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:12Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"test_result":1,"review_outcome":4,"verification":1}}}
 ---
 # A field constrained by a charset publishes that charset
 

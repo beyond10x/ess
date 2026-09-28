@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-reader-side-conformance-admits-reader-widening
 kind: story
-status: active
+status: implemented
 title: A consumer's reader-side conformance admits the widening a reader may do
 refs:
 - provider: github
@@ -30,10 +30,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T11:29:55Z", actor: "human:timo", revision: 12}
 - {from: "proposed", to: "active", at: "2026-09-28T11:29:56Z", actor: "human:timo", revision: 13}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:15Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"review_outcome":7,"verification":1}}}
 ---
 # Story: a consumer's reader-side conformance admits the widening a reader may do
 

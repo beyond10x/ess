@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:generated-runtimes-run-every-emitted-suite-version
 kind: story
-status: active
+status: implemented
 title: The generated Go and TypeScript runtimes run every suite version the release synthesizes
 refs:
 - provider: github
@@ -34,10 +34,11 @@ scope:
   path: crates/verify/ess-conformance/tests/presence_suite_versions_go.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/typescript_runtime.rs
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:17:58Z", actor: "human:timo", revision: 14}
 - {from: "proposed", to: "active", at: "2026-09-28T10:17:59Z", actor: "human:timo", revision: 15}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:14Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":14,"verification":1}}}
 ---
 # Story: the generated runtimes run every suite version the same release synthesizes
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts
 kind: story
-status: active
+status: implemented
 title: One name held by two kinds is refused whether or not either copy converts
 relations:
 - serves: vision:O2
@@ -19,10 +19,11 @@ scope:
   path: crates/specify/ess-domain/tests/adversary_one_name_pass2.rs
 - confidence: cited
   path: crates/specify/ess-domain/tests/masked_declaration_boundaries.rs
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:14:56Z", actor: "human:timo", revision: 9}
 - {from: "proposed", to: "active", at: "2026-09-28T10:14:56Z", actor: "human:timo", revision: 10}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:11Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"review_outcome":7,"verification":1}}}
 ---
 # One name held by two kinds is refused whether or not either copy converts
 

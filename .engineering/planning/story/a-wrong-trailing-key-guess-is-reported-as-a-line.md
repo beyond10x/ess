@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-wrong-trailing-key-guess-is-reported-as-a-line
 kind: story
-status: active
+status: implemented
 title: A wrong trailing-key guess is reported as a line
 relations:
 - serves: vision:O2
@@ -21,10 +21,11 @@ scope:
   path: crates/specify/ess-compiler/tests/trailing_key_guess_named_lists.rs
 - confidence: cited
   path: docs/design/review-typed-diagnostics.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T10:14:57Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-09-28T10:14:58Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:13Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":6,"verification":1}}}
 ---
 # A wrong trailing-key guess is reported as a line
 

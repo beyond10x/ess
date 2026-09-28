@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:a-wrong-state-witness-may-miss-a-mixed-guard-sibling-by-its-subject-guard
 kind: story
-status: active
+status: implemented
 title: A wrong-state witness may miss a mixed-guard sibling by its subject guard
 refs:
 - provider: github
@@ -16,10 +16,11 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/mixed_guard_wrong_state.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T13:35:30Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-09-28T13:35:30Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-09-28T15:58:15Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":6,"verification":1}}}
 ---
 # Story: a wrong-state witness may miss a mixed-guard sibling through its subject guard
 
