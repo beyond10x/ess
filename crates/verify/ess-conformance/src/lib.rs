@@ -156,6 +156,7 @@ pub mod response;
 pub mod runner;
 pub mod scenario;
 pub mod selection;
+pub mod sessions;
 pub mod subject;
 pub mod synthesize;
 pub mod target;

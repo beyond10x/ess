@@ -651,6 +651,11 @@ enum ConformCommand {
         /// always give the same verdict.
         #[arg(long, default_value_t = ess_conformance::linearize::DEFAULT_BUDGET)]
         budget: u64,
+        /// How many of a session's reads of an `eventual` view, invoked after the writes stop,
+        /// may still be behind; every later read is judged converged. A count of reads, not of
+        /// instants, so the clock a history was written on changes no verdict.
+        #[arg(long, value_name = "READS", default_value_t = ess_conformance::linearize::DEFAULT_SETTLE)]
+        settle: u64,
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
     },
@@ -3020,13 +3025,20 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             path,
             history,
             budget,
+            settle,
             format,
-        } => Ok(check_history(&path, &history, budget, format)),
+        } => Ok(check_history(&path, &history, budget, settle, format)),
     }
 }
 
 /// `ess verify conform check-history`: 0 linearizable, 1 violation, 3 unknown, 2 refused.
-fn check_history(path: &Path, history: &Path, budget: u64, format: MachineFormat) -> ExitCode {
+fn check_history(
+    path: &Path,
+    history: &Path,
+    budget: u64,
+    settle: u64,
+    format: MachineFormat,
+) -> ExitCode {
     const REFUSED: u8 = 2;
     // Every refusal exits 2, including one the loader or the file system reports as an error:
     // exit 1 is the Violation verdict, and a history nobody read is not one.
@@ -3056,13 +3068,14 @@ fn check_history(path: &Path, history: &Path, budget: u64, format: MachineFormat
             return ExitCode::from(REFUSED);
         }
     };
-    let report = match ess_conformance::linearize::report(&loaded, &recorded, budget) {
-        Ok(report) => report,
-        Err(refusal) => {
-            eprintln!("{} cannot be checked: {refusal}", history.display());
-            return ExitCode::from(REFUSED);
-        }
-    };
+    let report =
+        match ess_conformance::linearize::report_settled(&loaded, &recorded, budget, settle) {
+            Ok(report) => report,
+            Err(refusal) => {
+                eprintln!("{} cannot be checked: {refusal}", history.display());
+                return ExitCode::from(REFUSED);
+            }
+        };
     match format {
         MachineFormat::Text => print!("{}", report.to_text()),
         MachineFormat::Json => print!("{}", report.to_json()),

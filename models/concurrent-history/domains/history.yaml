@@ -77,6 +77,8 @@ entities:
         type: concurrent.history.Completion
       - name: outcome
         type: Optional<concurrent.history.QualifiedName>
+      - name: rows
+        type: Optional<List<String>>
     lifecycle:
       initial: Recorded
       states: [Recorded]

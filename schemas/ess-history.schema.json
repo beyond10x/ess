@@ -82,6 +82,10 @@
         "completion": { "$ref": "#/definitions/Completion" },
         "outcome": {
           "anyOf": [{ "$ref": "#/definitions/QualifiedName" }, { "type": "null" }]
+        },
+        "rows": {
+          "description": "For a Returned read of a view: the identity of each row it answered with, in the order answered. Absent on a command and on a read that could not record it; the checker judges no read without it.",
+          "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
         }
       },
       "oneOf": [
@@ -97,7 +101,8 @@
           "properties": {
             "completion": { "enum": ["Indeterminate"] },
             "returned_at": { "type": "null" },
-            "outcome": { "type": "null" }
+            "outcome": { "type": "null" },
+            "rows": { "type": "null" }
           }
         }
       ]

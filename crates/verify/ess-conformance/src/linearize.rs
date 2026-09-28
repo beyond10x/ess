@@ -49,11 +49,53 @@
 //!
 //! # Views
 //!
-//! This story checks reads of views declared `Current`. `ess/…` declares no such level — a view is
-//! `read_your_writes` or `eventual` ([`Consistency`]) — so every operation that names a view is
-//! **not judged here**: it is taken out of the search and listed in [`Checked::not_judged`] with
-//! the level it declares, for `story:session-and-eventual-view-checks`. The match over
-//! [`Consistency`] is exhaustive, so a level added later has to be decided here.
+//! A read of a view is not an operation of the search: it is judged after it, at the level its
+//! view declares ([`Consistency`] is `read_your_writes` or `eventual`; ESS declares no linearizable
+//! read). The match over [`Consistency`] is exhaustive, so a level added later has to be decided
+//! here.
+//!
+//! What a read answered is [`Operation::rows`], the identity of each row. What the model says a
+//! view holds in a state is, for each subject, whether its instance exists and its lifecycle state
+//! passes the view's filter. So one read is judged subject by subject — for each subject, whether
+//! it is a row — which is weaker than asking for one snapshot of every subject at once, and a
+//! violation of it is a violation of either.
+//!
+//! A read is judged against **every** state some complete linearization of the subject's
+//! operations passes through, not against the one order the search found: where two calls overlap,
+//! either order may be the one that happened. Each such state is a set of operations ordered so
+//! far and the model state they leave; an `Indeterminate` operation contributes both of its
+//! branches, took effect and never happened. For one read, of one subject, a state explains it
+//! when it shows the subject as the read does and:
+//!
+//! * every operation it has ordered was invoked no later than the read returned — a read shows
+//!   nothing no write had yet been asked for;
+//! * `read_your_writes`, per client session: it has ordered every operation the reading client
+//!   made on the subject that returned before the read was invoked. A read no such state explains,
+//!   and an earlier one does, is [`Anomaly::StaleRead`] (Jepsen Elle's session vocabulary);
+//! * `eventual`: nothing more, until the writes have settled. The writes **stop** at the latest
+//!   return of any command, where every command answered; a history with a command that never
+//!   answered has no such point, because that command may take effect at any time. A session is
+//!   one client's reads of one view. Its reads invoked after the writes stop are counted in invoke
+//!   order, and every one after the first `settle` ([`check_settled`]; [`DEFAULT_SETTLE`] for
+//!   [`check`]) must show a state in which every operation is ordered — what the linearized
+//!   commands produce — or it is [`Anomaly::NotConverged`]. `settle` counts reads, not instants:
+//!   instants compare only by order, so an order-preserving change of clock changes no verdict. A
+//!   read before that may be behind, because an eventual projection promises convergence, not
+//!   convergence by the next read; it is judged as the level allows and listed in
+//!   [`Checked::not_judged`] with the reason [`BEFORE_SETTLE`] or [`BEFORE_WRITES_STOP`], so a
+//!   history in which no read was judged for convergence says so.
+//!
+//! A read no allowed state explains, where no earlier one does either, or that shows a row no
+//! recorded operation addresses, is [`Anomaly::FutureRead`]. A read that lists one identity twice
+//! is [`Anomaly::DuplicateRow`]: a view that is not an aggregate (aggregates are not judged) has one
+//! row per instance, and the language declares no view with repeated rows. Reads are judged only when every
+//! partition is linearizable: a command violation is reported first, and an `Unknown` — from the
+//! search, or from the budget running out while every state is collected — leaves them unjudged.
+//!
+//! A read the checker cannot judge is listed in [`Checked::not_judged`] with its reason: one that
+//! never answered, one that records no rows, a read of a view that takes parameters (a history
+//! records none), of an aggregate view (its rows are groups, not instances), or of a view whose
+//! filter the lifecycle state alone does not decide (a history records no field values).
 //!
 //! # The budget
 //!
@@ -73,13 +115,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
-use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedEffect, ResolvedInstance};
+use ess_compiler::ir::{EssIr, ResolvedCommand, ResolvedEffect, ResolvedInstance, ResolvedView};
+use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName as ModelName;
 use ess_domain::view::Consistency;
+use ess_primitives::facts::{FactPath, FactStore, FactValue};
 use ess_primitives::node::Node;
+use ess_primitives::predicate::Truth;
 use serde::Serialize;
 
 use crate::history::{Completion, History, Operation, ReturnBound, Verdict};
+use crate::input::TypedFacts;
 use crate::interpret::execute::{
     execute_generating, Externals, Generated, GeneratedSlot, Store, Undetermined,
 };
@@ -88,7 +134,7 @@ use crate::witness::{self, Distinction};
 /// The search budget when none is named: this many executions of the model.
 pub const DEFAULT_BUDGET: u64 = 1_000_000;
 
-/// A read this check does not judge, and the level its view declares.
+/// A read this check does not judge, the level its view declares, and why it is not judged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NotJudged {
     /// The operation.
@@ -97,6 +143,58 @@ pub struct NotJudged {
     pub view: String,
     /// The consistency the view declares, as written in a document.
     pub consistency: String,
+    /// Why the read cannot be judged.
+    pub reason: String,
+}
+
+/// What a judged read shows that its view's declared consistency does not allow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Anomaly {
+    /// `read_your_writes`: the read shows a subject as it was before the reading client's own last
+    /// write on it.
+    StaleRead,
+    /// `eventual`: a read after a session's first `settle` reads after the writes stopped does not
+    /// show what the linearized commands produced.
+    NotConverged,
+    /// The read shows a subject as no write invoked before the read returned left it, or shows a
+    /// row no recorded operation addresses.
+    FutureRead,
+    /// The read lists one instance twice. A view that is not an aggregate holds one row per
+    /// instance of the entity it projects, so no state of the model answers it.
+    DuplicateRow,
+}
+
+impl Anomaly {
+    /// As written in a report.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StaleRead => "stale-read",
+            Self::NotConverged => "not-converged",
+            Self::FutureRead => "future-read",
+            Self::DuplicateRow => "duplicate-row",
+        }
+    }
+}
+
+/// A read its view's declared consistency does not allow: which client, which read, and what it
+/// showed of which subject.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReadViolation {
+    /// The read.
+    pub operation_id: String,
+    /// The client that made it.
+    pub client: u64,
+    /// The view it reads.
+    pub view: String,
+    /// The consistency the view declares, as written in a document.
+    pub consistency: String,
+    /// The subject the read shows wrongly.
+    pub subject_key: String,
+    /// Whether the read shows that subject as a row.
+    pub shown: bool,
+    /// What is wrong with it.
+    pub anomaly: Anomaly,
 }
 
 /// What searching one history concluded.
@@ -109,12 +207,18 @@ pub struct Checked {
     /// The subject whose partition decided a `Violation` or an `Unknown`.
     pub subject_key: Option<String>,
     /// For a `Violation` or an `Unknown`: the longest order of that partition's operations the
-    /// model accepted, by operation id. Empty for `Linearizable`.
+    /// model accepted, by operation id. For a read violation, one order the search found for the
+    /// subject the read shows wrongly; the read was judged against every order. Empty for
+    /// `Linearizable`.
     pub linearization: Vec<String>,
     /// How many subject partitions were searched.
     pub partitions: usize,
-    /// The operations taken out of the search, in document order.
+    /// The reads that cannot be judged, in document order.
     pub not_judged: Vec<NotJudged>,
+    /// How many reads were judged at their view's consistency.
+    pub judged: usize,
+    /// For a `Violation` a read decided: that read.
+    pub read: Option<ReadViolation>,
 }
 
 /// Why a history cannot be checked against this model at all.
@@ -190,15 +294,104 @@ struct Prepared<'h> {
     generated: Generated,
 }
 
-/// The model-side reading of every operation: judged ones by subject, not-judged ones listed.
+/// One read of a view the checker judges, with everything judging it needs.
+struct ViewRead<'h> {
+    operation: &'h Operation,
+    view: String,
+    consistency: Consistency,
+    /// The entity the view projects.
+    entity: &'h ModelName,
+    /// The lifecycle states whose instances the view's filter admits.
+    admits: BTreeSet<&'h StateName>,
+    /// What it answered, as a set.
+    rows: BTreeSet<&'h str>,
+    /// The first identity it answered more than once, where it did.
+    duplicate: Option<&'h str>,
+}
+
+/// The model-side reading of every operation: commands by subject, judged reads, and the reads
+/// that cannot be judged.
 struct Split<'h> {
     partitions: BTreeMap<&'h str, Vec<Prepared<'h>>>,
+    reads: Vec<ViewRead<'h>>,
     not_judged: Vec<NotJudged>,
+}
+
+/// The read `operation` of `view`, where it can be judged; why not, where it cannot.
+fn view_read<'h>(
+    ir: &'h EssIr,
+    view: &'h ResolvedView,
+    operation: &'h Operation,
+) -> Result<ViewRead<'h>, String> {
+    if operation.completion != Completion::Returned {
+        return Err("the read never answered".to_owned());
+    }
+    let Some(rows) = &operation.rows else {
+        return Err("the read records no rows".to_owned());
+    };
+    if !view.params.is_empty() {
+        return Err("the view takes parameters, and a history records none".to_owned());
+    }
+    if view.is_aggregate() {
+        return Err("an aggregate view's rows are groups, not instances".to_owned());
+    }
+    let entity = ir.entity(&view.source);
+    let mut admits = BTreeSet::new();
+    for state in &entity.lifecycle.states {
+        let admitted = match &view.filter {
+            None => true,
+            Some(filter) => {
+                let mut facts = TypedFacts::new(ir, &view.fields, FactStore::new());
+                facts.set(
+                    FactPath::new(STATE)
+                        .unwrap_or_else(|error| panic!("`{STATE}` is a fact path: {error}")),
+                    FactValue::text(state.as_str()),
+                );
+                match filter.evaluate(&facts) {
+                    Truth::True => true,
+                    Truth::False => false,
+                    Truth::Unknown => {
+                        return Err(
+                            "its filter is not decided by the lifecycle state alone, and a \
+                             history records no field values"
+                                .to_owned(),
+                        )
+                    }
+                }
+            }
+        };
+        if admitted {
+            admits.insert(state);
+        }
+    }
+    Ok(ViewRead {
+        operation,
+        view: view.name.to_string(),
+        consistency: view.consistency,
+        entity: &entity.name,
+        admits,
+        rows: rows.iter().map(String::as_str).collect(),
+        duplicate: {
+            let mut seen = BTreeSet::new();
+            rows.iter()
+                .map(String::as_str)
+                .find(|row| !seen.insert(*row))
+        },
+    })
+}
+
+/// The fact a view filter reads an instance's lifecycle state at.
+const STATE: &str = "state";
+
+/// `true` when `operation` names a view `ir` declares.
+fn reads_a_view(ir: &EssIr, operation: &Operation) -> bool {
+    ModelName::new(operation.command.as_str()).is_ok_and(|name| ir.views().contains_key(&name))
 }
 
 fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefusal> {
     let mut inputs: BTreeMap<&ModelName, Vec<BTreeMap<String, Node>>> = BTreeMap::new();
     let mut partitions: BTreeMap<&str, Vec<Prepared<'h>>> = BTreeMap::new();
+    let mut reads = Vec::new();
     let mut not_judged = Vec::new();
     for operation in &history.operations {
         let unknown = || CheckRefusal::UnknownOperation {
@@ -207,17 +400,16 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
         };
         let name = ModelName::new(operation.command.as_str()).map_err(|_| unknown())?;
         if let Some(view) = ir.views().get(&name) {
-            // Exhaustive on purpose: a level added to the language is decided here, not defaulted.
-            match view.consistency {
-                Consistency::ReadYourWrites | Consistency::Eventual => {
-                    not_judged.push(NotJudged {
-                        operation_id: operation.operation_id.as_str().to_owned(),
-                        view: name.to_string(),
-                        consistency: view.consistency.as_str().to_owned(),
-                    });
-                    continue;
-                }
+            match view_read(ir, view, operation) {
+                Ok(read) => reads.push(read),
+                Err(reason) => not_judged.push(NotJudged {
+                    operation_id: operation.operation_id.as_str().to_owned(),
+                    view: name.to_string(),
+                    consistency: view.consistency.as_str().to_owned(),
+                    reason,
+                }),
             }
+            continue;
         }
         let (key, command) = ir.commands().get_key_value(&name).ok_or_else(unknown)?;
         if !inputs.contains_key(key) {
@@ -256,6 +448,7 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
     }
     Ok(Split {
         partitions,
+        reads,
         not_judged,
     })
 }
@@ -376,7 +569,8 @@ impl Done {
 
 /// How one partition's search ended.
 enum Outcome {
-    Linearizable,
+    /// The order found, by operation index.
+    Linearizable(Vec<usize>),
     Violation(Vec<usize>),
     Unknown(Vec<usize>),
 }
@@ -388,6 +582,51 @@ struct Frame {
     next: usize,
 }
 
+/// The operations of one partition in the fixed order moves are tried in: invoke order, then
+/// document order.
+fn move_order(operations: &[Prepared<'_>]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..operations.len()).collect();
+    order.sort_by_key(|&index| (operations[index].operation.invoked_at, index));
+    order
+}
+
+/// The moves from one state: every operation nothing still outside the order returned before,
+/// with every state it can leave. `None` when the budget ran out.
+fn next_moves(
+    ir: &EssIr,
+    operations: &[Prepared<'_>],
+    order: &[usize],
+    done: &Done,
+    store: &Store,
+    budget: &mut u64,
+    spent: &mut u64,
+) -> Result<Option<Vec<(usize, Store)>>, CheckRefusal> {
+    let mut found: Vec<(usize, Store)> = Vec::new();
+    for &index in order {
+        if done.has(index) {
+            continue;
+        }
+        let invoked = operations[index].operation.invoked_at;
+        let held_back = order.iter().any(|&other| {
+            other != index
+                && !done.has(other)
+                && operations[other].operation.return_bound() < ReturnBound::At(invoked)
+        });
+        if held_back {
+            continue;
+        }
+        if *budget == 0 {
+            return Ok(None);
+        }
+        *budget -= 1;
+        *spent += 1;
+        for next in step(ir, store, &operations[index])? {
+            found.push((index, next));
+        }
+    }
+    Ok(Some(found))
+}
+
 /// Searches one partition, spending from `budget`.
 fn search(
     ir: &EssIr,
@@ -395,49 +634,28 @@ fn search(
     budget: &mut u64,
     spent: &mut u64,
 ) -> Result<Outcome, CheckRefusal> {
-    // Invoke order, then document order, so the moves are tried in one fixed order.
-    let mut order: Vec<usize> = (0..operations.len()).collect();
-    order.sort_by_key(|&index| (operations[index].operation.invoked_at, index));
+    let order = move_order(operations);
     let total = operations.len();
 
     let mut seen: BTreeMap<Done, Vec<Store>> = BTreeMap::new();
     let mut path: Vec<usize> = Vec::new();
     let mut longest: Vec<usize> = Vec::new();
 
-    // The moves from one state: every operation nothing still outside the order returned before.
-    let moves = |done: &Done, store: &Store, budget: &mut u64, spent: &mut u64| {
-        let mut found: Vec<(usize, Store)> = Vec::new();
-        for &index in &order {
-            if done.has(index) {
-                continue;
-            }
-            let invoked = operations[index].operation.invoked_at;
-            let held_back = order.iter().any(|&other| {
-                other != index
-                    && !done.has(other)
-                    && operations[other].operation.return_bound() < ReturnBound::At(invoked)
-            });
-            if held_back {
-                continue;
-            }
-            if *budget == 0 {
-                return Ok(None);
-            }
-            *budget -= 1;
-            *spent += 1;
-            for next in step(ir, store, &operations[index])? {
-                found.push((index, next));
-            }
-        }
-        Ok::<_, CheckRefusal>(Some(found))
-    };
-
     let start = Done::new(total);
-    let Some(first) = moves(&start, &Store::default(), budget, spent)? else {
+    let Some(first) = next_moves(
+        ir,
+        operations,
+        &order,
+        &start,
+        &Store::default(),
+        budget,
+        spent,
+    )?
+    else {
         return Ok(Outcome::Unknown(longest));
     };
     if total == 0 {
-        return Ok(Outcome::Linearizable);
+        return Ok(Outcome::Linearizable(Vec::new()));
     }
     let mut stack = vec![Frame {
         done: start,
@@ -462,9 +680,9 @@ fn search(
             longest.clone_from(&path);
         }
         if path.len() == total {
-            return Ok(Outcome::Linearizable);
+            return Ok(Outcome::Linearizable(path));
         }
-        let Some(found) = moves(&done, &store, budget, spent)? else {
+        let Some(found) = next_moves(ir, operations, &order, &done, &store, budget, spent)? else {
             return Ok(Outcome::Unknown(longest));
         };
         stack.push(Frame {
@@ -476,55 +694,436 @@ fn search(
     Ok(Outcome::Violation(longest))
 }
 
+// ---- every state a linearization passes through -----------------------------------------------
+
+/// One state some complete linearization of a partition passes through: the operations ordered
+/// so far, and the state they leave.
+struct Reached {
+    done: Done,
+    store: Store,
+    /// The latest invoke instant among the operations ordered so far; 0 when there are none.
+    latest: u64,
+    /// Whether every operation of the partition is ordered.
+    full: bool,
+}
+
+/// The walk behind [`reach`]: each node's liveness, cached by the set ordered and the state.
+struct Walk<'a, 'h> {
+    ir: &'a EssIr,
+    operations: &'a [Prepared<'h>],
+    order: Vec<usize>,
+    budget: &'a mut u64,
+    spent: &'a mut u64,
+    live: BTreeMap<Done, Vec<(Store, bool)>>,
+}
+
+impl Walk<'_, '_> {
+    /// Whether some complete linearization passes through (`done`, `store`); `None` when the
+    /// budget ran out.
+    fn visit(&mut self, done: &Done, store: &Store) -> Result<Option<bool>, CheckRefusal> {
+        if let Some(known) = self
+            .live
+            .get(done)
+            .and_then(|states| states.iter().find(|(held, _)| held == store))
+        {
+            return Ok(Some(known.1));
+        }
+        let complete = (0..self.operations.len()).all(|index| done.has(index));
+        let mut live = complete;
+        if !complete {
+            let Some(moves) = next_moves(
+                self.ir,
+                self.operations,
+                &self.order,
+                done,
+                store,
+                self.budget,
+                self.spent,
+            )?
+            else {
+                return Ok(None);
+            };
+            for (index, next) in moves {
+                match self.visit(&done.with(index), &next)? {
+                    None => return Ok(None),
+                    Some(child) => live |= child,
+                }
+            }
+        }
+        self.live
+            .entry(done.clone())
+            .or_default()
+            .push((store.clone(), live));
+        Ok(Some(live))
+    }
+}
+
+/// Every state some complete linearization of the partition passes through, including the empty
+/// start; `None` when the budget ran out.
+///
+/// Every order the search would accept, not the one it found: a read is explained by any of them.
+/// An `Indeterminate` operation contributes both of its branches — it took effect, or it never
+/// happened — because [`step`] returns both.
+fn reach(
+    ir: &EssIr,
+    operations: &[Prepared<'_>],
+    budget: &mut u64,
+    spent: &mut u64,
+) -> Result<Option<Vec<Reached>>, CheckRefusal> {
+    let total = operations.len();
+    let mut walk = Walk {
+        ir,
+        operations,
+        order: move_order(operations),
+        budget,
+        spent,
+        live: BTreeMap::new(),
+    };
+    if walk.visit(&Done::new(total), &Store::default())?.is_none() {
+        return Ok(None);
+    }
+    let mut reached = Vec::new();
+    for (done, states) in walk.live {
+        let ordered: Vec<usize> = (0..total).filter(|&index| done.has(index)).collect();
+        let latest = ordered
+            .iter()
+            .map(|&index| operations[index].operation.invoked_at)
+            .max()
+            .unwrap_or(0);
+        let full = ordered.len() == total;
+        for (store, live) in states {
+            if live {
+                reached.push(Reached {
+                    done: done.clone(),
+                    store,
+                    latest,
+                    full,
+                });
+            }
+        }
+    }
+    Ok(Some(reached))
+}
+
+/// How many of a session's reads of an `eventual` view, invoked after the writes stop, may still
+/// be behind, when none is named. Convergence is judged on the reads after them.
+///
+/// A count of reads, not a span of instants: `ess-history/1` instants compare only by order, so
+/// an order-preserving change of clock changes no verdict. Two is what the billing reference at
+/// `Billing::DEFAULT_LAG` needs — its projection catches up after two further reads by anyone,
+/// and a session's third read after the writes is invoked after its first two answered — and the
+/// default doubles it.
+pub const DEFAULT_SETTLE: u64 = 4;
+
 /// Searches `history` for an order of its operations the model of `ir` accepts, spending at most
-/// `budget` executions of the model.
+/// `budget` executions of the model, and judges its view reads with [`DEFAULT_SETTLE`].
 ///
 /// # Errors
 ///
 /// [`CheckRefusal`] where the history cannot be checked against this model at all.
 pub fn check(ir: &EssIr, history: &History, budget: u64) -> Result<Checked, CheckRefusal> {
+    check_settled(ir, history, budget, DEFAULT_SETTLE)
+}
+
+/// [`check`], with convergence of an `eventual` view judged only on a session's reads after its
+/// first `settle` reads of that view invoked after the writes stop.
+///
+/// # Errors
+///
+/// [`CheckRefusal`] where the history cannot be checked against this model at all.
+pub fn check_settled(
+    ir: &EssIr,
+    history: &History,
+    budget: u64,
+    settle: u64,
+) -> Result<Checked, CheckRefusal> {
     let split = split(ir, history)?;
     let mut remaining = budget;
     let mut spent = 0;
     let mut unknown: Option<(String, Vec<String>)> = None;
-    let ids = |operations: &[Prepared<'_>], indices: Vec<usize>| -> Vec<String> {
+    let ids = |operations: &[Prepared<'_>], indices: &[usize]| -> Vec<String> {
         indices
-            .into_iter()
-            .map(|index| operations[index].operation.operation_id.as_str().to_owned())
+            .iter()
+            .map(|&index| operations[index].operation.operation_id.as_str().to_owned())
             .collect()
     };
+    let mut found: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for (subject_key, operations) in &split.partitions {
         match search(ir, operations, &mut remaining, &mut spent)? {
-            Outcome::Linearizable => {}
+            Outcome::Linearizable(order) => {
+                found.insert(*subject_key, ids(operations, &order));
+            }
             Outcome::Violation(longest) => {
                 return Ok(Checked {
                     verdict: Verdict::Violation,
                     steps: spent,
                     subject_key: Some((*subject_key).to_owned()),
-                    linearization: ids(operations, longest),
+                    linearization: ids(operations, &longest),
                     partitions: split.partitions.len(),
                     not_judged: split.not_judged,
+                    judged: 0,
+                    read: None,
                 });
             }
             Outcome::Unknown(longest) => {
                 if unknown.is_none() {
-                    unknown = Some(((*subject_key).to_owned(), ids(operations, longest)));
+                    unknown = Some(((*subject_key).to_owned(), ids(operations, &longest)));
                 }
             }
         }
     }
-    let (verdict, subject_key, linearization) = match unknown {
-        Some((subject_key, longest)) => (Verdict::Unknown, Some(subject_key), longest),
-        None => (Verdict::Linearizable, None, Vec::new()),
+    let unknown_now =
+        |subject_key: String, linearization: Vec<String>, spent: u64, split: Split| Checked {
+            verdict: Verdict::Unknown,
+            steps: spent,
+            subject_key: Some(subject_key),
+            linearization,
+            partitions: split.partitions.len(),
+            not_judged: split.not_judged,
+            judged: 0,
+            read: None,
+        };
+    if let Some((subject_key, longest)) = unknown {
+        return Ok(unknown_now(subject_key, longest, spent, split));
+    }
+    let mut reached: BTreeMap<&str, Vec<Reached>> = BTreeMap::new();
+    if !split.reads.is_empty() {
+        for (subject_key, operations) in &split.partitions {
+            let Some(states) = reach(ir, operations, &mut remaining, &mut spent)? else {
+                let order = found.remove(subject_key).unwrap_or_default();
+                return Ok(unknown_now((*subject_key).to_owned(), order, spent, split));
+            };
+            reached.insert(*subject_key, states);
+        }
+    }
+    let convergence = convergence(&split, settle);
+    let (verdict, subject_key, linearization, read) = match judge(&split, &reached, &convergence) {
+        Some(violation) => (
+            Verdict::Violation,
+            Some(violation.subject_key.clone()),
+            found
+                .remove(violation.subject_key.as_str())
+                .unwrap_or_default(),
+            Some(violation),
+        ),
+        None => (Verdict::Linearizable, None, Vec::new(), None),
     };
+    let judged = split.reads.len()
+        - convergence
+            .values()
+            .filter(|judged| judged.is_err())
+            .count();
+    let not_judged = listed(history, split.not_judged, &split.reads, &convergence);
     Ok(Checked {
         verdict,
         steps: spent,
         subject_key,
         linearization,
         partitions: split.partitions.len(),
-        not_judged: split.not_judged,
+        not_judged,
+        judged,
+        read,
     })
+}
+
+/// `not_judged` with every read judged for less than its level promises added — each `eventual`
+/// read `convergence` did not judge for convergence — in document order.
+fn listed(
+    history: &History,
+    mut not_judged: Vec<NotJudged>,
+    reads: &[ViewRead<'_>],
+    convergence: &BTreeMap<&str, Result<(), String>>,
+) -> Vec<NotJudged> {
+    for read in reads {
+        if let Some(Err(reason)) = convergence.get(read.operation.operation_id.as_str()) {
+            not_judged.push(NotJudged {
+                operation_id: read.operation.operation_id.as_str().to_owned(),
+                view: read.view.clone(),
+                consistency: read.consistency.as_str().to_owned(),
+                reason: reason.clone(),
+            });
+        }
+    }
+    let position: BTreeMap<&str, usize> = history
+        .operations
+        .iter()
+        .enumerate()
+        .map(|(index, operation)| (operation.operation_id.as_str(), index))
+        .collect();
+    not_judged.sort_by_key(|read| position.get(read.operation_id.as_str()).copied());
+    not_judged
+}
+
+// ---- judging the reads -----------------------------------------------------------------------
+
+/// `true` when `operation` returned before `instant`.
+fn returned_before(operation: &Operation, instant: u64) -> bool {
+    operation.return_bound() < ReturnBound::At(instant)
+}
+
+/// The reason code of an `eventual` read not judged for convergence because the session had not
+/// yet read `settle` times after the writes stopped.
+pub const BEFORE_SETTLE: &str = "before-settle";
+
+/// The reason code of an `eventual` read not judged for convergence because it was invoked before
+/// the writes stopped, or the writes never stopped.
+pub const BEFORE_WRITES_STOP: &str = "before-writes-stop";
+
+/// For every `eventual` read, by operation id: `Ok` where it is judged for convergence, and the
+/// reason where it is not. A `read_your_writes` read has no entry.
+///
+/// The writes stop at the latest return of any command, where every command answered. A read is
+/// after it when it was invoked after that return — an order, never a difference of instants. A
+/// session is one client's reads of one view; its reads after the writes stop are counted in
+/// invoke order, and the first `settle` of them may still be behind.
+fn convergence<'h>(split: &Split<'h>, settle: u64) -> BTreeMap<&'h str, Result<(), String>> {
+    let stopped = split.partitions.values().flatten().try_fold(
+        None,
+        |latest: Option<&Operation>, prepared| {
+            let operation = prepared.operation;
+            (operation.completion == Completion::Returned)
+                .then(|| match latest {
+                    Some(held) if held.return_bound() >= operation.return_bound() => held,
+                    _ => operation,
+                })
+                .map(Some)
+        },
+    );
+    let mut sessions: BTreeMap<(u64, &str), Vec<&Operation>> = BTreeMap::new();
+    let mut decided = BTreeMap::new();
+    for read in &split.reads {
+        if read.consistency != Consistency::Eventual {
+            continue;
+        }
+        let operation = read.operation;
+        let id = operation.operation_id.as_str();
+        match stopped {
+            None => {
+                decided.insert(
+                    id,
+                    Err(format!(
+                        "{BEFORE_WRITES_STOP}: a command never answered, so the writes never \
+                         stop and convergence cannot be judged"
+                    )),
+                );
+            }
+            Some(last) if last.is_some_and(|last| !returned_before(last, operation.invoked_at)) => {
+                decided.insert(
+                    id,
+                    Err(format!(
+                        "{BEFORE_WRITES_STOP}: invoked before the last write returned, so it may \
+                         show any earlier state"
+                    )),
+                );
+            }
+            Some(_) => sessions
+                .entry((operation.client, read.view.as_str()))
+                .or_default()
+                .push(operation),
+        }
+    }
+    for reads in sessions.values_mut() {
+        reads.sort_by_key(|operation| operation.invoked_at);
+        for (count, operation) in reads.iter().enumerate() {
+            let judged = if (count as u64) < settle {
+                Err(format!(
+                    "{BEFORE_SETTLE}: read {} of its session after the writes stopped, within \
+                     the first {settle} that may still be behind",
+                    count + 1
+                ))
+            } else {
+                Ok(())
+            };
+            decided.insert(operation.operation_id.as_str(), judged);
+        }
+    }
+    decided
+}
+
+/// The first read, in document order, its view's declared consistency does not allow.
+fn judge(
+    split: &Split<'_>,
+    reached: &BTreeMap<&str, Vec<Reached>>,
+    convergence: &BTreeMap<&str, Result<(), String>>,
+) -> Option<ReadViolation> {
+    for read in &split.reads {
+        let operation = read.operation;
+        let returned = operation.returned_at.unwrap_or(u64::MAX);
+        let converges = matches!(
+            convergence.get(operation.operation_id.as_str()),
+            Some(Ok(()))
+        );
+        let violation = |subject: &str, shown: bool, anomaly: Anomaly| ReadViolation {
+            operation_id: operation.operation_id.as_str().to_owned(),
+            client: operation.client,
+            view: read.view.clone(),
+            consistency: read.consistency.as_str().to_owned(),
+            subject_key: subject.to_owned(),
+            shown,
+            anomaly,
+        };
+        // A row-level view holds one row per instance; the same identity twice is no state.
+        if let Some(row) = read.duplicate {
+            return Some(violation(row, true, Anomaly::DuplicateRow));
+        }
+        for row in &read.rows {
+            if !reached.contains_key(row) {
+                return Some(violation(row, true, Anomaly::FutureRead));
+            }
+        }
+        for (subject, states) in reached {
+            let shown = read.rows.contains(subject);
+            let partition = &split.partitions[subject];
+            // Exhaustive on purpose: a level added to the language is decided here, not defaulted.
+            // The reader's own operations on this subject that returned before it read.
+            let own: Vec<usize> = match read.consistency {
+                Consistency::ReadYourWrites => partition
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, prepared)| {
+                        let own = prepared.operation;
+                        own.client == operation.client
+                            && own.completion == Completion::Returned
+                            && returned_before(own, operation.invoked_at)
+                    })
+                    .map(|(index, _)| index)
+                    .collect(),
+                Consistency::Eventual => Vec::new(),
+            };
+            let answers = |state: &&Reached| {
+                state
+                    .store
+                    .instance(read.entity, subject)
+                    .is_some_and(|instance| read.admits.contains(&instance.state))
+                    == shown
+            };
+            let asked = |state: &&Reached| state.latest <= returned;
+            let covers = |state: &&Reached| own.iter().all(|&index| state.done.has(index));
+            if converges {
+                if states
+                    .iter()
+                    .filter(|state| state.full)
+                    .any(|state| answers(&state))
+                {
+                    continue;
+                }
+                return Some(violation(subject, shown, Anomaly::NotConverged));
+            }
+            if states
+                .iter()
+                .any(|state| asked(&state) && covers(&state) && answers(&state))
+            {
+                continue;
+            }
+            let anomaly = if states.iter().any(|state| asked(&state) && answers(&state)) {
+                Anomaly::StaleRead
+            } else {
+                Anomaly::FutureRead
+            };
+            return Some(violation(subject, shown, anomaly));
+        }
+    }
+    None
 }
 
 // ---- shrinking -------------------------------------------------------------------------------
@@ -536,46 +1135,64 @@ fn only(history: &History, keep: impl Fn(&Operation) -> bool) -> History {
     kept
 }
 
-/// How many judged operations of the partition that decided a violation no order explains: that
-/// partition's operations less its longest partial linearization.
+/// How many operations of the partition that decided a command violation no order explains: that
+/// partition's commands less its longest partial linearization.
 ///
 /// Independent of the order the search tries moves in. A violation is only reported after the
 /// search has reached every state it can, so the longest linearization is the longest there is; its
 /// length, unlike which operations it holds, is a property of the history.
-fn unexplained(history: &History, checked: &Checked) -> usize {
-    let not_judged: BTreeSet<&str> = checked
-        .not_judged
-        .iter()
-        .map(|read| read.operation_id.as_str())
-        .collect();
-    let judged = history
+fn unexplained(ir: &EssIr, history: &History, checked: &Checked) -> usize {
+    let commands = history
         .operations
         .iter()
         .filter(|operation| {
             Some(operation.subject_key.as_str()) == checked.subject_key.as_deref()
-                && !not_judged.contains(operation.operation_id.as_str())
+                && !reads_a_view(ir, operation)
         })
         .count();
-    judged.saturating_sub(checked.linearization.len())
+    commands.saturating_sub(checked.linearization.len())
 }
 
-/// The unexplained count of `candidate` when it is still a violation with no more unexplained
-/// operations than `bound`.
-fn no_worse(
-    ir: &EssIr,
-    candidate: &History,
-    bound: usize,
-    budget: u64,
-) -> Result<Option<usize>, CheckRefusal> {
-    if candidate.operations.is_empty() {
-        return Ok(None);
+/// What a trial must still be for a removal to be kept.
+#[derive(Debug, Clone)]
+enum Same {
+    /// A command violation with no more unexplained operations than this.
+    Command(usize),
+    /// A violation by this read, of this subject, of this kind.
+    Read(ReadViolation),
+}
+
+impl Same {
+    /// What `candidate` is, where it is still the same violation.
+    fn still(
+        &self,
+        ir: &EssIr,
+        candidate: &History,
+        budget: u64,
+        settle: u64,
+    ) -> Result<Option<Self>, CheckRefusal> {
+        if candidate.operations.is_empty() {
+            return Ok(None);
+        }
+        let checked = check_settled(ir, candidate, budget, settle)?;
+        if checked.verdict != Verdict::Violation {
+            return Ok(None);
+        }
+        Ok(match (self, &checked.read) {
+            (Self::Command(bound), None) => {
+                let count = unexplained(ir, candidate, &checked);
+                (count <= *bound).then_some(Self::Command(count))
+            }
+            (Self::Read(read), Some(found))
+                if found.operation_id == read.operation_id
+                    && found.subject_key == read.subject_key
+                    && found.anomaly == read.anomaly =>
+            {
+                Some(self.clone())
+            }
+            _ => None,
+        })
     }
-    let checked = check(ir, candidate, budget)?;
-    if checked.verdict != Verdict::Violation {
-        return Ok(None);
-    }
-    let count = unexplained(candidate, &checked);
-    Ok((count <= bound).then_some(count))
 }
 
 /// `true` when `earlier` returned before `later` was invoked.
@@ -601,7 +1218,8 @@ fn without(current: &History, drop: impl Fn(&Operation) -> bool) -> Option<Histo
 /// Three moves, each kept only while what is left is still that violation:
 ///
 /// 1. every operation outside the subject partition that decided the violation is dropped, which
-///    P-compositionality makes safe, and so is every read not judged here;
+///    P-compositionality makes safe. For a command violation every read goes too; for a read
+///    violation the read stays, answering only for that subject;
 /// 2. whole clients are removed one at a time;
 /// 3. single operations are removed one at a time, until no one more can be.
 ///
@@ -614,8 +1232,10 @@ fn without(current: &History, drop: impl Fn(&Operation) -> bool) -> Option<Histo
 /// * an operation is removed only when no operation that stays was invoked after it returned — the
 ///   setup a race runs after goes only once the race itself is gone, as a program's earlier calls
 ///   are kept while a later one needs them;
-/// * a removal is kept only when the result is still a violation and the number of operations no
-///   order explains has not grown since the last removal kept.
+/// * a removal is kept only when the result is still a violation of the same kind: for a command
+///   violation, the number of operations no order explains has not grown since the last removal
+///   kept; for a read violation, the same read still shows the same subject with the same
+///   [`Anomaly`].
 ///
 /// Moves 2 and 3 repeat until neither removes anything. Last, the sequential prefix — the setup
 /// every client raced after — is moved onto a client that is left, and the clients are numbered
@@ -626,24 +1246,54 @@ fn without(current: &History, drop: impl Fn(&Operation) -> bool) -> Option<Histo
 ///
 /// [`CheckRefusal`] where a trial cannot be checked.
 pub fn shrink(ir: &EssIr, history: &History, budget: u64) -> Result<History, CheckRefusal> {
-    let checked = check(ir, history, budget)?;
+    shrink_settled(ir, history, budget, DEFAULT_SETTLE)
+}
+
+/// [`shrink`], judging every trial with [`check_settled`] at `settle`.
+///
+/// # Errors
+///
+/// [`CheckRefusal`] where a trial cannot be checked.
+pub fn shrink_settled(
+    ir: &EssIr,
+    history: &History,
+    budget: u64,
+    settle: u64,
+) -> Result<History, CheckRefusal> {
+    let checked = check_settled(ir, history, budget, settle)?;
     if checked.verdict != Verdict::Violation {
         return Ok(history.clone());
     }
-    let mut bound = unexplained(history, &checked);
-    let not_judged: BTreeSet<&str> = checked
-        .not_judged
-        .iter()
-        .map(|read| read.operation_id.as_str())
-        .collect();
+    let subject = checked.subject_key.as_deref();
+    let (mut same, partition) = match &checked.read {
+        None => (
+            Same::Command(unexplained(ir, history, &checked)),
+            only(history, |operation| {
+                Some(operation.subject_key.as_str()) == subject && !reads_a_view(ir, operation)
+            }),
+        ),
+        Some(read) => {
+            let is_read =
+                |operation: &Operation| operation.operation_id.as_str() == read.operation_id;
+            let mut partition = only(history, |operation| {
+                is_read(operation)
+                    || (Some(operation.subject_key.as_str()) == subject
+                        && !reads_a_view(ir, operation))
+            });
+            for operation in &mut partition.operations {
+                if is_read(operation) {
+                    if let Some(rows) = &mut operation.rows {
+                        rows.retain(|row| *row == read.subject_key);
+                    }
+                }
+            }
+            (Same::Read(read.clone()), partition)
+        }
+    };
     let mut current = history.clone();
-    let partition = only(history, |operation| {
-        Some(operation.subject_key.as_str()) == checked.subject_key.as_deref()
-            && !not_judged.contains(operation.operation_id.as_str())
-    });
-    if let Some(count) = no_worse(ir, &partition, bound, budget)? {
+    if let Some(next) = same.still(ir, &partition, budget, settle)? {
         current = partition;
-        bound = count;
+        same = next;
     }
     loop {
         let mut removed = false;
@@ -652,9 +1302,9 @@ pub fn shrink(ir: &EssIr, history: &History, budget: u64) -> Result<History, Che
             let Some(candidate) = without(&current, |operation| operation.client == client) else {
                 continue;
             };
-            if let Some(count) = no_worse(ir, &candidate, bound, budget)? {
+            if let Some(next) = same.still(ir, &candidate, budget, settle)? {
                 current = candidate;
-                bound = count;
+                same = next;
                 removed = true;
                 break;
             }
@@ -673,9 +1323,9 @@ pub fn shrink(ir: &EssIr, history: &History, budget: u64) -> Result<History, Che
             else {
                 continue;
             };
-            if let Some(count) = no_worse(ir, &candidate, bound, budget)? {
+            if let Some(next) = same.still(ir, &candidate, budget, settle)? {
                 current = candidate;
-                bound = count;
+                same = next;
                 removed = true;
             }
         }
@@ -684,7 +1334,7 @@ pub fn shrink(ir: &EssIr, history: &History, budget: u64) -> Result<History, Che
         }
     }
     let relabelled = relabel(&current);
-    if no_worse(ir, &relabelled, bound, budget)?.is_some() {
+    if same.still(ir, &relabelled, budget, settle)?.is_some() {
         current = relabelled;
     }
     Ok(current)
@@ -762,8 +1412,15 @@ pub struct Report {
     pub subject_key: Option<String>,
     /// The longest order of that partition's operations the model accepted, by operation id.
     pub linearization: Vec<String>,
-    /// The reads not judged here.
+    /// The reads not judged here, each with its reason.
     pub not_judged: Vec<NotJudged>,
+    /// How many reads were judged at their view's consistency. Not written in the JSON report,
+    /// whose fields are those of `check-history`'s first release plus `read`.
+    #[serde(skip)]
+    pub judged: usize,
+    /// For a violation a read decided: the client, the read and what it showed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read: Option<ReadViolation>,
     /// For a violation, the shrunk history.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shrunk: Option<History>,
@@ -775,9 +1432,23 @@ pub struct Report {
 ///
 /// [`CheckRefusal`] where the history cannot be checked against this model at all.
 pub fn report(ir: &EssIr, history: &History, budget: u64) -> Result<Report, CheckRefusal> {
-    let checked = check(ir, history, budget)?;
+    report_settled(ir, history, budget, DEFAULT_SETTLE)
+}
+
+/// [`report`], with convergence judged at `settle` ([`check_settled`]).
+///
+/// # Errors
+///
+/// [`CheckRefusal`] where the history cannot be checked against this model at all.
+pub fn report_settled(
+    ir: &EssIr,
+    history: &History,
+    budget: u64,
+    settle: u64,
+) -> Result<Report, CheckRefusal> {
+    let checked = check_settled(ir, history, budget, settle)?;
     let shrunk = match checked.verdict {
-        Verdict::Violation => Some(shrink(ir, history, budget)?),
+        Verdict::Violation => Some(shrink_settled(ir, history, budget, settle)?),
         Verdict::Linearizable | Verdict::Unknown => None,
     };
     Ok(Report {
@@ -789,6 +1460,8 @@ pub fn report(ir: &EssIr, history: &History, budget: u64) -> Result<Report, Chec
         subject_key: checked.subject_key,
         linearization: checked.linearization,
         not_judged: checked.not_judged,
+        judged: checked.judged,
+        read: checked.read,
         shrunk,
     })
 }
@@ -827,11 +1500,18 @@ impl Report {
         let _ = writeln!(
             text,
             "searched {} operation(s) in {} subject partition(s), {} of {} step(s)",
-            self.operations - self.not_judged.len(),
+            self.operations - self.not_judged.len() - self.judged,
             self.partitions,
             self.steps,
             self.budget
         );
+        if self.judged > 0 {
+            let _ = writeln!(
+                text,
+                "judged {} view read(s) at their declared consistency",
+                self.judged
+            );
+        }
         if self.verdict == Verdict::Unknown {
             let _ = writeln!(
                 text,
@@ -849,11 +1529,24 @@ impl Report {
                 }
             );
         }
+        if let Some(read) = &self.read {
+            let _ = writeln!(
+                text,
+                "read violation: client {} read {} of `{}`, declared {}: {} — it {} `{}`",
+                read.client,
+                read.operation_id,
+                read.view,
+                read.consistency,
+                read.anomaly.as_str(),
+                if read.shown { "shows" } else { "does not show" },
+                read.subject_key
+            );
+        }
         for read in &self.not_judged {
             let _ = writeln!(
                 text,
-                "not judged: {} reads `{}`, declared {}",
-                read.operation_id, read.view, read.consistency
+                "not judged: {} reads `{}`, declared {}: {}",
+                read.operation_id, read.view, read.consistency, read.reason
             );
         }
         if let Some(shrunk) = &self.shrunk {
@@ -870,7 +1563,7 @@ impl Report {
                 };
                 let _ = writeln!(
                     text,
-                    "  client {} [{}, {}] {} `{}` -> {}",
+                    "  client {} [{}, {}] {} `{}` -> {}{}",
                     operation.client,
                     operation.invoked_at,
                     returned,
@@ -880,6 +1573,10 @@ impl Report {
                         .outcome
                         .as_ref()
                         .map_or("no answer", |outcome| outcome.as_str()),
+                    operation
+                        .rows
+                        .as_ref()
+                        .map_or_else(String::new, |rows| format!(" [{}]", rows.join(", "))),
                 );
             }
         }

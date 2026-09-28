@@ -162,8 +162,10 @@ impl fmt::Display for RecordError {
 impl std::error::Error for RecordError {}
 
 /// The seed's sequence: `SplitMix64`, written out so no crate is needed and no platform varies it.
+///
+/// Shared with [`crate::sessions`], so one seed interleaves both recorders' clients alike.
 #[derive(Debug, Clone)]
-struct Draw(u64);
+pub(crate) struct Draw(pub(crate) u64);
 
 impl Draw {
     fn next(&mut self) -> u64 {
@@ -174,7 +176,7 @@ impl Draw {
         z ^ (z >> 31)
     }
 
-    fn below(&mut self, bound: usize) -> usize {
+    pub(crate) fn below(&mut self, bound: usize) -> usize {
         // `bound` is at most a handful of clients, so the modulo bias is immaterial and, more to the
         // point, deterministic.
         usize::try_from(self.next() % bound as u64).unwrap_or(0)
@@ -182,9 +184,93 @@ impl Draw {
 }
 
 /// The identity the recorder writes for the `n`th thing it names.
-fn uuid(n: u64) -> Uuid {
+pub(crate) fn uuid(n: u64) -> Uuid {
     Uuid::new(format!("00000000-0000-4000-8000-{n:012x}"))
         .unwrap_or_else(|error| panic!("a counter-shaped UUID is canonical: {error}"))
+}
+
+/// The request for `call`, with the field that names its subject filled from `created` — the
+/// identity each prefix call created — and the subject it addresses, where it names one.
+///
+/// Shared with [`crate::sessions`]. `correlation` is the request's correlation.
+pub(crate) fn command_request(
+    ir: &EssIr,
+    created: &[Option<String>],
+    call: &Call,
+    correlation: CorrelationId,
+) -> Result<(SemanticCommandRequest, Option<String>), RecordError> {
+    let name = ModelName::new(&call.command)
+        .map_err(|_| RecordError::UnknownCommand(call.command.clone()))?;
+    let spec = ir
+        .commands()
+        .get(&name)
+        .ok_or_else(|| RecordError::UnknownCommand(call.command.clone()))?;
+    let mut input = call.input.clone();
+    let subject_key = match call.subject {
+        Subject::Creates => None,
+        Subject::Created(prefix) => {
+            let key = created
+                .get(prefix)
+                .cloned()
+                .flatten()
+                .ok_or(RecordError::NoSuchSubject { prefix })?;
+            let field = spec
+                .outcomes
+                .iter()
+                .filter_map(|outcome| outcome.subject.as_ref())
+                .find_map(|subject| match &subject.instance {
+                    ResolvedInstance::Supplied { field } => Some(field.name.clone()),
+                    ResolvedInstance::Observed { .. } => None,
+                })
+                .ok_or_else(|| RecordError::NoSubjectField(call.command.clone()))?;
+            input.insert(field, Node::Text(key.clone()));
+            Some(key)
+        }
+    };
+    let request = SemanticCommandRequest {
+        command: CommandRef::new(name),
+        actor: None,
+        input,
+        correlation,
+    };
+    Ok((request, subject_key))
+}
+
+/// The correlation of the `n`th operation a recorder writes, counting from 1.
+pub(crate) fn correlation(n: usize) -> CorrelationId {
+    CorrelationId::new(format!("history-{n}"))
+        .unwrap_or_else(|error| panic!("a counter-shaped correlation is valid: {error}"))
+}
+
+/// The identity a creating command's answer published, where the model says where it is.
+///
+/// Shared with [`crate::sessions`].
+pub(crate) fn created_identity(
+    ir: &EssIr,
+    command: &str,
+    result: &SemanticCommandResult,
+) -> Option<String> {
+    let name = ModelName::new(command).ok()?;
+    let spec = ir.commands().get(&name)?;
+    let taken = result.outcome.as_ref()?;
+    let outcome = spec
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name == taken.outcome)?;
+    let subject = outcome.subject.as_ref()?;
+    let (ResolvedEffect::Creates, ResolvedInstance::Observed { event, field }) =
+        (&subject.effect, &subject.instance)
+    else {
+        return None;
+    };
+    let event = &ir.event(event).name;
+    result
+        .direct_events
+        .iter()
+        .find(|occurrence| occurrence.event.name() == event)
+        .and_then(|occurrence| occurrence.payload.get(&field.name))
+        .and_then(Node::as_text)
+        .map(ToOwned::to_owned)
 }
 
 /// The recorder's working state for one run.
@@ -210,78 +296,13 @@ impl<T: Interleaved> Recording<'_, T> {
         self.clock
     }
 
-    /// Builds the request for `call`, filling the field that names its subject.
-    fn request(
-        &self,
-        call: &Call,
-    ) -> Result<(SemanticCommandRequest, Option<String>), RecordError> {
-        let name = ModelName::new(&call.command)
-            .map_err(|_| RecordError::UnknownCommand(call.command.clone()))?;
-        let spec = self
-            .ir
-            .commands()
-            .get(&name)
-            .ok_or_else(|| RecordError::UnknownCommand(call.command.clone()))?;
-        let mut input = call.input.clone();
-        let subject_key = match call.subject {
-            Subject::Creates => None,
-            Subject::Created(prefix) => {
-                let key = self
-                    .created
-                    .get(prefix)
-                    .cloned()
-                    .flatten()
-                    .ok_or(RecordError::NoSuchSubject { prefix })?;
-                let field = spec
-                    .outcomes
-                    .iter()
-                    .filter_map(|outcome| outcome.subject.as_ref())
-                    .find_map(|subject| match &subject.instance {
-                        ResolvedInstance::Supplied { field } => Some(field.name.clone()),
-                        ResolvedInstance::Observed { .. } => None,
-                    })
-                    .ok_or_else(|| RecordError::NoSubjectField(call.command.clone()))?;
-                input.insert(field, Node::Text(key.clone()));
-                Some(key)
-            }
-        };
-        let request = SemanticCommandRequest {
-            command: CommandRef::new(name),
-            actor: None,
-            input,
-            correlation: CorrelationId::new(format!("history-{}", self.operations.len() + 1))
-                .unwrap_or_else(|error| panic!("a counter-shaped correlation is valid: {error}")),
-        };
-        Ok((request, subject_key))
-    }
-
-    /// The identity a creating command's answer published, where the model says where it is.
-    fn created_identity(&self, command: &str, result: &SemanticCommandResult) -> Option<String> {
-        let name = ModelName::new(command).ok()?;
-        let spec = self.ir.commands().get(&name)?;
-        let taken = result.outcome.as_ref()?;
-        let outcome = spec
-            .outcomes
-            .iter()
-            .find(|outcome| outcome.name == taken.outcome)?;
-        let subject = outcome.subject.as_ref()?;
-        let (ResolvedEffect::Creates, ResolvedInstance::Observed { event, field }) =
-            (&subject.effect, &subject.instance)
-        else {
-            return None;
-        };
-        let event = &self.ir.event(event).name;
-        result
-            .direct_events
-            .iter()
-            .find(|occurrence| occurrence.event.name() == event)
-            .and_then(|occurrence| occurrence.payload.get(&field.name))
-            .and_then(Node::as_text)
-            .map(ToOwned::to_owned)
-    }
-
     fn invoke(&mut self, client: u64, call: &Call) -> Result<InFlight<T::Pending>, RecordError> {
-        let (request, subject_key) = self.request(call)?;
+        let (request, subject_key) = command_request(
+            self.ir,
+            &self.created,
+            call,
+            correlation(self.operations.len() + 1),
+        )?;
         let invoked_at = self.tick();
         let index = self.operations.len();
         // Reserve the operation's place in invoke order; `complete` fills it in.
@@ -295,6 +316,7 @@ impl<T: Interleaved> Recording<'_, T> {
             returned_at: None,
             completion: Completion::Indeterminate,
             outcome: None,
+            rows: None,
         });
         Ok(InFlight {
             pending: self.target.invoke(request),
@@ -314,7 +336,7 @@ impl<T: Interleaved> Recording<'_, T> {
             self.operations[flight.index].subject_key = flight.subject_key.unwrap_or_default();
             return None;
         };
-        let created = self.created_identity(&flight.command, &result);
+        let created = created_identity(self.ir, &flight.command, &result);
         // A result naming no declared branch is written under a name no branch can have, so the
         // checker finds no step that answers it.
         let outcome = result

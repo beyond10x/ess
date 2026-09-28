@@ -54,6 +54,7 @@ use ess_conformance::reference::{Billing, Oracle, Untraced};
 use ess_conformance::report::{CheckCode, ConformanceReport, ConformanceStatus, Status};
 use ess_conformance::runner::Runner;
 use ess_conformance::scenario::ConformanceSuite;
+use ess_conformance::sessions;
 use ess_conformance::synthesize::synthesize;
 use ess_conformance::target::{ConformanceTarget, ImplementationIdentity};
 use ess_domain::spec::{RawSpecFile, Specification};
@@ -334,6 +335,11 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             between the read and the write and every answer is the
     //                             reference's. The row is caught by a recorded concurrent history,
     //                             and the test after the next section says so.
+    //   StaleReadUnderReadYourWrites
+    //                          0  one client's reads always demand that client's newest write,
+    //                             which is also the newest write anybody made, and that read is the
+    //                             one that refreshes the copy. Only a second client writing between
+    //                             the first client's write and its read leaves the copy behind.
     let allowance: &[(Fault, usize)] = &[
         (Fault::WrongEvent, 24),
         (Fault::DropConsistencyToken, 9),
@@ -348,6 +354,7 @@ fn a_faults_blast_radius_is_accounted_for() {
         (Fault::WrongEventPayload, 2),
         (Fault::NegativeProjectedTotal, 4),
         (Fault::LostUpdate, 0),
+        (Fault::StaleReadUnderReadYourWrites, 0),
     ];
 
     for fault in Fault::ALL {
@@ -556,28 +563,31 @@ fn a_fault_only_a_concurrent_history_catches_passes_every_suite_scenario_and_fai
 
         let mut violations = 0;
         for seed in 0..24 {
-            let faulted = record::record(
-                &model,
-                &faulty::billing(*fault),
-                &faulty::lost_update_workload(),
-                seed,
-            )
-            .expect("the workload names what billing declares");
-            if linearize::check(&model, &faulted, linearize::DEFAULT_BUDGET)
-                .expect("checked")
-                .verdict
-                == Verdict::Violation
-            {
+            let target = faulty::billing(*fault);
+            let faulted = recorded(&model, *fault, &target, &target, seed);
+            let checked =
+                linearize::check(&model, &faulted, linearize::DEFAULT_BUDGET).expect("checked");
+            if checked.verdict == Verdict::Violation {
                 violations += 1;
+                if *fault == Fault::StaleReadUnderReadYourWrites {
+                    // The acceptance's second half: the violation names the client and the read.
+                    let read = checked
+                        .read
+                        .as_ref()
+                        .expect("a stale read is reported as a read violation");
+                    let named = faulted
+                        .operations
+                        .iter()
+                        .find(|operation| operation.operation_id.as_str() == read.operation_id)
+                        .expect("the named read is in the history");
+                    assert_eq!(named.command.as_str(), OUTSTANDING_INVOICES);
+                    assert_eq!(named.client, read.client);
+                    assert_eq!(read.anomaly, linearize::Anomaly::StaleRead);
+                    assert_eq!(read.consistency, "read_your_writes");
+                }
             }
             let reference = Billing::new();
-            let control = record::record(
-                &model,
-                &Atomic(&reference),
-                &faulty::lost_update_workload(),
-                seed,
-            )
-            .expect("the workload names what billing declares");
+            let control = recorded(&model, *fault, &Atomic(&reference), &reference, seed);
             assert_eq!(
                 linearize::check(&model, &control, linearize::DEFAULT_BUDGET)
                     .expect("checked")
@@ -597,7 +607,61 @@ fn a_fault_only_a_concurrent_history_catches_passes_every_suite_scenario_and_fai
             "{fault:?}: no recorded two-client history was a violation"
         );
     }
-    assert_eq!(rows, vec![Fault::LostUpdate]);
+    assert_eq!(
+        rows,
+        vec![Fault::LostUpdate, Fault::StaleReadUnderReadYourWrites]
+    );
+}
+
+#[test]
+fn the_single_client_stale_read_and_the_concurrent_one_are_two_rows_caught_two_ways() {
+    // `stale-read-your-writes` (`F-VIEW-RACE`) answers a demanding read one read behind, which one
+    // client already sees; `stale-read-under-read-your-writes` answers from a copy only another
+    // client's write leaves behind. Two defects, two rows, two checks.
+    assert_eq!(
+        Fault::StaleReadYourWrites.caught(),
+        Caught::By("billing.invoice.IssueInvoice/outcome/issued")
+    );
+    assert_eq!(
+        status_of(
+            &injected(Fault::StaleReadYourWrites),
+            "billing.invoice.IssueInvoice/outcome/issued"
+        ),
+        Some(Status::Failed)
+    );
+    assert!(matches!(
+        Fault::StaleReadUnderReadYourWrites.caught(),
+        Caught::ByHistory(_)
+    ));
+    assert_ne!(
+        Fault::StaleReadYourWrites.written(),
+        Fault::StaleReadUnderReadYourWrites.written()
+    );
+}
+
+/// `billing.invoice.OutstandingInvoices`, the `read_your_writes` view.
+const OUTSTANDING_INVOICES: &str = "billing.invoice.OutstandingInvoices";
+
+/// The history a row caught only by a concurrent history is recorded as, under `seed`.
+///
+/// Each such row names its workload: [`Fault::LostUpdate`] races two payments and reads nothing;
+/// [`Fault::StaleReadUnderReadYourWrites`] has each client issue an invoice and then read its own
+/// list, so it is recorded by the session recorder, which sends its reads to `views`.
+fn recorded<T: record::Interleaved, V: ConformanceTarget>(
+    model: &EssIr,
+    fault: Fault,
+    target: &T,
+    views: &V,
+    seed: u64,
+) -> ess_conformance::history::History {
+    match fault {
+        Fault::LostUpdate => record::record(model, target, &faulty::lost_update_workload(), seed),
+        Fault::StaleReadUnderReadYourWrites => {
+            sessions::record(model, target, views, &faulty::stale_read_workload(), seed)
+        }
+        other => panic!("{other:?} names no concurrent workload"),
+    }
+    .expect("the workload names what billing declares")
 }
 
 // ---- the matrix has to be repeatable, or it is not a matrix ---------------------------------------

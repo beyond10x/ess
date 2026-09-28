@@ -45,7 +45,7 @@
 //!
 //! # Boundary or implementation
 //!
-//! Twelve of the fourteen are [`Injection::Boundary`]: [`Faulty`] perturbs what goes into the
+//! Thirteen of the fifteen are [`Injection::Boundary`]: [`Faulty`] perturbs what goes into the
 //! target and what comes out of it, and never a broken internal, because that is the same position
 //! a real client is in.
 //!
@@ -73,6 +73,15 @@
 //! are told `settled`; the second payment is never applied. Only a recorded concurrent history,
 //! checked by [`crate::linearize`], shows that no order of the two calls answers both.
 //!
+//! [`StaleReadUnderReadYourWrites`](Fault::StaleReadUnderReadYourWrites) is the second, and the
+//! one a view's declared consistency decides. `OutstandingInvoices` is `read_your_writes`, and the
+//! fault answers a demanding read from a copy refreshed only by a read that demands the newest
+//! write. One client's demand is always the newest, so the suite reads fresh; with two clients, a
+//! client whose read demands its own write after the other client wrote gets a copy from before
+//! either. The history check judges the read per client session and names the client and the
+//! read. [`StaleReadYourWrites`](Fault::StaleReadYourWrites) stays its own row: it is one read
+//! behind for one client, and the suite catches it.
+//!
 //! # Nothing here is a new source of variation
 //!
 //! §37 gives the runner the clock and the id source, and a faulty target that reached for either
@@ -84,6 +93,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 
@@ -93,6 +103,7 @@ use crate::reference::{
     INVOICE_CREATED, INVOICE_ISSUED, INVOICE_PAID, ISSUE_INVOICE, OUTSTANDING, PAY_INVOICE,
 };
 use crate::scenario::{ErrorRef, EventRef, OutcomeRef, ViewRef};
+use crate::sessions::{self, Act};
 use crate::target::{
     ConformanceTarget, DeclaredErrorValue, EventObservationRequest, ExternalOutcomeControl,
     ImplementationIdentity, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
@@ -336,6 +347,26 @@ faults! {
         ),
         "a lifecycle command decides from the state it read at invoke and is told success after \
          a concurrent write made that decision stale";
+
+    /// `OutstandingInvoices` answers a read-your-writes read from a lagged copy.
+    ///
+    /// Not [`StaleReadYourWrites`](Fault::StaleReadYourWrites), which answers every demanding
+    /// read one read behind and which one client already sees. This copy is refreshed by a read
+    /// demanding the **newest** write anybody made, and a read demanding an older one is answered
+    /// from the copy as it stands — taking "older than the newest" for "already in the copy". One
+    /// client's reads always demand its own last write, which is the newest there is, so every
+    /// suite scenario reads fresh. Two clients are needed: one issues an invoice, the other
+    /// issues one after it, and the first client's read is answered from a copy that has neither.
+    /// See the [module documentation](self).
+    StaleReadUnderReadYourWrites => "stale-read-under-read-your-writes", System::Billing,
+        Injection::Boundary,
+        Caught::ByHistory(
+            "every suite scenario is one client, so the token its read demands is always the \
+             newest write and the copy is refreshed; only a second client writing between one \
+             client's write and its read leaves that read answered from before its own write"
+        ),
+        "a read_your_writes view answers a client's read from a copy that predates the client's \
+         own write, whenever another client wrote since";
 }
 
 // ---- the wrapper -----------------------------------------------------------------------------
@@ -352,6 +383,11 @@ pub struct Faulty<T> {
     /// Every command the target underneath has executed in this scenario, in order: what a read
     /// at an earlier instant replays ([`Fault::LostUpdate`]).
     applied: RefCell<Vec<SemanticCommandRequest>>,
+    /// The newest consistency token any command answered with in this scenario
+    /// ([`Fault::StaleReadUnderReadYourWrites`]).
+    newest: RefCell<Option<ConsistencyToken>>,
+    /// The lagged copy of `OutstandingInvoices` ([`Fault::StaleReadUnderReadYourWrites`]).
+    copy: RefCell<SemanticViewResult>,
 }
 
 impl<T> Faulty<T> {
@@ -362,6 +398,8 @@ impl<T> Faulty<T> {
             fault,
             memory: RefCell::new(Vec::new()),
             applied: RefCell::new(Vec::new()),
+            newest: RefCell::new(None),
+            copy: RefCell::new(SemanticViewResult::default()),
         }
     }
 
@@ -447,6 +485,8 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         // would be a second, undeclared defect (§8).
         self.memory.borrow_mut().clear();
         self.applied.borrow_mut().clear();
+        *self.newest.borrow_mut() = None;
+        *self.copy.borrow_mut() = SemanticViewResult::default();
         self.inner.begin_scenario(scenario)
     }
 
@@ -466,6 +506,9 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         let logged = request.clone();
         let mut result = self.inner.execute_command(request)?;
         self.applied.borrow_mut().push(logged);
+        if let Some(token) = &result.consistency {
+            *self.newest.borrow_mut() = Some(token.clone());
+        }
 
         match self.fault {
             Fault::WrongEvent if command == CREATE_INVOICE => {
@@ -532,10 +575,21 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         let view = request.view.clone();
         // Only a read that *demanded* the write is perturbed: an eventual read asks at `Current` and
         // is allowed to be behind, so answering it late would be conformant rather than faulty.
-        let demanded = request.consistency.token().is_some();
+        let demanded = request.consistency.token().cloned();
         let mut fresh = self.inner.query_view(request)?;
-        if self.fault == Fault::StaleReadYourWrites && demanded {
+        if self.fault == Fault::StaleReadYourWrites && demanded.is_some() {
             return Ok(self.one_read_behind(&view, fresh));
+        }
+        if self.fault == Fault::StaleReadUnderReadYourWrites && view.to_string() == OUTSTANDING {
+            if let Some(token) = demanded {
+                // Refreshed only by a read demanding the newest write; any other demand is taken
+                // to be covered by the copy, which is the defect.
+                if self.newest.borrow().as_ref() == Some(&token) {
+                    self.copy.borrow_mut().clone_from(&fresh);
+                    return Ok(fresh);
+                }
+                return Ok(self.copy.borrow().clone());
+            }
         }
         if self.fault == Fault::NegativeProjectedTotal && view.to_string() == OUTSTANDING {
             // One view, every row, one field: the projection's own corruption, not the write's.
@@ -669,6 +723,41 @@ pub fn lost_update_workload() -> Workload {
     }
 }
 
+/// The workload [`Fault::StaleReadUnderReadYourWrites`] is recorded under: client 0 creates two
+/// invoices, then each of two clients issues one of them and reads `OutstandingInvoices`.
+///
+/// A client's read demands its own last write ([`sessions`]). Where the other
+/// client issued its invoice between the two, the read is answered from the copy, which does not
+/// hold the reader's own invoice. Whether that happens is the seed's to decide.
+pub fn stale_read_workload() -> sessions::Workload {
+    let mut create = BTreeMap::from([("amount".to_owned(), money(5.0))]);
+    create.insert(
+        "account_id".to_owned(),
+        Node::Text("00000000-0000-4000-8000-0000000000aa".to_owned()),
+    );
+    create.insert(
+        "customer_email".to_owned(),
+        Node::Text("payer@example.com".to_owned()),
+    );
+    let session = |prefix: usize| {
+        vec![
+            Act::Call(Call::new(
+                ISSUE_INVOICE,
+                BTreeMap::new(),
+                Subject::Created(prefix),
+            )),
+            Act::Read(OUTSTANDING.to_owned()),
+        ]
+    };
+    sessions::Workload {
+        prefix: vec![
+            Call::new(CREATE_INVOICE, create.clone(), Subject::Creates),
+            Call::new(CREATE_INVOICE, create, Subject::Creates),
+        ],
+        clients: vec![session(0), session(1)],
+    }
+}
+
 /// `true` for the commands that read an invoice's state and then move it.
 fn reads_then_writes(request: &SemanticCommandRequest) -> bool {
     matches!(
@@ -789,7 +878,7 @@ mod tests {
         // The list is generated from the same lines as the variants, so what is left to check is
         // that no row was declared empty — a fault with no description is a row in a matrix nobody
         // can read.
-        assert_eq!(Fault::ALL.len(), 14);
+        assert_eq!(Fault::ALL.len(), 15);
         for fault in Fault::ALL {
             assert!(!fault.written().is_empty(), "{fault:?} has no written form");
             assert!(!fault.describe().is_empty(), "{fault:?} describes nothing");
