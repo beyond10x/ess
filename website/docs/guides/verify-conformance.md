@@ -307,10 +307,11 @@ the entry of a killed mutant that added one.
 The baseline is red only when a scenario failed or ended `error`. A scenario the target reports
 `unsupported`, or the runner `skipped`, is listed as not scored, and every mutant is scored on the
 scenarios the baseline executed. The scenarios the baseline did not execute are listed, not scored:
-a mutant scenario the baseline did not execute is excluded and listed on the mutant, and a mutant
-that nothing killed while one of its scenarios was excluded is *inconclusive*, not a survivor. A
-survivor is a mutant whose every scenario was scored and passed. A scenario new to a mutant's
-suite is scored. A baseline that executed nothing scores nothing.
+a mutant scenario the baseline did not execute is excluded and listed on the mutant. A mutant that
+nothing killed is *inconclusive*, not a survivor, when an excluded scenario is one it changed: that
+scenario might have killed it. An excluded scenario the mutant holds exactly as the baseline does
+asks the target what the baseline asked, so it cannot, and the mutant can still survive. A
+scenario new to a mutant's suite is scored. A baseline that executed nothing scores nothing.
 
 **A survivor is not answered by authoring a scenario.** An authored scenario's expectations are its
 author's, not the model's, so it runs identically in every mutant's suite and can never kill one;

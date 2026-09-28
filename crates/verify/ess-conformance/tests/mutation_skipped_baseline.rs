@@ -181,16 +181,33 @@ fn skipped_and_unsupported_baseline_scenarios_are_listed_and_the_rest_is_scored(
 
 #[test]
 fn a_mutant_failing_only_where_the_baseline_skipped_is_not_killed_by_it() {
+    for changed in [true, false] {
+        excluded_scenario_case(changed);
+    }
+}
+
+/// A mutant whose only failing scenario is one the baseline skipped, and which the mutant either
+/// changed or holds exactly as the baseline does.
+fn excluded_scenario_case(changed: bool) {
     let (emission, mut written) = green();
-    let baseline = scenario_ids(&emission, BASELINE_DIR);
-    let mutant = emission.manifest.mutants[0]
-        .dir
-        .clone()
-        .expect("an error-swap mutant has a suite");
-    let shared = scenario_ids(&emission, &mutant)
-        .into_iter()
-        .find(|id| baseline.contains(id))
-        .expect("the mutant shares a scenario with the baseline");
+    let baseline = admitted(&emission, BASELINE_DIR);
+    let (mutant, shared) = emission
+        .manifest
+        .mutants
+        .iter()
+        .filter_map(|it| it.dir.clone())
+        .find_map(|dir| {
+            let suite = admitted(&emission, &dir);
+            let (id, _) = suite.suite().scenarios.iter().find(|(id, scenario)| {
+                baseline
+                    .suite()
+                    .scenarios
+                    .get(*id)
+                    .is_some_and(|it| (it != *scenario) == changed)
+            })?;
+            Some((dir, id.to_string()))
+        })
+        .expect("an error-swap mutant shares such a scenario with the baseline");
     written.insert(
         format!("{BASELINE_DIR}/{REPORT_FILE}"),
         report1(&emission, BASELINE_DIR, |list| {
@@ -205,9 +222,14 @@ fn a_mutant_failing_only_where_the_baseline_skipped_is_not_killed_by_it() {
     );
     let report = collect(&written).expect("collects");
     let entry = report.mutants.iter().find(|it| it.id == mutant).unwrap();
-    // Not killed by what the baseline did not execute, and not a survivor either: one of its own
-    // scenarios went unscored, so nobody found out.
-    assert_eq!(entry.verdict, Verdict::Inconclusive, "{entry:?}");
+    // Never killed by what the baseline did not execute. A changed copy might have killed it, so
+    // nobody found out; an unchanged copy asks what the baseline asked, so it is a survivor.
+    let expected = if changed {
+        Verdict::Inconclusive
+    } else {
+        Verdict::Survived
+    };
+    assert_eq!(entry.verdict, expected, "{entry:?}");
     assert_eq!(entry.killers, None);
     assert_eq!(entry.excluded.as_deref(), Some(&[shared.clone()][..]));
     let text = report.render_text();

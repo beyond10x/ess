@@ -212,8 +212,13 @@ fn a_baseline_with_skipped_scenarios_is_scored_on_the_rest() {
     assert!(!stderr.contains("ESS-MUTATE-001"), "{stderr}");
     let written = read_json(&out);
     for mutant in written["mutants"].as_array().unwrap() {
+        // Every mutant report passed, so a mutant with an excluded scenario is inconclusive where
+        // it changed that scenario and a survivor where it holds the baseline's own copy.
         if mutant["excluded"].is_array() {
-            assert_eq!(mutant["verdict"], "inconclusive", "{mutant}");
+            assert!(
+                mutant["verdict"] == "inconclusive" || mutant["verdict"] == "survived",
+                "{mutant}"
+            );
         }
     }
     let expected = if written["counts"]["survived"] == 0 {

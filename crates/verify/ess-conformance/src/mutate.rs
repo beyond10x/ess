@@ -986,10 +986,10 @@ pub fn compile(documents: Vec<Document>, texts: &SourceMap) -> Result<EssIr, Sti
 pub enum Verdict {
     /// At least one scored scenario failed.
     Killed,
-    /// Every scenario of its suite was scored, and passed.
+    /// Every scored scenario passed, and no scenario it changed went unscored.
     Survived,
     /// No scored scenario failed, and at least one ended `error`, `unsupported` or `skipped`, or
-    /// one of its scenarios was excluded because the baseline did not execute it: nothing
+    /// a scenario it changed was excluded because the baseline did not execute it: nothing
     /// contradicted the mutant, and nobody found out.
     Inconclusive,
     /// `ESS-MUTATE-004`: no scored scenario failed, and the mutant's suite gained synthesis
@@ -1016,16 +1016,16 @@ impl Verdict {
     }
 
     /// The verdict of a mutant whose scored statuses are `statuses`, whose suite `gained`
-    /// synthesis refusals over the baseline's, and some of whose scenarios were `excluded`
-    /// because the baseline did not execute them. A failure kills it whatever else holds;
-    /// otherwise a gained refusal makes it [`Unwitnessed`](Self::Unwitnessed), and an excluded
-    /// scenario makes it [`Inconclusive`](Self::Inconclusive): it survives only a suite that ran
-    /// every one of its scenarios.
-    pub fn judge(statuses: &[Status], gained: bool, excluded: bool) -> Self {
+    /// synthesis refusals over the baseline's, and which `hidden` a scenario: one it changed that
+    /// was excluded because the baseline did not execute it. A failure kills it whatever else
+    /// holds; otherwise a gained refusal makes it [`Unwitnessed`](Self::Unwitnessed), and a hidden
+    /// scenario makes it [`Inconclusive`](Self::Inconclusive). An excluded scenario the mutant
+    /// holds unchanged asks the target what the baseline asked, so it cannot hide a kill.
+    pub fn judge(statuses: &[Status], gained: bool, hidden: bool) -> Self {
         match Self::classify(statuses) {
             Self::Killed => Self::Killed,
             _ if gained => Self::Unwitnessed,
-            Self::Survived if excluded => Self::Inconclusive,
+            Self::Survived if hidden => Self::Inconclusive,
             verdict => verdict,
         }
     }
@@ -1062,14 +1062,21 @@ pub struct RefusalKey {
 }
 
 impl RefusalKey {
-    /// The key of one refusal: its code, its scenario where it has one, and its subject — the
-    /// element refused, and for an unobservable invariant the invariant itself, so two invariants
-    /// refused at one scenario are two keys.
+    /// The key of one refusal: its code, its scenario where it has one, and its subject.
+    ///
+    /// The subject is the element refused, except where one scenario, or one element with no
+    /// scenario, is refused once per something smaller, which then is the subject: the invariant
+    /// for `ESS-SYNTH-011`, the view for `ESS-SYNTH-005` and `ESS-SYNTH-014`, and the input path
+    /// for `ESS-SYNTH-001`, which is refused once per `Binary64` use of one element.
     pub fn of(refusal: &crate::Refusal) -> Self {
+        use crate::RefusalCause;
         let subject = match &refusal.cause {
-            crate::RefusalCause::InvariantUnobservable {
+            RefusalCause::InvariantUnobservable {
                 entity, invariant, ..
             } => format!("{entity} invariant `{invariant}`"),
+            RefusalCause::ViewUndecidable { view, .. }
+            | RefusalCause::OrderUnwitnessed { view, .. } => format!("view {view}"),
+            RefusalCause::NoWitness(gap) => format!("{} at `{}`", refusal.subject, gap.path),
             _ => refusal.subject.to_string(),
         };
         Self {
@@ -1474,6 +1481,16 @@ impl Seen {
         }
     }
 
+    /// A status as an `ess-conformance-report/1` lists it; an unknown one could not answer.
+    fn listed(status: &str) -> Self {
+        match status {
+            "failed" => Self::Failed,
+            "unsupported" => Self::Unsupported,
+            "skipped" => Self::Skipped,
+            _ => Self::Error,
+        }
+    }
+
     /// As a mutant's scenario status: a skip contradicted nothing, and nobody found out.
     fn status(self) -> Status {
         match self {
@@ -1488,6 +1505,19 @@ impl Seen {
 struct Observed {
     scenarios: Vec<String>,
     not_passed: Vec<(String, Seen)>,
+    /// Each scenario as the suite holds it, by id.
+    bodies: Bodies,
+}
+
+/// A suite's scenarios by id.
+type Bodies = std::collections::BTreeMap<String, crate::scenario::ConformanceScenario>;
+
+fn bodies_of(suite: &crate::ConformanceSuite) -> Bodies {
+    suite
+        .scenarios
+        .iter()
+        .map(|(id, scenario)| (id.to_string(), scenario.clone()))
+        .collect()
 }
 
 /// The synthesis refusals of one suite: always the count, and the keys where they are known.
@@ -1502,6 +1532,8 @@ struct Ruler {
     /// with one of these ids is not scored; one new to the mutant's suite still is, because a
     /// scenario the mutant alone obliges is how a mutant that drops or adds a rule is killed.
     unexecuted: BTreeSet<String>,
+    /// The baseline's own copy of each scenario in `unexecuted`.
+    unexecuted_bodies: Bodies,
     not_scored: Vec<NotScored>,
     refused: Refused,
 }
@@ -1545,15 +1577,24 @@ impl Ruler {
                 not_scored,
             });
         }
+        let unexecuted_bodies = observed
+            .bodies
+            .iter()
+            .filter(|(id, _)| unexecuted.contains(*id))
+            .map(|(id, scenario)| (id.clone(), scenario.clone()))
+            .collect();
         Ok(Self {
             unexecuted,
+            unexecuted_bodies,
             not_scored,
             refused,
         })
     }
 
     /// Scores one mutant's run into its entry: a scenario the baseline did not execute is excluded,
-    /// and a refusal the baseline does not have makes a mutant nothing killed `unwitnessed`.
+    /// and a refusal the baseline does not have makes a mutant nothing killed `unwitnessed`. An
+    /// excluded scenario makes it `inconclusive` only where the mutant's copy differs from the
+    /// baseline's: an unchanged one asks the target what the baseline asked, so it cannot kill it.
     fn judge(&self, entry: &mut MutantEntry, observed: &Observed, refused: &Refused) {
         let statuses: Vec<Status> = observed
             .not_passed
@@ -1588,7 +1629,10 @@ impl Ruler {
             }
             _ => (refused.count > self.refused.count, None),
         };
-        entry.verdict = Verdict::judge(&statuses, gained, !excluded.is_empty());
+        let hidden = excluded
+            .iter()
+            .any(|id| observed.bodies.get(id) != self.unexecuted_bodies.get(id));
+        entry.verdict = Verdict::judge(&statuses, gained, hidden);
         if entry.verdict == Verdict::Killed {
             let mut killers: Vec<String> = observed
                 .not_passed
@@ -1643,6 +1687,7 @@ fn run<T: ConformanceTarget>(ir: &EssIr, new_target: &impl Fn() -> T) -> Result<
                     Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
                 })
                 .collect(),
+            bodies: bodies_of(&suite),
         },
         refused: Refused {
             count: refused.len(),
@@ -2107,6 +2152,7 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
             "{suite_path} is not the suite the manifest emitted"
         ));
     }
+    let bodies = bodies_of(admitted.suite());
     let order: Vec<String> = admitted
         .suite()
         .scenarios
@@ -2137,13 +2183,7 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
             }
             for entry in &report.failed_scenarios {
                 let (status, id) = entry.split_once(' ').unwrap_or_default();
-                let status = match status {
-                    "failed" => Seen::Failed,
-                    "unsupported" => Seen::Unsupported,
-                    "skipped" => Seen::Skipped,
-                    _ => Seen::Error,
-                };
-                if seen.insert(id.to_owned(), status).is_some() {
+                if seen.insert(id.to_owned(), Seen::listed(status)).is_some() {
                     return Err(format!("{report_path} lists `{id}` twice"));
                 }
             }
@@ -2193,6 +2233,7 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
                 .filter_map(|id| seen.get(id).map(|status| (id.clone(), *status)))
                 .collect(),
             scenarios: order,
+            bodies,
         },
     })
 }

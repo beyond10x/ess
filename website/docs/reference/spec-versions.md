@@ -383,7 +383,7 @@ JSON pointer or declares it `absent`, for `ess verify conform import-history`.
 yet. The report adds the `unwitnessed` verdict (`ESS-MUTATE-004`) with each mutant's
 `added_refusals`, each mutant's `excluded` scenarios, and the baseline's `not_scored` list; a
 baseline scenario reported `unsupported` or `skipped` is no longer red, and a mutant nothing
-killed with an excluded scenario is `inconclusive`. The manifest adds each
+killed with an excluded scenario it changed is `inconclusive`. The manifest adds each
 suite's `refused` list. `--collect` still reads a `/1` manifest and judges gained refusals by count.
 
 ## Still at version 1

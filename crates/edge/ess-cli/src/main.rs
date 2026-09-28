@@ -600,8 +600,9 @@ enum ConformCommand {
     /// A baseline scenario the target reports unsupported or skipped did not execute: it is listed,
     /// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that
     /// no scored scenario killed is unwitnessed (ESS-MUTATE-004) when its suite gained synthesis
-    /// refusals the baseline does not have, and inconclusive when one of its scenarios was not
-    /// scored; it survives only when every one of its scenarios was scored and passed.
+    /// refusals the baseline does not have, and inconclusive when a scenario it changed was not
+    /// scored; it survives when every scored scenario passed and each scenario it left unscored is
+    /// the baseline's own, unchanged.
     ///
     /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran, every scored
     /// mutant was killed, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
