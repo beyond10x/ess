@@ -735,10 +735,11 @@ fn the_input_a_scenario_sends_is_re_decided_against_the_guard_it_claims_to_reach
 
 #[test]
 fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
-    // A malformed declared path now fails assembly. A separate legal read of a map's count keeps
-    // the synthesis Unknown-versus-exhausted-search control: no input projection publishes it.
-    // (It was a text ordering until ess#94 ordered text by its bytes, which decides one.)
-    let malformed = UNDECIDED.replace("labels.count > 0", "amount.vat > 0");
+    // A malformed declared path now fails assembly. A separate legal read of a map's entries keeps
+    // the synthesis Unknown-versus-exhausted-search control: no input projection publishes them.
+    // (It was a text ordering until ess#94 ordered text by its bytes, which decides one, and then
+    // a map's count until ess#196 published that.)
+    let malformed = UNDECIDED.replace("label == vip", "amount.vat > 0");
     let errors = Specification::assemble([(
         Source::new("malformed.yaml"),
         RawSpecFile::parse(&malformed).unwrap(),
@@ -776,8 +777,8 @@ fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
         .expect("the guarded branch refuses");
     let rendered = refusal.to_string();
     assert!(
-        rendered.contains("labels.count > 0"),
-        "a refusal names the valid predicate whose map count nothing publishes: {rendered}"
+        rendered.contains("label == vip"),
+        "a refusal names the valid predicate whose map entries nothing publishes: {rendered}"
     );
     assert!(
         matches!(refusal.cause, RefusalCause::GuardUnevaluable(_)),
@@ -2841,7 +2842,7 @@ commands:
         type: Map<String, String>
     outcomes:
       - name: taxed
-        when: labels.count > 0
+        when: {exists: {in: labels, as: label, that: label == vip}}
         emits:
           - undecided.orders.Taxed
       - name: untaxed
