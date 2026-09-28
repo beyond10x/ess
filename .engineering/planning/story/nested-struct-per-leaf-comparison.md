@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:nested-struct-per-leaf-comparison
 kind: story
-status: active
+status: implemented
 title: A nested struct target is compared leaf by leaf
 refs:
 - provider: github
@@ -37,10 +37,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T20:39:19Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T20:40:23Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-paging-and-caller-filters
 kind: story
-status: active
+status: implemented
 title: A view can declare paging and a caller-supplied filter
 refs:
 - provider: github
@@ -41,10 +41,11 @@ scope:
   path: crates/verify/ess-conformance/src/ts/runtime.ts
 - confidence: inferred
   path: crates/verify/ess-diff/src/diff.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T22:01:15Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T22:02:28Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:25Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

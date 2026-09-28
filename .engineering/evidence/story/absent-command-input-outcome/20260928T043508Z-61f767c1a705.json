@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-28T04:35:08Z",
+  "actor": "human:timo",
+  "artifact": "story:absent-command-input-outcome",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on integrate/the-5-waves 578908582: 905 test binaries, 7342 passed, 0 failed, EXIT=0"
+  }
+}

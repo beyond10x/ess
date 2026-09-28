@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:bounded-retry-bindings
 kind: story
-status: active
+status: implemented
 title: A binding can state an attempt bound and which failures are final
 refs:
 - provider: github
@@ -53,10 +53,11 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: cited
   path: docs/design/binding-delivery-guarantees.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T19:06:13Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T19:08:17Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:25Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

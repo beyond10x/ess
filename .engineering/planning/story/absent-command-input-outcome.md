@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:absent-command-input-outcome
 kind: story
-status: active
+status: implemented
 title: A command can declare the outcome for an absent input as a whole
 refs:
 - provider: github
@@ -55,10 +55,11 @@ scope:
   path: crates/verify/ess-diff/src/diff.rs
 - confidence: inferred
   path: docs/design/outcome-shapes.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T18:54:48Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T18:55:44Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:23Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

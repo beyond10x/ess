@@ -118,3 +118,9 @@ open the PR against remote ess.
 `story:set-effects-over-filtered-instances` (#167, #175) was not dispatched with wave 4. Found
 at release prep; dispatched on `eb249b6bf` with the decisions in its brief (`instances: {where:}`,
 `{count: changed}`, `affects:` with `sets:` only; atomicity out of scope). It merges after retry.
+
+## Close (2026-09-28)
+
+All 18 stories merged into `integrate/the-5-waves`. Gate: `task check` on `578908582`, 905 test
+binaries, 7342 passed, 0 failed, EXIT=0. 36 adversary reviews recorded as `review-result`s; each
+story carries that run as `test_result` and is `implemented`.

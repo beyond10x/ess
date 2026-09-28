@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:upsert-outcome-by-existence
 kind: story
-status: active
+status: implemented
 title: An outcome can be selected by whether the addressed record exists
 refs:
 - provider: github
@@ -49,10 +49,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T21:41:22Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T21:42:40Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:24Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ungrouped-aggregate-views-are-witnessed
 kind: story
-status: active
+status: implemented
 title: An ungrouped, unparameterised aggregate view gets a scenario
 relations:
 - serves: vision:O2
@@ -22,10 +22,11 @@ scope:
   path: crates/verify/ess-conformance/tests/aggregate_optional_fields.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T21:28:08Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T21:29:37Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:23Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:witness-search-beyond-64-candidates
 kind: story
-status: active
+status: implemented
 title: A guard over three inputs is witnessed, not refused after 64 candidates
 relations:
 - serves: vision:O2
@@ -16,10 +16,11 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary2_connective_and_source_mutants.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T22:25:49Z", actor: "human:timo", revision: 6, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T22:26:47Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:21Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 

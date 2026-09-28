@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-filters-witnessed-on-matching-rows
 kind: story
-status: active
+status: implemented
 title: A filtered view is asserted over a row its filter matches
 relations:
 - serves: vision:O2
@@ -14,10 +14,11 @@ scope:
   path: crates/verify/ess-conformance/src/witness.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_guards.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-27T21:47:59Z", actor: "human:timo", revision: 5, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-27T21:49:36Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:35:22Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Scope
 
