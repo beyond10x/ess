@@ -5,6 +5,7 @@
 //
 //   (empty)          opens sessions, and refuses every other command outside one
 //   refuses-session  answers no declared branch for `OpenSession`
+//   drops-accounts   opens sessions, and stores no account whatever the input carries
 //
 // `explore_preconditions_target.go` is the same target in Go, line for line.
 
@@ -31,7 +32,8 @@ export function newTarget(mode = '') {
       switch (command) {
         case 'explorepre.desk.OpenSession': {
           if (mode === 'refuses-session') return { outcome: '', directEvents: [] };
-          users.push(input.user_id);
+          const accounts = mode === 'drops-accounts' ? [] : input.accounts;
+          users.push({ user_id: input.user_id, accounts });
           return answered('opened', 'explorepre.desk.SessionOpened', { user_id: input.user_id });
         }
         case 'explorepre.desk.ClearWrapUp': {
@@ -45,7 +47,7 @@ export function newTarget(mode = '') {
 
     queryView({ view }) {
       if (view === 'explorepre.desk.Users') {
-        return { rows: users.map((user_id) => ({ user_id, state: 'Active' })) };
+        return { rows: users.map((user) => ({ ...user, state: 'Active' })) };
       }
       throw unsupported(`${view} is not a view of explore-preconditions.yaml`);
     },

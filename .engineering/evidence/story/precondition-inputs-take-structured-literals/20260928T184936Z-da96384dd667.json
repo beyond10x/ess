@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T18:49:36Z",
+  "actor": "human:timo",
+  "artifact": "story:precondition-inputs-take-structured-literals",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "precondition_literals (base e93278196: 0 passed 8 failed, List<...> is not a scalar); unit 2f67d6a255: 11 passed; explore_preconditions 8; adversary 9+5+7+4 passed",
+    "reference": "~/.cache/ess-wave-n2/preconditions/red-domain.log vs c2/"
+  }
+}

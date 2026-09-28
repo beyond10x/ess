@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T18:44:00Z",
+  "actor": "human:timo",
+  "artifact": "story:gained-refusals-are-unwitnessed-not-survived",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "mutation_gained_refusals (red on base: guard-connective mutant survived with refusals 1 vs baseline 0) and mutation_skipped_baseline (red on base: ESS-MUTATE-001 on a skipped scenario); unit 5fa1f4be3e: 12 + 6 passed, adversary 4 + 8 passed",
+    "reference": "~/.cache/ess-wave-n2/mutate/red-probe.log vs gate-r2.log"
+  }
+}

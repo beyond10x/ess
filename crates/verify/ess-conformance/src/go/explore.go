@@ -551,6 +551,10 @@ type explorePlan struct {
 	// unarrangeable is `command/outcome` for every external branch the target refused to arrange,
 	// and its reason.
 	unarrangeable map[string]string
+	// sendable is every command excluded only because exploration cannot draw one of its inputs
+	// (a list, say): a precondition supplies its input as a literal, so it may still send one
+	// (beyond10x/ess#205). No sequence draws it.
+	sendable map[string]*exploreCommand
 }
 
 // exploreIsExternal is true for an outcome an external cause decides.
@@ -581,7 +585,7 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 // explorePlanAs is explorePlanOf, and with `concurrent` it resolves inputs as exploreResolveAs does and
 // keeps a command no actor may invoke, which is then sent with no actor.
 func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
-	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}, unarrangeable: map[string]string{}}
+	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}, unarrangeable: map[string]string{}, sendable: map[string]*exploreCommand{}}
 	actorFor := map[string]string{}
 	for _, actor := range exploreSorted(ir["actors"]) {
 		for _, command := range exploreStrings(actor["may"]) {
@@ -624,43 +628,57 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 				reason = fmt.Sprintf("outcome `%v` replays a retained result", exploreObject(outcome)["name"])
 			}
 		}
+		// undrawable is why exploration cannot draw an input, kept apart from every other reason so
+		// that a command excluded for it alone stays sendable by a precondition. It is reported in
+		// the order it always was: after the outcome reasons, before the guard and actor ones.
+		undrawable := ""
 		inputs := []exploreField{}
 		for _, field := range exploreList(node["input"]) {
 			field := exploreObject(field)
 			kind := exploreResolveAs(ir, exploreObject(field["type_ref"]), 0, concurrent)
-			if reason == "" && kind.kind == "unsupported" {
-				reason = fmt.Sprintf("input `%v` is %s", field["name"], kind.why)
+			if undrawable == "" && kind.kind == "unsupported" {
+				undrawable = fmt.Sprintf("input `%v` is %s", field["name"], kind.why)
 			}
 			inputs = append(inputs, exploreField{name: exploreString(field["name"]), kind: kind})
 		}
 		guards := map[string]predicate{}
 		ordered := []predicate{}
+		later := ""
 		for _, outcome := range outcomes {
 			outcome := exploreObject(outcome)
 			condition := exploreObject(outcome["condition"])
-			if reason != "" || (condition["kind"] != "when" && condition["kind"] != "external_when") {
+			if reason != "" || later != "" || (condition["kind"] != "when" && condition["kind"] != "external_when") {
 				continue
 			}
 			guard, refusal := exploreParse(condition["predicate"])
 			if refusal != "" {
-				reason = fmt.Sprintf("the guard of `%v`: %s", outcome["name"], refusal)
+				later = fmt.Sprintf("the guard of `%v`: %s", outcome["name"], refusal)
 				continue
 			}
 			guards[fmt.Sprint(outcome["name"])] = guard
 			ordered = append(ordered, guard)
 		}
 		actor, ok := actorFor[name]
-		if reason == "" && !ok && !concurrent {
-			reason = "no actor may invoke it"
+		if later == "" && !ok && !concurrent {
+			later = "no actor may invoke it"
+		}
+		command := &exploreCommand{
+			name: name, actor: actor, node: node, inputs: inputs, guards: guards, pools: exploreLiterals(ordered),
+		}
+		if reason == "" && later == "" && undrawable != "" {
+			p.sendable[name] = command
+		}
+		for _, next := range []string{undrawable, later} {
+			if reason == "" {
+				reason = next
+			}
 		}
 		if reason != "" {
 			p.excluded = append(p.excluded, Exclusion{Subject: name, Reason: reason})
 			p.excludedCommands[name] = true
 			continue
 		}
-		p.commands = append(p.commands, &exploreCommand{
-			name: name, actor: actor, node: node, inputs: inputs, guards: guards, pools: exploreLiterals(ordered),
-		})
+		p.commands = append(p.commands, command)
 	}
 
 	for _, view := range exploreSorted(ir["views"]) {
@@ -1460,6 +1478,9 @@ func explorePreconditions(s *exploreSession) error {
 			return fmt.Errorf("precondition `%s` reads fixture inputs, which exploration does not resolve", name)
 		}
 		planned := s.p.command(name)
+		if planned == nil {
+			planned = s.p.sendable[name]
+		}
 		if planned == nil {
 			return fmt.Errorf("precondition `%s` is a command exploration excludes", name)
 		}

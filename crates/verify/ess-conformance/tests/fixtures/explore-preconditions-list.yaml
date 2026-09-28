@@ -1,0 +1,49 @@
+format: ess/15
+system: explorepre
+version: v1
+preconditions:
+  - command: explorepre.desk.OpenSession
+    input:
+      user_id: 00000000-0000-4000-8000-000000000152
+      accounts: [{account_id: a1, name: First}]
+domain: explorepre.desk
+types:
+  - name: explorepre.desk.Account
+    kind: struct
+    fields:
+      - {name: account_id, type: String}
+      - {name: name, type: String}
+entities:
+  - name: explorepre.desk.User
+    identity: {name: user_id, type: Uuid}
+    fields:
+      - {name: accounts, type: 'List<explorepre.desk.Account>'}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: explorepre.desk.SessionOpened, fields: [{name: user_id, type: Uuid}]}
+  - {name: explorepre.desk.Cleared}
+actors:
+  - {name: explorepre.desk.Agent, may: [explorepre.desk.OpenSession, explorepre.desk.ClearWrapUp]}
+commands:
+  - name: explorepre.desk.OpenSession
+    input:
+      - {name: user_id, type: Uuid}
+      - {name: accounts, type: 'List<explorepre.desk.Account>'}
+    outcomes:
+      - name: opened
+        creates: explorepre.desk.User
+        instance: user_id
+        sets: {accounts: input.accounts}
+        emits: [explorepre.desk.SessionOpened]
+        payload: {explorepre.desk.SessionOpened: {user_id: input.user_id}}
+  - name: explorepre.desk.ClearWrapUp
+    outcomes:
+      - {name: cleared, emits: [explorepre.desk.Cleared]}
+views:
+  - name: explorepre.desk.Users
+    source: explorepre.desk.User
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: Uuid}
+      - {name: accounts, type: 'List<explorepre.desk.Account>'}
+      - {name: state, type: explorepre.desk.User.State}

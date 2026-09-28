@@ -411,6 +411,12 @@ interface Plan {
   externals: { command: string; id: string; cause: string }[];
   /** `command/outcome` for every external branch the target refused to arrange, and its reason. */
   unarrangeable: Map<string, string>;
+  /**
+   * Every command excluded only because exploration cannot draw one of its inputs (a list, say): a
+   * precondition supplies its input as a literal, so it may still send one (beyond10x/ess#205). No
+   * sequence draws it.
+   */
+  sendable: Map<string, Command>;
 }
 
 /** True for an outcome an external cause decides. */
@@ -438,6 +444,7 @@ function effectRefusal(outcome: Node): string | null {
 function plan(ir: Node, concurrent = false): Plan {
   const excluded: Exclusion[] = [];
   const excludedCommands = new Set<string>();
+  const sendable = new Map<string, Command>();
   const declared = new Map<string, string[]>();
   const externals: { command: string; id: string; cause: string }[] = [];
   const actorFor = new Map<string, string>();
@@ -488,37 +495,46 @@ function plan(ir: Node, concurrent = false): Plan {
         reason = `outcome \`${outcome.name}\` replays a retained result`;
       }
     }
+    // Why exploration cannot draw an input, kept apart from every other reason so that a command
+    // excluded for it alone stays sendable by a precondition. It is reported in the order it always
+    // was: after the outcome reasons, before the guard and actor ones.
+    let undrawable: string | null = null;
     const inputs: [string, Kind][] = [];
     for (const field of list(node.input)) {
       const kind = resolveKind(ir, field.type_ref, 0, concurrent);
-      if (reason === null && kind.kind === 'unsupported') {
-        reason = `input \`${field.name}\` is ${kind.why}`;
+      if (undrawable === null && kind.kind === 'unsupported') {
+        undrawable = `input \`${field.name}\` is ${kind.why}`;
       }
       inputs.push([field.name, kind]);
     }
     const guards = new Map<string, Predicate>();
+    let later: string | null = null;
     for (const outcome of outcomes) {
       const kind = outcome.condition?.kind;
-      if (reason !== null || (kind !== 'when' && kind !== 'external_when')) continue;
+      if (reason !== null || later !== null || (kind !== 'when' && kind !== 'external_when'))
+        continue;
       const guard = parsed(outcome.condition.predicate);
-      if (typeof guard === 'string') reason = `the guard of \`${outcome.name}\`: ${guard}`;
+      if (typeof guard === 'string') later = `the guard of \`${outcome.name}\`: ${guard}`;
       else guards.set(outcome.name, guard);
     }
     const actor = actorFor.get(node.name) ?? (concurrent ? '' : undefined);
-    if (reason === null && actor === undefined) reason = 'no actor may invoke it';
+    if (later === null && actor === undefined) later = 'no actor may invoke it';
+    const command: Command = {
+      name: node.name,
+      actor: actor ?? '',
+      node,
+      inputs,
+      guards,
+      pools: pools([...guards.values()]),
+    };
+    if (reason === null && later === null && undrawable !== null) sendable.set(node.name, command);
+    reason ??= undrawable ?? later;
     if (reason !== null || actor === undefined) {
       excluded.push({ subject: node.name, reason: reason ?? 'no actor may invoke it' });
       excludedCommands.add(node.name);
       continue;
     }
-    commands.push({
-      name: node.name,
-      actor,
-      node,
-      inputs,
-      guards,
-      pools: pools([...guards.values()]),
-    });
+    commands.push(command);
   }
 
   const views: Node[] = [];
@@ -550,6 +566,7 @@ function plan(ir: Node, concurrent = false): Plan {
     declared,
     externals,
     unarrangeable: new Map(),
+    sendable,
   };
 }
 
@@ -1184,7 +1201,8 @@ async function preconditions(s: Session): Promise<void> {
         `precondition \`${name}\` reads fixture inputs, which exploration does not resolve`,
       );
     }
-    const planned = s.p.commands.find((candidate) => candidate.name === name);
+    const planned =
+      s.p.commands.find((candidate) => candidate.name === name) ?? s.p.sendable.get(name);
     if (planned === undefined) {
       throw new Error(`precondition \`${name}\` is a command exploration excludes`);
     }

@@ -14,7 +14,7 @@ func (e explorePreUnsupported) Unwrap() error { return ErrUnsupported }
 
 type explorePreTarget struct {
 	mode    string
-	users   []Node
+	users   []Row
 	version int
 }
 
@@ -49,7 +49,11 @@ func (t *explorePreTarget) ExecuteCommand(request CommandRequest) (CommandResult
 		if t.mode == "refuses-session" {
 			return CommandResult{DirectEvents: []ObservedEvent{}}, nil
 		}
-		t.users = append(t.users, request.Input["user_id"])
+		accounts := request.Input["accounts"]
+		if t.mode == "drops-accounts" {
+			accounts = []Node{}
+		}
+		t.users = append(t.users, Row{"user_id": request.Input["user_id"], "accounts": accounts})
 		return t.answered("opened", "explorepre.desk.SessionOpened", map[string]Node{"user_id": request.Input["user_id"]}), nil
 	case "explorepre.desk.ClearWrapUp":
 		if len(t.users) == 0 {
@@ -67,7 +71,7 @@ func (t *explorePreTarget) QueryView(request ViewRequest) (ViewResult, error) {
 	}
 	rows := []Row{}
 	for _, user := range t.users {
-		rows = append(rows, Row{"user_id": user, "state": "Active"})
+		rows = append(rows, Row{"user_id": user["user_id"], "accounts": user["accounts"], "state": "Active"})
 	}
 	return ViewResult{Rows: rows}, nil
 }

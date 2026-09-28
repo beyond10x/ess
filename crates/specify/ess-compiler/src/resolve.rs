@@ -1313,15 +1313,18 @@ impl<'a> Resolver<'a> {
                     })
                     .map(ActorHandle::new);
                 let declared = self.spec.commands().get(&precondition.command)?;
-                let outcome =
-                    ess_domain::command::precondition_branch(declared, &precondition.input)
-                        .ok()?
-                        .name
-                        .clone();
+                let outcome = ess_domain::command::precondition_branch(
+                    &self.spec.system().types,
+                    declared,
+                    &precondition.input,
+                )
+                .ok()?
+                .name
+                .clone();
                 let mut input = BTreeMap::new();
                 let mut fixtures = BTreeMap::new();
                 for (field, value) in &precondition.input {
-                    if ess_domain::command::precondition_fixture(value).is_some() {
+                    if ess_domain::command::precondition_fixture(declared, field, value).is_some() {
                         continue;
                     }
                     input.insert(field.clone(), value.clone());
