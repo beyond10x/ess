@@ -564,30 +564,145 @@ pub(super) fn input_selects(
 /// `plain_guards`, keeps the state the only thing the scenario varies. The row half, and a default
 /// defined against it, are the arranged row's business, and the wrong-state row leaves them
 /// undecided on purpose.
-pub(super) fn refusal_input(
+///
+/// A sibling that needs both halves — a `when:` beside a `when_subject:` — is selected by neither
+/// alone, so it is equally missed where the arranged row falsifies its subject half
+/// (beyond10x/ess#192): `already-confirmed: history == Confirmed, token != ""` beside
+/// `token-required: token == ""` leaves no input refuting both input halves, and the witness sends
+/// `token != ""` to a row whose `history` is not `Confirmed`. That reading is taken only where no
+/// candidate refutes every input half, so a witness that already did stays the one it was. A
+/// branch with no subject half — a plain `when:`, an input-guarded refusal (#178) — is still missed
+/// only through its input, and so is a mixed sibling whose subject half the row holds or does not
+/// decide: the scenario is then refused rather than left to depend on evaluation order.
+///
+/// Where the witness relies on the row, the row is `arrangement` when it already falsifies what
+/// is relied on, and otherwise the first row in `state` the declared drivers leave that does —
+/// found by the search [`prepare`] arranges subject-fact branches with, steered by the command's
+/// own stored guards. Either way the fields relied on are observed before the command, as
+/// [`prepare`] observes them: the row is a fact the scenario is about, not one it assumes.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn refusal_witness(
     ir: &EssIr,
+    entity: &EntityHandle,
+    state: &super::StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    arrangement: Arrangement,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     distinction: Distinction,
-) -> Result<BTreeMap<String, Node>, RefusalCause> {
+) -> Result<(Arrangement, BTreeMap<String, Node>), RefusalCause> {
+    let (mut arrangement, input, relied) =
+        match refusal_input(ir, entity, &arrangement, command, outcome, distinction) {
+            Ok((input, relied)) => (arrangement, input, relied),
+            Err(cause) => {
+                let hints = hints(command);
+                let found = search(
+                    ir,
+                    entity,
+                    actors,
+                    &hints,
+                    Distinction::PLAIN,
+                    "state",
+                    |node| {
+                        if &node.state != state {
+                            return Ok(None);
+                        }
+                        Ok(
+                            refusal_input(ir, entity, node, command, outcome, distinction)
+                                .ok()
+                                .filter(|(_, relied)| !relied.is_empty()),
+                        )
+                    },
+                );
+                let Ok((row, (input, relied))) = found else {
+                    return Err(cause);
+                };
+                (row, input, relied)
+            }
+        };
+    if !relied.is_empty() {
+        let fields = read_fields(ir, entity, &relied);
+        let (steps, view) = observe_fields(ir, entity, &fields, &arrangement)?;
+        arrangement.steps.extend(steps);
+        arrangement.source.insert(view.into());
+    }
+    Ok((arrangement, input))
+}
+
+/// The input [`refusal_witness`] sends to `arrangement`'s row, and the stored guards of the mixed
+/// siblings it misses through that row rather than through its input: empty where every sibling's
+/// input half is refuted, which is every witness there was before beyond10x/ess#192.
+fn refusal_input(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
+) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
     let guards: Vec<&Predicate> = command
         .outcomes
         .iter()
         .filter_map(|branch| input_guard(&branch.condition))
         .collect();
     let own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
-    let siblings: Vec<&Predicate> = command
+    let branches: Vec<&ResolvedOutcome> = command
         .outcomes
         .iter()
         .filter(|other| other.name != outcome.name && !state_default(other))
+        .filter(|other| input_guard(&other.condition).is_some())
+        .collect();
+    let siblings: Vec<&Predicate> = branches
+        .iter()
         .filter_map(|other| input_guard(&other.condition))
         .collect();
     let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    let mut through_row = None;
     for input in &inputs {
         let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
-        if decides(&facts, &own, true)? && decides(&facts, &siblings, false)? {
-            return Ok(input.clone());
+        if !decides(&facts, &own, true)? {
+            continue;
         }
+        if decides(&facts, &siblings, false)? {
+            return Ok((input.clone(), Vec::new()));
+        }
+        if through_row.is_some() {
+            continue;
+        }
+        let mut relied = Vec::new();
+        for branch in &branches {
+            let Some(guard) = input_guard(&branch.condition) else {
+                continue;
+            };
+            if decides(&facts, &[guard], false)? {
+                continue;
+            }
+            let falsified = branch
+                .subject
+                .as_ref()
+                .filter(|subject| &subject.entity == entity)
+                .and_then(|_| stored(&branch.condition))
+                .filter(|predicate| {
+                    row_truth_with(
+                        ir,
+                        entity,
+                        &arrangement.settled,
+                        predicate,
+                        Some((command, input)),
+                    ) == Truth::False
+                });
+            let Some(predicate) = falsified else {
+                relied.clear();
+                break;
+            };
+            relied.push(predicate);
+        }
+        if !relied.is_empty() {
+            through_row = Some((input.clone(), relied));
+        }
+    }
+    if let Some(found) = through_row {
+        return Ok(found);
     }
     let mut named = own.clone();
     named.extend(siblings.iter().copied());
