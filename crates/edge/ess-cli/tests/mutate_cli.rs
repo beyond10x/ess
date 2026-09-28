@@ -118,6 +118,9 @@ fn a_class_with_no_site_exits_three_and_writes_no_report() {
     assert!(!report.exists(), "a refused audit writes no report");
 }
 
+/// The oracle reference answers none of billing's commands, so its baseline is red. The
+/// interpreter used to be the example; since issue #210 its `unsupported` scenarios are not scored
+/// rather than red, and it scores (`ess-conformance`'s `mutation_audit.rs`).
 #[test]
 fn a_baseline_that_does_not_pass_exits_three_with_mutate_001() {
     let directory = scratch("baseline");
@@ -126,7 +129,7 @@ fn a_baseline_that_does_not_pass_exits_three_with_mutate_001() {
         "--path",
         "examples/billing",
         "--target",
-        "interpreted",
+        "oracle-fixture",
         "--report-out",
         report.to_str().unwrap(),
     ]);
@@ -135,7 +138,7 @@ fn a_baseline_that_does_not_pass_exits_three_with_mutate_001() {
     assert!(stderr.starts_with("refusal[ESS-MUTATE-001]"), "{stderr}");
     assert!(
         stderr.contains("\n  billing.invoice.CreateInvoice/outcome/accepted\n"),
-        "every scenario that did not pass is listed: {stderr}"
+        "every scenario that failed or ended error is listed: {stderr}"
     );
     assert!(!report.exists(), "a refused audit writes no report");
 }
@@ -181,7 +184,7 @@ fn the_json_output_is_the_report_bytes() {
     let written = std::fs::read(&report).expect("--report-out is written");
     assert_eq!(output.stdout, written);
     let value: serde_json::Value = serde_json::from_slice(&written).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/1");
+    assert_eq!(value["format"], "ess-mutation-report/2");
     assert_eq!(value["counts"]["mutants"], 20);
     assert_eq!(value["counts"]["killed"], 12);
     assert_eq!(value["counts"]["stillborn"], 8);
@@ -196,7 +199,7 @@ fn the_json_output_is_the_report_bytes() {
     ]);
     assert_eq!(yaml.status.code(), Some(0));
     assert!(
-        text(&yaml.stdout).contains("format: ess-mutation-report/1"),
+        text(&yaml.stdout).contains("format: ess-mutation-report/2"),
         "{}",
         text(&yaml.stdout)
     );
@@ -246,5 +249,5 @@ fn every_mutate_code_is_named_in_the_formats_reference() {
         let code = code.code().to_string();
         assert!(page.contains(&code), "`{code}` is not named in formats.md");
     }
-    assert!(page.contains("ess-mutation-report/1"));
+    assert!(page.contains("ess-mutation-report/2"));
 }

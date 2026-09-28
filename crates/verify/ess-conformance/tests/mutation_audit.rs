@@ -171,7 +171,7 @@ fn pinned_verdicts(report: &MutationReport, pinned: &[(&str, Verdict, &str)]) {
                 entry.id,
                 entry.killers
             ),
-            Verdict::Survived | Verdict::Inconclusive => {}
+            Verdict::Survived | Verdict::Inconclusive | Verdict::Unwitnessed => {}
         }
     }
 }
@@ -541,28 +541,33 @@ fn a_faulty_baseline_is_refused_with_the_failing_scenarios() {
     assert_eq!(not_passed, &expected);
 }
 
-/// The interpreter executes commands and not yet views or bindings, so its baseline is not green.
+/// The interpreter executes commands and not yet views or bindings, so it answers every scenario
+/// needing one `unsupported`.
 ///
-/// Rewritten for `story:interpreted-command-execution`. The premise was a target that answers
-/// nothing (`Interpreted::new`); the audit now runs the interpreter holding the unchanged model, as
-/// `ess verify conform mutate --target interpreted` does. The refusal stands, and it now names
-/// exactly the scenarios that need something the interpreter does not derive: every scenario that
-/// holds only command execution passes and is absent from the list.
+/// Rewritten twice. For `story:interpreted-command-execution` the premise became the interpreter
+/// holding the unchanged model, as `ess verify conform mutate --target interpreted` runs it, and
+/// the audit was refused with `ESS-MUTATE-001`. Since issue #210 an `unsupported` baseline scenario
+/// is not red: the audit scores every mutant on the rest, and lists as not scored exactly the
+/// scenarios that need something the interpreter does not derive.
 #[test]
-fn the_interpreted_target_is_refused_with_mutate_001() {
+fn the_interpreted_target_scores_past_what_it_does_not_interpret() {
     let (files, texts) = example("billing");
     let ir = mutate::compile(files.clone(), &texts).unwrap();
-    let refusal = mutate::audit(&files, &texts, MutantClass::ALL, || {
+    let report = mutate::audit(&files, &texts, MutantClass::ALL, || {
         Interpreted::for_model(ir.clone())
     })
-    .expect_err("views and bindings are not interpreted, so the baseline is not green");
-    assert!(
-        refusal.to_string().starts_with("refusal[ESS-MUTATE-001]"),
-        "{refusal}"
-    );
-    let AuditRefusal::BaselineFailed { not_passed, .. } = &refusal else {
-        panic!("a baseline refusal: {refusal}");
-    };
+    .unwrap_or_else(|refusal| panic!("an unsupported baseline scenario is not red: {refusal}"));
+    assert!(report
+        .baseline
+        .not_scored
+        .iter()
+        .all(|it| it.status == mutate::NotScoredStatus::Unsupported));
+    let not_passed: Vec<String> = report
+        .baseline
+        .not_scored
+        .iter()
+        .map(|it| it.scenario.clone())
+        .collect();
 
     let mut suite = ess_conformance::synthesize(&ir).suite;
     suite.select_fresh_format();
@@ -589,8 +594,8 @@ fn the_interpreted_target_is_refused_with_mutate_001() {
         .collect();
     assert!(!needs_more.is_empty() && needs_more.len() < suite.scenarios.len());
     assert_eq!(
-        not_passed, &needs_more,
-        "exactly the scenarios needing a view or a binding did not pass"
+        not_passed, needs_more,
+        "exactly the scenarios needing a view or a binding are not scored"
     );
 }
 
@@ -604,7 +609,7 @@ fn two_audits_of_one_tree_are_byte_identical() {
     assert_eq!(first, second);
     assert!(first.ends_with("}\n"), "one trailing LF");
     let value: serde_json::Value = serde_json::from_str(&first).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/1");
+    assert_eq!(value["format"], "ess-mutation-report/2");
     assert_eq!(value["spec_digest"].as_str().map(str::len), Some(64));
     let ids: Vec<&str> = value["mutants"]
         .as_array()
@@ -700,7 +705,12 @@ fn every_mutate_code_is_derived_from_its_variant() {
         .collect();
     assert_eq!(
         codes,
-        ["ESS-MUTATE-001", "ESS-MUTATE-002", "ESS-MUTATE-003"]
+        [
+            "ESS-MUTATE-001",
+            "ESS-MUTATE-002",
+            "ESS-MUTATE-003",
+            "ESS-MUTATE-004"
+        ]
     );
 }
 

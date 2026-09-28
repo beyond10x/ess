@@ -1,0 +1,81 @@
+format: ess/16
+system: shop
+version: v1
+domain: shop.order
+summary: An order whose shipment status is reported by a carrier.
+naming:
+  wire: order
+  display: Order
+
+types:
+  - name: shop.order.Status
+    kind: enum
+    variants: [Lost, New, Paid, Shipped]
+
+entities:
+  - name: shop.order.Order
+    identity:
+      name: order_id
+      type: Uuid
+    fields:
+      - name: closed
+        type: Boolean
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+commands:
+  - name: shop.order.ReportStatus
+    naming:
+      wire: report_status
+      display: Report an order's status
+    input:
+      - name: status
+        type: shop.order.Status
+    outcomes:
+      - name: settled
+        when:
+          any:
+            - status == Paid
+            - status == Shipped
+        creates: shop.order.Order
+        instance: order_id
+        sets:
+          closed: true
+        emits: [shop.order.StatusReported]
+        payload:
+          shop.order.StatusReported:
+            order_id: {generated: true}
+            status: input.status
+      - name: pending
+        when: status == New
+        creates: shop.order.Order
+        instance: order_id
+        sets:
+          closed: false
+        emits: [shop.order.StatusReported]
+        payload:
+          shop.order.StatusReported:
+            order_id: {generated: true}
+            status: input.status
+      - name: noted
+        creates: shop.order.Order
+        instance: order_id
+        emits: [shop.order.StatusReported]
+        payload:
+          shop.order.StatusReported:
+            order_id: {generated: true}
+            status: input.status
+
+events:
+  - name: shop.order.StatusReported
+    naming:
+      wire: status_reported
+      display: Status reported
+    fields:
+      - name: order_id
+        type: Uuid
+      - name: status
+        type: shop.order.Status
+
