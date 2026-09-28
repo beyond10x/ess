@@ -2,8 +2,48 @@
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-09-28
+
 ### Added
 
+- Concurrent history conformance (#189, `docs/design/concurrent-history-conformance.md`): every
+  earlier check drives a target with one client, one call at a time; these record several clients
+  at once and search for an order the specification's own model accepts.
+- The Rust interpreter executes commands from the model: `ess verify conform run --target
+  interpreted --path SPEC` runs outcomes, transitions, `sets:` writes, emitted events and declared
+  refusals, and refuses a specification whose `spec_digest` is not the suite's. Views and
+  bindings are not interpreted yet; a scenario that reads one is an unsatisfied obligation.
+- `ess-history/1`: one run of several clients, each call with its client, command, subject,
+  invoke and return instants, `Returned` or `Indeterminate` completion and outcome, plus the rows
+  of a view read and the `retry_of` of a retried request. Specified in `models/concurrent-history/`
+  and published as `schemas/ess-history.schema.json`.
+- `ess verify conform check-history --history FILE`: Wing–Gong–Lowe linearizability search over
+  the interpreter, partitioned by subject, within `--budget` model executions (default 1,000,000).
+  A call that never answered is placed after every other one. Exit 0 linearizable, 1 violation
+  (the longest partial order and a shrunk history that still violates), 3 unknown when the budget
+  ran out, which is never a pass, 2 refused. The same history and budget print the same report;
+  `--format json` prints it as JSON.
+- The same check holds each view to its declared consistency: a `read_your_writes` read is judged
+  per client session, and an `eventual` view must converge once the writes stop, after at most
+  `--settle` behind reads per session (default 4; a count of reads, not of instants).
+- `ExploreConcurrent` (Go) and `exploreConcurrent` (TypeScript) in the emitted conformance
+  packages drive 2–4 clients against a target on a seeded logical clock, write
+  `history-<seed>.json` and call `ess` to check it; one seed writes the same bytes in both ports.
+  With `Inject`/`inject`, they inject every fault the specification declares and no other: a second
+  delivery for `delivery: at_least_once`, a client retry for `replays:`, and a delayed or
+  unanswered answer for another `external:` branch. No restart is injected.
+- `ess verify conform web --history FILE [--out DIR]` draws a checked history as one
+  self-contained `index.html`: a lane per client, each call's invoke–return bar, the linearization
+  points found, and for a violation the failing call, the call it conflicts with and the shrunk
+  history. It exits 0 whatever the verdict.
+- `ess verify conform import-history --log FILE --adapter FILE [--output FILE]` converts a JSON
+  Lines call log into `ess-history/1` through an `ess-history-adapter/1` document mapping each
+  field to a JSON pointer or `absent`. Nothing is guessed: a field a call cannot be judged without
+  is refused by line and field (exit 2); every other missing field is a coverage gap on stderr and
+  in `FILE.gaps.json`.
+- Four planted faults that no earlier check catches: `LostUpdate` and
+  `StaleReadUnderReadYourWrites` are caught by a recorded concurrent history,
+  `DoubleApplyOnRedelivery` and `RetryCreatesSecondEntity` only by declared fault injection.
 - Direct library returns: `returns: true` in source `ess/17`, literal `response:` assertions in
   authored `ess-scenario/4`, and typed direct-response observations in suites `ess-conformance/28`
   and `/29`. The Rust runner checks actual return values without invented events or persistence;
