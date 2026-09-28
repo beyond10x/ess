@@ -2,14 +2,47 @@
 format: aep.planning-md/3
 id: story:session-and-eventual-view-checks
 kind: story
-status: draft
+status: implemented
 title: Session and eventual views are checked at their declared strength
 owner: ess
 relations:
 - serves: vision:O2
 - depends_on: story:linearizability-checker-over-the-interpreter
 - decomposes: epic:concurrent-history-conformance
-revision: 1
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-xtask/tests/history_model.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/src/view.rs
+- confidence: cited
+  path: crates/verify/ess-conformance
+- confidence: cited
+  path: crates/verify/ess-conformance/src/faulty.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/history.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/record.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/reference.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/sessions.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/faults.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/view_consistency.rs
+- confidence: cited
+  path: models/concurrent-history/domains/history.yaml
+- confidence: cited
+  path: schemas/ess-history.schema.json
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T23:53:49Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T23:54:58Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:01:53Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 # Story: session and eventual views are checked at their declared strength
 
@@ -28,9 +61,23 @@ A `Current` view keeps the linearizable check.
 
 - New `faulty.rs` row `StaleReadUnderReadYourWrites`: `OutstandingInvoices` answers from a lagged
   copy. Its history is a violation naming the client and the read.
+- The fault matrix records `StaleReadUnderReadYourWrites` as caught by the history check and not by
+  the single-client suite.
+- The existing row `StaleReadYourWrites` (`F-VIEW-RACE`, `faulty.rs:243-246`) is still present as a
+  separate row and is still caught by the single-client suite (`tests/faults.rs:335`).
 - The billing target's eventual `InvoiceById` (`Billing::DEFAULT_LAG`) passes, and a variant that
   never converges fails.
 
 ## Scope
 
-The checker module from `story:linearizability-checker-over-the-interpreter`, and `faulty.rs`.
+Derived 2026-09-27 by `aep:story-scoper` against `472d35fbe`. Every line is **cited** or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance` — cited
+- **Files:** `crates/verify/ess-conformance/src/faulty.rs` — cited (new row `StaleReadUnderReadYourWrites`)
+- **Files:** `crates/verify/ess-conformance/tests/faults.rs` — inferred, the fault matrix (`:335`)
+- **Files:** the checker module from `story:linearizability-checker-over-the-interpreter` — inferred, not in the tree yet
+- **Symbols:** `Billing::DEFAULT_LAG`, `Billing::with_lag` — cited (`src/reference.rs:124`, `:136`)
+- **Also likely:** `crates/verify/ess-conformance/src/reference.rs` — inferred, for the never-converging variant
+- **Also likely:** `crates/specify/ess-domain/src/view.rs` (`Consistency`, `:71`) — inferred, read-only
+- **Confidence:** medium — the checker module's path is set by its dependency
+- **Would collide with:** any unit touching `faulty.rs`, `tests/faults.rs`, or the checker module

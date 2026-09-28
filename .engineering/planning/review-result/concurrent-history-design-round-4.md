@@ -1,0 +1,25 @@
+---
+format: aep.planning-md/3
+id: review-result:concurrent-history-design-round-4
+kind: review-result
+status: active
+title: Design critic, round 4 (wave-1 revisions)
+relations:
+- reviews: story:declared-fault-injection
+- reviews: story:concurrent-explorer-runner
+- reviews: story:concurrent-history-format
+- reviews: story:session-and-eventual-view-checks
+- reviews: epic:concurrent-history-conformance
+revision: 1
+---
+approve
+
+What I read: `aep plan artifact show` for all 5 named artifacts plus `story:explorer-takes-external-branches`, `story:mutate-drives-an-external-target`, `story:ess-manages-its-toolchain`, `story:linearizability-checker-over-the-interpreter`, `story:interpreted-command-execution`, `story:outcome-shapes-beyond-ess-14`, `story:concurrent-history-lanes`, `story:recorded-history-validation`, and the two prior review-results `review-result:concurrent-history-design-round-3` (and its predecessors 1–2) to confirm carry-forward. `aep plan artifact relations` for edge semantics. `aep plan artifact graph` (full store), grepped for every id in and adjacent to the set — walked all `depends_on`/`supersedes`/`decomposes` edges touching the 5 artifacts plus one hop out (`~30` edges): `concurrent-history-format → linearizability-checker-over-the-interpreter → {concurrent-explorer-runner, session-and-eventual-view-checks} → declared-fault-injection`, converging with `explorer-takes-external-branches`, `interpreted-command-execution`, `outcome-shapes-beyond-ess-14` from outside the set — a DAG, no cycle, and the branch at `linearizability-checker-over-the-interpreter` means it is not a strict serialising chain (unchanged from round 3's own description). `aep plan artifact validate` (full run, waited out its background completion) — nothing it reports touches any of the 5 artifacts or their edges.
+
+Both round-3 findings are fixed and verifiably so, not just reworded: `epic:concurrent-history-conformance`'s "Depends on existing work" now carries one prose line per `depends_on` edge (3 edges, 3 reasons), explicitly stating why the other two successors of the archived predecessor get no edge, citing the round-3 finding by name; `story:declared-fault-injection`'s `relations` no longer carries the two unexplained edges (`story:mutate-drives-an-external-target`, `story:ess-manages-its-toolchain`) — confirmed via `aep plan artifact show` and the graph grep, which shows only `session-and-eventual-view-checks`, `explorer-takes-external-branches`, `concurrent-explorer-runner` as its `depends_on` targets. No split abstraction or new hidden dependency introduced by the acceptance-bullet split in `story:session-and-eventual-view-checks` — it separates two already-distinct claims (a new fault row caught only by the history check vs. an existing row still caught by the single-client suite) without changing any edge.
+
+What I could not establish: the design record `docs/design/concurrent-history-conformance.md:106` plan-table row for `story:declared-fault-injection` still names the archived `story:external-mutation-explorer-and-toolchain` (#156) rather than its successor `story:explorer-takes-external-branches`; the dependency it names is otherwise now consistent with the current edges (runner, session checks, external branches), so this reads as stale naming in a doc outside the 5 judged artifacts rather than a shape defect in this set — noting it rather than filing it, since I cannot name which of the 5 artifacts a revision would touch to fix a citation inside a different file. Out of my lane: whether that same design-record staleness should block on scope or acceptance grounds is not mine to set.
+
+```findings
+[]
+```

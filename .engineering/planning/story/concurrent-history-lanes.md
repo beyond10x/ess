@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:concurrent-history-lanes
 kind: story
-status: draft
+status: implemented
 title: A failing history is drawn as client lanes
 owner: ess
 relations:
@@ -10,7 +10,32 @@ relations:
 - serves: vision:O2
 - decomposes: epic:concurrent-history-conformance
 - depends_on: story:concurrent-explorer-runner
-revision: 1
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/conform_web_history.rs
+- confidence: cited
+  path: crates/verify/ess-conformance
+- confidence: inferred
+  path: crates/verify/ess-conformance/assets
+- confidence: cited
+  path: crates/verify/ess-conformance/src/lanes.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/lib.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/web.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/lanes.rs
+- confidence: cited
+  path: website/docs/guides/verify-conformance.md
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T02:52:08Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-28T02:53:44Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T08:49:28Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 # Story: a failing history is drawn as client lanes
 
@@ -28,4 +53,13 @@ operation where the search failed. The page is rendered by `ess` itself, with no
 
 ## Scope
 
-`src/web.rs` and the web assets in `ess-gen`.
+Derived 2026-09-27 by `aep:story-scoper` against `472d35fbe`. Every line is **cited** or **inferred**. Replaces the earlier line that placed the web assets in `ess-gen`.
+
+- **Primary surface:** `crates/verify/ess-conformance` — cited (`src/web.rs`, the scenario player)
+- **Files:** `crates/verify/ess-conformance/src/web.rs` — cited
+- **Files:** `crates/verify/ess-conformance/assets/` — inferred; the player's embedded assets live here, not in `ess-gen` (`ess-gen/assets` holds only `default.css`, `mermaid.min.js`)
+- **Files:** `crates/edge/ess-cli/src/main.rs` (`ConformCommand::Web` `:515`, `conform_web` `:3467`) — inferred, a history input argument
+- **Also likely:** `crates/verify/ess-conformance/src/lib.rs` — inferred
+- **Also likely:** a new ess-cli integration test for the `LostUpdate` page — inferred
+- **Confidence:** medium
+- **Would collide with:** any unit touching `src/web.rs`, `src/web_replay.rs`, `assets/`, or `ConformCommand` in `ess-cli/src/main.rs`

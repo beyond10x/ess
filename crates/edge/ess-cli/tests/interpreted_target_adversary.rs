@@ -105,6 +105,8 @@ fn run_suite(suite: &Path, target: &str) -> (serde_json::Value, Option<i32>) {
     let output = Command::new(env!("CARGO_BIN_EXE_ess"))
         .current_dir(root())
         .args(["verify", "conform", "run", "--target", target])
+        // Every target is handed the model; `interpreted` requires it and the others ignore it.
+        .args(["--path", "examples/billing"])
         .arg("--suite")
         .arg(suite)
         .args(["--format", "json"])

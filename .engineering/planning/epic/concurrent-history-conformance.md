@@ -2,17 +2,21 @@
 format: aep.planning-md/3
 id: epic:concurrent-history-conformance
 kind: epic
-status: draft
+status: implemented
 title: An implementation is held to the specification under concurrent clients and declared faults
 summary: Concurrent histories against the adopter's target, checked against the IR model at each view's declared consistency, with declared faults injected.
 owner: ess
 relations:
-- depends_on: story:external-mutation-explorer-and-toolchain
+- depends_on: story:explorer-takes-external-branches
 - depends_on: story:interpreted-command-execution
 - serves: vision:O2
 - informed_by: epic:model-driven-interpretation
 - depends_on: story:outcome-shapes-beyond-ess-14
-revision: 1
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T08:58:17Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-28T08:59:23Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T09:00:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
 ---
 # Epic: concurrent history conformance
 
@@ -78,7 +82,11 @@ Design record with the research, the effort/gain ranking and these decisions:
 - `story:interpreted-command-execution` (`epic:model-driven-interpretation`): the Rust interpreter
   is the sequential model the checker searches against.
 - `story:outcome-shapes-beyond-ess-14` (#152): the ambient precondition / explorer seed.
-- `story:external-mutation-explorer-and-toolchain` (#156): external branches as explorer choices.
+- `story:explorer-takes-external-branches` (#156, implemented): external branches as explorer
+  choices, which `story:declared-fault-injection` drives as "delay or no answer". It replaced
+  the archived `story:external-mutation-explorer-and-toolchain`; that story's other two successors
+  (`story:mutate-drives-an-external-target`, `story:ess-manages-its-toolchain`) give this epic
+  nothing it uses, so no edge points at them (design critic, round 3, 2026-09-27).
 
 ## Specification
 

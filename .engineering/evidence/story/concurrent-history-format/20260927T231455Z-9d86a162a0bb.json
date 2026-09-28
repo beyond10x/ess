@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-27T23:14:55Z",
+  "actor": "human:timo",
+  "artifact": "story:concurrent-history-format",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave-1 gate on integrate/concurrent-history 85e251c20: fmt, clippy, doc, test -p ess-conformance (832 passed), ess-xtask (313), ess-domain (756), ess-cli (750), 0 failed; specify validate models/concurrent-history valid",
+    "reference": "85e251c20"
+  }
+}

@@ -524,6 +524,12 @@ enum ConformCommand {
         /// Ordinary (4) or declared coverage (5); coverage emits the paired replay document.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
+        /// An `ess-history/1` document: draw it, checked against the specification, as one lane
+        /// per client in a single self-contained `index.html`, printed when `--out` is absent.
+        /// `--out` replaces the files `ess` owns in that directory, the player's included, so
+        /// write history pages and the player to different directories.
+        #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
+        history: Option<PathBuf>,
     },
     /// Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent.
     Select {
@@ -544,8 +550,12 @@ enum ConformCommand {
     },
     /// Run a generated or committed suite against a built-in reference implementation.
     Run {
-        #[arg(long, default_value = ".")]
-        path: PathBuf,
+        /// The specification: synthesized when no suite is named, and executed by `interpreted`.
+        ///
+        /// Defaults to `.` for the other targets. `--target interpreted` requires it, because the
+        /// interpreter executes this model and refuses one the suite was not synthesized from.
+        #[arg(long)]
+        path: Option<PathBuf>,
         #[arg(long)]
         suite: Option<PathBuf>,
         /// Original coverage suite/5, /7 or /9 and its complete original parent chain.
@@ -622,6 +632,72 @@ enum ConformCommand {
         report_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+    },
+    /// Check a recorded concurrent history for linearizability against the specification's model.
+    ///
+    /// Reads an `ess-history/1` document recorded against the specification at `--path`, and
+    /// searches for an order of its operations the interpreter accepts, answer for answer. The
+    /// history records no inputs, so an operation is explained by any candidate input synthesis
+    /// would submit for its command. Reads of views are not judged and are listed. A violation is
+    /// reported with the longest partial linearization found and a shrunk history that is still a
+    /// violation.
+    ///
+    /// Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget`
+    /// before it finished, which is never a pass. Exit 2: the specification or the history could
+    /// not be read, the specification did not load, or the
+    /// history or one of its operations was refused.
+    CheckHistory {
+        /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The `ess-history/1` document.
+        #[arg(long)]
+        history: PathBuf,
+        /// How many executions of the model the search may spend; the same history and budget
+        /// always give the same verdict.
+        #[arg(long, default_value_t = ess_conformance::linearize::DEFAULT_BUDGET)]
+        budget: u64,
+        /// How many of a session's reads of an `eventual` view, invoked after the writes stop,
+        /// may still be behind; every later read is judged converged. A count of reads, not of
+        /// instants, so the clock a history was written on changes no verdict.
+        #[arg(long, value_name = "READS", default_value_t = ess_conformance::linearize::DEFAULT_SETTLE)]
+        settle: u64,
+        #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
+        format: MachineFormat,
+    },
+    /// Convert a recorded command/response log into an `ess-history/1` document.
+    ///
+    /// `--log` is JSON Lines, one call per line, in the log's own shape. `--adapter` is an
+    /// `ess-history-adapter/1` document that names, for every operation field, the JSON pointer
+    /// it sits at in a line, or declares it `absent`, and maps the log's completion words to
+    /// `Returned` and `Indeterminate`. Nothing is guessed: a field an operation cannot be judged
+    /// without is refused, named on every line that lacks it, and a field the history does
+    /// without is reported on stderr as a coverage gap. The document is recorded against the
+    /// specification at `--path`; judge it with `check-history`.
+    ///
+    /// With `--output FILE`, the coverage gaps are also written as a JSON array to
+    /// `FILE.gaps.json`, always (the document seed is never carried, so the list is never empty).
+    /// A history imported with gaps carries seed 0 and generated operation identities by
+    /// construction; the gaps file is the record of which.
+    ///
+    /// Exit 0: written, to `--output` or standard output. Exit 2: the specification, the adapter
+    /// or the log was refused, or `--output` (or its gaps file) is the `--log` or `--adapter`
+    /// file (a hard link included) or a file of the `--path` specification, or a write failed;
+    /// nothing was written. The two files are written to temporary siblings and renamed into
+    /// place only when both writes succeeded.
+    ImportHistory {
+        /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The JSON Lines log.
+        #[arg(long)]
+        log: PathBuf,
+        /// The `ess-history-adapter/1` document, YAML or JSON.
+        #[arg(long)]
+        adapter: PathBuf,
+        /// Where to write the `ess-history/1` document; standard output when absent.
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -2973,9 +3049,16 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
         } => author_suite(&input, scenarios.as_deref(), out.as_deref(), &suite_format),
         ConformCommand::Web {
             input,
+            out,
+            history: Some(history),
+            ..
+        } => conform_web_history(&input, &history, out.as_deref()),
+        ConformCommand::Web {
+            input,
             scenarios,
             out,
             suite_format,
+            history: None,
         } => conform_web(&input, scenarios.as_deref(), out.as_deref(), &suite_format),
         ConformCommand::Select {
             suite,
@@ -2983,64 +3066,413 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             ids,
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
-        ConformCommand::Run {
-            path,
-            suite,
-            suite_input,
-            suite_format,
-            scenarios,
-            target,
-            report_out,
-            report_format,
-            strict,
-            allow_incomplete: _,
-            format,
-        } => {
-            if strict && report_format != "2" {
-                bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
-            }
-            let admitted = if let Some(file) = suite_input {
-                ess_conformance::coverage::AdmittedInput::from_json(&fs::read_to_string(file)?)?
-                    .selected()
-                    .clone()
-            } else if let Some(file) = suite {
-                ess_conformance::AdmittedSuite::from_json(&fs::read_to_string(&file)?)?
-            } else {
-                let Ok((ir, _)) = resolved(&path, format)? else {
-                    return Ok(ExitCode::from(1));
-                };
-                ess_conformance::admission::model(&ir)?;
-                if suite_format.as_deref() == Some("5") {
-                    coverage::fresh(&ir, scenarios.as_deref(), None, false)?
-                        .selected()
-                        .clone()
-                } else {
-                    let Some(suite) = fresh_legacy_run_suite(&ir, scenarios.as_deref())? else {
-                        return Ok(ExitCode::from(1));
-                    };
-                    suite
-                }
-            };
-            let suite = admitted.suite();
-            let report = coverage::execute(&admitted, &report_format, || match target {
-                ReferenceTarget::Billing => wall_clock_runner(suite)
-                    .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
-                ReferenceTarget::OracleFixture => wall_clock_runner(suite)
-                    .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-                ReferenceTarget::Interpreted => wall_clock_runner(suite)
-                    .run_admitted(&admitted, &ess_conformance::interpret::Interpreted::new()),
-            })?;
-            render_conformance_report(
-                &report,
-                &admitted,
-                &report_format,
-                strict,
-                report_out.as_deref(),
-                format,
-            )
-        }
+        command @ ConformCommand::Run { .. } => conform_run(command),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
+        ConformCommand::CheckHistory {
+            path,
+            history,
+            budget,
+            settle,
+            format,
+        } => Ok(check_history(&path, &history, budget, settle, format)),
+        ConformCommand::ImportHistory {
+            path,
+            log,
+            adapter,
+            output,
+        } => Ok(import_history(&path, &log, &adapter, output.as_deref())),
     }
+}
+
+/// `ess verify conform import-history`: 0 written, 2 refused.
+fn import_history(path: &Path, log: &Path, adapter: &Path, output: Option<&Path>) -> ExitCode {
+    const REFUSED: u8 = 2;
+    let loaded = match resolved(path, Format::Text) {
+        Ok(Ok((loaded, _))) => loaded,
+        Ok(Err(_)) => return ExitCode::from(REFUSED),
+        Err(error) => {
+            eprintln!("import-history.specification-unreadable: {error:#}");
+            return ExitCode::from(REFUSED);
+        }
+    };
+    if output.is_some_and(|output| import_output_clashes(output, path, log, adapter)) {
+        return ExitCode::from(REFUSED);
+    }
+    let read = |file: &Path, what: &str| {
+        fs::read(file).map_err(|error| {
+            eprintln!(
+                "import-history.{what}-unreadable: reading {}: {error}",
+                file.display()
+            );
+        })
+    };
+    let Ok(adapter_bytes) = read(adapter, "adapter") else {
+        return ExitCode::from(REFUSED);
+    };
+    let Ok(log_bytes) = read(log, "log") else {
+        return ExitCode::from(REFUSED);
+    };
+    let declared = match std::str::from_utf8(&adapter_bytes)
+        .map_err(|error| ess_conformance::recorded::ImportRefusal::Adapter {
+            detail: error.to_string(),
+        })
+        .and_then(ess_conformance::recorded::adapter)
+    {
+        Ok(declared) => declared,
+        Err(refusal) => {
+            eprintln!("{} was refused: {refusal}", adapter.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let imported = match ess_conformance::recorded::import_for(&log_bytes, &declared, &loaded) {
+        Ok(imported) => imported,
+        Err(refusal) => {
+            eprintln!("{} was refused: {refusal}", log.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    for gap in &imported.gaps {
+        eprintln!("{gap}");
+    }
+    write_imported(&imported, output)
+}
+
+/// Where `import-history --output FILE` writes its coverage gaps: `FILE.gaps.json`.
+fn gaps_path(output: &Path) -> PathBuf {
+    let mut name = output.as_os_str().to_owned();
+    name.push(".gaps.json");
+    PathBuf::from(name)
+}
+
+/// `path` made absolute and canonical; for a path that does not exist yet, its canonical parent
+/// joined with its name.
+fn canonical_or_parent(path: &Path) -> Option<PathBuf> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Some(canonical);
+    }
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    Some(parent.canonicalize().ok()?.join(path.file_name()?))
+}
+
+/// Whether two existing paths are one file: by device and inode on Unix, so a hard link counts.
+#[cfg(unix)]
+fn same_identity(first: &Path, second: &Path) -> Option<bool> {
+    use std::os::unix::fs::MetadataExt as _;
+    let (first, second) = (fs::metadata(first).ok()?, fs::metadata(second).ok()?);
+    Some(first.dev() == second.dev() && first.ino() == second.ino())
+}
+
+/// Elsewhere there is no portable file identity; the canonical-path comparison decides.
+#[cfg(not(unix))]
+fn same_identity(_: &Path, _: &Path) -> Option<bool> {
+    None
+}
+
+/// Whether `candidate` names the same file as the existing `existing`: by file identity where both
+/// exist, otherwise by canonical path.
+fn same_file(candidate: &Path, existing: &Path) -> bool {
+    if let Some(same) = same_identity(candidate, existing) {
+        return same;
+    }
+    match (canonical_or_parent(candidate), existing.canonicalize()) {
+        (Some(candidate), Ok(existing)) => candidate == existing,
+        _ => false,
+    }
+}
+
+/// Whether `candidate` is `root`, lies inside the directory `root`, or is one file with any file
+/// under it.
+fn within(candidate: &Path, root: &Path) -> bool {
+    if same_file(candidate, root) {
+        return true;
+    }
+    if !root.is_dir() {
+        return false;
+    }
+    if let (Some(candidate), Ok(root)) = (canonical_or_parent(candidate), root.canonicalize()) {
+        if candidate.starts_with(&root) {
+            return true;
+        }
+    }
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if same_file(candidate, &path) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Refuses an `--output` whose document or gaps file would overwrite `--log`, `--adapter`, or the
+/// `--path` specification (the file, or any file of the directory).
+fn import_output_clashes(output: &Path, spec: &Path, log: &Path, adapter: &Path) -> bool {
+    let mut clash = false;
+    for written in [output.to_path_buf(), gaps_path(output)] {
+        for (read, what) in [(log, "--log"), (adapter, "--adapter")] {
+            if same_file(&written, read) {
+                eprintln!(
+                    "import-history.output-overwrites-input: {} is the {what} file {}; \
+                     nothing was written",
+                    written.display(),
+                    read.display()
+                );
+                clash = true;
+            }
+        }
+        if within(&written, spec) {
+            eprintln!(
+                "import-history.output-overwrites-input: {} is a file of the --path \
+                 specification {}; nothing was written",
+                written.display(),
+                spec.display()
+            );
+            clash = true;
+        }
+    }
+    clash
+}
+
+/// The temporary sibling `path` is written to before it is renamed into place.
+fn temporary_sibling(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(format!(".import-{}.tmp", std::process::id()));
+    PathBuf::from(name)
+}
+
+/// Writes the history to `output` and its gaps to `output.gaps.json`, or the history to
+/// standard output.
+///
+/// The pair is written to temporary siblings first, and renamed into place only when both writes
+/// succeeded: the gaps file first, then the history. A failed write leaves every existing file as
+/// it was and removes the temporaries.
+fn write_imported(
+    imported: &ess_conformance::recorded::Imported,
+    output: Option<&Path>,
+) -> ExitCode {
+    const REFUSED: u8 = 2;
+    let mut document = match serde_json::to_string_pretty(&imported.history) {
+        Ok(document) => document,
+        Err(error) => {
+            eprintln!("import-history.unwritable: {error}");
+            return ExitCode::from(REFUSED);
+        }
+    };
+    document.push('\n');
+    let Some(file) = output else {
+        print!("{document}");
+        return ExitCode::SUCCESS;
+    };
+    let pair = [
+        (gaps_path(file), imported.gaps_json()),
+        (file.to_path_buf(), document),
+    ];
+    for (path, _) in &pair {
+        if path.is_dir() {
+            eprintln!(
+                "import-history.output-unwritable: {} is a directory; nothing was written",
+                path.display()
+            );
+            return ExitCode::from(REFUSED);
+        }
+    }
+    let temporaries: Vec<PathBuf> = pair
+        .iter()
+        .map(|(path, _)| temporary_sibling(path))
+        .collect();
+    let discard = |temporaries: &[PathBuf]| {
+        for temporary in temporaries {
+            let _ = fs::remove_file(temporary);
+        }
+    };
+    for ((path, text), temporary) in pair.iter().zip(&temporaries) {
+        if let Err(error) = fs::write(temporary, text) {
+            eprintln!(
+                "import-history.output-unwritable: writing {}: {error}; nothing was written",
+                path.display()
+            );
+            discard(&temporaries);
+            return ExitCode::from(REFUSED);
+        }
+    }
+    for ((path, _), temporary) in pair.iter().zip(&temporaries) {
+        if let Err(error) = fs::rename(temporary, path) {
+            eprintln!(
+                "import-history.output-unwritable: replacing {}: {error}",
+                path.display()
+            );
+            discard(&temporaries);
+            return ExitCode::from(REFUSED);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// `ess verify conform check-history`: 0 linearizable, 1 violation, 3 unknown, 2 refused.
+fn check_history(
+    path: &Path,
+    history: &Path,
+    budget: u64,
+    settle: u64,
+    format: MachineFormat,
+) -> ExitCode {
+    const REFUSED: u8 = 2;
+    // Every refusal exits 2, including one the loader or the file system reports as an error:
+    // exit 1 is the Violation verdict, and a history nobody read is not one.
+    let loaded = match resolved(path, Format::Text) {
+        Ok(Ok((loaded, _))) => loaded,
+        Ok(Err(_)) => return ExitCode::from(REFUSED),
+        Err(error) => {
+            eprintln!("check-history.specification-unreadable: {error:#}");
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let bytes = match fs::read(history) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!(
+                "check-history.history-unreadable: reading {}: {error}",
+                history.display()
+            );
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let digest = ess_conformance::SuiteProvenance::of(&loaded).spec_digest;
+    let recorded = match ess_conformance::history::read(&bytes, &digest) {
+        Ok(recorded) => recorded,
+        Err(refusal) => {
+            eprintln!("{} was refused: {refusal}", history.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let report =
+        match ess_conformance::linearize::report_settled(&loaded, &recorded, budget, settle) {
+            Ok(report) => report,
+            Err(refusal) => {
+                eprintln!("{} cannot be checked: {refusal}", history.display());
+                return ExitCode::from(REFUSED);
+            }
+        };
+    match format {
+        MachineFormat::Text => print!("{}", report.to_text()),
+        MachineFormat::Json => print!("{}", report.to_json()),
+    }
+    ExitCode::from(report.exit_code())
+}
+
+/// `ess verify conform run`: one suite against one built-in target.
+fn conform_run(command: ConformCommand) -> Result<ExitCode> {
+    let ConformCommand::Run {
+        path,
+        suite,
+        suite_input,
+        suite_format,
+        scenarios,
+        target,
+        report_out,
+        report_format,
+        strict,
+        allow_incomplete: _,
+        format,
+    } = command
+    else {
+        unreachable!("dispatched on `Run` only");
+    };
+    if strict && report_format != "2" {
+        bail!("strict conformance requires explicit --report-format 2; use --allow-incomplete for diagnostic report/1");
+    }
+    if matches!(target, ReferenceTarget::Interpreted) && path.is_none() {
+        bail!(
+            "`--target interpreted` requires `--path`: the interpreter executes the \
+             specification the suite was synthesized from, and names no default for it"
+        );
+    }
+    let path = path.unwrap_or_else(|| PathBuf::from("."));
+    let admitted = if let Some(file) = suite_input {
+        ess_conformance::coverage::AdmittedInput::from_json(&fs::read_to_string(file)?)?
+            .selected()
+            .clone()
+    } else if let Some(file) = suite {
+        ess_conformance::AdmittedSuite::from_json(&fs::read_to_string(&file)?)?
+    } else {
+        let Ok((ir, _)) = resolved(&path, format)? else {
+            return Ok(ExitCode::from(1));
+        };
+        ess_conformance::admission::model(&ir)?;
+        if suite_format.as_deref() == Some("5") {
+            coverage::fresh(&ir, scenarios.as_deref(), None, false)?
+                .selected()
+                .clone()
+        } else {
+            let Some(suite) = fresh_legacy_run_suite(&ir, scenarios.as_deref())? else {
+                return Ok(ExitCode::from(1));
+            };
+            suite
+        }
+    };
+    let suite = admitted.suite();
+    let interpreted = match target {
+        ReferenceTarget::Interpreted => match interpreter_for(&path, suite, format)? {
+            Ok(interpreter) => Some(interpreter),
+            Err(code) => return Ok(code),
+        },
+        ReferenceTarget::Billing | ReferenceTarget::OracleFixture => None,
+    };
+    let report = coverage::execute(&admitted, &report_format, || match target {
+        ReferenceTarget::Billing => wall_clock_runner(suite)
+            .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
+        ReferenceTarget::OracleFixture => wall_clock_runner(suite)
+            .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
+        ReferenceTarget::Interpreted => wall_clock_runner(suite).run_admitted(
+            &admitted,
+            interpreted
+                .as_ref()
+                .expect("the interpreted target was built from `--path` above"),
+        ),
+    })?;
+    render_conformance_report(
+        &report,
+        &admitted,
+        &report_format,
+        strict,
+        report_out.as_deref(),
+        format,
+    )
+}
+
+/// The interpreter over the specification at `path`, refused unless the suite was synthesized from it.
+///
+/// `Err` carries the loader's own exit code for a specification that does not compile.
+fn interpreter_for(
+    path: &Path,
+    suite: &ess_conformance::ConformanceSuite,
+    format: Format,
+) -> Result<Result<ess_conformance::interpret::Interpreted, ExitCode>> {
+    let (ir, _) = match resolved(path, format)? {
+        Ok(loaded) => loaded,
+        Err(code) => return Ok(Err(code)),
+    };
+    let model = ess_conformance::SuiteProvenance::of(&ir).spec_digest;
+    if model != suite.provenance.spec_digest {
+        bail!(
+            "`--target interpreted` refuses the specification at {}: its spec_digest {model} is \
+             not the suite's spec_digest {}, so the model interpreted is not the one the suite was \
+             synthesized from",
+            path.display(),
+            suite.provenance.spec_digest
+        );
+    }
+    Ok(Ok(ess_conformance::interpret::Interpreted::for_model(*ir)))
 }
 
 /// The machine's clock, in epoch milliseconds: the wall a `now_offset` is resolved against.
@@ -3112,7 +3544,7 @@ fn conform_mutate(
 
     // The loader's own refusal path first, so a specification that does not compile is reported
     // exactly as `run` reports it, and exits 1.
-    let Ok(_) = resolved(path, format)? else {
+    let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
     let raw = load::raw_specification(path)?;
@@ -3134,7 +3566,8 @@ fn conform_mutate(
             &raw.parsed,
             &raw.texts,
             &classes,
-            ess_conformance::interpret::Interpreted::new,
+            // The unchanged specification, as every mutant's target implements it.
+            || ess_conformance::interpret::Interpreted::for_model((*ir).clone()),
         ),
     };
     finish_mutation_audit(audited, report_out, format)
@@ -3542,6 +3975,37 @@ fn conform_web(
     } else {
         ExitCode::from(1)
     })
+}
+
+/// `ess verify conform web --history`: a recorded history, checked, drawn as client lanes.
+///
+/// Exits 0 once the page is rendered, whatever the verdict: the verdict is `check-history`'s exit
+/// status, and the page is a reading of it.
+fn conform_web_history(input: &SpecPath, history: &Path, out: Option<&Path>) -> Result<ExitCode> {
+    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let bytes = fs::read(history).with_context(|| format!("reading {}", history.display()))?;
+    let digest = ess_conformance::SuiteProvenance::of(&ir).spec_digest;
+    let recorded = ess_conformance::history::read(&bytes, &digest)
+        .map_err(|refusal| anyhow::anyhow!("{} was refused: {refusal}", history.display()))?;
+    let page =
+        ess_conformance::lanes::render(&ir, &recorded, ess_conformance::linearize::DEFAULT_BUDGET)
+            .map_err(|refusal| {
+                anyhow::anyhow!("{} cannot be checked: {refusal}", history.display())
+            })?;
+    match out {
+        Some(out) => {
+            let artifacts = std::collections::BTreeMap::from([(
+                "index.html".to_owned(),
+                ess_gen::Artifact::new("index.html", page),
+            )]);
+            write_owned_artifacts(Some(out), "conformance-browser", &artifacts)?;
+            println!("1 artifact, written to {}", out.display());
+        }
+        None => print!("{page}"),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn author_suite(
@@ -4378,7 +4842,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 63;
+    const AREA_LEAVES: usize = 65;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in

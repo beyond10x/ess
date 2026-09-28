@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T01:21:00Z",
+  "actor": "human:timo",
+  "artifact": "story:linearizability-checker-over-the-interpreter",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave-2 gate on integrate/concurrent-history b08ed292d plus fix 57b8cb105: fmt, clippy, doc, test -p ess-conformance (852 passed), ess-xtask (313 on rerun), ess-domain (756), ess-cli (757), 0 failed",
+    "reference": "57b8cb105"
+  }
+}

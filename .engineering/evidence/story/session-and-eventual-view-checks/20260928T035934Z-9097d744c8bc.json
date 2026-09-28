@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T03:59:34Z",
+  "actor": "human:timo",
+  "artifact": "story:session-and-eventual-view-checks",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave-3 gate on integrate/concurrent-history acd6a0862: fmt, clippy, doc, test -p ess-conformance (874 passed), ess-domain (756), ess-cli (785, Go and Node lanes included), ess-xtask (313 on a rerun with no concurrent store writes), 0 failed; specify validate models/concurrent-history valid",
+    "reference": "acd6a0862"
+  }
+}
