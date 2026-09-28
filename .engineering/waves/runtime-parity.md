@@ -32,8 +32,8 @@ wave.
 
 | unit | files | worktree (managed id) | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|---|
-| go | `src/go/runtime.go`, `replay.go`, `predicate.go`, `reading.go`, `response.go`; Go parity tests | `ess-rp-go` | `impl/runtime-parity-go` | `~/.cache/b10x-target/ess-rp-go` | `~/.cache/ess-wave-rp/go` | dispatched |
-| ts | `src/ts/runtime.ts`, `runtime.test.ts`, `predicate.ts`, `reading.ts`, `response.ts`, `presence.test.ts`; TS parity tests | `ess-rp-ts` | `impl/runtime-parity-ts` | `~/.cache/b10x-target/ess-rp-ts` | `~/.cache/ess-wave-rp/ts` | dispatched |
+| go | `src/go/runtime.go`, `replay.go`, `predicate.go`, `reading.go`, `response.go`; Go parity tests | `ess-rp-go` | `impl/runtime-parity-go` | `~/.cache/b10x-target/ess-rp-go` | `~/.cache/ess-wave-rp/go` | correction 1 |
+| ts | `src/ts/runtime.ts`, `runtime.test.ts`, `predicate.ts`, `reading.ts`, `response.ts`, `presence.test.ts`; TS parity tests | `ess-rp-ts` | `impl/runtime-parity-ts` | `~/.cache/b10x-target/ess-rp-ts` | `~/.cache/ess-wave-rp/ts` | correction 1 |
 
 The admission guard test (every version synthesize can write is admitted by both runtimes) is the
 go unit's, as a Rust test under `crates/verify/ess-conformance/tests/`.
@@ -54,3 +54,8 @@ go unit's, as a Rust test under `crates/verify/ess-conformance/tests/`.
   never the suite.
 
 ## Log
+- 12:55 main moved: PR #189 (concurrent-history) merged as aa82c4de2; its release comes next. This wave merges main before its PR.
+- 13:09 go: implementor green (ess-conformance 1158→1184; TS half of runtime_suite_admission red until ts lands), committed 7b21e59d1; adversary pass 1 dispatched. Follow-ups: ~/.cache/ess-wave-rp/go/stale-docs.md (20 lines saying Go/TS refuse /22–/27), changelog.md; older-vocabulary parity gaps (expect_error fields, holds on list/map/union, eventually_event payload, response wire/display/summary) → story at close.
+- 13:12 ts: implementor green once its two coordinator patches applied (fixtures.test.ts, aggregate_views_mutants.rs flip pinned refusals to admission); coordinator applied them, typescript_runtime 4/4, typescript_suite_versions 29/29, aggregate_views_mutants 3/3; committed 810ba9ae3; adversary pass 1 dispatched.
+- 13:20 ts: adversary pass 1 red (5 findings: undefined-as-present blocker, exponent decimals refuse a whole suite, big integer literals, vocabulary guard too loose); recorded review-result:adversary-rp-ts-pass-1; correction 1 to the same implementor (undecided decided in scope: undefined = absent, literals exact).
+- 13:21 go: adversary pass 1 red (F1 blocker: eventuallyEvent ignores payload/shape — reachable from every synthesized binding flow/delivery at /26; F2 event null leaf parity), recorded review-result:adversary-rp-go-pass-1; correction 1 to the same implementor.
