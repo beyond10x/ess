@@ -339,6 +339,7 @@ fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
         ScenarioStep::ExecuteCommand {
             command: create.clone(),
             actor: None,
+            caller: std::collections::BTreeMap::new(),
             input: BTreeMap::from([
                 (
                     "account_id".to_owned(),
@@ -365,6 +366,7 @@ fn create_and_issue(instance: &str, amount: f64) -> Vec<ScenarioStep> {
         ScenarioStep::ExecuteCommand {
             command: issue.clone(),
             actor: None,
+            caller: std::collections::BTreeMap::new(),
             input: BTreeMap::from([("invoice_id".to_owned(), ScenarioValue::instance(bound))]),
         },
         ScenarioStep::ExpectOutcome {

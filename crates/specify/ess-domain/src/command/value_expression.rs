@@ -118,6 +118,8 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
             }
         }
     }
+    // The caller (ess/16, #168): actor attributes, and every guard that reads one.
+    errors.extend(super::caller_value::validate(spec));
     errors
 }
 
@@ -140,7 +142,10 @@ fn check(
             format!(
                 "a {} source requires specification format {}",
                 kind(source),
-                if matches!(source, PayloadSource::RelatedField { .. }) {
+                if matches!(
+                    source,
+                    PayloadSource::RelatedField { .. } | PayloadSource::CallerAttribute { .. }
+                ) {
                     "ess/16"
                 } else {
                     "ess/14"
@@ -191,6 +196,16 @@ fn check(
         PayloadSource::RelatedField { via, field } => {
             check_related(context, at, target, via, field, errors);
         }
+        PayloadSource::CallerAttribute { attribute } => {
+            super::caller_value::check_source(
+                context.spec,
+                context.command,
+                at,
+                target,
+                attribute,
+                errors,
+            );
+        }
         PayloadSource::Increment { by, scalar } => {
             check_increment(context, at, place, target, by, *scalar, errors);
         }
@@ -223,6 +238,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::InputOrGenerated { .. } => "`{input: …, else: …}`",
         PayloadSource::Struct { .. } => "nested mapping",
         PayloadSource::RelatedField { .. } => "`{related: …}`",
+        PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
         _ => "payload",
     }
 }

@@ -55,6 +55,7 @@ fn scenario(
     let named = ErrorRef::from(error);
     let mut steps = vec![
         ScenarioStep::ExecuteCommandWithoutInput {
+            caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor: actors.get(&command.name).cloned(),
         },

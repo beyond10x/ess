@@ -275,6 +275,7 @@ impl Specification {
 
         // `{related: …}` is an `ess/16` source; below it the same mapping is the nested one it was.
         crate::command::related_value::read_below_ess_16(system.format, &mut collected.commands);
+        crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
         let specification = Self {
             system,
             entities: collected.entities,

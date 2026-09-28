@@ -179,6 +179,7 @@
 
 mod absent_input;
 mod aggregate;
+mod caller;
 mod related;
 mod subject_fact;
 
@@ -1282,6 +1283,16 @@ impl fmt::Display for InstanceNeed {
 /// value it chooses is a function of the model, and nothing here reads a clock or a random device.
 /// `tests/synthesis.rs` synthesises the billing example twice and compares bytes.
 pub fn synthesize(ir: &EssIr) -> Synthesis {
+    // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
+    // assignment, each read with the caller's values written in (`caller::synthesize`).
+    if caller::uses(ir) {
+        return caller::synthesize(ir);
+    }
+    synthesize_plain(ir)
+}
+
+/// [`synthesize`], for a model in which nothing depends on who sends a command.
+fn synthesize_plain(ir: &EssIr) -> Synthesis {
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let mut refusals = Vec::new();
     for (path, subject) in ess_compiler::binary64::uses(ir) {
@@ -1883,6 +1894,7 @@ fn run_as(
         &setup.bound,
     );
     invoke.push(ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref,
         actor: actor.clone(),
         input: supplied.clone(),
@@ -2111,6 +2123,7 @@ fn run_state_refusal(
     let actor = actors.get(&command.name).cloned();
     let mut invoke = vec![
         ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: CommandRef::new(command.name.clone()),
             actor: actor.clone(),
             input: input.clone(),
@@ -2257,6 +2270,7 @@ fn run_replay(
     setup.extend(preservation.before);
     let mut invoke = vec![
         ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: capture.replay.command.clone(),
             actor: origin.actor.clone(),
             input: origin.input.clone(),
@@ -3001,6 +3015,7 @@ fn invoke_with(
     // An arranging act reads no row it can name here; an ess/14 source then determines nothing.
     let settled = settled(ir, driver.outcome, &supplied, &BTreeMap::new());
     steps.push(ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(&driver.command.name).cloned(),
         input: supplied,
@@ -3944,7 +3959,8 @@ fn determined_payload(
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
-            | ResolvedPayloadValue::RelatedField { .. } => {
+            | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. } => {
                 if let Some(ScenarioValue::Literal { value }) =
                     expression_value(ir, field, supplied, before)
                 {
@@ -4561,7 +4577,9 @@ fn expression_value(
         | ResolvedPayloadValue::InputField { .. }
         | ResolvedPayloadValue::ResponseField { .. }
         | ResolvedPayloadValue::Generated
-        | ResolvedPayloadValue::Cleared => None,
+        | ResolvedPayloadValue::Cleared
+        // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
+        | ResolvedPayloadValue::CallerAttribute { .. } => None,
     }
 }
 
@@ -4661,7 +4679,8 @@ fn without_literal_fallbacks(
             | ResolvedPayloadValue::Cleared
             | ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::RelatedField { .. }
-            | ResolvedPayloadValue::Increment { .. } => {}
+            | ResolvedPayloadValue::Increment { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. } => {}
         }
     }
     let (held, bound) = (setup.before.as_ref(), &setup.bound);
@@ -5034,7 +5053,8 @@ fn settled(
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
-            | ResolvedPayloadValue::RelatedField { .. } => {
+            | ResolvedPayloadValue::RelatedField { .. }
+            | ResolvedPayloadValue::CallerAttribute { .. } => {
                 match expression_value(ir, field, supplied, before) {
                     Some(value) => value,
                     None => continue,
@@ -6115,6 +6135,7 @@ fn refused_here(
         steps.extend(preservation.before.iter().cloned());
     }
     steps.push(ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(command).cloned(),
         input: supply(
@@ -6401,6 +6422,7 @@ fn unknown_instance(
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
     let mut steps = vec![
         ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor: actors.get(&command.name).cloned(),
             input: supply(command, &input, None, None, &BTreeMap::new()),
@@ -6525,6 +6547,7 @@ fn deletion_witness(
         let command_ref = CommandRef::new(command.name.clone());
         let branch = OutcomeRef::new(command_ref.clone(), answer.name.clone());
         steps.push(ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: command_ref,
             actor: run.actor.clone(),
             input: run.input.clone(),
@@ -6621,6 +6644,7 @@ fn preconditions(ir: &EssIr, suite: &mut ConformanceSuite) {
             }
         }
         prelude.push(ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor: precondition
                 .actor
@@ -6965,6 +6989,7 @@ fn from_source(
         });
     }
     steps.push(ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
         input: supplied.clone(),
@@ -7535,6 +7560,7 @@ fn boundaries(
             );
         }
         out.0.push(ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor: actors.get(&command.name).cloned(),
             input: supplied,

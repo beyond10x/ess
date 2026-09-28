@@ -1825,6 +1825,9 @@ impl<'a> Resolver<'a> {
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
                 sets,
+                decided_by_caller: ess_domain::command::caller_value::decides(
+                    self.spec, command, outcome,
+                ),
             });
         }
         if complete {
@@ -2293,6 +2296,9 @@ impl<'a> Resolver<'a> {
                 input,
                 subject,
             )?,
+            PayloadSource::CallerAttribute { attribute } => {
+                self.caller_field(command, outcome, block, (target, source), attribute)?
+            }
             _ => unreachable!("every other source is resolved by `payload_field`"),
         };
         let conversion = self.crossing(command, outcome, block, target, source, &from)?;
@@ -2395,6 +2401,55 @@ impl<'a> Resolver<'a> {
                 via,
                 entity: EntityHandle::new(entity.name.clone()),
                 field: read.name,
+                type_ref: read.type_ref.clone(),
+            },
+            read.type_ref,
+        ))
+    }
+
+    /// `{caller: <attribute>}` (ess/16, #168): the attribute as the actors that may invoke the
+    /// command declare it, by the rule `ess-domain` validated it with. The value and the type it is
+    /// read at; the caller checks that type against the target.
+    fn caller_field(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        block: SourceBlock<'_>,
+        (target, source): (&ResolvedField, &PayloadSource),
+        attribute: &str,
+    ) -> Option<(ResolvedPayloadValue, ResolvedTypeRef)> {
+        let declared =
+            ess_domain::command::caller_value::common_attributes(self.spec, &command.name)
+                .into_iter()
+                .find(|field| field.name == attribute);
+        let Some(declared) = declared else {
+            self.refuse_payload(
+                command,
+                outcome,
+                block,
+                Some((&target.name, source)),
+                codes::COMMAND_UNDECLARED_REFERENCE,
+                format!(
+                    "outcome `{}` of `{}` reads the caller's `{attribute}`, which not every actor \
+                     that may invoke it declares",
+                    outcome.name, command.name
+                ),
+                Vec::new(),
+            );
+            return None;
+        };
+        let read = self
+            .fields(
+                codes::COMMAND_TYPE_MISMATCH,
+                std::slice::from_ref(&declared),
+                &command.name,
+                &format!("commands.{}", command.name),
+                &[format!("name: {}", command.name)],
+            )?
+            .pop()?;
+        Some((
+            ResolvedPayloadValue::CallerAttribute {
+                attribute: read.name,
                 type_ref: read.type_ref.clone(),
             },
             read.type_ref,
@@ -3050,7 +3105,15 @@ impl<'a> Resolver<'a> {
                     }
                 }
             }
-            let (Some(domain), true) = (domain, complete) else {
+            // ess/16 (#168): what the credential carries, each type resolved as a field's is.
+            let attributes = self.fields(
+                codes::ACTOR_UNDECLARED_REFERENCE,
+                &actor.attributes,
+                &actor.name,
+                &format!("{path}.attributes"),
+                &needles,
+            );
+            let (Some(domain), true, Some(attributes)) = (domain, complete, attributes) else {
                 continue;
             };
             resolved.insert(
@@ -3060,6 +3123,7 @@ impl<'a> Resolver<'a> {
                     domain,
                     may,
                     naming: actor.naming,
+                    attributes,
                 },
             );
         }
@@ -4122,7 +4186,8 @@ fn payload_constant_source(
         | PayloadSource::SubjectField { .. }
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
-        | PayloadSource::RelatedField { .. } => return None,
+        | PayloadSource::RelatedField { .. }
+        | PayloadSource::CallerAttribute { .. } => return None,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
     };
     Some(payload_constant(target, value))

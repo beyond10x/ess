@@ -431,6 +431,10 @@ pub enum LoweringCode {
     /// An `input_absent:` branch (ess/16): the answer for a request with no input at all. An absent
     /// request body is a transport fact entity-core never sees, so it has no definition for it.
     InputAbsentUnsupported,
+    /// A value or a guard reads the authenticated caller (`{caller: …}`, `caller.<attribute>`,
+    /// ess/16): entity-core decides from a command's arguments and the stored row, and has no
+    /// operand for who sent the command.
+    CallerUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -600,6 +604,17 @@ impl Projector<'_> {
             });
             if lowered {
                 let at = site.site.render();
+                if reads_caller(&site) {
+                    self.diagnostic(
+                        LoweringCode::CallerUnsupported,
+                        &at,
+                        format!(
+                            "`{}` reads the caller (ess/16), and entity-core has no operand for \
+                             who sent the command",
+                            site.predicate
+                        ),
+                    );
+                }
                 let input = (!site.input.is_empty()).then_some(site.input.as_slice());
                 self.refuse_text_lengths(&site.fields, input, site.predicate, &at);
             }
@@ -1659,6 +1674,18 @@ impl Projector<'_> {
                 );
                 IdentityValue::Literal { value: Value::Null }
             }
+            Some(ResolvedPayloadField {
+                value: ResolvedPayloadValue::CallerAttribute { .. },
+                ..
+            }) => {
+                self.diagnostic(
+                    LoweringCode::CallerUnsupported,
+                    format!("{}.{}.identity", command.name, outcome.name.as_str()),
+                    "a logical identity is not lowered from the caller (ess/16); entity-core has \
+                     no operand for who sent the command",
+                );
+                IdentityValue::Literal { value: Value::Null }
+            }
             Some(mapped) if is_value_expression(&mapped.value) => {
                 self.diagnostic(
                     LoweringCode::ValueExpressionUnsupported,
@@ -1716,7 +1743,8 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::Increment { .. }
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
-                        | ResolvedPayloadValue::RelatedField { .. } => {
+                        | ResolvedPayloadValue::RelatedField { .. }
+                        | ResolvedPayloadValue::CallerAttribute { .. } => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
                             )
@@ -2357,6 +2385,17 @@ impl Projector<'_> {
                 kind: ProducedValueKind::Absent,
                 slot: None,
             }),
+            ResolvedPayloadValue::CallerAttribute { attribute, .. } => {
+                self.diagnostic(
+                    LoweringCode::CallerUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    format!(
+                        "the caller's `{attribute}` (ess/16) has no entity-core lowering; \
+                         entity-core has no operand for who sent the command"
+                    ),
+                );
+                None
+            }
             value @ (ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
@@ -3181,6 +3220,18 @@ enum Scalar {
 }
 
 /// The ess/14 sources, which entity-core has no value expression for.
+/// Whether a predicate the IR holds reads the authenticated caller (ess/16): `caller.<attribute>`,
+/// where no field it is read over is itself named `caller`.
+fn reads_caller(site: &ess_compiler::expression::PredicateSite<'_>) -> bool {
+    let caller = ess_domain::command::caller_value::CALLER_NAMESPACE;
+    !site.fields.iter().any(|field| field.name == caller)
+        && site
+            .predicate
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == caller && path.segments().len() > 1)
+}
+
 fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
     matches!(
         value,

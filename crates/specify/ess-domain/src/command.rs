@@ -199,6 +199,7 @@
 //! have shared since wave 1.
 
 pub(crate) mod absent_input;
+pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
 mod narrowing;
@@ -973,6 +974,15 @@ pub enum PayloadSource {
         /// The field of the referenced row.
         field: String,
     },
+    /// An attribute of the authenticated caller: `{caller: account_id}` (ess/16,
+    /// beyond10x/ess#168, [`caller_value`]).
+    ///
+    /// Declared by every actor that may invoke the command, and carried by the credential rather
+    /// than by the input.
+    CallerAttribute {
+        /// The actor attribute read.
+        attribute: String,
+    },
 }
 
 impl PayloadSource {
@@ -1005,6 +1015,7 @@ impl fmt::Display for PayloadSource {
             Self::RelatedField { via, field } => {
                 write!(f, "field `{field}` of the row `{via}` names")
             }
+            Self::CallerAttribute { attribute } => write!(f, "the caller's `{attribute}`"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1041,7 +1052,8 @@ impl PayloadSource {
             | Self::Increment { .. }
             | Self::InputOrGenerated { .. }
             | Self::Struct { .. }
-            | Self::RelatedField { .. } => true,
+            | Self::RelatedField { .. }
+            | Self::CallerAttribute { .. } => true,
             Self::ResponseField { .. }
             | Self::Generated
             | Self::InputField { .. }
@@ -1094,6 +1106,7 @@ enum RawPayloadSource {
     Decimal(f64),
     Explicit(ExplicitPayloadSource),
     Related(RawRelatedSource),
+    Caller(caller_value::RawCallerSource),
     Nested(RawNestedSources),
 }
 
@@ -1175,7 +1188,8 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                      `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
                      `{input: <field>, else: {generated: true}}`, \
                      `{input: <field>, else: <literal>}`, \
-                     `{related: {via: <field>, field: <field>}}`, or a mapping of struct fields",
+                     `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, or a \
+                     mapping of struct fields",
                 )
             }
 
@@ -1219,6 +1233,9 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                 }
                 if let Some(related) = RawRelatedSource::recognise(&entries) {
                     return Ok(RawPayloadSource::Related(related));
+                }
+                if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
+                    return Ok(RawPayloadSource::Caller(caller));
                 }
                 if !entries.is_empty()
                     && entries
@@ -1384,6 +1401,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 via: RelatedVia::parse(&via),
                 field,
             }),
+            RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -1533,6 +1551,9 @@ impl From<&PayloadSource> for RawPayloadSource {
                     field: field.clone(),
                 },
             }),
+            PayloadSource::CallerAttribute { attribute } => {
+                Self::Caller(caller_value::RawCallerSource::of(attribute))
+            }
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
                     ScalarKind::Integer => by
@@ -2417,6 +2438,10 @@ impl CommandSpec {
         for path in predicate.fact_paths() {
             let root = path.namespace();
             if !inputs.contains(root) {
+                // `caller.<attribute>` (ess/16) is checked with the actors in hand.
+                if caller_value::is_caller_path(path, &self.input) {
+                    continue;
+                }
                 errors.push(
                     ValidationError::at(
                         location.clone().key("when"),
@@ -2481,6 +2506,15 @@ impl CommandSpec {
         let checked = crate::expression::check_predicate(&environment, predicate, &rendered);
         let mut errors = ValidationErrors::new();
         for error in &checked.errors {
+            // `caller.<attribute>` (ess/16) is checked with the actors in hand, and so is the
+            // comparison it sits in.
+            if error
+                .path
+                .as_ref()
+                .is_some_and(|path| caller_value::is_caller_path(path, &self.input))
+            {
+                continue;
+            }
             let mut diagnostic = error.validation_error();
             if let Some(path) = &error.path {
                 if error.segment.as_deref() == Some(path.namespace())
@@ -2877,7 +2911,8 @@ fn check_payload_entry(
         | PayloadSource::Increment { .. }
         | PayloadSource::InputOrGenerated { .. }
         | PayloadSource::Struct { .. }
-        | PayloadSource::RelatedField { .. } => {}
+        | PayloadSource::RelatedField { .. }
+        | PayloadSource::CallerAttribute { .. } => {}
         PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => {
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.

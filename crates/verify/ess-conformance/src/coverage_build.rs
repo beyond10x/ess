@@ -482,6 +482,7 @@ fn coverage_version(
         if crate::leaf_payloads::used_by(suite)
             || crate::absent_input::used_by(suite)
             || crate::aggregate_delta::used_by(suite)
+            || crate::caller_values::used_by(suite)
         {
             "ess-conformance/27"
         } else if crate::presence::used_by(suite) {

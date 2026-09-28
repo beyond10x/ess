@@ -1494,6 +1494,7 @@ pub(super) fn absent(
         })?;
     let command_ref = CommandRef::new(command.name.clone());
     let mut steps = vec![ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
         input: supply(command, &input, None, None, &BTreeMap::new()),
@@ -1856,6 +1857,7 @@ fn send_for_row(
         &BTreeMap::new(),
     );
     steps.push(ScenarioStep::ExecuteCommand {
+        caller: std::collections::BTreeMap::new(),
         command: command_ref,
         actor: actors.get(&command.name).cloned(),
         input: supplied.clone(),

@@ -198,7 +198,7 @@ use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
 use crate::artifact::{Artifact, Generator};
-use crate::http::{self, status, CONFLICT, NO_INPUT, READ, REFUSED, UPSTREAM};
+use crate::http::{self, status, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
 use ess_compiler::refs::{ActorRef, BindingRef, ComponentRef, EssSemanticRef};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
@@ -451,6 +451,7 @@ fn operation(ir: &EssIr, handle: &CommandHandle, grants: &Grants<'_>) -> Operati
         description: command.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: may_invoke(handle, grants),
+        caller: http::caller_attributes(ir, command),
         accessors: ir
             .bindings()
             .values()
@@ -497,6 +498,7 @@ fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
         description: view.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: Vec::new(),
+        caller: Vec::new(),
         accessors: Vec::new(),
         consistency: Some(view.consistency.as_str()),
         parameters: Vec::new(),
@@ -702,6 +704,10 @@ fn meaning(status: &str) -> &'static str {
         NO_INPUT => {
             "the request carried no input at all. The body names the declared error the command \
              reports for a request without its body."
+        }
+        FORBIDDEN => {
+            "the caller is not one this branch admits: its guard compares the authenticated caller \
+             with the input or the record. The same request from an admitted caller is accepted."
         }
         _ => {
             "the branch the specification declares for this input. Events this branch emits are \
@@ -1344,6 +1350,12 @@ struct Operation {
     /// prove it. See the module documentation's "What this refuses to guess".
     #[serde(rename = "x-ess-may-invoke", skip_serializing_if = "Vec::is_empty")]
     may_invoke: Vec<String>,
+    /// The attributes of the caller the command reads (ess/16, beyond10x/ess#168): what the
+    /// request has to be authenticated as, which its body does not carry. An annotation, for the
+    /// reason `x-ess-may-invoke` is one: the model states what the credential carries, not how a
+    /// caller proves it.
+    #[serde(rename = "x-ess-caller", skip_serializing_if = "Vec::is_empty")]
+    caller: Vec<String>,
     /// How soon a view reflects a command that has already returned.
     ///
     /// An annotation and not a header, because it is a property of the projection rather than of

@@ -412,6 +412,7 @@ impl ConformanceTarget for Billing {
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
+        refuse_caller(&request)?;
         let mut state = self.state.borrow_mut();
         match request.command.to_string().as_str() {
             CREATE_INVOICE => Ok(self.create_invoice(&mut state, &request)),
@@ -672,6 +673,19 @@ fn send_email(state: &mut State, request: &SemanticCommandRequest) -> SemanticCo
         }
         None => SemanticCommandResult::took(outcome(SEND_EMAIL, "failed"))
             .with_error(DeclaredErrorValue::new(declared_error(UNDELIVERABLE))),
+    }
+}
+
+/// A command sent as a particular caller (suite/26, ess/16): neither reference system declares an
+/// actor attribute, so neither holds a credential to send it with, and answering as nobody in
+/// particular would pass a scenario about someone else.
+fn refuse_caller(request: &SemanticCommandRequest) -> Result<(), TargetError> {
+    match &request.caller {
+        Some(_) => Err(TargetError::unsupported(
+            format!("sending `{}` as a caller", request.command),
+            "this reference implementation authenticates no caller",
+        )),
+        None => Ok(()),
     }
 }
 
@@ -1285,6 +1299,7 @@ impl ConformanceTarget for Oracle {
         &self,
         request: SemanticCommandRequest,
     ) -> Result<SemanticCommandResult, TargetError> {
+        refuse_caller(&request)?;
         let mut state = self.state.borrow_mut();
         match request.command.to_string().as_str() {
             PLACE_ORDER => Ok(self.place_order(&mut state, &request)),
