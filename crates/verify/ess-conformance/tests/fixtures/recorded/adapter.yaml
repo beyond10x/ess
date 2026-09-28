@@ -1,0 +1,21 @@
+format: ess-history-adapter/1
+fields:
+  operation_id:
+    pointer: /correlation
+  client:
+    pointer: /request/client
+  command:
+    pointer: /request/command
+  subject_key:
+    pointer: /request/subject
+  invoked_at:
+    pointer: /request/at_ms
+  returned_at:
+    pointer: /response/at_ms
+  outcome:
+    pointer: /response/outcome
+  completion:
+    pointer: /response/status
+    values:
+      ok: Returned
+      timeout: Indeterminate
