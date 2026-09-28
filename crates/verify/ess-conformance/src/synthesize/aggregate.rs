@@ -32,8 +32,9 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{
-    advance, clipped, created, has_subject_guards, identity_inputs, insert, literal_value, reach,
-    reachable_types, route_from, shows, subject_fact, Arrangement, Refusal, RefusalCause,
+    advance, arrange_owner, clipped, created_owned, has_subject_guards, identity_inputs, insert,
+    literal_value, reach, reachable_types, route_from, shares_owner, shows, subject_fact,
+    Arrangement, Refusal, RefusalCause,
 };
 use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
@@ -860,11 +861,19 @@ fn assign_tuples(plan: &mut Plan<'_>) {
     // One Bₖ per key that another key does not already tell apart from B: every non-scoped key,
     // the first included — a non-scoped first key with no Bₖ is a key an implementation may ignore
     // and pass — and every scoped key after the first. The first key, when scoped, is what A, B and
-    // C already differ in.
+    // C already differ in — unless every other key is scoped as well: then A, B and C differ in
+    // all of them at once and no value of a later key repeats, so a target grouping by the later
+    // keys alone forms the same groups. B₁ repeats B's later keys under another first key
+    // (beyond10x/ess#193, `group_by: [account_id, memo]`).
+    let all_scoped = plan.keys.len() > 1
+        && plan
+            .keys
+            .iter()
+            .all(|(_, key)| matches!(key, Key::Scoped(_)));
     for index in 0..plan.keys.len() {
         let label = format!("B{}", index + 1);
         let candidates: Vec<Node> = match &plan.keys[index].1 {
-            Key::Scoped(_) if index == 0 => continue,
+            Key::Scoped(_) if index == 0 && !all_scoped => continue,
             Key::Scoped(kind) => vec![plan.scoped(*kind, &label)],
             key => {
                 let bound = key.len().unwrap_or(plan.tuples.len() + 1);
@@ -1062,10 +1071,48 @@ fn arrange_and_observe(
         ))
     })?;
     let params = plan.params("in");
+    // A link to the entity's owner that the view groups by or aggregates is realised as owners
+    // (beyond10x/ess#193): the first row the pattern gives a value arranges an owner, and every
+    // other row given the same value is created under the same instance, so the pattern's groups
+    // and duplicate counts hold of the owners. The value the pattern chose is never sent; the
+    // owner's identity is.
+    // Only where an owner may hold many rows: under `cardinality: one` every row has an owner of
+    // its own, and a pattern value that repeats names no shared owner.
+    let link = ir
+        .owner_of(plan.handle)
+        .filter(|_| shares_owner(ir, plan.handle))
+        .map(|owned| owned.via.to_owned())
+        .filter(|via| {
+            plan.aggregation.group_by.contains(via)
+                || plan.aggregation.functions.values().any(|aggregate| {
+                    aggregate
+                        .input
+                        .as_ref()
+                        .is_some_and(|input| input.name == *via)
+                })
+        });
+    let mut owners: Vec<(Node, (String, Arrangement))> = Vec::new();
+    let owner_for = |row: &Row, distinction, owners: &[(Node, (String, Arrangement))]| {
+        let shared = link
+            .as_ref()
+            .and_then(|field| row.values.get(field))
+            .and_then(|key| owners.iter().find(|(held, _)| held == key));
+        match shared {
+            Some((_, (field, owner))) => Some((
+                field.clone(),
+                Arrangement {
+                    steps: Vec::new(),
+                    ..owner.clone()
+                },
+            )),
+            None => arrange_owner(ir, creator.outcome, plan.handle, actors, distinction, &[]),
+        }
+    };
     let mut arranged = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
         let distinction = Distinction::further(index + 1);
         let mut attempt = row.clone();
+        let owner = owner_for(&attempt, distinction, &owners);
         let result = match arrange_row(
             plan,
             creator,
@@ -1073,6 +1120,7 @@ fn arrange_and_observe(
             &base,
             &attempt,
             distinction,
+            owner.as_ref(),
             actors,
             &params,
         ) {
@@ -1092,12 +1140,21 @@ fn arrange_and_observe(
                     &base,
                     &attempt,
                     distinction,
+                    owner.as_ref(),
                     actors,
                     &params,
                 )
             }
             Err(error) => Err(error),
         }?;
+        if let (Some(key), Some(owner)) = (
+            link.as_ref().and_then(|field| attempt.values.get(field)),
+            owner,
+        ) {
+            if !owners.iter().any(|(held, _)| held == key) {
+                owners.push((key.clone(), owner));
+            }
+        }
         arranged.push(Arranged {
             row: attempt,
             arrangement: result.0,
@@ -1116,6 +1173,7 @@ fn arrange_row(
     base: &BTreeMap<String, Node>,
     row: &Row,
     distinction: Distinction,
+    owner: Option<&(String, Arrangement)>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<(Arrangement, bool), RefusalCause> {
@@ -1151,13 +1209,13 @@ fn arrange_row(
             creator.command.name, creator.outcome.name, row.label
         )));
     }
-    let start = created(
+    let start = created_owned(
         ir,
         plan.handle,
         creator,
         actors,
         distinction,
-        &[],
+        owner,
         Some(&input),
     )
     .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)))?;
@@ -1248,9 +1306,15 @@ fn kept_as_planned(
         if field == plan.entity.identity.name || field == EntitySpec::STATE {
             continue;
         }
+        // The link to the owner holds the owner the row was created under, not the value that
+        // named its group (see `arrange_and_observe`).
+        let linked = created
+            .settled
+            .get(field)
+            .is_some_and(|held| matches!(held.value, ScenarioValue::Instance { .. }));
         let planned = match row.values.get(field) {
-            Some(value) => Some(ScenarioValue::literal(value.clone())),
-            None => literal(created, field),
+            Some(value) if !linked => Some(ScenarioValue::literal(value.clone())),
+            _ => literal(created, field),
         };
         if literal(reached, field) != planned {
             return Err(plan.unwitnessed(format!(
@@ -1275,8 +1339,23 @@ fn held(plan: &Plan<'_>, arranged: &Arranged, index: usize, field: &str) -> Opti
     }
     match &arranged.arrangement.settled.get(field)?.value {
         ScenarioValue::Literal { value } => Some(value.clone()),
+        // An owner the implementation named: one token per instance, which is all a group key or a
+        // `count_distinct` reads of it (beyond10x/ess#193).
+        ScenarioValue::Instance { instance } => Some(Node::Text(format!("instance:{instance}"))),
         _ => None,
     }
+}
+
+/// The value a group key is asserted as: what its rows were given, which for a link to an owner is
+/// the owner's identity and never the token [`held`] groups by.
+fn key_value(arranged: &[Arranged], members: &[usize], key: &str, held: &Node) -> ScenarioValue {
+    members
+        .first()
+        .and_then(|index| arranged[*index].arrangement.settled.get(key))
+        .map(|determined| &determined.value)
+        .filter(|value| matches!(value, ScenarioValue::Instance { .. }))
+        .cloned()
+        .unwrap_or_else(|| ScenarioValue::literal(held.clone()))
 }
 
 fn kind(ir: &EssIr, entity: &ResolvedEntity, field: &str) -> ValueKind {
@@ -1360,7 +1439,7 @@ fn observe(
             .group_by
             .iter()
             .zip(tuple)
-            .map(|(key, value)| (key.clone(), ScenarioValue::literal(value.clone())))
+            .map(|(key, value)| (key.clone(), key_value(arranged, members, key, value)))
             .collect();
         let admitted: Vec<usize> = members
             .iter()

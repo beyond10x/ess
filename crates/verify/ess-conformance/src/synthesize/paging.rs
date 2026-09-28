@@ -24,7 +24,7 @@ use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate};
 
 use super::{
-    bound, shows, Arrangement, BTreeMap, BTreeSet, Determined, EssIr, ResolvedView, ScenarioStep,
+    bound, Arrangement, BTreeMap, BTreeSet, Determined, EssIr, ResolvedView, ScenarioStep,
     ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::view_paging::Follows;
@@ -44,6 +44,7 @@ pub(super) fn page_reads(
     ir: &EssIr,
     view: &ResolvedView,
     settled: &BTreeMap<String, Determined>,
+    identity: Option<&ScenarioValue>,
     admits_subject: bool,
     companions: &[Arrangement],
     unwitnessed: &BTreeSet<ViewRef>,
@@ -52,14 +53,14 @@ pub(super) fn page_reads(
         return Vec::new();
     };
     let name = &ViewRef::new(view.name.clone());
-    let params = &bound(view, settled);
+    let params = &bound(ir, view, settled, identity);
     let shown: Vec<&BTreeMap<String, Determined>> = admits_subject
         .then_some(settled)
         .into_iter()
         .chain(
             companions
                 .iter()
-                .filter(|row| shows(ir, view, &row.state, &row.settled, params) == Ok(true))
+                .filter(|row| row.shows(ir, view, params) == Ok(true))
                 .map(|row| &row.settled),
         )
         .collect();

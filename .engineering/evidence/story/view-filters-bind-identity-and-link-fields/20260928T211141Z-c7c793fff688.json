@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T21:11:41Z",
+  "actor": "human:timo",
+  "artifact": "story:view-filters-bind-identity-and-link-fields",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "view_filter_identity 8, adversary_view_filter_pass1 7 (was 4 red), pass2 14 (was 3 red), ess-conformance 1540 passed on fc27494ee9; generate --check up to date; ESS-SYNTH-003 when_subject guard case left to unit linkguard",
+    "reference": "~/.cache/ess-wave-n2/viewfilter/test-c2.log"
+  }
+}

@@ -7,6 +7,8 @@ title: An upper count bound on a collection is never sent at its accepting bound
 refs:
 - provider: github
   reference: beyond10x/ess#196
+relations:
+- serves: vision:O2
 revision: 1
 ---
 ## Outcome
