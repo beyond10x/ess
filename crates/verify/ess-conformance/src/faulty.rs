@@ -45,7 +45,7 @@
 //!
 //! # Boundary or implementation
 //!
-//! Thirteen of the fifteen are [`Injection::Boundary`]: [`Faulty`] perturbs what goes into the
+//! Fifteen of the seventeen are [`Injection::Boundary`]: [`Faulty`] perturbs what goes into the
 //! target and what comes out of it, and never a broken internal, because that is the same position
 //! a real client is in.
 //!
@@ -82,6 +82,24 @@
 //! read. [`StaleReadYourWrites`](Fault::StaleReadYourWrites) stays its own row: it is one read
 //! behind for one client, and the suite catches it.
 //!
+//! # Faults only a declared fault shows
+//!
+//! Two rows are [`Caught::ByInjection`]: no scenario catches them, and neither does a concurrent
+//! history recorded without injection, because the defect waits for a fault the specification
+//! declares — and [`sessions::record_injected`] injects exactly those.
+//!
+//! [`DoubleApplyOnRedelivery`](Fault::DoubleApplyOnRedelivery) waits for a second delivery.
+//! `notify-on-invoice-created` declares `delivery: at_least_once`, and this implementation, handed
+//! `InvoiceCreated` a second time, runs the creation it announces again: a second invoice nobody
+//! asked for. Its only witness is a read of `InvoiceById` listing an invoice no recorded call
+//! created, which the history check names a future read.
+//!
+//! [`RetryCreatesSecondEntity`](Fault::RetryCreatesSecondEntity) waits for a client retry.
+//! `retry.core.Seed` declares `replayed` with `replays: seeded`, and this implementation looks a
+//! request up when it arrives but retains it only once answered. A retry after the answer is
+//! replayed; a retry overlapping its original is applied as a new request, and one request answers
+//! `seeded` twice ([`crate::linearize`]).
+//!
 //! # Nothing here is a new source of variation
 //!
 //! §37 gives the runner the clock and the id source, and a faulty target that reached for either
@@ -95,12 +113,14 @@ use std::collections::BTreeMap;
 
 use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::facts::Number;
+use ess_primitives::ids::CorrelationId;
 use ess_primitives::node::Node;
 
 use crate::record::{Call, Interleaved, Subject, Workload};
 use crate::reference::{
-    Billing, Oracle, CANCEL_INVOICE, CREATE_INVOICE, INVALID_AMOUNT, INVOICE_CANCELLED,
-    INVOICE_CREATED, INVOICE_ISSUED, INVOICE_PAID, ISSUE_INVOICE, OUTSTANDING, PAY_INVOICE,
+    Billing, Oracle, Retained, CANCEL_INVOICE, CREATE_INVOICE, INVALID_AMOUNT, INVOICE_BY_ID,
+    INVOICE_CANCELLED, INVOICE_CREATED, INVOICE_ISSUED, INVOICE_PAID, ISSUE_INVOICE, OUTSTANDING,
+    PAY_INVOICE, SEED,
 };
 use crate::scenario::{ErrorRef, EventRef, OutcomeRef, ViewRef};
 use crate::sessions::{self, Act};
@@ -125,14 +145,28 @@ pub enum System {
     Billing,
     /// `examples/oracle-fixture/`, the fixture built for the checks billing cannot make fail.
     Oracle,
+    /// `crates/verify/ess-conformance/tests/fixtures/explore-retry/`: one command declaring
+    /// `replays:`, which neither example declares and which a client retry is owed only by.
+    Retry,
 }
 
 impl System {
-    /// The directory under `examples/` that holds it.
+    /// The directory that holds it: under `examples/` for the two examples, and the fixture's own
+    /// directory name for [`System::Retry`] — [`path`](Self::path) says where each is.
     pub fn directory(self) -> &'static str {
         match self {
             Self::Billing => "billing",
             Self::Oracle => "oracle-fixture",
+            Self::Retry => "explore-retry",
+        }
+    }
+
+    /// The directory that holds it, from the workspace root.
+    pub fn path(self) -> &'static str {
+        match self {
+            Self::Billing => "examples/billing",
+            Self::Oracle => "examples/oracle-fixture",
+            Self::Retry => "crates/verify/ess-conformance/tests/fixtures/explore-retry",
         }
     }
 }
@@ -159,6 +193,11 @@ pub enum Caught {
     /// No scenario catches it, and a recorded concurrent history checked by
     /// [`crate::linearize`] does; the text says why only an interleaving shows it.
     ByHistory(&'static str),
+    /// No scenario catches it, and no concurrent history recorded without injection does: only a
+    /// history recorded with the faults the specification declares injected
+    /// ([`sessions::record_injected`]), checked by [`crate::linearize`]. The text says which
+    /// declared fault it takes.
+    ByInjection(&'static str),
 }
 
 impl Caught {
@@ -166,7 +205,7 @@ impl Caught {
     pub fn scenario(self) -> Option<&'static str> {
         match self {
             Self::By(scenario) => Some(scenario),
-            Self::Nothing(_) | Self::ByHistory(_) => None,
+            Self::Nothing(_) | Self::ByHistory(_) | Self::ByInjection(_) => None,
         }
     }
 }
@@ -367,6 +406,40 @@ faults! {
         ),
         "a read_your_writes view answers a client's read from a copy that predates the client's \
          own write, whenever another client wrote since";
+
+    /// A second delivery of `InvoiceCreated` is applied as a second creation.
+    ///
+    /// `notify-on-invoice-created` declares `delivery: at_least_once`, so the transport may deliver
+    /// one `InvoiceCreated` twice and the binding's `SendEmail` must survive it — which it does.
+    /// This implementation also re-applies the creation the event announces, as a handler that is
+    /// not idempotent does: a second invoice, with an identity no client was ever told about. The
+    /// suite's one second delivery (`notify-on-invoice-created/binding/delivery`) asserts only that
+    /// the mail still goes out, and no concurrent history without injection delivers anything
+    /// twice. See the [module documentation](self).
+    DoubleApplyOnRedelivery => "double-apply-on-redelivery", System::Billing, Injection::Boundary,
+        Caught::ByInjection(
+            "only a second delivery of `InvoiceCreated`, which `delivery: at_least_once` declares, \
+             creates the second invoice, and only a later read of `InvoiceById` shows a row no \
+             client's call created; the suite's second delivery reads nothing after it"
+        ),
+        "a redelivered InvoiceCreated is applied again, creating an invoice nobody asked for";
+
+    /// A retry of `retry.core.Seed` that arrives while the first is in flight creates a second
+    /// record.
+    ///
+    /// `replayed` declares `replays: seeded`: the same request answered again is answered from what
+    /// was retained. This implementation looks the request up when it arrives, and retains it only
+    /// when it has been answered, so a retry arriving after its original answered is replayed —
+    /// every suite scenario, one call at a time, sees that — and one arriving while the original is
+    /// still in flight is applied as a new request. See the [module documentation](self).
+    RetryCreatesSecondEntity => "retry-creates-second-entity", System::Retry, Injection::Boundary,
+        Caught::ByInjection(
+            "only a client retry, which `replays:` declares, sends one request twice, and only a \
+             retry overlapping its original finds nothing retained yet; the suite retries after \
+             the original answered"
+        ),
+        "a request sent again while the first is in flight creates a second record instead of \
+         replaying the first";
 }
 
 // ---- the wrapper -----------------------------------------------------------------------------
@@ -465,6 +538,21 @@ pub fn oracle(fault: Fault) -> Faulty<Oracle> {
         _ => Oracle::new(),
     };
     Faulty::new(reference, fault)
+}
+
+/// The retry fixture's reference, wrong in exactly one way.
+///
+/// # Panics
+///
+/// If `fault` is not one of `System::Retry`'s. See [`billing`].
+pub fn retry(fault: Fault) -> Faulty<Retained> {
+    assert_eq!(
+        fault.system(),
+        System::Retry,
+        "{fault:?} is a fault of `{}`, not of the retry fixture",
+        fault.system().directory()
+    );
+    Faulty::new(Retained::new(), fault)
 }
 
 impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
@@ -629,7 +717,23 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
     }
 
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
-        self.inner.redeliver_event(request)
+        let redelivered = request.event.clone();
+        self.inner.redeliver_event(request)?;
+        if self.fault == Fault::DoubleApplyOnRedelivery && redelivered == event(INVOICE_CREATED) {
+            // The binding ran again, as `at_least_once` allows; the defect is that the creation
+            // the event announces is applied again too.
+            let creation = self
+                .applied
+                .borrow()
+                .iter()
+                .rev()
+                .find(|earlier| earlier.command.to_string() == CREATE_INVOICE)
+                .cloned();
+            if let Some(creation) = creation {
+                self.inner.execute_command(creation)?;
+            }
+        }
+        Ok(())
     }
 
     fn observe_invocations(
@@ -652,6 +756,9 @@ pub struct InFlight {
     request: SemanticCommandRequest,
     /// What the call decided from the state it read at invoke, where the fault reads early.
     read: Option<Result<SemanticCommandResult, TargetError>>,
+    /// Whether nothing had been answered for this request when it arrived, where the fault looks
+    /// retained requests up early ([`Fault::RetryCreatesSecondEntity`]).
+    unretained: bool,
 }
 
 impl Interleaved for Faulty<Billing> {
@@ -663,7 +770,11 @@ impl Interleaved for Faulty<Billing> {
     fn invoke(&self, request: SemanticCommandRequest) -> InFlight {
         let read = (self.fault == Fault::LostUpdate && reads_then_writes(&request))
             .then(|| self.read_now(&request));
-        InFlight { request, read }
+        InFlight {
+            request,
+            read,
+            unretained: false,
+        }
     }
 
     /// The write, at the return instant, against the invoice as it stands then. Where the answer
@@ -695,6 +806,89 @@ impl Faulty<Billing> {
         }
         snapshot.execute_command(request.clone())
     }
+}
+
+impl Interleaved for Faulty<Retained> {
+    type Pending = InFlight;
+
+    /// [`Fault::RetryCreatesSecondEntity`] looks the request up when it arrives: whether this
+    /// target has answered it before is decided now, not at the return instant.
+    fn invoke(&self, request: SemanticCommandRequest) -> InFlight {
+        let unretained = self.fault == Fault::RetryCreatesSecondEntity
+            && !self.applied.borrow().contains(&request);
+        InFlight {
+            request,
+            read: None,
+            unretained,
+        }
+    }
+
+    /// The call, at the return instant. A request found unretained at invoke and answered since —
+    /// its twin was in flight beside it — is applied as a new one: its correlation, which is what
+    /// the reference retains a request under, is replaced by one nothing has used. Run on its own,
+    /// a call finds at invoke exactly what it finds at return, and is answered as the reference
+    /// answers it.
+    fn complete(&self, pending: InFlight) -> Result<SemanticCommandResult, TargetError> {
+        let answered_since = pending.unretained && self.applied.borrow().contains(&pending.request);
+        if !answered_since {
+            return self.execute_command(pending.request);
+        }
+        let mut fresh = pending.request.clone();
+        fresh.correlation =
+            CorrelationId::new(format!("{}-unretained", pending.request.correlation))
+                .unwrap_or_else(|error| panic!("a suffixed correlation is valid: {error}"));
+        let result = self.inner.execute_command(fresh)?;
+        self.applied.borrow_mut().push(pending.request);
+        Ok(result)
+    }
+}
+
+/// The workload [`Fault::DoubleApplyOnRedelivery`] is recorded under: client 0 creates one invoice,
+/// then two clients each read `InvoiceById` three times.
+///
+/// Recorded with injection, the `InvoiceCreated` the creation published is delivered a second time
+/// at a tick the seed picks; a read after the second delivery, once the projection has caught up,
+/// is what shows the invoice nobody created. Without injection it is delivered once.
+pub fn double_apply_workload() -> sessions::Workload {
+    let reads = || vec![Act::Read(INVOICE_BY_ID.to_owned()); 3];
+    sessions::Workload {
+        prefix: vec![Call::new(CREATE_INVOICE, invoice(), Subject::Creates)],
+        clients: vec![reads(), reads()],
+    }
+}
+
+/// The workload [`Fault::RetryCreatesSecondEntity`] is recorded under: each of two clients seeds
+/// one record.
+///
+/// Recorded with injection, each `Seed` is sent a second time, at a tick the seed picks; where the
+/// retry is sent before the original answered, both find nothing retained. Without injection no
+/// request is sent twice.
+pub fn retry_workload() -> sessions::Workload {
+    let seed = |document: &str| {
+        vec![Act::Call(Call::new(
+            SEED,
+            BTreeMap::from([("document".to_owned(), Node::Text(document.to_owned()))]),
+            Subject::Creates,
+        ))]
+    };
+    sessions::Workload {
+        prefix: Vec::new(),
+        clients: vec![seed("first"), seed("second")],
+    }
+}
+
+/// The input of a `CreateInvoice` the reference accepts.
+fn invoice() -> BTreeMap<String, Node> {
+    let mut create = BTreeMap::from([("amount".to_owned(), money(5.0))]);
+    create.insert(
+        "account_id".to_owned(),
+        Node::Text("00000000-0000-4000-8000-0000000000aa".to_owned()),
+    );
+    create.insert(
+        "customer_email".to_owned(),
+        Node::Text("payer@example.com".to_owned()),
+    );
+    create
 }
 
 /// The workload [`Fault::LostUpdate`] is recorded under: client 0 creates and issues one invoice,
@@ -878,7 +1072,7 @@ mod tests {
         // The list is generated from the same lines as the variants, so what is left to check is
         // that no row was declared empty — a fault with no description is a row in a matrix nobody
         // can read.
-        assert_eq!(Fault::ALL.len(), 15);
+        assert_eq!(Fault::ALL.len(), 17);
         for fault in Fault::ALL {
             assert!(!fault.written().is_empty(), "{fault:?} has no written form");
             assert!(!fault.describe().is_empty(), "{fault:?} describes nothing");
@@ -896,6 +1090,11 @@ mod tests {
                     why.len() > 20,
                     "{fault:?} is caught only by a concurrent history and says only `{why}`; the \
                      reason no single-client scenario sees it is the row's claim"
+                ),
+                Caught::ByInjection(why) => assert!(
+                    why.len() > 20,
+                    "{fault:?} is caught only by a history with declared faults injected and says \
+                     only `{why}`; which declared fault it waits for is the row's claim"
                 ),
             }
         }
@@ -931,9 +1130,16 @@ mod tests {
                 System::Oracle => {
                     let _ = oracle(*fault);
                 }
+                System::Retry => {
+                    let _ = retry(*fault);
+                }
             }
         }
         assert_eq!(System::Billing.directory(), "billing");
         assert_eq!(System::Oracle.directory(), "oracle-fixture");
+        assert_eq!(System::Retry.directory(), "explore-retry");
+        for system in [System::Billing, System::Oracle, System::Retry] {
+            assert!(system.path().ends_with(system.directory()), "{system:?}");
+        }
     }
 }

@@ -109,8 +109,13 @@ func (t *exploreBillingTarget) ConfigureExternalOutcome(ExternalOutcomeControl) 
 	return exploreFixtureUnsupported{"no external outcome"}
 }
 
-func (t *exploreBillingTarget) RedeliverEvent(RedeliveryRequest) error {
-	return exploreFixtureUnsupported{"no redelivery"}
+// RedeliverEvent delivers `InvoiceCreated` again to `notify-on-invoice-created`, whose mail this target
+// does not model, so nothing changes; any other event it has no binding for.
+func (t *exploreBillingTarget) RedeliverEvent(request RedeliveryRequest) error {
+	if request.Event != "billing.invoice.InvoiceCreated" {
+		return exploreFixtureUnsupported{"no binding reacts to " + request.Event}
+	}
+	return nil
 }
 
 func (t *exploreBillingTarget) ObserveInvocations(InvocationObservationRequest) ([]Invocation, error) {

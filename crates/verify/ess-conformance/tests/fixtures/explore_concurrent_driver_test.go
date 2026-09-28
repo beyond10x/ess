@@ -60,6 +60,9 @@ func TestExploreConcurrent(t *testing.T) {
 			if one.Target == "billing" {
 				newTarget = func() Target { return newExploreBillingTarget() }
 			}
+			if one.Target == "retry" {
+				newTarget = func() Target { return newExploreRetryTarget(one.Mutant) }
+			}
 			result, err := ExploreConcurrent(newTarget, options)
 			if err != nil {
 				write(".refused", err.Error())

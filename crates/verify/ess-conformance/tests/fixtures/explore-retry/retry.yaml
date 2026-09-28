@@ -1,0 +1,41 @@
+format: ess/7
+system: retry
+version: v1
+domain: retry.core
+entities:
+  - name: retry.core.Record
+    identity: {name: record_id, type: Uuid}
+    fields:
+      - {name: value, type: String}
+    lifecycle:
+      initial: Committed
+      states: [Committed]
+      terminal: [Committed]
+commands:
+  - name: retry.core.Seed
+    input: [{name: document, type: String}]
+    response:
+      - {name: revision_id, type: Uuid}
+    outcomes:
+      - name: seeded
+        creates: retry.core.Record
+        instance: record_id
+        sets: {value: input.document}
+        emits: [retry.core.Seeded]
+        payload:
+          retry.core.Seeded:
+            record_id: {generated: true}
+      - name: replayed
+        external: the same request, already answered, is retained
+        replays: seeded
+events:
+  - name: retry.core.Seeded
+    fields: [{name: record_id, type: Uuid}]
+views:
+  - name: retry.core.Records
+    source: retry.core.Record
+    consistency: read_your_writes
+    fields:
+      - {name: record_id, type: Uuid}
+      - {name: value, type: String}
+      - {name: state, type: retry.core.Record.State}

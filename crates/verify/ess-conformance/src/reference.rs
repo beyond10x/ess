@@ -96,7 +96,7 @@ const EMAIL_SENT: &str = "billing.email.EmailSent";
 const DELIVERY_ESCALATED: &str = "billing.email.DeliveryEscalated";
 
 /// `billing.invoice.InvoiceById`, the projection.
-const INVOICE_BY_ID: &str = "billing.invoice.InvoiceById";
+pub(crate) const INVOICE_BY_ID: &str = "billing.invoice.InvoiceById";
 /// `billing.invoice.OutstandingInvoices`, read-your-writes.
 pub(crate) const OUTSTANDING: &str = "billing.invoice.OutstandingInvoices";
 
@@ -1457,6 +1457,162 @@ fn non_negative(weight: &Node) -> bool {
     match weight {
         Node::Number(number) => number.get() >= 0.0,
         _ => false,
+    }
+}
+
+// ---- the third reference: a command that replays a retained result ------------------------------
+
+/// `retry.core.Seed`.
+pub(crate) const SEED: &str = "retry.core.Seed";
+/// `retry.core.Seeded`.
+const SEEDED: &str = "retry.core.Seeded";
+/// `retry.core.Records`, read-your-writes.
+const RECORDS: &str = "retry.core.Records";
+
+/// `crates/verify/ess-conformance/tests/fixtures/explore-retry/`, implemented by hand and in memory.
+///
+/// The fixture declares one command, `retry.core.Seed`, whose `seeded` branch creates a record and
+/// whose `replayed` branch `replays: seeded`: a request this target has already answered with
+/// `seeded` is answered again with that result, exactly, and nothing else happens. One request is
+/// the same correlation and the same input — what a client sends when it sends a request again.
+/// It exists for the concurrent explorer's client retry, which only a command declaring `replays:`
+/// is owed ([`crate::sessions`]).
+#[derive(Debug, Default)]
+pub struct Retained {
+    state: RefCell<Retention>,
+}
+
+/// One scenario's records and retained answers.
+#[derive(Debug, Default)]
+struct Retention {
+    records: BTreeMap<String, Node>,
+    retained: Vec<(SemanticCommandRequest, SemanticCommandResult)>,
+    log: Vec<ObservedEvent>,
+    sequence: u64,
+}
+
+impl Retention {
+    fn identifier(&mut self) -> String {
+        self.sequence += 1;
+        format!("00000000-0000-4000-8000-{:012}", self.sequence)
+    }
+}
+
+impl Retained {
+    /// The implementation, with nothing retained.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl ConformanceTarget for Retained {
+    fn identity(&self) -> Result<ImplementationIdentity, TargetError> {
+        Ok(ImplementationIdentity::new(
+            "retry-reference",
+            env!("CARGO_PKG_VERSION"),
+        ))
+    }
+
+    fn begin_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
+        *self.state.borrow_mut() = Retention::default();
+        Ok(())
+    }
+
+    fn execute_command(
+        &self,
+        request: SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        if request.command.to_string() != SEED {
+            return Err(TargetError::unavailable(
+                format!("invoking `{}`", request.command),
+                "this implementation accepts only `retry.core.Seed`".to_owned(),
+            ));
+        }
+        let mut state = self.state.borrow_mut();
+        if let Some((_, answered)) = state.retained.iter().find(|(sent, _)| *sent == request) {
+            // The retained result, exactly, under the branch that replays it — no event, no
+            // second record.
+            let mut replayed = answered.clone();
+            replayed.outcome = Some(outcome(SEED, "replayed"));
+            replayed.direct_events = Vec::new();
+            return Ok(replayed);
+        }
+        let record = state.identifier();
+        let revision = state.identifier();
+        let document = request.input.get("document").cloned().unwrap_or_default();
+        state.records.insert(record.clone(), document);
+        let seeded = ObservedEvent::new(event(SEEDED))
+            .with("record_id", Node::Text(record))
+            .in_activity(request.correlation.clone());
+        state.log.push(seeded.clone());
+        let token =
+            ConsistencyToken::new(format!("seq:{}", state.sequence)).unwrap_or_else(|error| {
+                panic!("a generated consistency token is well formed: {error}")
+            });
+        let mut result = SemanticCommandResult::took(outcome(SEED, "seeded"))
+            .with_consistency(token)
+            .emitting(seeded);
+        result.response = Some(BTreeMap::from([(
+            "revision_id".to_owned(),
+            Node::Text(revision),
+        )]));
+        state.retained.push((request, result.clone()));
+        Ok(result)
+    }
+
+    fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
+        if request.view.to_string() != RECORDS {
+            return Err(TargetError::unavailable(
+                format!("reading `{}`", request.view),
+                "this implementation projects only `retry.core.Records`".to_owned(),
+            ));
+        }
+        let state = self.state.borrow();
+        Ok(SemanticViewResult::of(state.records.iter().map(
+            |(id, value)| {
+                let mut row = ViewRow::new();
+                row.insert("record_id".to_owned(), Node::Text(id.clone()));
+                row.insert("value".to_owned(), value.clone());
+                row.insert("state".to_owned(), Node::Text("Committed".to_owned()));
+                row
+            },
+        )))
+    }
+
+    fn observe_events(
+        &self,
+        request: EventObservationRequest,
+    ) -> Result<Vec<ObservedEvent>, TargetError> {
+        Ok(self
+            .state
+            .borrow()
+            .log
+            .iter()
+            .filter(|published| published.event == request.event)
+            .cloned()
+            .collect())
+    }
+
+    fn configure_external_outcome(
+        &self,
+        request: ExternalOutcomeControl,
+    ) -> Result<(), TargetError> {
+        Err(TargetError::unavailable(
+            format!("forcing `{}`", request.force),
+            "a replay is answered from what was retained, never forced".to_owned(),
+        ))
+    }
+
+    fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unavailable(
+            format!("delivering `{}` again", request.event),
+            "this system declares no binding".to_owned(),
+        ))
+    }
+
+    fn end_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
+        *self.state.borrow_mut() = Retention::default();
+        Ok(())
     }
 }
 

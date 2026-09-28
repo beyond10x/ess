@@ -219,6 +219,15 @@ pub struct Operation {
     /// field existed reads unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rows: Option<Vec<String>>,
+    /// For a client retry: the operation whose request this one sent again, unchanged.
+    ///
+    /// A retry is written only by a runner injecting the faults a specification declares, and only
+    /// for a command declaring a `replays` branch: one logical request, sent twice, is answered by
+    /// its origin branch at most once and by the retained result otherwise
+    /// ([`crate::linearize`]). It names an earlier operation of the same client and command. Absent
+    /// on every other operation; a document written before the field existed reads unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_of: Option<Uuid>,
 }
 
 /// What [`read`] admits for a [`History`]: the same fields, deserialized only from a JSON object.
@@ -261,6 +270,7 @@ struct OperationWire {
     completion: Completion,
     outcome: Option<QualifiedName>,
     rows: Option<Vec<String>>,
+    retry_of: Option<Uuid>,
 }
 
 impl From<OperationWire> for Operation {
@@ -275,6 +285,7 @@ impl From<OperationWire> for Operation {
             completion: wire.completion,
             outcome: wire.outcome,
             rows: wire.rows,
+            retry_of: wire.retry_of,
         }
     }
 }
@@ -387,6 +398,14 @@ pub enum HistoryRefusal {
         /// The value written.
         value: u64,
     },
+    /// An operation's `retry_of` names no earlier operation of the same client and command: a
+    /// retry sends again a request its own client already sent.
+    RetryOfUnknown {
+        /// The retry.
+        operation_id: String,
+        /// What it names.
+        retry_of: String,
+    },
 }
 
 impl HistoryRefusal {
@@ -409,6 +428,7 @@ impl HistoryRefusal {
             Self::ReturnedWithoutOutcome { .. } => "history.returned-without-outcome",
             Self::NonCanonicalUuid { .. } => "history.non-canonical-uuid",
             Self::IntegerOutOfRange { .. } => "history.integer-out-of-range",
+            Self::RetryOfUnknown { .. } => "history.retry-of-unknown",
         }
     }
 }
@@ -479,6 +499,14 @@ impl fmt::Display for HistoryRefusal {
             Self::IntegerOutOfRange { field, value } => write!(
                 formatter,
                 "{code}: `{field}` is {value}, above the largest admitted integer {MAX_INTEGER}"
+            ),
+            Self::RetryOfUnknown {
+                operation_id,
+                retry_of,
+            } => write!(
+                formatter,
+                "{code}: operation {operation_id} is a retry of {retry_of}, which is no earlier \
+                 operation of the same client and command"
             ),
         }
     }
@@ -597,6 +625,23 @@ pub fn read(bytes: &[u8], expected: &SpecDigest) -> Result<History, HistoryRefus
             in_range(at("returned_at"), returned_at)?;
         }
         check(operation, history.clients)?;
+        if let Some(original) = &operation.retry_of {
+            lower_case(original)?;
+            let sent_before = history.operations[..index].iter().any(|earlier| {
+                earlier
+                    .operation_id
+                    .as_str()
+                    .eq_ignore_ascii_case(original.as_str())
+                    && earlier.client == operation.client
+                    && earlier.command == operation.command
+            });
+            if !sent_before {
+                return Err(HistoryRefusal::RetryOfUnknown {
+                    operation_id: operation.operation_id.as_str().to_owned(),
+                    retry_of: original.as_str().to_owned(),
+                });
+            }
+        }
     }
     Ok(history)
 }

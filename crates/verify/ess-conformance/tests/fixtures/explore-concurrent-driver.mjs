@@ -13,6 +13,7 @@ import test from 'node:test';
 
 import { concurrentProblem, exploreConcurrent, goMarshal, SplitMix64 } from './dist/index.js';
 import { newBillingTarget } from './explore-concurrent-billing-target.mjs';
+import { newRetryTarget } from './explore-concurrent-retry-target.mjs';
 import { newTarget } from './explore-target.mjs';
 
 const out = process.env.ESS_CONCURRENT_OUT ?? '.';
@@ -29,7 +30,11 @@ for (const one of cases) {
     if (one.pathEnv !== undefined) process.env.PATH = one.pathEnv;
     try {
       const make =
-        one.target === 'billing' ? () => newBillingTarget() : () => newTarget(one.mutant ?? '', 'low');
+        one.target === 'billing'
+          ? () => newBillingTarget()
+          : one.target === 'retry'
+            ? () => newRetryTarget(one.mutant ?? '')
+            : () => newTarget(one.mutant ?? '', 'low');
       const result = await exploreConcurrent(make, {
         ...(one.options ?? {}),
         path: process.env.ESS_CONCURRENT_SPEC,

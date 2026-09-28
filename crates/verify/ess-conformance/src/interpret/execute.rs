@@ -337,7 +337,7 @@ pub fn execute_generating(
         .commands()
         .get(command)
         .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
-    interpretable(spec)?;
+    interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
     let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&facts) {
@@ -422,9 +422,17 @@ pub fn execute_generating(
 }
 
 /// Refuses a command using any construct this module does not execute, before anything is read.
-fn interpretable(spec: &ResolvedCommand) -> Result<(), Undetermined> {
+///
+/// `recorded` is a caller replaying what a history recorded ([`Generated::Recorded`]), which
+/// records neither a typed response nor a retained result's contents: for it, a command that
+/// declares a response is stepped without one, and a `replays:` branch is the step it declares —
+/// the retained answer again, with no event and no change to any instance. Whether anything was
+/// retained to replay is the request's, which a step does not see: the checker takes a replay only
+/// once its request's origin branch has been taken in the order it tries ([`crate::linearize`]). A target,
+/// which owes the response and the retained result themselves, is still refused both.
+fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermined> {
     let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
-    if !spec.response.is_empty() {
+    if !recorded && !spec.response.is_empty() {
         return gap(format!("the typed response of `{}`", spec.name));
     }
     for outcome in &spec.outcomes {
@@ -445,7 +453,7 @@ fn interpretable(spec: &ResolvedCommand) -> Result<(), Undetermined> {
                 return gap(format!("the guard over the subject's held state of `{at}`"));
             }
         }
-        if outcome.replays.is_some() || outcome.retains_result {
+        if !recorded && (outcome.replays.is_some() || outcome.retains_result) {
             return gap(format!("the retained result of `{at}`"));
         }
     }

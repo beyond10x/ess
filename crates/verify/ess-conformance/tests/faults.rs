@@ -47,26 +47,42 @@ use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile;
 use ess_compiler::source::SourceMap;
 use ess_conformance::faulty::{self, Caught, Fault, Injection, System};
-use ess_conformance::history::Verdict;
+use ess_conformance::history::{Completion, Verdict};
 use ess_conformance::linearize;
-use ess_conformance::record::{self, Atomic};
-use ess_conformance::reference::{Billing, Oracle, Untraced};
+use ess_conformance::record::{self, Atomic, Call, Subject};
+use ess_conformance::reference::{Billing, Oracle, Retained, Untraced};
 use ess_conformance::report::{CheckCode, ConformanceReport, ConformanceStatus, Status};
 use ess_conformance::runner::Runner;
 use ess_conformance::scenario::ConformanceSuite;
-use ess_conformance::sessions;
+use ess_conformance::sessions::{self, Act, FaultInjection};
 use ess_conformance::synthesize::synthesize;
-use ess_conformance::target::{ConformanceTarget, ImplementationIdentity};
+use ess_conformance::target::{
+    ConformanceTarget, Deadline, ImplementationIdentity, InvocationObservationRequest,
+};
+use ess_conformance::AdmittedSuite;
 use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
+use ess_primitives::node::Node;
+use ess_primitives::time::Timestamp;
 
 // ---- the specifications under test ---------------------------------------------------------------
 
 /// An example directory, compiled from the files it lives in rather than from a copy inlined here.
 fn example(name: &str) -> EssIr {
+    model_at(&format!("examples/{name}"))
+}
+
+/// A specification directory, by its path from the workspace root, compiled from its files.
+fn model_at(path: &str) -> EssIr {
+    model_rewritten(path, ToOwned::to_owned)
+}
+
+/// [`model_at`], with each file's text passed through `rewrite` before it is parsed.
+fn model_rewritten(path: &str, rewrite: impl Fn(&str) -> String) -> EssIr {
+    let name = path;
     let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../examples")
-        .join(name)
+        .join("../../..")
+        .join(path)
         .canonicalize()
         .unwrap_or_else(|error| panic!("`{name}` exists: {error}"));
 
@@ -92,7 +108,7 @@ fn example(name: &str) -> EssIr {
             .expect("inside the example")
             .display()
             .to_string();
-        let text = std::fs::read_to_string(&path).expect("readable");
+        let text = rewrite(&std::fs::read_to_string(&path).expect("readable"));
         let raw = RawSpecFile::parse(&text)
             .unwrap_or_else(|error| panic!("{label} is well formed: {error}"));
         sources.insert(label.clone(), text);
@@ -106,12 +122,20 @@ fn example(name: &str) -> EssIr {
 
 /// The suite one of the two systems obliges.
 fn suite(system: System) -> ConformanceSuite {
-    synthesize(&example(system.directory())).suite
+    synthesize(&model_at(system.path())).suite
 }
 
 /// The report a run of `system`'s suite against `target` produces.
+///
+/// The retry fixture's suite observes retained results, which only an admitted run executes.
 fn run<T: ConformanceTarget>(system: System, target: &T) -> ConformanceReport {
     let suite = suite(system);
+    if system == System::Retry {
+        let admitted = AdmittedSuite::from_suite(&suite).expect("the retry suite is admitted");
+        return Runner::for_suite(admitted.suite())
+            .run_admitted(&admitted, target)
+            .into_report();
+    }
     Runner::for_suite(&suite).run(&suite, target).unwrap()
 }
 
@@ -123,6 +147,7 @@ fn injected(fault: Fault) -> ConformanceReport {
     match fault.system() {
         System::Billing => run(fault.system(), &faulty::billing(fault)),
         System::Oracle => run(fault.system(), &faulty::oracle(fault)),
+        System::Retry => run(fault.system(), &faulty::retry(fault)),
     }
 }
 
@@ -151,10 +176,15 @@ fn each_specification_is_passed_in_full_by_the_implementation_written_from_it() 
     // matrix would be measuring the reference rather than the suite. Both references, because the
     // oracle fixture is where §26's second claim is made and a fixture nothing passes proves less
     // than nothing.
-    for (system, scenarios) in [(System::Billing, 32), (System::Oracle, 34)] {
+    for (system, scenarios) in [
+        (System::Billing, 32),
+        (System::Oracle, 34),
+        (System::Retry, RETRY_SCENARIOS),
+    ] {
         let report = match system {
             System::Billing => run(system, &Billing::new()),
             System::Oracle => run(system, &Oracle::new()),
+            System::Retry => run(system, &Retained::new()),
         };
         assert_eq!(
             report.scenarios.len(),
@@ -340,6 +370,16 @@ fn a_faults_blast_radius_is_accounted_for() {
     //                             which is also the newest write anybody made, and that read is the
     //                             one that refreshes the copy. Only a second client writing between
     //                             the first client's write and its read leaves the copy behind.
+    //   DoubleApplyOnRedelivery
+    //                          0  the suite delivers `InvoiceCreated` a second time once, right
+    //                             after the creation, and asserts only that the mail still goes
+    //                             out; the second invoice it leaves is read by no scenario. Only a
+    //                             history recorded with the declared faults injected reads
+    //                             `InvoiceById` after a second delivery.
+    //   RetryCreatesSecondEntity
+    //                          0  the suite retries `Seed` only after the original answered, and
+    //                             a request answered before is replayed. Only a retry sent while
+    //                             its original is in flight finds nothing retained.
     let allowance: &[(Fault, usize)] = &[
         (Fault::WrongEvent, 24),
         (Fault::DropConsistencyToken, 9),
@@ -355,6 +395,8 @@ fn a_faults_blast_radius_is_accounted_for() {
         (Fault::NegativeProjectedTotal, 4),
         (Fault::LostUpdate, 0),
         (Fault::StaleReadUnderReadYourWrites, 0),
+        (Fault::DoubleApplyOnRedelivery, 0),
+        (Fault::RetryCreatesSecondEntity, 0),
     ];
 
     for fault in Fault::ALL {
@@ -375,6 +417,7 @@ fn a_faults_blast_radius_is_accounted_for() {
             match fault.caught() {
                 Caught::By(scenario) => scenario,
                 Caught::ByHistory(_) => "— a concurrent history only",
+                Caught::ByInjection(_) => "— a history with declared faults injected only",
                 Caught::Nothing(_) => "— nothing",
             },
             report.scenarios.len() - broken.len(),
@@ -664,6 +707,523 @@ fn recorded<T: record::Interleaved, V: ConformanceTarget>(
     .expect("the workload names what billing declares")
 }
 
+// ---- the rows only a declared fault shows --------------------------------------------------------
+
+/// How many seeds each row caught only with declared faults injected is recorded under.
+const INJECTED_SEEDS: u64 = 24;
+
+/// How many scenarios the retry fixture's suite obliges.
+const RETRY_SCENARIOS: usize = 2;
+
+/// The workload a row caught only with declared faults injected is recorded under.
+fn injected_workload(fault: Fault) -> sessions::Workload {
+    match fault {
+        Fault::DoubleApplyOnRedelivery => faulty::double_apply_workload(),
+        Fault::RetryCreatesSecondEntity => faulty::retry_workload(),
+        other => panic!("{other:?} names no workload recorded with injection"),
+    }
+}
+
+/// The histories one seed records for a row caught only with declared faults injected: against
+/// the faulty target without injection, against it with injection, and against the reference with
+/// injection.
+fn three_recordings(
+    model: &EssIr,
+    fault: Fault,
+    seed: u64,
+) -> (sessions::Recorded, sessions::Recorded, sessions::Recorded) {
+    let workload = injected_workload(fault);
+    match fault.system() {
+        System::Billing => {
+            let faulted = |injection| {
+                let target = faulty::billing(fault);
+                sessions::record_with(model, &target, &target, &workload, seed, injection)
+                    .expect("the workload names what billing declares")
+            };
+            let reference = |injection| {
+                let target = Billing::new();
+                sessions::record_with(model, &Atomic(&target), &target, &workload, seed, injection)
+                    .expect("the workload names what billing declares")
+            };
+            (
+                faulted(FaultInjection::None),
+                faulted(FaultInjection::Declared),
+                reference(FaultInjection::Declared),
+            )
+        }
+        System::Retry => {
+            let faulted = |injection| {
+                let target = faulty::retry(fault);
+                sessions::record_with(model, &target, &target, &workload, seed, injection)
+                    .expect("the workload names what the retry fixture declares")
+            };
+            let reference = |injection| {
+                let target = Retained::new();
+                sessions::record_with(model, &Atomic(&target), &target, &workload, seed, injection)
+                    .expect("the workload names what the retry fixture declares")
+            };
+            (
+                faulted(FaultInjection::None),
+                faulted(FaultInjection::Declared),
+                reference(FaultInjection::Declared),
+            )
+        }
+        System::Oracle => panic!("{fault:?}: no oracle fault is recorded with injection"),
+    }
+}
+
+/// Adds every count of `more` to `into`.
+fn add(into: &mut sessions::Injected, more: &sessions::Injected) {
+    for (total, counts) in [
+        (&mut into.redeliveries, &more.redeliveries),
+        (&mut into.refused, &more.refused),
+        (&mut into.retries, &more.retries),
+        (&mut into.delayed, &more.delayed),
+        (&mut into.unanswered, &more.unanswered),
+        (&mut into.reached, &more.reached),
+    ] {
+        for (key, count) in counts {
+            *total.entry(key.clone()).or_default() += count;
+        }
+    }
+}
+
+/// Asserts that the violation `checked` found in `history` is the defect `fault` plants, and not
+/// some other one.
+fn the_violation_is_the_faults(
+    fault: Fault,
+    history: &ess_conformance::history::History,
+    checked: &linearize::Checked,
+) {
+    match fault {
+        Fault::DoubleApplyOnRedelivery => {
+            // The witness is a read listing the invoice nobody created.
+            let read = checked
+                .read
+                .as_ref()
+                .expect("a read shows the second invoice");
+            assert_eq!(read.anomaly, linearize::Anomaly::FutureRead);
+            assert!(read.shown);
+            assert!(
+                history
+                    .operations
+                    .iter()
+                    .all(|operation| operation.subject_key != read.subject_key),
+                "no recorded call created {}",
+                read.subject_key
+            );
+        }
+        Fault::RetryCreatesSecondEntity => {
+            // One request, two operations, both answering `seeded`.
+            assert!(checked.read.is_none());
+            let named: Vec<_> = history
+                .operations
+                .iter()
+                .filter(|operation| {
+                    checked
+                        .linearization
+                        .contains(&operation.operation_id.as_str().to_owned())
+                })
+                .collect();
+            assert_eq!(named.len(), 2, "{checked:?}");
+            assert!(named.iter().any(|operation| operation.retry_of.is_some()));
+            assert!(named.iter().all(|operation| operation
+                .outcome
+                .as_ref()
+                .map(ess_conformance::history::QualifiedName::as_str)
+                == Some("seeded")));
+        }
+        other => panic!("{other:?} is not recorded with injection"),
+    }
+}
+
+#[test]
+fn a_fault_only_a_declared_fault_shows_passes_the_suite_and_uninjected_histories_and_fails_an_injected_one(
+) {
+    // The story's acceptance, both halves per row: found by the concurrent recorder with the
+    // declared faults injected, missed by the same seeds without injection — and by every suite
+    // scenario. The reference, recorded with the same injections, is linearizable under every
+    // seed, so the violation is the fault's and not the injection's.
+    let mut rows = Vec::new();
+    for fault in Fault::ALL {
+        let Caught::ByInjection(_) = fault.caught() else {
+            continue;
+        };
+        rows.push(*fault);
+        let report = injected(*fault);
+        assert_eq!(
+            report.status,
+            ConformanceStatus::Passed,
+            "{fault:?} is recorded as caught only with declared faults injected, but the suite \
+             caught it: {:?}",
+            not_passed(&report)
+        );
+
+        let model = model_at(fault.system().path());
+        let verdict = |history: &ess_conformance::history::History| {
+            linearize::check(&model, history, linearize::DEFAULT_BUDGET).expect("checked")
+        };
+        let mut caught = 0;
+        let mut totals = sessions::Injected::default();
+        for seed in 0..INJECTED_SEEDS {
+            let (without, with, control) = three_recordings(&model, *fault, seed);
+            assert_eq!(
+                without.injected,
+                sessions::Injected::default(),
+                "seed {seed}: nothing is injected without injection"
+            );
+            assert_eq!(
+                verdict(&without.history).verdict,
+                Verdict::Linearizable,
+                "{fault:?}, seed {seed}: the same seed without injection must miss it"
+            );
+            assert_eq!(
+                verdict(&control.history).verdict,
+                Verdict::Linearizable,
+                "{fault:?}, seed {seed}: the reference with the same injections is linearizable, \
+                 or the violation is not the fault's"
+            );
+            add(&mut totals, &with.injected);
+            let checked = verdict(&with.history);
+            if checked.verdict != Verdict::Violation {
+                continue;
+            }
+            caught += 1;
+            the_violation_is_the_faults(*fault, &with.history, &checked);
+        }
+        println!(
+            "{:<28} {:<14} caught with declared faults injected in {caught} of {INJECTED_SEEDS} \
+             seeds, without in 0; the suite caught nothing; injected: {}",
+            fault.written(),
+            fault.system().directory(),
+            serde_json::to_string(&totals).expect("counts serialize")
+        );
+        assert!(
+            caught > 0,
+            "{fault:?}: no history recorded with declared faults injected was a violation"
+        );
+        assert!(
+            totals.total() > 0 && totals.refused.is_empty(),
+            "{totals:?}"
+        );
+    }
+    assert_eq!(
+        rows,
+        vec![
+            Fault::DoubleApplyOnRedelivery,
+            Fault::RetryCreatesSecondEntity
+        ]
+    );
+}
+
+#[test]
+fn an_undeclared_fault_is_never_injected() {
+    // `delivery: at_most_once` declares that nothing delivers an event a second time, so a second
+    // delivery of `InvoiceCreated` under it is a fault the specification does not declare. The
+    // count is read twice: from what the recorder says it injected, and from the target itself —
+    // every run of `notify-on-invoice-created` is an invocation the billing reference records.
+    let undeclared = model_rewritten("examples/billing", |text| {
+        text.replace("delivery: at_least_once", "delivery: at_most_once")
+    });
+    let declared = example("billing");
+    let invocations = |target: &faulty::Faulty<Billing>| {
+        target
+            .observe_invocations(InvocationObservationRequest {
+                binding: "notify-on-invoice-created".parse().unwrap(),
+                command: "billing.email.SendEmail".parse().unwrap(),
+                correlation: ess_primitives::ids::CorrelationId::new("history-1").unwrap(),
+                deadline: Deadline::at(Timestamp::from_epoch_millis(u64::MAX)),
+            })
+            .expect("the reference shows its invocations")
+            .len() as u64
+    };
+    let mut declared_redeliveries = 0;
+    for seed in 0..INJECTED_SEEDS {
+        let target = faulty::billing(Fault::DoubleApplyOnRedelivery);
+        let recorded = sessions::record_injected(
+            &undeclared,
+            &target,
+            &target,
+            &faulty::double_apply_workload(),
+            seed,
+        )
+        .expect("recorded");
+        assert_eq!(
+            recorded.injected.redeliveries.values().sum::<u64>(),
+            0,
+            "seed {seed}: a second delivery was injected under `at_most_once`"
+        );
+        assert_eq!(
+            invocations(&target),
+            1,
+            "seed {seed}: the binding ran once per creation and never again"
+        );
+        assert_eq!(
+            linearize::check(&undeclared, &recorded.history, linearize::DEFAULT_BUDGET)
+                .expect("checked")
+                .verdict,
+            Verdict::Linearizable,
+            "seed {seed}: with nothing delivered twice, the second invoice never appears"
+        );
+
+        // The same seed, the binding declaring `at_least_once`: the delivery is injected, and the
+        // target saw it.
+        let target = faulty::billing(Fault::DoubleApplyOnRedelivery);
+        let recorded = sessions::record_injected(
+            &declared,
+            &target,
+            &target,
+            &faulty::double_apply_workload(),
+            seed,
+        )
+        .expect("recorded");
+        let counted = recorded.injected.redeliveries["notify-on-invoice-created"];
+        assert_eq!(counted, 1, "seed {seed}: one creation, one second delivery");
+        // The creation, its second delivery, and the creation the defect applied again, which
+        // runs the binding once more.
+        assert_eq!(invocations(&target), 3, "seed {seed}");
+        declared_redeliveries += counted;
+    }
+    println!(
+        "undeclared (at_most_once): 0 second deliveries in {INJECTED_SEEDS} seeds; declared \
+         (at_least_once): {declared_redeliveries}"
+    );
+}
+
+#[test]
+fn a_declared_external_branch_is_delayed_or_left_unanswered_and_written_indeterminate() {
+    // `billing.email.SendEmail/failed` is `external:`, so a call of `SendEmail` may be delayed past
+    // the client's wait or never answered. Either is written `Indeterminate`, and the reference
+    // stays linearizable: a call that may have taken effect is placed after every other one.
+    let model = example("billing");
+    let email = || {
+        Act::Call(Call::new(
+            "billing.email.SendEmail",
+            BTreeMap::from([
+                (
+                    "recipient".to_owned(),
+                    Node::Text("payer@example.com".to_owned()),
+                ),
+                (
+                    "template".to_owned(),
+                    Node::Text("invoice-created".to_owned()),
+                ),
+            ]),
+            Subject::Creates,
+        ))
+    };
+    let workload = sessions::Workload {
+        prefix: Vec::new(),
+        clients: vec![vec![email(), email()], vec![email(), email()]],
+    };
+    let mut totals = sessions::Injected::default();
+    for seed in 0..INJECTED_SEEDS {
+        let reference = Billing::new();
+        let recorded =
+            sessions::record_injected(&model, &Atomic(&reference), &reference, &workload, seed)
+                .expect("recorded");
+        let indeterminate = recorded
+            .history
+            .operations
+            .iter()
+            .filter(|operation| operation.completion == Completion::Indeterminate)
+            .count() as u64;
+        assert_eq!(
+            indeterminate,
+            recorded.injected.delayed.values().sum::<u64>()
+                + recorded.injected.unanswered.values().sum::<u64>(),
+            "seed {seed}: every injected delay or loss, and nothing else, is Indeterminate"
+        );
+        assert_eq!(
+            linearize::check(&model, &recorded.history, linearize::DEFAULT_BUDGET)
+                .expect("checked")
+                .verdict,
+            Verdict::Linearizable,
+            "seed {seed}"
+        );
+        add(&mut totals, &recorded.injected);
+    }
+    println!(
+        "external: {}",
+        serde_json::to_string(&totals).expect("counts serialize")
+    );
+    assert!(totals.delayed["billing.email.SendEmail"] > 0, "{totals:?}");
+    assert!(
+        totals.unanswered["billing.email.SendEmail"] > 0,
+        "{totals:?}"
+    );
+    assert!(
+        totals.reached.contains_key("billing.email.SendEmail/sent"),
+        "a delayed call's late answer names the branch it reached: {totals:?}"
+    );
+    assert!(totals.retries.is_empty() && totals.redeliveries.is_empty());
+}
+
+#[test]
+fn a_retry_of_a_command_declaring_replays_is_written_as_one_and_replayed_by_the_reference() {
+    // Every `Seed` a client sends is sent again, unchanged; the second operation names the first,
+    // the document is admitted as written, and the reference answers each request's second
+    // operation from what it retained.
+    let model = model_at(System::Retry.path());
+    let digest = ess_conformance::scenario::SuiteProvenance::of(&model).spec_digest;
+    let mut totals = sessions::Injected::default();
+    for seed in 0..INJECTED_SEEDS {
+        let reference = Retained::new();
+        let recorded = sessions::record_injected(
+            &model,
+            &Atomic(&reference),
+            &reference,
+            &faulty::retry_workload(),
+            seed,
+        )
+        .expect("recorded");
+        let retries: Vec<_> = recorded
+            .history
+            .operations
+            .iter()
+            .filter(|operation| operation.retry_of.is_some())
+            .collect();
+        assert_eq!(retries.len(), 2, "seed {seed}: one retry per `Seed`");
+        let bytes = serde_json::to_vec(&recorded.history).expect("serializes");
+        let read = ess_conformance::history::read(&bytes, &digest).expect("admitted");
+        assert_eq!(read, recorded.history, "seed {seed}");
+        assert_eq!(
+            linearize::check(&model, &recorded.history, linearize::DEFAULT_BUDGET)
+                .expect("checked")
+                .verdict,
+            Verdict::Linearizable,
+            "seed {seed}"
+        );
+        add(&mut totals, &recorded.injected);
+    }
+    println!(
+        "retry: {}",
+        serde_json::to_string(&totals).expect("counts serialize")
+    );
+    assert_eq!(totals.retries["retry.core.Seed"], 2 * INJECTED_SEEDS);
+    assert!(
+        totals.reached.contains_key("retry.core.Seed/replayed"),
+        "{totals:?}"
+    );
+}
+
+/// A retry fixture history of two `Seed` operations on client 0, the second a retry of the first
+/// when `retry_of` is given, answering `first` and `second`.
+fn two_seeds(retry_of: Option<&str>, client: u64, first: &str, second: &str) -> Vec<u8> {
+    let model = model_at(System::Retry.path());
+    let digest = ess_conformance::scenario::SuiteProvenance::of(&model).spec_digest;
+    let retry = retry_of.map_or_else(String::new, |id| format!(r#","retry_of":"{id}""#));
+    let key = |outcome: &str, n: u8| {
+        if outcome == "seeded" {
+            format!("00000000-0000-4000-8000-00000000000{n}")
+        } else {
+            String::new()
+        }
+    };
+    format!(
+        r#"{{"format":"ess-history/1","history_id":"00000000-0000-4000-8000-000000000001","spec_digest":"{digest}","seed":1,"clients":2,"operations":[{{"operation_id":"00000000-0000-4000-8000-000000000001","client":0,"command":"retry.core.Seed","subject_key":"{}","invoked_at":1,"returned_at":3,"completion":"Returned","outcome":"{first}"}},{{"operation_id":"00000000-0000-4000-8000-000000000002","client":{client},"command":"retry.core.Seed","subject_key":"{}","invoked_at":2,"returned_at":4,"completion":"Returned","outcome":"{second}"{retry}}}]}}"#,
+        key(first, 1),
+        key(second, 2),
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_retry_names_an_earlier_call_of_its_own_client_and_command_or_the_history_is_refused() {
+    let model = model_at(System::Retry.path());
+    let digest = ess_conformance::scenario::SuiteProvenance::of(&model).spec_digest;
+    let first = "00000000-0000-4000-8000-000000000001";
+    let admitted =
+        ess_conformance::history::read(&two_seeds(Some(first), 0, "seeded", "replayed"), &digest)
+            .expect("a retry of the client's own earlier call is admitted");
+    assert_eq!(
+        admitted.operations[1]
+            .retry_of
+            .as_ref()
+            .map(|id| id.as_str().to_owned()),
+        Some(first.to_owned())
+    );
+    // Written back in the reader's own spelling, `retry_of` last.
+    assert_eq!(
+        serde_json::to_vec(&admitted).unwrap(),
+        two_seeds(Some(first), 0, "seeded", "replayed")
+    );
+    for (retry_of, client, why) in [
+        (
+            "00000000-0000-4000-8000-000000000009",
+            0,
+            "an operation the history does not hold",
+        ),
+        (first, 1, "another client's call"),
+        (
+            "00000000-0000-4000-8000-000000000002",
+            0,
+            "itself, which is not earlier",
+        ),
+    ] {
+        let refused = ess_conformance::history::read(
+            &two_seeds(Some(retry_of), client, "seeded", "replayed"),
+            &digest,
+        )
+        .expect_err(why);
+        assert_eq!(
+            refused.code(),
+            "history.retry-of-unknown",
+            "{why}: {refused}"
+        );
+    }
+}
+
+#[test]
+fn one_request_answered_by_its_origin_branch_twice_is_a_violation_and_once_is_not() {
+    let model = model_at(System::Retry.path());
+    let digest = ess_conformance::scenario::SuiteProvenance::of(&model).spec_digest;
+    let first = "00000000-0000-4000-8000-000000000001";
+    let checked = |bytes: Vec<u8>| {
+        let history = ess_conformance::history::read(&bytes, &digest).expect("admitted");
+        linearize::check(&model, &history, linearize::DEFAULT_BUDGET).expect("checked")
+    };
+    // Seeded, then replayed: the declared answer to a request sent twice.
+    assert_eq!(
+        checked(two_seeds(Some(first), 0, "seeded", "replayed")).verdict,
+        Verdict::Linearizable
+    );
+    // Seeded twice, as two requests: two records, which nothing forbids.
+    assert_eq!(
+        checked(two_seeds(None, 0, "seeded", "seeded")).verdict,
+        Verdict::Linearizable
+    );
+    // Seeded twice, as one request sent twice: applied twice.
+    let twice = checked(two_seeds(Some(first), 0, "seeded", "seeded"));
+    assert_eq!(twice.verdict, Verdict::Violation);
+    assert_eq!(
+        twice.subject_key.as_deref(),
+        Some("00000000-0000-4000-8000-000000000002")
+    );
+    assert_eq!(
+        twice.linearization,
+        vec![
+            first.to_owned(),
+            "00000000-0000-4000-8000-000000000002".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn one_seed_with_injection_records_one_history_and_one_count() {
+    // Each injection is part of the seed: the same seed injects the same faults at the same ticks.
+    let model = example("billing");
+    for seed in [0, 7, 23] {
+        let first = faulty::billing(Fault::DoubleApplyOnRedelivery);
+        let second = faulty::billing(Fault::DoubleApplyOnRedelivery);
+        let workload = faulty::double_apply_workload();
+        assert_eq!(
+            sessions::record_injected(&model, &first, &first, &workload, seed).unwrap(),
+            sessions::record_injected(&model, &second, &second, &workload, seed).unwrap()
+        );
+    }
+}
+
 // ---- the matrix has to be repeatable, or it is not a matrix ---------------------------------------
 
 #[test]
@@ -690,6 +1250,7 @@ fn two_runs_against_one_faulty_target_produce_byte_identical_reports() {
                 match fault.system() {
                     System::Billing => format!("billing-reference-{}", fault.written()),
                     System::Oracle => format!("oracle-reference-{}", fault.written()),
+                    System::Retry => format!("retry-reference-{}", fault.written()),
                 },
                 env!("CARGO_PKG_VERSION")
             ),
