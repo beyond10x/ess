@@ -228,8 +228,8 @@ func (r *run) expectEventValues(index int, step Step) bool {
 		if event.Event != step.Event {
 			continue
 		}
-		if !matches(event.Payload, payload) {
-			return r.fail(index, "`%s` carried different fixture values", step.Event)
+		if reason := payloadCarries(event.Payload, payload); reason != "" {
+			return r.fail(index, "`%s` carried different fixture values: %s", step.Event, reason)
 		}
 		if reason := holds(event.Payload, step.Shape); reason != "" {
 			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)

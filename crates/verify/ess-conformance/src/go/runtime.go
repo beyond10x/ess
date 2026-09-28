@@ -1463,8 +1463,18 @@ type Harness struct {
 
 // NewHarness returns the harness a run uses, seeded from the specification's own system name.
 func NewHarness(system string) *Harness {
-	return &Harness{system: reduce(system), attempts: 8}
+	return &Harness{system: reduce(system), attempts: eventualTimeoutMillis / stepMillis}
 }
+
+// eventualTimeoutMillis and stepMillis are ess_conformance::runner's
+// `RunnerConfig::DEFAULT_EVENTUAL_TIMEOUT_MS` and `AdvancingClock::DEFAULT_STEP_MS`: the Rust runner
+// asks an eventually step until its clock, advancing one step per read, passes the timeout, so the
+// two runners give an eventual observation the same number of asks. tests/eventual_budget_go.rs
+// holds these to the Rust constants.
+const (
+	eventualTimeoutMillis = 5000
+	stepMillis            = 100
+)
 
 // Correlation mints the next activity id.
 func (h *Harness) Correlation() string {
@@ -2209,8 +2219,10 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 		if err != nil {
 			return r.fail(index, "observing `%s`: %v", step.Event, err)
 		}
+		// Remembered for the whole scenario, where an `observed` value reads it, and nowhere else:
+		// `expect_event`, `expect_no_event` and `capture_instance` read only the last command's
+		// direct events, as ess_conformance::runner reads them.
 		for _, event := range events {
-			r.observed[event.Event] = append(r.observed[event.Event], event)
 			r.remember(event)
 		}
 		// The first occurrence of this answer carrying the step's values, held to the same
