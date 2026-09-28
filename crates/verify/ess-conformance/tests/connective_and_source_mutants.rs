@@ -898,6 +898,180 @@ fn a_sets_source_is_witnessed_apart_from_its_same_typed_siblings() {
     }
 }
 
+// ---- #202: three same-typed `sets:` sources, and the pair a retarget joins -------------------------
+
+const FLAGS: &str = r"
+format: ess/13
+system: shop
+version: v1
+domain: shop.order
+
+entities:
+  - name: shop.order.Order
+    identity: {name: order_id, type: String}
+    fields:
+      - {name: paid, type: Boolean}
+      - {name: gift, type: Boolean}
+      - {name: rush, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+events:
+  - name: shop.order.OrderPlaced
+    fields:
+      - {name: order_id, type: String}
+
+views:
+  - name: shop.order.Orders
+    source: shop.order.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: String}
+      - {name: paid, type: Boolean}
+      - {name: gift, type: Boolean}
+      - {name: rush, type: Boolean}
+
+commands:
+  - name: shop.order.PlaceOrder
+    input:
+      - {name: order_id, type: String}
+      - {name: paid, type: Boolean}
+      - {name: gift, type: Boolean}
+      - {name: rush, type: Boolean}
+    outcomes:
+      - name: placed
+        creates: shop.order.Order
+        instance: order_id
+        sets: {paid: input.paid, gift: input.gift, rush: input.rush}
+        emits: [shop.order.OrderPlaced]
+        payload:
+          shop.order.OrderPlaced: {order_id: input.order_id}
+";
+
+const PLACED: &str = "shop.order.PlaceOrder/outcome/placed";
+const FLAG_FIELDS: [&str; 3] = ["paid", "gift", "rush"];
+
+/// The input the `placed` scenario sends, and every `Orders` row it then requires.
+fn placed(synthesis: &Synthesis) -> (BTreeMap<String, Node>, Vec<BTreeMap<String, Node>>) {
+    let sent = invocations(synthesis)
+        .into_iter()
+        .find(|invocation| invocation.scenario == PLACED && invocation.expected == "placed")
+        .expect("the branch is invoked");
+    let rows = steps(synthesis, PLACED)
+        .iter()
+        .filter_map(|step| match step {
+            ScenarioStep::ExpectView {
+                view,
+                expectation: ViewExpectation::Contains { fields },
+            }
+            | ScenarioStep::EventuallyView {
+                view,
+                expectation: ViewExpectation::Contains { fields },
+                ..
+            } if view.to_string() == "shop.order.Orders" => Some(
+                fields
+                    .iter()
+                    .filter_map(|(field, value)| {
+                        value
+                            .as_literal()
+                            .cloned()
+                            .map(|node| (field.clone(), node))
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect();
+    (sent.input, rows)
+}
+
+/// Each `sets-retarget` mutant of three Booleans written to three fields gets a witness that sends
+/// the pair it joins apart, and so a row the unmutated specification contradicts: the original
+/// writes every flag from its own input, so a required row with a flag other than that input's
+/// value is one every implementation of the original fails.
+#[test]
+fn a_retargeted_sets_pair_is_witnessed_apart_among_three_same_typed_sources() {
+    let model = documents(FLAGS);
+    let mutants = mutants_of(&model, MutantClass::SetsRetarget);
+    assert_eq!(
+        mutants.len(),
+        3,
+        "the audit retargets each of the three flags: {:?}",
+        mutants.iter().map(|(id, _)| id).collect::<Vec<_>>()
+    );
+    let mut survivors = Vec::new();
+    for (id, mutated) in mutants {
+        let (input, rows) = placed(&synthesize(&mutated));
+        assert!(!rows.is_empty(), "`{id}` requires an `Orders` row");
+        let killed = rows.iter().any(|row| {
+            FLAG_FIELDS.iter().any(|flag| {
+                row.get(*flag)
+                    .is_some_and(|held| input.get(*flag) != Some(held))
+            })
+        });
+        if !killed {
+            survivors.push(format!("`{id}` sends {input:?} and requires {rows:?}"));
+        }
+    }
+    assert!(
+        survivors.is_empty(),
+        "these retargets are witnessed with the joined pair equal, so they survive: {survivors:#?}"
+    );
+}
+
+/// The notes of `synthesis` saying a scenario sends a joined pair with one value, as
+/// `(scenario, source, unread)`.
+fn unseparated(synthesis: &Synthesis) -> Vec<(String, String, String)> {
+    synthesis
+        .notes
+        .iter()
+        .filter_map(|note| match note {
+            Note::UnseparatedSources {
+                scenario,
+                source,
+                unread,
+            } => Some((scenario.to_string(), source.clone(), unread.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Guards that fix both inputs of the joined pair to one value leave no witness that separates
+/// them, and the scenario says so in a note naming the pair instead of dropping it silently. The
+/// declared model joins nothing, so it carries no such note.
+#[test]
+fn a_joined_pair_the_guards_hold_equal_is_named_in_a_note() {
+    let guarded = FLAGS.replace(
+        "      - name: placed\n",
+        "      - name: placed\n        when:\n          all: [paid == true, gift == true]\n",
+    ) + r"
+      - name: refused
+        error: shop.order.NotPlaced
+
+errors:
+  - name: shop.order.NotPlaced
+    summary: Only paid gifts are placed here.
+    fields: []
+";
+    let model = documents(&guarded);
+    assert_eq!(
+        unseparated(&synthesize(&compiled(&model))),
+        Vec::<(String, String, String)>::new(),
+        "the declared model joins no pair"
+    );
+    let (id, mutated) = mutants_of(&model, MutantClass::SetsRetarget)
+        .into_iter()
+        .find(|(id, _)| id.ends_with("/placed/gift"))
+        .expect("the audit retargets `gift`");
+    assert_eq!(
+        unseparated(&synthesize(&mutated)),
+        vec![(PLACED.to_owned(), "paid".to_owned(), "gift".to_owned())],
+        "`{id}` joins `paid` and `gift`, which the guard holds equal"
+    );
+}
+
 /// A later branch writing a literal is arranged on a row that held something else.
 const RECORDED: &str = r"
 format: ess/13

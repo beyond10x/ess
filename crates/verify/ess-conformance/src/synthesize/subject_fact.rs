@@ -1552,6 +1552,16 @@ pub(super) fn prepare(
         }
         best
     };
+    // The pair a `sets-retarget` mutant joins is sent apart on the chosen row too, where the row
+    // still selects the branch and no more of its writes are left unchanged (beyond10x/ess#202).
+    let keeps = |next: &BTreeMap<String, Node>| {
+        selects(ir, command, entity, &arrangement, next)
+            .ok()
+            .flatten()
+            .is_some_and(|branch| branch.name == outcome.name)
+            && super::unchanged_writes(ir, outcome, next, &arrangement.settled) <= unchanged
+    };
+    let (input, _) = super::sources_apart(ir, command, outcome, input, &keeps);
     let (steps, view) = observe_fields(ir, entity, &fields, &arrangement)?;
     arrangement.steps.extend(steps);
     arrangement.source.insert(view.into());

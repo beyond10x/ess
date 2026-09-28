@@ -276,6 +276,18 @@ pub enum Note {
         /// The subject fields no view lets it observe, in name order.
         unobserved: Vec<String>,
     },
+    /// A branch whose `sets:` read one input into two targets while a same-typed input feeds none —
+    /// the pair a `sets-retarget` mutant joins — is sent with the two inputs equal, because no input
+    /// its guards leave tells them apart (beyond10x/ess#202). Its scenario then cannot tell the
+    /// model it was synthesized from from the one that writes the unread input.
+    UnseparatedSources {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The input read into two or more targets.
+        source: String,
+        /// The same-typed input no target reads.
+        unread: String,
+    },
 }
 
 impl fmt::Display for Note {
@@ -313,6 +325,17 @@ impl fmt::Display for Note {
                     if names.len() == 1 { "it" } else { "them" }
                 )
             }
+            Self::UnseparatedSources {
+                scenario,
+                source,
+                unread,
+            } => write!(
+                f,
+                "`{scenario}` sends `{source}` and `{unread}` with one value: `{source}` feeds two \
+                 or more `sets:` targets while `{unread}` feeds none, and no input its guards leave \
+                 tells them apart, so a model writing `{unread}` where this one writes `{source}` \
+                 passes it too"
+            ),
         }
     }
 }
@@ -1346,10 +1369,20 @@ impl fmt::Display for InstanceNeed {
 pub fn synthesize(ir: &EssIr) -> Synthesis {
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`).
-    if caller::uses(ir) {
-        return caller::synthesize(ir);
-    }
-    synthesize_plain(ir)
+    let mut synthesis = if caller::uses(ir) {
+        caller::synthesize(ir)
+    } else {
+        synthesize_plain(ir)
+    };
+    // A note about an unseparated pair is recorded with its branch's scenario, and later passes
+    // (fixtures, clock offsets, caller readings) may drop that scenario; a note naming a scenario
+    // the suite does not hold points at nothing, so it goes with it (beyond10x/ess#202).
+    let suite = &synthesis.suite;
+    synthesis.notes.retain(|note| match note {
+        Note::UnseparatedSources { scenario, .. } => suite.scenario(scenario).is_some(),
+        _ => true,
+    });
+    synthesis
 }
 
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
@@ -1371,6 +1404,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     }
     let actors = granted_actors(ir);
 
+    let mut unseparated_notes = Vec::new();
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
             // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
@@ -1400,6 +1434,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
             else {
                 continue;
             };
+            unseparated_notes.extend(unseparated(command, outcome, &id, &scenario));
             insert(&mut suite, id, scenario, &mut refusals);
         }
     }
@@ -1412,6 +1447,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     existence::existence(ir, &actors, &mut suite, &mut refusals);
     set_effects::set_effects(ir, &actors, &mut suite, &mut refusals);
     notes.extend(partial);
+    notes.extend(unseparated_notes);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
@@ -5769,13 +5805,24 @@ fn equals_a_sibling(
 /// witness gives the moved field its value, as [`freshened`] takes one, and the branch is decided
 /// again by [`selects_branch`]; where neither can move the input stands, because no input tells the
 /// two apart.
+///
+/// Three inputs of a two-valued type cannot all differ (beyond10x/ess#202), so the pairs that
+/// matter most are separated first: the [`source_pairs`], each `sets:` source beside a same-typed
+/// input no `sets:` entry reads. A `sets-retarget` mutant's model leaves the original source unread,
+/// and only a witness sending it apart from the new source tells the mutant from the declared
+/// model. Once apart — moved, or sent apart already — each such pair is pinned: no later move may
+/// give its two inputs one value again. No other pair is pinned.
 fn distinguished(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    mut input: BTreeMap<String, Node>,
+    input: BTreeMap<String, Node>,
     held: Option<&StateName>,
 ) -> BTreeMap<String, Node> {
+    let keeps = |next: &BTreeMap<String, Node>| {
+        selects_branch(ir, command, outcome, held, next).unwrap_or(false)
+    };
+    let (mut input, pinned) = sources_apart(ir, command, outcome, input, &keeps);
     for set in &outcome.sets {
         let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
             continue;
@@ -5793,31 +5840,173 @@ fn distinguished(
             if !input.contains_key(field) || input.get(field) != input.get(sibling) {
                 continue;
             }
-            'moved: for moving in [sibling, field] {
-                for nth in 1..=FRESH_WITNESSES {
-                    let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
-                        .ok()
-                        .and_then(|inputs| inputs.into_iter().next())
-                        .and_then(|mut further| further.remove(moving))
-                    else {
-                        continue;
-                    };
-                    if input.get(moving) == Some(&moved) {
-                        continue;
-                    }
-                    let mut next = input.clone();
-                    next.insert(moving.clone(), moved);
-                    if admitted(ir, command, &next)
-                        && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
-                    {
-                        input = next;
-                        break 'moved;
-                    }
-                }
+            if let Some(next) = moved_apart(ir, command, &input, [sibling, field], &pinned, &keeps)
+            {
+                input = next;
             }
         }
     }
     input
+}
+
+/// Every pair a `sets-retarget` mutant could join, read off the model being synthesized
+/// (beyond10x/ess#202): `(source, unread)`, where `source` is an input some `sets:` entry of
+/// `outcome` reads and `unread` is an input of the same declared type that no `sets:` entry of it
+/// reads. A retarget leaves the original source unread whichever input it retargets to — one
+/// feeding two targets, or one only a payload or a guard reads — so every such pair is one a
+/// mutant may have joined.
+///
+/// Pairs come in priority order: first those the model shows joined — `source` feeds two or more
+/// targets, or `unread` is named like a target `source` feeds — then the rest, each group in
+/// declaration order of `source`, then of `unread`. Where not every pair can be sent apart, the
+/// joined ones are the ones kept apart. The flag says which group a pair is in.
+pub(super) fn source_pairs<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<(&'c str, &'c str, bool)> {
+    let mut fed: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for set in &outcome.sets {
+        if let ResolvedPayloadValue::InputField { field, .. } = &set.value {
+            fed.entry(field.as_str())
+                .or_default()
+                .push(set.target.as_str());
+        }
+    }
+    let mut joined = Vec::new();
+    let mut rest = Vec::new();
+    for source in &command.input {
+        let Some(targets) = fed.get(source.name.as_str()) else {
+            continue;
+        };
+        for unread in command.input.iter().filter(|other| {
+            other.name != source.name
+                && other.type_ref == source.type_ref
+                && !fed.contains_key(other.name.as_str())
+        }) {
+            let (source, unread) = (source.name.as_str(), unread.name.as_str());
+            if targets.len() >= 2 || targets.contains(&unread) {
+                joined.push((source, unread, true));
+            } else {
+                rest.push((source, unread, false));
+            }
+        }
+    }
+    joined.extend(rest);
+    joined
+}
+
+/// `input` with every one of the [`source_pairs`] sent apart that can be, in their order, and the
+/// pairs that end apart — the pins every later move must keep. For each pair still sent one value,
+/// the unread input is moved first, because no `sets:` entry reads it into the row, and the source
+/// only where the unread one cannot move; a move is kept only where the input is still admitted,
+/// `keeps` it on the branch, and leaves every pair already pinned apart. Used by [`distinguished`]
+/// and by the stored-row search's arrangement ([`subject_fact::prepare`]).
+pub(super) fn sources_apart<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    keeps: &dyn Fn(&BTreeMap<String, Node>) -> bool,
+) -> (BTreeMap<String, Node>, Vec<(&'c str, &'c str)>) {
+    let mut pinned: Vec<(&str, &str)> = Vec::new();
+    for (source, unread, _) in source_pairs(command, outcome) {
+        if !input.contains_key(source) || !input.contains_key(unread) {
+            continue;
+        }
+        if input.get(source) == input.get(unread) {
+            if let Some(next) = moved_apart(ir, command, &input, [unread, source], &pinned, keeps) {
+                input = next;
+            }
+        }
+        if input.get(source) != input.get(unread) {
+            pinned.push((source, unread));
+        }
+    }
+    (input, pinned)
+}
+
+/// The notes for a scenario whose last invocation of `command` sends a joined pair of
+/// [`source_pairs`] of `outcome` with one value (beyond10x/ess#202), one note per pair: no input
+/// the guards and the pins leave told them apart, so the `sets-retarget` mutant this model may be
+/// is not killed by this scenario.
+///
+/// Only joined pairs are noted — the source feeds two targets, or the unread input is named like
+/// the source's target — because those are the pairs a retarget shows. A declared source held
+/// equal to an input it never joined (a guard fixing both, or a row whose writes must still
+/// change) is a pair the model does not name, and noting it would report a separation nothing lost.
+fn unseparated(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    id: &ScenarioId,
+    scenario: &ConformanceScenario,
+) -> Vec<Note> {
+    let Some(sent) = scenario.steps.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } if sent.to_string() == command.name.to_string() => Some(input),
+        _ => None,
+    }) else {
+        return Vec::new();
+    };
+    source_pairs(command, outcome)
+        .into_iter()
+        .filter(|(_, _, joined)| *joined)
+        .filter(|(source, unread, _)| {
+            match (
+                sent.get(*source).and_then(ScenarioValue::as_literal),
+                sent.get(*unread).and_then(ScenarioValue::as_literal),
+            ) {
+                (Some(first), Some(second)) => first == second,
+                _ => false,
+            }
+        })
+        .map(|(source, unread, _)| Note::UnseparatedSources {
+            scenario: id.clone(),
+            source: source.to_owned(),
+            unread: unread.to_owned(),
+        })
+        .collect()
+}
+
+/// `input` with the first of `moving` that can move given a further witness's value, where the
+/// result is admitted, `keeps` it on the branch, and leaves every `pinned` pair apart; nothing
+/// where no such move exists. See [`distinguished`].
+fn moved_apart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    moving: [&str; 2],
+    pinned: &[(&str, &str)],
+    keeps: &dyn Fn(&BTreeMap<String, Node>) -> bool,
+) -> Option<BTreeMap<String, Node>> {
+    for moving in moving {
+        for nth in 1..=FRESH_WITNESSES {
+            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|mut further| further.remove(moving))
+            else {
+                continue;
+            };
+            if input.get(moving) == Some(&moved) {
+                continue;
+            }
+            let mut next = input.clone();
+            next.insert(moving.to_owned(), moved);
+            if pinned
+                .iter()
+                .any(|(first, second)| next.get(*first) == next.get(*second))
+            {
+                continue;
+            }
+            if admitted(ir, command, &next) && keeps(&next) {
+                return Some(next);
+            }
+        }
+    }
+    None
 }
 
 /// What a row holds in `target` before a branch writes it, where a scenario can know: the literal
