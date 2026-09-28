@@ -1,12 +1,15 @@
-//! The Go runtime refuses suite/24 and /25 by version (beyond10x/ess#139).
+//! The Go runtime reads suite/24 and /25 and holds a payload leaf to its presence policy
+//! (beyond10x/ess#139, beyond10x/ess#188).
 //!
-//! Its leaf unmarshal drops a key the type does not name, so a `presence` policy would be read as
-//! no policy and the swap it forbids would pass. The runtime is compiled beside a Go test, the shape
+//! Until #188 this runtime refused both majors by version: its leaf unmarshal dropped the
+//! `presence` key, so a policy would have been read as no policy and the swap it forbids would
+//! have passed. `Held` now carries the key and `holds` decides by it as `LeafShape::admits` does,
+//! so the refusal is replaced by the check. The runtime is compiled beside a Go test, the shape
 //! `tests/optional_shape_go.rs` established.
 #[test]
-fn go_refuses_suites_carrying_presence_policies_by_version() {
+fn go_admits_presence_suites_and_decides_by_the_policy() {
     let directory = std::env::temp_dir().join(format!(
-        "ess-presence-refusal-{}-{}",
+        "ess-presence-policy-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -16,7 +19,7 @@ fn go_refuses_suites_carrying_presence_policies_by_version() {
     std::fs::create_dir(&directory).unwrap();
     std::fs::write(
         directory.join("go.mod"),
-        "module presencerefusalproof\n\ngo 1.24\n",
+        "module presencepolicyproof\n\ngo 1.24\n",
     )
     .unwrap();
     std::fs::write(
@@ -38,8 +41,8 @@ fn go_refuses_suites_carrying_presence_policies_by_version() {
     )
     .unwrap();
     std::fs::write(
-        directory.join("presence_refusal_test.go"),
-        include_str!("fixtures/presence-refusal.go"),
+        directory.join("presence_policy_test.go"),
+        include_str!("fixtures/presence-policy-go.go"),
     )
     .unwrap();
     let output = std::process::Command::new("go")
@@ -48,8 +51,9 @@ fn go_refuses_suites_carrying_presence_policies_by_version() {
             "-p",
             "2",
             "-count=1",
+            "-v",
             "-run",
-            "^TestPresenceSuitesAreRefusedByVersion$",
+            "^TestPresence",
             ".",
         ])
         .env("GOWORK", "off")
@@ -58,10 +62,20 @@ fn go_refuses_suites_carrying_presence_policies_by_version() {
         .output()
         .expect("required Go toolchain executes");
     std::fs::remove_dir_all(&directory).unwrap();
-    assert!(
-        output.status.success(),
+    let log = format!(
         "{}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(output.status.success(), "{log}");
+    for case in [
+        "TestPresenceSuitesAreAdmitted",
+        "TestPresencePolicyDecidesNullAndAbsence",
+        "TestPresenceBelowSuite24IsRefused",
+    ] {
+        assert!(
+            log.contains(&format!("--- PASS: {case}")),
+            "{case} ran: {log}"
+        );
+    }
 }
