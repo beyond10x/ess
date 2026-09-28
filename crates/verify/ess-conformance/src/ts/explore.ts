@@ -2340,7 +2340,7 @@ async function recordHistory(
         flying[client] =
           call.view !== null
             ? invokeRead(h, client, call.view)
-            : await invokeCall(h, client, call.command, call.step);
+            : await invokeCall(h, client, call.command as Command, call.step as Step);
       }
     }
     return [historyText(digest, seed, clients, h.operations), h];
