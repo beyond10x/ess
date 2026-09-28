@@ -647,7 +647,11 @@ impl schemars::JsonSchema for MappingTable {
 #[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SelectionMapping {
+    // `Field::PATTERN` on the selector and each path segment, published so an editor refuses what
+    // `BindingSpec::validate` refuses. `tests/published_charsets.rs` holds them together.
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     selection: String,
+    #[schemars(inner(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$")))]
     path: Vec<String>,
 }
 

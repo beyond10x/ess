@@ -12,26 +12,35 @@
 //!
 //! # The class
 //!
-//! Every text field of a `Raw*` type in `ess-domain` whose value a constructor with a `PATTERN`
-//! parses, as of this story:
+//! Every position in the document schema whose text `ess-domain` parses or validates against a
+//! charset, whatever the Rust type is called. Enumerated from the checking side: every charset
+//! check in `ess-domain` — the `PATTERN` constructors, `QualifiedName::new` and its single-segment
+//! `local_name`, and `types::field_name` with its callers — traced to the document position it
+//! reads, as of this story:
 //!
-//! | field | parsed by | published |
+//! | position | checked by | published |
 //! |---|---|---|
 //! | `RawComponentSpec.name` | `ComponentName::new` | here |
 //! | `RawCommandLineSurface.binary` | `CliName::new` | here |
 //! | `RawCommandGroup.name` | `CliName::new` | here |
 //! | `RawBindingSpec.name` | `BindingName::new` | here |
+//! | `RawTopology.workloads` keys | `ComponentName::new` | here, as `propertyNames` |
+//! | `Transition.name` | `local_name` | here, `Transition::NAME_PATTERN` |
+//! | `SelectionInput.name`, `Selection.name` | `field_name` in `SelectionPlan::resolve` | here |
+//! | `SelectionMapping.selection`, `.path[]` | `field_name` in `BindingSpec::validate` | here |
 //! | `RawComponentSetting.name` | `CliName::new` | `component_settings.rs` |
-//! | `RawField.name`, `RawInputField.name`, `RawViewField.name` | `Field::PATTERN` | already |
-//! | `RawTopology.workloads` keys | `ComponentName::new` | not yet: a map key needs `propertyNames` |
+//! | `Field`, `InputField`, `RawViewField`, `RelationSpec` names; `.via` | `field_name` | already |
+//! | outcome, outcome-group, state, qualified names, versions | their newtypes | already |
+//! | `RawRelated.via`, `.field` | `is_field_name`, from `ess/16` | no: see below |
 //!
-//! Outcome, outcome-group and state names are not in it: their `Raw*` fields are typed
-//! `OutcomeName`, `OutcomeGroupName` and `StateName`, which publish their own pattern. The other
-//! text fields of `Raw*` types are free text (`summary`, `external`, `alphabet`, `prefix`) or name
-//! a declaration that is resolved by lookup rather than parsed by a charset (`instance`,
-//! `group_by`, `RawSubjectField`, union `tag`, `fixture_inputs` keys). `RawRelated` is parsed by
-//! the field-name charset, but its shape is also a valid `RawNestedSources`, so a pattern on it
-//! would refuse nothing.
+//! `RawRelated` is not published because a pattern there would refuse nothing: its shape is also a
+//! valid `RawNestedSources`, which a document below `ess/16` means. The rest of the schema's bare
+//! strings are checked by no charset: free text (`summary`, `external`, `alphabet`, `prefix`,
+//! `Naming`), a name resolved by lookup among declarations (`instance`, `group_by`,
+//! `Ranking.field`, `RawSubjectField`, aggregates, `First.in`, `excluding`, `first_present`, union
+//! `tag`, map keys other than workloads), a small grammar that is parsed whole
+//! (`SelectionInput.from`, mapping and payload source strings, `TypeRef`, predicates), or a bare
+//! enum variant name, which no parser checks (`EnumVariant`, see its schema impl).
 
 use ess_domain::binding::{BindingName, RawBindingSpec};
 use ess_domain::component::{
@@ -173,4 +182,132 @@ fn a_workload_key_publishes_the_component_name_charset() {
             "RawTopology.workloads key {written:?}: the schema and the parser disagree"
         );
     }
+}
+
+/// Spellings on both sides of the field-name and transition-name charsets: underscores, hyphens,
+/// digits, case, dots, spaces, a trailing newline and a non-ASCII letter.
+const IDENTIFIERS: &[&str] = &[
+    "invoice_id",
+    "_url",
+    "IssueInvoice",
+    "a",
+    "Z9",
+    "issue-invoice",
+    "a-",
+    "_a-b",
+    "",
+    "_",
+    "__1",
+    "1abc",
+    "-a",
+    "a.b",
+    "a b",
+    "a!",
+    "a\n",
+    "ïd",
+];
+
+/// The committed schema at `definition.property` and `parses` agree on every spelling in
+/// [`IDENTIFIERS`], of which some must be read and some refused. `wrap` places the spelling where
+/// the property holds it: itself, or inside a list.
+fn assert_identifier_parity(
+    definition: &str,
+    property: &str,
+    wrap: impl Fn(&str) -> Value,
+    parses: impl Fn(&str) -> bool,
+) {
+    let validator = property_validator(definition, property);
+    let (mut read, mut refused) = (0, 0);
+    for &written in IDENTIFIERS {
+        let reads = parses(written);
+        if reads {
+            read += 1;
+        } else {
+            refused += 1;
+        }
+        let admitted = validator.is_valid(&wrap(written));
+        assert_eq!(
+            admitted,
+            reads,
+            "{definition}.{property} {written:?}: the schema {} it and the parser {} it",
+            if admitted { "admits" } else { "refuses" },
+            if reads { "reads" } else { "refuses" },
+        );
+    }
+    assert!(
+        read > 0 && refused > 0,
+        "the corpus tries both sides: {read} read, {refused} refused"
+    );
+}
+
+/// The pattern the committed schema publishes at `definition.property`, or at its items.
+fn committed_pattern(definition: &str, property: &str) -> Value {
+    let schema = document_schema();
+    let at = &schema["definitions"][definition]["properties"][property];
+    if at["pattern"].is_null() {
+        at["items"]["pattern"].clone()
+    } else {
+        at["pattern"].clone()
+    }
+}
+
+#[test]
+fn a_transition_name_publishes_the_single_segment_charset() {
+    use ess_domain::entity::{StateName, Transition};
+
+    assert_eq!(
+        derived_pattern(&schemars::schema_for!(Transition), "name"),
+        json!(Transition::NAME_PATTERN),
+        "a schema that accepts what the parser refuses is worse than no schema"
+    );
+    let to = StateName::new("Paid").expect("a state name");
+    assert_identifier_parity(
+        "Transition",
+        "name",
+        |w| json!(w),
+        |written| Transition::new(written, [], to.clone()).is_ok(),
+    );
+}
+
+#[test]
+fn a_selection_input_name_publishes_the_field_name_charset() {
+    use ess_domain::selection::SelectionInput;
+    use ess_domain::types::{is_field_name, Field};
+
+    assert_eq!(
+        derived_pattern(&schemars::schema_for!(SelectionInput), "name"),
+        json!(Field::PATTERN),
+        "a schema that accepts what the validator refuses is worse than no schema"
+    );
+    assert_identifier_parity("SelectionInput", "name", |w| json!(w), is_field_name);
+}
+
+#[test]
+fn a_selector_name_publishes_the_field_name_charset() {
+    use ess_domain::selection::Selection;
+    use ess_domain::types::{is_field_name, Field};
+
+    assert_eq!(
+        derived_pattern(&schemars::schema_for!(Selection), "name"),
+        json!(Field::PATTERN),
+        "a schema that accepts what the validator refuses is worse than no schema"
+    );
+    assert_identifier_parity("Selection", "name", |w| json!(w), is_field_name);
+}
+
+/// `SelectionMapping` is private to `binding.rs`, so the committed schema is read for its literal.
+#[test]
+fn a_selection_mapping_publishes_the_field_name_charset_on_its_selector_and_path() {
+    use ess_domain::types::{is_field_name, Field};
+
+    for property in ["selection", "path"] {
+        assert_eq!(
+            committed_pattern("SelectionMapping", property),
+            json!(Field::PATTERN),
+            "SelectionMapping.{property}: a schema that accepts what the validator refuses is \
+             worse than no schema"
+        );
+    }
+    assert_identifier_parity("SelectionMapping", "selection", |w| json!(w), is_field_name);
+    assert_identifier_parity("SelectionMapping", "path", |w| json!([w]), is_field_name);
 }

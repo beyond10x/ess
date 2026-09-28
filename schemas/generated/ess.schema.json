@@ -3359,7 +3359,8 @@
         },
         "name": {
           "description": "Unique local selector identity.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false
@@ -3387,7 +3388,8 @@
         },
         "name": {
           "description": "Binding-local identity.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false
@@ -3402,11 +3404,13 @@
         "path": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
           }
         },
         "selection": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }
       },
       "additionalProperties": false
@@ -3435,7 +3439,8 @@
         },
         "name": {
           "description": "Its own name, such as `IssueInvoice`.",
-          "type": "string"
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
         },
         "to": {
           "description": "The state it ends in.",
