@@ -10,10 +10,13 @@
 //! delete that field and the wrong guess is unique, and `Locator` reports the line it lands on —
 //! which belongs to a command in another file that is not refused at all.
 //!
-//! `story:a-wrong-trailing-key-guess-is-reported-as-a-line` closes it in `Locator::span`: a guess
-//! is reported only when its one occurrence lies inside the block of the declaration the path
-//! names. The cases below are the adversary's own assertion, unchanged; the same wrong guess with
-//! both commands in one file; and a right guess, which must still be cited at its key.
+//! `story:a-wrong-trailing-key-guess-is-reported-as-a-line` closes it twice over:
+//! `needles_from_tokens` builds no `<name>:` guess for an element of `outcomes`, `input`, `fields`
+//! or `params`, which is always written `- name: <name>`; and `Locator::span`, once a declaration is
+//! located, reports any other guess only inside that declaration's list item. The cases below are
+//! the adversary's own assertion, unchanged; the same wrong guess with both commands in one file;
+//! and a right guess, which must still be cited at its key (driven through `Locator` directly, so
+//! the list-item guard is what decides it).
 
 use ess_compiler::resolve::{diagnose_locating, Locator};
 use ess_compiler::source::{Location, SourceMap};
@@ -157,8 +160,7 @@ fn assert_the_guess_is_unique_and_cannot_match_its_target() {
 ///
 /// The adversary's assertion, unchanged and not relaxed. An outcome is written `- name: <x>` and
 /// never `<x>:`, so for every `command.*.outcomes.<name>` refusal the guess can never match its own
-/// target; its one match here is in `b.yaml`, outside the refused declaration's block, and is not
-/// reported.
+/// target, and no guess is built for it.
 #[test]
 fn a_wrong_trailing_key_guess_is_not_cited_at_all() {
     assert_the_guess_is_unique_and_cannot_match_its_target();

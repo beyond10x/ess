@@ -499,13 +499,16 @@ impl<'a> Locator<'a> {
 
     /// A span for `path`, located at the first needle that occurs exactly once.
     ///
-    /// A trailing-key guess (`<last>:`, see [`whole_name_matters`]) counts only when its one
-    /// occurrence lies inside the block of the declaration the path names — the first declaration
-    /// needle that is itself unique. A guess is allowed to be wrong, and a wrong guess that happens
-    /// to be unique lands on some other construct's line, possibly in another file, possibly one
-    /// that was never refused. Requiring it to sit under the refused declaration is what keeps a
-    /// refusal from being cited anywhere else; with no declaration located, a guess is never
-    /// reported, because nothing says where it would have had to be.
+    /// When a declaration is located — the first declaration needle that is itself unique — a
+    /// trailing-key guess (`<last>:`, see [`whole_name_matters`]) counts only when its one
+    /// occurrence lies inside that declaration's list item. A guess is allowed to be wrong, and a
+    /// wrong guess that happens to be unique lands on some other construct's line, possibly in
+    /// another file, possibly one that was never refused; requiring it to sit in the refused
+    /// declaration's item is what keeps a refusal from being cited anywhere else.
+    ///
+    /// With no declaration located, the guess is judged as every needle is: first unique wins.
+    /// Some paths have no declaration needle at all — `topology.workloads.<component>` is only
+    /// ever the workload key — and dropping the guess there would cost the one right line.
     pub fn span(&self, path: impl Into<String>, needles: &[String]) -> Span {
         let path = path.into();
         let declaration = needles
@@ -517,10 +520,11 @@ impl<'a> Locator<'a> {
                 continue;
             };
             if !whole_name_matters(needle)
-                && !declaration
+                && declaration
                     .as_ref()
                     .is_some_and(|(declared_in, declared_at)| {
-                        *declared_in == source && self.encloses(declared_in, *declared_at, location)
+                        *declared_in != source
+                            || !self.encloses(declared_in, *declared_at, location)
                     })
             {
                 continue;
@@ -552,27 +556,53 @@ impl<'a> Locator<'a> {
         answer
     }
 
-    /// Whether `at` lies in the block the declaration at `declared` opens, in file `label`.
+    /// Whether `at` lies in the list item the declaration at `declared` belongs to, in file
+    /// `label`.
     ///
-    /// The block is every line after the declaration's own, up to the first non-blank,
-    /// non-comment line indented less than the declaration's key — for `  - name: X` at column 5,
-    /// its siblings `outcomes:`, `input:` sit at indent 4 and belong to it, and the next
-    /// `  - name: Y` at indent 2 ends it.
+    /// The item's keys are indented to the declaration key's column. For `  - name: X` at column
+    /// 5, its siblings `outcomes:`, `input:` sit at indent 4 and belong to it, and the next
+    /// `  - name: Y` at indent 2 ends it. YAML key order is free, so the item also reaches
+    /// *upwards* from a declaration key written after other keys (`  - mapping: …` above
+    /// `    id: X`), as far as the `- ` that opens the item. Blank lines and comments neither
+    /// open nor close it.
     fn encloses(&self, label: &str, declared: Location, at: Location) -> bool {
         let Some(text) = self.sources.get(label) else {
             return false;
         };
-        if at.line <= declared.line {
-            return false;
-        }
+        let lines: Vec<&str> = text.lines().collect();
         let indent = declared.column - 1;
-        text.lines()
-            .skip(declared.line)
-            .take(at.line - declared.line)
-            .all(|line| {
-                let body = line.trim_start_matches(' ');
-                body.is_empty() || body.starts_with('#') || line.len() - body.len() >= indent
-            })
+        let indent_of = |line: &str| line.len() - line.trim_start_matches(' ').len();
+        let neutral = |line: &str| {
+            let body = line.trim_start_matches(' ');
+            body.is_empty() || body.starts_with('#')
+        };
+        let declared_at = declared.line - 1;
+
+        // The item's first line: the declaration's own when its key follows the `- `; otherwise
+        // the nearest line above, indented less than the key, that opens an item.
+        let mut first = declared_at;
+        let key_opens_the_line = lines
+            .get(declared_at)
+            .is_some_and(|line| indent_of(line) == indent);
+        if key_opens_the_line {
+            for index in (0..declared_at).rev() {
+                let line = lines[index];
+                if neutral(line) || indent_of(line) >= indent {
+                    continue;
+                }
+                if line.trim_start_matches(' ').starts_with("- ") {
+                    first = index;
+                }
+                break;
+            }
+        }
+
+        // The item's last line: before the first line after the declaration indented less.
+        let end = (declared_at + 1..lines.len())
+            .find(|index| !neutral(lines[*index]) && indent_of(lines[*index]) < indent)
+            .unwrap_or(lines.len());
+
+        (first..end).contains(&(at.line - 1))
     }
 
     /// [`Self::unique`], actually reading the files.
@@ -615,8 +645,9 @@ impl<'a> Locator<'a> {
 ///
 /// What the exemption does *not* buy is safety, and an earlier version of this comment said it did.
 /// A guess that happens to occur exactly once used to be reported as a line, and the line could
-/// belong to something that was never refused. Safety comes from [`Locator::span`] instead, which
-/// reports a guess only inside the block of the declaration the path names
+/// belong to something that was never refused. Safety comes from elsewhere: [`needles_from_tokens`]
+/// builds no guess for an element of a [`NAMED_LISTS`] list, and [`Locator::span`], once a
+/// declaration is located, reports a guess only inside that declaration's list item
 /// (`story:a-wrong-trailing-key-guess-is-reported-as-a-line`, measured by
 /// `tests/trailing_key_guess_citations.rs`). What the exemption *does* buy is that the filter
 /// cannot make a guess more eager: [`whole_name`] only ever removes matches, and removing a match
@@ -909,6 +940,14 @@ fn class_of(code: ValidationCode) -> u16 {
     }
 }
 
+/// The structural keys whose value is a list of elements each written `- name: <x>`.
+///
+/// Read off `ess-domain`'s raw types, not guessed: `outcomes` is `Vec<RawOutcome>` /
+/// `Vec<RawGroupOutcome>`, `input` is `Vec<InputField>` / `Vec<Field>`, `fields` is `Vec<Field>` /
+/// `Vec<RawViewField>`, `params` is `Vec<Field>` — every one a struct with a `name`. A path
+/// `<…>.<key>.<x>` under one of them names the element, and the element is never written `<x>:`.
+const NAMED_LISTS: &[&str] = &["outcomes", "input", "fields", "params"];
+
 /// The keys a document path passes *through*, which never name a declaration.
 ///
 /// Used to stop reading a path at the point it stops being a name — `binding.<id>.mapping.<target>`
@@ -981,11 +1020,15 @@ const STRUCTURAL: &[&str] = &[
 ///
 /// It bit every `command.*.outcomes.<name>` refusal, because an outcome is written `- name: <x>`
 /// and never `<x>:`, so the first needle tried can never match its own target and any match it
-/// does find is wrong by construction. The needles are unchanged; [`Locator::span`] now reports a
-/// guess only when its one occurrence lies inside the block of the declaration the later needles
-/// locate, so a wrong guess falls through to that declaration
+/// does find is wrong by construction. Two guards now
 /// (`story:a-wrong-trailing-key-guess-is-reported-as-a-line`,
-/// `tests/trailing_key_guess_citations.rs`).
+/// `tests/trailing_key_guess_citations.rs`, `tests/trailing_key_guess_adversary.rs`):
+///
+/// * no guess is built for the element of a [`NAMED_LISTS`] list — `outcomes`, `input`,
+///   `fields`, `params` — so such a refusal is searched for by its declaration only;
+/// * any other guess, once a declaration is located, is reported only inside that declaration's
+///   list item ([`Locator::span`]). With no declaration located it is first unique, as before,
+///   because some paths (`topology.workloads.<component>`) have nothing else to be cited by.
 fn needles_for(location: &str) -> Vec<String> {
     let tokens: Vec<&str> = location
         .split(['.', ' ', '[', ']'])
@@ -1001,13 +1044,16 @@ fn needles_for(location: &str) -> Vec<String> {
 fn needles_from_tokens(tokens: &[&str]) -> Vec<String> {
     let mut needles = Vec::new();
 
-    // The last segment, when it is a key an author wrote — `recipient:`, `invoice-service:`.
-    if let Some(last) = tokens.last() {
+    // The last segment, when it is a key an author wrote — `recipient:`, `invoice-service:`. Not
+    // when it names an element of a `NAMED_LISTS` list: that element is written `- name: <last>`,
+    // never `<last>:`, so the guess could only ever match something else.
+    if let Some((last, before)) = tokens.split_last() {
         let key_like = last
             .chars()
             .next()
             .is_some_and(|first| first.is_ascii_lowercase());
-        if key_like && !STRUCTURAL.contains(last) {
+        let names_a_list_element = before.last().is_some_and(|key| NAMED_LISTS.contains(key));
+        if key_like && !STRUCTURAL.contains(last) && !names_a_list_element {
             needles.push(format!("{last}:"));
         }
     }
@@ -4862,12 +4908,14 @@ mod tests {
     /// * **One match** — the needle written once, on line 2, under an unrelated line. Narrowing
     ///   changes nothing here. It is built because it is the *only* state in which the key-needle
     ///   exemption would be unsafe, and a check that certifies the exemption while never
-    ///   constructing it certifies nothing. A declaration needle reports line 2. The key guess
-    ///   reports nothing: [`Locator::span`] reports a guess only inside the block of the
-    ///   declaration the path names, and here no declaration is located at all. Before
-    ///   `story:a-wrong-trailing-key-guess-is-reported-as-a-line` this state reported line 2 for
-    ///   both kinds; `tests/trailing_key_guess_citations.rs` measures the consequence on real
-    ///   documents.
+    ///   constructing it certifies nothing. Both kinds report line 2: with no declaration located,
+    ///   [`Locator::span`] has nothing to hold a guess against, and some paths
+    ///   (`topology.workloads.<component>`) have no declaration needle at all.
+    /// * **A located declaration** — the construct's full needle list against a document holding
+    ///   its declaration, with the guess once inside the declaration's list item and once in the
+    ///   next item. Inside is cited at the guess; outside falls through to the declaration
+    ///   (`story:a-wrong-trailing-key-guess-is-reported-as-a-line`;
+    ///   `tests/trailing_key_guess_citations.rs` measures it on real documents).
     ///
     /// Asserting the *kind* as well as the effect is what makes this a class check: a third needle
     /// shape fails the first assertion rather than silently inheriting whichever side the code
@@ -4916,20 +4964,47 @@ mod tests {
                 }
 
                 // The one-match state. For a declaration needle this is the ordinary case. For the
-                // key guess it is the unsafe one: `unrelated:` is not what the path names, and a
-                // guess under no located declaration says nothing about where the refusal is.
+                // key guess it is the state the exemption leaves open: `unrelated:` is not what
+                // the path names, and with no declaration located the guess is judged as every
+                // needle is, first unique wins — `topology.workloads.<component>` has no other
+                // needle, and its workload key is the right line.
                 let one = line_of(format!("unrelated: value\n{needle} value\n"));
                 assert_eq!(
                     one.located.map(|located| located.line),
-                    if names_a_declaration { Some(2) } else { None },
-                    "for `{needle}` a single match is {}: {one}",
+                    Some(2),
+                    "with no declaration located, a single match is reported for either kind; \
+                     for `{needle}` that is {}: {one}",
                     if names_a_declaration {
-                        "the declaration the path names, and is reported"
+                        "the declaration the path names"
                     } else {
-                        "a guess at a key the author may never have written, under no located \
-                         declaration, and is not reported"
+                        "a guess no declaration contradicts"
                     }
                 );
+
+                // Where a declaration *is* located, a guess counts only inside its list item.
+                let all = needles_of_site(&construct);
+                let declared = all.iter().find(|candidate| whole_name_matters(candidate));
+                if let (true, Some(declared)) = (guesses_a_key, declared) {
+                    let cited = |text: String| {
+                        let mut sources = SourceMap::new();
+                        sources.insert("a.yaml", text);
+                        let locator = Locator::new(&sources, &["a.yaml"]);
+                        locator
+                            .span("probe", &all)
+                            .located
+                            .map(|located| located.line)
+                    };
+                    let inside = cited(format!("- {declared}\n  {needle} value\n"));
+                    assert_eq!(inside, Some(2), "`{needle}` is in `{declared}`'s item");
+                    let outside = cited(format!(
+                        "- {declared}\n  x: 1\n- other: 2\n  {needle} value\n"
+                    ));
+                    assert_eq!(
+                        outside,
+                        Some(1),
+                        "`{needle}` is in the next item, so `{declared}` answers"
+                    );
+                }
             }
         }
     }
