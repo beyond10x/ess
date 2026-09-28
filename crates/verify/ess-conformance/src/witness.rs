@@ -74,7 +74,8 @@
 //!
 //! A type that refers to itself, and a field whose name cannot be spelled as a fact path. Both are
 //! [`WitnessGap`], and both are reported rather than worked around. Everything else in the model has
-//! a value: a list is `[]` (one element where a guard reads into it, rule 3), a union is its first
+//! a value: a list is `[]` (one element where a guard reads into it, rule 3, or where a branch copies
+//! it whole into a payload or a stored field, ess#196), a union is its first
 //! variant in the encoding `ess-gen` publishes, and an enum is its first declared variant.
 //!
 //! **A map holds one entry** (beyond10x/ess#196), so a target that drops or empties a copied map
@@ -84,7 +85,9 @@
 //! A guard over `<map>.count`, which the flattener publishes, is tried at the empty map and at the
 //! lengths rule 3 names, each further entry a copy of the first under the next instance's key. A map
 //! whose key is a `Decimal`, which has no setup spelling, or whose value has no finite witness, is
-//! `{}`.
+//! `{}`. A value that reaches a type already being built — a type that refers to itself through a
+//! map or a copied list — is unfolded once, and every map and copied list inside that one entry is
+//! empty.
 //!
 //! **A witness is only as good as the type it is built from.** `currency: String` with no invariant
 //! gets the text `"amount.currency"`, because that is every value the specification permits. An
@@ -2137,6 +2140,14 @@ struct Builder<'ir> {
     /// Every recorded path that holds a map with one entry in its base (beyond10x/ess#196): what a
     /// `.count` guard over it varies by [`Choice::Elements`].
     maps: BTreeSet<FactPath>,
+    /// The declared types being built on the way down to the current value, outermost first.
+    building: Vec<String>,
+    /// The input paths a `sets:` or payload value copies whole: a list at or under one holds one
+    /// element in the base rather than `[]`, as a map holds one entry (beyond10x/ess#196).
+    copied: BTreeSet<FactPath>,
+    /// Whether the value being built is already inside the one entry a type that refers to itself
+    /// through a map or a copied list is unfolded to.
+    unfolded: bool,
     /// Every path that holds an `Optional` member of an input or of a struct, which a
     /// [`Choice::Omit`] can leave out.
     optionals: BTreeSet<FactPath>,
@@ -2177,6 +2188,9 @@ impl<'ir> Builder<'ir> {
             leaves: BTreeMap::new(),
             lists: BTreeSet::new(),
             maps: BTreeSet::new(),
+            building: Vec::new(),
+            copied: BTreeSet::new(),
+            unfolded: false,
             optionals: BTreeSet::new(),
             invariants: BTreeMap::new(),
             alphabets: BTreeMap::new(),
@@ -2204,6 +2218,7 @@ impl<'ir> Builder<'ir> {
                 })
                 .collect();
         }
+        self.copied = copied_inputs(command);
         let mut input = BTreeMap::new();
         for field in &command.input {
             let path = FactPath::new(&field.name).map_err(|_| WitnessGap {
@@ -2272,7 +2287,43 @@ impl<'ir> Builder<'ir> {
         base
     }
 
-    /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3).
+    /// The one element of a copied list, or the value of a map's entry, built at `<path>.0`; or
+    /// `None` where it has none, and then nothing the attempt recorded is kept.
+    ///
+    /// A value that reaches a type already being built is unfolded once — `{name, children:
+    /// {"children": {name, children: {}}}}` — and every map and copied list inside that one entry is
+    /// empty, so a type that refers to itself through a map keeps a finite witness (beyond10x/ess#196).
+    fn entry(
+        &mut self,
+        of: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Option<Node> {
+        let recursive = reaches(self.ir, of, &self.building);
+        if recursive && self.unfolded {
+            return None;
+        }
+        let mut probe = self.clone();
+        probe.unfolded |= recursive;
+        let value = probe
+            .value(of, &path.child("0"), overrides, depth + 1, record)
+            .ok()?;
+        probe.unfolded = self.unfolded;
+        *self = probe;
+        Some(value)
+    }
+
+    /// Whether `path` is, or lies inside, an input a branch copies whole.
+    fn is_copied(&self, path: &FactPath) -> bool {
+        self.copied
+            .iter()
+            .any(|copied| path.segments().starts_with(copied.segments()))
+    }
+
+    /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3) or a branch
+    /// copies it (beyond10x/ess#196), where it holds one element.
     fn list(
         &mut self,
         of: &ResolvedTypeRef,
@@ -2282,6 +2333,13 @@ impl<'ir> Builder<'ir> {
         record: bool,
     ) -> Result<Node, WitnessGap> {
         if !record || !self.expand.contains(path) {
+            // A copied list holds one element, so a target that drops it, or anything inside it,
+            // fails the copy's assertion; a guard's list keeps the ladders below.
+            if record && self.is_copied(path) {
+                if let Some(element) = self.entry(of, path, overrides, depth, record) {
+                    return Ok(Node::Seq(vec![element]));
+                }
+            }
             return Ok(Node::Seq(Vec::new()));
         }
         if let Some(&held) = self
@@ -2329,11 +2387,9 @@ impl<'ir> Builder<'ir> {
         let Some(first) = map_key(key, path, self.distinction) else {
             return Node::Map(BTreeMap::new());
         };
-        let mut probe = self.clone();
-        let Ok(value) = probe.value(of, &path.child("0"), overrides, depth + 1, record) else {
+        let Some(value) = self.entry(of, path, overrides, depth, record) else {
             return Node::Map(BTreeMap::new());
         };
-        *self = probe;
         if record {
             self.maps.insert(path.clone());
         }
@@ -2391,87 +2447,112 @@ impl<'ir> Builder<'ir> {
                 Ok(chosen(self.primitive(*name, path, record)))
             }
             ResolvedTypeRef::Declared { name } => {
-                // Read through the IR reference rather than through `self`, so what comes back
-                // lives as long as the IR and the recursive calls below can still borrow `self`.
-                let ir = self.ir;
-                match &ir.named_type(name).body {
-                    ResolvedBody::Newtype { of, invariants, .. } => {
-                        // The outermost newtype of a chain sees every layer below it, so its
-                        // answer is the effective one and an inner layer never replaces it.
-                        if !self.alphabets.contains_key(path) {
-                            if let Some(alphabet) = chain_alphabet(ir, type_ref) {
-                                self.alphabets.insert(path.clone(), alphabet);
-                            }
-                        }
-                        if !self.prefixes.contains_key(path) {
-                            if let Some(prefix) = chain_prefix(ir, type_ref) {
-                                self.prefixes.insert(path.clone(), prefix);
-                            }
-                        }
-                        if record {
-                            let recorded = self.invariants.entry(path.clone()).or_default();
-                            for invariant in invariants {
-                                if !recorded.contains(&invariant.predicate) {
-                                    recorded.push(invariant.predicate.clone());
-                                }
-                            }
-                        }
-                        self.value(of, path, overrides, depth + 1, record)
-                    }
-                    ResolvedBody::Enum { variants } => {
-                        // The variants cycle, so a closed set of two names distinguishes two
-                        // instances and no more — which is the type's answer, not a shortfall here.
-                        let variant = if variants.is_empty() {
-                            String::new()
-                        } else {
-                            variants[self.distinction.get() % variants.len()]
-                                .name()
-                                .to_owned()
-                        };
-                        let base = self
-                            .examples
-                            .get(path)
-                            .cloned()
-                            .unwrap_or(Node::Text(variant));
-                        if record {
-                            self.leaves.insert(
-                                path.clone(),
-                                (
-                                    Leaf::Enum {
-                                        variants: variants
-                                            .iter()
-                                            .map(|variant| variant.name().to_owned())
-                                            .collect(),
-                                    },
-                                    base.clone(),
-                                ),
-                            );
-                        }
-                        Ok(chosen(base))
-                    }
-                    ResolvedBody::Union { tag, variants } => {
-                        let Some((label, variant)) = variants.iter().next() else {
-                            return Ok(Node::Map(BTreeMap::new()));
-                        };
-                        let inner = self.value(variant, path, overrides, depth + 1, false)?;
-                        Ok(Node::Map(BTreeMap::from([
-                            (tag.clone(), Node::Text(label.clone())),
-                            (UNION_VALUE.to_owned(), inner),
-                        ])))
-                    }
-                    ResolvedBody::Struct { fields, .. } => {
-                        let mut value = BTreeMap::new();
-                        for field in fields {
-                            let child = path.child(&field.name);
-                            if let Some(inner) =
-                                self.member(&field.type_ref, &child, overrides, depth + 1, record)?
-                            {
-                                value.insert(field.name.clone(), inner);
-                            }
-                        }
-                        Ok(Node::Map(value))
+                // Every declared type on the way down is known, so a map whose value reaches one
+                // is witnessed `{}` at once (beyond10x/ess#196) rather than at the depth limit.
+                let declared = self.ir.named_type(name).name.to_string();
+                self.building.push(declared);
+                let built = self.declared(type_ref, path, overrides, depth, record);
+                self.building.pop();
+                built
+            }
+        }
+    }
+
+    /// One value of the declared type `type_ref`, at `path`: [`value`](Self::value)'s arm for it.
+    fn declared(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Result<Node, WitnessGap> {
+        let ResolvedTypeRef::Declared { name } = type_ref else {
+            unreachable!("called for a declared type only");
+        };
+        let chosen = |base: Node| match overrides.get(path) {
+            Some(Choice::Value(value)) => value.clone(),
+            _ => base,
+        };
+        // Read through the IR reference rather than through `self`, so what comes back
+        // lives as long as the IR and the recursive calls below can still borrow `self`.
+        let ir = self.ir;
+        match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, invariants, .. } => {
+                // The outermost newtype of a chain sees every layer below it, so its
+                // answer is the effective one and an inner layer never replaces it.
+                if !self.alphabets.contains_key(path) {
+                    if let Some(alphabet) = chain_alphabet(ir, type_ref) {
+                        self.alphabets.insert(path.clone(), alphabet);
                     }
                 }
+                if !self.prefixes.contains_key(path) {
+                    if let Some(prefix) = chain_prefix(ir, type_ref) {
+                        self.prefixes.insert(path.clone(), prefix);
+                    }
+                }
+                if record {
+                    let recorded = self.invariants.entry(path.clone()).or_default();
+                    for invariant in invariants {
+                        if !recorded.contains(&invariant.predicate) {
+                            recorded.push(invariant.predicate.clone());
+                        }
+                    }
+                }
+                self.value(of, path, overrides, depth + 1, record)
+            }
+            ResolvedBody::Enum { variants } => {
+                // The variants cycle, so a closed set of two names distinguishes two
+                // instances and no more — which is the type's answer, not a shortfall here.
+                let variant = if variants.is_empty() {
+                    String::new()
+                } else {
+                    variants[self.distinction.get() % variants.len()]
+                        .name()
+                        .to_owned()
+                };
+                let base = self
+                    .examples
+                    .get(path)
+                    .cloned()
+                    .unwrap_or(Node::Text(variant));
+                if record {
+                    self.leaves.insert(
+                        path.clone(),
+                        (
+                            Leaf::Enum {
+                                variants: variants
+                                    .iter()
+                                    .map(|variant| variant.name().to_owned())
+                                    .collect(),
+                            },
+                            base.clone(),
+                        ),
+                    );
+                }
+                Ok(chosen(base))
+            }
+            ResolvedBody::Union { tag, variants } => {
+                let Some((label, variant)) = variants.iter().next() else {
+                    return Ok(Node::Map(BTreeMap::new()));
+                };
+                let inner = self.value(variant, path, overrides, depth + 1, false)?;
+                Ok(Node::Map(BTreeMap::from([
+                    (tag.clone(), Node::Text(label.clone())),
+                    (UNION_VALUE.to_owned(), inner),
+                ])))
+            }
+            ResolvedBody::Struct { fields, .. } => {
+                let mut value = BTreeMap::new();
+                for field in fields {
+                    let child = path.child(&field.name);
+                    if let Some(inner) =
+                        self.member(&field.type_ref, &child, overrides, depth + 1, record)?
+                    {
+                        value.insert(field.name.clone(), inner);
+                    }
+                }
+                Ok(Node::Map(value))
             }
         }
     }
@@ -2543,6 +2624,78 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
             }),
         )])),
     }
+}
+
+/// Whether a value of `type_ref` reaches one of the declared types in `building`: a type that
+/// refers to itself through a map or a copied list, which is witnessed empty there rather than
+/// nested to the depth limit (beyond10x/ess#196).
+fn reaches(ir: &EssIr, type_ref: &ResolvedTypeRef, building: &[String]) -> bool {
+    fn walk(
+        ir: &EssIr,
+        type_ref: &ResolvedTypeRef,
+        building: &[String],
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        match type_ref {
+            ResolvedTypeRef::Primitive { .. } => false,
+            ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => {
+                walk(ir, of, building, seen)
+            }
+            ResolvedTypeRef::Map { value, .. } => walk(ir, value, building, seen),
+            ResolvedTypeRef::Declared { name } => {
+                let declared = ir.named_type(name);
+                let spelled = declared.name.to_string();
+                if building.contains(&spelled) {
+                    return true;
+                }
+                if !seen.insert(spelled) {
+                    return false;
+                }
+                match &declared.body {
+                    ResolvedBody::Newtype { of, .. } => walk(ir, of, building, seen),
+                    ResolvedBody::Enum { .. } => false,
+                    ResolvedBody::Union { variants, .. } => variants
+                        .values()
+                        .any(|variant| walk(ir, variant, building, seen)),
+                    ResolvedBody::Struct { fields, .. } => fields
+                        .iter()
+                        .any(|field| walk(ir, &field.type_ref, building, seen)),
+                }
+            }
+        }
+    }
+    !building.is_empty() && walk(ir, type_ref, building, &mut BTreeSet::new())
+}
+
+/// Every input path a branch copies whole into an event payload or a stored field: `input.<x>`,
+/// and `{input: x, else: …}`, at any depth of a struct-valued target.
+fn copied_inputs(command: &ResolvedCommand) -> BTreeSet<FactPath> {
+    use ess_compiler::ir::{ResolvedPayloadField, ResolvedPayloadValue};
+    fn walk(fields: &[ResolvedPayloadField], found: &mut BTreeSet<FactPath>) {
+        for field in fields {
+            match &field.value {
+                ResolvedPayloadValue::InputField { field, .. }
+                | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+                    if let Ok(path) = FactPath::new(field) {
+                        found.insert(path);
+                    }
+                }
+                ResolvedPayloadValue::Struct { fields } => walk(fields, found),
+                _ => {}
+            }
+        }
+    }
+    let mut found = BTreeSet::new();
+    for outcome in &command.outcomes {
+        for payload in &outcome.payload {
+            walk(&payload.fields, &mut found);
+        }
+        walk(&outcome.sets, &mut found);
+        for affect in &outcome.affects {
+            walk(&affect.sets, &mut found);
+        }
+    }
+    found
 }
 
 /// The key of a map's witness entry: the key primitive's own witness at the map's path and

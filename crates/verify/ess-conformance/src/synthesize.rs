@@ -7444,6 +7444,13 @@ fn with_count(
                 elements.resize(wanted, filler);
             }
         }
+        // A map only shrinks: a new entry needs a key of the declared key type, which this
+        // type-blind resize cannot spell (beyond10x/ess#196).
+        Node::Map(entries) if entries.len() >= wanted => {
+            while entries.len() > wanted {
+                entries.pop_last();
+            }
+        }
         _ => return None,
     }
     Some(out)
