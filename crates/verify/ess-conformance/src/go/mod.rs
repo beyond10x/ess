@@ -215,6 +215,13 @@ return. A call that returns `ErrIndeterminate` (or wraps it, or `context.Deadlin
 `ConcurrentOptions{AllowExcluded: true}` accepts it. `Clients` outside 2 to 4 is refused. `Unknown`
 fails `AssertConcurrent` as a violation does.
 
+A client's call may also be a read of one of the specification's views, drawn from the seed beside
+the commands. A read of a `read_your_writes` view demands the token the client's own last answered
+command returned (`ViewRequest.AtLeast`); a read of an `eventual` view demands none. The view is
+asked at the read's return instant, and the identity of each row it answered is written as `rows`,
+so `ess` holds the target to each view's declared consistency. A view answered with
+`ErrUnsupported` is left out as a command is.
+
 `ConcurrentOptions{Inject: true}` injects every fault the specification declares, and no other: a
 second delivery (`RedeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the
 same request sent again, written with `retry_of` naming the first, for a command declaring

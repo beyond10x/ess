@@ -1,0 +1,5 @@
+format: ess/15
+system: recorded
+version: v1
+domains:
+  - recorded.adapter

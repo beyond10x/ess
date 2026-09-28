@@ -1,0 +1,476 @@
+{
+  "base": {
+    "format": "ess-history-adapter/1",
+    "fields": {
+      "operation_id": { "pointer": "/correlation" },
+      "client": { "pointer": "/request/client" },
+      "command": { "pointer": "/request/command" },
+      "subject_key": { "pointer": "/request/subject" },
+      "invoked_at": { "pointer": "/request/at_ms" },
+      "returned_at": { "pointer": "/response/at_ms" },
+      "outcome": { "pointer": "/response/outcome" },
+      "completion": {
+        "pointer": "/response/status",
+        "values": { "ok": "Returned", "timeout": "Indeterminate" }
+      }
+    }
+  },
+  "cases": [
+    { "name": "the base document", "admitted": true, "edits": [] },
+    {
+      "name": "every source absent",
+      "admitted": true,
+      "edits": [
+        { "pointer": "/fields/operation_id", "value": "absent" },
+        { "pointer": "/fields/client", "value": "absent" },
+        { "pointer": "/fields/command", "value": "absent" },
+        { "pointer": "/fields/subject_key", "value": "absent" },
+        { "pointer": "/fields/invoked_at", "value": "absent" },
+        { "pointer": "/fields/returned_at", "value": "absent" },
+        { "pointer": "/fields/outcome", "value": "absent" },
+        { "pointer": "/fields/completion", "value": "absent" },
+        { "pointer": "/fields/rows", "value": "absent" }
+      ]
+    },
+    {
+      "name": "rows at a pointer",
+      "admitted": true,
+      "edits": [{ "pointer": "/fields/rows", "value": { "pointer": "/response/rows" } }]
+    },
+    {
+      "name": "the root pointer",
+      "admitted": true,
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": "/" } }]
+    },
+    {
+      "name": "a pointer with escapes",
+      "admitted": true,
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": "/a~1b/~0c" } }]
+    },
+    {
+      "name": "a completion with no words",
+      "admitted": true,
+      "edits": [{ "pointer": "/fields/completion/values", "value": {} }]
+    },
+    {
+      "name": "a completion word that is empty",
+      "admitted": true,
+      "edits": [{ "pointer": "/fields/completion/values", "value": { "": "Returned" } }]
+    },
+    {
+      "name": "another format",
+      "admitted": false,
+      "edits": [{ "pointer": "/format", "value": "ess-history-adapter/2" }]
+    },
+    {
+      "name": "the history format",
+      "admitted": false,
+      "edits": [{ "pointer": "/format", "value": "ess-history/1" }]
+    },
+    { "name": "no format", "admitted": false, "edits": [{ "pointer": "/format", "remove": true }] },
+    { "name": "no fields", "admitted": false, "edits": [{ "pointer": "/fields", "remove": true }] },
+    {
+      "name": "fields null",
+      "admitted": false,
+      "edits": [{ "pointer": "/fields", "value": null }]
+    },
+    {
+      "name": "an unknown top-level key",
+      "admitted": false,
+      "edits": [{ "pointer": "/seed", "value": 0 }]
+    },
+    {
+      "name": "an unknown field",
+      "admitted": false,
+      "at": "fields: unknown field `retry_of`",
+      "edits": [{ "pointer": "/fields/retry_of", "value": "absent" }]
+    },
+    {
+      "name": "an undeclared required source",
+      "admitted": false,
+      "at": "fields: missing field `operation_id`",
+      "edits": [{ "pointer": "/fields/operation_id", "remove": true }]
+    },
+    {
+      "name": "an undeclared completion",
+      "admitted": false,
+      "at": "fields: missing field `completion`",
+      "edits": [{ "pointer": "/fields/completion", "remove": true }]
+    },
+    {
+      "name": "an empty pointer",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": "" } }]
+    },
+    {
+      "name": "a pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": "request/client" } }]
+    },
+    {
+      "name": "a completion pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/pointer", "value": "response/status" }]
+    },
+    {
+      "name": "an operation_id pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.operation_id",
+      "edits": [{ "pointer": "/fields/operation_id", "value": { "pointer": "correlation" } }]
+    },
+    {
+      "name": "a command pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.command",
+      "edits": [{ "pointer": "/fields/command", "value": { "pointer": "request/command" } }]
+    },
+    {
+      "name": "a subject_key pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.subject_key",
+      "edits": [{ "pointer": "/fields/subject_key", "value": { "pointer": "request/subject" } }]
+    },
+    {
+      "name": "an invoked_at pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.invoked_at",
+      "edits": [{ "pointer": "/fields/invoked_at", "value": { "pointer": "request/at_ms" } }]
+    },
+    {
+      "name": "a returned_at pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.returned_at",
+      "edits": [{ "pointer": "/fields/returned_at", "value": { "pointer": "response/at_ms" } }]
+    },
+    {
+      "name": "an outcome pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.outcome",
+      "edits": [{ "pointer": "/fields/outcome", "value": { "pointer": "response/outcome" } }]
+    },
+    {
+      "name": "a rows pointer without a leading slash",
+      "admitted": false,
+      "at": "fields.rows",
+      "edits": [{ "pointer": "/fields/rows", "value": { "pointer": "response/rows" } }]
+    },
+    {
+      "name": "a pointer that is a number",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": 5 } }]
+    },
+    {
+      "name": "a pointer that is null",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": null } }]
+    },
+    {
+      "name": "a pointer with an unknown key",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "pointer": "/a", "default": 0 } }]
+    },
+    {
+      "name": "a plain source with completion words",
+      "admitted": false,
+      "edits": [
+        { "pointer": "/fields/client", "value": { "pointer": "/a", "values": { "ok": "Returned" } } }
+      ]
+    },
+    {
+      "name": "a completion without words",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/values", "remove": true }]
+    },
+    {
+      "name": "a completion without a pointer",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/pointer", "remove": true }]
+    },
+    {
+      "name": "a completion with an unknown key",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/default", "value": "Returned" }]
+    },
+    {
+      "name": "a completion word mapped to an undeclared value",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/values/ok", "value": "returned" }]
+    },
+    {
+      "name": "a completion word mapped to null",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/values/ok", "value": null }]
+    },
+    {
+      "name": "completion words as a list",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/values", "value": ["Returned"] }]
+    },
+    {
+      "name": "absent capitalised",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": "Absent" }]
+    },
+    {
+      "name": "another word for absent",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": "none" }]
+    },
+    {
+      "name": "a source that is null",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": null }]
+    },
+    {
+      "name": "rows that is null",
+      "admitted": false,
+      "at": "fields.rows",
+      "edits": [{ "pointer": "/fields/rows", "value": null }]
+    },
+    {
+      "name": "a completion that is null",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion", "value": null }]
+    },
+    {
+      "name": "a bare pointer string",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": "/request/client" }]
+    },
+    {
+      "name": "absent in a list",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": ["absent"] }]
+    },
+    {
+      "name": "an empty source object",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": {} }]
+    },
+    {
+      "name": "a source that is true",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": true }]
+    },
+    {
+      "name": "the document is a list",
+      "admitted": false,
+      "edits": [{ "pointer": "", "value": [] }]
+    },
+    {
+      "name": "the document as a sequence of its fields",
+      "admitted": false,
+      "edits": [
+        {
+          "pointer": "",
+          "value": [
+            "ess-history-adapter/1",
+            {
+              "operation_id": "absent",
+              "client": "absent",
+              "command": "absent",
+              "subject_key": "absent",
+              "invoked_at": "absent",
+              "returned_at": "absent",
+              "outcome": "absent",
+              "completion": "absent"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fields as a sequence of eight sources",
+      "admitted": false,
+      "edits": [
+        {
+          "pointer": "/fields",
+          "value": ["absent", "absent", "absent", "absent", "absent", "absent", "absent", "absent"]
+        }
+      ]
+    },
+    {
+      "name": "fields as a sequence of nine sources",
+      "admitted": false,
+      "edits": [
+        {
+          "pointer": "/fields",
+          "value": [
+            "absent", "absent", "absent", "absent", "absent", "absent", "absent", "absent", "absent"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the format written as a one-key map",
+      "admitted": false,
+      "edits": [{ "pointer": "/format", "value": { "ess-history-adapter/1": null } }]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: absent written as a one-key map to null",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "absent": null } }]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: rows absent written as a one-key map to null",
+      "admitted": false,
+      "at": "fields.rows",
+      "edits": [{ "pointer": "/fields/rows", "value": { "absent": null } }]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: the completion absent written as a one-key map to null",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion", "value": { "absent": null } }]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: a completion value written as a one-key map to null",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [
+        { "pointer": "/fields/completion/values/ok", "value": { "Returned": null } },
+        { "pointer": "/fields/completion/values/timeout", "value": { "Indeterminate": null } }
+      ]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: a pointer as a sequence of its one field",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": ["/request/client"] }]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: a completion as a sequence of its two fields",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [
+        { "pointer": "/fields/completion", "value": ["/response/status", { "ok": "Returned" }] }
+      ]
+    },
+    {
+      "name": "undeclared, admitted only through serde's untagged buffer: both forms at once",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [
+        {
+          "pointer": "/fields/completion",
+          "value": ["/response/status", { "ok": { "Returned": null } }]
+        }
+      ]
+    },
+    {
+      "name": "absent as a one-key map to an empty object",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "absent": {} } }]
+    },
+    {
+      "name": "absent as a one-key map to an empty list",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "absent": [] } }]
+    },
+    {
+      "name": "absent as a one-key map to a string",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "absent": "absent" } }]
+    },
+    {
+      "name": "absent as a map with a second key",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "absent": null, "pointer": "/a" } }]
+    },
+    {
+      "name": "absent capitalised, as a one-key map",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": { "Absent": null } }]
+    },
+    {
+      "name": "a completion value as a one-key map to an undeclared value",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/values/ok", "value": { "returned": null } }]
+    },
+    {
+      "name": "a completion value as a map of both values",
+      "admitted": false,
+      "edits": [
+        {
+          "pointer": "/fields/completion/values/ok",
+          "value": { "Returned": null, "Indeterminate": null }
+        }
+      ]
+    },
+    {
+      "name": "completion words as a sequence of pairs",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion/values", "value": [["ok", "Returned"]] }]
+    },
+    {
+      "name": "a pointer as a sequence of two",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": ["/a", "/b"] }]
+    },
+    {
+      "name": "a pointer as an empty sequence",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": [] }]
+    },
+    {
+      "name": "a pointer as a sequence, without a leading slash",
+      "admitted": false,
+      "at": "fields.client",
+      "edits": [{ "pointer": "/fields/client", "value": ["request/client"] }]
+    },
+    {
+      "name": "a completion as a sequence of its pointer only",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion", "value": ["/a"] }]
+    },
+    {
+      "name": "a completion as a sequence of three",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion", "value": ["/a", {}, "/b"] }]
+    },
+    {
+      "name": "a completion as a sequence in the wrong order",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion", "value": [{ "ok": "Returned" }, "/a"] }]
+    },
+    {
+      "name": "a completion as a sequence with an undeclared value",
+      "admitted": false,
+      "at": "fields.completion",
+      "edits": [{ "pointer": "/fields/completion", "value": ["/a", { "ok": "returned" }] }]
+    }
+  ]
+}
