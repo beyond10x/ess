@@ -277,8 +277,9 @@ The same precedence holds on a command that only addresses an existing record (`
 witnesses both halves of it (beyond10x/ess#209). The refusal's own scenario sends the refused
 input for an identity nothing stored, as before. It then creates the record through a declared
 creation, the same arrangement the accepting branch gets, drives it to a state the command runs
-from, sends the refused input for it, and requires the error, no event and the row unchanged. A
-target that looks the record up before it checks the input fails the first half; a target that
+from, sends the refused input for it, and requires the error and no event. It also requires the
+row unchanged, but only where an identity view shows the row: with no such view nothing reads the
+row back, and the half makes no claim about it. A target that looks the record up before it checks the input fails the first half; a target that
 checks the input only for unknown records fails the second. If no arrangement reaches that
 record, synthesis withdraws the scenario and refuses it with the arrangement's cause. It is not
 filed to be skipped at run time. Three cases keep their own families: a refusal whose guard reads

@@ -388,9 +388,8 @@ fn issue_209_a_target_writing_the_stored_row_on_refusal_fails() {
     // `missing-configuration` is refused for `issuer == ""`, and nothing but `Configure` writes
     // `issuer`, so the arranged row already holds whatever the target starts it with. Writing
     // `""` over it is invisible to any suite. Only `secret-too-short` carries an issuer that differs.
-    for id in [SECRET] {
-        assert!(failed.contains_key(id), "{id} passed: {failed:#?}");
-    }
+    let id = SECRET;
+    assert!(failed.contains_key(id), "{id} passed: {failed:#?}");
 }
 
 #[test]
