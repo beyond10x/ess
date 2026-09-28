@@ -374,6 +374,17 @@ The document is specified in `models/concurrent-history/` and published as
 `ess-history-adapter/1`, introduced in [0.39.0][r39], maps each field of a JSON Lines call log to a
 JSON pointer or declares it `absent`, for `ess verify conform import-history`.
 
+## `ess-mutation-report/` and `ess-mutation-manifest/` — the mutation audit
+
+`ess-mutation-report/1`, introduced in [0.34.0][r34], is what `ess verify conform mutate` writes.
+`ess-mutation-manifest/1`, introduced in [0.37.0][r37], is what `--emit` writes and `--collect` reads.
+
+`ess-mutation-report/2` and `ess-mutation-manifest/2` are in the current source and in no release
+yet. The report adds the `unwitnessed` verdict (`ESS-MUTATE-004`) with each mutant's
+`added_refusals`, each mutant's `excluded` scenarios, and the baseline's `not_scored` list; a
+baseline scenario reported `unsupported` or `skipped` is no longer red. The manifest adds each
+suite's `refused` list. `--collect` still reads a `/1` manifest and judges gained refusals by count.
+
 ## Still at version 1
 
 Never revised, and a document that claims a higher number is refused:

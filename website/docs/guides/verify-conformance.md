@@ -298,6 +298,18 @@ transition sent to another state is stillborn wherever its old arrival state has
 (`ESS-COMMAND-007`). A stillborn mutant says something about the operator, not about the suite, and
 does not change the exit status.
 
+A mutant can make one of its own outcomes unsatisfiable, so synthesis refuses that outcome's
+scenario and the mutant's suite is the baseline's minus it. Such a mutant is *unwitnessed*
+(`ESS-MUTATE-004`) unless a scenario still kills it: what it changed has no scenario, so the rest
+passing is not a survivor. Its entry lists each refusal it added, by code and scenario, and so does
+the entry of a killed mutant that added one.
+
+The baseline is red only when a scenario failed or ended `error`. A scenario the target reports
+`unsupported`, or the runner `skipped`, is listed as not scored, and every mutant is scored on the
+scenarios the baseline executed; a mutant scenario the baseline did not execute is excluded and
+listed on the mutant. A scenario new to a mutant's suite is scored. A baseline that executed nothing
+scores nothing.
+
 **A survivor is not answered by authoring a scenario.** An authored scenario's expectations are its
 author's, not the model's, so it runs identically in every mutant's suite and can never kill one;
 `mutate` runs none. Answer a survivor by declaring what makes the rule observable, such as a view
@@ -307,11 +319,11 @@ projecting the field a `sets` entry writes, or by filing a synthesis gap.
 |---|---|
 | 0 | The baseline passed, at least one mutant ran, and every mutant that ran was killed. |
 | 1 | The specification did not load, or at least one mutant survived. |
-| 3 | `ESS-MUTATE-001` (the unmutated suite did not pass), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant inconclusive, or every mutant stillborn. |
+| 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive, or every mutant stillborn. |
 
-The text output prints one summary line, then survivors, inconclusive, stillborn and killed
-mutants, one line each. `--report-out` writes an
-[`ess-mutation-report/1`](../reference/formats.md#change-and-conformance-records) document, and
+The text output prints one summary line, then the baseline scenarios not scored, then survivors,
+unwitnessed, inconclusive, stillborn and killed mutants, one line each. `--report-out` writes an
+[`ess-mutation-report/2`](../reference/formats.md#change-and-conformance-records) document, and
 `--format json` prints the same bytes. Only the built-in targets are supported; replaying mutant
 suites in an adopter's own language is not implemented yet.
 

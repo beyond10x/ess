@@ -60,7 +60,7 @@ pub type Document = (Source, RawSpecFile);
 pub const FAMILY: &str = "MUTATE";
 
 /// The document family the audit writes.
-pub const REPORT_FORMAT: &str = "ess-mutation-report/1";
+pub const REPORT_FORMAT: &str = "ess-mutation-report/2";
 
 // ---- the classes --------------------------------------------------------------------------------
 
@@ -132,19 +132,29 @@ impl fmt::Display for MutantClass {
 /// The codes of the `MUTATE` family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MutateCode {
-    /// The baseline suite did not pass against the target, so no failure under a mutant can be
-    /// shown to be *because of* the mutant.
+    /// A baseline scenario failed or ended `error` against the target, so no failure under a
+    /// mutant can be shown to be *because of* the mutant. A scenario the target reported
+    /// `unsupported` or `skipped` is not scored rather than red.
     BaselineFailed,
     /// A mutant was refused by `assemble` or `compile`.
     Stillborn,
     /// The selected classes found no site: an audit that ran nothing and exited 0 would be a green
     /// exit that checked nothing.
     NoSite,
+    /// A mutant's suite gained synthesis refusals the baseline's does not have, and no scored
+    /// scenario failed: what the mutant changed has no scenario in its suite, so passing what is
+    /// left says nothing about it.
+    Unwitnessed,
 }
 
 impl MutateCode {
     /// Every code.
-    pub const ALL: &'static [Self] = &[Self::BaselineFailed, Self::Stillborn, Self::NoSite];
+    pub const ALL: &'static [Self] = &[
+        Self::BaselineFailed,
+        Self::Stillborn,
+        Self::NoSite,
+        Self::Unwitnessed,
+    ];
 
     /// Its stable code, derived from the variant as `RefusalCause::code` derives its own.
     pub fn code(self) -> Code {
@@ -154,6 +164,7 @@ impl MutateCode {
                 Self::BaselineFailed => 1,
                 Self::Stillborn => 2,
                 Self::NoSite => 3,
+                Self::Unwitnessed => 4,
             },
         )
     }
@@ -973,13 +984,17 @@ pub fn compile(documents: Vec<Document>, texts: &SourceMap) -> Result<EssIr, Sti
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
-    /// At least one scenario failed.
+    /// At least one scored scenario failed.
     Killed,
-    /// Every scenario passed.
+    /// Every scored scenario passed.
     Survived,
-    /// No scenario failed, and at least one ended `error` or `unsupported`: nothing contradicted
-    /// the mutant, and nobody found out.
+    /// No scored scenario failed, and at least one ended `error`, `unsupported` or `skipped`:
+    /// nothing contradicted the mutant, and nobody found out.
     Inconclusive,
+    /// `ESS-MUTATE-004`: no scored scenario failed, and the mutant's suite gained synthesis
+    /// refusals the baseline's does not have. What the mutant changed has no scenario, so what is
+    /// left passing is not a finding that the suite misses it.
+    Unwitnessed,
     /// `assemble` or `compile` refused the mutant.
     Stillborn,
 }
@@ -999,15 +1014,97 @@ impl Verdict {
         }
     }
 
+    /// The verdict of a mutant whose scored statuses are `statuses` and whose suite `gained`
+    /// synthesis refusals over the baseline's: a failure kills it whatever it gained, and
+    /// otherwise a gained refusal makes it [`Unwitnessed`](Self::Unwitnessed).
+    pub fn judge(statuses: &[Status], gained: bool) -> Self {
+        match Self::classify(statuses) {
+            Self::Killed => Self::Killed,
+            _ if gained => Self::Unwitnessed,
+            verdict => verdict,
+        }
+    }
+
     /// How it is written.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Killed => "killed",
             Self::Survived => "survived",
             Self::Inconclusive => "inconclusive",
+            Self::Unwitnessed => "unwitnessed",
             Self::Stillborn => "stillborn",
         }
     }
+}
+
+/// One synthesis refusal, as the audit tells two apart: its code, and the scenario that would
+/// have existed — or, for a refusal about no single scenario, its subject.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct RefusalKey {
+    /// The refusal's code, `ESS-SYNTH-…`.
+    pub code: String,
+    /// The scenario that would have existed; absent when the refusal is about none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario: Option<String>,
+    /// The ESS element refused; only when there is no scenario.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+}
+
+impl RefusalKey {
+    /// The key of one refusal.
+    pub fn of(refusal: &crate::Refusal) -> Self {
+        let scenario = refusal.scenario.as_ref().map(ToString::to_string);
+        Self {
+            code: refusal.code().to_string(),
+            subject: scenario.is_none().then(|| refusal.subject.to_string()),
+            scenario,
+        }
+    }
+
+    /// Exactly one of `scenario` and `subject`, or why not.
+    fn check(&self) -> Result<(), String> {
+        match (&self.scenario, &self.subject) {
+            (Some(_), None) | (None, Some(_)) => Ok(()),
+            _ => Err(format!(
+                "a refusal `{}` names exactly one of `scenario` and `subject`",
+                self.code
+            )),
+        }
+    }
+}
+
+impl fmt::Display for RefusalKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let about = self
+            .scenario
+            .as_deref()
+            .or(self.subject.as_deref())
+            .unwrap_or_default();
+        write!(f, "{} `{about}`", self.code)
+    }
+}
+
+/// Why a baseline scenario is not scored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotScoredStatus {
+    /// The target cannot expose what the scenario observes.
+    Unsupported,
+    /// The runner skipped it.
+    Skipped,
+}
+
+/// A baseline scenario the target did not execute, so no mutant is scored on it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NotScored {
+    /// The scenario.
+    pub scenario: String,
+    /// What the baseline's run reported for it.
+    pub status: NotScoredStatus,
 }
 
 // ---- the report ---------------------------------------------------------------------------------
@@ -1015,10 +1112,19 @@ impl Verdict {
 /// One mutant's entry in the report. Fields are declared in key order.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutantEntry {
+    /// The synthesis refusals the mutant's suite has and the baseline's does not, sorted; absent
+    /// when there are none, or when an `ess-mutation-manifest/1` emission names none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub added_refusals: Option<Vec<RefusalKey>>,
     /// What changed.
     pub change: String,
     /// Its class.
     pub class: MutantClass,
+    /// Scenarios of the mutant's suite not scored because the baseline's run reported the same
+    /// scenario `unsupported` or `skipped`, sorted; absent when there are none. A scenario new to
+    /// the mutant's suite is scored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub excluded: Option<Vec<String>>,
     /// `<class>/<site>`.
     pub id: String,
     /// The scenarios that failed, sorted; only on `killed`.
@@ -1042,8 +1148,10 @@ pub struct MutantEntry {
 }
 
 /// The baseline suite's size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SuiteSize {
+    /// The scenarios the target did not execute, in suite order: no mutant is scored on them.
+    pub not_scored: Vec<NotScored>,
     /// Synthesis refusals.
     pub refusals: usize,
     /// Scenarios.
@@ -1063,9 +1171,23 @@ pub struct Counts {
     pub stillborn: usize,
     /// Survived.
     pub survived: usize,
+    /// Unwitnessed.
+    pub unwitnessed: usize,
 }
 
-/// The `ess-mutation-report/1` document: keys sorted, no timestamp, so its bytes are a function of
+impl Counts {
+    fn count(&mut self, verdict: Verdict) {
+        match verdict {
+            Verdict::Killed => self.killed += 1,
+            Verdict::Survived => self.survived += 1,
+            Verdict::Inconclusive => self.inconclusive += 1,
+            Verdict::Unwitnessed => self.unwitnessed += 1,
+            Verdict::Stillborn => self.stillborn += 1,
+        }
+    }
+}
+
+/// The `ess-mutation-report/2` document: keys sorted, no timestamp, so its bytes are a function of
 /// the tree and the target.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MutationReport {
@@ -1093,12 +1215,15 @@ impl MutationReport {
         json
     }
 
-    /// One summary line, then survivors, inconclusive, stillborn and killed, one line each.
+    /// One summary line, then the baseline scenarios not scored, then survivors, unwitnessed,
+    /// inconclusive, stillborn and killed, one line each.
     pub fn render_text(&self) -> String {
         let counts = &self.counts;
+        let not_scored = &self.baseline.not_scored;
         let mut out = format!(
             "mutation audit of {} against {}: {} mutant(s), {} killed, {} survived, {} \
-             inconclusive, {} stillborn (baseline: {} scenario(s), {} refusal(s))\n",
+             inconclusive, {} stillborn, {} unwitnessed (baseline: {} scenario(s), {} \
+             refusal(s){})\n",
             self.specification,
             self.implementation,
             counts.mutants,
@@ -1106,17 +1231,35 @@ impl MutationReport {
             counts.survived,
             counts.inconclusive,
             counts.stillborn,
+            counts.unwitnessed,
             self.baseline.scenarios,
             self.baseline.refusals,
+            if not_scored.is_empty() {
+                String::new()
+            } else {
+                format!(", {} not scored", not_scored.len())
+            },
         );
+        for skipped in not_scored {
+            let status = match skipped.status {
+                NotScoredStatus::Unsupported => "unsupported",
+                NotScoredStatus::Skipped => "skipped",
+            };
+            let _ = writeln!(
+                out,
+                "not scored {}: the baseline's run reported it {status}",
+                skipped.scenario
+            );
+        }
         for verdict in [
             Verdict::Survived,
+            Verdict::Unwitnessed,
             Verdict::Inconclusive,
             Verdict::Stillborn,
             Verdict::Killed,
         ] {
             for entry in self.mutants.iter().filter(|entry| entry.verdict == verdict) {
-                let tail = match (&entry.killers, &entry.stillborn) {
+                let mut tail = match (&entry.killers, &entry.stillborn) {
                     (Some(killers), _) => {
                         let named = killers.iter().take(3).cloned().collect::<Vec<_>>();
                         format!(
@@ -1132,6 +1275,28 @@ impl MutationReport {
                     ),
                     (None, None) => String::new(),
                 };
+                if verdict == Verdict::Unwitnessed {
+                    let _ = write!(tail, " — {}", MutateCode::Unwitnessed.code());
+                    if entry.added_refusals.is_none() {
+                        let _ = write!(
+                            tail,
+                            ": {} refusal(s) against the baseline's {}",
+                            entry.refusals.unwrap_or_default(),
+                            self.baseline.refusals
+                        );
+                    }
+                }
+                if let Some(added) = &entry.added_refusals {
+                    let named: Vec<String> = added.iter().map(ToString::to_string).collect();
+                    let _ = write!(tail, "; adds {}", named.join(", "));
+                }
+                if let Some(excluded) = &entry.excluded {
+                    let _ = write!(
+                        tail,
+                        "; {} scenario(s) the baseline did not execute not scored",
+                        excluded.len()
+                    );
+                }
                 let _ = writeln!(
                     out,
                     "{} {}: {}{tail}",
@@ -1150,17 +1315,25 @@ impl MutationReport {
 /// Why an audit ran no mutant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuditRefusal {
-    /// `ESS-MUTATE-001`: the baseline suite did not pass against the target.
+    /// `ESS-MUTATE-001`: a baseline scenario failed or ended `error` against the target.
     BaselineFailed {
         /// The implementation.
         implementation: String,
-        /// Every scenario that did not pass, in suite order.
+        /// Every scenario that failed or ended `error`, in suite order.
         not_passed: Vec<String>,
     },
     /// `ESS-MUTATE-003`: the selected classes found no site.
     NoSite {
         /// The classes asked for.
         classes: Vec<MutantClass>,
+    },
+    /// The baseline executed no scenario — every one was `unsupported` or `skipped`, or the suite
+    /// holds none — so no mutant can be scored on anything.
+    NothingScored {
+        /// The implementation.
+        implementation: String,
+        /// Every baseline scenario, with what the run reported for it.
+        not_scored: Vec<NotScored>,
     },
     /// The unmutated specification does not compile.
     Unloadable(Stillborn),
@@ -1179,11 +1352,18 @@ impl AuditRefusal {
         match self {
             Self::BaselineFailed { .. } => Some(MutateCode::BaselineFailed.code()),
             Self::NoSite { .. } => Some(MutateCode::NoSite.code()),
-            Self::Unloadable(_)
+            Self::NothingScored { .. }
+            | Self::Unloadable(_)
             | Self::Admission(_)
             | Self::NoSuchSite(_)
             | Self::Uncollectable(_) => None,
         }
+    }
+
+    /// `true` when the audit ran and could conclude nothing — a refusal with a code, or a
+    /// baseline that executed nothing — rather than failing to load or read its input.
+    pub fn is_inconclusive(&self) -> bool {
+        self.code().is_some() || matches!(self, Self::NothingScored { .. })
     }
 }
 
@@ -1198,7 +1378,7 @@ impl fmt::Display for AuditRefusal {
                     f,
                     "refusal[{}]: the unmutated suite did not pass against `{implementation}`, so \
                      no scenario failing under a mutant could be shown to fail because of it; {} \
-                     scenario(s) did not pass:",
+                     scenario(s) failed or ended `error`:",
                     MutateCode::BaselineFailed.code(),
                     not_passed.len()
                 )?;
@@ -1218,6 +1398,25 @@ impl fmt::Display for AuditRefusal {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            Self::NothingScored {
+                implementation,
+                not_scored,
+            } => {
+                write!(
+                    f,
+                    "nothing scored: the unmutated suite executed no scenario against \
+                     `{implementation}`, so no mutant can be scored; {} scenario(s) not scored:",
+                    not_scored.len()
+                )?;
+                for skipped in not_scored {
+                    let status = match skipped.status {
+                        NotScoredStatus::Unsupported => "unsupported",
+                        NotScoredStatus::Skipped => "skipped",
+                    };
+                    write!(f, "\n  {} ({status})", skipped.scenario)?;
+                }
+                Ok(())
+            }
             Self::Unloadable(stillborn) => write!(
                 f,
                 "the specification does not compile: {} {}",
@@ -1236,85 +1435,274 @@ impl fmt::Display for AuditRefusal {
 
 impl std::error::Error for AuditRefusal {}
 
+// ---- scoring ------------------------------------------------------------------------------------
+
+/// What a run reported for a scenario that did not pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Seen {
+    Failed,
+    Error,
+    Unsupported,
+    Skipped,
+}
+
+impl Seen {
+    fn from_status(status: Status) -> Option<Self> {
+        match status {
+            Status::Passed => None,
+            Status::Failed => Some(Self::Failed),
+            Status::Error => Some(Self::Error),
+            Status::Unsupported => Some(Self::Unsupported),
+        }
+    }
+
+    /// As a mutant's scenario status: a skip contradicted nothing, and nobody found out.
+    fn status(self) -> Status {
+        match self {
+            Self::Failed => Status::Failed,
+            Self::Error | Self::Skipped => Status::Error,
+            Self::Unsupported => Status::Unsupported,
+        }
+    }
+}
+
+/// One suite's run: every scenario in suite order, and each that did not pass.
+struct Observed {
+    scenarios: Vec<String>,
+    not_passed: Vec<(String, Seen)>,
+}
+
+/// The synthesis refusals of one suite: always the count, and the keys where they are known.
+struct Refused {
+    count: usize,
+    keys: Option<Vec<RefusalKey>>,
+}
+
+/// The baseline, read as the ruler every mutant is measured against.
+struct Ruler {
+    /// The baseline scenarios the target reported `unsupported` or `skipped`. A mutant scenario
+    /// with one of these ids is not scored; one new to the mutant's suite still is, because a
+    /// scenario the mutant alone obliges is how a mutant that drops or adds a rule is killed.
+    unexecuted: BTreeSet<String>,
+    not_scored: Vec<NotScored>,
+    refused: Refused,
+}
+
+impl Ruler {
+    /// Refuses a baseline with a failed or `error` scenario, and one that executed nothing.
+    fn new(
+        implementation: &str,
+        observed: &Observed,
+        refused: Refused,
+    ) -> Result<Self, AuditRefusal> {
+        let red: Vec<String> = observed
+            .not_passed
+            .iter()
+            .filter(|(_, seen)| matches!(seen, Seen::Failed | Seen::Error))
+            .map(|(id, _)| id.clone())
+            .collect();
+        if !red.is_empty() {
+            return Err(AuditRefusal::BaselineFailed {
+                implementation: implementation.to_owned(),
+                not_passed: red,
+            });
+        }
+        let not_scored: Vec<NotScored> = observed
+            .not_passed
+            .iter()
+            .map(|(id, seen)| NotScored {
+                scenario: id.clone(),
+                status: if *seen == Seen::Unsupported {
+                    NotScoredStatus::Unsupported
+                } else {
+                    NotScoredStatus::Skipped
+                },
+            })
+            .collect();
+        let unexecuted: BTreeSet<String> =
+            not_scored.iter().map(|it| it.scenario.clone()).collect();
+        if observed.scenarios.iter().all(|id| unexecuted.contains(id)) {
+            return Err(AuditRefusal::NothingScored {
+                implementation: implementation.to_owned(),
+                not_scored,
+            });
+        }
+        Ok(Self {
+            unexecuted,
+            not_scored,
+            refused,
+        })
+    }
+
+    /// Scores one mutant's run into its entry: a scenario the baseline did not execute is excluded,
+    /// and a refusal the baseline does not have makes a mutant nothing killed `unwitnessed`.
+    fn judge(&self, entry: &mut MutantEntry, observed: &Observed, refused: &Refused) {
+        let statuses: Vec<Status> = observed
+            .not_passed
+            .iter()
+            .filter(|(id, _)| !self.unexecuted.contains(id))
+            .map(|(_, seen)| seen.status())
+            .collect();
+        let mut excluded: Vec<String> = observed
+            .scenarios
+            .iter()
+            .filter(|id| self.unexecuted.contains(*id))
+            .cloned()
+            .collect();
+        excluded.sort();
+        let (gained, added) = match (&self.refused.keys, &refused.keys) {
+            (Some(baseline), Some(mutant)) => {
+                let baseline: BTreeSet<&RefusalKey> = baseline.iter().collect();
+                let added: BTreeSet<&RefusalKey> = mutant
+                    .iter()
+                    .filter(|key| !baseline.contains(key))
+                    .collect();
+                let added: Vec<RefusalKey> = added.into_iter().cloned().collect();
+                (!added.is_empty(), (!added.is_empty()).then_some(added))
+            }
+            _ => (refused.count > self.refused.count, None),
+        };
+        entry.verdict = Verdict::judge(&statuses, gained);
+        if entry.verdict == Verdict::Killed {
+            let mut killers: Vec<String> = observed
+                .not_passed
+                .iter()
+                .filter(|(id, seen)| *seen == Seen::Failed && !self.unexecuted.contains(id))
+                .map(|(id, _)| id.clone())
+                .collect();
+            killers.sort();
+            entry.killers = Some(killers);
+        }
+        entry.added_refusals = added;
+        entry.excluded = (!excluded.is_empty()).then_some(excluded);
+        entry.refusals = Some(refused.count);
+        entry.scenarios = Some(observed.scenarios.len());
+    }
+
+    fn size(&self, scenarios: usize) -> SuiteSize {
+        SuiteSize {
+            not_scored: self.not_scored.clone(),
+            refusals: self.refused.count,
+            scenarios,
+        }
+    }
+}
+
 // ---- running ------------------------------------------------------------------------------------
 
 /// A suite synthesized from `ir` and run once on a fresh target.
 struct Ran {
-    statuses: Vec<(String, Status)>,
-    scenarios: usize,
-    refusals: usize,
+    observed: Observed,
+    refused: Refused,
     implementation: String,
     spec_digest: String,
 }
 
 fn run<T: ConformanceTarget>(ir: &EssIr, new_target: &impl Fn() -> T) -> Result<Ran, AuditRefusal> {
-    let (suite, refusals) = synthesized(ir);
+    let (suite, refused) = synthesized(ir);
     let admitted = AdmittedSuite::from_suite(&suite)
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
     let executed = Runner::for_suite(&suite).run_admitted(&admitted, &new_target());
     Ok(Ran {
-        statuses: executed
-            .scenarios
-            .iter()
-            .map(|result| (result.scenario.to_string(), result.status))
-            .collect(),
-        scenarios: suite.len(),
-        refusals,
+        observed: Observed {
+            scenarios: executed
+                .scenarios
+                .iter()
+                .map(|result| result.scenario.to_string())
+                .collect(),
+            not_passed: executed
+                .scenarios
+                .iter()
+                .filter_map(|result| {
+                    Seen::from_status(result.status).map(|seen| (result.scenario.to_string(), seen))
+                })
+                .collect(),
+        },
+        refused: Refused {
+            count: refused.len(),
+            keys: Some(refused),
+        },
         implementation: executed.implementation.name.clone(),
         spec_digest: suite.provenance.spec_digest.to_string(),
     })
 }
 
-/// Runs one mutant on a fresh target and says what it came to.
-pub fn evaluate<T: ConformanceTarget>(
-    documents: &[Document],
-    texts: &SourceMap,
-    mutant: &Mutant,
-    new_target: impl Fn() -> T,
-) -> Result<MutantEntry, AuditRefusal> {
-    let mutated = apply(documents, &mutant.mutation).map_err(AuditRefusal::NoSuchSite)?;
-    let entry = |verdict| MutantEntry {
+fn blank_entry(mutant: &Mutant) -> MutantEntry {
+    MutantEntry {
+        added_refusals: None,
         change: mutant.change.clone(),
         class: mutant.class,
+        excluded: None,
         id: mutant.id.clone(),
         killers: None,
         refusals: None,
         scenarios: None,
         stillborn: None,
         unscored: None,
-        verdict,
-    };
-    let ir = match compile(mutated, texts) {
-        Ok(ir) => ir,
-        Err(stillborn) => {
-            return Ok(MutantEntry {
-                stillborn: Some(stillborn),
-                ..entry(Verdict::Stillborn)
-            })
-        }
-    };
-    let ran = run(&ir, &new_target)?;
-    let statuses: Vec<Status> = ran.statuses.iter().map(|(_, status)| *status).collect();
-    let verdict = Verdict::classify(&statuses);
-    let killers = (verdict == Verdict::Killed).then(|| {
-        let mut killers: Vec<String> = ran
-            .statuses
-            .iter()
-            .filter(|(_, status)| *status == Status::Failed)
-            .map(|(id, _)| id.clone())
-            .collect();
-        killers.sort();
-        killers
-    });
-    Ok(MutantEntry {
-        killers,
-        refusals: Some(ran.refusals),
-        scenarios: Some(ran.scenarios),
-        ..entry(verdict)
+        verdict: Verdict::Stillborn,
+    }
+}
+
+/// The baseline of `documents` run on a fresh target, as the ruler [`evaluate`] measures with.
+struct BaselineRun {
+    ruler: Ruler,
+    implementation: String,
+    spec_digest: String,
+    scenarios: usize,
+}
+
+fn baseline<T: ConformanceTarget>(
+    ir: &EssIr,
+    new_target: &impl Fn() -> T,
+) -> Result<BaselineRun, AuditRefusal> {
+    let ran = run(ir, new_target)?;
+    let scenarios = ran.observed.scenarios.len();
+    Ok(BaselineRun {
+        ruler: Ruler::new(&ran.implementation, &ran.observed, ran.refused)?,
+        implementation: ran.implementation,
+        spec_digest: ran.spec_digest,
+        scenarios,
     })
 }
 
-/// The audit: a green baseline, then every mutant of `classes`, each on a fresh target.
+/// Runs one mutant on a fresh target and says what it came to, measured against the baseline of
+/// `documents` run on a fresh target of its own.
+///
+/// Refuses as [`audit`] refuses when that baseline cannot be scored against.
+pub fn evaluate<T: ConformanceTarget>(
+    documents: &[Document],
+    texts: &SourceMap,
+    mutant: &Mutant,
+    new_target: impl Fn() -> T,
+) -> Result<MutantEntry, AuditRefusal> {
+    let baseline_ir = compile(documents.to_vec(), texts).map_err(AuditRefusal::Unloadable)?;
+    let ruler = baseline(&baseline_ir, &new_target)?.ruler;
+    measure(documents, texts, mutant, &ruler, &new_target)
+}
+
+fn measure<T: ConformanceTarget>(
+    documents: &[Document],
+    texts: &SourceMap,
+    mutant: &Mutant,
+    ruler: &Ruler,
+    new_target: &impl Fn() -> T,
+) -> Result<MutantEntry, AuditRefusal> {
+    let mutated = apply(documents, &mutant.mutation).map_err(AuditRefusal::NoSuchSite)?;
+    let mut entry = blank_entry(mutant);
+    let ir = match compile(mutated, texts) {
+        Ok(ir) => ir,
+        Err(stillborn) => {
+            entry.stillborn = Some(stillborn);
+            return Ok(entry);
+        }
+    };
+    let ran = run(&ir, new_target)?;
+    ruler.judge(&mut entry, &ran.observed, &ran.refused);
+    Ok(entry)
+}
+
+/// The audit: a baseline with no failed or `error` scenario, then every mutant of `classes`, each
+/// on a fresh target and scored on the scenarios the baseline executed.
 pub fn audit<T: ConformanceTarget>(
     documents: &[Document],
     texts: &SourceMap,
@@ -1331,19 +1719,7 @@ pub fn audit<T: ConformanceTarget>(
         classes.dedup();
         return Err(AuditRefusal::NoSite { classes });
     }
-    let baseline = run(&baseline_ir, &new_target)?;
-    let not_passed: Vec<String> = baseline
-        .statuses
-        .iter()
-        .filter(|(_, status)| *status != Status::Passed)
-        .map(|(id, _)| id.clone())
-        .collect();
-    if !not_passed.is_empty() {
-        return Err(AuditRefusal::BaselineFailed {
-            implementation: baseline.implementation,
-            not_passed,
-        });
-    }
+    let baseline = baseline(&baseline_ir, &new_target)?;
 
     let mut entries = Vec::with_capacity(selected.len());
     let mut counts = Counts {
@@ -1351,20 +1727,12 @@ pub fn audit<T: ConformanceTarget>(
         ..Counts::default()
     };
     for mutant in &selected {
-        let entry = evaluate(documents, texts, mutant, &new_target)?;
-        match entry.verdict {
-            Verdict::Killed => counts.killed += 1,
-            Verdict::Survived => counts.survived += 1,
-            Verdict::Inconclusive => counts.inconclusive += 1,
-            Verdict::Stillborn => counts.stillborn += 1,
-        }
+        let entry = measure(documents, texts, mutant, &baseline.ruler, &new_target)?;
+        counts.count(entry.verdict);
         entries.push(entry);
     }
     Ok(MutationReport {
-        baseline: SuiteSize {
-            refusals: baseline.refusals,
-            scenarios: baseline.scenarios,
-        },
+        baseline: baseline.ruler.size(baseline.scenarios),
         counts,
         format: REPORT_FORMAT.to_owned(),
         implementation: baseline.implementation,
@@ -1376,8 +1744,11 @@ pub fn audit<T: ConformanceTarget>(
 
 // ---- an external target: emit, then collect -----------------------------------------------------
 
-/// The document family [`emit`] writes beside the suites and [`collect`] reads back.
-pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/1";
+/// The document family [`emit`] writes beside the suites.
+pub const MANIFEST_FORMAT: &str = "ess-mutation-manifest/2";
+/// The earlier manifest [`collect`] still reads: it names each suite's refusal count and not the
+/// refusals, so a mutant's gained refusals are judged by count alone.
+pub const MANIFEST_FORMAT_1: &str = "ess-mutation-manifest/1";
 /// The manifest's file name, at the top of the emitted directory.
 pub const MANIFEST_FILE: &str = "manifest.json";
 /// The directory the unmutated suite is written to.
@@ -1399,10 +1770,22 @@ pub struct EmittedSuite {
     pub dir: String,
     /// Synthesis refusals.
     pub refusals: usize,
+    /// Each synthesis refusal, sorted; always in `ess-mutation-manifest/2`, never in `/1`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<Vec<RefusalKey>>,
     /// Scenarios.
     pub scenarios: usize,
     /// The digest of the model the suite was synthesized from.
     pub spec_digest: String,
+}
+
+impl EmittedSuite {
+    fn refused(&self) -> Refused {
+        Refused {
+            count: self.refusals,
+            keys: self.refused.clone(),
+        }
+    }
 }
 
 /// One mutant of an emission. Fields are declared in key order.
@@ -1421,6 +1804,10 @@ pub struct EmittedMutant {
     /// Synthesis refusals of its suite; absent on a stillborn mutant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refusals: Option<usize>,
+    /// Each synthesis refusal of its suite, sorted; absent on a stillborn mutant and in
+    /// `ess-mutation-manifest/1`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<Vec<RefusalKey>>,
     /// Scenarios of its suite; absent on a stillborn mutant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenarios: Option<usize>,
@@ -1444,11 +1831,12 @@ impl EmittedMutant {
             &self.spec_digest,
             &self.stillborn,
         ) {
-            (None, None, None, None, Some(_)) => Ok(None),
+            (None, None, None, None, Some(_)) if self.refused.is_none() => Ok(None),
             (Some(dir), Some(refusals), Some(scenarios), Some(spec_digest), None) => {
                 Ok(Some(EmittedSuite {
                     dir: dir.clone(),
                     refusals,
+                    refused: self.refused.clone(),
                     scenarios,
                     spec_digest: spec_digest.clone(),
                 }))
@@ -1461,13 +1849,13 @@ impl EmittedMutant {
     }
 }
 
-/// The `ess-mutation-manifest/1` document: what [`emit`] wrote, and what [`collect`] scores.
+/// The `ess-mutation-manifest/2` document: what [`emit`] wrote, and what [`collect`] scores.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// The unmutated suite.
     pub baseline: EmittedSuite,
-    /// [`MANIFEST_FORMAT`].
+    /// [`MANIFEST_FORMAT`], or [`MANIFEST_FORMAT_1`] for a manifest an earlier release wrote.
     pub format: String,
     /// Every mutant, in byte order of id.
     pub mutants: Vec<EmittedMutant>,
@@ -1483,21 +1871,53 @@ impl Manifest {
         canonical(self)
     }
 
-    /// Reads a manifest, refusing another format, an incoherent mutant entry, or a directory that
-    /// leaves the emission.
+    /// Reads a manifest, refusing another format, an incoherent mutant entry, a suite's refusals
+    /// that `/2` omits, `/1` carries or disagree with its count, or a directory that leaves the
+    /// emission.
     pub fn from_json(text: &str) -> Result<Self, String> {
         let manifest: Self =
             serde_json::from_str(text).map_err(|error| format!("{MANIFEST_FILE}: {error}"))?;
-        if manifest.format != MANIFEST_FORMAT {
-            return Err(format!(
-                "{MANIFEST_FILE} is `{}`, not `{MANIFEST_FORMAT}`",
-                manifest.format
-            ));
-        }
+        let keyed = match manifest.format.as_str() {
+            MANIFEST_FORMAT => true,
+            MANIFEST_FORMAT_1 => false,
+            other => {
+                return Err(format!(
+                    "{MANIFEST_FILE} is `{other}`, not `{MANIFEST_FORMAT}` or \
+                     `{MANIFEST_FORMAT_1}`"
+                ))
+            }
+        };
+        let refused = |suite: &EmittedSuite| -> Result<(), String> {
+            match (&suite.refused, keyed) {
+                (None, false) => Ok(()),
+                (Some(keys), true) => {
+                    if keys.len() != suite.refusals {
+                        return Err(format!(
+                            "{MANIFEST_FILE}: `{}` counts {} refusal(s) and lists {} as `refused`",
+                            suite.dir,
+                            suite.refusals,
+                            keys.len()
+                        ));
+                    }
+                    keys.iter().try_for_each(RefusalKey::check)
+                }
+                (None, true) => Err(format!(
+                    "{MANIFEST_FILE}: `{}` has no `refused`, which `{MANIFEST_FORMAT}` requires",
+                    suite.dir
+                )),
+                (Some(_), false) => Err(format!(
+                    "{MANIFEST_FILE}: `{}` carries `refused`, which `{MANIFEST_FORMAT_1}` does not \
+                     have",
+                    suite.dir
+                )),
+            }
+        };
         contained(&manifest.baseline.dir)?;
+        refused(&manifest.baseline)?;
         for mutant in &manifest.mutants {
             if let Some(suite) = mutant.suite()? {
                 contained(&suite.dir)?;
+                refused(&suite)?;
             }
         }
         Ok(manifest)
@@ -1540,12 +1960,15 @@ fn contained(dir: &str) -> Result<(), String> {
     }
 }
 
-/// The suite `ir` obliges, synthesized as the built-in audit synthesizes it, and its refusals.
-fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, usize) {
+/// The suite `ir` obliges, synthesized as the built-in audit synthesizes it, and its refusals,
+/// sorted.
+fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, Vec<RefusalKey>) {
     let synthesis = crate::synthesize(ir);
     let mut suite = synthesis.suite;
     suite.select_fresh_format_for(ir);
-    (suite, synthesis.refusals.len())
+    let mut refused: Vec<RefusalKey> = synthesis.refusals.iter().map(RefusalKey::of).collect();
+    refused.sort();
+    (suite, refused)
 }
 
 /// Writes the suite `ir` obliges, and the model beside it, into `dir`.
@@ -1555,7 +1978,7 @@ fn emit_suite(
     files: &mut std::collections::BTreeMap<String, String>,
 ) -> Result<EmittedSuite, AuditRefusal> {
     contained(dir).map_err(AuditRefusal::NoSuchSite)?;
-    let (suite, refusals) = synthesized(ir);
+    let (suite, refused) = synthesized(ir);
     let json = suite
         .to_canonical_json()
         .map_err(|error| AuditRefusal::Admission(error.to_string()))?;
@@ -1567,7 +1990,8 @@ fn emit_suite(
     );
     Ok(EmittedSuite {
         dir: dir.to_owned(),
-        refusals,
+        refusals: refused.len(),
+        refused: Some(refused),
         scenarios: suite.len(),
         spec_digest: suite.provenance.spec_digest.to_string(),
     })
@@ -1605,6 +2029,7 @@ pub fn emit(
             dir: None,
             id: mutant.id.clone(),
             refusals: None,
+            refused: None,
             scenarios: None,
             site: mutant.mutation.site(),
             spec_digest: None,
@@ -1615,6 +2040,7 @@ pub fn emit(
                 let suite = emit_suite(&ir, &mutant.id, &mut files)?;
                 entry.dir = Some(suite.dir);
                 entry.refusals = Some(suite.refusals);
+                entry.refused = suite.refused;
                 entry.scenarios = Some(suite.scenarios);
                 entry.spec_digest = Some(suite.spec_digest);
             }
@@ -1637,9 +2063,7 @@ pub fn emit(
 /// One report, read against the suite it claims to be a run of.
 struct Scored {
     implementation: String,
-    /// Every scenario that did not pass, in the suite's order, with its status. A Go `skipped`
-    /// is read as [`Status::Error`]: the target could not answer, so nothing was contradicted.
-    not_passed: Vec<(String, Status)>,
+    observed: Observed,
 }
 
 /// Reads the report beside `suite`, or says why it cannot be scored.
@@ -1672,8 +2096,7 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
         .get("format")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    let mut statuses: std::collections::BTreeMap<String, Status> =
-        std::collections::BTreeMap::new();
+    let mut seen: std::collections::BTreeMap<String, Seen> = std::collections::BTreeMap::new();
     let implementation = match format {
         crate::evidence::STANDALONE_REPORT_FORMAT => {
             let report = crate::evidence::StandaloneConformanceReport::from_json(&text)
@@ -1689,11 +2112,12 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
             for entry in &report.failed_scenarios {
                 let (status, id) = entry.split_once(' ').unwrap_or_default();
                 let status = match status {
-                    "failed" => Status::Failed,
-                    "unsupported" => Status::Unsupported,
-                    _ => Status::Error,
+                    "failed" => Seen::Failed,
+                    "unsupported" => Seen::Unsupported,
+                    "skipped" => Seen::Skipped,
+                    _ => Seen::Error,
                 };
-                if statuses.insert(id.to_owned(), status).is_some() {
+                if seen.insert(id.to_owned(), status).is_some() {
                     return Err(format!("{report_path} lists `{id}` twice"));
                 }
             }
@@ -1703,10 +2127,10 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
             crate::CountReport::from_json(&text, &admitted)
                 .map_err(|error| format!("{report_path}: {error}"))?;
             for (category, status) in [
-                ("failed", Status::Failed),
-                ("unsupported", Status::Unsupported),
-                ("error", Status::Error),
-                ("skipped", Status::Error),
+                ("failed", Seen::Failed),
+                ("unsupported", Seen::Unsupported),
+                ("error", Seen::Error),
+                ("skipped", Seen::Skipped),
             ] {
                 let ids = value["outcomes"][category]
                     .as_array()
@@ -1714,7 +2138,7 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
                     .flatten()
                     .filter_map(serde_json::Value::as_str);
                 for id in ids {
-                    statuses.insert(id.to_owned(), status);
+                    seen.insert(id.to_owned(), status);
                 }
             }
             value["implementation"]
@@ -1730,40 +2154,44 @@ fn score(read: &impl Fn(&str) -> Option<String>, suite: &EmittedSuite) -> Result
             ))
         }
     };
-    if let Some(id) = statuses.keys().find(|id| !order.contains(id)) {
+    if let Some(id) = seen.keys().find(|id| !order.contains(id)) {
         return Err(format!(
             "{report_path} names `{id}`, which {suite_path} does not hold"
         ));
     }
     Ok(Scored {
         implementation,
-        not_passed: order
-            .into_iter()
-            .filter_map(|id| statuses.get(&id).map(|status| (id.clone(), *status)))
-            .collect(),
+        observed: Observed {
+            not_passed: order
+                .iter()
+                .filter_map(|id| seen.get(id).map(|status| (id.clone(), *status)))
+                .collect(),
+            scenarios: order,
+        },
     })
 }
 
 /// The audit's second half: every report the project's runner wrote beside an emitted suite,
-/// scored into the `ess-mutation-report/1` [`audit`] writes.
+/// scored into the `ess-mutation-report/2` [`audit`] writes.
 ///
 /// `read` answers a path relative to the emission with that file's text, or `None` when it is
-/// not there. The baseline's report must have passed, or the collection is refused with
-/// `ESS-MUTATE-001`, as [`audit`] refuses. A mutant whose report is missing, unreadable, of
-/// another suite, or answered by another implementation than the baseline's is `inconclusive`,
-/// with the reason in `unscored`: nothing contradicted it, and nobody found out.
+/// not there. A baseline report with a failed or `error` scenario is refused with
+/// `ESS-MUTATE-001`, as [`audit`] refuses; its `unsupported` and `skipped` scenarios are listed as
+/// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant whose
+/// report is missing, unreadable, of another suite, or answered by another implementation than
+/// the baseline's is `inconclusive`, with the reason in `unscored`: nothing contradicted it, and
+/// nobody found out.
 pub fn collect(read: impl Fn(&str) -> Option<String>) -> Result<MutationReport, AuditRefusal> {
     let text = read(MANIFEST_FILE)
         .ok_or_else(|| AuditRefusal::Uncollectable(format!("no {MANIFEST_FILE}")))?;
     let manifest = Manifest::from_json(&text).map_err(AuditRefusal::Uncollectable)?;
     let baseline = score(&read, &manifest.baseline)
         .map_err(|why| AuditRefusal::Uncollectable(format!("the baseline: {why}")))?;
-    if !baseline.not_passed.is_empty() {
-        return Err(AuditRefusal::BaselineFailed {
-            implementation: baseline.implementation,
-            not_passed: baseline.not_passed.into_iter().map(|(id, _)| id).collect(),
-        });
-    }
+    let ruler = Ruler::new(
+        &baseline.implementation,
+        &baseline.observed,
+        manifest.baseline.refused(),
+    )?;
 
     let mut entries = Vec::with_capacity(manifest.mutants.len());
     let mut counts = Counts {
@@ -1772,8 +2200,10 @@ pub fn collect(read: impl Fn(&str) -> Option<String>) -> Result<MutationReport, 
     };
     for mutant in &manifest.mutants {
         let mut entry = MutantEntry {
+            added_refusals: None,
             change: mutant.change.clone(),
             class: mutant.class,
+            excluded: None,
             id: mutant.id.clone(),
             killers: None,
             refusals: None,
@@ -1783,54 +2213,31 @@ pub fn collect(read: impl Fn(&str) -> Option<String>) -> Result<MutationReport, 
             verdict: Verdict::Stillborn,
         };
         if let Some(suite) = mutant.suite().map_err(AuditRefusal::Uncollectable)? {
-            entry.refusals = Some(suite.refusals);
-            entry.scenarios = Some(suite.scenarios);
             match score(&read, &suite) {
                 Ok(scored) if scored.implementation != baseline.implementation => {
+                    entry.refusals = Some(suite.refusals);
+                    entry.scenarios = Some(suite.scenarios);
                     entry.verdict = Verdict::Inconclusive;
                     entry.unscored = Some(format!(
                         "{}/{REPORT_FILE} was answered by `{}`, not the baseline's `{}`",
                         suite.dir, scored.implementation, baseline.implementation
                     ));
                 }
-                Ok(scored) => {
-                    let statuses: Vec<Status> = scored
-                        .not_passed
-                        .iter()
-                        .map(|(_, status)| *status)
-                        .collect();
-                    entry.verdict = Verdict::classify(&statuses);
-                    if entry.verdict == Verdict::Killed {
-                        let mut killers: Vec<String> = scored
-                            .not_passed
-                            .into_iter()
-                            .filter(|(_, status)| *status == Status::Failed)
-                            .map(|(id, _)| id)
-                            .collect();
-                        killers.sort();
-                        entry.killers = Some(killers);
-                    }
-                }
+                Ok(scored) => ruler.judge(&mut entry, &scored.observed, &suite.refused()),
                 Err(why) => {
+                    entry.refusals = Some(suite.refusals);
+                    entry.scenarios = Some(suite.scenarios);
                     entry.verdict = Verdict::Inconclusive;
                     entry.unscored = Some(why);
                 }
             }
         }
-        match entry.verdict {
-            Verdict::Killed => counts.killed += 1,
-            Verdict::Survived => counts.survived += 1,
-            Verdict::Inconclusive => counts.inconclusive += 1,
-            Verdict::Stillborn => counts.stillborn += 1,
-        }
+        counts.count(entry.verdict);
         entries.push(entry);
     }
     entries.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(MutationReport {
-        baseline: SuiteSize {
-            refusals: manifest.baseline.refusals,
-            scenarios: manifest.baseline.scenarios,
-        },
+        baseline: ruler.size(manifest.baseline.scenarios),
         counts,
         format: REPORT_FORMAT.to_owned(),
         implementation: baseline.implementation,
