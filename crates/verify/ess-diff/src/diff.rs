@@ -1126,6 +1126,22 @@ fn written_failure(binding: &ResolvedBinding) -> String {
         ess_compiler::ir::ResolvedFailure::Escalate { emits } => {
             format!("escalate, publishing `{}`", EventRef::from(emits))
         }
+        ess_compiler::ir::ResolvedFailure::BoundedRetry { bound } => {
+            let finals: Vec<String> = bound
+                .final_outcomes
+                .iter()
+                .map(|outcome| format!("`{outcome}`"))
+                .collect();
+            if finals.is_empty() {
+                format!("retry, {} attempts", bound.attempts)
+            } else {
+                format!(
+                    "retry, {} attempts, final {}",
+                    bound.attempts,
+                    finals.join(", ")
+                )
+            }
+        }
     }
 }
 
@@ -1801,7 +1817,7 @@ fn compare_bindings(
         });
     }
 
-    if was.failure != is.failure || was.escalation != is.escalation {
+    if was.failure != is.failure || was.escalation != is.escalation || was.retry != is.retry {
         push(BindingChange::FailureChanged {
             before: written_failure(was),
             after: written_failure(is),
@@ -2177,6 +2193,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                 "delivery",
                 "failure",
                 "escalation",
+                "retry",
             ],
         ),
         "components" => remove_keys(

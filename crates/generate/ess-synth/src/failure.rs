@@ -243,3 +243,40 @@ pub(crate) fn input_absent(
         Err(TargetFailure::new(ir, target, plan, causes))
     }
 }
+
+/// A binding with a bounded retry (ess/16, beyond10x/ess#165) is refused by every target that
+/// delivers bindings, as `Json` is. The command-line target delivers none, so it has nothing to
+/// refuse.
+///
+/// The generated retry holds the event for the next pump and counts no attempts, so it cannot stop
+/// after `attempts:` or on a `final:` refusal; emitting it would retry forever where the
+/// specification says how many times. Each binding is named rather than emitted with a meaning
+/// nobody chose.
+pub(crate) fn retry_bound(
+    ir: &ess_compiler::EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+) -> Result<(), TargetFailure> {
+    if target == Target::Clap {
+        return Ok(());
+    }
+    let causes = ir
+        .bindings()
+        .values()
+        .filter(|binding| binding.retry.is_some())
+        .map(|binding| {
+            TargetFailureCause::new(
+                TargetFailureCode::MissingRepresentation,
+                vec![format!("bindings.{}.on_failure.retry", binding.name)],
+                "this target's retry holds the event for the next pump and counts no attempts, \
+                 so it cannot stop after `attempts:` or on a `final:` refusal"
+                    .to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    if causes.is_empty() {
+        Ok(())
+    } else {
+        Err(TargetFailure::new(ir, target, plan, causes))
+    }
+}

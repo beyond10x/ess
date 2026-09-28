@@ -889,7 +889,9 @@ fn consumer(ir: &EssIr, binding: &ResolvedBinding) -> Consumer {
 fn escalates_with(ir: &EssIr, binding: &ResolvedBinding) -> Option<String> {
     match binding.on_failure() {
         ResolvedFailure::Escalate { emits } => Some(ir.event(emits).name.to_string()),
-        ResolvedFailure::Retry | ResolvedFailure::Drop => None,
+        ResolvedFailure::Retry | ResolvedFailure::Drop | ResolvedFailure::BoundedRetry { .. } => {
+            None
+        }
     }
 }
 
@@ -972,6 +974,23 @@ fn failure_means(ir: &EssIr, binding: &ResolvedBinding) -> String {
              retries it, and nobody is told, so the event's effect is lost and this specification \
              says that is acceptable"
             .to_owned(),
+        ResolvedFailure::BoundedRetry { bound } => {
+            let finals: Vec<String> = bound
+                .final_outcomes
+                .iter()
+                .map(|outcome| format!("`{outcome}`"))
+                .collect();
+            let except = if finals.is_empty() {
+                String::new()
+            } else {
+                format!(", except that {} ends it at once", finals.join(" or "))
+            };
+            format!(
+                "the invocation is retried up to {} attempts in all, the first included{except}; \
+                 after the last attempt the work is lost and nothing is published",
+                bound.attempts
+            )
+        }
     }
 }
 

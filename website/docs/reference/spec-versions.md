@@ -124,6 +124,8 @@ Under `ess/16` an actor may declare `attributes:` its credential carries, which 
 
 Under `ess/16` a view with `order_by:` may declare `paging: {page: <param>, size: <param>, first_page: 0|1, total: true|false}` (beyond10x/ess#174): two declared `Integer` parameters that slice the declared order, `size` rows starting at `(page - first_page) * size`, with the number of rows the filter admits beside them where `total: true`; a read that sends neither answers every row. The parameters `paging:` names are exempt from the refusal of a parameter no filter reads. `paging:` is refused below `ess/16` with `unsupported_format_version`. A caller-supplied filter expression is not part of it. See [paging a view](../guides/write-a-specification.md#a-view-can-be-paged).
 
+Under `ess/16` a binding may bound its retry: `on_failure: {retry: {attempts: 3, final: [<refusal>]}}` (beyond10x/ess#165). `attempts` counts invocations including the first and is at least 2; `final` names refusals of the invoked command, by outcome or by error, that end the retry at once. The block is refused below `ess/16` with `unsupported_format_version`; `on_failure: retry` written bare keeps its meaning.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -240,6 +242,8 @@ TypeScript refuse these envelopes by their version.
 The `execute_command_without_input` step (beyond10x/ess#170) is round-3 vocabulary: it invokes a command with no input document, which is not `execute_command` with `input: {}`, and a suite carrying it takes `/26` or `/27`. A target that cannot send a request without input reports the scenario `unsupported`.
 
 The `page` view expectation (beyond10x/ess#174) is round-3 vocabulary too: after a read of a paged view that sent its page and size parameters, the page holds exactly `rows` rows (at least `rows`, and at most `size`, with `at_least: true`), the answer carries a total of at least `total_at_least` where one is named, and with `follows` the page continues the one the run snapshotted before it — its rows in `follows.order_by`, none ranked before that page's last row, and none carrying that page's values in all of `follows.distinct_by`. Each claim holds on a target other users share. A suite carrying it takes `ess-conformance/26` or `/27`; the Go and TypeScript runtimes refuse both by version.
+
+A bounded retry (beyond10x/ess#165) is round-3 vocabulary too: `configure_external_outcome` may carry `times` (force the outcome on the next `times` invocations), `expect_invocation` may carry `count` (exactly that many matching invocations), and a binding scenario may be filed under the `final-failure` aspect. A suite carrying any of them takes `/26` or `/27`. A target that cannot force an outcome more than once reports the scenario `unsupported`.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

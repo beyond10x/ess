@@ -182,6 +182,7 @@ mod aggregate;
 mod caller;
 mod existence;
 mod paging;
+mod bounded_retry;
 mod related;
 mod subject_fact;
 
@@ -1028,8 +1029,8 @@ fn value_unwitnessed(
 
 /// Why one clause of a binding has no scenario.
 ///
-/// Seven shapes, and the split that matters is between the first five — a specification an author
-/// can edit — and the last two, [`PolicySilent`](Self::PolicySilent) and
+/// Ten shapes, and the split that matters is between the eight a specification author can edit
+/// and [`PolicySilent`](Self::PolicySilent) and
 /// [`DeliverySingleAttempt`](Self::DeliverySingleAttempt), which are decisions the author already
 /// made and for which the model deliberately gives nothing to observe.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1103,6 +1104,23 @@ pub enum BindingGap {
     /// [`redeliver_event`](crate::target::ConformanceTarget::redeliver_event) is never reached for
     /// it. A system all of whose bindings deliver at most once owes that method nothing.
     DeliverySingleAttempt,
+    /// The binding states a bounded retry, and every refusal of the invoked command a scenario can
+    /// force is `final`, so none can be forced on every attempt to exhaust the bound.
+    RetriedUnforcible {
+        /// The invoked command.
+        command: CommandRef,
+    },
+    /// The binding names `final` refusals, and none of them can be forced.
+    FinalUnforcible {
+        /// The invoked command.
+        command: CommandRef,
+    },
+    /// Every command that publishes the binding's event needs an arrangement that publishes it
+    /// too, so the binding would be invoked before the counted attempts begin.
+    ArrangementSetsOff {
+        /// The event the binding reacts to.
+        event: EventRef,
+    },
 }
 
 impl BindingGap {
@@ -1138,6 +1156,17 @@ impl BindingGap {
             Self::DeliverySingleAttempt => {
                 "`at_most_once` has no redelivery by design; write `at_least_once` if the transport \
                  really may deliver the event again"
+            }
+            Self::RetriedUnforcible { .. } => {
+                "declare the refusal the retry repeats `external:` and leave it out of `final:`, \
+                 which is what lets a scenario force it on every attempt"
+            }
+            Self::FinalUnforcible { .. } => {
+                "declare the final refusal `external:`, which is what lets a scenario force it"
+            }
+            Self::ArrangementSetsOff { .. } => {
+                "let some command publish the event without an arrangement that publishes it first; \
+                 an attempt count is only a count of the attempts the bound made"
             }
         }
     }
@@ -1178,6 +1207,18 @@ impl fmt::Display for BindingGap {
             Self::DeliverySingleAttempt => {
                 f.write_str("delivers at most once, which has no second delivery to observe")
             }
+            Self::RetriedUnforcible { command } => write!(
+                f,
+                "bounds its retry, and no refusal of `{command}` it retries can be forced"
+            ),
+            Self::FinalUnforcible { command } => write!(
+                f,
+                "names final refusals of `{command}`, and none of them can be forced"
+            ),
+            Self::ArrangementSetsOff { event } => write!(
+                f,
+                "counts attempts, and every way to publish `{event}` publishes it while arranging"
+            ),
         }
     }
 }
@@ -1530,7 +1571,7 @@ pub(crate) fn needs_of(
                     needs.insert(command.clone().into());
                 }
             }
-            ScenarioStep::ConfigureExternalOutcome { force } => {
+            ScenarioStep::ConfigureExternalOutcome { force, .. } => {
                 if !handles(ir, component, force.command.name()) {
                     needs.insert(force.command.clone().into());
                 }
@@ -1892,6 +1933,7 @@ fn run_as(
         // mail, so the suite injects the answer rather than inventing an input that produces it.
         invoke.push(ScenarioStep::ConfigureExternalOutcome {
             force: outcome_ref.clone(),
+            times: None,
         });
     }
     // A branch reading stored fields that names no subject of its own — a refusal — reads the one
@@ -3021,6 +3063,7 @@ fn invoke_with(
     if driver.outcome.test_strategy == TestStrategy::InjectFault {
         steps.push(ScenarioStep::ConfigureExternalOutcome {
             force: outcome_ref.clone(),
+            times: None,
         });
     }
     let supplied = supply(
@@ -7071,6 +7114,7 @@ fn from_source(
     if outcome.test_strategy == TestStrategy::InjectFault {
         steps.push(ScenarioStep::ConfigureExternalOutcome {
             force: outcome_ref.clone(),
+            times: None,
         });
     }
     steps.push(ScenarioStep::ExecuteCommand {
@@ -8340,7 +8384,12 @@ fn bindings(
                 BindingAspect::Flow => flow(ir, invoked, &trigger, &event),
                 BindingAspect::Mapping => mapping(ir, binding, invoked, &trigger, &event),
                 BindingAspect::Delivery => delivery(ir, binding, invoked, &trigger, &event),
+                BindingAspect::OnFailure if binding.retry.is_some() => {
+                    bounded_retry::exhausted(ir, binding, invoked, &trigger, &event, actors)
+                }
                 BindingAspect::OnFailure => on_failure(ir, binding, invoked, &trigger, &event),
+                // Not in `ALL`; produced below for the bindings that make the claim.
+                BindingAspect::FinalFailure => continue,
             };
             let (steps, purpose, extra) = match built {
                 Ok(built) => built,
@@ -8364,6 +8413,9 @@ fn bindings(
                 refusals,
             );
         }
+        bounded_retry::final_failure(
+            ir, binding, invoked, &trigger, &event, actors, &source, suite, refusals,
+        );
     }
 }
 
@@ -8474,6 +8526,7 @@ fn mapping(
         binding: BindingRef::new(binding.name.clone()),
         command: command.clone(),
         input,
+        count: None,
     });
 
     let text = format!(
@@ -8596,6 +8649,7 @@ fn on_failure(
     let mut steps = trigger.setup.clone();
     steps.push(ScenarioStep::ConfigureExternalOutcome {
         force: forced_ref.clone(),
+        times: None,
     });
     steps.extend(trigger.invoke.iter().cloned());
     steps.push(ScenarioStep::ExpectEvent {
@@ -8648,6 +8702,10 @@ fn on_failure(
         }
         // Refused above, before anything was forced.
         ResolvedFailure::Drop => unreachable!("`drop` is refused before the failure is forced"),
+        // Its own scenario, `bounded_retry::exhausted`, which `bindings` calls instead.
+        ResolvedFailure::BoundedRetry { .. } => {
+            unreachable!("a bounded retry is synthesized by `bounded_retry::exhausted`")
+        }
     };
     Ok((steps, clipped(&text), source))
 }

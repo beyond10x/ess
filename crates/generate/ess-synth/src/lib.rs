@@ -293,6 +293,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
     failure::input_absent(ir, &plan, target)?;
     existence::refuse(ir, &plan, target)?;
     paging::refuse(ir, &plan, target)?;
+    failure::retry_bound(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
     insert(
         &mut artifacts,

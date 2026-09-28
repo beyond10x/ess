@@ -1841,6 +1841,33 @@ fn failure_sentence(ir: &EssIr, binding: &ResolvedBinding) -> Vec<Inline> {
                  an event here would make this a notification, which is a different decision.",
             ),
         ],
+        ResolvedFailure::BoundedRetry { bound } => {
+            let mut out = vec![
+                Inline::text("When it fails it is "),
+                Inline::Strong {
+                    text: vec![Inline::text("retried")],
+                },
+                Inline::text(format!(
+                    " up to {} attempts in all, the first included",
+                    bound.attempts
+                )),
+            ];
+            if !bound.final_outcomes.is_empty() {
+                out.push(Inline::text(", except that "));
+                for (index, outcome) in bound.final_outcomes.iter().enumerate() {
+                    if index > 0 {
+                        out.push(Inline::text(" or "));
+                    }
+                    out.push(Inline::code(outcome.to_string()));
+                }
+                out.push(Inline::text(" ends it at once"));
+            }
+            out.push(Inline::text(
+                ". After the last attempt the work is lost, and nothing is published: the bound is \
+                 observable as the number of invocations of the command.",
+            ));
+            out
+        }
     }
 }
 
@@ -2761,6 +2788,9 @@ fn failure_label(ir: &EssIr, binding: &ResolvedBinding) -> String {
             format!("escalated to a person, emitting {}", ir.event(emits).name)
         }
         ResolvedFailure::Drop => "dropped: the work is lost".to_owned(),
+        ResolvedFailure::BoundedRetry { bound } => {
+            format!("retried up to {} attempts, then dropped", bound.attempts)
+        }
     }
 }
 

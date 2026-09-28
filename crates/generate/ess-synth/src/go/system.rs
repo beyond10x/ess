@@ -1119,6 +1119,7 @@ fn failure_policy(
             );
             out.push_str("\t}\n\treturn nil\n}\n");
         }
+        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
         ResolvedFailure::Drop => {
             out.push_str(
                 "\t// `drop`: a declared refusal is given up silently, because that is what the \
@@ -1205,6 +1206,7 @@ fn selection_failure_policy(
                 )
             );
         }
+        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
         ResolvedFailure::Drop => {}
         ResolvedFailure::Escalate { emits } => {
             let _ = writeln!(out, "escalation, unmet := s.obligations.{}SelectionEscalation(event, selectionFailure)\nif unmet != nil {{ return &TransportFailure{{Obligation: unmet}} }}\ns.published = append(s.published, {}{{Event: escalation}})", name::exported(source), emit.layout.system_event(emits.name()));

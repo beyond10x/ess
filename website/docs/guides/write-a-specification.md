@@ -1080,6 +1080,24 @@ reads — because a specification claiming the stronger guarantee is a claim the
 keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
 redelivery is the thing that word says will not happen.
 
+### Bound a retry
+
+`on_failure: retry` says nothing about how often. Where the count is a constant in the sender's
+code rather than a deployment setting, state it (`format: ess/16`):
+
+```yaml
+on_failure:
+  retry: {attempts: 3, final: [demo.ledger.Unknown]}
+```
+
+`attempts` counts invocations including the first, and is at least 2 — one attempt is `drop`.
+`final` names refusals of the invoked command that end the retry at once: an outcome that carries
+`error:`, by name, or the error itself. Any other failure is retried up to the bound, and after the
+last attempt the event's effect is lost. The conformance suite forces a retried `external:` refusal
+on every attempt and requires exactly `attempts` invocations, and forces a final one once and
+requires exactly one. The generated Rust, Go and Web targets refuse a bounded retry by name,
+because their retry counts no attempts.
+
 ### Read a field inside an event envelope
 
 The `ess/3` format adds bounded binding accessors. Set `format: ess/3`

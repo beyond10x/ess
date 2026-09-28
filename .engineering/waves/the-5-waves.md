@@ -112,3 +112,9 @@ remaining units, (2) upgrade `aep` to the latest release and re-install the aep 
 is current, (3) migrate the ESS store to the latest format (no gates needed for this step), (4) commit
 the store, (5) run the full local gate, (6) record the closing evidence and moves, commit, push, and
 open the PR against remote ess.
+
+## seteff dispatched late (2026-09-28)
+
+`story:set-effects-over-filtered-instances` (#167, #175) was not dispatched with wave 4. Found
+at release prep; dispatched on `eb249b6bf` with the decisions in its brief (`instances: {where:}`,
+`{count: changed}`, `affects:` with `sets:` only; atomicity out of scope). It merges after retry.

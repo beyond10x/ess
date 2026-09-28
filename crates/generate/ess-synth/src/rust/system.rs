@@ -645,6 +645,9 @@ fn system_struct(
                 used_traits.push(format!("obligations::{pascal}Escalation"));
             }
             ResolvedFailure::Retry => retries = true,
+            ResolvedFailure::BoundedRetry { .. } => {
+                unreachable!("refused by `failure::retry_bound`")
+            }
             ResolvedFailure::Drop => {}
         }
     }
@@ -1079,6 +1082,7 @@ fn delivery_arm(
                 &body,
             );
         }
+        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
         ResolvedFailure::Drop => {
             let _ = writeln!(
                 out,
@@ -1133,6 +1137,7 @@ fn selection_failure_policy(
                 variants[binding.cause.event().expect("selection event")]
             );
         }
+        ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),
         ResolvedFailure::Drop => {}
         ResolvedFailure::Escalate { emits } => {
             let _ = writeln!(out, "let escalation = self.obligations.{ident}_selection_escalation(event, &failure)?; self.published.push(SystemEvent::{}(escalation));", variants[emits]);

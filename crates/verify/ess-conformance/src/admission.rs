@@ -390,6 +390,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
     }
     Ok(())
 }
+#[allow(clippy::too_many_lines)]
 fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
     let object = value.object()?;
     let tag = object
@@ -412,6 +413,9 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
     let (required, optional): (&[&str], &[&str]) = match tag {
+        _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
+            crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
+        }
         "resolve_fixtures" => (&["step", "fixtures"], &[]),
         "expect_event_values" => (&["step", "event", "payload"], &["shape"]),
         "establish_entity" => (
@@ -475,6 +479,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             "force" | "outcome" => {
                 field.closed(&["command", "outcome"], &[])?;
             }
+            "times" | "count" => crate::bounded_retry::admit_positive(&field.raw)
+                .map_err(|reason| field.error("InvalidRepetition", reason))?,
             "input" | "params" | "subject" => values(field, major, tag == "expect_invocation")?,
             "identity" => field.payload()?,
             "fields" | "payload" | "caller" => {
@@ -530,6 +536,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::view_paging::admit_format(suite)?;
     crate::now_offset::admit_format(suite)?;
     crate::caller_values::admit_format(suite)?;
+    crate::bounded_retry::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;
