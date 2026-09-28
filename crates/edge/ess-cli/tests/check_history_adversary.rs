@@ -42,7 +42,7 @@ fn a_history_file_that_does_not_exist_is_refused_with_exit_2_not_reported_as_a_v
         "--path",
         REGISTER,
         "--history",
-        "crates/verify/ess-conformance/tests/fixtures/register/no-such-history.json",
+        "no-such-directory/no-such-history.json",
     ]);
     assert_eq!(output.status.code(), Some(2), "{}", explained(&output));
 }
@@ -54,7 +54,7 @@ fn a_specification_path_that_does_not_exist_is_refused_with_exit_2_not_reported_
         "conform",
         "check-history",
         "--path",
-        "crates/verify/ess-conformance/tests/fixtures/register/no-such-model.yaml",
+        "no-such-directory/no-such-model.yaml",
         "--history",
         NOT_LINEARIZABLE,
     ]);
