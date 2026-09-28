@@ -97,8 +97,8 @@ Left out:
 
 | unit | story | issue | worktree (managed id) | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|---|---|
-| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | correction 1 (waiting on go merge) |
-| reader | `a-reader-side-conformance-admits-reader-widening` | #191 | `ess-n-reader` | `impl/reader-side-conformance` | `~/.cache/b10x-target/ess-n-reader` | `~/.cache/ess-wave-c1/reader` | adversary 2 (head d6d073d0d) |
+| docdrift | `generated-suite-docs-say-what-the-runner-does` | #186 | `ess-n-docdrift` | `impl/generated-docs-say-what-runs` | `~/.cache/b10x-target/ess-n-docdrift` | `~/.cache/ess-wave-c1/docdrift` | adversary 2 (head ff62941c5) |
+| reader | `a-reader-side-conformance-admits-reader-widening` | #191 | `ess-n-reader` | `impl/reader-side-conformance` | `~/.cache/b10x-target/ess-n-reader` | `~/.cache/ess-wave-c1/reader` | merged (380852f06) |
 
 The full gate that was running on this branch (`fmt-check` 0, `clippy` 0, `test` in progress) was stopped at 99% disk use (13G free); it runs once, on the whole shared branch, after every unit has merged. Its build dir was deleted (disk back to 64G).
 
@@ -108,3 +108,7 @@ Coordinator decisions for #191 are in the story body (per-entry `reader: true` i
 - 13:57 reader: adversary pass 1 red (9/12; F1 Json-as-map, F2 wire-name collision of extra fields — blockers; F3 /2 reader: null; F4 subset vs closed generated types; F5 docs), recorded review-result:adversary-n-reader-pass-1; story Design 1, 5, 6 revised; correction 1 to the same implementor.
 - 13:59 docdrift: adversary pass 1 red (F1 duplicate Running it section, F2 hard-coded version sets break against the merged runtimes — blockers; F3 run instructions for refused versions; F4 guide; F5 help; F6 TS message). Recorded review-result:adversary-n-docdrift-pass-1. Correction 1 waits for the go unit to merge; the coordinator then merges integrate/ess-next into impl/generated-docs-say-what-runs so the fix is made against the merged runtimes.
 - 14:06 reader: correction 1 green (ess-composition 69→70, adversary 12/12), committed d6d073d0d; 5 outcomes fixed; adversary pass 2 dispatched.
+- 14:10 docdrift: Outcome-comment patches applied on integrate/ess-next (c4ffd7d36); integrate/ess-next merged into impl/generated-docs-say-what-runs (46cfd5023); correction 1 to the same implementor.
+- 14:13 reader: adversary pass 2 red on 2 over-refusal notes only (no admission of a rejecting consumer) — pass 1: 5 → pass 2: 2; recorded review-result:adversary-n-reader-pass-2; both deferred to story:reader-conformance-over-refusals (outcome no-op); the two cases pinned to today's refusal before merge.
+- 14:14 reader: two over-refusals pinned (ess-composition 70→85), committed 5994d2b00; VERIFIED; merged as 380852f06.
+- 14:28 docdrift: correction 1 green (ess-conformance 1374 passed, 0 failed), committed ff62941c5; 6 outcomes fixed; adversary pass 2 dispatched. Behaviour change: emit refuses a suite version the emitted runtime does not admit. Left: ess-cli coverage.rs:160 message still says suite/8 and /9 (not in scope).
