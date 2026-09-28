@@ -105,7 +105,7 @@ use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate, TextOp};
-use ess_primitives::time::Rfc3339Instant;
+use ess_primitives::time::{CurrentTime, Rfc3339Instant};
 
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
 ///
@@ -1986,7 +1986,13 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool)
             }
         }
         Leaf::Timestamp => {
-            let texts: Vec<&str> = literals.iter().filter_map(FactValue::as_text).collect();
+            let (current, texts): (Vec<&str>, Vec<&str>) = literals
+                .iter()
+                .filter_map(FactValue::as_text)
+                .partition(|text| CurrentTime::parse(text).is_some());
+            for value in current_time_alternatives(&current) {
+                push(value);
+            }
             for text in &texts {
                 push(Node::Text((*text).to_owned()));
             }
@@ -2013,6 +2019,30 @@ fn alternatives(leaf: &Leaf, base: &Node, literals: &[FactValue], ordered: bool)
         Leaf::Enum { variants } => {
             for variant in variants {
                 push(Node::Text(variant.clone()));
+            }
+        }
+    }
+    values
+}
+
+/// The instants a `Timestamp` compared with the current time is tried at (beyond10x/ess#171): a
+/// second either side of each boundary, against the reference instant synthesis decides such a
+/// guard at ([`crate::now_offset::reference`]), and never the boundary itself.
+///
+/// The boundary is what a latency flips: `starts_at >= now` holds of an input sent at the moment it
+/// names only if the target reads its clock at that same moment, and never does. A second inside
+/// and a second outside decide the same way for any target that handles the request within a
+/// second of its being sent. The operand's text itself is no instant and is never tried.
+fn current_time_alternatives(literals: &[&str]) -> Vec<Node> {
+    let reference = crate::now_offset::reference();
+    let mut values = Vec::new();
+    for literal in literals {
+        let Some(boundary) = CurrentTime::parse(literal).and_then(|now| now.at(reference)) else {
+            continue;
+        };
+        for step in [-1, 1] {
+            if let Some(moved) = boundary.plus_seconds(step) {
+                values.push(Node::Text(moved.to_rfc3339()));
             }
         }
     }

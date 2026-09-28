@@ -431,6 +431,11 @@ pub enum LoweringCode {
     /// An `input_absent:` branch (ess/16): the answer for a request with no input at all. An absent
     /// request body is a transport fact entity-core never sees, so it has no definition for it.
     InputAbsentUnsupported,
+    /// A command guard orders a `Timestamp` against the current time (`starts_at < now - 60s`,
+    /// ess/16), and entity-core has no clock operand: it reads the clock at the edge and hands it
+    /// in as an argument, so a lowered `before` against the text `now - 60s` would be `Unknown`
+    /// for every request.
+    CurrentTimeUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -566,6 +571,17 @@ impl Projector<'_> {
             predicate,
             at,
         );
+        for path in &checked.current_time {
+            self.diagnostic(
+                LoweringCode::CurrentTimeUnsupported,
+                at,
+                format!(
+                    "`{predicate}` orders `{path}` against the current time, and Entity Runtime \
+                     has no clock operand: entity-core reads the clock at the edge and takes it as \
+                     an argument, so a lowered rule would be Unknown for every request"
+                ),
+            );
+        }
         for read in checked.reads {
             if read.resolution.access.text_length {
                 self.diagnostic(

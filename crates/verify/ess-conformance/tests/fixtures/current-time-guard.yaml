@@ -1,0 +1,46 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.jobs
+summary: Jobs scheduled for a start time that may not lie too far in the past.
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: starts_at, type: Timestamp}
+    lifecycle: {initial: Scheduled, states: [Scheduled], terminal: [Scheduled], transitions: []}
+actors:
+  - {name: demo.jobs.Clerk, may: [demo.jobs.ScheduleJob]}
+errors:
+  - name: demo.jobs.StartInPast
+    summary: The start time is more than 60 seconds in the past.
+    fields: []
+commands:
+  - name: demo.jobs.ScheduleJob
+    input:
+      - {name: starts_at, type: Timestamp}
+    outcomes:
+      - name: start-in-past
+        when: starts_at < now - 60s
+        error: demo.jobs.StartInPast
+      - name: scheduled
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {starts_at: input.starts_at}
+        emits: [demo.jobs.JobScheduled]
+        payload:
+          demo.jobs.JobScheduled: {job_id: {generated: true}, starts_at: input.starts_at}
+events:
+  - name: demo.jobs.JobScheduled
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: starts_at, type: Timestamp}
+views:
+  - name: demo.jobs.JobDetails
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: starts_at, type: Timestamp}

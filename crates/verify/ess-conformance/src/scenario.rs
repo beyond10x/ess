@@ -157,6 +157,7 @@ impl ConformanceSuite {
         self.provenance.suite_version = if crate::leaf_payloads::used_by(self)
             || crate::absent_input::used_by(self)
             || crate::aggregate_delta::used_by(self)
+            || crate::now_offset::used_by(self)
         {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
@@ -1489,6 +1490,16 @@ pub enum ScenarioValue {
         /// The field of that event's payload.
         field: String,
     },
+    /// An instant `seconds` from the moment the runner first sends it in this scenario
+    /// (beyond10x/ess#171, suite/26): the value a guard over the current time is witnessed with.
+    ///
+    /// The runner resolves it from its wall clock when the first step naming it runs, and every
+    /// later one with the same number in the scenario reads the same instant, so a row read back
+    /// afterwards is required to hold what was sent. [`crate::now_offset`] is the authority.
+    NowOffset {
+        /// Seconds after (before, when negative) the moment of sending.
+        seconds: i64,
+    },
 }
 
 impl ScenarioValue {
@@ -1518,7 +1529,8 @@ impl ScenarioValue {
             | Self::Instance { .. }
             | Self::Observed { .. }
             | Self::ObservedAccessor { .. }
-            | Self::ObservedSelection { .. } => None,
+            | Self::ObservedSelection { .. }
+            | Self::NowOffset { .. } => None,
         }
     }
 }

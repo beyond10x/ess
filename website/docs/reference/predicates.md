@@ -549,6 +549,40 @@ membership (`channel: [Web, Store]`), not with `>`.
 when: sku < "m"
 ```
 
+### A `Timestamp` against the current time
+
+From `format: ess/16`, a command outcome's `when:` may order a `Timestamp` input against `now`, the
+moment the implementation handles the request, moved by a whole number of seconds, minutes or hours.
+That includes the `when:` beside `when_subject_state:`, `when_state_changes:`, `when_subject:` or an
+external cause:
+
+```text
+when: starts_at < now - 60s
+when: expires_at > now + 5m
+when: {starts_at: {ge: now - 1h}}
+```
+
+`now` goes on the right of `<`, `<=`, `>` or `>=`. The offset is written `<n>s`, `<n>m` or `<n>h`
+with no leading zero; there are no days, so write `24h`. Anywhere else — an invariant, a view
+filter, a selection, a `when_subject:` predicate over stored fields — the operand is refused,
+because none of those is the guard over a request's input read while it is handled. `==` and `!=`
+against `now` are refused too: an instant is ordered against the current time, never equated with
+it. Below `ess/16` the guard is refused as
+`unsupported_format_version`. Over a `String`, `now` is still the text `now`.
+
+A generated suite witnesses such a guard a second either side of its boundary and never on it:
+`starts_at < now - 60s` is sent `now - 61s` requiring the refusal and `now - 59s` requiring the
+other branch. The suite carries each value as a `now_offset`, which the runner turns into an
+instant from the wall clock it is given when it sends the command, so a target that handles the
+request within a second decides it as required. Entity Runtime has no clock operand and refuses the
+guard (`CurrentTimeUnsupported`). A value chosen from a fixed instant the same field is also
+ordered against is sent as that instant. Synthesis refuses to witness `now` against a `Timestamp`
+inside a structure or a list element (`exists: {in: starts, as: s, that: s > now}`): a `now_offset`
+replaces a whole input field. It also refuses a field ordered against `now` and against a fixed
+instant between `2019-12-30T23:59:59Z`, the instant it decides values at, and
+`2026-09-27T00:00:00Z`: that instant lies on the other side of `now` at every run. See
+`docs/design/current-time-guards.md`.
+
 ## String operators
 
 `starts_with`, `ends_with` and `contains` test a text fact against a literal. They need

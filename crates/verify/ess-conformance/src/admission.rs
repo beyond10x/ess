@@ -282,6 +282,20 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
             "observed" => {
                 v.closed(&["kind", "event", "field"], &[])?;
             }
+            "now_offset" if major >= crate::now_offset::ORDINARY => {
+                let fields = v.closed(&["kind", "seconds"], &[])?;
+                let seconds: i64 = serde_json::from_str(&fields["seconds"].raw)
+                    .map_err(|error| v.error("InvalidNowOffset", error.to_string()))?;
+                if seconds.unsigned_abs() > crate::now_offset::MAX_SECONDS.unsigned_abs() {
+                    return Err(v.error(
+                        "InvalidNowOffset",
+                        format!(
+                            "now_offset exceeds {} seconds either way",
+                            crate::now_offset::MAX_SECONDS
+                        ),
+                    ));
+                }
+            }
             _ => return Err(v.error("UnsupportedScenarioValue", tag)),
         }
     }
@@ -509,6 +523,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;
     crate::aggregate_delta::admit_format(suite)?;
+    crate::now_offset::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;

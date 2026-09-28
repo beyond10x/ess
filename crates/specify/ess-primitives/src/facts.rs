@@ -1186,6 +1186,15 @@ pub trait FactSource {
         false
     }
 
+    /// The current time, which a `now` operand in an ordering over a declared `Timestamp` is read
+    /// against (beyond10x/ess#171, [`crate::time::CurrentTime`]).
+    ///
+    /// `None` by default: a source that is not told the time has none, and such a comparison stays
+    /// `Unknown`, as it was before the operand existed. A source wrapping another forwards it.
+    fn now(&self) -> Option<crate::time::Rfc3339Instant> {
+        None
+    }
+
     /// Whether the text at `path`, where no declared scale orders it, is ordered by its UTF-8
     /// bytes.
     ///

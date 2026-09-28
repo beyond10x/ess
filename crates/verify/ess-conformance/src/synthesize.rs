@@ -1350,6 +1350,17 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
             }),
         ));
     }
+    for (id, path, reason) in crate::now_offset::install(ir, &mut suite) {
+        suite.scenarios.remove(&id);
+        refusals.push(Refusal::about(
+            &id,
+            RefusalCause::NoWitness(WitnessGap {
+                path,
+                type_ref: "Timestamp".into(),
+                reason,
+            }),
+        ));
+    }
     suite.select_fresh_format_for(ir);
 
     Synthesis {
@@ -3214,7 +3225,7 @@ fn supply(
                 _ => match bound.get(field) {
                     Some(owner) => ScenarioValue::instance(owner.clone()),
                     None => command.fixture_inputs.get(field).map_or_else(
-                        || ScenarioValue::literal(value.clone()),
+                        || crate::now_offset::sent(command, field, value),
                         |fixture| ScenarioValue::Fixture {
                             fixture: fixture.clone(),
                         },
@@ -7064,6 +7075,9 @@ impl Bound<'_> {
     /// `<=`, the neighbour inside it for `>` and `<`.
     fn accepting(&self) -> Option<Node> {
         use ess_primitives::predicate::CompareOp;
+        if self.reads_current_time() {
+            return self.current_time_margin(true);
+        }
         match self.op {
             CompareOp::Ge | CompareOp::Le => self.stepped(0),
             CompareOp::Gt => self.stepped(1),
@@ -7076,6 +7090,9 @@ impl Bound<'_> {
     /// neighbour outside it for `>=` and `<=`.
     fn refuting(&self) -> Option<Node> {
         use ess_primitives::predicate::CompareOp;
+        if self.reads_current_time() {
+            return self.current_time_margin(false);
+        }
         match self.op {
             CompareOp::Gt | CompareOp::Lt => self.stepped(0),
             CompareOp::Ge => self.stepped(-1),
@@ -7101,6 +7118,31 @@ impl Bound<'_> {
         }
         instant
             .plus_seconds(i64::from(by))
+            .map(|moved| Node::Text(moved.to_rfc3339()))
+    }
+}
+
+impl Bound<'_> {
+    /// Whether the literal is the current-time operand (beyond10x/ess#171).
+    fn reads_current_time(&self) -> bool {
+        self.literal
+            .as_text()
+            .is_some_and(|text| ess_primitives::time::CurrentTime::parse(text).is_some())
+    }
+
+    /// For a bound against the current time, the value a second from the boundary on the side
+    /// asked for — inside it when `accepting`, outside it otherwise — and never the boundary
+    /// itself, which a latency flips: see [`crate::now_offset`].
+    fn current_time_margin(&self, accepting: bool) -> Option<Node> {
+        use ess_primitives::predicate::CompareOp;
+        let now = ess_primitives::time::CurrentTime::parse(self.literal.as_text()?)?;
+        let inside: i64 = match self.op {
+            CompareOp::Gt | CompareOp::Ge => 1,
+            CompareOp::Lt | CompareOp::Le => -1,
+            CompareOp::Eq | CompareOp::Ne => return None,
+        };
+        now.at(crate::now_offset::reference())?
+            .plus_seconds(if accepting { inside } else { -inside })
             .map(|moved| Node::Text(moved.to_rfc3339()))
     }
 }

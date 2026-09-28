@@ -104,6 +104,19 @@ use crate::target::{
 pub trait Clock {
     /// The current time, advanced by this read.
     fn now(&mut self) -> Timestamp;
+
+    /// The time the target's own clock is expected to read: what a `now_offset` value is resolved
+    /// against when a step first names it (beyond10x/ess#171, [`crate::now_offset`]).
+    ///
+    /// [`Self::now`] by default, which keeps a run a function of what was run: this crate reads no
+    /// clock of the machine's. But that is the runner's own measure of budgets and durations, and
+    /// [`AdvancingClock`] starts in 2023, while a guard over the current time is decided by the
+    /// implementation's clock. So a caller running a suite that carries `now_offset` values against
+    /// a target reading the machine's clock hands the runner that clock as its wall —
+    /// [`crate::now_offset::WithWall`] — and a test holding both sides fixed hands it a fixed one.
+    fn wall(&mut self) -> Timestamp {
+        self.now()
+    }
 }
 
 /// A clock that starts at a fixed instant and advances by a fixed step on every read.
@@ -460,6 +473,8 @@ impl<C: Clock> Runner<C> {
         run: &mut Run,
         target: &T,
     ) -> Flow {
+        let wall = &mut self.clock;
+        run.now.fix(step, || wall.wall());
         match step {
             ScenarioStep::ResolveFixtures { .. } | ScenarioStep::ExpectEventValues { .. } => {
                 fixture_step(step, run)
@@ -2385,6 +2400,8 @@ struct Run {
     /// The instants an earlier step named, so a window measured from an unmarked one is a suite
     /// defect rather than a measurement from whatever was in hand.
     marked: BTreeSet<InstantName>,
+    /// The instant each `now_offset` resolved to in this scenario (beyond10x/ess#171).
+    now: crate::now_offset::Resolved,
     seen: Vec<ObservedEvent>,
     checks: Vec<CheckResult>,
 }
@@ -2405,6 +2422,7 @@ impl Run {
             retained: BTreeMap::new(),
             established: Vec::new(),
             marked: BTreeSet::new(),
+            now: crate::now_offset::Resolved::default(),
             seen: Vec::new(),
             checks: Vec::new(),
         }
@@ -2440,6 +2458,7 @@ impl Run {
                 }
             }
             ScenarioValue::Literal { value } => Ok(value.clone()),
+            ScenarioValue::NowOffset { seconds } => self.now.get(*seconds),
             ScenarioValue::Instance { instance } => self
                 .instances
                 .get(instance)
