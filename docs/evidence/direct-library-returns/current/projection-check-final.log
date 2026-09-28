@@ -1,0 +1,8 @@
+task: [projection-check] cargo xtask generate --check
+projections are up to date
+task: [projection-check] cargo xtask schema --check
+schemas/generated/ess.schema.json: current
+task: [projection-check] cargo xtask whats-changed --check
+WHATS-CHANGED.md: 26 entries, byte-identical to changes/
+task: [projection-check] cargo xtask docs
+57 supported format versions, each with a recorded release, each named in a reference page, none called unreleased; the install walkthrough names 0.38.0; the newest release note trails it by 1

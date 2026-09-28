@@ -1825,6 +1825,7 @@ impl<'a> Resolver<'a> {
                 error,
                 refuses: outcome.refuses,
                 accepts_nothing: outcome.accepts_nothing,
+                returns: outcome.returns,
                 summary: outcome.summary.clone(),
                 refs: outcome.refs.clone(),
                 sets,

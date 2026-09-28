@@ -1,0 +1,24 @@
+   Compiling ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 8.19s
+     Running tests/direct_returns.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/direct_returns-02220fe4f762dc57)
+
+running 16 tests
+test pure_return_native_binary64_remains_explicitly_unsupported ... ok
+test pure_return_correct_literal_compiles_without_events ... ok
+test pure_return_source_requires_its_format_and_a_successful_typed_response ... ok
+test pure_return_generated_shape_is_checked_without_authored_literals ... ok
+test pure_return_generators_refuse_unsupported_execution ... ok
+test pure_return_unknown_response_coordinate_refuses_at_compile ... ok
+test pure_return_correct_literal_passes_without_events ... ok
+test pure_return_wrong_literal_fails_named_scenario ... ok
+test pure_return_coverage_and_report_retain_exact_admitted_bytes ... ok
+test pure_return_payloads_have_an_independent_lossless_resource_bound ... ok
+test pure_return_nested_presence_is_preserved_and_checked ... ok
+test pure_return_absent_field_and_extra_field_refuse ... ok
+test pure_return_complete_nested_values_preserve_order_and_duplicates ... ok
+test pure_return_json_obeys_the_same_recursive_resource_bounds ... ok
+test pure_return_legacy_suite_bytes_unchanged ... ok
+test pure_return_old_formats_refuse_before_target_effects ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

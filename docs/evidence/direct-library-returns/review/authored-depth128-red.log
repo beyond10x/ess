@@ -1,0 +1,15 @@
+
+running 1 test
+
+thread 'reviewer_authored_depth128_literal_survives_compile_and_admission' (1066864) panicked at $HOME/.cache/er-ess-release/ess-review/probe.rs:46:5:
+the documented literal depth must compile: [Refusal { origin: "depth-boundary.yaml", scenario: None, cause: Unreadable { detail: "recursion limit exceeded at line 9 column 147" } }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test reviewer_authored_depth128_literal_survives_compile_and_admission ... FAILED
+
+failures:
+
+failures:
+    reviewer_authored_depth128_literal_survives_compile_and_admission
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+

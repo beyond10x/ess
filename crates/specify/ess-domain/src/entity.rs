@@ -2308,6 +2308,7 @@ lifecycle:
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 set_effects: crate::command::SetEffects::default(),
                 summary: None,
                 refs: crate::refs::Refs::new(),

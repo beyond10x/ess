@@ -862,6 +862,9 @@ pub struct ResolvedOutcome {
     /// of the document when `false`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub accepts_nothing: bool,
+    /// The outcome returns the command's complete typed response (ess/17).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returns: bool,
     /// One line for generated documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,

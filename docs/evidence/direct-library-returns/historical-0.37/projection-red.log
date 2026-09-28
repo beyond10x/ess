@@ -1,0 +1,9 @@
+task: [projection-check] cargo xtask generate --check
+projections are up to date
+task: [projection-check] cargo xtask schema --check
+schemas/generated/ess.schema.json: current
+task: [projection-check] cargo xtask whats-changed --check
+WHATS-CHANGED.md: 25 entries, byte-identical to changes/
+task: [projection-check] cargo xtask docs
+supported format versions with no release recorded in FORMAT_RELEASES: ess/16, ess-conformance/26, ess-conformance/27
+task: Failed to run task "projection-check": exit status 1

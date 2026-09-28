@@ -1,0 +1,1366 @@
+    Blocking waiting for file lock on build directory
+   Compiling ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 39.28s
+     Running unittests src/lib.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/ess_conformance-d54b7e585015e516)
+
+running 87 tests
+test counts::tests::exact_unsigned_scalar_vectors_do_not_use_binary64 ... ok
+test decision::tests::a_decision_reads_its_two_other_cases_as_neither_satisfied_nor_the_other ... ok
+test aggregate::tests::a_decimal_spells_its_value_without_trailing_zeroes ... ok
+test counts::tests::payload_number_and_utf8_canonical_profile_is_frozen_separately_from_scalars ... ok
+test decision::tests::a_refusal_renders_the_predicate_the_command_and_every_reason ... ok
+test decision::tests::exactly_one_reason_says_another_candidate_would_help ... ok
+test evidence::tests::a_standalone_report_carries_every_field_an_adapter_needs ... ok
+test evidence::tests::report_readers_refuse_more_nonpasses_than_executed_scenarios ... ok
+test faulty::tests::a_fault_is_injected_into_the_system_that_declares_what_it_breaks ... ok
+test faulty::tests::every_fault_says_what_it_is_and_where_it_goes ... ok
+test evidence::tests::the_closed_report_round_trips_with_identical_canonical_bytes ... ok
+test faulty::tests::no_two_faults_claim_the_same_scenario ... ok
+test faulty::tests::only_the_two_faults_the_boundary_cannot_express_are_injected_in_the_implementation ... ok
+test evidence::tests::unknown_report_fields_are_refused ... ok
+test evidence::tests::report_readers_do_not_guess_a_producer_from_status_vocabulary ... ok
+test evidence::tests::report_readers_refuse_nonpass_count_and_list_disagreement ... ok
+test input::tests::a_primitive_refuses_a_node_of_the_wrong_shape_rather_than_coercing_it ... ok
+test input::tests::every_primitive_projects_to_the_one_fact_value_that_can_hold_it ... ok
+test input::tests::shape_errors_render_one_per_line_and_name_the_input_root_by_name ... ok
+test report::tests::a_quoted_input_reads_as_the_call_that_was_made ... ok
+test report::tests::a_diagnostic_answers_all_five_of_the_questions_a_failure_has_to_answer ... ok
+test go::tests::every_go_file_is_in_the_package_the_readme_names ... ok
+test report::tests::a_scenario_status_is_the_strongest_of_its_checks_and_a_contradiction_outranks_everything ... ok
+test evidence::tests::report_readers_preserve_go_producer_bytes_and_historical_nonpass_counts ... ok
+test report::tests::an_unsupported_scenario_makes_the_run_fail_rather_than_look_like_a_pass ... ok
+test go::tests::the_readme_wires_the_package_into_a_placeholder_module ... ok
+test mutate::tests::every_mutate_code_is_named_in_the_formats_reference ... ok
+test report::tests::every_check_code_has_a_distinct_name_and_a_rule_sentence ... ok
+test runner::tests::a_nested_row_binds_the_paths_a_predicate_spells ... ok
+test runner::tests::a_count_with_neither_bound_is_a_suite_defect_and_not_a_satisfied_assertion ... ok
+test runner::tests::a_count_is_the_half_of_an_ordering_claim_that_says_the_rows_were_there ... ok
+test runner::tests::a_position_in_a_view_that_declares_no_order_is_a_suite_defect ... ok
+test runner::tests::a_declared_order_is_checked_on_adjacent_rows_and_the_next_key_breaks_a_tie ... ok
+test runner::tests::a_position_names_both_ends_and_a_row_that_is_not_there_is_not_a_match ... ok
+test runner::tests::a_ranking_key_a_row_does_not_publish_is_undecidable_rather_than_out_of_order ... ok
+test runner::tests::an_empty_field_set_means_a_row_exists_and_not_that_anything_will_do ... ok
+test evidence::tests::report_readers_refuse_unknown_report_formats ... ok
+test runner::tests::a_view_that_holds_nothing_does_not_satisfy_an_invariant_by_being_empty ... ok
+test runner::tests::a_predicate_a_row_cannot_answer_is_reported_rather_than_retried ... ok
+test runner::tests::an_enum_leaf_admits_a_declared_variant_and_nothing_else_here_or_in_the_go_runtime ... ok
+test runner::tests::an_optional_leaf_is_satisfied_by_absence_and_by_null_and_is_still_checked_when_present ... ok
+test runner::tests::an_order_over_fewer_than_two_rows_holds_and_does_not_double_as_a_non_emptiness_claim ... ok
+test go::tests::the_runner_is_a_constant_and_only_the_suite_moves ... ok
+test runner::tests::the_runners_clock_advances_on_every_read_so_a_deadline_can_bound_anything ... ok
+test scenario::tests::a_declared_leaf_admits_what_its_type_admits_and_absence_only_where_the_type_permits_it ... ok
+test scenario::tests::a_purpose_is_one_line_and_says_something ... ok
+test scenario::tests::a_scenario_id_names_the_construct_it_exercises_rather_than_its_position ... ok
+test runner::tests::ids_come_from_the_suite_and_from_nothing_ambient ... ok
+test scenario::tests::a_payload_shape_round_trips_through_the_form_a_suite_is_stored_in ... ok
+test scenario::tests::a_semantic_reference_renders_the_way_the_design_writes_one ... ok
+test scenario::tests::a_scenario_id_that_names_no_construct_is_refused ... ok
+test scenario::tests::a_suite_format_from_a_later_build_is_refused_rather_than_guessed ... ok
+test scenario::tests::a_transition_ref_refuses_a_name_no_lifecycle_can_declare ... ok
+test scenario::tests::a_suite_refuses_a_second_scenario_under_one_id ... ok
+test scenario::tests::an_invariant_scenario_is_keyed_by_the_entity_and_the_branch_and_never_by_a_position ... ok
+test scenario::tests::every_binding_aspect_is_in_the_list_that_is_walked_to_produce_them ... ok
+test scenario::tests::two_scenarios_about_the_same_thing_in_the_same_way_are_one_id ... ok
+test scenario::tests::the_ids_of_a_suite_sort_the_way_a_reader_sorts_the_file ... ok
+test synthesize::aggregate::tests::each_input_has_its_own_duplicate_pattern ... ok
+test scenario::tests::every_scenario_id_reads_back_from_the_form_a_report_prints ... ok
+test synthesize::aggregate::tests::the_group_size_has_a_factor_other_than_two_and_five ... ok
+test synthesize::tests::a_refusal_names_the_construct_the_code_and_the_repair ... ok
+test synthesize::tests::every_refusal_carries_a_distinct_code_in_one_family ... ok
+test ts::tests::the_emitted_settings_are_the_settings_the_sources_are_checked_under ... ok
+test ts::tests::the_manifest_declares_the_module_system_and_the_runner_the_readme_names ... ok
+test web::tests::no_comparison_sits_in_a_text_node_mustache ... ok
+test evidence::tests::report_readers_refuse_malformed_and_unsupported_suite_versions ... ok
+test witness::tests::a_text_witness_is_its_own_path_so_two_fields_of_one_type_never_agree ... ok
+test witness::tests::an_enum_offers_every_variant_it_declares_and_the_first_one_only_once ... ok
+test witness::tests::an_ordered_timestamp_is_tried_either_side_of_each_instant ... ok
+test witness::tests::the_alternatives_for_a_number_are_the_guards_own_literals_either_side ... ok
+test witness::tests::an_integer_leaf_is_never_offered_a_fractional_candidate ... ok
+test web::tests::the_page_calls_nothing_the_player_does_not_return ... ok
+test evidence::tests::report_readers_refuse_nonpass_entries_without_a_known_nonpass_status ... ok
+test witness::tests::the_count_cap_is_one_number_in_both_widths ... ok
+test witness::tests::the_candidate_count_is_bounded_however_many_fields_a_guard_reads ... ok
+test witness::tests::two_uuid_witnesses_differ_and_neither_moves_when_a_third_field_appears ... ok
+test ts::tests::no_emitted_source_is_a_placeholder ... ok
+test ts::tests::every_typescript_source_is_under_the_root_the_compiler_is_given ... ok
+test go::tests::every_emitted_file_spells_the_grouped_commands ... ok
+test ts::tests::the_runner_is_a_constant_and_only_the_suite_moves ... ok
+test web::tests::the_page_is_specification_neutral ... ok
+test ts::tests::the_coverage_rewrite_lands_on_the_one_read_the_runner_performs ... ok
+test ts::tests::every_emitted_file_spells_the_grouped_commands ... ok
+test evidence::tests::report_readers_refuse_status_claims_that_contradict_the_list ... ok
+test evidence::tests::report_readers_preserve_rust_producer_bytes_for_every_supported_suite ... ok
+test coverage_build::tests::actual_duplicate_insertion_keeps_the_generated_survivor_and_refusal_through_execution ... ok
+
+test result: ok. 87 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/a1_timestamp_setup_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/a1_timestamp_setup_adversary-922ae99af33c4b6c)
+
+running 1 test
+test a_timestamp_invariant_is_decided_by_the_instant_in_entity_setup_not_by_its_spelling ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adversary2_connective_and_source_mutants.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary2_connective_and_source_mutants-ef17c4cae039c872)
+
+running 6 tests
+test adversary2_a_three_input_nested_guard_is_witnessed_and_its_mutants_killed ... ignored, story:witness-search-beyond-64-candidates: the witness search stops at 64 candidates for a guard over three inputs
+test adversary2_nested_stored_field_connective_is_witnessed_for_both_mutants ... ok
+test adversary2_a_changeable_literal_write_is_changed_beside_one_no_row_changes ... ok
+test adversary2_decimal_and_timestamp_boundary_mutants_are_killed ... ok
+test adversary2_nested_input_guard_connective_mutants_are_all_killed ... ok
+test adversary2_committed_generated_suites_are_still_what_synthesis_produces ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/adversary_connective_and_source_mutants.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_connective_and_source_mutants-dc8873db4dc27f64)
+
+running 9 tests
+test adversary_same_typed_sources_are_sent_apart_behind_a_stored_field_guard ... ok
+test adversary_partial_observation_requires_every_published_field ... ok
+test adversary_help_for_an_immediate_view_requirement_does_not_offer_eventual ... ok
+test adversary_three_same_typed_sources_are_sent_pairwise_apart ... ok
+test adversary_stored_field_any_guard_is_witnessed_once_per_disjunct ... ok
+test adversary_a_literal_write_is_arranged_over_another_value_on_every_path ... ok
+test adversary_count_boundary_near_zero_is_killed ... ok
+test adversary_numeric_boundary_moved_either_way_is_killed_for_every_ordering_operator ... ok
+test adversary_every_state_dropped_from_an_all_states_transition_gets_its_refusal ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/adversary_expression_pass1.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_expression_pass1-105011078fb065b4)
+
+running 4 tests
+test authored_semantic_depth_is_distinct_from_the_projection_limit ... ok
+test malformed_bound_operands_refuse_before_the_collection_projection_gap ... ok
+test authored_optional_enum_membership_rejects_later_invalid_values ... ok
+test authored_rows_preserve_scalar_controls_and_reject_aggregate_and_unprojected_reads ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adversary_guards.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_guards-807ae22c20e27f31)
+
+running 4 tests
+test adv_a_folded_view_filter_is_witnessed_on_a_case_changed_row_or_refused ... ignored, story:view-filters-witnessed-on-matching-rows: view-filter synthesis asserts only non-matching rows (pre-existing)
+test adv_a_non_ascii_fold_literal_is_tried_in_its_unicode_case_to_refute_unicode_folding ... ok
+test adv_a_stored_field_fold_is_witnessed_on_a_case_changed_row ... ok
+test adv_e6_is_witnessed_both_ways_for_every_comparable_operand_type ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/adversary_guards_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_guards_pass2-be3eb78c70449f09)
+
+running 4 tests
+test adv2_the_default_is_witnessed_on_a_one_character_change_of_the_literal ... ok
+test adv2_the_default_is_witnessed_when_every_one_character_change_is_another_member ... ok
+test adv2_a_literal_without_letters_is_witnessed_both_ways ... ok
+test adv2_some_scenario_sends_a_text_only_unicode_folding_equates_with_the_literal ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/adversary_integer_bound_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_integer_bound_pass2-7cff8f3bd3128a1d)
+
+running 3 tests
+test a_value_admitted_as_an_integer_yields_the_integer_it_was_admitted_as ... ok
+test two_declared_integers_are_not_one_value_in_an_expect_event_payload ... ok
+test every_integer_the_corpus_admits_is_one_the_generated_codec_decodes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adversary_names_pass1.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_names_pass1-330db9a9f9e682d1)
+
+running 3 tests
+test issue_143_synthesizes_the_same_suite_as_the_primitive_key ... ok
+test a_bare_underscore_operand_means_the_same_to_rust_and_to_the_browser ... ok
+test a_predicate_on_an_underscore_field_is_admitted_by_rust_and_by_the_browser ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/adversary_names_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_names_pass2-568f8ffb4e43c350)
+
+running 2 tests
+test adversary_pass2_control_a_string_keyed_fixture_compiles ... ok
+test adversary_pass2_an_authored_fixture_may_spell_the_newtype_keyed_map_the_model_admits ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adversary_response_union.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_response_union-1161714846d64b4a)
+
+running 1 test
+test actual_response_union_rejects_undeclared_members ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adversary_types_pass1.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_types_pass1-ef9382d73ee64331)
+
+running 10 tests
+test adversary_139_some_invocation_leaves_each_policy_field_absent ... ok
+test adversary_146_a_prefix_longer_than_the_length_bound_is_not_silently_witnessed ... ok
+test adversary_139_a_suite_that_writes_a_presence_key_is_at_least_suite_24 ... ok
+test adversary_139_a_synthesized_suite_fails_an_implementation_swapping_the_policies ... ok
+test adversary_139_the_declared_spelling_passes_the_synthesized_suite ... ok
+test adversary_139_the_synthesized_suite_24_is_admitted_for_execution ... ok
+test adversary_146_the_issue_repro_passes_against_an_implementation_enforcing_its_grammar ... ok
+test adversary_138_a_json_body_delivered_unchanged_passes_and_a_stringified_one_fails ... ok
+test adversary_139_the_coverage_suite_25_is_built_and_admitted ... ok
+test adversary_139_a_response_field_declared_null_when_absent_fails_an_omitted_key ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adversary_types_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/adversary_types_pass2-65f54a7ff6b22439)
+
+running 4 tests
+test adversary2_139_generated_and_defaulted_policy_fields_beside_an_input_pass_the_declared_spelling ... ok
+test adversary2_139_a_struct_member_policy_fails_an_implementation_that_omits_the_key ... ok
+test adversary2_139_a_policy_event_on_a_guarded_branch_fails_a_swapped_implementation ... ok
+test adversary2_139_a_suite_with_no_carried_policy_stays_below_suite_24 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/aggregate_optional_fields.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_optional_fields-ce0237b91e6fea20)
+
+running 11 tests
+test a_skipping_aggregate_reads_only_the_values_present ... ok
+test over_no_present_value_sum_avg_and_the_extremes_are_absent_and_the_distinct_count_is_zero ... ok
+test two_skipping_inputs_each_get_a_row_that_lacks_only_that_input ... ok
+test an_optional_key_that_scopes_nothing_else_asserts_its_null_group_as_a_floor ... ok
+test an_ungrouped_skipping_aggregate_is_witnessed_and_its_empty_read_is_absent ... ok
+test a_grouped_skipping_aggregate_is_witnessed_by_a_row_that_lacks_the_value ... ok
+test an_optional_key_beside_a_scoped_key_asserts_its_null_group_exactly ... ok
+test the_issues_ungrouped_total_is_unscoped_and_every_other_view_has_its_scenario ... ok
+test a_value_no_created_row_can_lack_is_refused_rather_than_asserted_unwitnessed ... ok
+test the_views_as_specified_pass_their_own_suite ... ok
+test every_way_of_getting_absence_wrong_fails_the_scenarios_that_witness_it ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/aggregate_optional_fields_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_optional_fields_adversary-9aec309c866e1828)
+
+running 3 tests
+test adversary_a_skipping_distinct_count_over_an_optional_key_is_zero_in_its_null_group ... ok
+test adversary_two_skipping_inputs_are_witnessed_absent_one_at_a_time ... ok
+test adversary_a_parameter_scoped_view_asserts_its_null_group_exactly ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/aggregate_optional_fields_adversary_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_optional_fields_adversary_pass2-b9bf323208704daa)
+
+running 2 tests
+test adversary_a_min_max_only_view_catches_a_target_that_drops_rows_lacking_any_skipping_input ... ok
+test adversary_three_skipping_kinds_beside_a_required_mean_and_an_optional_key_match_sql ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/aggregate_semantics.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_semantics-7e1f5cd721c7daab)
+
+running 4 tests
+test over_zero_rows_count_and_sum_are_zero_and_extremes_and_avg_are_absent ... ok
+test count_distinct_uses_the_equality_of_the_type ... ok
+test avg_rounds_to_six_places_ties_to_even ... ok
+test sum_is_exact_and_extremes_follow_the_type_order ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/aggregate_views.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_views-d497a28b89aa714f)
+
+running 19 tests
+test an_enum_only_keyed_view_is_refused_as_unscoped ... ok
+test a_filter_made_only_of_the_scoping_equality_is_refuted_through_the_out_value ... ok
+test no_row_level_scenario_reads_an_aggregate_view ... ok
+test a_mean_over_a_key_every_row_shares_is_refused_rather_than_asserted ... ok
+test an_aggregate_over_a_group_key_takes_the_keys_value ... ok
+test a_non_scoped_first_key_gets_its_own_b_row ... ok
+test a_boolean_second_key_gets_the_negated_value_and_a_one_variant_key_gets_no_row ... ok
+test a_move_that_rewrites_a_group_key_refuses_the_view ... ok
+test a_mean_is_moved_until_rounding_and_truncation_differ ... ok
+test an_ungrouped_view_is_read_twice_once_for_its_rows_and_once_empty ... ok
+test a_second_key_gets_a_row_that_differs_from_b_in_that_key ... ok
+test a_scoped_value_the_model_writes_as_a_literal_takes_the_next_suffix ... ok
+test an_explicitly_pinned_older_suite_with_an_aggregate_scenario_is_refused ... ok
+test a_parameter_read_inside_a_disjunction_is_refused_as_unwitnessed ... ok
+test the_example_yields_one_aggregate_scenario_per_view_and_selects_suite_16 ... ok
+test the_page_example_asserts_the_page_numbers ... ok
+test a_refusal_only_suite_carrying_an_aggregate_refusal_is_written_at_coverage_17 ... ok
+test an_extreme_or_mean_over_the_identity_is_refused_and_its_distinct_count_is_not ... ok
+test the_conformance_catalog_names_each_views_grouping_and_aggregates ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/aggregate_views_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_views_adversary-aab2dded99b16fb0)
+
+running 5 tests
+test min_over_a_generated_string_identity_asserts_no_invented_value ... ok
+test a_move_that_rewrites_the_group_key_leaves_no_unscoped_group_asserted ... ok
+test ignoring_a_non_scoped_first_key_merges_two_asserted_groups ... ok
+test avg_over_a_group_of_seven_separates_rounding_from_truncation ... ok
+test avg_over_the_second_input_separates_rounding_from_truncation ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/aggregate_views_mutants.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/aggregate_views_mutants-08350712e011a7f0)
+
+running 3 tests
+test the_views_as_specified_pass_their_own_suite ... ok
+test every_mutant_the_page_names_fails_the_scenarios_the_page_says_catch_it ... ok
+test the_go_lane_runs_the_suite_and_the_typescript_lane_refuses_it_before_any_callback ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.20s
+
+     Running tests/authored.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/authored-203b87fa3cc42ada)
+
+running 66 tests
+test a_halt_of_a_listing_the_model_calls_eventual_retries_because_the_model_said_so ... ok
+test a_name_a_closed_set_does_not_have_is_refused_with_the_set ... ok
+test a_domain_the_model_does_not_declare_is_refused_by_name ... ok
+test a_declared_field_nothing_supplies_is_refused_by_name ... ok
+test a_halt_after_no_rows_at_all_is_refused_rather_than_compiled ... ok
+test a_bounded_negative_that_forbids_no_event_is_refused ... ok
+test a_claim_the_timelines_own_instants_contradict_is_refused ... ok
+test a_halt_compiles_to_a_step_of_its_own_and_not_to_a_claim_about_rows ... ok
+test a_state_the_lifecycle_does_not_declare_is_refused_as_a_state_and_not_as_a_variant ... ok
+test a_predicate_reading_something_the_view_does_not_publish_is_refused ... ok
+test a_command_the_model_does_not_declare_is_refused_by_name ... ok
+test a_field_the_surface_does_not_declare_is_refused_by_name ... ok
+test a_document_that_is_not_one_is_refused_rather_than_read_as_an_empty_scenario ... ok
+test a_scenario_compiles_to_the_id_the_domain_and_the_name_make ... ok
+test a_reference_where_the_suite_compares_a_value_it_carries_is_refused ... ok
+test a_halt_stated_beside_another_claim_is_two_assertions_filed_as_one ... ok
+test a_scenario_that_runs_nothing_is_refused_rather_than_counted_as_a_check ... ok
+test adversary_entity_setup_null_identity_is_refused_at_source_validation ... ok
+test a_format_this_build_does_not_implement_is_refused_before_anything_is_read ... ok
+test a_positional_claim_takes_the_order_from_the_view_rather_than_from_the_author ... ok
+test a_halt_claimed_of_a_listing_with_no_declared_order_is_refused_by_the_code_that_already_says_so ... ok
+test a_timeline_whose_instants_do_not_ascend_is_refused ... ok
+test a_value_read_off_an_event_nothing_required_is_refused ... ok
+test a_position_in_a_view_that_declares_no_order_is_refused ... ok
+test a_view_the_model_does_not_declare_is_refused_by_name ... ok
+test a_window_that_states_other_than_one_bound_is_refused ... ok
+test an_actor_the_specification_does_not_grant_the_command_is_refused ... ok
+test a_value_the_declared_type_does_not_admit_is_refused_where_it_sits ... ok
+test an_act_cannot_open_a_window_at_its_own_instant ... ok
+test an_actor_the_model_does_not_declare_is_refused_by_name ... ok
+test an_instance_the_arrangement_does_not_declare_is_refused_by_name ... ok
+test an_instance_named_before_anything_binds_it_is_refused ... ok
+test an_event_the_model_does_not_declare_is_refused_by_name ... ok
+test a_window_measured_from_an_instant_nothing_marked_is_refused_with_the_ones_that_are ... ok
+test entity_setup_compiles_real_rows_without_a_creator_or_dummy_command ... ok
+test an_error_the_model_does_not_declare_is_refused_by_name ... ok
+test a_window_of_no_seconds_is_refused_rather_than_compiled_into_a_check_that_cannot_fail ... ok
+test an_outcome_the_command_does_not_declare_is_refused_with_the_ones_it_does ... ok
+test an_instance_bound_to_a_field_that_cannot_hold_an_identity_is_refused ... ok
+test an_entity_the_model_does_not_declare_is_refused_by_name ... ok
+test entity_setup_checks_collection_members_and_value_object_invariants ... ok
+test authored_aggregate_presence_keeps_026_and_valid_scalar_reads_keep_the_predicate ... ok
+test entity_setup_execution::entity_setup_direct_writers_refuse_unbounded_literals_and_assertions_before_setup ... ok
+test an_assertion_that_states_other_than_one_claim_is_refused ... ok
+test an_elapsed_claim_compiles_to_the_four_steps_that_carry_it_and_they_come_before_the_act ... ok
+test authored_predicate_operand_errors_have_their_own_refusal ... ok
+test entity_setup_checks_union_tags_payloads_and_nested_struct_invariants ... ok
+test entity_setup_holds_a_text_to_its_declared_alphabet ... ok
+test entity_setup_execution::entity_setup_manual_suite_refuses_duplicates_and_setup_only_before_target ... ok
+test entity_setup_requires_valid_complete_nonduplicate_declared_state ... ok
+test entity_setup_invariant_unknown_refuses_and_identity_namespace_is_qualified ... ok
+test entity_setup_execution::adversary_entity_setup_cannot_pass_by_asserting_a_pre_setup_snapshot ... ok
+test the_order_the_files_are_handed_over_in_does_not_reach_the_result ... ok
+test the_steps_are_the_vocabulary_a_generated_scenario_already_uses ... ok
+test the_committed_billing_suite_holds_the_authored_scenario_beside_the_generated_ones ... ok
+test one_name_for_two_instants_is_refused_rather_than_read_as_the_later_one ... ok
+test two_files_naming_one_scenario_are_refused_rather_than_one_displacing_the_other ... ok
+test two_compilations_of_one_file_produce_identical_bytes ... ok
+test every_cause_is_reachable_from_a_document ... ok
+test entity_setup_execution::entity_setup_target_storage_decides_values_membership_order_and_isolation ... ok
+test coverage_builder_retains_authored_duplicate_ownership_and_original_source_bytes ... ok
+test paired_browser_emission_retains_original_input_and_checks_the_actual_model ... ok
+test independently_successful_authored_batches_are_refused_only_at_final_merge ... ok
+test rejected_authored_candidate_needs_are_proved_independently_of_an_outside_survivor ... ok
+test entity_setup_execution::adversary_entity_setup_go_cannot_pass_by_asserting_a_pre_setup_snapshot ... ok
+test entity_setup_execution::entity_setup_generated_go_reads_established_backend_rows_and_rejects_faults ... ok
+
+test result: ok. 66 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.96s
+
+     Running tests/binary64_count_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/binary64_count_adversary-618ac0be0eccd6e6)
+
+running 3 tests
+test both_fallible_runners_preserve_all_binary64_issues_before_effects ... ok
+test unified_model_issues_survive_authored_synthesis_and_web_boundaries ... ok
+test original_byte_and_serde_admission_refuse_binary64_across_all_legacy_suite_majors ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bounded_accessor.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/bounded_accessor-492eebfa31fd7529)
+
+running 13 tests
+test nominal_observation_facts_are_rechecked_at_the_persisted_boundary ... ok
+test hidden_nested_optional_whole_leaf_refuses ... ok
+test observations_use_declared_names_without_wire_alias_fallback ... ok
+test absent_traversal_and_missing_terminal_are_different ... ok
+test terminal_nested_optional_equal_target_refuses_but_deeper_target_is_observable ... ok
+test adversary_nullable_newtype_union_payload_is_unavailable_not_malformed ... ok
+test unavailable_union_branch_still_checks_its_declared_payload_kind ... ok
+test executable_accessors_select_new_suite_and_roundtrip_closed_admission ... ok
+test coverage_refusals_select_seven_and_exact_filtered_lineage_cannot_downgrade ... ok
+test adversary_go_nullable_newtype_union_payload_is_unavailable ... ok
+test generated_go_executes_accessor_admission_and_presence_faults ... ok
+test adversary_second_go_exact_canonical_escape_boundaries ... ok
+test adversary_go_accepts_rust_admitted_unicode_below_observation_byte_limit ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.74s
+
+     Running tests/clock_reading.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/clock_reading-c4f2a7a0d0baa6d6)
+
+running 7 tests
+test fresh_reading_suites_select6_and_legacy_suites_keep4 ... ok
+test standalone_suite_contract_is_not_an_adapter_certificate ... ok
+test actual_observed_offset_unix_and_local_coordinates_pass_in_the_runner ... ok
+test wrong_observed_fixed_offset_fails_the_coordinate_claim ... ok
+test persisted_reading_contract_is_closed_and_old_suite_versions_refuse_it ... ok
+test evidence_from_another_scenario_or_occurrence_fails ... ok
+test absent_or_incompatible_clock_authority_is_unsupported_never_passed ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/connective_and_source_mutants.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/connective_and_source_mutants-b2e66f75f2d17638)
+
+running 10 tests
+test a_count_boundary_is_witnessed_on_both_sides_of_the_literal ... ok
+test a_disjunctive_guard_is_witnessed_once_per_disjunct_with_the_others_false ... ok
+test a_literal_write_is_arranged_over_a_row_that_held_another_value ... ok
+test a_conjunctive_guard_is_refuted_once_per_conjunct_with_the_others_true ... ok
+test a_terminal_refusal_is_witnessed_over_the_fields_an_eventual_view_publishes ... ok
+test a_terminal_refusal_nothing_can_observe_points_at_views ... ok
+test a_sets_source_is_witnessed_apart_from_its_same_typed_siblings ... ok
+test both_connective_mutants_synthesize_a_scenario_the_unmutated_model_contradicts ... ok
+test a_count_boundary_moved_either_way_is_killed_for_every_ordering_operator ... ok
+test a_state_dropped_from_an_all_states_transition_gets_a_refusal_the_original_contradicts ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/constrained_types.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/constrained_types-13047f8599f5ba03)
+
+running 3 tests
+test a_response_carrying_a_constrained_text_is_refused_either_way ... ok
+test a_retained_response_carrying_a_constrained_text_is_refused_either_way ... ok
+test a_selection_over_an_item_with_a_constrained_text_is_refused_either_way ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/count_reports.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/count_reports-4b9c0944e4cfa81b)
+
+running 9 tests
+test legacy_runner_refuses_new_majors_before_target_identity ... ok
+test legacy_dto_is_not_original_byte_admission_and_typed_execution_still_checks_versions ... ok
+test suite_six_keeps_unknown_coverage_and_binds_report_two_to_original_bytes ... ok
+test known_complete_coverage_qualifies_actual_nonempty_passes ... ok
+test detailed_admission_checks_fields_outcome_order_and_checked_time ... ok
+test exact_bytes_profiles_partition_and_identity_cannot_be_guessed ... ok
+test suite_admission_closes_structural_variants_before_target_identity ... ok
+test new_scalar_tokens_are_exact_unsigned_in_both_surfaces ... ok
+test actual_rust_producer_pairs_preserve_categories_precedence_empty_and_high_u64 ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/count_writer_pass1.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/count_writer_pass1-549516e9d8b5c178)
+
+running 1 test
+test a_completed_run_cannot_be_rebound_to_different_admitted_original_bytes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/count_writer_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/count_writer_pass2-b521002fea4f353b)
+
+running 1 test
+test cloned_execution_binding_survives_mutation_of_extracted_legacy_diagnostics ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/coverage_admission.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/coverage_admission-964597b24e2feb35)
+
+running 7 tests
+test input_carrier_is_structural_and_cannot_mint_admission ... ok
+test complete_inventory_is_admitted_from_its_original_bytes ... ok
+test all_input_is_admitted_only_without_unused_parents ... ok
+test coverage_source_identity_is_checked_without_normalizing_it ... ok
+test coverage_integer_tokens_and_closed_fields_are_checked_before_serde ... ok
+test inventory_corruption_is_refused_at_admission ... ok
+test explicit_selection_retains_original_parents_and_refuses_direct_admission ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/coverage_writer_adversary_pass1.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/coverage_writer_adversary_pass1-1d9263070a37faec)
+
+running 2 tests
+test d1_authored_inventory_preserves_full_original_typed_refusal_rendering ... ok
+test d1_generated_inventory_preserves_full_original_typed_refusal_rendering ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/coverage_writer_adversary_pass2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/coverage_writer_adversary_pass2-e2315561f438d646)
+
+running 1 test
+test final_merge_orders_sources_and_preserves_full_d1_diagnostics_through_empty_selection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/creates_copies_input.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/creates_copies_input-ae86f052730f64f4)
+
+running 1 test
+test a_view_filtered_on_fields_the_create_copied_from_input_is_decided_without_synth_005 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/declared_behaviour.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/declared_behaviour-fa49e7d26b5a7dd7)
+
+running 13 tests
+test a_transition_scenario_asserts_the_state_it_moves_to ... ok
+test a_multi_source_transition_is_exercised_from_every_source ... ok
+test an_integer_guard_is_witnessed_at_its_literal_and_the_neighbour_across_it ... ok
+test an_update_witness_differs_from_what_the_row_already_holds ... ok
+test a_close_that_leaves_the_order_where_it_was_fails_the_transition ... ok
+test a_close_from_one_source_only_fails_the_transition ... ok
+test a_boundary_moved_past_the_literal_fails_the_success ... ok
+test an_update_that_drops_a_field_nobody_wrote_fails_it ... ok
+test a_boundary_moved_below_one_conjunct_fails_the_refusal ... ok
+test an_update_that_drops_a_field_the_setup_wrote_fails_it ... ok
+test the_specification_as_declared_passes_its_own_suite ... ok
+test the_suite_needs_no_new_vocabulary_and_every_lane_admits_it ... ok
+test an_unknown_order_answered_undeclared_fails_the_wrong_state_outcome ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/direct_returns.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/direct_returns-02220fe4f762dc57)
+
+running 16 tests
+test pure_return_native_binary64_remains_explicitly_unsupported ... ok
+test pure_return_correct_literal_compiles_without_events ... ok
+test pure_return_generated_shape_is_checked_without_authored_literals ... ok
+test pure_return_generators_refuse_unsupported_execution ... ok
+test pure_return_correct_literal_passes_without_events ... ok
+test pure_return_coverage_and_report_retain_exact_admitted_bytes ... ok
+test pure_return_unknown_response_coordinate_refuses_at_compile ... ok
+test pure_return_source_requires_its_format_and_a_successful_typed_response ... ok
+test pure_return_wrong_literal_fails_named_scenario ... ok
+test pure_return_nested_presence_is_preserved_and_checked ... ok
+test pure_return_absent_field_and_extra_field_refuse ... ok
+test pure_return_payloads_have_an_independent_lossless_resource_bound ... ok
+test pure_return_complete_nested_values_preserve_order_and_duplicates ... ok
+test pure_return_legacy_suite_bytes_unchanged ... ok
+test pure_return_json_obeys_the_same_recursive_resource_bounds ... ok
+test pure_return_old_formats_refuse_before_target_effects ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/elapsed.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/elapsed-b9b7bb1803cb6aa7)
+
+running 7 tests
+test a_deadline_the_target_ran_past_fails_the_within_claim ... ok
+test a_window_opened_at_an_instant_nothing_marked_is_a_suite_defect_and_not_a_failed_implementation ... ok
+test a_target_with_no_clock_reports_unsupported_and_the_run_fails ... ok
+test a_target_whose_clock_never_moves_fails_rather_than_being_read_as_having_waited ... ok
+test a_target_that_holds_the_window_and_reports_it_passes ... ok
+test an_event_published_inside_the_window_fails_the_bounded_negative_and_nothing_else ... ok
+test two_runs_over_one_window_produce_byte_identical_reports ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/execution.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/execution-fde080da908721ae)
+
+running 12 tests
+test an_eventual_view_is_read_again_and_a_read_your_writes_view_is_not ... ok
+test an_eventual_assertion_asks_again_within_a_deadline_and_never_sleeps ... ok
+test a_view_assertion_names_the_instance_the_scenario_created_rather_than_any_row ... ok
+test every_scenario_checked_something_and_no_family_of_them_was_silently_empty ... ok
+test a_value_of_the_wrong_declared_type_is_caught_by_the_same_check_as_a_missing_one ... ok
+test a_target_that_cannot_expose_an_observation_fails_the_run_rather_than_skipping_it ... ok
+test a_scenario_whose_input_no_longer_reaches_its_branch_fails_with_a_diagnostic_naming_the_defect ... ok
+test an_event_missing_a_field_it_declares_is_named_leaf_by_leaf_rather_than_reported_as_absent ... ok
+test a_read_your_writes_view_is_not_quietly_read_at_current_when_no_token_came_back ... ok
+test every_scenario_the_billing_specification_obliges_passes_against_the_reference_implementation ... ok
+test a_view_answered_in_the_wrong_order_fails_exactly_the_scenarios_that_assert_its_order ... ok
+test two_runs_of_one_suite_against_one_target_produce_byte_identical_reports ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/explore.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/explore-7d60ea22c01c6622)
+
+running 9 tests
+test the_packages_with_a_model_add_the_explorer_and_nothing_else_moves ... ok
+test the_emitted_ir_json_is_the_compact_ir_and_hashes_to_the_suites_digest ... ok
+test one_changed_byte_in_ir_json_is_refused_in_both_languages ... ok
+test seed_one_draws_the_pinned_outputs_in_rust_typescript_and_go ... ok
+test either_answer_to_overlapping_guards_passes_and_the_draw_is_reported_ambiguous ... ok
+test the_correct_target_passes_and_reaches_every_declared_outcome ... ok
+test an_unsupported_command_fails_unless_its_outcomes_are_explicitly_accepted ... ok
+test each_engine_mutant_is_caught_with_a_shrunk_trace_that_fails_again_under_its_seed ... ok
+test both_languages_report_the_same_result_for_every_case ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.76s
+
+     Running tests/explore_external.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/explore_external-7df106a6ab956b05)
+
+running 4 tests
+test a_double_that_arranges_external_branches_reaches_each_and_reports_it_reached ... ok
+test a_double_that_ignores_the_arrangement_is_a_disagreement_on_the_external_branch ... ok
+test a_double_that_cannot_arrange_reports_the_branches_unarrangeable_and_no_disagreement ... ok
+test both_languages_report_the_same_result_for_every_external_case ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s
+
+     Running tests/explore_external_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/explore_external_adversary-a6dccf4e0b37505e)
+
+running 2 tests
+test the_arrangement_rule_is_needed_the_mutant_that_always_offers_the_ordinary_branch_disagrees ... ok
+test an_external_branch_from_a_state_the_ordinary_branch_does_not_act_from_is_reached ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.05s
+
+     Running tests/explore_external_exits_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/explore_external_exits_adversary-8e9a9ead839ca943)
+
+running 4 tests
+test each_exit_without_an_ordinary_branch_takes_its_external_branch ... ok
+test reverting_the_no_move_state_exit_is_caught ... ok
+test a_draw_at_an_exit_whose_external_branch_cannot_be_arranged_is_reported_ambiguous ... ok
+test reverting_the_overlapping_guards_exit_is_caught ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.15s
+
+     Running tests/explore_preconditions.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/explore_preconditions-588f39aeaa0d3337)
+
+running 3 tests
+test a_refused_precondition_is_a_setup_failure_and_not_a_disagreement ... ok
+test the_model_starts_from_the_state_the_preconditions_leave ... ok
+test both_languages_report_the_same_result ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.96s
+
+     Running tests/faults.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/faults-8f507afee35315f7)
+
+running 11 tests
+test a_fault_nothing_catches_is_recorded_rather_than_quietly_dropped ... ok
+test the_diagnostic_of_a_caught_fault_names_the_defect_rather_than_reporting_that_something_broke ... ok
+test a_wrong_mapping_is_invisible_to_a_target_that_cannot_show_its_invocations ... ok
+test dropping_one_binding_leaves_the_other_two_green ... ok
+test every_fault_that_could_be_a_boundary_perturbation_is_one ... ok
+test the_widest_blast_radius_is_scenarios_that_could_not_be_arranged_rather_than_extra_verdicts ... ok
+test each_specification_is_passed_in_full_by_the_implementation_written_from_it ... ok
+test two_runs_against_one_faulty_target_produce_byte_identical_reports ... ok
+test a_faults_blast_radius_is_accounted_for ... ok
+test a_fault_does_not_simply_break_everything ... ok
+test each_fault_fails_the_scenario_that_exists_to_catch_it ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+     Running tests/field_presence.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/field_presence-5c19f3bb8078bf83)
+
+running 6 tests
+test issue_139_a_leaf_decides_null_and_absence_by_its_policy ... ok
+test an_implementation_that_swaps_the_two_policies_fails_both_leaves ... ok
+test suite_formats_24_and_25_remain_supported_and_future_versions_refuse ... ok
+test presence_is_written_only_where_declared_and_round_trips ... ok
+test a_suite_without_one_keeps_its_format ... ok
+test a_suite_with_a_presence_leaf_is_written_as_suite_24 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/field_presence_synthesized.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/field_presence_synthesized-d27fc7853065312c)
+
+running 1 test
+test issue_139_the_synthesized_shape_carries_both_policies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/field_wire_names.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/field_wire_names-cd140368aeaa01ab)
+
+running 2 tests
+test the_compiled_field_carries_the_wire_name_a_target_spells ... ok
+test issue_142_the_nested_spelling_synthesizes_the_same_suite_as_the_flat_one ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/finite_enum.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/finite_enum-6693458cba5799f2)
+
+running 24 tests
+test predicate_node_budget_is_checked_independently_of_domain_size ... ok
+test adversary_optional_container_cannot_prove_required_leaf_coverage ... ok
+test an_extra_open_input_conjunct_does_not_prove_coverage ... ok
+test optional_domain_does_not_hide_absence ... ok
+test adversary_raw_named_scalar_deferral_does_not_escape_full_validation ... ok
+test adversary_undeclared_variant_inside_membership_is_not_coverage ... ok
+test missing_variant_reports_a_real_uncovered_value ... ok
+test duplicate_guards_report_both_overlap_and_the_omitted_value ... ok
+test overlap_cannot_prove_unique_coverage ... ok
+test absence_and_null_stay_unknown_in_the_existing_evaluator ... ok
+test an_extra_enum_conjunct_has_a_concrete_uncovered_assignment ... ok
+test oversized_joint_domain_is_not_mistaken_for_complete_search ... ok
+test invariant_filter_preserves_unconstrained_candidate_order_and_bytes ... ok
+test adversary_legacy_default_wrapper_witness_respects_declared_invariant ... ok
+test a_real_default_retains_its_reachable_witness ... ok
+test transparent_wrappers_preserve_the_real_domain ... ok
+test invariant_filter_with_no_admitted_candidate_reports_zero_guard_trials ... ok
+test adversary_repeated_same_fact_is_one_correlated_domain ... ok
+test external_branch_does_not_replace_or_interfere_with_enum_coverage ... ok
+test retained_unreachable_branch_is_still_refused ... ok
+test adversary_finite_wrapper_witness_respects_declared_invariant ... ok
+test two_six_value_shapes_have_unique_executable_branch_witnesses ... ok
+test struct_paths_are_populated_by_the_same_proof_assignments ... ok
+test complete_joint_enum_domain_yields_real_witnesses ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/guarded_external.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/guarded_external-94302705af65b966)
+
+running 6 tests
+test guarded_external_rejects_untyped_guards_and_empty_causes ... ok
+test impossible_external_eligibility_refuses_a_scenario ... ok
+test eligibility_constrains_input_without_removing_fault_arrangement ... ok
+test a_finite_partition_does_not_hide_external_witness_fields ... ok
+test legacy_formats_do_not_admit_guarded_external_semantics ... ok
+test emitted_runtimes_fail_when_the_observed_outcome_ignores_the_fault ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.73s
+
+     Running tests/halt.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/halt-b5754ae0b343b7ca)
+
+running 7 tests
+test a_target_whose_producer_stops_when_the_reader_does_passes ... ok
+test a_listing_that_ran_out_before_the_reader_stopped_it_is_not_a_halt ... ok
+test a_target_that_cannot_read_a_row_at_a_time_reports_unsupported_and_the_run_fails ... ok
+test a_target_that_reads_the_whole_listing_fails_rather_than_being_read_as_having_stopped ... ok
+test retrying_does_not_rescue_a_producer_that_never_stops ... ok
+test a_halt_of_an_eventual_listing_is_asked_again_while_the_projection_catches_up ... ok
+test two_runs_over_one_halt_claim_produce_byte_identical_reports ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/json_primitive.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/json_primitive-cf5d34143a0657a8)
+
+running 2 tests
+test a_json_leaf_admits_any_value_and_equality_is_structural ... ok
+test issue_138_a_json_input_is_an_object_and_its_event_is_compared_structurally ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/list_selection.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/list_selection-7ee4a4cea269efa1)
+
+running 6 tests
+test exclusions_compare_occurrence_indices_even_when_identifiers_are_equal ... ok
+test retained_indices_and_declared_predicate_facts_are_revalidated ... ok
+test independent_go_observation_witness_receives_closed_typed_contract ... ok
+test malformed_and_over_limit_tail_cannot_hide_behind_first_match ... ok
+test generated_binding_scenario_retains_observed_selection_and_version_six ... ok
+test actual_ordered_mixed_leg_and_fallback_decision_table ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/list_selection_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/list_selection_adversary-542f1b90d2e35d5f)
+
+running 1 test
+test unselected_tail_must_satisfy_its_declared_record_invariant ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/mutation_audit.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/mutation_audit-03bd35c994271d78)
+
+running 13 tests
+test every_mutate_code_is_derived_from_its_variant ... ok
+test the_classes_are_exactly_the_nine_altering_classes ... ok
+test the_verdict_classification_reads_scenario_statuses ... ok
+test each_class_changes_exactly_what_its_description_says ... ok
+test a_class_with_no_site_is_refused_with_mutate_003 ... ok
+test a_transition_to_an_undeclared_state_is_stillborn_with_the_compilers_code ... ok
+test the_interpreted_target_is_refused_with_mutate_001 ... ok
+test a_faulty_baseline_is_refused_with_the_failing_scenarios ... ok
+test the_oracle_audit_pins_every_mutant_and_kills_every_one_that_ran ... ok
+test the_billing_audit_pins_every_mutant_and_kills_every_one_that_ran ... ok
+test a_sets_field_no_view_reads_is_the_one_survivor ... ok
+test every_killer_is_a_scenario_of_the_mutants_own_suite_that_failed ... ok
+test two_audits_of_one_tree_are_byte_identical ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+     Running tests/mutation_external.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/mutation_external-1f301065db4be2cb)
+
+running 8 tests
+test a_class_with_no_site_emits_nothing_with_mutate_003 ... ok
+test a_manifest_directory_outside_the_emission_is_refused ... ok
+test a_missing_baseline_report_is_refused ... ok
+test a_missing_report_is_inconclusive_and_says_which ... ok
+test a_report_of_another_suite_is_not_scored ... ok
+test a_baseline_report_that_did_not_pass_is_refused_with_mutate_001 ... ok
+test the_emission_is_a_manifest_a_baseline_and_one_directory_per_mutant ... ok
+test collecting_the_reference_runs_of_every_emitted_suite_is_the_built_in_audit ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.61s
+
+     Running tests/mutation_external_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/mutation_external_adversary-8661c8366351a16a)
+
+running 7 tests
+test adversary_a_red_report2_baseline_is_refused_with_mutate_001 ... ok
+test adversary_a_mutant_report_answered_by_another_implementation_is_inconclusive ... ok
+test adversary_a_report_of_another_format_is_not_scored ... ok
+test adversary_a_report1_naming_a_scenario_the_suite_does_not_hold_is_not_scored ... ok
+test adversary_a_suite_swapped_for_the_baselines_is_not_scored ... ok
+test adversary_every_traversal_spelling_in_the_manifest_is_refused ... ok
+test adversary_go_skipped_in_report2_is_inconclusive_not_killed_or_survived ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+
+     Running tests/optional_shape_go.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/optional_shape_go-61eae643c67dad43)
+
+running 1 test
+test go_shape_leaves_honour_optional_without_going_unchecked ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running tests/outcome_groups.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/outcome_groups-3dde2824407e998c)
+
+running 1 test
+test c1_a_group_and_its_hand_copy_synthesize_byte_identical_suites ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/outcome_shapes.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/outcome_shapes-2503959e20c1c2da)
+
+running 9 tests
+test a_model_using_none_of_the_constructs_keeps_its_suite_format ... ok
+test an_older_suite_label_is_refused_before_any_target_activity ... ok
+test every_scenario_passes_against_the_behaviour_the_issues_describe ... ok
+test issue_150_a_call_offered_as_ringing_is_ringing_and_arranges_what_follows ... ok
+test issue_144_an_accepted_no_op_leaves_every_immediate_view_as_it_was ... ok
+test issue_151_a_deleted_row_is_absent_and_a_later_command_meets_an_unknown_identity ... ok
+test issue_152_every_scenario_runs_inside_the_preconditions ... ok
+test issue_145_an_unknown_identity_takes_its_own_branch ... ok
+test the_coverage_suite_takes_the_coverage_major ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/outcome_shapes_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/outcome_shapes_adversary-e90e590c9b0f2d08)
+
+running 4 tests
+test adversary_a_refused_precondition_never_lets_a_scenario_pass ... ok
+test adversary_the_precondition_commands_own_scenario_does_not_create_the_identity_it_already_created ... ok
+test adversary_an_aggregate_arranged_through_a_creation_into_a_state_passes_against_a_correct_target ... ok
+test adversary_a_deleted_identity_answered_with_the_event_again_is_caught ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/outcome_shapes_adversary2.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/outcome_shapes_adversary2-78544a63102aed14)
+
+running 3 tests
+test adversary2_a_model_without_the_new_constructs_carries_none_of_their_keys ... ok
+test adversary2_a_scenario_skipping_one_recreating_precondition_still_runs_the_ones_before_it ... ok
+test adversary2_an_aggregate_whose_only_creator_creates_into_a_later_state_passes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/owned_subject_arrangement.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/owned_subject_arrangement-2a28467b0f12e59c)
+
+running 6 tests
+test an_owner_nothing_creates_leaves_the_arrangement_as_it_was ... ok
+test two_entities_that_own_each_other_arrange_once_and_stop ... ok
+test a_created_subject_that_is_owned_is_created_under_an_owner_that_exists ... ok
+test the_row_is_asserted_to_hold_the_owner_the_scenario_arranged ... ok
+test an_entity_nobody_owns_arranges_what_it_always_did ... ok
+test without_the_declared_link_nothing_is_arranged_and_nothing_is_guessed ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/periodic.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/periodic-b28aaf2249a9117d)
+
+running 7 tests
+test elapsed_overshoot_cannot_hide_a_missing_live_tick ... ok
+test unrepresentable_period_window_is_a_refusal_with_a_serializable_remaining_suite ... ok
+test controlled_periodic_ready_inactive_failure_and_slow_read_are_executable ... ok
+test controlled_periodic_faults_are_nonpassing_and_close_the_host ... ok
+test periodic_suites_require_new_vocabulary_and_unsupported_is_not_passing ... ok
+test generated_go_admits_periodic_vocabulary ... ok
+test generated_go_runs_controlled_periodic_hosts_and_rejects_faults ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+     Running tests/pre_execution_fixtures.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/pre_execution_fixtures-3c45af8761ede880)
+
+running 13 tests
+test fixture_inputs_cannot_replace_generated_guard_witnesses ... ok
+test source_declared_fixture_inputs_reach_requests_and_event_equalities ... ok
+test fixture_contract_rejects_recursive_unrelated_and_constrained_types ... ok
+test source_refuses_old_format_unknown_fields_and_conflicting_fixture_types ... ok
+test values_are_resolved_once_and_isolated_per_scenario ... ok
+test authored_fixtures_refuse_old_formats_wrong_types_unknown_names_and_unused_declarations ... ok
+test authored_fixture_types_reach_equality_without_replacing_literal_inputs ... ok
+test invalid_provider_data_stops_before_target_activity_and_missing_capability_skips ... ok
+test independent_values_pass_and_wrong_observed_values_fail ... ok
+test fixture_inventory_and_filtered_parent_retain_new_vocabulary ... ok
+test fixture_admission_refuses_old_versions_unbound_references_and_late_preludes ... ok
+test emitted_runtimes_preserve_independent_fixture_values_and_reject_mutations ... ok
+test emitted_coverage_runtimes_preserve_fixtures_with_exact_parent_lineage ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.74s
+
+     Running tests/presence_suite_versions_go.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/presence_suite_versions_go-7ce250d2fca54c11)
+
+running 1 test
+test go_refuses_suites_carrying_presence_policies_by_version ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+     Running tests/primitive_corpus.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/primitive_corpus-1c575f564ba66a85)
+
+running 9 tests
+test rust_admission_answers_every_vector_the_corpus_states ... ok
+test the_corpus_is_the_one_document_all_three_readers_open ... ok
+test the_browser_adapter_answers_every_vector_the_corpus_states ... ok
+test a_payload_that_contradicts_its_shape_is_refused_by_both_admitters ... ok
+test the_go_runtime_answers_every_vector_the_corpus_states ... ok
+test the_go_runtime_reads_every_text_length_the_corpus_states ... ok
+test the_go_runtime_answers_every_text_match_the_corpus_states ... ok
+test the_go_runtime_orders_every_text_pair_the_corpus_states_by_its_bytes ... ok
+test the_go_runtime_compares_every_number_carrier_by_the_value_rust_decides ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+     Running tests/primitive_divergence.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/primitive_divergence-c35b4bc8b7d5fb6e)
+
+running 4 tests
+test an_integer_payload_is_admitted_the_same_way_before_and_after_it_is_written ... ok
+test a_node_number_is_the_number_it_was_after_a_round_trip_through_its_own_serializer ... ok
+test the_three_admitters_agree_about_padding_that_is_not_a_suffix ... ok
+test the_three_admitters_agree_about_the_top_of_the_declared_integer_range ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+
+     Running tests/quoted_predicate_versions.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/quoted_predicate_versions-96c63b59c7eaaff2)
+
+running 3 tests
+test versions_do_not_interpret_literal_payloads_as_predicates ... ok
+test versions_distinguish_lossless_reader_from_compatible_fallback ... ok
+test versions_cover_first_selection_predicates ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/quoted_predicates.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/quoted_predicates-a73c846e854b0676)
+
+running 4 tests
+test source_command_guard_refuses_the_measured_disjunction ... ok
+test rust_suite_reader_refuses_trailing_tokens_but_preserves_structured_any ... ok
+test generated_go_reader_and_evaluator_keep_quoted_operand_boundaries ... ok
+test generated_suite_literals_roundtrip_in_rust_go_and_browser ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+     Running tests/report_reader_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/report_reader_adversary-c03e5d42ee12ad4c)
+
+running 4 tests
+test duplicate_claims_cannot_hide_behind_a_valid_last_value ... ok
+test count_extremes_refuse_contradictions_without_inventing_coverage ... ok
+test closed_wire_fields_preserve_their_formats_scalar_contracts ... ok
+test aggregate_status_does_not_depend_on_nonpass_order_or_multiplicity ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/response_admission.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/response_admission-a82acd5bfa92aa23)
+
+running 1 test
+test typed_response_writers_refuse_old_pins_and_invalid_observations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/response_payload.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/response_payload-ae0e34939d07c641)
+
+running 7 tests
+test browser_response_vocabulary_is_explicitly_refused ... ok
+test exact_invocation_response_cannot_be_replaced_by_stale_observations ... ok
+test actual_typed_response_and_generated_payload_pass ... ok
+test response_schema_and_provenance_include_named_response_fields ... ok
+test nullable_response_field_preserves_null_and_absence ... ok
+test response_persistence_versions_and_runtime_artifacts ... ok
+test response_mutations_and_missing_data_fail ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/response_union.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/response_union-a9157512883c61e3)
+
+running 1 test
+test union_response_checks_closed_keys_without_changing_optional_content ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/retained_replay.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/retained_replay-cb6bea6dff9274c2)
+
+running 31 tests
+test emit_replay_runtime_artifacts_when_requested ... ok
+test adversary_r2_complete_rows_validate_union_payload_and_exact_integer_bounds ... ok
+test complete_shape_recursively_checks_collections_and_named_variants ... ok
+test original_identity_reads_exact_input_or_one_direct_event ... ok
+test complementary_complete_views_observe_the_actual_subject ... ok
+test adversary_replay_requires_complete_actual_subject_rows_not_only_complete_view_declarations ... ok
+test native_integer_adapter_preserves_adjacent_values_and_i64_endpoints ... ok
+test original_complete_rows_refuse_before_any_retry_callback ... ok
+test replay_identity_field_uses_the_declared_field_grammar ... ok
+test finite_default_refusals_execute_every_rejected_held_state_without_effects ... ok
+test actual_original_exact_result_and_complete_subject_are_deciding_observations ... ok
+test complete_rows_preserve_optional_absence_null_and_extra_keys ... ok
+test replay_synthesis_captures_original_result_and_identity_before_real_retry ... ok
+test replay_conditions_must_hold_for_the_original_input_not_a_new_candidate ... ok
+test post_command_complete_rows_execute_typed_admission_before_equality ... ok
+test adversary_source7_wrong_state_refusal_requires_actual_complete_subject_observation ... ok
+test adversary_replay_must_reach_its_own_state_guard_after_the_origin ... ok
+test adversary_r2_replay_checks_actual_guard_state_before_retry ... ok
+test replay_response_refuses_floating_representations_recursively ... ok
+test unsupported_complete_subject_observers_refuse_by_name ... ok
+test move_replay_cannot_substitute_a_neighbour_for_original_input_identity ... ok
+test replay_eligibility_keeps_external_input_and_actual_state_observation ... ok
+test replay_envelope_refuses_old_labels_unknown_fields_and_unbound_or_overwritten_snapshots ... ok
+test all_five_held_states_execute_and_each_refusal_is_effect_free ... ok
+test external_stale_arrangement_preserves_real_commit_and_validate_refusal_obligations ... ok
+test source7_named_wrong_state_refusals_require_complete_effect_free_observation ... ok
+test legacy_preservation_and_subjectless_errors_coexist_with_complete_snapshots ... ok
+test replay_requires_fresh_views_and_original_invocation_identity ... ok
+test complete_descriptor_and_pair_refuse_weakening_before_callbacks ... ok
+test adversary_go_replay_requires_complete_actual_subject_rows ... ok
+test generated_go_replay_runtime_executes_actual_results_and_strict_admission ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+
+     Running tests/selection_primitive_go.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/selection_primitive_go-2d9bcf6ef7319bc4)
+
+running 1 test
+test go_selection_validates_primitives_and_every_list_member ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running tests/selection_reading_integration.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/selection_reading_integration-bfe74c594928d6c4)
+
+running 1 test
+test observation_refuses_clock_contract_reachable_through_unread_alias_member ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/stored_field_guards.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/stored_field_guards-8e6942b040b0d40c)
+
+running 15 tests
+test a_string_operator_under_when_subject_needs_ess_8_and_an_enum_field_refuses_it ... ok
+test a_guarded_field_no_arranging_branch_can_set_is_refused_by_name ... ok
+test an_optional_stored_field_is_arranged_absent_for_not_defined ... ok
+test without_a_view_observing_every_guarded_field_the_arrangement_is_refused ... ok
+test an_absent_subject_is_sent_once_and_asserted_to_create_nothing ... ok
+test the_refusal_is_witnessed_against_an_express_parcel_of_21_kg ... ok
+test the_success_is_witnessed_at_the_boundary_the_guard_does_not_refuse ... ok
+test the_design_example_synthesizes_with_only_the_undeclared_wrong_state_refusal ... ok
+test a_guarded_field_is_arranged_through_an_update_whose_sets_maps_it ... ok
+test the_suite_needs_no_new_vocabulary_and_every_lane_admits_it ... ok
+test an_implementation_that_ignores_the_stored_weight_fails_the_boundary_success ... ok
+test the_rule_as_specified_passes_its_own_suite ... ok
+test an_implementation_that_answers_an_absent_subject_fails_the_absent_subject_witness ... ok
+test an_implementation_that_never_reads_the_stored_fields_fails_the_refusal ... ok
+test a_string_operator_over_a_stored_field_validates_under_ess_9_and_synthesizes_both_branches ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/stored_field_guards_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/stored_field_guards_adversary-da3159d33a205477)
+
+running 14 tests
+test adv_a_stored_count_guard_past_the_cap_is_refused_as_a_count_not_as_a_missing_value ... ok
+test adv_a_byte_wise_text_guard_over_a_stored_string_is_witnessed ... ok
+test adv_a_boolean_guard_over_a_stored_flag_is_witnessed ... ok
+test adv_defined_over_an_optional_stored_field_is_witnessed ... ok
+test adv_an_ordinal_guard_over_a_stored_list_is_witnessed ... ok
+test adv_a_timestamp_guard_over_a_stored_instant_is_witnessed ... ok
+test adv_an_ess6_field_equals_model_keeps_its_generated_default_scenario ... ok
+test adv_control_the_same_count_guard_over_input_is_witnessed_by_two_elements ... ok
+test adv_an_ordering_over_an_optional_stored_field_is_witnessed ... ok
+test adv_two_refusals_on_different_stored_fields_are_each_witnessed ... ok
+test adv_a_stored_guard_conjoined_with_an_input_guard_is_witnessed ... ok
+test adv_a_count_guard_over_a_stored_list_is_witnessed_by_two_elements ... ok
+test adv_an_implementation_that_ignores_the_stored_service_fails_the_suite ... ok
+test adv_go_and_typescript_lanes_agree_with_rust_on_the_parcels_suite ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.90s
+
+     Running tests/string_alphabet_and_length.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/string_alphabet_and_length-245d6e8c6e883dba)
+
+running 11 tests
+test a_type_that_reads_its_own_length_is_witnessed_by_a_resized_base ... ok
+test an_example_is_the_first_instance_and_a_further_instance_is_its_own ... ok
+test a_value_object_whose_invariant_reads_a_length_names_the_count ... ok
+test the_list_ladders_unit_a1_built_keep_their_candidates ... ok
+test a_length_guard_and_a_prefix_guard_on_one_path_are_met_together ... ok
+test the_keypad_suite_witnesses_both_branches_with_sendable_keys ... ok
+test a_list_count_above_one_is_witnessed_by_copies_of_the_first_element ... ok
+test a_keypad_that_refuses_unsendable_keys_passes_its_generated_suite ... ok
+test an_entity_invariant_over_a_published_field_s_count_is_unassertable_not_unpublished ... ok
+test a_count_just_under_the_cap_is_witnessed_and_one_past_it_is_refused_by_name ... ok
+test the_example_is_the_base_and_the_length_ladder_resizes_it ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/string_operators.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/string_operators-a48f016abed9f5a3)
+
+running 13 tests
+test a_suite_string_operand_that_is_not_a_json_string_is_refused_because_suites_are_not_checked ... ok
+test an_undecidable_string_guard_names_the_absent_path ... ok
+test contains_without_starting_with_is_witnessed_by_the_text_after_the_path ... ok
+test an_email_suffix_under_an_at_invariant_is_refuted_by_the_invariant_compositions ... ok
+test a_string_operator_over_a_list_element_is_witnessed_by_a_one_element_list ... ok
+test a_phone_prefix_under_a_plus_invariant_keeps_refuting_candidates ... ok
+test a_prefix_a_suffix_and_a_negated_substring_compose_into_one_witness ... ok
+test every_operator_has_a_satisfying_and_a_refuting_candidate ... ok
+test a_suite_carrying_a_string_operator_takes_the_new_ordinary_major ... ok
+test synthesis_witnesses_both_branches_of_every_string_guard ... ok
+test the_browser_adapter_refuses_the_new_major_and_a_forged_older_suite_carrying_one ... ok
+test the_go_runtime_admits_the_new_majors_and_refuses_the_construct_below_them ... ok
+test go_decides_every_constraint_mapping_as_rust_does ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running tests/string_operators_adversary.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/string_operators_adversary-2745947850a3a456)
+
+running 6 tests
+test a_string_invariant_on_an_input_no_guard_reads_is_still_witnessed ... ok
+test control_an_any_of_invariant_on_an_input_no_guard_reads_is_still_witnessed ... ok
+test two_positive_prefixes_where_the_second_extends_the_first_are_still_witnessed ... ok
+test published_string_invariants_reach_the_suite_rebased_and_take_the_new_pair ... ok
+test go_coverage_lineage_reads_a_string_operand_verbatim_as_rust_does ... ok
+test go_evaluates_every_string_operator_of_one_mapping_as_rust_does ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/subject_guard_input.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/subject_guard_input-d720b4e96d1a0863)
+
+running 12 tests
+test the_new_majors_are_supported_and_the_next_is_not ... ok
+test a_fold_operand_that_is_not_a_json_string_is_refused_because_suites_are_not_checked ... ok
+test a_literal_with_k_or_s_is_tried_with_the_unicode_letter_that_folds_onto_it ... ok
+test the_140_repro_synthesizes_both_branches ... ok
+test a_case_changed_literal_matches_and_a_one_character_change_does_not ... ok
+test the_157_repro_synthesizes_with_only_the_undeclared_wrong_state_refusal ... ok
+test the_default_is_witnessed_with_the_recording_the_row_holds ... ok
+test the_guarded_branch_is_witnessed_with_a_recording_other_than_the_one_the_row_holds ... ok
+test the_default_is_sent_the_one_character_change_and_then_the_unicode_case ... ok
+test either_operator_and_a_negation_is_witnessed_both_ways ... ok
+test a_suite_carrying_a_fold_takes_the_new_ordinary_major ... ok
+test the_go_runtime_reads_the_new_majors_and_answers_every_case_fold_the_corpus_states ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/subject_history.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/subject_history-52f06e3be7022b3d)
+
+running 6 tests
+test a_same_state_update_can_establish_new_history ... ok
+test repeated_answer_is_arranged_from_observed_history_and_preserves_the_subject ... ok
+test history_semantics_refuse_legacy_sources_and_invalid_facts ... ok
+test missing_history_or_incomplete_preservation_is_refused ... ok
+test older_suite_formats_refuse_snapshot_and_no_error_steps ... ok
+test emitted_runtimes_observe_history_no_error_and_real_row_preservation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.49s
+
+     Running tests/subject_state.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/subject_state-e770d152ddd70cc9)
+
+running 5 tests
+test absent_or_different_subject_is_never_created_or_selected_as_initial ... ok
+test subject_state_without_an_observable_identity_state_pair_refuses_synthesis ... ok
+test same_ringing_input_has_different_established_state_and_no_fault_injection ... ok
+test runtime_observations_defeat_guard_ignoring_and_wrong_identity_targets ... ok
+test generated_go_runs_the_state_witness_and_rejects_the_guard_ignoring_mutation ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+     Running tests/suite.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/suite-a6949f2b6379161e)
+
+running 16 tests
+test a_suite_naming_something_that_is_not_an_ess_name_is_refused_while_it_is_read ... ok
+test a_suite_parses_from_text_alone_without_an_ir ... ok
+test the_scan_for_a_clock_finds_one_and_does_not_find_a_word_that_merely_ends_in_a_banned_token ... ok
+test a_count_and_a_position_read_back_as_what_a_runner_in_another_language_must_read ... ok
+test the_steps_a_binding_and_an_invariant_need_survive_being_read_back_from_text ... ok
+test sparse_models_cannot_publish_an_empty_success_for_binary64 ... ok
+test every_scenario_id_the_billing_model_can_produce_reads_back ... ok
+test the_dependency_set_names_a_type_no_derived_from_would_have_mentioned ... ok
+test a_suite_serialised_in_one_process_resolves_in_another ... ok
+test inserting_one_outcome_re_keys_nothing_around_it ... ok
+test the_suite_records_the_same_model_digest_the_projections_do ... ok
+test typed_binary64_suites_refuse_serialization_emission_and_target_effects ... ok
+test the_step_vocabulary_expresses_the_worked_example_from_section_ten ... ok
+test the_scenario_ids_appear_in_the_file_in_the_order_a_sorted_key_list_would_be ... ok
+test serialising_a_suite_twice_produces_byte_identical_json ... ok
+test no_source_file_in_this_crate_reads_a_clock_or_an_unordered_map ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/synthesis.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/synthesis-81830617ecf4b9ef)
+
+running 65 tests
+test a_guard_no_candidate_can_satisfy_is_refused_with_the_number_tried ... ok
+test a_duration_on_command_input_is_never_ordered_by_its_bytes ... ok
+test a_command_that_declares_no_wrong_state_answer_is_refused_by_name_beside_its_scenario ... ok
+test a_binding_whose_branch_the_event_decides_refuses_the_flow_and_still_checks_the_mapping ... ok
+test a_filter_reading_something_no_scenario_knows_refuses_rather_than_guessing ... ok
+test a_cleared_field_is_asserted_empty_rather_than_left_unsaid ... ok
+test a_field_set_to_the_empty_string_is_asserted_empty ... ok
+test a_field_a_later_act_overwrites_is_not_asserted_at_the_value_an_earlier_one_supplied ... ok
+test a_command_that_accepts_a_wrong_state_is_asserted_as_accepting_rather_than_refusing ... ok
+test a_field_an_arrangement_step_overwrote_is_not_asserted_at_what_an_earlier_step_supplied ... ok
+test a_component_nothing_declares_is_refused_by_name ... ok
+test a_state_reached_only_through_a_branch_no_input_reaches_is_refused_rather_than_arranged ... ok
+test a_literal_over_a_spellable_primitive_is_asserted_as_that_primitive ... ok
+test a_parameterised_view_is_queried_with_the_value_the_scenario_put_in_the_row ... ok
+test a_list_guard_is_satisfied_by_one_element_the_guard_itself_writes ... ok
+test a_state_change_branch_is_arranged_only_in_the_held_states_it_admits ... ok
+test a_binding_that_retries_forces_one_failure_and_still_requires_the_consequence ... ok
+test a_binding_mapping_names_the_source_the_document_wrote_and_not_its_same_typed_sibling ... ok
+test a_binding_that_drops_its_failures_refuses_that_check_and_names_the_reason ... ok
+test a_read_your_writes_view_filled_by_the_command_that_ran_is_asserted_to_hold_a_row ... ok
+test an_entity_nothing_creates_cannot_be_acted_on_and_says_so ... ok
+test a_binding_flow_is_proved_through_the_event_the_invoked_command_publishes ... ok
+test a_value_object_nothing_observable_holds_keeps_a_refusal_naming_what_would_close_it ... ok
+test a_declared_order_is_asserted_against_two_rows_the_scenario_arranged_itself ... ok
+test a_declared_error_is_asserted_by_name_and_never_by_an_invented_payload ... ok
+test a_scenario_that_moves_an_instance_names_the_one_an_earlier_step_created ... ok
+test an_order_the_specification_cannot_put_two_rows_under_is_refused_and_not_asserted ... ok
+test a_value_objects_own_invariants_are_read_at_every_field_position_a_view_holds_one ... ok
+test a_view_that_does_not_hold_the_instance_yet_is_not_asked_about_its_invariants ... ok
+test an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget ... ok
+test a_move_is_observed_through_the_view_the_state_it_left_is_filtered_on ... ok
+test a_view_is_asserted_in_the_block_its_own_consistency_decides ... ok
+test a_move_that_is_illegal_in_a_state_is_attempted_with_the_input_that_would_have_worked ... ok
+test a_whole_system_suite_does_not_mention_a_component ... ok
+test a_synthesised_suite_survives_being_written_and_read_back ... ok
+test a_synthesised_count_is_a_floor_the_scenario_arranged_and_never_a_ceiling ... ok
+test a_binding_that_escalates_requires_the_event_the_escalation_declares ... ok
+test an_invariant_over_a_field_no_view_publishes_refuses_rather_than_being_dropped ... ok
+test an_at_least_once_binding_delivers_the_event_twice_and_requires_no_count ... ok
+test an_unquoted_null_guard_is_refused_at_validate_and_a_quoted_one_is_the_text ... ok
+test a_view_the_entity_has_not_reached_yet_is_asserted_to_exclude_the_instance_by_name ... ok
+test an_event_assertion_carries_the_declared_shape_and_exactly_the_values_the_payload_determines ... ok
+test an_illegal_move_requires_the_branch_and_the_declared_error_rather_than_merely_failing ... ok
+test every_presence_list_and_text_ordering_guard_gets_a_satisfying_and_a_refuting_scenario ... ok
+test the_absent_side_of_a_presence_guard_omits_the_optional_field_from_the_input ... ok
+test an_outcome_that_updates_an_instance_acts_on_one_the_scenario_created ... ok
+test a_suite_for_one_component_holds_only_what_that_component_realises ... ok
+test an_invariant_is_asserted_against_every_view_that_publishes_what_it_reads ... ok
+test an_actor_is_named_only_where_the_specification_grants_the_command ... ok
+test the_failure_control_is_armed_after_the_arrangement_and_before_the_command_that_triggers_it ... ok
+test every_command_names_an_instance_an_earlier_step_of_the_same_scenario_bound ... ok
+test the_dependency_set_names_the_types_the_scenario_is_made_of ... ok
+test an_at_most_once_binding_synthesises_no_redelivery_anywhere_in_its_suite ... ok
+test an_outcome_no_input_decides_is_reached_by_injection_and_by_nothing_else ... ok
+test the_refusal_branch_asserts_that_no_event_the_specification_declares_occurred ... ok
+test every_declared_outcome_is_either_a_scenario_or_a_named_refusal_or_asserted_by_the_state_family ... ok
+test the_input_a_scenario_sends_is_re_decided_against_the_guard_it_claims_to_reach ... ok
+test every_declared_transition_has_a_scenario_that_proves_it_can_occur ... ok
+test each_example_synthesises_the_families_its_specification_declares ... ok
+test every_clause_of_every_binding_is_either_a_scenario_or_a_named_refusal ... ok
+test synthesising_the_same_specification_twice_produces_byte_identical_output ... ok
+test coverage_all_missing_invariants_keep_null_survivors_and_component_proofs_stay_conservative ... ok
+test coverage_builder_records_the_complete_generated_inventory_and_component_omissions ... ok
+test coverage_missing_lifecycle_and_view_checks_remain_beside_actual_passing_results ... ok
+test canonical_expression_compatibility_fixtures ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running tests/text_prefix.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/text_prefix-660369e992ab2282)
+
+running 5 tests
+test issue_146_every_witness_starts_with_the_prefix ... ok
+test under_an_alphabet_the_prefix_is_kept_and_the_rest_is_mapped ... ok
+test a_prefix_longer_than_a_count_bound_is_still_a_witness_only_where_it_fits ... ok
+test guard_alternatives_start_with_the_prefix_too ... ok
+test a_count_guard_resizes_after_the_prefix ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/typescript_runtime.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/typescript_runtime-5ea7c285439604cf)
+
+running 4 tests
+test the_repositorys_own_typescript_typechecks_including_its_cases ... ok
+test the_emitted_package_typechecks_as_an_adopter_compiles_it ... ok
+test the_typescript_sources_are_formatted_by_the_configuration_beside_them ... ok
+test every_case_the_typescript_runtime_carries_is_executed_and_passes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.24s
+
+     Running tests/underscore_field_names.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/underscore_field_names-ceaac4f0760c710a)
+
+running 3 tests
+test underscores_alone_or_before_a_digit_are_still_not_field_names ... ok
+test issue_141_an_underscore_field_synthesizes_scenarios_and_no_refusal ... ok
+test no_runtime_spells_the_field_name_rule_other_than_the_specification_does ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/unknown_instance.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/unknown_instance-a058d6f07de7dbf6)
+
+running 3 tests
+test a_command_without_wrong_state_is_a_coverage_note_and_not_a_refusal ... ok
+test a_command_declaring_wrong_state_is_witnessed_on_an_identity_no_record_carries ... ok
+test a_command_that_creates_only_has_no_unknown_instance_to_answer ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/unknown_instance_not_found.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/unknown_instance_not_found-ad0589c57d899f4b)
+
+running 3 tests
+test two_candidate_answers_are_a_note_and_neither_is_assumed ... ok
+test a_not_found_outcome_answers_a_command_that_declares_no_wrong_state ... ok
+test a_declared_not_found_outcome_answers_the_fresh_identity_instead_of_wrong_state ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/value_expressions.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/value_expressions-7ba28d244cbe1df9)
+
+running 6 tests
+test a_decimal_sets_literal_is_asserted_on_the_row_as_a_number ... ok
+test a_numeric_payload_literal_is_compared_as_the_number_it_spells ... ok
+test a_generated_sets_entry_makes_no_claim_about_the_row ... ok
+test a_fallback_is_asserted_when_the_input_is_sent_and_a_nested_struct_when_every_leaf_is_known ... ok
+test an_increment_is_asserted_as_the_arranged_value_plus_the_amount ... ok
+test a_subject_source_in_a_payload_is_the_arranged_rows_value ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/witness.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/witness-b240580dfc95eab5)
+
+running 34 tests
+test a_conjunction_of_two_undecidable_leaves_reports_both ... ok
+test a_candidate_carrying_a_field_no_type_declares_is_refused ... ok
+test a_candidate_missing_a_required_field_is_refused_before_any_guard_is_read ... ok
+test a_newtype_is_transparent_so_a_deep_path_reaches_through_it_without_a_segment ... ok
+test a_path_into_a_list_or_a_union_names_the_aggregate_rather_than_the_missing_element ... ok
+test a_newtype_is_transparent_when_a_path_is_resolved_as_well_as_when_it_is_projected ... ok
+test an_absent_optional_binds_nothing_rather_than_binding_a_default ... ok
+test a_scalar_of_the_wrong_shape_is_refused_rather_than_coerced ... ok
+test a_path_landing_on_an_aggregate_is_unevaluable_by_construction ... ok
+test a_refusal_names_the_predicate_the_command_and_the_path ... ok
+test a_disjunction_one_of_whose_branches_holds_is_satisfied_despite_an_undecidable_branch ... ok
+test a_list_a_map_and_a_union_bind_no_fact_in_the_current_projection ... ok
+test a_candidate_input_projects_one_fact_per_scalar_leaf ... ok
+test a_refuted_guard_carries_the_leaf_and_the_value_that_refuted_it ... ok
+test a_text_ordering_on_command_input_is_decided_by_bytes ... ok
+test an_absent_optional_is_unevaluable_but_says_a_candidate_could_repair_it ... ok
+test a_list_read_by_position_is_decided_by_every_candidate ... ok
+test a_presence_guard_is_tried_with_the_optional_omitted ... ok
+test an_input_list_publishes_its_count_and_one_fact_per_element_leaf ... ok
+test an_integral_witness_is_still_written_with_the_fractional_part_it_does_not_have ... ok
+test legal_list_cardinality_is_projected_and_map_cardinality_is_not ... ok
+test resolved_adapter_keeps_semantics_separate_from_collection_projection ... ok
+test the_same_text_ordering_is_decidable_once_a_scale_contains_both_values ... ok
+test a_long_recursive_read_validates_beyond_the_projection_limit ... ok
+test otherwise_and_external_are_not_guards_over_the_input ... ok
+test equality_over_two_texts_is_decided_even_though_ordering_them_is_not ... ok
+test ordering_across_two_types_is_unevaluable_not_false ... ok
+test ordering_two_texts_is_decided_by_bytes_unless_a_scale_contains_both_values ... ok
+test the_normative_shape_of_guard_is_decidable_for_both_signs ... ok
+test expression_search_limits_do_not_define_type_correctness ... ok
+test only_an_absent_value_says_another_candidate_would_help ... ok
+test unclassified_is_a_drift_alarm_and_no_enumerated_source_trips_it ... ok
+test malformed_declarations_refuse_early_and_direct_bad_reads_remain_unknown ... ok
+test no_candidate_is_offered_twice ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests ess_conformance
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

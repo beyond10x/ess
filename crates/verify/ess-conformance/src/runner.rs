@@ -490,6 +490,9 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::ExpectResponsePayload { response } => {
                 expect_response_payload(response, run)
             }
+            ScenarioStep::ExpectDirectResponse { response } => {
+                expect_direct_response(response, run)
+            }
             ScenarioStep::CheckPeriodic { check } => check_periodic(check, run, target),
             ScenarioStep::ExpectReadingOrder { left, right, order } => {
                 expect_reading_order(left, right, *order, run, target)
@@ -1327,6 +1330,41 @@ fn expect_error(error: &ErrorRef, fields: &BTreeMap<String, Node>, run: &mut Run
 }
 
 /// Only the immediately preceding exact invocation supplies response authority.
+fn expect_direct_response(response: &crate::direct_response::Observation, run: &mut Run) -> Flow {
+    let result = (|| {
+        let executed = run
+            .last_command
+            .as_ref()
+            .ok_or("no preceding command".to_owned())?;
+        if executed.command != response.command.to_string()
+            || response
+                .outcome
+                .as_ref()
+                .is_some_and(|outcome| executed.result.outcome.as_ref() != Some(outcome))
+        {
+            return Err("direct response names a different command or outcome".to_owned());
+        }
+        if executed.result.error.is_some() {
+            return Err(
+                "command returned an error instead of the declared successful response".to_owned(),
+            );
+        }
+        response.compare(executed.result.response.as_ref())
+    })();
+    let about = format!("direct response {}", response.command);
+    match result {
+        Ok(()) => run.record(CheckResult::passed(CheckCode::Payload, about)),
+        Err(reason) => run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::Payload, run.id.clone())
+                .declared_by(response.command.clone())
+                .expected("actual typed return satisfies its complete schema and authored literals")
+                .observed(reason),
+        )),
+    }
+    Flow::Continue
+}
+
 fn expect_response_payload(response: &crate::response::Observation, run: &mut Run) -> Flow {
     let result = (|| {
         let executed = run

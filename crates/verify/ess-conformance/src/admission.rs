@@ -117,10 +117,14 @@ impl AdmittedSuite {
     }
     pub(crate) fn parse(original: &str) -> Result<Self, AdmissionError> {
         accessor_preflight(original)?;
-        let value = Json::parse(original, "$suite")?;
+        let (value, direct_profile) = Json::parse_suite(original)?;
         validate_suite(&value)?;
-        let suite: ConformanceSuite = serde_json::from_str(original)
-            .map_err(|e| AdmissionError::new("InvalidSuite", "$suite", e.to_string()))?;
+        let suite: ConformanceSuite = if direct_profile {
+            value.decode_checked_depth()?
+        } else {
+            serde_json::from_str(original)
+                .map_err(|e| AdmissionError::new("InvalidSuite", "$suite", e.to_string()))?
+        };
         self::suite(&suite)?;
         payload_agrees_with_its_shape(&suite)?;
         entity_setup(&suite)?;
@@ -181,20 +185,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=27) {
+    if !matches!(version.major(), 1..=29) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–27",
+            "execution readers admit suite majors 1–29",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23, suite/25 and suite/27",
+            "coverage is required exactly for odd suite majors from /5 through /29",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -405,6 +409,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < 4 && matches!(tag, "expect_halt" | "eventually_halt"))
         || (major < 6 && matches!(tag, "establish_entity" | "expect_reading_order"))
         || (major < 8 && tag == "expect_response_payload")
+        || (major < crate::direct_response::ORDINARY && tag == "expect_direct_response")
         || (major < crate::fixtures::ORDINARY
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
         || crate::outcome_shapes::needs_newer(tag, major)
@@ -423,7 +428,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             &[],
         ),
         "expect_reading_order" => (&["step", "left", "right", "order"], &[]),
-        "expect_response_payload" => (&["step", "response"], &[]),
+        "expect_response_payload" | "expect_direct_response" => (&["step", "response"], &[]),
         "capture_command_result" | "expect_replay_result" if major >= 12 => {
             (&["step", "capture"], &[])
         }
@@ -465,9 +470,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 let _: crate::replay::Observation = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
             }
-            "response" if tag == "expect_response_payload" => {
-                let _: crate::response::Observation = serde_json::from_str(&field.raw)
-                    .map_err(|error| field.error("InvalidResponse", error.to_string()))?;
+            "response" if matches!(tag, "expect_response_payload" | "expect_direct_response") => {
+                response_observation(field, tag == "expect_direct_response")?;
             }
             "left" | "right" if tag == "expect_reading_order" => {
                 let reference: crate::reading::ReadingReference = serde_json::from_str(&field.raw)
@@ -497,6 +501,19 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
     }
     Ok(())
+}
+
+fn response_observation(field: &Json, direct: bool) -> Result<(), AdmissionError> {
+    if direct {
+        field
+            .decode_checked_depth::<crate::direct_response::Observation>()
+            .map(|_| ())
+            .map_err(|error| field.error("InvalidResponse", error.to_string()))
+    } else {
+        serde_json::from_str::<crate::response::Observation>(&field.raw)
+            .map(|_| ())
+            .map_err(|error| field.error("InvalidResponse", error.to_string()))
+    }
 }
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
@@ -529,6 +546,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::direct_response::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;

@@ -1,0 +1,23 @@
+   Compiling serde_json v1.0.151
+    Checking schemars v0.8.22
+    Checking ess-primitives v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-primitives)
+    Checking ess-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-domain)
+    Checking ess-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-compiler)
+warning: function `same` is never used
+   --> crates/specify/ess-compiler/src/resolve.rs:413:14
+    |
+413 |     const fn same(left: &str, right: &str) -> bool {
+    |              ^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: function `distinct` is never used
+   --> crates/specify/ess-compiler/src/resolve.rs:429:14
+    |
+429 |     const fn distinct(codes: &[Code]) -> bool {
+    |              ^^^^^^^^
+
+warning: `ess-compiler` (lib) generated 2 warnings
+    Checking ess-gen v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-gen)
+    Checking ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+    Finished `dev` profile [unoptimized] target(s) in 20.25s

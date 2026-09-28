@@ -1,0 +1,107 @@
+task: [fmt-check] cargo fmt --package billing-realization --package ess-cli --package ess-cli-contract --package ess-cli-project --package ess-compiler --package ess-composition --package ess-conformance --package ess-diff --package ess-deployment --package ess-domain --package ess-entity-runtime --package ess-gen --package ess-kubernetes --package ess-openapi --package ess-primitives --package ess-realization --package ess-service-contract --package ess-synth --package ess-xtask --package gatepass-realization --package infra-analyze --package infra-compiler --package infra-domain --package infra-project --package infra-spec --package schema-contract -- --check
+task: [clippy] cargo clippy --workspace --all-targets --locked -- -D warnings
+   Compiling serde_json v1.0.151
+   Compiling ring v0.17.14
+    Checking schemars v0.8.22
+    Checking jsonschema-value v0.52.1
+    Checking referencing v0.52.1
+    Checking ess-primitives v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-primitives)
+    Checking jsonschema v0.52.1
+    Checking ess-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-domain)
+    Checking infra-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-domain)
+    Checking infra-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-compiler)
+    Checking ess-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-compiler)
+    Checking infra-analyze v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-analyze)
+    Checking ess-gen v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-gen)
+    Checking ess-cli-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-cli-contract)
+    Checking ess-cli-project v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-cli-project)
+    Checking infra-spec v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-spec)
+   Compiling rustls v0.23.45
+    Checking rustls-webpki v0.103.15
+    Checking ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+    Checking ess-synth v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-synth)
+    Checking schema-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/schema-contract)
+    Checking infra-project v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-project)
+    Checking ess-realization v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-realization)
+    Checking ess-kubernetes v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/ess-kubernetes)
+    Checking ess-composition v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-composition)
+    Checking ess-openapi v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-openapi)
+    Checking ess-deployment v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-deployment)
+    Checking ess-diff v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-diff)
+    Checking ureq v3.4.2
+    Checking ess-service-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-service-contract)
+    Checking entity-core v0.24.1 (https://github.com/beyond10x/entity-runtime?tag=0.24.1#4746bd7c)
+    Checking ess-entity-runtime v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-entity-runtime)
+    Checking ess-cli v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-cli)
+   Compiling ess-xtask v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-xtask)
+    Checking rcgen v0.13.2
+    Checking billing-realization v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/examples/billing-realization)
+    Checking gatepass-realization v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/examples/gatepass-realization)
+    Finished `dev` profile [unoptimized] target(s) in 1m 04s
+task: [doc-check] cargo doc --workspace --no-deps --locked
+    Blocking waiting for file lock on build directory
+    Checking ess-primitives v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-primitives)
+    Checking infra-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-domain)
+    Checking ess-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-domain)
+    Checking infra-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-compiler)
+    Checking infra-analyze v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-analyze)
+    Checking jsonschema-value v0.52.1
+    Checking referencing v0.52.1
+    Checking jsonschema v0.52.1
+    Checking ess-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-compiler)
+    Checking ess-gen v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-gen)
+    Checking ess-realization v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-realization)
+    Checking ess-synth v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-synth)
+    Checking ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+    Checking ess-cli-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-cli-contract)
+    Checking infra-spec v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-spec)
+    Checking schema-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/schema-contract)
+    Checking ess-deployment v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-deployment)
+    Checking ess-kubernetes v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/ess-kubernetes)
+    Checking ess-cli-project v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-cli-project)
+    Checking infra-project v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-project)
+    Checking ess-diff v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-diff)
+    Checking ess-composition v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-composition)
+    Checking ess-openapi v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-openapi)
+   Compiling ess-xtask v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-xtask)
+    Checking ess-service-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-service-contract)
+ Documenting ess-entity-runtime v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-entity-runtime)
+    Checking ess-cli v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-cli)
+ Documenting ess-cli v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-cli)
+ Documenting ess-xtask v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/edge/ess-xtask)
+ Documenting ess-diff v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-diff)
+ Documenting schema-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/schema-contract)
+ Documenting ess-deployment v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-deployment)
+ Documenting ess-kubernetes v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/ess-kubernetes)
+ Documenting ess-cli-project v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-cli-project)
+ Documenting infra-project v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-project)
+ Documenting ess-service-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-service-contract)
+ Documenting ess-synth v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-synth)
+ Documenting ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+ Documenting ess-realization v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-realization)
+ Documenting ess-composition v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-composition)
+ Documenting ess-cli-contract v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-cli-contract)
+ Documenting ess-gen v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-gen)
+ Documenting ess-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-compiler)
+ Documenting infra-spec v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-spec)
+ Documenting infra-analyze v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-analyze)
+ Documenting infra-compiler v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-compiler)
+ Documenting ess-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-domain)
+ Documenting ess-primitives v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/specify/ess-primitives)
+ Documenting ess-openapi v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/generate/ess-openapi)
+ Documenting infra-domain v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/infra/infra-domain)
+    Finished `dev` profile [unoptimized] target(s) in 1m 27s
+   Generated $HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/target/doc/billing_realization/index.html and 29 other files
+task: [release-check] cargo xtask release verify
+release 0.38.0: workspace version and changelog agree
+task: [action-check] bash -n .github/actions/release-component/release.sh
+task: [action-check] grep -q '^name: Release ESS component$' .github/actions/release-component/action.yml
+task: [action-check] grep -q 'build-image:' .github/actions/release-component/action.yml
+task: [action-check] grep -q 'rust-toolchain:' .github/actions/release-component/action.yml
+task: [action-check] grep -q "if: inputs.node-version != ''" .github/actions/release-component/action.yml
+task: [action-check] grep -q "if: inputs.pnpm-version != ''" .github/actions/release-component/action.yml
+task: [action-check] grep -q 'pnpm-version requires node-version' .github/actions/release-component/action.yml
+task: [action-check] grep -q 'generate release bundle' .github/actions/release-component/release.sh
+task: [action-check] grep -q 'run: bash "$GITHUB_ACTION_PATH/release.sh"' .github/actions/release-component/action.yml
+task: [action-check] grep -q 'helm push .*2>&1' .github/actions/release-component/release.sh
+task: [action-check] test "$(printf 'Pushed: example.invalid/charts/service:1.2.3\nDigest: sha256:%064d\n' 0 | grep -Eo 'sha256:[0-9a-f]{64}' | tail -1)" = "sha256:0000000000000000000000000000000000000000000000000000000000000000"

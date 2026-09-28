@@ -134,6 +134,13 @@ Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: 
 A bare variant list is admitted by every version, and a variant that declares no naming serializes
 back as a bare name, so a specification written before `ess/5` keeps its exact bytes.
 
+`ess/17` is unreleased. It adds `returns: true` to an outcome whose command declares a nonempty
+typed `response`. The outcome promises a successful return matching that schema; it makes no
+claim about persistence or side effects. Those require their own declarations and real API
+observations. It cannot also declare an error, `accepts: nothing`, or `replays`. Older readers
+refuse the header, and this build refuses `returns` under an earlier header. A model without it
+keeps its bytes and compiled digest.
+
 ## `ess-diff/` — what moved between two revisions
 
 | Version | Released in | What changed | An older reader |
@@ -247,6 +254,16 @@ The `page` view expectation (beyond10x/ess#174) is round-3 vocabulary too: after
 
 A bounded retry (beyond10x/ess#165) is round-3 vocabulary too: `configure_external_outcome` may carry `times` (force the outcome on the next `times` invocations), `expect_invocation` may carry `count` (exactly that many matching invocations), and a binding scenario may be filed under the `final-failure` aspect. A suite carrying any of them takes `/26` or `/27`. A target that cannot force an outcome more than once reports the scenario `unsupported`.
 
+`ess-conformance/28` and `ess-conformance/29` are unreleased. They add
+`expect_direct_response`, which checks the immediately preceding invocation's actual return
+against its complete typed response schema and any authored literals. Version 28 is ordinary;
+29 carries declared coverage and exact-parent lineage. The Rust runner requires report/2.
+Go and TypeScript generation refuse the observation, and older readers refuse these envelopes
+before target callbacks. Released suites 26 and 27 retain their round-3 meaning and bytes.
+Direct responses preserve exact integers, nested presence policies, collection order and
+duplicate multiplicity; Binary64 remains outside the admitted profile. Responses are bounded
+to 1 MiB, depth 128 and 65,536 members per collection, without truncation.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
@@ -267,6 +284,15 @@ Two readers fail differently at the same document, which is why the number exist
 Rust reader parses a closed tagged enum and fails with `unknown variant` — a message that blames
 the document. An old Go runner abandons a scenario whose first word it does not know and reports it
 skipped, which is the right answer reached by accident. Neither is a verdict anyone should act on.
+
+## `ess-scenario/` — authored conformance scenarios
+
+`ess-scenario/4` is unreleased. An act may declare `response: {field: literal}` to assert
+selected fields of its command's return. Each literal must match its complete declared type;
+unknown fields and invalid nested presence are refused before execution. An empty mapping
+requests only the complete response shape check. Every selected `returns: true` outcome gets
+that shape check even without authored literals. No event, stored subject or view is invented.
+Earlier scenario readers refuse the header; earlier versions refuse the new key.
 
 ## `ess-normalization/` — normalization recipes
 
