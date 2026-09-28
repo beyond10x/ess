@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "id": "https://github.com/beyond10x/ess/schemas/ess-history-adapter.schema.json",
+  "title": "ess-history-adapter/1",
+  "description": "How the lines of a recorded command/response log map onto ess-history/1 operations, as declared by models/recorded-log-adapter/ and read by `ess verify conform import-history`. Each source is the word absent or an object naming a JSON pointer into one log line; every source but rows must be declared.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "fields"],
+  "properties": {
+    "format": { "$ref": "#/definitions/AdapterFormat" },
+    "fields": { "$ref": "#/definitions/Fields" }
+  },
+  "definitions": {
+    "AdapterFormat": {
+      "type": "string",
+      "enum": ["ess-history-adapter/1"]
+    },
+    "Absent": {
+      "description": "The log does not carry this field.",
+      "type": "string",
+      "enum": ["absent"]
+    },
+    "Completion": {
+      "description": "concurrent.history.Completion, which the log's word for a completion means.",
+      "type": "string",
+      "enum": ["Returned", "Indeterminate"]
+    },
+    "JsonPointer": {
+      "description": "An RFC 6901 JSON pointer into one log line.",
+      "type": "string",
+      "pattern": "^/"
+    },
+    "Pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pointer"],
+      "properties": {
+        "pointer": { "$ref": "#/definitions/JsonPointer" }
+      }
+    },
+    "MappedCompletion": {
+      "description": "Where the completion is, and what each of the log's words for it means. A word not listed is refused on import.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pointer", "values"],
+      "properties": {
+        "pointer": { "$ref": "#/definitions/JsonPointer" },
+        "values": {
+          "description": "Each of the log's words and the completion it means. A key here is a string word: it maps a log value that is that string, and the key \"200\" maps the string \"200\", not the number 200. A JSON object's keys are always strings, so this schema, which describes the JSON spelling, admits string words only. An adapter written in YAML may also use an integer key (200: Returned), which maps a log value that is that integer; that spelling has no JSON form. A word is mapped once: a YAML adapter mapping both 200 and \"200\" is refused.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/Completion" }
+        }
+      }
+    },
+    "Fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "client",
+        "command",
+        "subject_key",
+        "invoked_at",
+        "returned_at",
+        "outcome",
+        "completion"
+      ],
+      "properties": {
+        "operation_id": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "client": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "command": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "subject_key": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "invoked_at": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "returned_at": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "outcome": {
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        },
+        "completion": {
+          "oneOf": [
+            { "$ref": "#/definitions/Absent" },
+            { "$ref": "#/definitions/MappedCompletion" }
+          ]
+        },
+        "rows": {
+          "description": "A JSON array of row identities, for a read of a view. Absent when left out.",
+          "oneOf": [{ "$ref": "#/definitions/Absent" }, { "$ref": "#/definitions/Pointer" }]
+        }
+      }
+    }
+  }
+}

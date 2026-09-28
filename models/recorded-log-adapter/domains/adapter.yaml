@@ -1,0 +1,72 @@
+domain: recorded.adapter
+
+types:
+  - name: recorded.adapter.AdapterFormat
+    kind: enum
+    variants: ["ess-history-adapter/1"]
+
+  - name: recorded.adapter.Absent
+    kind: enum
+    variants: [absent]
+
+  - name: recorded.adapter.Completion
+    kind: enum
+    variants: [Returned, Indeterminate]
+
+  - name: recorded.adapter.JsonPointer
+    kind: newtype
+    of: String
+    prefix: "/"
+
+  - name: recorded.adapter.Pointer
+    kind: struct
+    fields:
+      - name: pointer
+        type: recorded.adapter.JsonPointer
+
+  - name: recorded.adapter.MappedCompletion
+    kind: struct
+    fields:
+      - name: pointer
+        type: recorded.adapter.JsonPointer
+      - name: values
+        type: Map<String, recorded.adapter.Completion>
+
+  - name: recorded.adapter.Fields
+    kind: struct
+    fields:
+      - name: operation_id
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: client
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: command
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: subject_key
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: invoked_at
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: returned_at
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: outcome
+        type: Optional<recorded.adapter.Pointer>
+        presence: null_when_absent
+      - name: completion
+        type: Optional<recorded.adapter.MappedCompletion>
+        presence: null_when_absent
+      - name: rows
+        type: Optional<recorded.adapter.Pointer>
+        presence: omitted_when_absent
+
+  - name: recorded.adapter.Adapter
+    kind: struct
+    fields:
+      - name: format
+        type: recorded.adapter.AdapterFormat
+      - name: fields
+        type: recorded.adapter.Fields
