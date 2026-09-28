@@ -179,10 +179,10 @@
 
 mod absent_input;
 mod aggregate;
+mod bounded_retry;
 mod caller;
 mod existence;
 mod paging;
-mod bounded_retry;
 mod related;
 mod set_effects;
 mod subject_fact;
