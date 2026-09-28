@@ -66,6 +66,11 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
         "crates/verify/ess-conformance/src/scenario.rs",
         "SUPPORTED_SUITE_FORMATS",
     ),
+    (
+        "ess-composition",
+        "crates/specify/ess-composition/src/lib.rs",
+        "SUPPORTED_COMPOSITION_FORMATS",
+    ),
 ];
 
 /// Every supported format version and the release that first shipped it.
@@ -87,7 +92,10 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
 /// | `9572af9b` | `ess/3`, `ess/4`, `ess-diff/3`, `ess-diff/4`, `ess-conformance/6`–`/9` | 0.23.0 |
 /// | `9746c09f` | `ess/5`, `ess-diff/5` | 0.27.0 |
 ///
-/// The families after `ess-conformance` have no `SUPPORTED_*` constant to read. Their rows are the
+/// `ess-composition` gained `SUPPORTED_COMPOSITION_FORMATS` with `/2`; its `/1` row is read the way
+/// the rows below are, and `/2` is unreleased.
+///
+/// The families after `ess-composition` have no `SUPPORTED_*` constant to read. Their rows are the
 /// ones the version history gives a release (`HISTORY`), each read as the earliest version tag
 /// whose non-test Rust source carries the quoted `"family/N"` literal
 /// (`git grep -F '"family/N"' <tag> -- '*.rs' ':!*/tests/*'`, tags in version order). A version
@@ -147,6 +155,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-conformance", 25, Some("0.37.0")),
     ("ess-conformance", 26, None),
     ("ess-conformance", 27, None),
+    ("ess-composition", 1, Some("0.4.0")),
+    ("ess-composition", 2, None),
     ("ess-scenario", 1, Some("0.16.0")),
     ("ess-scenario", 2, Some("0.23.0")),
     ("ess-scenario", 3, Some("0.35.0")),
