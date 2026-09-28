@@ -23,6 +23,7 @@ import {
   equal,
   errorText,
   goMarshal,
+  isObject,
   name,
   paddedBase64,
 } from './runtime.js';
@@ -47,6 +48,11 @@ export interface ResponseObservation {
   /** Event field name to the response field it must equal. */
   mappings: Record<string, string>;
   targets: AccessorField[];
+  /**
+   * Response field name to its presence policy (suite/24, beyond10x/ess#139): `null_when_absent`
+   * or `omitted_when_absent`. A field with none admits both spellings of an absent value.
+   */
+  presence?: Record<string, string>;
 }
 
 const BYTE_LIMIT = 1048576;
@@ -143,10 +149,7 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
       outcome: decodedString(outcomeRaw.outcome, 'an outcome'),
     },
     event: decodedString(document.event, 'an event'),
-    fields:
-      document.fields === undefined || document.fields === null
-        ? []
-        : array(document.fields).map(decodeAccessorField),
+    fields: [],
     declarations,
     mappings,
     targets:
@@ -154,6 +157,29 @@ export function decodeResponseObservation(value: unknown): ResponseObservation {
         ? []
         : array(document.targets).map(decodeAccessorField),
   };
+  // A response field alone may carry a presence policy; it is read beside the field, not into it,
+  // so the contract the byte bound measures stays the one Go measures.
+  const presence: Record<string, string> = {};
+  for (const raw of document.fields === undefined || document.fields === null
+    ? []
+    : array(document.fields)) {
+    const policy = isObject(raw) ? raw.presence : undefined;
+    const field = decodeAccessorField(
+      policy === undefined
+        ? raw
+        : Object.fromEntries(Object.entries(raw).filter(([k]) => k !== 'presence')),
+    );
+    if (policy !== undefined) {
+      if (policy !== 'null_when_absent' && policy !== 'omitted_when_absent') {
+        throw new Error('presence must be null_when_absent or omitted_when_absent');
+      }
+      presence[field.name] = policy;
+    }
+    observation.fields.push(field);
+  }
+  if (Object.keys(presence).length > 0) {
+    observation.presence = presence;
+  }
   validateResponseObservation(observation);
   return observation;
 }
@@ -216,6 +242,354 @@ export function validateResponseObservation(observation: ResponseObservation): v
   }
   if (goBytes(marshalShape(observation)) > BYTE_LIMIT) {
     throw new Error('response contract byte limit');
+  }
+}
+
+// ---- retained results (suite/12, `replays:`) --------------------------------------------------------
+
+/**
+ * A retained-result observation: the original command's successful outcome, the retained branch
+ * of the same command, the subject both are about, and the complete response schema their results
+ * are compared under. `replay::Observation` in Rust.
+ */
+export interface RetainedCapture {
+  snapshot: string;
+  origin: OutcomeRef;
+  replay: OutcomeRef;
+  instance: string;
+  /** Where the original subject's identity is read: an input field, or one direct event's field. */
+  identity: { kind: 'input'; field: string } | { kind: 'event'; event: string; field: string };
+  fields: AccessorField[];
+  declarations: Record<string, SelectionDeclaration>;
+  /** The capture as written, for the exact comparison of the original and the replay's authority. */
+  written: string;
+}
+
+/** A retained original result, and what the original was sent with. */
+export interface RetainedResult {
+  capture: RetainedCapture;
+  response: Record<string, Node>;
+  identity: Node;
+  input: Record<string, Node> | undefined;
+  actor: string;
+}
+
+/** Read and validate a retained-result observation, refusing an unknown key anywhere in it. */
+export function decodeRetainedCapture(value: unknown): RetainedCapture {
+  const root = closed(value, 'snapshot origin replay instance identity fields declarations', '');
+  const outcome = (raw: unknown): OutcomeRef => {
+    const held = closed(raw, 'command outcome', '');
+    return {
+      command: decodedString(held.command, 'a command'),
+      outcome: decodedString(held.outcome, 'an outcome'),
+    };
+  };
+  const identityRaw = root.identity;
+  let identity: RetainedCapture['identity'];
+  if (isObject(identityRaw) && identityRaw.kind === 'input') {
+    const held = closed(identityRaw, 'kind field', '');
+    identity = { kind: 'input', field: decodedString(held.field, 'an identity field') };
+  } else if (isObject(identityRaw) && identityRaw.kind === 'event') {
+    const held = closed(identityRaw, 'kind event field', '');
+    identity = {
+      kind: 'event',
+      event: decodedString(held.event, 'an identity event'),
+      field: decodedString(held.field, 'an identity field'),
+    };
+  } else {
+    throw new Error('retained identity must be an input or an event field');
+  }
+  if (!isObject(root.declarations)) {
+    throw new Error('retained declarations must be an object');
+  }
+  const declarations: Record<string, SelectionDeclaration> = {};
+  for (const [key, body] of Object.entries(root.declarations)) {
+    declarations[key] = decodeDeclaration(body);
+  }
+  const capture: RetainedCapture = {
+    snapshot: decodedString(root.snapshot, 'a snapshot name'),
+    origin: outcome(root.origin),
+    replay: outcome(root.replay),
+    instance: decodedString(root.instance, 'an instance name'),
+    identity,
+    fields: array(root.fields).map(decodeAccessorField),
+    declarations,
+    written: goMarshal(value),
+  };
+  if (
+    capture.origin.command !== capture.replay.command ||
+    capture.origin.outcome === capture.replay.outcome
+  ) {
+    throw new Error('replay must name a distinct origin in the same command');
+  }
+  if (capture.fields.length === 0 || capture.fields.length > 256) {
+    throw new Error('replay schema resource limit');
+  }
+  validateTypedFields([capture.fields], declarations);
+  const floating = (type: string): boolean => /(^|[<,\s])(Decimal|Binary64)([>,\s]|$)/.test(type);
+  if (
+    capture.fields.some((field) => floating(field.type)) ||
+    Object.values(declarations).some(
+      (declared) => floating(declared.of) || declared.fields.some((field) => floating(field.type)),
+    )
+  ) {
+    throw new Error('Decimal and Binary64 replay results are unsupported');
+  }
+  return capture;
+}
+
+/** Admit one retained-result observation: its grammar, then the checks decoding makes. */
+export function admitRetainedCapture(value: unknown): void {
+  const root = closed(value, 'snapshot origin replay instance identity fields declarations', '');
+  admitOutcome(root.origin);
+  admitOutcome(root.replay);
+  name(root.snapshot, true);
+  name(root.instance, true);
+  for (const field of array(root.fields)) {
+    admitAccessorField(field);
+  }
+  admitTypedDeclarations(root.declarations);
+  decodeRetainedCapture(value);
+}
+
+/** Every value of an actual response, and no undeclared member, under the capture's schema. */
+function admitRetainedResponse(
+  capture: RetainedCapture,
+  response: Record<string, Node> | null | undefined,
+): Record<string, Node> {
+  if (response === null || response === undefined) {
+    throw new Error('command returned no response');
+  }
+  const names = new Set(capture.fields.map((field) => field.name));
+  if (Object.keys(response).some((key) => !names.has(key))) {
+    throw new Error('undeclared response field');
+  }
+  const observer = responseObserver(capture.declarations);
+  const counter: ByteCounter = { bytes: 0 };
+  for (const field of capture.fields) {
+    observer.validateValue(
+      field.type,
+      owned(response, field.name),
+      present(response, field.name),
+      counter,
+      0,
+    );
+  }
+  if (counter.bytes > BYTE_LIMIT) {
+    throw new Error('replay response byte limit');
+  }
+  return response;
+}
+
+/** What the retained-result steps read of the run they are handed. */
+export type RetainedRun = Pick<
+  ScenarioRun,
+  'lastCommand' | 'last' | 'lastInput' | 'lastActor' | 'instances' | 'retained' | 'fail'
+>;
+
+/**
+ * `capture_command_result` (original) and `expect_replay_result`: the original's exact typed result
+ * is retained, and a retry of the same request by the same actor about the same subject returns
+ * exactly it, with no error and no new facts — the Rust runner's `retained_result`.
+ */
+export function retainedResult(
+  run: RetainedRun,
+  index: number,
+  capture: RetainedCapture | undefined,
+  original: boolean,
+): boolean {
+  if (capture === undefined) {
+    return run.fail(index, 'missing retained result observation');
+  }
+  const refuse = (reason: string): boolean =>
+    run.fail(
+      index,
+      `retained result ${capture.snapshot}: exact retained original result, without error or ` +
+        `new facts; ${reason}`,
+    );
+  if (run.lastCommand === '') {
+    return refuse('no preceding command');
+  }
+  const expected = original ? capture.origin : capture.replay;
+  if (run.lastCommand !== expected.command || run.last.outcome !== expected.outcome) {
+    return refuse('retained result names a different command or outcome');
+  }
+  if (run.last.error !== '') {
+    return refuse('retained result returned an error');
+  }
+  if (!Object.prototype.hasOwnProperty.call(run.instances, capture.instance)) {
+    return refuse('original subject has no observed identity');
+  }
+  const identity = run.instances[capture.instance];
+  try {
+    if (original) {
+      let read: Node;
+      if (capture.identity.kind === 'input') {
+        if (!present(run.lastInput, capture.identity.field)) {
+          throw new Error('original input identity is missing');
+        }
+        read = owned(run.lastInput, capture.identity.field);
+      } else {
+        const event = capture.identity.event;
+        const matching = run.last.directEvents.filter((held) => held.event === event);
+        if (matching.length === 0) {
+          throw new Error('original identity event is missing');
+        }
+        if (matching.length > 1) {
+          throw new Error('original identity event is ambiguous');
+        }
+        if (!present(matching[0]!.payload, capture.identity.field)) {
+          throw new Error('original event identity is missing');
+        }
+        read = owned(matching[0]!.payload, capture.identity.field);
+      }
+      if (!equal(read, identity)) {
+        throw new Error('captured subject differs from the actual original identity');
+      }
+      const response = admitRetainedResponse(capture, run.last.response);
+      if (run.retained.has(capture.snapshot)) {
+        throw new Error('original result snapshot already exists');
+      }
+      run.retained.set(capture.snapshot, {
+        capture,
+        response,
+        identity,
+        input: run.lastInput,
+        actor: run.lastActor,
+      });
+      return true;
+    }
+    const saved = run.retained.get(capture.snapshot);
+    if (saved === undefined) {
+      throw new Error('original result snapshot is missing');
+    }
+    if (
+      saved.capture.written !== capture.written ||
+      !equal(saved.identity, identity) ||
+      goMarshal(saved.input ?? null) !== goMarshal(run.lastInput ?? null) ||
+      saved.actor !== run.lastActor
+    ) {
+      throw new Error('replay substituted the original authority, subject, input, or actor');
+    }
+    if (run.last.directEvents.length > 0) {
+      throw new Error('replay emitted new facts');
+    }
+    admitRetainedResponse(capture, saved.response);
+    const replayed = admitRetainedResponse(capture, run.last.response);
+    if (!exactlyEqual(saved.response, replayed)) {
+      throw new Error('retry result differs from retained original response');
+    }
+    return true;
+  } catch (error) {
+    return refuse(errorText(error));
+  }
+}
+
+/** Structural equality with every number compared as the digits it was written with. */
+function exactlyEqual(left: Node, right: Node): boolean {
+  if (left instanceof JsonNumber || right instanceof JsonNumber) {
+    return left instanceof JsonNumber && right instanceof JsonNumber && left.raw === right.raw;
+  }
+  if (Array.isArray(left)) {
+    return (
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, position) => exactlyEqual(item, right[position]))
+    );
+  }
+  if (isObject(left)) {
+    if (!isObject(right)) {
+      return false;
+    }
+    const keys = Object.keys(left);
+    return (
+      keys.length === Object.keys(right).length &&
+      keys.every((key) => Object.hasOwn(right, key) && exactlyEqual(left[key], right[key]))
+    );
+  }
+  return left === right || (left === null && right === null);
+}
+
+// ---- complete subject rows (suite/12 vocabulary, synthesized into every later suite) -------------
+
+/**
+ * The complete projected row of one subject: its finite typed schema, never expected data. What a
+ * `snapshot_complete_subject` step carries, and `subject::SubjectShape` in Rust.
+ */
+export interface SubjectShape {
+  /** The required, non-optional projected identity field selecting the subject. */
+  identityField: string;
+  /** Every declared field of the projection. */
+  fields: AccessorField[];
+  declarations: Record<string, SelectionDeclaration>;
+}
+
+/** Read and validate a subject shape, refusing an unknown key anywhere in it. */
+export function decodeSubjectShape(value: unknown): SubjectShape {
+  const root = closed(value, 'identity_field fields declarations', '');
+  const declarationsRaw = root.declarations;
+  if (!isObject(declarationsRaw)) {
+    throw new Error('subject declarations must be an object');
+  }
+  const declarations: Record<string, SelectionDeclaration> = {};
+  for (const [key, body] of Object.entries(declarationsRaw)) {
+    declarations[key] = decodeDeclaration(body);
+  }
+  const shape: SubjectShape = {
+    identityField: decodedString(root.identity_field, 'an identity field'),
+    fields: array(root.fields).map(decodeAccessorField),
+    declarations,
+  };
+  validateSubjectShape(shape);
+  return shape;
+}
+
+/** Admit one authored subject shape: the same checks, with the grammar of each field and type. */
+export function admitSubjectShape(value: unknown): void {
+  const root = closed(value, 'identity_field fields declarations', '');
+  for (const field of array(root.fields)) {
+    admitAccessorField(field);
+  }
+  admitTypedDeclarations(root.declarations);
+  decodeSubjectShape(value);
+}
+
+function validateSubjectShape(shape: SubjectShape): void {
+  validateTypedFields([shape.fields], shape.declarations);
+  const identity = shape.fields.find((field) => field.name === shape.identityField);
+  if (identity === undefined) {
+    throw new Error('complete subject identity is not a declared field');
+  }
+  const optional = (type: string, depth: number): boolean => {
+    if (accessorOptional(type)[1]) {
+      return true;
+    }
+    const declared = owned(shape.declarations, type);
+    return depth < 128 && declared?.kind === 'newtype' && optional(declared.of, depth + 1);
+  };
+  if (optional(identity.type, 0)) {
+    throw new Error('complete subject identity cannot be optional');
+  }
+}
+
+/**
+ * Require every declared value of an actual row, each of its declared type. Extra row keys stay
+ * part of the exact comparison that follows; they are not refused here.
+ */
+export function admitSubjectRow(shape: SubjectShape, row: Record<string, Node>): void {
+  const observer = responseObserver(shape.declarations);
+  const counter: ByteCounter = { bytes: 0 };
+  for (const field of shape.fields) {
+    observer.validateValue(
+      field.type,
+      owned(row, field.name),
+      present(row, field.name),
+      counter,
+      0,
+    );
+  }
+  if (counter.bytes > BYTE_LIMIT || goBytes(row) > BYTE_LIMIT) {
+    throw new Error('complete subject row byte limit');
   }
 }
 
@@ -398,6 +772,23 @@ export function compareResponse(
   if (counter.bytes > BYTE_LIMIT) {
     throw new Error('response byte limit');
   }
+  for (const field of observation.fields) {
+    const policy = owned(observation.presence, field.name);
+    if (policy === 'null_when_absent' && !present(response, field.name)) {
+      throw new Error(
+        `response field ${field.name} was left out, and it is declared null_when_absent`,
+      );
+    }
+    if (
+      policy === 'omitted_when_absent' &&
+      present(response, field.name) &&
+      owned(response, field.name) === null
+    ) {
+      throw new Error(
+        `response field ${field.name} was sent as null, and it is declared omitted_when_absent`,
+      );
+    }
+  }
   for (const [target, source] of Object.entries(observation.mappings)) {
     const actual = owned(response, source);
     const exists = present(response, source);
@@ -452,12 +843,21 @@ export function expectResponsePayload(run: ResponseRun, index: number, step: Ste
 }
 
 /** Admit one authored response observation. */
-export function admitResponse(value: unknown): void {
+export function admitResponse(value: unknown, major = 21): void {
   const root = closed(value, 'command outcome event fields declarations mappings targets', '');
   admitOutcome(root.outcome);
   admitTypedDeclarations(root.declarations);
   for (const key of ['fields', 'targets']) {
     for (const field of array(root[key])) {
+      if (key === 'fields' && isObject(field) && Object.hasOwn(field, 'presence')) {
+        // A response field's presence policy (beyond10x/ess#139) is suite/24 vocabulary.
+        if (major < 24) {
+          throw new Error('field presence policies require suite/24 or /25');
+        }
+        const { presence: _policy, ...rest } = field;
+        admitAccessorField(rest);
+        continue;
+      }
       admitAccessorField(field);
     }
   }

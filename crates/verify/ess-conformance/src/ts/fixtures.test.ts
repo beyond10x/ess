@@ -76,25 +76,24 @@ test('suite admission refuses old vocabulary, misplaced preludes and undeclared 
   ]);
 });
 
-// Suite/18 implies every major below it, and suites 12–17 carry vocabulary this runtime does not
-// run. Admitting 18 for fixtures must not admit that vocabulary: each is still refused by name.
-test('fixture suites still refuse the retained-result, string-operator and aggregate vocabulary', () => {
-  for (const step of ['capture_command_result', 'expect_replay_result', 'expect_no_events']) {
-    assert.throws(() => admitSuite(suiteText([...steps, { step }])), /unsupported step/);
+// Suite/18 implies every major below it, and suites 12–17 carry retained results, string operators
+// and aggregate views, which this runtime runs (beyond10x/ess#188). A fixture suite admits that
+// vocabulary as the Rust reader does, and still refuses a malformed step of it.
+test('fixture suites admit the retained-result, string-operator and aggregate vocabulary', () => {
+  for (const step of ['capture_command_result', 'expect_replay_result']) {
+    assert.throws(() => admitSuite(suiteText([...steps, { step }])), /missing field capture/);
   }
+  admitSuite(suiteText([...steps, { step: 'expect_no_events' }]));
   const satisfies = {
     step: 'expect_view',
     view: 'example.Opened',
     expectation: { expect: 'satisfies', predicate: { principal: { starts_with: 'x' } } },
   };
-  assert.throws(
-    () => admitSuite(suiteText([...steps, satisfies])),
-    /unknown predicate constraint operator "starts_with"/,
-  );
+  admitSuite(suiteText([...steps, satisfies]));
   const aggregate = JSON.parse(suiteText());
   aggregate.scenarios['example.Opened/aggregate'] =
     aggregate.scenarios['example.Open/outcome/opened'];
-  assert.throws(() => admitSuite(JSON.stringify(aggregate)), /aggregate views require/);
+  admitSuite(JSON.stringify(aggregate));
 });
 
 test('fixture snapshots survive provider and request mutation, and wrong observed values fail', async () => {

@@ -40,6 +40,7 @@ import {
   scenarioIdentity,
   strictJSON,
   unsupported,
+  UNEXECUTED_STEPS,
   writeReport,
 } from './runtime.js';
 import type {
@@ -100,35 +101,51 @@ class Recorder implements TestScope {
 
 const digest = 'a'.repeat(64);
 
-test('retained-result envelopes and mislabeled steps refuse before target callbacks', async () => {
+// Suites 12–17 carry retained results, string operators and aggregate views, and every later major
+// implies them, so this runtime admits and runs them (beyond10x/ess#188). What stays refused is the
+// construct in a forged older envelope: refused by its version, before any target callback.
+test('suites 12 to 17 are admitted and each is run only with an explicit report format', async () => {
+  for (const major of [12, 13, 14, 15, 16, 17]) {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = `ess-conformance/${major}`;
+    if (major % 2 === 1) {
+      // A coverage major carries its inventory; its absence is refused on its own.
+      assert.throws(() => admitSuiteDocument(JSON.stringify(raw), false), /coverage is required/);
+      continue;
+    }
+    assert.equal(
+      admitSuiteDocument(JSON.stringify(raw), false).provenance.suite_version,
+      `ess-conformance/${major}`,
+    );
+    await assert.rejects(
+      runWith(new Recorder('report'), () => ({}) as Target, JSON.stringify(raw)),
+      /require explicit ESS_REPORT_FORMAT=2/,
+    );
+  }
+});
+
+test('retained-result steps in a forged older envelope refuse before target callbacks', async () => {
   let callbacks = 0;
   const target = (): Target => {
     callbacks += 1;
     throw new Error('target must not be constructed');
   };
-  for (const major of [12, 13]) {
-    const raw = JSON.parse(suiteText());
-    raw.provenance.suite_version = `ess-conformance/${major}`;
-    await assert.rejects(
-      runWith(new Recorder('retained'), target, JSON.stringify(raw)),
-      /unsupported suite version/,
-    );
-  }
-  for (const step of ['capture_command_result', 'expect_replay_result', 'expect_no_events']) {
+  for (const [step, reason] of [
+    ['capture_command_result', /retained results require suite\/12 or \/13/],
+    ['expect_replay_result', /retained results require suite\/12 or \/13/],
+    ['expect_no_events', /`expect_no_events` requires suite\/12 or \/13/],
+  ] as const) {
     const raw = JSON.parse(suiteText());
     raw.provenance.suite_version = 'ess-conformance/10';
     raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push({ step });
-    await assert.rejects(
-      runWith(new Recorder('retained'), target, JSON.stringify(raw)),
-      /unsupported step/,
-    );
+    await assert.rejects(runWith(new Recorder('retained'), target, JSON.stringify(raw)), reason);
   }
   assert.equal(callbacks, 0);
 });
 
-// String operators (beyond10x/ess#95) are not a TypeScript lane: the suites that carry one are
-// refused by their version, and a forged older suite carrying one is refused by the operator.
-test('string-operator suites and forged older ones refuse before target callbacks', async () => {
+// String operators (beyond10x/ess#95) are suite/14 vocabulary: a forged older suite carrying one is
+// refused by its version, as the Rust reader refuses it.
+test('string operators in a forged older envelope refuse before target callbacks', async () => {
   let callbacks = 0;
   const target = (): Target => {
     callbacks += 1;
@@ -139,15 +156,6 @@ test('string-operator suites and forged older ones refuse before target callback
     view: 'billing.Invoices',
     expectation: { expect: 'satisfies', predicate: { not: { customer: { starts_with: '+44' } } } },
   };
-  for (const major of [14, 15]) {
-    const raw = JSON.parse(suiteText());
-    raw.provenance.suite_version = `ess-conformance/${major}`;
-    raw.scenarios['billing.CreateInvoice/outcome/created'].steps.push(satisfies);
-    await assert.rejects(
-      runWith(new Recorder('strings'), target, JSON.stringify(raw)),
-      /unsupported suite version "ess-conformance\/1[45]"/,
-    );
-  }
   for (const operator of ['starts_with', 'ends_with', 'contains']) {
     const raw = JSON.parse(suiteText());
     raw.provenance.suite_version = 'ess-conformance/10';
@@ -157,29 +165,21 @@ test('string-operator suites and forged older ones refuse before target callback
     });
     await assert.rejects(
       runWith(new Recorder('strings'), target, JSON.stringify(raw)),
-      new RegExp(`unknown predicate constraint operator "${operator}"`),
+      /string predicate operators require suite\/14 or \/15/,
     );
   }
   assert.equal(callbacks, 0);
 });
 
-// Aggregate views (beyond10x/ess#96) are not a TypeScript lane either: their suites are refused by
-// their version, and a forged older suite carrying an aggregate scenario is refused by its id.
-test('aggregate suites and forged older ones refuse before target callbacks', async () => {
+// An aggregate scenario (beyond10x/ess#96) is suite/16 vocabulary: a forged older suite carrying one
+// is refused by its id, and from suite/16 on the id is well formed.
+test('aggregate scenarios in a forged older envelope refuse before target callbacks', async () => {
   let callbacks = 0;
   const target = (): Target => {
     callbacks += 1;
     throw new Error('target must not be constructed');
   };
   const scenario = JSON.parse(suiteText()).scenarios['billing.CreateInvoice/outcome/created'];
-  for (const major of [16, 17]) {
-    const raw = JSON.parse(suiteText());
-    raw.provenance.suite_version = `ess-conformance/${major}`;
-    await assert.rejects(
-      runWith(new Recorder('aggregates'), target, JSON.stringify(raw)),
-      /unsupported suite version "ess-conformance\/1[67]"/,
-    );
-  }
   const forged = JSON.parse(suiteText());
   forged.scenarios['billing.Invoices/aggregate'] = scenario;
   await assert.rejects(
@@ -187,10 +187,71 @@ test('aggregate suites and forged older ones refuse before target callbacks', as
     /aggregate views require suite\/16 or \/17/,
   );
   assert.throws(
-    () => scenarioIdentity('billing.Invoices/aggregate'),
+    () => scenarioIdentity('billing.Invoices/aggregate', 15),
     /aggregate views require suite\/16 or \/17/,
   );
+  assert.doesNotThrow(() => scenarioIdentity('billing.Invoices/aggregate', 16));
   assert.equal(callbacks, 0);
+});
+
+// A construct this runtime cannot execute, from suite/12 on, refuses the one scenario carrying it
+// by name and runs every other (beyond10x/ess#188); below suite/12 it refuses the suite, as it
+// always did. `UNEXECUTED_STEPS` is empty today, so the case registers a construct of its own.
+test('a construct refused by name skips its scenario, and only it', async () => {
+  UNEXECUTED_STEPS['future_step'] = { major: 26, what: 'a step from a later build' };
+  try {
+    const raw = JSON.parse(suiteText());
+    raw.provenance.suite_version = 'ess-conformance/26';
+    // Two scenarios: the one that runs, and the one carrying the construct.
+    delete raw.scenarios['billing.CreateInvoice/outcome/refused'];
+    delete raw.scenarios['billing.CreateInvoice/outcome/unanswered'];
+    raw.scenarios['billing.CreateInvoice/outcome/deferred'] = {
+      purpose: 'A scenario carrying a construct this runtime does not execute',
+      source: [],
+      steps: [
+        ...raw.scenarios['billing.CreateInvoice/outcome/created'].steps,
+        { step: 'future_step' },
+      ],
+    };
+    const suite = admitSuiteDocument(JSON.stringify(raw), false);
+    assert.match(
+      suite.scenarios['billing.CreateInvoice/outcome/deferred']?.refused ?? '',
+      /step 2: the `future_step` step \(a step from a later build\)/,
+    );
+    assert.equal(suite.scenarios['billing.CreateInvoice/outcome/created']?.refused, undefined);
+
+    const recorder = new Recorder('refused');
+    let commands = 0;
+    const target = (): Target =>
+      ({
+        identity: () => ({ name: 'refusal', version: '1' }),
+        beginScenario: () => {},
+        endScenario: () => {},
+        executeCommand: () => {
+          commands += 1;
+          return { outcome: 'created' };
+        },
+      }) as unknown as Target;
+    const previous = process.env.ESS_REPORT_FORMAT;
+    process.env.ESS_REPORT_FORMAT = '2';
+    try {
+      await runWith(recorder, target, JSON.stringify(raw));
+    } finally {
+      if (previous === undefined) delete process.env.ESS_REPORT_FORMAT;
+      else process.env.ESS_REPORT_FORMAT = previous;
+    }
+    assert.deepEqual(recorder.verdicts(), ['passed', 'skipped']);
+    assert.match(recorder.children[1]?.skipped ?? '', /does not execute step 2: the `future_step`/);
+    assert.equal(commands, 1, 'the refused scenario reached no target callback');
+
+    raw.provenance.suite_version = 'ess-conformance/10';
+    assert.throws(
+      () => admitSuiteDocument(JSON.stringify(raw), false),
+      /deferred: unsupported step future_step/,
+    );
+  } finally {
+    delete UNEXECUTED_STEPS['future_step'];
+  }
 });
 
 function suiteText(): string {

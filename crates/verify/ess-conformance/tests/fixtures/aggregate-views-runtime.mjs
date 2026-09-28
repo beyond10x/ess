@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { admitSuiteDocument, run } from './dist/runtime.js';
-// Aggregate suites are not a TypeScript lane: the runtime refuses the suite's version before it
-// constructs a target, so no callback may run.
+// Aggregate suites are a TypeScript lane (beyond10x/ess#188): the runtime admits the suite and
+// constructs a target, which throws here, so the run fails at the target and not at admission.
 let constructed = 0;
 await test('sessions', async (t) => {
   try {
