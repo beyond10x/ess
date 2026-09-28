@@ -20,9 +20,13 @@
 //! A reader assertion (`reader: true`, `ess-composition/3`) admits what a consumer that only reads
 //! the imported type can also afford, because it rejects no value the imported type allows: an
 //! imported newtype read as what it wraps, through any chain; an imported enum read as `String`;
-//! enum variants compared by wire name, the local set including every imported one; `Json` read as
-//! `Map<String, Json>`; and a subset of a struct's fields, where a local field the imported struct
-//! lacks must be `Optional` and not `null_when_absent`. Everything else is compared as above.
+//! enum variants compared by wire name, the local set including every imported one; a value that is
+//! always a JSON object (a struct, or a map with `String` keys) read as `Map<String, Json>`; and a
+//! subset of a struct's fields. An extra local field is matched by wire name against every imported
+//! field, omitted ones included, and compared as a reader when the keys meet; one that meets none
+//! must be `Optional` and not `null_when_absent`. Everything else is compared as above. The subset
+//! assumes a tolerant reader that ignores keys it does not declare; ESS-generated closed types do
+//! not, and that is the author's assertion, not something this comparison can see.
 
 use std::collections::BTreeSet;
 
@@ -170,6 +174,18 @@ impl Comparison<'_> {
                 continue;
             }
             let at = join(path, &field.name);
+            // A reader decodes by wire name: a local field that travels as a key the imported
+            // struct sends reads that field, whatever either end calls it, omitted or not.
+            if self.reader {
+                if let Some(sent) = theirs
+                    .iter()
+                    .find(|candidate| wire_name(candidate) == wire_name(field))
+                {
+                    self.field_naming(&at, field, sent, imported);
+                    self.references(&at, &field.type_ref, &sent.type_ref);
+                    continue;
+                }
+            }
             let optional = matches!(field.type_ref, ResolvedTypeRef::Optional { .. });
             if !(self.reader && optional) {
                 self.drifts.push(format!(
@@ -301,6 +317,9 @@ impl Comparison<'_> {
                 ResolvedTypeRef::Primitive { name: mine },
                 ResolvedTypeRef::Primitive { name: theirs },
             ) if mine == theirs => {}
+            // A value that is always a JSON object is read by `Map<String, Json>`.
+            (local, imported)
+                if self.reader && reads_any_object(local) && self.object_shaped(imported) => {}
             (
                 ResolvedTypeRef::Map {
                     key: my_key,
@@ -331,9 +350,9 @@ impl Comparison<'_> {
     /// `false` when none applies:
     ///
     /// * an imported newtype, through any chain, is read as what it wraps;
-    /// * an imported enum is read as `String`;
-    /// * `Json` is read as `Map<String, Json>`, which is what a JSON object admits.
+    /// * an imported enum is read as `String`.
     ///
+    /// `Json` is not widened: it may be an array or a scalar, which `Map<String, Json>` rejects.
     /// A widening that applies but recurses into a drift records it and still returns `true`.
     fn widened(&mut self, path: &str, local: &ResolvedTypeRef, imported: &ResolvedTypeRef) -> bool {
         match imported {
@@ -355,16 +374,45 @@ impl Comparison<'_> {
                     ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => false,
                 }
             }
-            ResolvedTypeRef::Primitive {
-                name: Primitive::Json,
-            } => matches!(
-                local,
-                ResolvedTypeRef::Map { key: Primitive::String, value }
-                    if matches!(**value, ResolvedTypeRef::Primitive { name: Primitive::Json })
-            ),
             _ => false,
         }
     }
+
+    /// Whether every value of the imported reference is a JSON object: a map with `String` keys,
+    /// or a struct, directly or through a chain of newtypes. `Json`, `Optional` (which may be
+    /// `null`), lists, enums and unions are not.
+    fn object_shaped(&self, imported: &ResolvedTypeRef) -> bool {
+        match imported {
+            ResolvedTypeRef::Map { key, .. } => *key == Primitive::String,
+            ResolvedTypeRef::Declared { name } => {
+                match self
+                    .imported
+                    .types()
+                    .get(name.name())
+                    .map(|found| &found.body)
+                {
+                    Some(ResolvedBody::Struct { .. }) => true,
+                    Some(ResolvedBody::Newtype { of, .. }) => self.object_shaped(of),
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+/// `Map<String, Json>`: the reader that accepts every JSON object.
+fn reads_any_object(local: &ResolvedTypeRef) -> bool {
+    matches!(
+        local,
+        ResolvedTypeRef::Map { key: Primitive::String, value }
+            if matches!(**value, ResolvedTypeRef::Primitive { name: Primitive::Json })
+    )
+}
+
+/// A field's key on the wire.
+fn wire_name(field: &ResolvedField) -> &str {
+    field.naming.wire.as_deref().unwrap_or(&field.name)
 }
 
 fn join(path: &str, name: &str) -> String {

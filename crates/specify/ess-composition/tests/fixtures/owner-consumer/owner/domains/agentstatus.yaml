@@ -38,6 +38,11 @@ types:
     kind: struct
     fields:
       - { name: body, type: Json }
+  - name: demo.owner.agentstatus.ObjectView
+    kind: struct
+    fields:
+      - { name: body, type: demo.owner.agentstatus.CallIdView }
+      - { name: labels, type: "Map<String, String>" }
 
 entities:
   - name: demo.owner.agentstatus.AgentStatus

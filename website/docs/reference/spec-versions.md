@@ -353,10 +353,14 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 
 `ess-composition/3` is unreleased. A `conformances` entry may carry `reader: true`: the consumer's
 type only reads the imported one, so it may also read a newtype as what it wraps, an enum as
-`String`, enum variants by wire name, `Json` as `Map<String, Json>`, and a subset of the fields.
-Anything that could reject an imported value stays `type_conformance_drift`. An entry without
-the key is compared as before. The earlier format keeps its meaning and bytes and refuses the key,
-even `false`; an older reader refuses `/3`.
+`String`, enum variants by wire name, a struct or `String`-keyed map as `Map<String, Json>`, and a
+subset of the fields, with any extra field compared by wire name against every imported field.
+`Json` itself read as a map, and anything else that could reject an imported value, stays
+`type_conformance_drift`. `reader: true` also asserts that the consumer's reader ignores keys it
+does not declare; ESS-generated closed types do not, so a consumer reading through them must not
+use `reader` for a field subset. An entry without the key is compared as before. Earlier formats
+keep their meaning and bytes and refuse the key whatever its value, `null` included; an older
+reader refuses `/3`.
 
 ## Still at version 1
 

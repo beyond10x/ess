@@ -19,8 +19,11 @@
 //!
 //! Under [`READER_COMPOSITION_FORMAT`] a conformance may carry `reader: true`: the local type only
 //! reads the imported one off the wire, so it may also read a newtype as its primitive, an enum as
-//! `String`, enum variants by wire name, a JSON value as a map of JSON, and a subset of the
-//! imported fields. Anything that could reject a value the imported type allows stays drift.
+//! `String`, enum variants by wire name, a struct or `String`-keyed map as `Map<String, Json>`, and
+//! a subset of the imported fields. `reader: true` also asserts that the consumer's reader ignores
+//! keys it does not declare; ESS-generated closed types (`additionalProperties: false`,
+//! `deny_unknown_fields`) do not, so a consumer reading through them must not use `reader` for a
+//! field subset.
 //!
 //! The persisted input formats are [`SUPPORTED_COMPOSITION_FORMATS`]. Generated clients consume
 //! the derived [`EssClientPlan`] rather than reinterpreting multiple service models independently.
@@ -343,10 +346,32 @@ impl TypeBinding {
 pub struct TypeConformance {
     local: TypeBinding,
     conforms_to: TypeBinding,
-    /// `reader:` as authored (`ess-composition/3`); absent from every `/2` entry, which keeps its
-    /// bytes, and refused under `/2` even when `false`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    reader: Option<bool>,
+    /// `reader:` as authored (`ess-composition/3`): `None` when the key is absent, `Some(None)`
+    /// for an authored `null`. Absent from every `/2` entry, which keeps its bytes; refused under
+    /// `/1` and `/2` whatever its value.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    reader: Option<ReaderKey>,
+}
+
+/// An authored `reader:` value, `null` included; kept apart from absence by `Option<ReaderKey>`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+struct ReaderKey(Option<bool>);
+
+/// Records that a key was written, `null` included, which a plain `Option` field cannot tell from
+/// an absent one.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 impl TypeConformance {
@@ -363,20 +388,31 @@ impl TypeConformance {
     ///
     /// Beyond [`TypeConformance::new`]'s rule, the local type may read a newtype (through any
     /// chain) as its representation, an enum as `String` (`Optional<String>` where the imported
-    /// enum is optional), an enum by wire name with a superset of the imported wire names, `Json`
-    /// as `Map<String, Json>`, and a subset of a struct's fields, where a local field the imported
-    /// struct lacks is optional and not `null_when_absent`.
+    /// enum is optional), an enum by wire name with a superset of the imported wire names, a
+    /// struct or `String`-keyed map as `Map<String, Json>`, and a subset of a struct's fields. A
+    /// local field the imported struct lacks by name is compared with the imported field that
+    /// shares its wire name, or else must be optional and not `null_when_absent`.
+    ///
+    /// The assertion includes a precondition the comparison cannot see: the consumer's reader
+    /// ignores keys it does not declare. ESS-generated closed types (`additionalProperties: false`,
+    /// `deny_unknown_fields`) do not, so a consumer reading through them must not use `reader` for
+    /// a field subset.
     pub fn for_reader(local: TypeBinding, conforms_to: TypeBinding) -> Self {
         Self {
             local,
             conforms_to,
-            reader: Some(true),
+            reader: Some(ReaderKey(Some(true))),
         }
     }
 
     /// Whether this is a reader assertion (`reader: true`).
     pub fn reader(&self) -> bool {
-        self.reader == Some(true)
+        self.reader == Some(ReaderKey(Some(true)))
+    }
+
+    /// Whether the `reader` key was written, whatever its value.
+    fn reader_key(&self) -> bool {
+        self.reader.is_some()
     }
 
     /// The consumer's own type.
@@ -1359,18 +1395,18 @@ fn validate_format(
             ),
         ));
     }
-    if format == CONFORMANCE_COMPOSITION_FORMAT
+    if format != READER_COMPOSITION_FORMAT
         && specification
             .conformances()
             .iter()
-            .any(|asserted| asserted.reader.is_some())
+            .any(TypeConformance::reader_key)
     {
         diagnostics.push(CompositionDiagnostic::new(
             CompositionCode::UnsupportedFormat,
             None,
             format!(
                 "`reader` on a conformance is an {READER_COMPOSITION_FORMAT} construct; \
-                 {CONFORMANCE_COMPOSITION_FORMAT} does not admit it"
+                 {format} does not admit it, whatever its value"
             ),
         ));
     }

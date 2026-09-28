@@ -98,6 +98,21 @@ types:
     kind: struct
     fields:
       - { name: body, type: "Map<String, Json>" }
+  - name: demo.consumer.dashboard.ObjectAsMap
+    kind: struct
+    fields:
+      - { name: body, type: "Map<String, Json>" }
+      - { name: labels, type: "Map<String, Json>" }
+  - name: demo.consumer.dashboard.RemarkAsInteger
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: remark, type: Optional<Integer>, wire: note }
+  - name: demo.consumer.dashboard.RemarkAsString
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.consumer.dashboard.AgentRef }
+      - { name: remark, type: Optional<String>, wire: note }
   - name: demo.consumer.dashboard.ContextAsStrings
     kind: struct
     fields:

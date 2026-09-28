@@ -416,6 +416,7 @@ fn a_drift_inside_a_nested_named_type_names_the_field_that_reaches_it() {
 const CALL_ID_VIEW: &str = "demo.owner.agentstatus.CallIdView";
 const CALL_STATE_VIEW: &str = "demo.owner.agentstatus.CallStateView";
 const CONTEXT_VIEW: &str = "demo.owner.agentstatus.ContextView";
+const OBJECT_VIEW: &str = "demo.owner.agentstatus.ObjectView";
 
 fn binding_pair(local: &str, imported: &str) -> (TypeBinding, TypeBinding) {
     (
@@ -543,8 +544,10 @@ fn reader_refuses_an_enum_lacking_an_owner_wire_name() {
 }
 
 #[test]
-fn reader_admits_json_read_as_a_map_of_json() {
-    reader_conforms("demo.consumer.dashboard.ContextAsMap", CONTEXT_VIEW);
+fn reader_admits_an_object_read_as_a_map_of_json() {
+    // A struct and a `Map<String, String>` are always JSON objects, so `Map<String, Json>` reads
+    // every value either can send.
+    reader_conforms("demo.consumer.dashboard.ObjectAsMap", OBJECT_VIEW);
 }
 
 #[test]
@@ -552,6 +555,21 @@ fn reader_refuses_json_read_as_a_map_that_rejects_some_json() {
     let detail = reader_drift("demo.consumer.dashboard.ContextAsStrings", CONTEXT_VIEW);
     assert!(detail.contains("field `body`"), "{detail}");
     assert!(detail.contains("Map<String, String>"), "{detail}");
+    // Coordinator decision F1 (correction round 1), revising story decision 5: a producer `Json`
+    // may be an array or a scalar, so even `Map<String, Json>` rejects some of its values.
+    let detail = reader_drift("demo.consumer.dashboard.ContextAsMap", CONTEXT_VIEW);
+    assert!(detail.contains("field `body`"), "{detail}");
+    assert!(detail.contains("Map<String, Json>"), "{detail}");
+}
+
+#[test]
+fn reader_refuses_an_extra_field_that_reads_an_omitted_owner_wire_key() {
+    // The consumer omits the owner's `note` and declares `remark`, travelling as `note`, typed
+    // `Optional<Integer>`: on the wire it reads the owner's `Optional<String>`.
+    let detail = reader_drift("demo.consumer.dashboard.RemarkAsInteger", STATUS_VIEW);
+    assert!(detail.contains("field `remark`"), "{detail}");
+    // The same key read with a conforming type is a reader like any other.
+    reader_conforms("demo.consumer.dashboard.RemarkAsString", STATUS_VIEW);
 }
 
 #[test]
@@ -582,7 +600,8 @@ fn without_reader_every_widening_stays_drift() {
             CALL_STATE_VIEW,
         ),
         ("demo.consumer.dashboard.PhaseView", CALL_STATE_VIEW),
-        ("demo.consumer.dashboard.ContextAsMap", CONTEXT_VIEW),
+        ("demo.consumer.dashboard.ObjectAsMap", OBJECT_VIEW),
+        ("demo.consumer.dashboard.RemarkAsString", STATUS_VIEW),
         ("demo.consumer.dashboard.StatusSummary", STATUS_VIEW),
     ] {
         exact_drift(local, imported);
