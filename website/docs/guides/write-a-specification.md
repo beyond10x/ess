@@ -231,6 +231,11 @@ A literal in `sets:` or `payload:` may also be written as the YAML value it mean
 the repair, `quote it: label: '0'`. Over any other type it gets the same refusal as its quoted form.
 A decimal such as `1.5` is never a literal, quoted or not; read it from an input.
 
+A literal cannot say that an `Optional` field holds nothing. `metrics: none` is not read as the
+field's type and synthesis drops it, and `lane_id: ""` is an empty string, which a reader tells
+apart from an absent value and which a struct cannot hold at all. To empty a field, write
+`{cleared: true}`; see [value expressions](#value-expressions).
+
 ### Cover every declared enum value
 
 Since 0.23.0 a command may omit its default when its input guards
@@ -827,6 +832,7 @@ the input or a literal:
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
+| `{cleared: true}` | `sets:` | the target field is `Optional<…>`; refused in `payload:`. Synthesis asserts the field is empty in the view, so a target that keeps the old value fails |
 
 A mapping is a source when every key is one of `response`, `generated`, `cleared`, `subject`,
 `increment`, `input` and `else`; any other key makes it a nested mapping. The text
