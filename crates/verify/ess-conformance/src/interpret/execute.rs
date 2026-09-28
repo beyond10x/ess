@@ -54,9 +54,11 @@ use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
 use ess_domain::name::QualifiedName;
 use ess_domain::types::Primitive;
+use ess_primitives::facts::FactValue;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Predicate, Truth};
+use ess_primitives::predicate::{Operand, Predicate, Truth};
+use ess_primitives::time::CurrentTime;
 
 use crate::input::{self, Completeness, TypedFacts};
 use crate::scenario::{CommandRef, ErrorRef, EventRef, OutcomeRef};
@@ -437,6 +439,13 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
     }
     for outcome in &spec.outcomes {
         let at = branch(spec, outcome);
+        if let ResolvedCondition::When { predicate }
+        | ResolvedCondition::ExternalWhen { predicate, .. } = &outcome.condition
+        {
+            if reads_now(predicate) {
+                return gap(format!("the current-time guard of `{at}`"));
+            }
+        }
         match &outcome.condition {
             ResolvedCondition::When { .. }
             | ResolvedCondition::Otherwise
@@ -464,6 +473,24 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
         }
     }
     Ok(())
+}
+
+/// Whether a guard compares a fact with the current time (`now`, `now - 60s`; ess/16). The model
+/// holds no clock, so such a guard is not interpreted: comparing the operand as text would take a
+/// branch the specification does not.
+fn reads_now(predicate: &Predicate) -> bool {
+    match predicate {
+        Predicate::All(children) | Predicate::Any(children) => children.iter().any(reads_now),
+        Predicate::Not(inner) => reads_now(inner),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            reads_now(&quantified.body)
+        }
+        Predicate::Compare { left, right, .. } => [left, right].into_iter().any(|operand| {
+            matches!(operand, Operand::Literal(FactValue::Text(text))
+                if CurrentTime::parse(text).is_some())
+        }),
+        _ => false,
+    }
 }
 
 /// The step for a request no declared branch covers.
