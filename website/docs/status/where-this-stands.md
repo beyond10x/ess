@@ -8,16 +8,15 @@ description: Current-source ESS capabilities, a dated release observation, and t
 
 ESS is experimental and standalone.
 
-Latest published release observed on 20 September 2026:
-[0.27.0](https://github.com/beyond10x/ess/releases/tag/0.27.0). Its release record lists archives
+Latest published release observed on 28 September 2026:
+[0.38.0](https://github.com/beyond10x/ess/releases/tag/0.38.0). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated asset-list observation;
 it does not claim that the archives were downloaded, their checksums verified, or the binary
-installed or executed. The release adds specification format `ess/5` and delta format
-`ess-diff/5`, so an enum variant can declare the name it is called on the wire.
-[Format version history](../reference/spec-versions.md) says what every format version number
-changed and which release introduced it.
-
-The dated conformance observations below remain scoped to their original release and execution.
+installed or executed. The release adds specification format `ess/16`, suite formats
+`ess-conformance/26` and `/27`, delta format `ess-diff/9` and composition format
+`ess-composition/2`. [Format version history](../reference/spec-versions.md) says what every format
+version number changed and which release introduced it, and the
+[changelog](https://github.com/beyond10x/ess/blob/main/CHANGELOG.md) lists every release.
 
 ## Current source capabilities
 
@@ -79,9 +78,10 @@ The source checkout’s workspace version is `0.38.0` and includes separately do
 
 [ess-source-support-end]: #
 
-The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`, then `skill`, which
-prints the embedded agent guidance. Earlier flat spellings remain hidden aliases with the same
-accepted-command output and exit status.
+The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`. Earlier flat spellings
+remain hidden aliases with the same accepted-command output and exit status. The agent guidance that
+`ess skill` printed in 0.30.0 is the `ess` plugin in
+[`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins).
 
 Compilation and projection remain deterministic and offline. Live Kubernetes import and the
 commands named `execute`, `publish`, `fetch`, and `reconcile` are explicit credential edges; they do

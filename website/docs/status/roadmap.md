@@ -25,5 +25,11 @@ The standing constraints are:
 4. no importer guesses, no projector applies, and every adapter declares coverage;
 5. every new persisted field is assessed against old-reader behavior.
 
-Engineering wave records and accepted designs live in the repository’s `docs/` tree. This site
-documents shipped behavior rather than publishing proposed work as product fact.
+## Not scheduled
+
+- **Obligations as trackable records.** A synthesis obligation is an entry in the generated plan
+  (`PLAN.md`, `plan.json`), not a record a task can own and evidence can close. Nothing blocks it;
+  it has not been scheduled.
+
+Accepted designs live in the repository’s `docs/design/` tree. This site documents shipped behavior
+rather than publishing proposed work as product fact.
