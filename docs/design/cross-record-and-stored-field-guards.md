@@ -283,8 +283,12 @@ misses every sibling, chosen in `subject_fact::refusal_witness` (beyond10x/ess#1
   half refuted, or its subject half decided false by the row.
 
 A stored-guarded sibling that moves the subject along a transition not starting from `<S>` needs no
-refuting. Selected or not, a move from a state it does not leave is the wrong-state answer, so the
-row the `rush` move itself left in `Rushed` can serve even though `rushed`'s guard still holds on it.
+refuting while its guard decides true or false on the row. Selected or not, a move from a state it
+does not leave is the wrong-state answer, so the row the `rush` move itself left in `Rushed` can
+serve even though `rushed`'s guard still holds on it. A guard that is unknown on the row (it reads an
+optional field no creation fills) stops selection before the wrong-state answer; that case, and a
+moving branch whose own stored guard the row rejects, are not yet handled
+(`story:wrong-state-witness-unknown-and-own-stored-guards`).
 
 The input is one the moving branch's own input guard admits. A candidate refuting every input half
 is preferred; only where none exists does the witness rely on the row for a mixed branch. For
