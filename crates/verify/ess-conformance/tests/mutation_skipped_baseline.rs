@@ -205,9 +205,18 @@ fn a_mutant_failing_only_where_the_baseline_skipped_is_not_killed_by_it() {
     );
     let report = collect(&written).expect("collects");
     let entry = report.mutants.iter().find(|it| it.id == mutant).unwrap();
-    assert_eq!(entry.verdict, Verdict::Survived, "{entry:?}");
+    // Not killed by what the baseline did not execute, and not a survivor either: one of its own
+    // scenarios went unscored, so nobody found out.
+    assert_eq!(entry.verdict, Verdict::Inconclusive, "{entry:?}");
     assert_eq!(entry.killers, None);
-    assert_eq!(entry.excluded.as_deref(), Some(&[shared][..]));
+    assert_eq!(entry.excluded.as_deref(), Some(&[shared.clone()][..]));
+    let text = report.render_text();
+    assert!(
+        text.contains(&format!(
+            "not scored, as the baseline did not execute them: {shared} (1 in total)"
+        )),
+        "{text}"
+    );
 }
 
 #[test]

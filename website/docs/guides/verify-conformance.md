@@ -306,9 +306,11 @@ the entry of a killed mutant that added one.
 
 The baseline is red only when a scenario failed or ended `error`. A scenario the target reports
 `unsupported`, or the runner `skipped`, is listed as not scored, and every mutant is scored on the
-scenarios the baseline executed; a mutant scenario the baseline did not execute is excluded and
-listed on the mutant. A scenario new to a mutant's suite is scored. A baseline that executed nothing
-scores nothing.
+scenarios the baseline executed. The scenarios the baseline did not execute are listed, not scored:
+a mutant scenario the baseline did not execute is excluded and listed on the mutant, and a mutant
+that nothing killed while one of its scenarios was excluded is *inconclusive*, not a survivor. A
+survivor is a mutant whose every scenario was scored and passed. A scenario new to a mutant's
+suite is scored. A baseline that executed nothing scores nothing.
 
 **A survivor is not answered by authoring a scenario.** An authored scenario's expectations are its
 author's, not the model's, so it runs identically in every mutant's suite and can never kill one;
@@ -317,15 +319,14 @@ projecting the field a `sets` entry writes, or by filing a synthesis gap.
 
 | Exit | When |
 |---|---|
-| 0 | The baseline passed, at least one mutant ran, and every mutant that ran was killed. |
+| 0 | No baseline scenario failed or ended `error`, at least one mutant ran, every scored mutant was killed, and none is inconclusive or unwitnessed. Baseline scenarios that were not executed are listed, not scored. |
 | 1 | The specification did not load, or at least one mutant survived. |
 | 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive, or every mutant stillborn. |
 
 The text output prints one summary line, then the baseline scenarios not scored, then survivors,
 unwitnessed, inconclusive, stillborn and killed mutants, one line each. `--report-out` writes an
 [`ess-mutation-report/2`](../reference/formats.md#change-and-conformance-records) document, and
-`--format json` prints the same bytes. Only the built-in targets are supported; replaying mutant
-suites in an adopter's own language is not implemented yet.
+`--format json` prints the same bytes.
 
 ## Explore random command sequences
 

@@ -597,13 +597,14 @@ enum ConformCommand {
     /// by authoring a scenario, which runs identically in every mutant's suite and so can never
     /// kill one. No authored scenario is run.
     ///
-    /// A baseline scenario the target reports unsupported or skipped is listed as not scored, and
-    /// each mutant is scored on the scenarios the baseline executed. A mutant whose suite gained
-    /// synthesis refusals the baseline does not have, and that no scored scenario killed, is
-    /// unwitnessed (ESS-MUTATE-004): what it changed has no scenario in its suite.
+    /// A baseline scenario the target reports unsupported or skipped did not execute: it is listed,
+    /// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that
+    /// no scored scenario killed is unwitnessed (ESS-MUTATE-004) when its suite gained synthesis
+    /// refusals the baseline does not have, and inconclusive when one of its scenarios was not
+    /// scored; it survives only when every one of its scenarios was scored and passed.
     ///
-    /// Exit 0: the baseline passed, at least one mutant ran, and every mutant that ran was
-    /// killed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
+    /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran, every scored
+    /// mutant was killed, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
     /// a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing
     /// (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at
     /// least one was unwitnessed or inconclusive, or none ran.

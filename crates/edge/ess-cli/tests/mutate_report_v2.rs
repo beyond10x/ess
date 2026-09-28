@@ -188,7 +188,11 @@ fn an_unwitnessed_mutant_is_reported_with_its_added_refusal_and_exits_three() {
     assert_eq!(report["mutants"][0]["verdict"], "unwitnessed");
     assert_eq!(
         report["mutants"][0]["added_refusals"],
-        json!([{"code": "ESS-SYNTH-003", "scenario": "shop.order.ReportStatus/outcome/settled"}])
+        json!([{
+            "code": "ESS-SYNTH-003",
+            "scenario": "shop.order.ReportStatus/outcome/settled",
+            "subject": "outcome shop.order.ReportStatus/settled"
+        }])
     );
 }
 
@@ -206,11 +210,18 @@ fn a_baseline_with_skipped_scenarios_is_scored_on_the_rest() {
     let stdout = text(&output.stdout);
     let stderr = text(&output.stderr);
     assert!(!stderr.contains("ESS-MUTATE-001"), "{stderr}");
-    assert_eq!(
-        output.status.code(),
-        Some(1),
-        "every mutant survived: {stdout}{stderr}"
-    );
+    let written = read_json(&out);
+    for mutant in written["mutants"].as_array().unwrap() {
+        if mutant["excluded"].is_array() {
+            assert_eq!(mutant["verdict"], "inconclusive", "{mutant}");
+        }
+    }
+    let expected = if written["counts"]["survived"] == 0 {
+        3
+    } else {
+        1
+    };
+    assert_eq!(output.status.code(), Some(expected), "{stdout}{stderr}");
     assert!(stdout.contains("1 not scored"), "{stdout}");
     assert!(
         stdout.contains(&format!(

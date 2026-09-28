@@ -382,7 +382,8 @@ JSON pointer or declares it `absent`, for `ess verify conform import-history`.
 `ess-mutation-report/2` and `ess-mutation-manifest/2` are in the current source and in no release
 yet. The report adds the `unwitnessed` verdict (`ESS-MUTATE-004`) with each mutant's
 `added_refusals`, each mutant's `excluded` scenarios, and the baseline's `not_scored` list; a
-baseline scenario reported `unsupported` or `skipped` is no longer red. The manifest adds each
+baseline scenario reported `unsupported` or `skipped` is no longer red, and a mutant nothing
+killed with an excluded scenario is `inconclusive`. The manifest adds each
 suite's `refused` list. `--collect` still reads a `/1` manifest and judges gained refusals by count.
 
 ## Still at version 1

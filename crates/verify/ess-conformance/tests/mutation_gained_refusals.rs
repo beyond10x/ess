@@ -32,6 +32,7 @@ use ess_primitives::verification::VerificationStatus;
 
 const MUTANT: &str = "guard-connective/shop.order.ReportStatus/settled/0";
 const LOST_SCENARIO: &str = "shop.order.ReportStatus/outcome/settled";
+const LOST_SUBJECT: &str = "outcome shop.order.ReportStatus/settled";
 
 /// The issue's specification, with its enum variants in `variants` order.
 fn shop(variants: &str) -> (Vec<Document>, SourceMap) {
@@ -98,7 +99,7 @@ fn lost() -> RefusalKey {
     RefusalKey {
         code: "ESS-SYNTH-003".to_owned(),
         scenario: Some(LOST_SCENARIO.to_owned()),
-        subject: None,
+        subject: Some(LOST_SUBJECT.to_owned()),
     }
 }
 
@@ -167,7 +168,7 @@ fn a_mutant_whose_suite_lost_its_outcomes_scenario_is_unwitnessed_not_survived()
     assert_eq!(mutant["verdict"], "unwitnessed");
     assert_eq!(
         mutant["added_refusals"],
-        serde_json::json!([{"code": "ESS-SYNTH-003", "scenario": LOST_SCENARIO}])
+        serde_json::json!([{"code": "ESS-SYNTH-003", "scenario": LOST_SCENARIO, "subject": LOST_SUBJECT}])
     );
 }
 
@@ -250,14 +251,30 @@ fn the_built_in_audit_records_the_refusals_a_killed_mutant_added() {
 #[test]
 fn a_failure_outranks_a_gained_refusal_and_a_gained_refusal_outranks_the_rest() {
     use Status::{Error, Failed, Passed, Unsupported};
-    assert_eq!(Verdict::judge(&[Passed, Failed], true), Verdict::Killed);
-    assert_eq!(Verdict::judge(&[Passed], true), Verdict::Unwitnessed);
-    assert_eq!(Verdict::judge(&[], true), Verdict::Unwitnessed);
-    assert_eq!(Verdict::judge(&[Error], true), Verdict::Unwitnessed);
-    assert_eq!(Verdict::judge(&[Unsupported], true), Verdict::Unwitnessed);
-    assert_eq!(Verdict::judge(&[Passed], false), Verdict::Survived);
-    assert_eq!(Verdict::judge(&[Error], false), Verdict::Inconclusive);
-    assert_eq!(Verdict::judge(&[Failed], false), Verdict::Killed);
+    assert_eq!(
+        Verdict::judge(&[Passed, Failed], true, false),
+        Verdict::Killed
+    );
+    assert_eq!(Verdict::judge(&[Passed], true, false), Verdict::Unwitnessed);
+    assert_eq!(Verdict::judge(&[], true, false), Verdict::Unwitnessed);
+    assert_eq!(Verdict::judge(&[Error], true, false), Verdict::Unwitnessed);
+    assert_eq!(
+        Verdict::judge(&[Unsupported], true, false),
+        Verdict::Unwitnessed
+    );
+    assert_eq!(Verdict::judge(&[Passed], false, false), Verdict::Survived);
+    assert_eq!(
+        Verdict::judge(&[Error], false, false),
+        Verdict::Inconclusive
+    );
+    assert_eq!(Verdict::judge(&[Failed], false, false), Verdict::Killed);
+    assert_eq!(
+        Verdict::judge(&[Passed], false, true),
+        Verdict::Inconclusive
+    );
+    assert_eq!(Verdict::judge(&[], false, true), Verdict::Inconclusive);
+    assert_eq!(Verdict::judge(&[Failed], false, true), Verdict::Killed);
+    assert_eq!(Verdict::judge(&[Passed], true, true), Verdict::Unwitnessed);
 }
 
 #[test]
@@ -282,7 +299,7 @@ fn emit_records_each_suites_refusals_by_code_and_scenario() {
         .expect("emitted");
     assert_eq!(mutant.refusals, Some(1));
     assert_eq!(mutant.refused.as_deref(), Some(&[lost()][..]));
-    let expected = serde_json::json!([{"code": "ESS-SYNTH-003", "scenario": LOST_SCENARIO}]);
+    let expected = serde_json::json!([{"code": "ESS-SYNTH-003", "scenario": LOST_SCENARIO, "subject": LOST_SUBJECT}]);
     let manifest: serde_json::Value =
         serde_json::from_str(&emission.files[MANIFEST_FILE]).expect("JSON");
     assert_eq!(manifest["baseline"]["refused"], serde_json::json!([]));

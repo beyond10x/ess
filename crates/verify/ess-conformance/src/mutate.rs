@@ -986,10 +986,11 @@ pub fn compile(documents: Vec<Document>, texts: &SourceMap) -> Result<EssIr, Sti
 pub enum Verdict {
     /// At least one scored scenario failed.
     Killed,
-    /// Every scored scenario passed.
+    /// Every scenario of its suite was scored, and passed.
     Survived,
-    /// No scored scenario failed, and at least one ended `error`, `unsupported` or `skipped`:
-    /// nothing contradicted the mutant, and nobody found out.
+    /// No scored scenario failed, and at least one ended `error`, `unsupported` or `skipped`, or
+    /// one of its scenarios was excluded because the baseline did not execute it: nothing
+    /// contradicted the mutant, and nobody found out.
     Inconclusive,
     /// `ESS-MUTATE-004`: no scored scenario failed, and the mutant's suite gained synthesis
     /// refusals the baseline's does not have. What the mutant changed has no scenario, so what is
@@ -1014,13 +1015,17 @@ impl Verdict {
         }
     }
 
-    /// The verdict of a mutant whose scored statuses are `statuses` and whose suite `gained`
-    /// synthesis refusals over the baseline's: a failure kills it whatever it gained, and
-    /// otherwise a gained refusal makes it [`Unwitnessed`](Self::Unwitnessed).
-    pub fn judge(statuses: &[Status], gained: bool) -> Self {
+    /// The verdict of a mutant whose scored statuses are `statuses`, whose suite `gained`
+    /// synthesis refusals over the baseline's, and some of whose scenarios were `excluded`
+    /// because the baseline did not execute them. A failure kills it whatever else holds;
+    /// otherwise a gained refusal makes it [`Unwitnessed`](Self::Unwitnessed), and an excluded
+    /// scenario makes it [`Inconclusive`](Self::Inconclusive): it survives only a suite that ran
+    /// every one of its scenarios.
+    pub fn judge(statuses: &[Status], gained: bool, excluded: bool) -> Self {
         match Self::classify(statuses) {
             Self::Killed => Self::Killed,
             _ if gained => Self::Unwitnessed,
+            Self::Survived if excluded => Self::Inconclusive,
             verdict => verdict,
         }
     }
@@ -1037,8 +1042,9 @@ impl Verdict {
     }
 }
 
-/// One synthesis refusal, as the audit tells two apart: its code, and the scenario that would
-/// have existed — or, for a refusal about no single scenario, its subject.
+/// One synthesis refusal, as the audit tells two apart: its code, the scenario that would have
+/// existed where there is one, and its subject. Two refusals may still share a key, so suites are
+/// compared key by key with counts.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -1049,42 +1055,51 @@ pub struct RefusalKey {
     /// The scenario that would have existed; absent when the refusal is about none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenario: Option<String>,
-    /// The ESS element refused; only when there is no scenario.
+    /// The ESS element refused, and for an unobservable invariant the invariant; absent only in a
+    /// key a hand-written manifest gives no subject.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
 }
 
 impl RefusalKey {
-    /// The key of one refusal.
+    /// The key of one refusal: its code, its scenario where it has one, and its subject — the
+    /// element refused, and for an unobservable invariant the invariant itself, so two invariants
+    /// refused at one scenario are two keys.
     pub fn of(refusal: &crate::Refusal) -> Self {
-        let scenario = refusal.scenario.as_ref().map(ToString::to_string);
+        let subject = match &refusal.cause {
+            crate::RefusalCause::InvariantUnobservable {
+                entity, invariant, ..
+            } => format!("{entity} invariant `{invariant}`"),
+            _ => refusal.subject.to_string(),
+        };
         Self {
             code: refusal.code().to_string(),
-            subject: scenario.is_none().then(|| refusal.subject.to_string()),
-            scenario,
+            scenario: refusal.scenario.as_ref().map(ToString::to_string),
+            subject: Some(subject),
         }
     }
 
-    /// Exactly one of `scenario` and `subject`, or why not.
+    /// At least one of `scenario` and `subject`, or why not.
     fn check(&self) -> Result<(), String> {
-        match (&self.scenario, &self.subject) {
-            (Some(_), None) | (None, Some(_)) => Ok(()),
-            _ => Err(format!(
-                "a refusal `{}` names exactly one of `scenario` and `subject`",
+        if self.scenario.is_none() && self.subject.is_none() {
+            return Err(format!(
+                "a refusal `{}` names neither a `scenario` nor a `subject`",
                 self.code
-            )),
+            ));
         }
+        Ok(())
     }
 }
 
 impl fmt::Display for RefusalKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let about = self
-            .scenario
-            .as_deref()
-            .or(self.subject.as_deref())
-            .unwrap_or_default();
-        write!(f, "{} `{about}`", self.code)
+        match (&self.scenario, &self.subject) {
+            (Some(scenario), Some(subject)) => {
+                write!(f, "{} `{scenario}` ({subject})", self.code)
+            }
+            (Some(about), None) | (None, Some(about)) => write!(f, "{} `{about}`", self.code),
+            (None, None) => write!(f, "{}", self.code),
+        }
     }
 }
 
@@ -1291,9 +1306,12 @@ impl MutationReport {
                     let _ = write!(tail, "; adds {}", named.join(", "));
                 }
                 if let Some(excluded) = &entry.excluded {
+                    let named = excluded.iter().take(3).cloned().collect::<Vec<_>>();
                     let _ = write!(
                         tail,
-                        "; {} scenario(s) the baseline did not execute not scored",
+                        "; not scored, as the baseline did not execute them: {}{} ({} in total)",
+                        named.join(", "),
+                        if excluded.len() > 3 { ", …" } else { "" },
                         excluded.len()
                     );
                 }
@@ -1552,17 +1570,25 @@ impl Ruler {
         excluded.sort();
         let (gained, added) = match (&self.refused.keys, &refused.keys) {
             (Some(baseline), Some(mutant)) => {
-                let baseline: BTreeSet<&RefusalKey> = baseline.iter().collect();
-                let added: BTreeSet<&RefusalKey> = mutant
-                    .iter()
-                    .filter(|key| !baseline.contains(key))
-                    .collect();
-                let added: Vec<RefusalKey> = added.into_iter().cloned().collect();
+                // Per-key counts: a second refusal with a key the baseline holds once is gained.
+                let mut held: std::collections::BTreeMap<&RefusalKey, usize> =
+                    std::collections::BTreeMap::new();
+                for key in baseline {
+                    *held.entry(key).or_default() += 1;
+                }
+                let mut added: Vec<RefusalKey> = Vec::new();
+                for key in mutant {
+                    match held.get_mut(key) {
+                        Some(count) if *count > 0 => *count -= 1,
+                        _ => added.push(key.clone()),
+                    }
+                }
+                added.sort();
                 (!added.is_empty(), (!added.is_empty()).then_some(added))
             }
             _ => (refused.count > self.refused.count, None),
         };
-        entry.verdict = Verdict::judge(&statuses, gained);
+        entry.verdict = Verdict::judge(&statuses, gained, !excluded.is_empty());
         if entry.verdict == Verdict::Killed {
             let mut killers: Vec<String> = observed
                 .not_passed
