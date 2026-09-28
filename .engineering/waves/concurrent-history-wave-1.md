@@ -136,3 +136,12 @@ The three units merged without textual conflicts but did not compile together: `
 Gate on `8c03d0b54`: every step exit 0; `ess-conformance` 918 passed, `ess-xtask` 313, `ess-domain` 756, `ess-cli` 797; model valid.
 
 `epic:concurrent-history-conformance` moved draft → proposed → active → implemented with all eight stories implemented.
+
+## Integration with main (2026-09-28)
+
+- `origin/main` moved 51 commits (the-5-waves, release 0.38.0, the store migrated to `aep.project/5`). This branch migrated its own store with the same build (`f63751481`, 597 artifacts verified), then merged main (`5d43c8622`): two code conflicts (`lib.rs`, `main.rs`), plus two semantic fixes (the `caller` field; the interpreter declines main's `InputAbsent`/`ExistingInstance` branches) and, from the gate, a third (`ee39d0d75`: guards reading the current time are not interpreted).
+- Package gate on the merged head: `ess-conformance` 1289 passed, `ess-xtask` 313, `ess-domain` 923, `ess-cli` 806 on `ee39d0d75`; 0 failed.
+
+## Handoffs owed
+
+- Tell the session `ess` (ESS planning) one line when the PR to `main` merges and one when the release tag is pushed.
