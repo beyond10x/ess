@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: epic:concurrent-history-conformance
 kind: epic
-status: draft
+status: implemented
 title: An implementation is held to the specification under concurrent clients and declared faults
 summary: Concurrent histories against the adopter's target, checked against the IR model at each view's declared consistency, with declared faults injected.
 owner: ess
@@ -12,7 +12,7 @@ relations:
 - serves: vision:O2
 - informed_by: epic:model-driven-interpretation
 - depends_on: story:outcome-shapes-beyond-ess-14
-revision: 2
+revision: 5
 ---
 # Epic: concurrent history conformance
 

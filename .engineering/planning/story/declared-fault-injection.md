@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:declared-fault-injection
 kind: story
-status: active
+status: implemented
 title: Faults the specification declares are injected during concurrent runs
 owner: ess
 relations:
@@ -13,24 +13,38 @@ relations:
 - serves: vision:O2
 scope:
 - confidence: cited
+  path: crates/edge/ess-cli/tests/explore_concurrent.rs
+- confidence: cited
   path: crates/verify/ess-conformance
 - confidence: cited
   path: crates/verify/ess-conformance/src/faulty.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/explore.go
-- confidence: inferred
+- confidence: cited
+  path: crates/verify/ess-conformance/src/history.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/reference.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/sessions.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/target.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/explore.ts
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/explore.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/faults.rs
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures
-revision: 6
+- confidence: cited
+  path: models/concurrent-history/domains/history.yaml
+- confidence: cited
+  path: schemas/ess-history.schema.json
+revision: 8
 ---
 # Story: faults the specification declares are injected during concurrent runs
 

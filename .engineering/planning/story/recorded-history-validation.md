@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:recorded-history-validation
 kind: story
-status: active
+status: implemented
 title: A recorded production history is validated against the specification
 owner: ess
 tags:
@@ -35,7 +35,7 @@ scope:
   path: schemas
 - confidence: cited
   path: website/docs/guides/verify-conformance.md
-revision: 7
+revision: 8
 ---
 # Story: a recorded production history is validated against the specification (later milestone)
 

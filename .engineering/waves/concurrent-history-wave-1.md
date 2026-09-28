@@ -122,3 +122,17 @@ Gate on `acd6a0862`, own build dir: fmt, clippy, doc 0; `ess-conformance` 874 pa
 The two `consumer_coverage` failures seen in waves 2 and 3 are explained: `source_files` (`crates/edge/ess-xtask/src/consumer_coverage/mod.rs:323`) hashes every tracked and untracked file, `.engineering/` included, and compares it with the snapshot taken at build time. Coordinator store writes into this tree ran during both gates. Rule from here: no store write into the integration tree while a gate runs.
 
 The installed `aep` became 0.62.0 at 04:08 (not this session), which refuses this `aep.project/3` store; this branch writes through a private 0.61.1 built from tag `0.61.1` (`b6213e1fc`).
+
+## Wave 4 (2026-09-28)
+
+| unit | story | branch head | stage |
+|---|---|---|---|
+| lanes | `story:concurrent-history-lanes` | `9237c3cab` | merged `2b80ba5e6`; implemented |
+| recorded | `story:recorded-history-validation` | `4e4cd73ce` | merged `fe16e2f78`; implemented |
+| faults | `story:declared-fault-injection` | `7abca4f437` | merged `e1b9468159`; implemented |
+
+The three units merged without textual conflicts but did not compile together: `linearize::conflict()` (lanes) stepped a `Store` after fault injection changed `step()` to take `Held`, and `recorded.rs` had no arm for the new `HistoryRefusal::RetryOfUnknown`. Fixed in `8c03d0b54`. Rule from here: compile (`cargo clippy -p <crate>`) after every unit merge into the integration branch, not only at the gate; `git merge-tree` shows textual conflicts only.
+
+Gate on `8c03d0b54`: every step exit 0; `ess-conformance` 918 passed, `ess-xtask` 313, `ess-domain` 756, `ess-cli` 797; model valid.
+
+`epic:concurrent-history-conformance` moved draft → proposed → active → implemented with all eight stories implemented.
