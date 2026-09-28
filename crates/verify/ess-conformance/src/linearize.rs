@@ -20,13 +20,37 @@
 //! * The history is **partitioned by subject** (P-compositionality): the interpreter's store keys
 //!   every instance by its identity and no step reads another instance, so operations on different
 //!   subjects commute and each subject's operations are searched alone. The history is linearizable
-//!   exactly when every partition is.
+//!   exactly when every partition is. The one exception is a retried request (below): every subject
+//!   its operations name is one partition.
 //!
 //! # What a returned operation must answer
 //!
 //! A `Returned` operation's step must take the branch it recorded, by outcome name. An
 //! `Indeterminate` operation's step may take any branch — or none, because a call that never
 //! answered may never have happened.
+//!
+//! # A retried request
+//!
+//! A runner injecting the faults a specification declares sends a request to a command declaring
+//! a `replays` branch a second time, and writes the second operation's
+//! [`retry_of`](Operation::retry_of); an operation and its retries are one request. The search state
+//! records, beside the model's store, which requests have taken the branch a `replays:` branch
+//! retains, and holds every operation of a request to the declaration in every order it tries:
+//!
+//! * the origin branch is taken at most once per request — by an operation that answered it, or by
+//!   one that never answered and is read as having taken it. A second is the request applied
+//!   twice, and that order is not one the model allows;
+//! * a `replays:` branch — answered, or taken by an operation that never answered — is available
+//!   only once the request's origin branch has been taken earlier in that order, and changes
+//!   nothing. A replay with nothing of its request taken before it is not one the model allows.
+//!
+//! Because the rule spans the request, every subject its operations name — an original that never
+//! answered names the instance it would have created, a retry that created another names that one
+//! — is searched in one partition, named by the least of them, with every other operation on those
+//! subjects; an operation of the request that names none, a replay of a generated identity, is
+//! searched there too. Where two operations of one request both answered the origin branch, the
+//! violation is reported before any search, naming the subject the second answer created and the
+//! request's operations.
 //!
 //! # What `ess-history/1` does not record, and how the search reads it
 //!
@@ -292,6 +316,8 @@ struct Prepared<'h> {
     name: ModelName,
     inputs: Vec<BTreeMap<String, Node>>,
     generated: Generated,
+    /// For an operation of a command declaring `replays:`, the request it sends ([`RequestPlan`]).
+    request: Option<Request>,
 }
 
 /// One read of a view the checker judges, with everything judging it needs.
@@ -393,6 +419,7 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
     let mut partitions: BTreeMap<&str, Vec<Prepared<'h>>> = BTreeMap::new();
     let mut reads = Vec::new();
     let mut not_judged = Vec::new();
+    let mut plan = request_plan(ir, history);
     for operation in &history.operations {
         let unknown = || CheckRefusal::UnknownOperation {
             operation_id: operation.operation_id.as_str().to_owned(),
@@ -436,14 +463,21 @@ fn split<'h>(ir: &'h EssIr, history: &'h History) -> Result<Split<'h>, CheckRefu
                 .map(|slot| (slot, subject.clone()))
                 .collect(),
         );
+        let id = operation.operation_id.as_str();
         partitions
-            .entry(operation.subject_key.as_str())
+            .entry(
+                plan.partition
+                    .get(id)
+                    .copied()
+                    .unwrap_or(operation.subject_key.as_str()),
+            )
             .or_default()
             .push(Prepared {
                 operation,
                 name: key.clone(),
                 inputs,
                 generated,
+                request: plan.requests.remove(id),
             });
     }
     Ok(Split {
@@ -503,13 +537,26 @@ fn observed(command: &ResolvedCommand) -> impl Iterator<Item = GeneratedSlot> + 
 
 // ---- one step --------------------------------------------------------------------------------
 
-/// Every state the model can be in after `prepared` from `store`, answering what it recorded.
-fn step(ir: &EssIr, store: &Store, prepared: &Prepared<'_>) -> Result<Vec<Store>, CheckRefusal> {
+/// The state a search holds: the model's store, and the requests whose origin branch the order so
+/// far has taken ([`Request::id`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct Held {
+    store: Store,
+    taken: BTreeSet<usize>,
+}
+
+/// Every state the model can be in after `prepared` from `held`, answering what it recorded.
+///
+/// An operation of a request to a command declaring `replays:` is held to the request besides:
+/// its origin branch is taken at most once per request, and a `replays:` branch only once it has
+/// been, whether the operation answered it or, never answering, may have taken it.
+fn step(ir: &EssIr, held: &Held, prepared: &Prepared<'_>) -> Result<Vec<Held>, CheckRefusal> {
     let operation = prepared.operation;
-    let mut next: Vec<Store> = Vec::new();
+    let store = &held.store;
+    let mut next: Vec<Held> = Vec::new();
     if operation.completion == Completion::Indeterminate {
         // It may never have happened.
-        next.push(store.clone());
+        next.push(held.clone());
     }
     for input in &prepared.inputs {
         let steps = match execute_generating(
@@ -539,8 +586,30 @@ fn step(ir: &EssIr, store: &Store, prepared: &Prepared<'_>) -> Result<Vec<Store>
                     .is_some_and(|outcome| outcome.outcome.as_str() == recorded.as_str()),
                 _ => true,
             };
-            if answers && !next.contains(&taken.next) {
-                next.push(taken.next);
+            if !answers {
+                continue;
+            }
+            let mut taken_now = held.taken.clone();
+            if let Some(request) = &prepared.request {
+                let branch = taken
+                    .outcome
+                    .as_ref()
+                    .map_or("", |outcome| outcome.outcome.as_str());
+                if request.origins.contains(branch) && !taken_now.insert(request.id) {
+                    // The request's origin branch was taken already: applied twice.
+                    continue;
+                }
+                if request.replays.contains(branch) && !held.taken.contains(&request.id) {
+                    // Nothing of this request was retained to replay.
+                    continue;
+                }
+            }
+            let state = Held {
+                store: taken.next,
+                taken: taken_now,
+            };
+            if !next.contains(&state) {
+                next.push(state);
             }
         }
     }
@@ -578,7 +647,7 @@ enum Outcome {
 /// One level of the depth-first search: the state reached, and the moves from it not yet tried.
 struct Frame {
     done: Done,
-    moves: Vec<(usize, Store)>,
+    moves: Vec<(usize, Held)>,
     next: usize,
 }
 
@@ -597,11 +666,11 @@ fn next_moves(
     operations: &[Prepared<'_>],
     order: &[usize],
     done: &Done,
-    store: &Store,
+    store: &Held,
     budget: &mut u64,
     spent: &mut u64,
-) -> Result<Option<Vec<(usize, Store)>>, CheckRefusal> {
-    let mut found: Vec<(usize, Store)> = Vec::new();
+) -> Result<Option<Vec<(usize, Held)>>, CheckRefusal> {
+    let mut found: Vec<(usize, Held)> = Vec::new();
     for &index in order {
         if done.has(index) {
             continue;
@@ -637,7 +706,7 @@ fn search(
     let order = move_order(operations);
     let total = operations.len();
 
-    let mut seen: BTreeMap<Done, Vec<Store>> = BTreeMap::new();
+    let mut seen: BTreeMap<Done, Vec<Held>> = BTreeMap::new();
     let mut path: Vec<usize> = Vec::new();
     let mut longest: Vec<usize> = Vec::new();
 
@@ -647,7 +716,7 @@ fn search(
         operations,
         &order,
         &start,
-        &Store::default(),
+        &Held::default(),
         budget,
         spent,
     )?
@@ -714,13 +783,13 @@ struct Walk<'a, 'h> {
     order: Vec<usize>,
     budget: &'a mut u64,
     spent: &'a mut u64,
-    live: BTreeMap<Done, Vec<(Store, bool)>>,
+    live: BTreeMap<Done, Vec<(Held, bool)>>,
 }
 
 impl Walk<'_, '_> {
     /// Whether some complete linearization passes through (`done`, `store`); `None` when the
     /// budget ran out.
-    fn visit(&mut self, done: &Done, store: &Store) -> Result<Option<bool>, CheckRefusal> {
+    fn visit(&mut self, done: &Done, store: &Held) -> Result<Option<bool>, CheckRefusal> {
         if let Some(known) = self
             .live
             .get(done)
@@ -779,7 +848,7 @@ fn reach(
         spent,
         live: BTreeMap::new(),
     };
-    if walk.visit(&Done::new(total), &Store::default())?.is_none() {
+    if walk.visit(&Done::new(total), &Held::default())?.is_none() {
         return Ok(None);
     }
     let mut reached = Vec::new();
@@ -791,11 +860,11 @@ fn reach(
             .max()
             .unwrap_or(0);
         let full = ordered.len() == total;
-        for (store, live) in states {
+        for (held, live) in states {
             if live {
                 reached.push(Reached {
                     done: done.clone(),
-                    store,
+                    store: held.store,
                     latest,
                     full,
                 });
@@ -838,6 +907,9 @@ pub fn check_settled(
     settle: u64,
 ) -> Result<Checked, CheckRefusal> {
     let split = split(ir, history)?;
+    if let Some(checked) = applied_twice(ir, history, &split) {
+        return Ok(checked);
+    }
     let mut remaining = budget;
     let mut spent = 0;
     let mut unknown: Option<(String, Vec<String>)> = None;
@@ -897,12 +969,15 @@ pub fn check_settled(
         }
     }
     let convergence = convergence(&split, settle);
-    let (verdict, subject_key, linearization, read) = match judge(&split, &reached, &convergence) {
+    let subjects = subjects(&split);
+    let judged_reads = judge(&split, &subjects, &reached, &convergence);
+    let (verdict, subject_key, linearization, read) = match judged_reads {
         Some(violation) => (
             Verdict::Violation,
             Some(violation.subject_key.clone()),
-            found
-                .remove(violation.subject_key.as_str())
+            subjects
+                .get(violation.subject_key.as_str())
+                .and_then(|partition| found.remove(partition))
                 .unwrap_or_default(),
             Some(violation),
         ),
@@ -924,6 +999,211 @@ pub fn check_settled(
         judged,
         read,
     })
+}
+
+/// Every request in `history`, in document order: the operation that first sent it, by lower-case
+/// id, and every operation that sent it — the first and each retry ([`Operation::retry_of`]). A
+/// retry naming an operation the history does not hold is its own request.
+fn requests(history: &History) -> Vec<(String, Vec<&Operation>)> {
+    let by_id: BTreeMap<String, &Operation> = history
+        .operations
+        .iter()
+        .map(|operation| {
+            (
+                operation.operation_id.as_str().to_ascii_lowercase(),
+                operation,
+            )
+        })
+        .collect();
+    let root = |operation: &Operation| -> String {
+        let mut current = operation.operation_id.as_str().to_ascii_lowercase();
+        let mut steps = 0;
+        while let Some(original) = by_id
+            .get(&current)
+            .and_then(|operation| operation.retry_of.as_ref())
+            .map(|original| original.as_str().to_ascii_lowercase())
+            .filter(|original| by_id.contains_key(original))
+        {
+            current = original;
+            steps += 1;
+            if steps > history.operations.len() {
+                break;
+            }
+        }
+        current
+    };
+    let mut requests: Vec<(String, Vec<&Operation>)> = Vec::new();
+    for operation in &history.operations {
+        let request = root(operation);
+        match requests.iter_mut().find(|(known, _)| *known == request) {
+            Some((_, members)) => members.push(operation),
+            None => requests.push((request, vec![operation])),
+        }
+    }
+    requests
+}
+
+/// The branches of `command` a `replays:` branch retains, and the `replays:` branches themselves.
+fn retained_branches(command: &ResolvedCommand) -> (BTreeSet<&str>, BTreeSet<&str>) {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| {
+            outcome
+                .replays
+                .as_ref()
+                .map(|replay| (replay.origin.as_str(), outcome.name.as_str()))
+        })
+        .unzip()
+}
+
+/// Whether `operation` answered one of `branches`.
+fn answered_one_of(operation: &Operation, branches: &BTreeSet<&str>) -> bool {
+    operation.completion == Completion::Returned
+        && operation
+            .outcome
+            .as_ref()
+            .is_some_and(|outcome| branches.contains(outcome.as_str()))
+}
+
+/// One request to a command declaring `replays:`, as each of its operations is stepped with it.
+#[derive(Debug, Clone)]
+struct Request {
+    /// The request's place among the history's requests: what [`Held::taken`] records.
+    id: usize,
+    /// The branches a `replays:` branch retains.
+    origins: BTreeSet<String>,
+    /// The `replays:` branches.
+    replays: BTreeSet<String>,
+}
+
+/// Where each operation of a request to a command declaring `replays:` is searched, and the
+/// request it belongs to, by operation id.
+///
+/// One request's operations may name different subjects — an original that never answered
+/// names the instance it would have created, and a retry that created another names that one — and
+/// the search holds them to one rule across all of them (at most one origin answer, a replay only
+/// after it). So every subject one request's operations name is searched in one partition, with
+/// every other operation on those subjects, and an operation of the request that names no subject
+/// (a replay of a generated identity) is searched there too. The partition is named by the least of
+/// those subjects.
+struct RequestPlan<'h> {
+    requests: BTreeMap<&'h str, Request>,
+    partition: BTreeMap<&'h str, &'h str>,
+}
+
+fn request_plan<'h>(ir: &EssIr, history: &'h History) -> RequestPlan<'h> {
+    let mut plan = RequestPlan {
+        requests: BTreeMap::new(),
+        partition: BTreeMap::new(),
+    };
+    let mut classes: Vec<BTreeSet<&'h str>> = Vec::new();
+    let mut members_of: Vec<(Vec<&'h Operation>, BTreeSet<&'h str>)> = Vec::new();
+    for (id, (_, members)) in requests(history).into_iter().enumerate() {
+        let Some(command) = ModelName::new(members[0].command.as_str())
+            .ok()
+            .and_then(|name| ir.commands().get(&name))
+        else {
+            continue;
+        };
+        let (origins, replays) = retained_branches(command);
+        if origins.is_empty() {
+            continue;
+        }
+        let request = Request {
+            id,
+            origins: origins.into_iter().map(ToOwned::to_owned).collect(),
+            replays: replays.into_iter().map(ToOwned::to_owned).collect(),
+        };
+        for operation in &members {
+            plan.requests
+                .insert(operation.operation_id.as_str(), request.clone());
+        }
+        let subjects: BTreeSet<&'h str> = members
+            .iter()
+            .map(|operation| operation.subject_key.as_str())
+            .filter(|subject| !subject.is_empty())
+            .collect();
+        let mut merged = subjects.clone();
+        classes.retain(|class| {
+            if class.is_disjoint(&subjects) {
+                true
+            } else {
+                merged.extend(class.iter().copied());
+                false
+            }
+        });
+        if !merged.is_empty() {
+            classes.push(merged);
+        }
+        members_of.push((members, subjects));
+    }
+    let name_of = |subject: &str| {
+        classes
+            .iter()
+            .find(|class| class.contains(subject))
+            .and_then(|class| class.first().copied())
+    };
+    for operation in &history.operations {
+        if let Some(name) = name_of(operation.subject_key.as_str()) {
+            plan.partition.insert(operation.operation_id.as_str(), name);
+        }
+    }
+    for (members, subjects) in &members_of {
+        let Some(name) = subjects.first().and_then(|subject| name_of(subject)) else {
+            continue;
+        };
+        for operation in members {
+            plan.partition.insert(operation.operation_id.as_str(), name);
+        }
+    }
+    plan
+}
+
+/// The first request a client sent more than once whose origin branch answered more than once, as
+/// a violation naming the subject the second such answer created and every operation of the
+/// request, by id.
+///
+/// A retry ([`Operation::retry_of`]) sends one logical request again. Its command declares a
+/// `replays` branch, which is what the specification says a request already answered by the
+/// branch it replays answers: the retained result, with no second effect. So of one request's
+/// operations, at most one may answer that origin branch; each other may answer the replay, or
+/// never answer. Two origin answers are one request applied twice, whatever the search would make
+/// of them as two independent calls. A retry naming an operation the history does not hold is its
+/// own request.
+fn applied_twice(ir: &EssIr, history: &History, split: &Split<'_>) -> Option<Checked> {
+    for (_, members) in requests(history)
+        .iter()
+        .filter(|(_, members)| members.len() > 1)
+    {
+        let Some(command) = ModelName::new(members[0].command.as_str())
+            .ok()
+            .and_then(|name| ir.commands().get(&name))
+        else {
+            continue;
+        };
+        let (origins, _) = retained_branches(command);
+        let applied: Vec<&&Operation> = members
+            .iter()
+            .filter(|operation| answered_one_of(operation, &origins))
+            .collect();
+        if let [_, second, ..] = applied.as_slice() {
+            return Some(Checked {
+                verdict: Verdict::Violation,
+                steps: 0,
+                subject_key: Some(second.subject_key.clone()),
+                linearization: members
+                    .iter()
+                    .map(|operation| operation.operation_id.as_str().to_owned())
+                    .collect(),
+                partitions: split.partitions.len(),
+                not_judged: split.not_judged.clone(),
+                judged: 0,
+                read: None,
+            });
+        }
+    }
+    None
 }
 
 /// `not_judged` with every read judged for less than its level promises added — each `eventual`
@@ -1041,8 +1321,26 @@ fn convergence<'h>(split: &Split<'h>, settle: u64) -> BTreeMap<&'h str, Result<(
 }
 
 /// The first read, in document order, its view's declared consistency does not allow.
+/// Every subject a partition's operations name, with the partition it is searched in, and each
+/// partition under its own name: one subject is one partition, except where one request's
+/// operations name several ([`RequestPlan`]).
+fn subjects<'s>(split: &Split<'s>) -> BTreeMap<&'s str, &'s str> {
+    let mut subjects = BTreeMap::new();
+    for (partition, operations) in &split.partitions {
+        subjects.insert(*partition, *partition);
+        for prepared in operations {
+            let subject = prepared.operation.subject_key.as_str();
+            if !subject.is_empty() {
+                subjects.insert(subject, *partition);
+            }
+        }
+    }
+    subjects
+}
+
 fn judge(
     split: &Split<'_>,
+    subjects: &BTreeMap<&str, &str>,
     reached: &BTreeMap<&str, Vec<Reached>>,
     convergence: &BTreeMap<&str, Result<(), String>>,
 ) -> Option<ReadViolation> {
@@ -1067,13 +1365,16 @@ fn judge(
             return Some(violation(row, true, Anomaly::DuplicateRow));
         }
         for row in &read.rows {
-            if !reached.contains_key(row) {
+            if !subjects.contains_key(row) {
                 return Some(violation(row, true, Anomaly::FutureRead));
             }
         }
-        for (subject, states) in reached {
+        for (subject, name) in subjects {
+            let Some(states) = reached.get(name) else {
+                continue;
+            };
             let shown = read.rows.contains(subject);
-            let partition = &split.partitions[subject];
+            let partition = &split.partitions[name];
             // Exhaustive on purpose: a level added to the language is decided here, not defaulted.
             // The reader's own operations on this subject that returned before it read.
             let own: Vec<usize> = match read.consistency {
@@ -1083,6 +1384,7 @@ fn judge(
                     .filter(|(_, prepared)| {
                         let own = prepared.operation;
                         own.client == operation.client
+                            && (own.subject_key == *subject || own.subject_key.is_empty())
                             && own.completion == Completion::Returned
                             && returned_before(own, operation.invoked_at)
                     })
@@ -1563,7 +1865,7 @@ impl Report {
                 };
                 let _ = writeln!(
                     text,
-                    "  client {} [{}, {}] {} `{}` -> {}{}",
+                    "  client {} [{}, {}] {} `{}` -> {}{}{}",
                     operation.client,
                     operation.invoked_at,
                     returned,
@@ -1577,6 +1879,13 @@ impl Report {
                         .rows
                         .as_ref()
                         .map_or_else(String::new, |rows| format!(" [{}]", rows.join(", "))),
+                    operation
+                        .retry_of
+                        .as_ref()
+                        .map_or_else(String::new, |original| format!(
+                            " (a retry of {})",
+                            original.as_str()
+                        )),
                 );
             }
         }

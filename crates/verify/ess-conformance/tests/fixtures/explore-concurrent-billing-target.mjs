@@ -96,8 +96,10 @@ export function newBillingTarget() {
     configureExternalOutcome: () => {
       throw unsupported('no external outcome');
     },
-    redeliverEvent: () => {
-      throw unsupported('no redelivery');
+    // `InvoiceCreated` again reaches `notify-on-invoice-created`, whose mail this target does not
+    // model, so nothing changes; any other event it has no binding for.
+    redeliverEvent({ event }) {
+      if (event !== 'billing.invoice.InvoiceCreated') throw unsupported(`no binding reacts to ${event}`);
     },
     observeInvocations: () => {
       throw unsupported('no bindings');

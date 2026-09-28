@@ -86,6 +86,10 @@
         "rows": {
           "description": "For a Returned read of a view: the identity of each row it answered with, in the order answered. Absent on a command and on a read that could not record it; the checker judges no read without it.",
           "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+        },
+        "retry_of": {
+          "description": "For a client retry: the operation_id of an earlier operation of the same client and command whose request this one sent again, unchanged. Written only when a runner injects the faults a specification declares, for a command declaring a replays branch. Absent on every other operation.",
+          "anyOf": [{ "$ref": "#/definitions/Uuid" }, { "type": "null" }]
         }
       },
       "oneOf": [

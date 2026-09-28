@@ -471,7 +471,12 @@ function plan(ir: Node, concurrent = false): Plan {
     }
     for (const outcome of outcomes) reason ??= effectRefusal(outcome);
     for (const outcome of outcomes) {
-      if (reason === null && outcome.replays !== undefined && outcome.replays !== null) {
+      if (
+        reason === null &&
+        !concurrent &&
+        outcome.replays !== undefined &&
+        outcome.replays !== null
+      ) {
         reason = `outcome \`${outcome.name}\` replays a retained result`;
       }
     }
@@ -1519,6 +1524,12 @@ export function assertExplored(result: ExploreResult, options: AssertOptions = {
 // one with no call in flight invokes its next call, or one with a call in flight receives its
 // answer. Each move is awaited before the next is drawn, so one seed writes one history, byte for
 // byte, and the Go port writes the same bytes.
+//
+// With `inject`, every fault the specification declares is injected, and no other: a second
+// delivery for each `delivery: at_least_once` binding, a client retry for each command declaring
+// `replays:`, and a delayed or unanswered answer for each command declaring another `external:`
+// branch. Each is a move the seed schedules, drawn from its own SplitMix64 sequence of the seed,
+// and `ConcurrentResult.injected` counts them and the declared branches they reached.
 
 /** One call between its invoke and its return. */
 export interface PendingCommand {
@@ -1559,6 +1570,31 @@ export interface ConcurrentOptions {
    * written to any history. An explicit, reviewable opt-out, as `assertExplored` has.
    */
   allowExcluded?: boolean;
+  /**
+   * Inject every fault the specification declares, and no other, each as one more move the seed
+   * schedules: a second delivery of an event only `delivery: at_least_once` bindings react to
+   * (`redeliverEvent`); the same request sent again, as a second operation whose `retry_of` names
+   * the first, for a command declaring `replays:`; and, for a command declaring another `external:`
+   * branch, an answer delayed past the client's wait or never arriving, written `Indeterminate`.
+   * Nothing is injected into the prefix. `ess` records the same way.
+   */
+  inject?: boolean;
+}
+
+/** What an exploration injected, keyed by what declared each fault. */
+export interface ConcurrentInjected {
+  /** Second deliveries, by the binding declaring `at_least_once`. */
+  redeliveries: Record<string, number>;
+  /** Second deliveries the target refused, by event. */
+  refused: Record<string, number>;
+  /** Requests sent again, by the command declaring `replays:`. */
+  retries: Record<string, number>;
+  /** Calls answered after the client stopped waiting, by command. */
+  delayed: Record<string, number>;
+  /** Calls never answered and never executed, by command. */
+  unanswered: Record<string, number>;
+  /** The declared branch each retried or delayed call's answer took, as `command/outcome`. */
+  reached: Record<string, number>;
 }
 
 /** The first history `ess` did not find linearizable. */
@@ -1594,6 +1630,8 @@ export interface ConcurrentResult {
   /** Each history's verdict, in seed order. */
   verdicts: string[];
   failure?: ConcurrentFailure;
+  /** What was injected across every history, all empty without `inject`. */
+  injected: ConcurrentInjected;
 }
 
 /** The refusal when `ess` is not on PATH. */
@@ -1642,7 +1680,7 @@ const MASK_64 = (1n << 64n) - 1n;
 export class SplitMix64 {
   private state: bigint;
 
-  constructor(seed: number) {
+  constructor(seed: number | bigint) {
     this.state = BigInt(seed) & MASK_64;
   }
 
@@ -1668,12 +1706,31 @@ interface Operation {
   outcome?: string;
   /** A call the target does not expose: it is not written. */
   dropped?: boolean;
+  /** One more than the index of the operation this one sends again, or 0. */
+  retryOf: number;
 }
 
 interface Flight {
   pending: PendingCommand;
   command: Command;
   index: number;
+  /** An injected delay (`DELAYED`) or loss (`UNANSWERED`), or 0. */
+  timeout: number;
+}
+
+/** A client's retry of the call it invoked last: waiting to be sent, then in flight. */
+interface Retry {
+  command: Command;
+  step: Step;
+  request: CommandRequest;
+  original: number;
+  flight: Flight | null;
+}
+
+/** An event waiting to be delivered a second time, and the bindings it reaches. */
+interface Redelivery {
+  event: string;
+  bindings: string[];
 }
 
 interface Recording {
@@ -1685,11 +1742,107 @@ interface Recording {
   indeterminate: number;
   /** Every command the target threw `unsupported` for, with its reason, in the order found. */
   unsupported: Exclusion[];
+  /** The model, for what each binding and command declares. */
+  ir: Node;
+  /** Draws the injected faults; null when nothing is injected. */
+  injection: SplitMix64 | null;
+  /** True while the prefix runs, when nothing is injected into a call. */
+  arranging: boolean;
+  redeliveries: Redelivery[];
+  retries: (Retry | null)[];
+  injected: ConcurrentInjected;
+}
+
+/** Moves the injections' SplitMix64 sequence away from the schedule's, as `ess` does. */
+const INJECTION_STREAM = 0x1f83d9abfb41bd6bn;
+const DELAYED = 1;
+const UNANSWERED = 2;
+
+function newInjected(): ConcurrentInjected {
+  return { redeliveries: {}, refused: {}, retries: {}, delayed: {}, unanswered: {}, reached: {} };
+}
+
+function bump(counts: Record<string, number>, key: string): void {
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function addInjected(into: ConcurrentInjected, more: ConcurrentInjected): void {
+  for (const kind of [
+    'redeliveries',
+    'refused',
+    'retries',
+    'delayed',
+    'unanswered',
+    'reached',
+  ] as const) {
+    for (const [key, count] of Object.entries(more[kind])) {
+      into[kind][key] = (into[kind][key] ?? 0) + count;
+    }
+  }
 }
 
 /** An identity as a subject key: its text, or empty when it is not text. */
 function subjectKey(value: Node): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** Whether a command declares a `replays:` branch. */
+function declaresReplay(command: Command): boolean {
+  return list(command.node.outcomes).some(
+    (outcome: Node) => outcome.replays !== undefined && outcome.replays !== null,
+  );
+}
+
+/** Whether a command declares an `external:` branch other than a `replays:` one. */
+function declaresOtherExternal(command: Command): boolean {
+  return list(command.node.outcomes).some(
+    (outcome: Node) =>
+      (outcome.replays === undefined || outcome.replays === null) && isExternal(outcome),
+  );
+}
+
+function requestOf(h: Recording, command: Command, step: Step): CommandRequest {
+  return {
+    command: command.name,
+    actor: command.actor,
+    input: step.input,
+    correlation: h.correlation,
+  };
+}
+
+function reserve(h: Recording, client: number, command: Command, step: Step): number {
+  let subject = '';
+  const supplied = suppliedOutcome(command);
+  if (supplied !== undefined) {
+    subject = subjectKey(readPath(step.input, String(supplied.subject?.instance?.field?.name)));
+  }
+  h.clock += 1;
+  const index = h.operations.length;
+  h.operations.push({
+    client,
+    command: command.name,
+    subjectKey: subject,
+    invokedAt: h.clock,
+    retryOf: 0,
+  });
+  return index;
+}
+
+async function send(h: Recording, request: CommandRequest): Promise<PendingCommand> {
+  const target = h.target as Partial<InterleavedTarget> & Target;
+  if (typeof target.invokeCommand === 'function') {
+    try {
+      return await target.invokeCommand(request);
+    } catch (error) {
+      // Classified where the answer would have arrived, exactly as a throw from `complete` is.
+      return {
+        complete: () => {
+          throw error;
+        },
+      };
+    }
+  }
+  return { complete: () => target.executeCommand(request) };
 }
 
 async function invokeCall(
@@ -1698,37 +1851,82 @@ async function invokeCall(
   command: Command,
   step: Step,
 ): Promise<Flight> {
-  const request: CommandRequest = {
-    command: command.name,
-    actor: command.actor,
-    input: step.input,
-    correlation: h.correlation,
-  };
-  let subject = '';
-  const supplied = suppliedOutcome(command);
-  if (supplied !== undefined) {
-    subject = subjectKey(readPath(step.input, String(supplied.subject?.instance?.field?.name)));
-  }
-  h.clock += 1;
-  const index = h.operations.length;
-  h.operations.push({ client, command: command.name, subjectKey: subject, invokedAt: h.clock });
-  const target = h.target as Partial<InterleavedTarget> & Target;
-  let pending: PendingCommand;
-  if (typeof target.invokeCommand === 'function') {
-    try {
-      pending = await target.invokeCommand(request);
-    } catch (error) {
-      // Classified where the answer would have arrived, exactly as a throw from `complete` is.
-      pending = {
-        complete: () => {
-          throw error;
-        },
-      };
+  const request = requestOf(h, command, step);
+  const index = reserve(h, client, command, step);
+  // One call, one correlation: a retry sends it again under the same one, and a target tells a
+  // retry from a new call of the same input only by it — it never replays one call for another.
+  request.correlation = `${h.correlation}-${index + 1}`;
+  let timeout = 0;
+  if (h.injection !== null && !h.arranging) {
+    if (h.retries[client] === null && declaresReplay(command)) {
+      h.retries[client] = { command, step, request, original: index, flight: null };
     }
-  } else {
-    pending = { complete: () => target.executeCommand(request) };
+    if (declaresOtherExternal(command)) {
+      const drawn = h.injection.below(3);
+      if (drawn === 1) timeout = DELAYED;
+      if (drawn === 2) timeout = UNANSWERED;
+    }
   }
-  return { pending, command, index };
+  return { pending: await send(h, request), command, index, timeout };
+}
+
+/** Sends a client's retry: the request it sent, unchanged, as a new operation. */
+async function invokeRetry(h: Recording, client: number, retry: Retry): Promise<Flight> {
+  const request = retry.request;
+  const index = reserve(h, client, retry.command, retry.step);
+  (h.operations[index] as Operation).retryOf = retry.original + 1;
+  bump(h.injected.retries, retry.command.name);
+  return { pending: await send(h, request), command: retry.command, index, timeout: 0 };
+}
+
+/**
+ * Queues a second delivery of every event `result` published that only `at_least_once` bindings
+ * react to.
+ */
+function queueRedeliveries(h: Recording, result: CommandResult): void {
+  if (h.injection === null) return;
+  for (const event of result.directEvents ?? []) {
+    const bindings: string[] = [];
+    let declared = true;
+    for (const binding of sortedValues(h.ir.bindings)) {
+      if (typeof binding.event !== 'string' || binding.event !== event.event) continue;
+      bindings.push(String(binding.name));
+      declared = declared && binding.delivery === 'at_least_once';
+    }
+    if (bindings.length > 0 && declared) h.redeliveries.push({ event: event.event, bindings });
+  }
+}
+
+/** Delivers the queued event at `slot` a second time. */
+async function redeliver(h: Recording, slot: number): Promise<void> {
+  const [queued] = h.redeliveries.splice(slot, 1) as [Redelivery];
+  try {
+    await h.target.redeliverEvent({ event: queued.event, correlation: h.correlation });
+  } catch {
+    bump(h.injected.refused, queued.event);
+    return;
+  }
+  for (const binding of queued.bindings) bump(h.injected.redeliveries, binding);
+}
+
+/** The identity a creating branch of `command` published in `result`, and its entity, or null. */
+function createdBy(command: Command, result: CommandResult): { id: string; entity: string } | null {
+  const taken = result.outcome ?? '';
+  for (const outcome of list(command.node.outcomes)) {
+    if (String(outcome.name) !== taken) continue;
+    const subject = outcome.subject;
+    if (subject?.effect !== 'creates') return null;
+    const carrier = subject.instance?.event;
+    const field = subject.instance?.field?.name;
+    for (const event of result.directEvents ?? []) {
+      if (event.event !== carrier) continue;
+      const id = subjectKey(event.payload?.[field]);
+      if (id === '') return null;
+      return { id, entity: String(subject.entity) };
+    }
+    return null;
+  }
+  return null;
 }
 
 /**
@@ -1739,6 +1937,13 @@ async function completeCall(
   h: Recording,
   flight: Flight,
 ): Promise<{ id: string; entity: string } | null> {
+  if (flight.timeout === UNANSWERED) {
+    // The client stops waiting, and the target never executes the call.
+    h.clock += 1;
+    h.indeterminate += 1;
+    bump(h.injected.unanswered, flight.command.name);
+    return null;
+  }
   let result: CommandResult;
   try {
     result = await flight.pending.complete();
@@ -1764,24 +1969,23 @@ async function completeCall(
   h.clock += 1;
   const operation = h.operations[flight.index] as Operation;
   const taken = result.outcome ?? '';
-  operation.returnedAt = h.clock;
-  operation.outcome = taken === '' ? UNDECLARED : taken;
-  for (const outcome of list(flight.command.node.outcomes)) {
-    if (String(outcome.name) !== taken) continue;
-    const subject = outcome.subject;
-    if (subject?.effect !== 'creates') return null;
-    const carrier = subject.instance?.event;
-    const field = subject.instance?.field?.name;
-    for (const event of result.directEvents ?? []) {
-      if (event.event !== carrier) continue;
-      const id = subjectKey(event.payload?.[field]);
-      if (id === '') return null;
-      if (operation.subjectKey === '') operation.subjectKey = id;
-      return { id, entity: String(subject.entity) };
-    }
+  queueRedeliveries(h, result);
+  const created = createdBy(flight.command, result);
+  if (flight.timeout === DELAYED) {
+    // Executed, and answered after the client stopped waiting: written `Indeterminate`, with the
+    // instance the late answer named, so a read showing it is not a read of nothing.
+    h.indeterminate += 1;
+    bump(h.injected.delayed, flight.command.name);
+    bump(h.injected.reached, `${flight.command.name}/${taken}`);
+    if (operation.subjectKey === '' && created !== null) operation.subjectKey = created.id;
     return null;
   }
-  return null;
+  if (operation.retryOf !== 0) bump(h.injected.reached, `${flight.command.name}/${taken}`);
+  operation.returnedAt = h.clock;
+  operation.outcome = taken === '' ? UNDECLARED : taken;
+  if (created === null) return null;
+  if (operation.subjectKey === '') operation.subjectKey = created.id;
+  return created;
 }
 
 function uuidOf(n: bigint): string {
@@ -1808,6 +2012,15 @@ function historyText(
   clients: number,
   operations: Operation[],
 ): string {
+  // Where each written operation stands among the written ones, from 1, for a retry naming it.
+  const position = new Map<number, number>();
+  let kept = 0;
+  operations.forEach((operation, index) => {
+    if (operation.dropped !== true) {
+      kept += 1;
+      position.set(index, kept);
+    }
+  });
   const written = operations
     .filter((operation) => operation.dropped !== true)
     .map((operation, index) => {
@@ -1824,6 +2037,10 @@ function historyText(
         members.push(['outcome', quote(operation.outcome)]);
       } else {
         members.push(['completion', quote('Indeterminate')]);
+      }
+      const original = position.get(operation.retryOf - 1);
+      if (operation.retryOf !== 0 && original !== undefined) {
+        members.push(['retry_of', quote(uuidOf(BigInt(original)))]);
       }
       return jsonObject(members);
     });
@@ -1862,6 +2079,12 @@ async function recordHistory(
       operations: [],
       indeterminate: 0,
       unsupported: [],
+      ir: p.ir,
+      injection: options.inject === true ? new SplitMix64(BigInt(seed) ^ INJECTION_STREAM) : null,
+      arranging: true,
+      redeliveries: [],
+      retries: Array.from({ length: clients }, () => null),
+      injected: newInjected(),
     };
     const model = new Model();
 
@@ -1894,19 +2117,39 @@ async function recordHistory(
       workload.push(own);
     }
 
-    // The interleaving.
+    // The interleaving: the clients' moves first, in client order, then each client's retry, then
+    // each queued second delivery. Without `inject` only the first kind exists.
+    h.arranging = false;
     const schedule = new SplitMix64(seed);
     const next = workload.map(() => 0);
     const flying: (Flight | null)[] = workload.map(() => null);
     for (;;) {
-      const enabled: number[] = [];
+      const enabled: [number, number][] = [];
       workload.forEach((own, client) => {
-        if (flying[client] !== null || (next[client] as number) < own.length) enabled.push(client);
+        if (
+          flying[client] !== null ||
+          (h.retries[client] === null && (next[client] as number) < own.length)
+        )
+          enabled.push([0, client]);
       });
+      workload.forEach((_, client) => {
+        if (h.retries[client] !== null) enabled.push([1, client]);
+      });
+      h.redeliveries.forEach((_, slot) => enabled.push([2, slot]));
       if (enabled.length === 0) break;
-      const client = enabled[schedule.below(enabled.length)] as number;
+      const [kind, client] = enabled[schedule.below(enabled.length)] as [number, number];
       const flight = flying[client] as Flight | null;
-      if (flight !== null) {
+      if (kind === 1) {
+        const retry = h.retries[client] as Retry;
+        if (retry.flight === null) {
+          retry.flight = await invokeRetry(h, client, retry);
+        } else {
+          h.retries[client] = null;
+          await completeCall(h, retry.flight);
+        }
+      } else if (kind === 2) {
+        await redeliver(h, client);
+      } else if (flight !== null) {
         await completeCall(h, flight);
         flying[client] = null;
       } else {
@@ -2004,6 +2247,7 @@ export async function exploreConcurrent(
     excluded: [],
     allowExcluded: options.allowExcluded === true,
     verdicts: [],
+    injected: newInjected(),
   };
   for (const seed of seeds) {
     if (p.commands.length === 0) break;
@@ -2015,6 +2259,7 @@ export async function exploreConcurrent(
       throw new Error(`explore: seed ${seed}: ${errorText(error)}`);
     }
     result.indeterminate += recording.indeterminate;
+    addInjected(result.injected, recording.injected);
     for (const exclusion of recording.unsupported) {
       if (!result.excluded.some((earlier) => earlier.subject === exclusion.subject))
         result.excluded.push(exclusion);

@@ -210,6 +210,16 @@ return. A call that returns `ErrIndeterminate` (or wraps it, or `context.Deadlin
 `ErrUnsupported` is left out, and `AssertConcurrent` fails on it unless
 `ConcurrentOptions{AllowExcluded: true}` accepts it. `Clients` outside 2 to 4 is refused. `Unknown`
 fails `AssertConcurrent` as a violation does.
+
+`ConcurrentOptions{Inject: true}` injects every fault the specification declares, and no other: a
+second delivery (`RedeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the
+same request sent again, written with `retry_of` naming the first, for a command declaring
+`replays:`; and an answer delayed past the client's wait or never arriving, written `Indeterminate`,
+for a command declaring another `external:` branch. Each is a move the seed schedules, and
+`ConcurrentResult.Injected` counts them by what declared them and names the branches they reached.
+Nothing is injected into the prefix, and a target restart never is: nothing declares one. Each
+call carries its own correlation, which only its retry repeats, so a target tells a retry from a new
+call of the same input by it.
 "#;
 
 /// The one file that exists only to embed the other one.

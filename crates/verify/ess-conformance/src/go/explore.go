@@ -620,7 +620,7 @@ func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 			}
 		}
 		for _, outcome := range outcomes {
-			if reason == "" && exploreObject(outcome)["replays"] != nil {
+			if reason == "" && !concurrent && exploreObject(outcome)["replays"] != nil {
 				reason = fmt.Sprintf("outcome `%v` replays a retained result", exploreObject(outcome)["name"])
 			}
 		}
@@ -1842,6 +1842,12 @@ func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 // with, picks at every tick of a logical clock which client acts next: one with no call in flight
 // invokes its next call, or one with a call in flight receives its answer. So one seed writes one
 // history, byte for byte, and the TypeScript port writes the same bytes.
+//
+// With ConcurrentOptions.Inject, every fault the specification declares is injected, and no other:
+// a second delivery for each `delivery: at_least_once` binding, a client retry for each command
+// declaring `replays:`, and a delayed or unanswered answer for each command declaring another
+// `external:` branch. Each is a move the seed schedules, drawn from its own SplitMix64 sequence of
+// the seed, and ConcurrentResult.Injected counts them and the declared branches they reached.
 
 // PendingCommand is one call between its invoke and its return.
 type PendingCommand interface {
@@ -1886,6 +1892,42 @@ type ConcurrentOptions struct {
 	// AllowExcluded accepts commands the target does not expose (ErrUnsupported), whose calls are
 	// then not written to any history. An explicit, reviewable opt-out, as AssertOptions has.
 	AllowExcluded bool `json:"allowExcluded,omitempty"`
+	// Inject injects every fault the specification declares, and no other, each as one more move
+	// the seed schedules: a second delivery of an event only `delivery: at_least_once` bindings
+	// react to (RedeliverEvent); the same request sent again, as a second operation whose
+	// `retry_of` names the first, for a command declaring `replays:`; and, for a command declaring
+	// another `external:` branch, an answer delayed past the client's wait or never arriving,
+	// written `Indeterminate`. Nothing is injected into the prefix. `ess` records the same way.
+	Inject bool `json:"inject,omitempty"`
+}
+
+// ConcurrentInjected is what an exploration injected, keyed by what declared each fault.
+type ConcurrentInjected struct {
+	// Redeliveries counts second deliveries by the binding declaring `at_least_once`.
+	Redeliveries map[string]int `json:"redeliveries"`
+	// Refused counts second deliveries the target refused, by event.
+	Refused map[string]int `json:"refused"`
+	// Retries counts requests sent again, by the command declaring `replays:`.
+	Retries map[string]int `json:"retries"`
+	// Delayed counts calls answered after the client stopped waiting, by command.
+	Delayed map[string]int `json:"delayed"`
+	// Unanswered counts calls never answered and never executed, by command.
+	Unanswered map[string]int `json:"unanswered"`
+	// Reached counts the declared branch each retried or delayed call's answer took, as
+	// `command/outcome`.
+	Reached map[string]int `json:"reached"`
+}
+
+func newConcurrentInjected() ConcurrentInjected {
+	return ConcurrentInjected{Redeliveries: map[string]int{}, Refused: map[string]int{}, Retries: map[string]int{}, Delayed: map[string]int{}, Unanswered: map[string]int{}, Reached: map[string]int{}}
+}
+
+func (i ConcurrentInjected) add(more ConcurrentInjected) {
+	for _, pair := range [][2]map[string]int{{i.Redeliveries, more.Redeliveries}, {i.Refused, more.Refused}, {i.Retries, more.Retries}, {i.Delayed, more.Delayed}, {i.Unanswered, more.Unanswered}, {i.Reached, more.Reached}} {
+		for key, count := range pair[1] {
+			pair[0][key] += count
+		}
+	}
 }
 
 // ConcurrentFailure is the first history `ess` did not find linearizable.
@@ -1918,6 +1960,8 @@ type ConcurrentResult struct {
 	// Verdicts is each history's verdict, in seed order.
 	Verdicts []string           `json:"verdicts"`
 	Failure  *ConcurrentFailure `json:"failure,omitempty"`
+	// Injected is what was injected across every history, all empty without Inject.
+	Injected ConcurrentInjected `json:"injected"`
 }
 
 // ErrNoEss is the refusal when `ess` is not on PATH.
@@ -1934,6 +1978,10 @@ const (
 	exploreConcurrentCalls  = 3
 	exploreConcurrentPrefix = 2
 	exploreUndeclared       = "<undeclared>"
+	// exploreInjectionStream moves the injections' SplitMix64 sequence away from the schedule's.
+	exploreInjectionStream uint64 = 0x1f83d9abfb41bd6b
+	exploreDelayed                = 1
+	exploreUnanswered             = 2
 )
 
 // SplitMix64 is the generator that picks which client acts next, as `ess` records with.
@@ -1969,17 +2017,36 @@ type exploreOperation struct {
 	outcome    string
 	// dropped is a call the target does not expose: it is not written.
 	dropped bool
+	// retryOf is one more than the index of the operation this one sends again, or 0.
+	retryOf int
 }
 
 type exploreFlight struct {
 	pending PendingCommand
 	command *exploreCommand
 	index   int
+	// timeout is an injected delay (exploreDelayed) or loss (exploreUnanswered), or 0.
+	timeout int
 }
 
 type exploreCall struct {
 	command *exploreCommand
 	step    *exploreStep
+}
+
+// exploreRetry is a client's retry of the call it invoked last: waiting to be sent, then in flight.
+type exploreRetry struct {
+	command  *exploreCommand
+	step     *exploreStep
+	request  CommandRequest
+	original int
+	flight   *exploreFlight
+}
+
+// exploreRedelivery is an event waiting to be delivered a second time, and the bindings it reaches.
+type exploreRedelivery struct {
+	event    string
+	bindings []string
 }
 
 type exploreRecording struct {
@@ -1992,6 +2059,15 @@ type exploreRecording struct {
 	// unsupported is every command the target answered ErrUnsupported to, with its reason, in the
 	// order found.
 	unsupported []Exclusion
+	// ir is the model, for what each binding and command declares.
+	ir map[string]any
+	// injection draws the injected faults, and is nil when nothing is injected.
+	injection *SplitMix64
+	// arranging is true while the prefix runs, when nothing is injected into a call.
+	arranging    bool
+	redeliveries []exploreRedelivery
+	retries      []*exploreRetry
+	injected     ConcurrentInjected
 }
 
 // exploreKey is an identity as a subject key: its text, or empty when it is not text.
@@ -2000,8 +2076,33 @@ func exploreKey(value Node) string {
 	return text
 }
 
-func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) *exploreFlight {
-	request := CommandRequest{Command: command.name, Actor: command.actor, Input: map[string]Node(step.input), Correlation: h.correlation}
+// exploreReplays is whether a command declares a `replays:` branch.
+func exploreReplays(command *exploreCommand) bool {
+	for _, node := range exploreList(command.node["outcomes"]) {
+		if exploreObject(node)["replays"] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// exploreExternalOther is whether a command declares an `external:` branch other than a
+// `replays:` one, which a retry exercises instead.
+func exploreExternalOther(command *exploreCommand) bool {
+	for _, node := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(node)
+		if outcome["replays"] == nil && exploreIsExternal(outcome) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *exploreRecording) request(command *exploreCommand, step *exploreStep) CommandRequest {
+	return CommandRequest{Command: command.name, Actor: command.actor, Input: map[string]Node(step.input), Correlation: h.correlation}
+}
+
+func (h *exploreRecording) reserve(client int, command *exploreCommand, step *exploreStep) int {
 	subject := ""
 	if supplied := exploreSupplied(command); supplied != nil {
 		field := exploreString(exploreObject(exploreObject(exploreObject(supplied["subject"])["instance"])["field"])["name"])
@@ -2012,19 +2113,127 @@ func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exp
 	h.clock++
 	index := len(h.operations)
 	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock})
+	return index
+}
+
+func (h *exploreRecording) send(request CommandRequest) PendingCommand {
 	var pending PendingCommand = exploreAtomicCall{target: h.target, request: request}
 	if interleaved, ok := h.target.(InterleavedTarget); ok {
 		pending = interleaved.InvokeCommand(request)
 	}
-	return &exploreFlight{pending: pending, command: command, index: index}
+	return pending
+}
+
+func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) *exploreFlight {
+	request := h.request(command, step)
+	index := h.reserve(client, command, step)
+	// One call, one correlation: a retry sends it again under the same one, and a target tells a
+	// retry from a new call of the same input only by it — it never replays one call for another.
+	request.Correlation = fmt.Sprintf("%s-%d", h.correlation, index+1)
+	timeout := 0
+	if h.injection != nil && !h.arranging {
+		if h.retries[client] == nil && exploreReplays(command) {
+			h.retries[client] = &exploreRetry{command: command, step: step, request: request, original: index}
+		}
+		if exploreExternalOther(command) {
+			switch h.injection.below(3) {
+			case 1:
+				timeout = exploreDelayed
+			case 2:
+				timeout = exploreUnanswered
+			}
+		}
+	}
+	return &exploreFlight{pending: h.send(request), command: command, index: index, timeout: timeout}
+}
+
+// invokeRetry sends a client's retry: the request it sent, unchanged, as a new operation.
+func (h *exploreRecording) invokeRetry(client int, retry *exploreRetry) *exploreFlight {
+	request := retry.request
+	index := h.reserve(client, retry.command, retry.step)
+	h.operations[index].retryOf = retry.original + 1
+	h.injected.Retries[retry.command.name]++
+	return &exploreFlight{pending: h.send(request), command: retry.command, index: index}
+}
+
+// queueRedeliveries queues a second delivery of every event result published that only
+// `at_least_once` bindings react to.
+func (h *exploreRecording) queueRedeliveries(result CommandResult) {
+	if h.injection == nil {
+		return
+	}
+	for _, event := range result.DirectEvents {
+		bindings := []string{}
+		declared := true
+		for _, binding := range exploreSorted(h.ir["bindings"]) {
+			if exploreString(binding["event"]) != event.Event {
+				continue
+			}
+			bindings = append(bindings, exploreString(binding["name"]))
+			declared = declared && exploreString(binding["delivery"]) == "at_least_once"
+		}
+		if len(bindings) > 0 && declared {
+			h.redeliveries = append(h.redeliveries, exploreRedelivery{event: event.Event, bindings: bindings})
+		}
+	}
+}
+
+// redeliver delivers the queued event at slot a second time.
+func (h *exploreRecording) redeliver(slot int) {
+	queued := h.redeliveries[slot]
+	h.redeliveries = append(h.redeliveries[:slot], h.redeliveries[slot+1:]...)
+	if err := h.target.RedeliverEvent(RedeliveryRequest{Event: queued.event, Correlation: h.correlation}); err != nil {
+		h.injected.Refused[queued.event]++
+		return
+	}
+	for _, binding := range queued.bindings {
+		h.injected.Redeliveries[binding]++
+	}
+}
+
+// exploreCreated is the identity a creating branch of command published in result and its entity,
+// or nil.
+func exploreCreated(command *exploreCommand, result CommandResult) (Node, string) {
+	for _, node := range exploreList(command.node["outcomes"]) {
+		outcome := exploreObject(node)
+		if fmt.Sprint(outcome["name"]) != result.Outcome {
+			continue
+		}
+		subject := exploreObject(outcome["subject"])
+		if subject["effect"] != "creates" {
+			return nil, ""
+		}
+		instance := exploreObject(subject["instance"])
+		carrier := exploreString(instance["event"])
+		field := exploreString(exploreObject(instance["field"])["name"])
+		for _, event := range result.DirectEvents {
+			if event.Event != carrier {
+				continue
+			}
+			id := exploreKey(event.Payload[field])
+			if id == "" {
+				return nil, ""
+			}
+			return id, exploreString(subject["entity"])
+		}
+		return nil, ""
+	}
+	return nil, ""
 }
 
 // complete writes the answer into the operation flight reserved, and returns the identity a
 // creating branch published and its entity, or nil.
 func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error) {
+	operation := &h.operations[flight.index]
+	if flight.timeout == exploreUnanswered {
+		// The client stops waiting, and the target never executes the call.
+		h.clock++
+		h.indeterminate++
+		h.injected.Unanswered[flight.command.name]++
+		return nil, "", nil
+	}
 	result, err := flight.pending.Complete()
 	h.clock++
-	operation := &h.operations[flight.index]
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrUnsupported):
@@ -2042,40 +2251,35 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 	default:
 		return nil, "", fmt.Errorf("`%s` failed: %w", flight.command.name, err)
 	}
+	h.queueRedeliveries(result)
+	id, entity := exploreCreated(flight.command, result)
+	if flight.timeout == exploreDelayed {
+		// Executed, and answered after the client stopped waiting: written `Indeterminate`, with
+		// the instance the late answer named, so a read showing it is not a read of nothing.
+		h.indeterminate++
+		h.injected.Delayed[flight.command.name]++
+		h.injected.Reached[flight.command.name+"/"+result.Outcome]++
+		if operation.subjectKey == "" && id != nil {
+			operation.subjectKey = exploreKey(id)
+		}
+		return nil, "", nil
+	}
+	if operation.retryOf != 0 {
+		h.injected.Reached[flight.command.name+"/"+result.Outcome]++
+	}
 	operation.returned = true
 	operation.returnedAt = h.clock
 	operation.outcome = result.Outcome
 	if operation.outcome == "" {
 		operation.outcome = exploreUndeclared
 	}
-	for _, node := range exploreList(flight.command.node["outcomes"]) {
-		outcome := exploreObject(node)
-		if fmt.Sprint(outcome["name"]) != result.Outcome {
-			continue
-		}
-		subject := exploreObject(outcome["subject"])
-		if subject["effect"] != "creates" {
-			return nil, "", nil
-		}
-		instance := exploreObject(subject["instance"])
-		carrier := exploreString(instance["event"])
-		field := exploreString(exploreObject(instance["field"])["name"])
-		for _, event := range result.DirectEvents {
-			if event.Event != carrier {
-				continue
-			}
-			id := exploreKey(event.Payload[field])
-			if id == "" {
-				return nil, "", nil
-			}
-			if operation.subjectKey == "" {
-				operation.subjectKey = id
-			}
-			return id, exploreString(subject["entity"]), nil
-		}
+	if id == nil {
 		return nil, "", nil
 	}
-	return nil, "", nil
+	if operation.subjectKey == "" {
+		operation.subjectKey = exploreKey(id)
+	}
+	return id, entity, nil
 }
 
 func exploreUUID(n uint64) string {
@@ -2096,8 +2300,12 @@ func exploreQuote(text string) string {
 func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
 	written := []string{}
 	kept := []exploreOperation{}
-	for _, operation := range operations {
+	// position is where each written operation stands among the written ones, from 1, for a retry
+	// naming it.
+	position := map[int]int{}
+	for index, operation := range operations {
 		if !operation.dropped {
+			position[index] = len(kept) + 1
 			kept = append(kept, operation)
 		}
 	}
@@ -2116,6 +2324,9 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 				[2]string{"outcome", exploreQuote(operation.outcome)})
 		} else {
 			members = append(members, [2]string{"completion", exploreQuote("Indeterminate")})
+		}
+		if original := position[operation.retryOf-1]; operation.retryOf != 0 && original != 0 {
+			members = append(members, [2]string{"retry_of", exploreQuote(exploreUUID(uint64(original)))})
 		}
 		written = append(written, exploreJSONObject(members))
 	}
@@ -2155,7 +2366,10 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		return nil, nil, err
 	}
 	defer func() { _ = target.EndScenario(scenario) }()
-	h := &exploreRecording{target: target, correlation: scenario.Correlation}
+	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected()}
+	if options.Inject {
+		h.injection = NewSplitMix64(uint64(seed) ^ exploreInjectionStream)
+	}
 	model := &exploreModel{records: map[string][]*exploreRecord{}}
 
 	// The prefix: creations on client 0, one at a time, so the clients have subjects to share.
@@ -2197,22 +2411,45 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		}
 	}
 
-	// The interleaving.
+	// The interleaving: the clients' moves first, in client order, then each client's retry, then
+	// each queued second delivery. Without Inject only the first kind exists.
+	h.arranging = false
 	draw := NewSplitMix64(uint64(seed))
 	next := make([]int, clients)
 	flying := make([]*exploreFlight, clients)
 	for {
-		enabled := []int{}
+		enabled := [][2]int{}
 		for client := range workload {
-			if flying[client] != nil || next[client] < len(workload[client]) {
-				enabled = append(enabled, client)
+			if flying[client] != nil || (h.retries[client] == nil && next[client] < len(workload[client])) {
+				enabled = append(enabled, [2]int{0, client})
 			}
+		}
+		for client := range workload {
+			if h.retries[client] != nil {
+				enabled = append(enabled, [2]int{1, client})
+			}
+		}
+		for slot := range h.redeliveries {
+			enabled = append(enabled, [2]int{2, slot})
 		}
 		if len(enabled) == 0 {
 			break
 		}
-		client := enabled[draw.below(len(enabled))]
-		if flying[client] != nil {
+		move := enabled[draw.below(len(enabled))]
+		client := move[1]
+		if move[0] == 1 {
+			retry := h.retries[client]
+			if retry.flight == nil {
+				retry.flight = h.invokeRetry(client, retry)
+			} else {
+				h.retries[client] = nil
+				if _, _, err := h.complete(retry.flight); err != nil {
+					return nil, nil, err
+				}
+			}
+		} else if move[0] == 2 {
+			h.redeliver(move[1])
+		} else if flying[client] != nil {
 			if _, _, err := h.complete(flying[client]); err != nil {
 				return nil, nil, err
 			}
@@ -2283,7 +2520,7 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 			seeds = append(seeds, seed)
 		}
 	}
-	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded}
+	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded, Injected: newConcurrentInjected()}
 	for _, seed := range seeds {
 		if len(p.commands) == 0 {
 			break
@@ -2293,6 +2530,7 @@ func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (Conc
 			return ConcurrentResult{}, fmt.Errorf("explore: seed %d: %w", seed, err)
 		}
 		result.Indeterminate += recording.indeterminate
+		result.Injected.add(recording.injected)
 		for _, exclusion := range recording.unsupported {
 			known := false
 			for _, earlier := range result.Excluded {

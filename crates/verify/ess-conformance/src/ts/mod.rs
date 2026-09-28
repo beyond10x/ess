@@ -202,6 +202,15 @@ written `Indeterminate` and counted; anything else thrown fails the exploration.
 throws `unsupported` is left out, and `assertConcurrent` fails on it unless `{ allowExcluded: true }`
 accepts it. `clients` outside 2 to 4 is refused. `Unknown` fails `assertConcurrent` as a violation
 does.
+
+`{ inject: true }` injects every fault the specification declares, and no other: a second delivery
+(`redeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the same request
+sent again, written with `retry_of` naming the first, for a command declaring `replays:`; and an
+answer delayed past the client's wait or never arriving, written `Indeterminate`, for a command
+declaring another `external:` branch. Each is a move the seed schedules, and `result.injected`
+counts them by what declared them and names the branches they reached. Nothing is injected into the
+prefix, and a target restart never is: nothing declares one. Each call carries its own correlation,
+which only its retry repeats, so a target tells a retry from a new call of the same input by it.
 "#;
 
 /// Emit an immutable suite/5 input with all exact original ancestors.

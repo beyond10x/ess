@@ -79,6 +79,8 @@ entities:
         type: Optional<concurrent.history.QualifiedName>
       - name: rows
         type: Optional<List<String>>
+      - name: retry_of
+        type: Optional<Uuid>
     lifecycle:
       initial: Recorded
       states: [Recorded]

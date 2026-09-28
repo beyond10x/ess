@@ -25,6 +25,11 @@
 //! [`Workload::clients`] is one client's calls, in order, and a client never has two calls in
 //! flight. At every tick the seed picks one enabled move — a client with no call in flight invokes
 //! its next call, or a client with one in flight receives its answer.
+//!
+//! Nothing is injected here. The faults a specification declares — a second delivery, a client
+//! retry, a delayed or lost external answer — are injected by
+//! [`sessions::record_injected`](crate::sessions::record_injected), which needs the target as a
+//! [`ConformanceTarget`] too, to deliver an event a second time.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -317,6 +322,7 @@ impl<T: Interleaved> Recording<'_, T> {
             completion: Completion::Indeterminate,
             outcome: None,
             rows: None,
+            retry_of: None,
         });
         Ok(InFlight {
             pending: self.target.invoke(request),

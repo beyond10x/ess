@@ -20,8 +20,10 @@ use serde_json::Value;
 
 const EXPLORE: &str = "crates/verify/ess-conformance/tests/fixtures/explore.yaml";
 const BILLING: &str = "examples/billing";
+const RETRY: &str = "crates/verify/ess-conformance/tests/fixtures/explore-retry/retry.yaml";
 const SEEDS: u64 = 200;
 const BILLING_SEEDS: u64 = 40;
+const RETRY_SEEDS: u64 = 20;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -140,6 +142,10 @@ fn go(root: &Path, spec: &str, cases: &Value) -> Lane {
             "explore_concurrent_billing_target_test.go",
         ),
         (
+            "explore_concurrent_retry_target.go",
+            "explore_concurrent_retry_target_test.go",
+        ),
+        (
             "explore_concurrent_driver_test.go",
             "explore_concurrent_driver_test.go",
         ),
@@ -182,6 +188,7 @@ fn typescript(root: &Path, spec: &str, cases: &Value) -> Lane {
     for name in [
         "explore-target.mjs",
         "explore-concurrent-billing-target.mjs",
+        "explore-concurrent-retry-target.mjs",
         "explore-concurrent-driver.mjs",
     ] {
         std::fs::copy(fixture(name), package.join(name)).expect("the fixture copies");
@@ -253,13 +260,24 @@ fn explore_cases(scratch: &Path) -> Value {
 fn billing_cases() -> Value {
     serde_json::json!([
         {"name": "billing", "target": "billing", "options": {"seeds": BILLING_SEEDS}},
+        {"name": "billing-injected", "target": "billing", "options": {"seeds": BILLING_SEEDS, "inject": true}},
     ])
 }
 
-/// Both explore lanes and both billing lanes, run once for every test below.
+fn retry_cases() -> Value {
+    serde_json::json!([
+        {"name": "retry", "target": "retry", "options": {"seeds": RETRY_SEEDS}},
+        {"name": "retry-injected", "target": "retry", "options": {"seeds": RETRY_SEEDS, "inject": true}},
+        {"name": "unretained", "target": "retry", "mutant": "unretained", "options": {"seeds": RETRY_SEEDS}},
+        {"name": "unretained-injected", "target": "retry", "mutant": "unretained", "options": {"seeds": RETRY_SEEDS, "inject": true}},
+    ])
+}
+
+/// Both explore lanes, both billing lanes and both retry lanes, run once for every test below.
 struct Lanes {
     explore: (Lane, Lane),
     billing: (Lane, Lane),
+    retry: (Lane, Lane),
 }
 
 fn lanes() -> &'static Lanes {
@@ -276,7 +294,16 @@ fn lanes() -> &'static Lanes {
             typescript(&scratch.path().join("billing"), BILLING, &cases),
             go(&scratch.path().join("billing"), BILLING, &cases),
         );
-        Lanes { explore, billing }
+        let cases = retry_cases();
+        let retry = (
+            typescript(&scratch.path().join("retry"), RETRY, &cases),
+            go(&scratch.path().join("retry"), RETRY, &cases),
+        );
+        Lanes {
+            explore,
+            billing,
+            retry,
+        }
     })
 }
 
@@ -452,6 +479,9 @@ fn every_written_history_is_admitted_and_is_the_readers_own_spelling() {
         (&lanes.explore.0, "answer-lost", EXPLORE),
         (&lanes.explore.1, "close-unsupported", EXPLORE),
         (&lanes.billing.0, "billing", BILLING),
+        (&lanes.billing.1, "billing-injected", BILLING),
+        (&lanes.retry.0, "retry-injected", RETRY),
+        (&lanes.retry.1, "unretained-injected", RETRY),
     ] {
         let digest = spec_digest(spec);
         for (seed, bytes) in &lane.histories[name] {
@@ -773,5 +803,127 @@ fn a_negative_seed_count_seed_or_call_count_is_refused_with_one_message_in_both_
         );
         assert_eq!(typescript.results[name], go.results[name], "{name}");
         assert!(typescript.histories[name].is_empty() && go.histories[name].is_empty());
+    }
+}
+
+// ---- the faults the specification declares, injected (`story:declared-fault-injection`) ---------
+
+/// `result[injected][kind][key]`, or 0.
+fn injected(result: &Value, kind: &str, key: &str) -> u64 {
+    result["injected"][kind][key].as_u64().unwrap_or(0)
+}
+
+/// The sum of `result[injected][kind]`.
+fn injected_total(result: &Value, kind: &str) -> u64 {
+    result["injected"][kind]
+        .as_object()
+        .unwrap_or_else(|| panic!("`injected.{kind}` is a map: {result}"))
+        .values()
+        .map(|count| count.as_u64().expect("a count"))
+        .sum()
+}
+
+#[test]
+fn injection_over_examples_billing_writes_equal_bytes_in_go_and_typescript_and_stays_linearizable()
+{
+    let (typescript, go) = &lanes().billing;
+    let ts = &typescript.histories["billing-injected"];
+    assert_eq!(ts.len() as u64, BILLING_SEEDS);
+    assert_eq!(ts, &go.histories["billing-injected"]);
+    assert_eq!(
+        result(typescript, "billing-injected"),
+        result(go, "billing-injected")
+    );
+    assert_ne!(
+        ts, &typescript.histories["billing"],
+        "injection changed no history, so it injected nothing"
+    );
+    for lane in [typescript, go] {
+        let billing = result(lane, "billing-injected");
+        println!("billing-injected: {}", billing["injected"]);
+        assert_eq!(count(billing, "linearizable"), BILLING_SEEDS, "{billing}");
+        // What billing declares: `notify-on-invoice-created` is `at_least_once`, and
+        // `SendEmail/failed` is `external:`. It declares no `replays:`, so nothing is retried.
+        assert!(
+            injected(billing, "redeliveries", "notify-on-invoice-created") > 0,
+            "{billing}"
+        );
+        assert_eq!(injected_total(billing, "retries"), 0, "{billing}");
+        assert_eq!(injected_total(billing, "refused"), 0, "{billing}");
+        let lost = injected_total(billing, "delayed") + injected_total(billing, "unanswered");
+        assert!(lost > 0, "{billing}");
+        let written = operations(lane, "billing-injected")
+            .iter()
+            .filter(|operation| operation["completion"] == "Indeterminate")
+            .count() as u64;
+        assert_eq!(count(billing, "indeterminate"), written, "{billing}");
+        assert_eq!(
+            written, lost,
+            "every injected delay or loss, and nothing else"
+        );
+        // Without injection nothing is counted.
+        let plain = result(lane, "billing");
+        assert_eq!(
+            plain["injected"],
+            serde_json::json!({"redeliveries": {}, "refused": {}, "retries": {}, "delayed": {}, "unanswered": {}, "reached": {}})
+        );
+    }
+}
+
+#[test]
+fn a_client_retry_of_a_command_declaring_replays_is_written_equally_and_catches_an_unretained_target(
+) {
+    let (typescript, go) = &lanes().retry;
+    for name in [
+        "retry",
+        "retry-injected",
+        "unretained",
+        "unretained-injected",
+    ] {
+        assert_eq!(
+            typescript.histories[name], go.histories[name],
+            "`{name}`: the TypeScript and Go histories differ"
+        );
+        assert_eq!(result(typescript, name), result(go, name), "`{name}`");
+    }
+    for lane in [typescript, go] {
+        let correct = result(lane, "retry-injected");
+        println!("retry-injected: {}", correct["injected"]);
+        assert_eq!(count(correct, "linearizable"), RETRY_SEEDS, "{correct}");
+        assert!(
+            injected(correct, "retries", "retry.core.Seed") > 0,
+            "{correct}"
+        );
+        assert!(
+            injected(correct, "reached", "retry.core.Seed/replayed") > 0,
+            "{correct}"
+        );
+        assert!(operations(lane, "retry-injected")
+            .iter()
+            .any(|operation| operation.get("retry_of").is_some()));
+        // The target that retains a request only once it answered: no violation without a retry,
+        // and at least one with.
+        let without = result(lane, "unretained");
+        assert_eq!(count(without, "violations"), 0, "{without}");
+        assert!(operations(lane, "unretained")
+            .iter()
+            .all(|operation| operation.get("retry_of").is_none()));
+        let with = result(lane, "unretained-injected");
+        println!(
+            "unretained-injected: {} violation(s) of {RETRY_SEEDS}; first failing seed {}",
+            count(with, "violations"),
+            with["failure"]["seed"]
+        );
+        assert!(count(with, "violations") >= 1, "{with}");
+        // The violation is the request applied twice: its retry answered the origin branch.
+        let report = with["failure"]["report"]
+            .as_str()
+            .expect("the checker's report");
+        println!("{report}");
+        assert!(report.contains("-> seeded (a retry of "), "{report}");
+        assert_eq!(
+            result(lane, "retry")["verdicts"].as_array().unwrap().len() as u64,
+            RETRY_SEEDS
+        );
     }
 }
