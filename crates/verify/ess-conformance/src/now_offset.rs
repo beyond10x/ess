@@ -3,7 +3,7 @@
 //!
 //! A guard `starts_at < now - 60s` (source format `ess/16`) compares an input with the moment the
 //! implementation handles the request. No suite can carry that instant: it does not exist until the
-//! run. So synthesis decides its witnesses against a fixed [`reference`] instant, and writes each
+//! run. So synthesis decides its witnesses against a fixed [`reference()`] instant, and writes each
 //! value it chose for a now-guarded input as `{kind: now_offset, seconds: <n>}` — the reference
 //! offset, carried over to the moment of sending. The runner resolves it from its wall clock
 //! ([`crate::Clock::wall`]) when the step that first names it runs, rounded up to a whole second,
@@ -56,7 +56,7 @@ pub fn reference() -> Rfc3339Instant {
 /// The earliest moment a suite carrying `now_offset` values runs: `2026-09-27T00:00:00Z`, the day
 /// the operand was implemented.
 ///
-/// Synthesis decides every value once, at [`reference`]. A fixed instant a now-guarded field is
+/// Synthesis decides every value once, at [`reference()`]. A fixed instant a now-guarded field is
 /// also ordered against, lying after the reference and not after this moment, is on one side of
 /// `now` at the reference and on the other at every run, so a value chosen at that fixed bound is
 /// decided the other way by a correct service. Such a field is refused by name.

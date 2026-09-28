@@ -8,7 +8,7 @@
 //!   outcome on the next `times` invocations rather than on the next one only;
 //! * [`ExpectInvocation::count`](crate::ScenarioStep::ExpectInvocation) requires exactly that many
 //!   invocations by the binding;
-//! * [`BindingAspect::FinalFailure`](crate::BindingAspect::FinalFailure) files the scenario in which
+//! * [`crate::BindingAspect::FinalFailure`] files the scenario in which
 //!   a `final` refusal is forced once and exactly one invocation is required.
 //!
 //! Such a suite is written in ordinary suite/[`ORDINARY`] or coverage suite/[`COVERAGE`], the
