@@ -1,0 +1,23 @@
+    Blocking waiting for file lock on build directory
+   Compiling ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 9.11s
+     Running tests/direct_return_port.rs (target/debug/deps/direct_return_port-64b4190310c49aa3)
+
+running 1 test
+test direct_returns_use_fresh_source_and_suite_versions ... FAILED
+
+failures:
+
+---- direct_returns_use_fresh_source_and_suite_versions stdout ----
+
+thread 'direct_returns_use_fresh_source_and_suite_versions' (528844) panicked at crates/verify/ess-conformance/tests/direct_return_port.rs:11:6:
+the new direct-return declaration parses: Error("unknown field `returns`, expected one of `name`, `when`, `when_subject`, `when_subject_state`, `when_state_changes`, `external`, `wrong_state`, `unknown_instance`, `input_absent`, `existing_instance`, `refuses`, `creates`, `moves`, `updates`, `preserves`, `deletes`, `into`, `accepts`, `replays`, `instance`, `instances`, `affects`, `emits`, `payload`, `sets`, `error`, `summary`, `refs`")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    direct_returns_use_fresh_source_and_suite_versions
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p ess-conformance --test direct_return_port`

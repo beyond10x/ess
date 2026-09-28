@@ -1557,6 +1557,9 @@ pub(crate) fn needs_of(
                 if !handles(ir, component, response.command.name()) { needs.insert(response.command.clone().into()); }
                 if !emits(ir, component, response.event.name()) { needs.insert(response.event.clone().into()); }
             }
+            ScenarioStep::ExpectDirectResponse { response } => {
+                if !handles(ir, component, response.command.name()) { needs.insert(response.command.clone().into()); }
+            }
             ScenarioStep::CheckPeriodic { check } => {
                 if !handles(ir, component, check.command.name()) { needs.insert(check.command.clone().into()); }
                 if check.periodic.host.owner != component.name { needs.insert(ComponentRef::new(check.periodic.host.owner.clone()).into()); }
@@ -1785,6 +1788,30 @@ fn exercise_as(
                 payload,
                 shape,
             });
+        }
+    }
+    if outcome.returns {
+        match crate::direct_response::Observation::of(
+            ir,
+            command,
+            Some(OutcomeRef::new(
+                CommandRef::new(command.name.clone()),
+                outcome.name.clone(),
+            )),
+            BTreeMap::new(),
+        ) {
+            Ok(response) => steps.push(ScenarioStep::ExpectDirectResponse { response }),
+            Err(reason) => {
+                refusals.push(Refusal::about(
+                    id,
+                    RefusalCause::NoWitness(WitnessGap {
+                        path: format!("{}.response: {reason}", command.name),
+                        type_ref: "command response".into(),
+                        reason: "typed direct response observation cannot execute this contract",
+                    }),
+                ));
+                return None;
+            }
         }
     }
     match crate::response::Observation::of(ir, command, outcome) {

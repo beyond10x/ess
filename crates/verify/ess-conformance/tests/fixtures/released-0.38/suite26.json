@@ -1,0 +1,292 @@
+{
+  "provenance": {
+    "suite_version": "ess-conformance/26",
+    "system": "demo",
+    "specification_version": "v1",
+    "spec_digest": "ca68cbb0042fd5e56abcc7b665c7f7a9377b0d1ce6df49edefe9463d710de1a1",
+    "contract_digest": "47265818629aa2603e4589d1f54cde7a29914c804737400d78d8d1e1752d3ed2"
+  },
+  "scenarios": {
+    "demo.notes.RewordNote/outcome/reworded": {
+      "purpose": "`demo.notes.RewordNote` answers `reworded` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "demo.notes.SubmitNote",
+          "actor": "demo.notes.Service",
+          "input": {
+            "text": {
+              "kind": "literal",
+              "value": "text"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "demo.notes.SubmitNote",
+            "outcome": "submitted"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "note",
+          "entity": "demo.notes.Note",
+          "event": "demo.notes.NoteSubmitted",
+          "field": "note_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "demo.notes.RewordNote",
+          "actor": "demo.notes.Service",
+          "input": {
+            "note_id": {
+              "kind": "instance",
+              "instance": "note"
+            },
+            "text": {
+              "kind": "literal",
+              "value": "text-1"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "demo.notes.RewordNote",
+            "outcome": "reworded"
+          }
+        },
+        {
+          "step": "expect_event",
+          "event": "demo.notes.NoteReworded",
+          "shape": {
+            "note_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "demo.notes.NoteSubmitted"
+        },
+        {
+          "step": "query_view",
+          "view": "demo.notes.NoteDetails"
+        },
+        {
+          "step": "expect_view",
+          "view": "demo.notes.NoteDetails",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "note_id": {
+                "kind": "instance",
+                "instance": "note"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "demo.notes.NoteId"
+        },
+        {
+          "kind": "entity",
+          "name": "demo.notes.Note"
+        },
+        {
+          "kind": "command",
+          "name": "demo.notes.RewordNote"
+        },
+        {
+          "kind": "command",
+          "name": "demo.notes.SubmitNote"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "demo.notes.RewordNote",
+            "outcome": "reworded"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "demo.notes.SubmitNote",
+            "outcome": "submitted"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "demo.notes.NoteReworded"
+        },
+        {
+          "kind": "event",
+          "name": "demo.notes.NoteSubmitted"
+        },
+        {
+          "kind": "view",
+          "name": "demo.notes.NoteDetails"
+        },
+        {
+          "kind": "actor",
+          "name": "demo.notes.Service"
+        }
+      ]
+    },
+    "demo.notes.SubmitNote/outcome/body-missing": {
+      "purpose": "`demo.notes.SubmitNote` with no input at all takes `body-missing` and reports `demo.notes.BodyMissing`",
+      "steps": [
+        {
+          "step": "execute_command_without_input",
+          "command": "demo.notes.SubmitNote",
+          "actor": "demo.notes.Service"
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "demo.notes.SubmitNote",
+            "outcome": "body-missing"
+          }
+        },
+        {
+          "step": "expect_error",
+          "error": "demo.notes.BodyMissing"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "demo.notes.NoteReworded"
+        },
+        {
+          "step": "expect_no_event",
+          "event": "demo.notes.NoteSubmitted"
+        }
+      ],
+      "source": [
+        {
+          "kind": "command",
+          "name": "demo.notes.SubmitNote"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "demo.notes.SubmitNote",
+            "outcome": "body-missing"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "demo.notes.NoteReworded"
+        },
+        {
+          "kind": "event",
+          "name": "demo.notes.NoteSubmitted"
+        },
+        {
+          "kind": "error",
+          "name": "demo.notes.BodyMissing"
+        },
+        {
+          "kind": "actor",
+          "name": "demo.notes.Service"
+        }
+      ]
+    },
+    "demo.notes.SubmitNote/outcome/submitted": {
+      "purpose": "`demo.notes.SubmitNote` answers `submitted` for an input no other branch's guard claims",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "demo.notes.SubmitNote",
+          "actor": "demo.notes.Service",
+          "input": {
+            "text": {
+              "kind": "literal",
+              "value": "text"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "demo.notes.SubmitNote",
+            "outcome": "submitted"
+          }
+        },
+        {
+          "step": "expect_event",
+          "event": "demo.notes.NoteSubmitted",
+          "shape": {
+            "note_id": {
+              "holds": "primitive",
+              "kind": "uuid"
+            }
+          }
+        },
+        {
+          "step": "expect_no_event",
+          "event": "demo.notes.NoteReworded"
+        },
+        {
+          "step": "query_view",
+          "view": "demo.notes.NoteDetails"
+        },
+        {
+          "step": "expect_view",
+          "view": "demo.notes.NoteDetails",
+          "expectation": {
+            "expect": "contains",
+            "fields": {
+              "note_id": {
+                "kind": "observed",
+                "event": "demo.notes.NoteSubmitted",
+                "field": "note_id"
+              }
+            }
+          }
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "demo.notes.NoteId"
+        },
+        {
+          "kind": "entity",
+          "name": "demo.notes.Note"
+        },
+        {
+          "kind": "command",
+          "name": "demo.notes.SubmitNote"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "demo.notes.SubmitNote",
+            "outcome": "submitted"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "demo.notes.NoteReworded"
+        },
+        {
+          "kind": "event",
+          "name": "demo.notes.NoteSubmitted"
+        },
+        {
+          "kind": "view",
+          "name": "demo.notes.NoteDetails"
+        },
+        {
+          "kind": "actor",
+          "name": "demo.notes.Service"
+        }
+      ]
+    }
+  }
+}

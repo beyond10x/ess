@@ -323,6 +323,10 @@ pub struct Act {
     /// The declared branch it must take.
     #[serde(default)]
     pub outcome: Option<String>,
+    /// Literal assertions over the actual direct return; `{}` checks its closed shape only.
+    /// Available in ess-scenario/4. Values never come from the target's own post-state.
+    #[serde(default, deserialize_with = "deserialize_response_claim")]
+    pub response: Option<BTreeMap<String, Node>>,
     /// The declared error it must report, and what it must carry.
     #[serde(default)]
     pub error: Option<ErrorClaim>,
@@ -348,6 +352,12 @@ pub struct Act {
     /// no width and the claim in it cannot fail.
     #[serde(default)]
     pub mark: Option<InstantName>,
+}
+
+fn deserialize_response_claim<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, Node>>, D::Error> {
+    <BTreeMap<String, Node> as serde::Deserialize>::deserialize(deserializer).map(Some)
 }
 
 /// One claim about the time between a marked instant and the act that carries it.
@@ -1154,7 +1164,7 @@ impl Cause {
                 "the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
                  key it does not know is refused rather than ignored"
             }
-            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, or `ess-scenario/3` for fixture values",
+            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, or `ess-scenario/4` for direct responses",
             Self::Duplicate { .. } => {
                 "two files name one scenario in one domain; rename one of them"
             }
@@ -1561,23 +1571,8 @@ pub(crate) fn compile_one(
                 detail: error.to_string(),
             })
         })?;
-    if document.format != FORMAT
-        && document.format != "ess-scenario/2"
-        && document.format != "ess-scenario/3"
-    {
-        return Err(bare(Cause::UnsupportedFormat {
-            found: document.format,
-        }));
-    }
-    if document.format == FORMAT && document.arrange.iter().any(|item| item.setup.is_some()) {
-        return Err(bare(Cause::Unreadable {
-            detail: "entity setup requires type: ess-scenario/2".into(),
-        }));
-    }
-    if document.format != "ess-scenario/3" && !document.fixtures.is_empty() {
-        return Err(bare(Cause::Unreadable {
-            detail: "fixture declarations require type: ess-scenario/3".into(),
-        }));
+    if let Some(cause) = document_format_refusal(&document) {
+        return Err(bare(cause));
     }
     let Ok(domain) = QualifiedName::new(&document.domain) else {
         return Err(bare(undeclared_domain(ir, &document.domain)));
@@ -1602,7 +1597,10 @@ pub(crate) fn compile_one(
     let mut compiler = Compiler {
         fixtures: document.fixtures.clone(),
         used_fixtures: BTreeSet::new(),
-        fixture_format: document.format == "ess-scenario/3",
+        fixture_format: matches!(
+            document.format.as_str(),
+            "ess-scenario/3" | "ess-scenario/4"
+        ),
         ir,
         origin: &source.origin,
         id: id.clone(),
@@ -1644,6 +1642,39 @@ pub(crate) fn compile_one(
         id,
         ConformanceScenario::new(document.summary, compiler.steps, dependencies),
     ))
+}
+
+fn document_format_refusal(document: &Document) -> Option<Cause> {
+    if !matches!(
+        document.format.as_str(),
+        FORMAT | "ess-scenario/2" | "ess-scenario/3" | "ess-scenario/4"
+    ) {
+        return Some(Cause::UnsupportedFormat {
+            found: document.format.clone(),
+        });
+    }
+    if document.format == FORMAT && document.arrange.iter().any(|item| item.setup.is_some()) {
+        return Some(Cause::Unreadable {
+            detail: "entity setup requires type: ess-scenario/2".into(),
+        });
+    }
+    if !matches!(
+        document.format.as_str(),
+        "ess-scenario/3" | "ess-scenario/4"
+    ) && !document.fixtures.is_empty()
+    {
+        return Some(Cause::Unreadable {
+            detail: "fixture declarations require type: ess-scenario/3".into(),
+        });
+    }
+    if document.format != "ess-scenario/4"
+        && document.timeline.iter().any(|act| act.response.is_some())
+    {
+        return Some(Cause::Unreadable {
+            detail: "direct response assertions require type: ess-scenario/4".into(),
+        });
+    }
+    None
 }
 
 /// The refusal for a domain the model does not declare, with the ones it does.
@@ -1847,6 +1878,32 @@ impl Compiler<'_> {
 
         if let Some(claim) = &act.error {
             self.error(claim);
+        }
+        let returning = match &act.outcome {
+            Some(name) => command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.name.as_str() == name && outcome.returns),
+            None => command.outcomes.iter().all(|outcome| outcome.returns),
+        };
+        if act.response.is_some() || returning {
+            self.reach(&command.response);
+            let outcome = act
+                .outcome
+                .as_ref()
+                .and_then(|name| name.parse().ok())
+                .map(|name| OutcomeRef::new(command_ref.clone(), name));
+            match crate::direct_response::Observation::of(
+                self.ir,
+                command,
+                outcome,
+                act.response.clone().unwrap_or_default(),
+            ) {
+                Ok(response) => self
+                    .steps
+                    .push(ScenarioStep::ExpectDirectResponse { response }),
+                Err(detail) => self.refuse(Cause::Unreadable { detail }),
+            }
         }
         for claim in &act.events {
             self.event(claim);

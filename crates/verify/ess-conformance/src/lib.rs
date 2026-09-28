@@ -138,6 +138,7 @@ pub mod coverage;
 pub mod coverage_build;
 pub mod decision;
 pub mod defined_aggregates;
+pub mod direct_response;
 pub mod evidence;
 pub mod faulty;
 pub mod fixtures;

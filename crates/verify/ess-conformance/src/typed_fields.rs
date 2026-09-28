@@ -8,6 +8,21 @@ pub(crate) fn declarations<'a>(
     ir: &EssIr,
     fields: impl IntoIterator<Item = &'a Field>,
 ) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
+    declarations_with_presence(ir, fields, false)
+}
+
+pub(crate) fn direct_response_declarations<'a>(
+    ir: &EssIr,
+    fields: impl IntoIterator<Item = &'a Field>,
+) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
+    declarations_with_presence(ir, fields, true)
+}
+
+fn declarations_with_presence<'a>(
+    ir: &EssIr,
+    fields: impl IntoIterator<Item = &'a Field>,
+    preserve_presence: bool,
+) -> Result<BTreeMap<QualifiedName, Declaration>, String> {
     let mut declarations = BTreeMap::new();
     let mut pending: Vec<_> = fields
         .into_iter()
@@ -33,7 +48,14 @@ pub(crate) fn declarations<'a>(
             ResolvedBody::Struct { fields, .. } => Declaration::Struct {
                 fields: fields
                     .iter()
-                    .map(|f| Field::new(&f.name, crate::accessor::unresolve(&f.type_ref)))
+                    .map(|f| {
+                        let mut field =
+                            Field::new(&f.name, crate::accessor::unresolve(&f.type_ref));
+                        if preserve_presence {
+                            field.naming.presence = f.naming.presence;
+                        }
+                        field
+                    })
                     .collect(),
             },
             ResolvedBody::Enum { variants } => Declaration::Enum {

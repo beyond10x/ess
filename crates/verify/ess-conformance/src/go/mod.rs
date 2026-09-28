@@ -47,6 +47,7 @@ pub const PACKAGE: &str = "essconform";
 /// Deterministic: the same suite produces the same bytes, because the three Go files are constants
 /// and the fourth is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
+    crate::direct_response::refuse_generation(suite, "Go")?;
     let json = suite.to_canonical_json()?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
@@ -67,6 +68,7 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
+    crate::direct_response::refuse_generation(suite.suite(), "Go")?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
         contents,

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Direct library returns: `returns: true` in source `ess/17`, literal `response:` assertions in
+  authored `ess-scenario/4`, and typed direct-response observations in suites `ess-conformance/28`
+  and `/29`. The Rust runner checks actual return values without invented events or persistence;
+  unsupported Go/TypeScript generation refuses explicitly. Released source `ess/16` and suites
+  `/26` and `/27` retain their existing meaning and bytes.
+
 ## [0.38.0] — 2026-09-28
 
 ### Added

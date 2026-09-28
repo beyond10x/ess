@@ -532,7 +532,14 @@ fn validate_value(
     bytes: &mut usize,
     depth: usize,
 ) -> Result<(), &'static str> {
-    validate_value_inner(ty, value, declarations, bytes, depth, false)
+    validate_value_inner(
+        ty,
+        value,
+        declarations,
+        bytes,
+        depth,
+        ValueProfile::Selection,
+    )
 }
 pub(crate) fn validate_response_value(
     ty: &TypeRef,
@@ -540,15 +547,68 @@ pub(crate) fn validate_response_value(
     declarations: &BTreeMap<QualifiedName, Declaration>,
     bytes: &mut usize,
 ) -> Result<(), &'static str> {
-    validate_value_inner(ty, value, declarations, bytes, 0, true)
+    validate_value_inner(ty, value, declarations, bytes, 0, ValueProfile::Response)
 }
+
+pub(crate) fn validate_direct_response_value(
+    ty: &TypeRef,
+    value: Option<&Node>,
+    declarations: &BTreeMap<QualifiedName, Declaration>,
+    bytes: &mut usize,
+) -> Result<(), &'static str> {
+    validate_value_inner(
+        ty,
+        value,
+        declarations,
+        bytes,
+        0,
+        ValueProfile::DirectResponse,
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ValueProfile {
+    Selection,
+    Response,
+    DirectResponse,
+}
+
+impl ValueProfile {
+    fn closed(self) -> bool {
+        self != Self::Selection
+    }
+
+    fn presence(self, field: &Field, value: Option<&Node>) -> Result<(), &'static str> {
+        if self == Self::DirectResponse {
+            crate::direct_response::presence(field, value).map_err(|_| "invalid_presence")?;
+        }
+        Ok(())
+    }
+
+    fn text_limit(self) -> usize {
+        if self == Self::DirectResponse {
+            1_048_576
+        } else {
+            4096
+        }
+    }
+
+    fn collection_limit(self) -> usize {
+        if self == Self::DirectResponse {
+            65_536
+        } else {
+            64
+        }
+    }
+}
+
 fn validate_value_inner(
     ty: &TypeRef,
     value: Option<&Node>,
     declarations: &BTreeMap<QualifiedName, Declaration>,
     bytes: &mut usize,
     depth: usize,
-    response: bool,
+    profile: ValueProfile,
 ) -> Result<(), &'static str> {
     if depth > 128 || *bytes > 1_048_576 {
         return Err("resource");
@@ -557,14 +617,14 @@ fn validate_value_inner(
         return if value.is_none() || matches!(value, Some(Node::Null)) {
             Ok(())
         } else {
-            validate_value_inner(of, value, declarations, bytes, depth + 1, response)
+            validate_value_inner(of, value, declarations, bytes, depth + 1, profile)
         };
     }
     let value = value.ok_or("invalid_input")?;
     match ty {
         TypeRef::Named(name) => match declarations.get(name).ok_or("invalid_input")? {
             Declaration::Newtype { of } => {
-                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, response)
+                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, profile)
             }
             Declaration::Enum { variants } => match value {
                 Node::Text(text) if variants.contains(text) => {
@@ -577,7 +637,7 @@ fn validate_value_inner(
                 let Node::Map(values) = value else {
                     return Err("invalid_input");
                 };
-                if response
+                if profile.closed()
                     && values
                         .keys()
                         .any(|key| !fields.iter().any(|f| &f.name == key))
@@ -586,13 +646,14 @@ fn validate_value_inner(
                 }
                 for field in fields {
                     *bytes = bytes.saturating_add(field.name.len());
+                    profile.presence(field, values.get(&field.name))?;
                     validate_value_inner(
                         &field.type_ref,
                         values.get(&field.name),
                         declarations,
                         bytes,
                         depth + 1,
-                        response,
+                        profile,
                     )?;
                 }
                 Ok(())
@@ -605,7 +666,7 @@ fn validate_value_inner(
                     return Err("invalid_input");
                 };
                 let content = ess_gen::schema::union_content_key(tag);
-                if response && values.keys().any(|key| key != tag && key != content) {
+                if profile.closed() && values.keys().any(|key| key != tag && key != content) {
                     return Err("invalid_input");
                 }
                 let ty = variants.get(label).ok_or("invalid_input")?;
@@ -615,33 +676,33 @@ fn validate_value_inner(
                     declarations,
                     bytes,
                     depth + 1,
-                    response,
+                    profile,
                 )
             }
         },
-        TypeRef::Primitive(kind) => validate_primitive(*kind, value, bytes),
+        TypeRef::Primitive(kind) => validate_primitive(*kind, value, bytes, depth, profile),
         TypeRef::List(of) => {
             let Node::Seq(values) = value else {
                 return Err("invalid_input");
             };
-            if values.len() > 64 {
+            if values.len() > profile.collection_limit() {
                 return Err("resource");
             }
             for value in values {
-                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, response)?;
+                validate_value_inner(of, Some(value), declarations, bytes, depth + 1, profile)?;
             }
             Ok(())
         }
-        TypeRef::Map(key, of) if response && *key == ess_domain::Primitive::String => {
+        TypeRef::Map(key, of) if profile.closed() && *key == ess_domain::Primitive::String => {
             let Node::Map(values) = value else {
                 return Err("invalid_input");
             };
-            if values.len() > 64 {
+            if values.len() > profile.collection_limit() {
                 return Err("resource");
             }
             for (name, child) in values {
                 *bytes = bytes.saturating_add(name.len());
-                validate_value_inner(of, Some(child), declarations, bytes, depth + 1, response)?;
+                validate_value_inner(of, Some(child), declarations, bytes, depth + 1, profile)?;
             }
             Ok(())
         }
@@ -671,15 +732,53 @@ fn validate_primitive(
     kind: ess_domain::Primitive,
     value: &Node,
     bytes: &mut usize,
+    depth: usize,
+    profile: ValueProfile,
 ) -> Result<(), &'static str> {
     if !(crate::scenario::Holds::Primitive { kind }).admits(value) {
         return Err("invalid_input");
     }
+    if kind == ess_domain::Primitive::Json && profile == ValueProfile::DirectResponse {
+        return validate_direct_json(value, bytes, depth);
+    }
     if let Node::Text(text) = value {
         *bytes = bytes.saturating_add(text.len());
-        if text.len() > 4096 {
+        if text.len() > profile.text_limit() {
             return Err("resource");
         }
+    }
+    Ok(())
+}
+
+// Json is opaque to type checking, but not to the direct-return resource contract.
+fn validate_direct_json(value: &Node, bytes: &mut usize, depth: usize) -> Result<(), &'static str> {
+    *bytes = bytes.saturating_add(1);
+    if depth > 128 || *bytes > 1_048_576 {
+        return Err("resource");
+    }
+    match value {
+        Node::Text(text) => *bytes = bytes.saturating_add(text.len()),
+        Node::Seq(values) => {
+            if values.len() > ValueProfile::DirectResponse.collection_limit() {
+                return Err("resource");
+            }
+            for child in values {
+                validate_direct_json(child, bytes, depth + 1)?;
+            }
+        }
+        Node::Map(values) => {
+            if values.len() > ValueProfile::DirectResponse.collection_limit() {
+                return Err("resource");
+            }
+            for (name, child) in values {
+                *bytes = bytes.saturating_add(name.len());
+                validate_direct_json(child, bytes, depth + 1)?;
+            }
+        }
+        Node::Null | Node::Bool(_) | Node::Number(_) => {}
+    }
+    if *bytes > 1_048_576 {
+        return Err("resource");
     }
     Ok(())
 }

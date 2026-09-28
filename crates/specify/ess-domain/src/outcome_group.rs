@@ -142,6 +142,7 @@ impl RawGroupOutcome {
             deletes: None,
             into: None,
             accepts: None,
+            returns: false,
             replays: None,
             instance: None,
             instances: None,

@@ -307,14 +307,14 @@ fn a_struct_leaf_read_whole_is_asserted_by_its_scalar_leaves() {
 }
 
 #[test]
-fn suite_formats_26_and_27_are_supported_and_28_is_not() {
+fn released_suite_formats_26_and_27_remain_supported_and_future_versions_refuse() {
     for version in ["ess-conformance/26", "ess-conformance/27"] {
         assert!(
             SuiteFormat::parse(version).unwrap().is_supported(),
             "{version}"
         );
     }
-    assert!(!SuiteFormat::parse("ess-conformance/28")
+    assert!(!SuiteFormat::parse("ess-conformance/30")
         .unwrap()
         .is_supported());
 }
