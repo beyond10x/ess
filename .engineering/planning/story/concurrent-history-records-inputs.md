@@ -9,7 +9,38 @@ relations:
 - serves: vision:O2
 - informed_by: review-result:linearizability-checker-over-the-interpreter-adversary-pass-2
 - depends_on: story:concurrent-history-format
-revision: 1
+scope:
+- confidence: cited
+  path: crates/edge/ess-cli/tests/explore_concurrent.rs
+- confidence: inferred
+  path: crates/edge/ess-xtask/tests/history_model.rs
+- confidence: inferred
+  path: crates/specify/ess-domain/tests/ess_history_schema_adversary.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/faulty.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/go/explore.go
+- confidence: cited
+  path: crates/verify/ess-conformance/src/history.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/record.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/recorded.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/src/sessions.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/ts/explore.ts
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/history_format.rs
+- confidence: inferred
+  path: crates/verify/ess-conformance/tests/linearizability.rs
+- confidence: inferred
+  path: models/concurrent-history/domains/history.yaml
+- confidence: inferred
+  path: schemas/ess-history.schema.json
+revision: 4
 ---
 # Story: a concurrent history records each command's input
 
@@ -39,4 +70,16 @@ lets the checker replay the exact input.
 
 ## Scope
 
-Not scoped yet.
+Derived 2026-09-28 by `aep:story-scoper` against the integration tree plus the unmerged
+`story:declared-fault-injection` changes. Every line is **cited** or **inferred**.
+
+- **Primary surface:** `crates/verify/ess-conformance` (history format and linearizability checker) — cited
+- **Files:** `crates/verify/ess-conformance/src/history.rs` (`Operation`, wire struct, `read`) — cited
+- **Files:** `crates/verify/ess-conformance/src/linearize.rs` (`candidates`, the input loop) — cited
+- **Files:** `crates/verify/ess-conformance/src/go/explore.go`, `src/ts/explore.ts` (history writers) — cited
+- **Files:** `crates/edge/ess-cli/tests/explore_concurrent.rs` (Go/TS equal-bytes test) — cited
+- **Files:** `models/concurrent-history/domains/history.yaml`, `schemas/ess-history.schema.json`, `crates/edge/ess-xtask/tests/history_model.rs` — inferred, the three move together
+- **Also likely:** `src/record.rs`, `src/sessions.rs` (recorders build the request), `src/recorded.rs` (importer adapter field), `src/faulty.rs`, `tests/linearizability.rs`, `tests/history_format.rs`, `crates/specify/ess-domain/tests/ess_history_schema_adversary.rs` — inferred
+- **Confidence:** medium
+- **Would collide with:** every unit touching the `ess-history` operation shape, `linearize.rs`, the Go/TS writers or `explore_concurrent.rs` — including `story:declared-fault-injection` and `story:explorers-record-view-reads`
+- **Open:** the input's wire type (the model has no map type; a canonical-JSON string like `rows` is the smallest change); whether an optional field keeps `ess-history/1` (the reader and schema are closed, so a new history is refused by an older reader)

@@ -11,17 +11,27 @@ relations:
 - decomposes: epic:concurrent-history-conformance
 - depends_on: story:concurrent-explorer-runner
 scope:
-- confidence: inferred
+- confidence: cited
   path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-cli/tests/conform_web_history.rs
 - confidence: cited
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: crates/verify/ess-conformance/assets
+- confidence: cited
+  path: crates/verify/ess-conformance/src/lanes.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/lib.rs
 - confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: cited
   path: crates/verify/ess-conformance/src/web.rs
-revision: 6
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/lanes.rs
+- confidence: cited
+  path: website/docs/guides/verify-conformance.md
+revision: 7
 ---
 # Story: a failing history is drawn as client lanes
 

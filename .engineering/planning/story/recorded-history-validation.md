@@ -16,16 +16,26 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/src/main.rs
 - confidence: cited
+  path: crates/edge/ess-cli/tests/import_history.rs
+- confidence: cited
   path: crates/verify/ess-conformance
 - confidence: inferred
   path: crates/verify/ess-conformance/src/lib.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/recorded.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/recorded
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/recorded_history.rs
 - confidence: inferred
   path: models/concurrent-history/domains/history.yaml
 - confidence: inferred
   path: schemas
-revision: 6
+- confidence: cited
+  path: website/docs/guides/verify-conformance.md
+revision: 7
 ---
 # Story: a recorded production history is validated against the specification (later milestone)
 
