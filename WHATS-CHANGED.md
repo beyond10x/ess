@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.38.0](#set-effects-caller-values-existence-selected-outcomes-bounded-retries-and-paged-views) | Set effects, caller values, existence-selected outcomes, bounded retries and paged views | capability | significant |
 | [0.37.0](#outcome-shapes-subject-guards-over-the-input-new-value-types-and-a-pinned-toolchain) | Outcome shapes, subject guards over the input, new value types and a pinned toolchain | capability | significant |
 | [0.36.0](#payload-and-sets-values-read-the-subject-increment-fall-back-and-nest) | Payload and sets values read the subject, increment, fall back and nest | capability | significant |
 | [0.35.0](#typed-fixture-values-resolved-before-a-scenario-starts) | Typed fixture values resolved before a scenario starts | capability | significant |
@@ -31,6 +32,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.38.0 — 2026-09-28
+
+### Set effects, caller values, existence-selected outcomes, bounded retries and paged views
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.38.0)
+
+Source format `ess/16` adds literal fallbacks, `defined()` over optional aggregates, bodiless requests, related-record values, `now` in guards, create-or-update outcomes, caller attributes, bounded retries, view paging and outcomes over every record a filter selects. `ess-composition/2` checks consumer types.
 
 ## 0.37.0 — 2026-09-27
 
