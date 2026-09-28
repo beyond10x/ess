@@ -15,8 +15,8 @@
 //! Such a suite is written in ordinary suite/[`ORDINARY`] or coverage suite/[`COVERAGE`], the
 //! round-3 pair [`crate::leaf_payloads`] registered. An older reader does not know `page` and would
 //! refuse it as an unknown expectation, blaming the document for the age of the tool; the number
-//! turns that into "upgrade the tool". The Go and TypeScript runtimes refuse these majors by
-//! version, so they need no execution support for it.
+//! turns that into "upgrade the tool". The Go and TypeScript runtimes execute these majors
+//! too (beyond10x/ess#188).
 
 use ess_domain::view::Ranking;
 

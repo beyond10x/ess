@@ -16,7 +16,7 @@
 //! be, so the refusal a caller who is not the record's agent must meet, and the account a created
 //! record must carry, are asserted against the wrong caller — a wrong verdict caused by the age of
 //! the tool. A reader that checks this number first refuses the suite instead. The Go and
-//! TypeScript runtimes refuse these majors by version.
+//! TypeScript runtimes execute these majors too (beyond10x/ess#188).
 
 use crate::admission::AdmissionError;
 use crate::scenario::{ConformanceSuite, ScenarioStep};

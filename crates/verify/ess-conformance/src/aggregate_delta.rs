@@ -14,8 +14,8 @@
 //! round-3 pair [`crate::leaf_payloads`] registered. The number moves because of what an older
 //! reader does with the expectation: it does not know `changed_by` and refuses it as an unknown
 //! expectation, which blames the document for the age of the tool; the number turns that into
-//! "upgrade the tool". The Go and TypeScript runtimes refuse these majors by version, so they need
-//! no execution support for it.
+//! "upgrade the tool". The Go and TypeScript runtimes execute these majors too
+//! (beyond10x/ess#188).
 
 use std::collections::{BTreeMap, BTreeSet};
 

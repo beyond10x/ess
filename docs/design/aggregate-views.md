@@ -701,7 +701,7 @@ absolute `Contains`:
   A change that names no field, an amount that is not a number or has no exact decimal spelling
   (`1e40`, or one past 38 digits), or an `absent_is_zero` entry that is not one of its fields, is
   refused as `InvalidSuite`.
-  The Go and TypeScript runtimes refuse suite/26 and /27 by version and need no execution support.
+  The Go and TypeScript runtimes execute suite/26 and /27 (beyond10x/ess#188).
   Entity Runtime lowers no view, and the generated targets (`ess-gen`, `ess-synth`) render the view
   as before: nothing there reads a suite expectation.
 

@@ -6,7 +6,7 @@
 //! [`leaf_payloads`](crate::leaf_payloads) registers, which every round-3 construct shares. A reader
 //! older than that pair does not know the step and must refuse the suite rather than send `{}` in
 //! its place, which the implementation #170 describes answers differently. The Go and TypeScript
-//! runtimes refuse these majors by version, so they need no execution support for the step.
+//! runtimes execute the step too (beyond10x/ess#188).
 
 use crate::admission::AdmissionError;
 use crate::scenario::{ConformanceSuite, ScenarioStep};

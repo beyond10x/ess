@@ -17,8 +17,8 @@
 //!
 //! Such a suite is written in the round-3 pair, ordinary suite/[`ORDINARY`] and coverage
 //! suite/[`COVERAGE`], which [`crate::leaf_payloads`] registers. An older reader does not know the
-//! value kind and refuses the suite by version; the Go and TypeScript runtimes refuse both majors
-//! by version, so they need no support for it. A suite without one keeps its format and bytes.
+//! value kind and refuses the suite by version; the Go and TypeScript runtimes execute both majors
+//! and resolve it (beyond10x/ess#188). A suite without one keeps its format and bytes.
 
 use std::collections::BTreeMap;
 

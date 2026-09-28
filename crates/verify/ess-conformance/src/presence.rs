@@ -9,7 +9,7 @@
 //! Rust reader ignores it the same way. Either would pass an implementation that sends `null`
 //! where the specification says the key is omitted — a wrong verdict caused by the age of the
 //! tool. A reader that checks this number first refuses the suite instead. Both emitted runtimes
-//! refuse these majors by version; they do not read the policy.
+//! execute these majors and read the policy (beyond10x/ess#188).
 
 use crate::scenario::{ConformanceSuite, ScenarioStep};
 

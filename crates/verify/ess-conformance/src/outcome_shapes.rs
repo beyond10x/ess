@@ -17,8 +17,8 @@
 //! precondition is an ordinary command at the head of every scenario. A suite using only those
 //! keeps its format and its bytes.
 //!
-//! The Go and TypeScript readers enumerate the suite majors they execute and stop below this one,
-//! so they refuse suite/22 and /23 by version rather than misreading them.
+//! The Go and TypeScript readers execute suite/22 and /23 as the Rust runner does
+//! (beyond10x/ess#188).
 
 use crate::admission::AdmissionError;
 use crate::{ConformanceSuite, ScenarioStep};
