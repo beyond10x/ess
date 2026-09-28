@@ -200,6 +200,40 @@ impl DomainSpec {
         name.is_within(&self.name)
     }
 
+    /// The refusal of `domain` declaring `name` as `kind` when `name` is not in its namespace.
+    ///
+    /// [`validate`](DomainSpec::validate) asks it of every member a domain holds, and `spec.rs`'s
+    /// `Collected::write` of a copy it keeps out of the domain for repeating a name, so that a copy
+    /// filed under the wrong domain is refused for it whether or not it is also a duplicate.
+    pub(crate) fn misplaced(
+        domain: &QualifiedName,
+        kind: MemberKind,
+        name: &QualifiedName,
+    ) -> Option<ValidationError> {
+        if name.is_within(domain) {
+            return None;
+        }
+        Some(
+            // Not `UndeclaredReference`: the name *is* declared, right here. What cannot hold is
+            // the pair — this domain's namespace and that name — so a tool reading the code is told
+            // to move the declaration, not to hunt for a missing one.
+            ValidationError::new(
+                ValidationCode::ConflictingDeclaration,
+                format!("domain {}.{}", domain, kind.field()),
+                format!("`{name}` is not inside `{domain}`, so this domain cannot declare it"),
+            )
+            .with_hint(match name.namespace() {
+                Some(owner) => format!(
+                    "`{name}` belongs to `{owner}`; declare it there, or rename it `{domain}.{}`",
+                    name.local()
+                ),
+                None => format!(
+                    "a domain declares only names in its own namespace; write `{domain}.{name}`"
+                ),
+            }),
+        )
+    }
+
     /// Checks what one domain can see on its own.
     ///
     /// Two things: every declared name sits inside the domain's own namespace, and no name is
@@ -210,33 +244,8 @@ impl DomainSpec {
         let mut seen: BTreeMap<&QualifiedName, MemberKind> = BTreeMap::new();
 
         for (kind, name) in self.declared() {
-            if !self.contains(name) {
-                errors.push(
-                    // Not `UndeclaredReference`: the name *is* declared, right here. What cannot
-                    // hold is the pair — this domain's namespace and that name — so a tool reading
-                    // the code is told to move the declaration, not to hunt for a missing one.
-                    ValidationError::new(
-                        ValidationCode::ConflictingDeclaration,
-                        format!("domain {}.{}", self.name, kind.field()),
-                        format!(
-                            "`{name}` is not inside `{}`, so this domain cannot declare it",
-                            self.name
-                        ),
-                    )
-                    .with_hint(match name.namespace() {
-                        Some(owner) => format!(
-                            "`{name}` belongs to `{owner}`; declare it there, or rename it \
-                             `{}.{}`",
-                            self.name,
-                            name.local()
-                        ),
-                        None => format!(
-                            "a domain declares only names in its own namespace; write \
-                             `{}.{name}`",
-                            self.name
-                        ),
-                    }),
-                );
+            if let Some(misplaced) = Self::misplaced(&self.name, kind, name) {
+                errors.push(misplaced);
             }
 
             if let Some(first) = seen.insert(name, kind) {
