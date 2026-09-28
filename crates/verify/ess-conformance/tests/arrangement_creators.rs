@@ -1,7 +1,8 @@
 //! An existing row is arranged through every declared creation, for every scenario that needs one.
 //!
-//! * beyond10x/ess#198: a stored-row search seeds every creating command, so a branch only the
-//!   second-declared creation's row selects is witnessed, whatever order the two are declared in.
+//! * beyond10x/ess#198: a stored-row search seeds every creating command, tried in command-name
+//!   order, so a branch only a later creation's row selects is witnessed, whichever of the two
+//!   carries the value.
 //! * beyond10x/ess#209: an input-guarded refusal on a command addressing an existing record keeps
 //!   its plain send (the input refusal is answered before existence) and gains an arranged half: the
 //!   record created through a declared creation, the refused input sent for it.

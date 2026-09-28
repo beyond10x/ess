@@ -236,9 +236,10 @@ pub(super) fn existence(
 /// "Precedence"). A target that looks the record up first answers that send "not found", so this
 /// adds the other half, as [`refusals_on_a_stored_row`] does for the two existence forms: the
 /// record created through a declared creation and driven to a state the command runs from, the
-/// refused input sent for it, and the refusal required with no event and the row unchanged. Where
-/// no arrangement reaches that record, the scenario is withdrawn and refused with the
-/// arrangement's cause, never filed to be skipped at run time.
+/// refused input sent for it, and the refusal required with no event and the row unchanged — the
+/// last only where some identity view shows the row. Where no arrangement reaches that record, the
+/// scenario is withdrawn and refused with the arrangement's cause, never filed to be skipped at
+/// run time.
 ///
 /// Left to their own families: the two existence forms (their stored-row half is above), a command
 /// reading stored fields (its refusals are already sent for an arranged row), a command whose
@@ -329,7 +330,24 @@ fn arranged_refusal(
     // Refused, the record stays where the arrangement left it.
     setup.after.clone_from(&setup.before);
     let refused = reach(ir, command, refusal, Distinction::PLAIN)?;
-    let preservation = subject_fact::preserve_refused_subject(ir, subject, &setup)?;
+    // Where no identity view shows the arranged row, nothing can read it back, so the half is
+    // filed without the unchanged-row claim and still requires the error and no event. The plain
+    // send needs no view either, so the scenario is not lost over it (adversary pass 1).
+    let observed = identity_views(ir, subject).any(|view| {
+        setup.after.as_ref().is_some_and(|state| {
+            shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
+        })
+    });
+    let preservation = if observed {
+        subject_fact::preserve_refused_subject(ir, subject, &setup)?
+    } else {
+        subject_fact::Preservation {
+            before: Vec::new(),
+            after: Vec::new(),
+            source: BTreeSet::new(),
+            unobserved: Vec::new(),
+        }
+    };
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), refusal.name.clone());

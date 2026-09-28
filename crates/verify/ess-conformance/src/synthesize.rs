@@ -2793,9 +2793,10 @@ fn arrange(
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     // Every creating branch is a place to start (ess/15, `into:`): the route is the shortest from
-    // the state some creation lands in, ties to the first creator declared. A creation that cannot
-    // be arranged, or whose route cannot be driven, gives way to the next in that order
-    // (beyond10x/ess#198), and the cause kept is the first one's.
+    // the state some creation lands in, ties to the first creator in the order `EssIr::drivers`
+    // yields them: command name, then declared branch order, since the IR keeps commands by name.
+    // A creation that cannot be arranged, or whose route cannot be driven, gives way to the next
+    // in that order (beyond10x/ess#198), and the cause kept is the first one's.
     let mut creators = drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -2808,7 +2809,7 @@ fn arrange(
             route_from(ir, entity, drivers, born(ir, creator), target).map(|path| (creator, path))
         })
         .collect();
-    // Stable: equal lengths keep declaration order.
+    // Stable: equal lengths keep the drivers' name order.
     routed.sort_by_key(|(_, path)| path.len());
     let mut first: Option<Unreachable> = None;
     for (creator, route) in routed {
@@ -3708,6 +3709,9 @@ pub(super) struct Shadow {
     claimed: BTreeMap<OutcomeName, String>,
     /// Whether some candidate satisfying the guard was lost to anything other than a refusal.
     otherwise: bool,
+    /// Whether the branch shadowed is itself an input-guarded refusal, which the model orders
+    /// neither before nor after its siblings.
+    refusal: bool,
 }
 
 impl Shadow {
@@ -3717,10 +3721,11 @@ impl Shadow {
         outcome: &ResolvedOutcome,
         facts: &crate::InputFacts<'_>,
     ) -> Result<(), RefusalCause> {
-        if outcome.error.is_some() {
+        if outcome.error.is_some() && !is_input_guarded_refusal(outcome) {
             self.otherwise = true;
             return Ok(());
         }
+        self.refusal |= outcome.error.is_some();
         let mut claimed = false;
         for refusal in sibling_refusals(command, outcome) {
             let Some(guard) = when(refusal) else {
@@ -3744,6 +3749,16 @@ impl Shadow {
             .iter()
             .map(|(name, guard)| format!("{name} ({guard})"))
             .collect();
+        if self.refusal {
+            // Two refusals whose guards overlap: the model takes neither first, so an input both
+            // claim selects no one outcome (beyond10x/ess#209, adversary pass 1).
+            return Some(format!(
+                "{} outside {}, an input-guarded refusal the model orders neither before nor \
+                 after it",
+                rendered(guards, true),
+                refusals.join(", ")
+            ));
+        }
         Some(format!(
             "{} outside {}, the input-guarded refusal taken first",
             rendered(guards, true),
@@ -3759,7 +3774,8 @@ impl Shadow {
 /// must also refute every sibling input-guarded refusal ([`admits_plain`]), and a candidate search
 /// varies only what its guards read — so where none of the first candidates steps out of a refusal
 /// (`count < 5` beside `open == false`, and `count` at its base `1`), the search runs again over
-/// the refusals' guards as well, which puts `5` on `count`'s ladder.
+/// the refusals' guards as well, which puts `5` on `count`'s ladder. An input-guarded refusal
+/// refutes its sibling refusals too, so it is searched the same way.
 fn searched_guards<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
@@ -3767,7 +3783,7 @@ fn searched_guards<'c>(
     satisfy: bool,
 ) -> Vec<Vec<&'c Predicate>> {
     let mut searches = vec![guards.to_vec()];
-    if satisfy && outcome.error.is_none() {
+    if satisfy && (outcome.error.is_none() || is_input_guarded_refusal(outcome)) {
         let mut widened = guards.to_vec();
         widened.extend(
             sibling_refusals(command, outcome)
@@ -3929,7 +3945,10 @@ fn admits_plain(
             .filter(|other| other.name != outcome.name)
             .filter_map(when)
             .collect()
-    } else if outcome.error.is_none() {
+    } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
+        // An input-guarded refusal refutes its sibling refusals as well: beside a default the
+        // model orders none of them before another, so an input two of them claim selects no one
+        // outcome, and a scenario requiring either would require a choice the model does not make.
         sibling_refusals(command, outcome)
             .filter_map(when)
             .collect()

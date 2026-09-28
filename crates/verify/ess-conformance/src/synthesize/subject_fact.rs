@@ -1101,12 +1101,13 @@ fn successors(
 
 /// Search the rows the declared drivers can leave for one the goal accepts.
 ///
-/// Every creating branch is a place to start (beyond10x/ess#198): each is searched in declaration
-/// order, within its own budget of [`MAX_NODES`], and the first whose rows reach the goal wins. So
-/// a branch only the second-declared creation's row selects is witnessed through that creation,
-/// and a model whose first creation already reaches the goal is arranged exactly as before. A
-/// creation that leaves no row, or none the goal accepts, gives way to the next, and the refusal
-/// is the first creation's cause where every one fails.
+/// Every creating branch is a place to start (beyond10x/ess#198): each is searched in the order
+/// [`EssIr::drivers`] yields them — command name, then the command's branches as declared, the
+/// IR keeping commands by name — within its own budget of [`MAX_NODES`], and the first whose rows
+/// reach the goal wins. So a branch only a later creation's row selects is witnessed through that
+/// creation, and a model whose first creation already reaches the goal is arranged exactly as
+/// before. A creation that leaves no row, or none the goal accepts, gives way to the next, and the
+/// refusal is the first creation's cause where every one fails.
 fn search<T>(
     ir: &EssIr,
     entity: &EntityHandle,
