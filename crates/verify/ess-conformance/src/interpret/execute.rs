@@ -150,6 +150,13 @@ pub enum Generated {
     /// brings a new instance into existence and never replaces one. Where no branch yields a step,
     /// the answer is [`Undetermined::Request`].
     Given(BTreeMap<GeneratedSlot, Node>),
+    /// What a recorded history knows: the published value of some slots and not of the rest.
+    ///
+    /// A slot present is used exactly as [`Given`](Self::Given) uses it — type-checked, and a
+    /// creating branch whose identity the store already holds yields no step. A slot absent is
+    /// minted from the counter, as under [`Counter`](Self::Counter), rather than making the branch
+    /// yield no step: `ess-history/1` records no payload values, so its absence says nothing.
+    Recorded(BTreeMap<GeneratedSlot, Node>),
 }
 
 /// One observable value the implementation assigns: `field` of the emitted `event`.
@@ -174,6 +181,8 @@ impl GeneratedSlot {
 /// One branch's reading of [`Generated`].
 struct Supply<'g> {
     given: Option<&'g BTreeMap<GeneratedSlot, Node>>,
+    /// Whether a slot not given is minted rather than refused ([`Generated::Recorded`]).
+    mint_absent: bool,
 }
 
 impl<'g> Supply<'g> {
@@ -181,8 +190,9 @@ impl<'g> Supply<'g> {
         Self {
             given: match generated {
                 Generated::Counter => None,
-                Generated::Given(values) => Some(values),
+                Generated::Given(values) | Generated::Recorded(values) => Some(values),
             },
+            mint_absent: matches!(generated, Generated::Recorded(_)),
         }
     }
 }
@@ -773,8 +783,8 @@ fn literal(ir: &EssIr, target: &ResolvedTypeRef, text: &str) -> Result<Node, Und
 
 /// The observable value the implementation assigns to `field` of the emitted `event`.
 ///
-/// From [`Generated::Given`] where the caller has values, by the rules that variant states;
-/// otherwise [`mint`]ed. `Ok(Err(_))` is a branch the given values do not describe.
+/// From [`Generated::Given`] or [`Generated::Recorded`] where the caller has values, by the rules
+/// those variants state; otherwise [`mint`]ed. `Ok(Err(_))` is a branch the given values do not describe.
 fn assign(
     ir: &EssIr,
     event: &QualifiedName,
@@ -788,6 +798,7 @@ fn assign(
     let slot = GeneratedSlot::new(event.clone(), field);
     match given.get(&slot) {
         None | Some(Node::Null) if target.is_optional() => Ok(Ok(None)),
+        None if work.supply.mint_absent => mint(ir, target, work).map(Ok),
         None => Ok(Err(format!("no value was given for `{event}.{field}`"))),
         Some(value) => Ok(match input::validate_typed_value(ir, target, value) {
             Ok(()) => Ok(Some(value.clone())),

@@ -45,7 +45,7 @@
 //!
 //! # Boundary or implementation
 //!
-//! Eleven of the thirteen are [`Injection::Boundary`]: [`Faulty`] perturbs what goes into the
+//! Twelve of the fourteen are [`Injection::Boundary`]: [`Faulty`] perturbs what goes into the
 //! target and what comes out of it, and never a broken internal, because that is the same position
 //! a real client is in.
 //!
@@ -62,6 +62,17 @@
 //! the two mechanisms each fault uses so the split is a property of the type rather than a
 //! paragraph.
 //!
+//! # A fault only an interleaving shows
+//!
+//! [`LostUpdate`](Fault::LostUpdate) is the row no single-client check can catch, and it is
+//! [`Caught::ByHistory`] rather than [`Caught::By`] a scenario. A lifecycle command reads the
+//! invoice when the call is invoked and writes when it returns, with no lock between the two
+//! ([`record::Interleaved`](crate::record::Interleaved)). Run one call at a time — which is what
+//! every suite does — nothing happens between the read and the write, and the answer is the
+//! reference's own. Two clients paying one issued invoice at once both read `Issued`, and both
+//! are told `settled`; the second payment is never applied. Only a recorded concurrent history,
+//! checked by [`crate::linearize`], shows that no order of the two calls answers both.
+//!
 //! # Nothing here is a new source of variation
 //!
 //! §37 gives the runner the clock and the id source, and a faulty target that reached for either
@@ -76,6 +87,7 @@ use std::collections::BTreeMap;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 
+use crate::record::{Call, Interleaved, Subject, Workload};
 use crate::reference::{
     Billing, Oracle, CANCEL_INVOICE, CREATE_INVOICE, INVALID_AMOUNT, INVOICE_CANCELLED,
     INVOICE_CREATED, INVOICE_ISSUED, INVOICE_PAID, ISSUE_INVOICE, OUTSTANDING, PAY_INVOICE,
@@ -133,6 +145,9 @@ pub enum Caught {
     By(&'static str),
     /// Nothing catches it, and why — see the [module documentation](self).
     Nothing(&'static str),
+    /// No scenario catches it, and a recorded concurrent history checked by
+    /// [`crate::linearize`] does; the text says why only an interleaving shows it.
+    ByHistory(&'static str),
 }
 
 impl Caught {
@@ -140,7 +155,7 @@ impl Caught {
     pub fn scenario(self) -> Option<&'static str> {
         match self {
             Self::By(scenario) => Some(scenario),
-            Self::Nothing(_) => None,
+            Self::Nothing(_) | Self::ByHistory(_) => None,
         }
     }
 }
@@ -306,6 +321,21 @@ faults! {
     NegativeProjectedTotal => "negative-projected-total", System::Billing, Injection::Boundary,
         Caught::By("billing.invoice.Money/invariant/at/billing.invoice.OutstandingInvoices/total"),
         "the outstanding list reports a total below zero, which no Money admits";
+
+    /// A lifecycle command reads the invoice at invoke and writes at return, with no lock.
+    ///
+    /// The row the concurrent history check exists for. One call at a time, the read and the write
+    /// are adjacent and the answer is the reference's; two calls on one invoice at once both
+    /// decide from the state before either wrote, and the one whose write finds the invoice moved
+    /// is still told it succeeded. See the [module documentation](self).
+    LostUpdate => "lost-update", System::Billing, Injection::Boundary,
+        Caught::ByHistory(
+            "every suite scenario runs one call at a time, so nothing ever happens between the \
+             read and the write; only two clients' calls on one invoice, overlapping, show two \
+             successes no order of the calls allows"
+        ),
+        "a lifecycle command decides from the state it read at invoke and is told success after \
+         a concurrent write made that decision stale";
 }
 
 // ---- the wrapper -----------------------------------------------------------------------------
@@ -319,6 +349,9 @@ pub struct Faulty<T> {
     inner: T,
     fault: Fault,
     memory: RefCell<Vec<(ViewRef, SemanticViewResult)>>,
+    /// Every command the target underneath has executed in this scenario, in order: what a read
+    /// at an earlier instant replays ([`Fault::LostUpdate`]).
+    applied: RefCell<Vec<SemanticCommandRequest>>,
 }
 
 impl<T> Faulty<T> {
@@ -328,6 +361,7 @@ impl<T> Faulty<T> {
             inner,
             fault,
             memory: RefCell::new(Vec::new()),
+            applied: RefCell::new(Vec::new()),
         }
     }
 
@@ -412,6 +446,7 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         // Isolation covers the fault's own memory too, or a stale answer from the previous scenario
         // would be a second, undeclared defect (§8).
         self.memory.borrow_mut().clear();
+        self.applied.borrow_mut().clear();
         self.inner.begin_scenario(scenario)
     }
 
@@ -428,7 +463,9 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
             }
         }
         let input = request.input.clone();
+        let logged = request.clone();
         let mut result = self.inner.execute_command(request)?;
+        self.applied.borrow_mut().push(logged);
 
         match self.fault {
             Fault::WrongEvent if command == CREATE_INVOICE => {
@@ -553,6 +590,93 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
     }
 }
 
+// ---- invoke and return -----------------------------------------------------------------------
+
+/// A [`Faulty`] billing call between its invoke and its return.
+#[derive(Debug)]
+pub struct InFlight {
+    request: SemanticCommandRequest,
+    /// What the call decided from the state it read at invoke, where the fault reads early.
+    read: Option<Result<SemanticCommandResult, TargetError>>,
+}
+
+impl Interleaved for Faulty<Billing> {
+    type Pending = InFlight;
+
+    /// Every fault but [`Fault::LostUpdate`] does all of its work at the return instant.
+    /// `LostUpdate` reads at the invoke instant too: it decides a lifecycle command's answer from
+    /// the invoice as it stands now.
+    fn invoke(&self, request: SemanticCommandRequest) -> InFlight {
+        let read = (self.fault == Fault::LostUpdate && reads_then_writes(&request))
+            .then(|| self.read_now(&request));
+        InFlight { request, read }
+    }
+
+    /// The write, at the return instant, against the invoice as it stands then. Where the answer
+    /// decided at invoke differs from the one the write came to, the client is told the one
+    /// decided at invoke — the check it was based on is the one no lock kept true.
+    ///
+    /// With nothing between the invoke and the return, the two answers are the same, so a call
+    /// run on its own is answered exactly as the reference answers it.
+    fn complete(&self, pending: InFlight) -> Result<SemanticCommandResult, TargetError> {
+        let written = self.execute_command(pending.request)?;
+        match pending.read {
+            Some(Ok(read)) if read.outcome != written.outcome => Ok(read),
+            _ => Ok(written),
+        }
+    }
+}
+
+impl Faulty<Billing> {
+    /// The answer `request` gets from the invoices as they stand now, without writing anything:
+    /// the commands executed so far, replayed on a fresh reference, and then this one.
+    fn read_now(
+        &self,
+        request: &SemanticCommandRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        let snapshot = Billing::new();
+        for earlier in self.applied.borrow().iter() {
+            // Replayed for the state it leaves; what each answered was already answered.
+            let _ = snapshot.execute_command(earlier.clone());
+        }
+        snapshot.execute_command(request.clone())
+    }
+}
+
+/// The workload [`Fault::LostUpdate`] is recorded under: client 0 creates and issues one invoice,
+/// then two clients each pay it once.
+///
+/// Exactly one of the two payments may settle it. Whether the two are in flight at once is the
+/// seed's to decide ([`record::record`](crate::record::record)).
+pub fn lost_update_workload() -> Workload {
+    let amount = || BTreeMap::from([("amount".to_owned(), money(5.0))]);
+    let pay = || Call::new(PAY_INVOICE, amount(), Subject::Created(0));
+    let mut create = amount();
+    create.insert(
+        "account_id".to_owned(),
+        Node::Text("00000000-0000-4000-8000-0000000000aa".to_owned()),
+    );
+    create.insert(
+        "customer_email".to_owned(),
+        Node::Text("payer@example.com".to_owned()),
+    );
+    Workload {
+        prefix: vec![
+            Call::new(CREATE_INVOICE, create, Subject::Creates),
+            Call::new(ISSUE_INVOICE, BTreeMap::new(), Subject::Created(0)),
+        ],
+        clients: vec![vec![pay()], vec![pay()]],
+    }
+}
+
+/// `true` for the commands that read an invoice's state and then move it.
+fn reads_then_writes(request: &SemanticCommandRequest) -> bool {
+    matches!(
+        request.command.to_string().as_str(),
+        ISSUE_INVOICE | PAY_INVOICE | CANCEL_INVOICE
+    )
+}
+
 // ---- the names this module writes --------------------------------------------------------------
 
 /// Parses an event name this module names as a literal.
@@ -665,7 +789,7 @@ mod tests {
         // The list is generated from the same lines as the variants, so what is left to check is
         // that no row was declared empty — a fault with no description is a row in a matrix nobody
         // can read.
-        assert_eq!(Fault::ALL.len(), 13);
+        assert_eq!(Fault::ALL.len(), 14);
         for fault in Fault::ALL {
             assert!(!fault.written().is_empty(), "{fault:?} has no written form");
             assert!(!fault.describe().is_empty(), "{fault:?} describes nothing");
@@ -678,6 +802,11 @@ mod tests {
                     why.len() > 20,
                     "{fault:?} is uncaught and says only `{why}`; an uncaught fault is a finding \
                      about the model or the synthesizer, and the finding is the reason"
+                ),
+                Caught::ByHistory(why) => assert!(
+                    why.len() > 20,
+                    "{fault:?} is caught only by a concurrent history and says only `{why}`; the \
+                     reason no single-client scenario sees it is the row's claim"
                 ),
             }
         }
