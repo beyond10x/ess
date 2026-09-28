@@ -292,6 +292,7 @@ impl ConformanceTarget for Calls {
                     ])
                 })
                 .collect(),
+            total: None,
         })
     }
     fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {

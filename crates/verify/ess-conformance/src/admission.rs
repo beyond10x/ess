@@ -345,6 +345,9 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
     if crate::aggregate_delta::needs_newer(tag, major) {
         return Err(value.error("UnsupportedVocabulary", crate::aggregate_delta::REQUIRES));
     }
+    if crate::view_paging::needs_newer(tag, major) {
+        return Err(value.error("UnsupportedVocabulary", crate::view_paging::REQUIRES));
+    }
     match tag {
         "contains" | "excludes" => {
             let f = value.closed(&["expect", "fields"], &[])?;
@@ -382,6 +385,7 @@ fn expectation(value: &Json, major: u32) -> Result<(), AdmissionError> {
             }
         }
         "changed_by" => crate::aggregate_delta::admit_json(value)?,
+        "page" => crate::view_paging::admit_json(value)?,
         _ => return Err(value.error("UnsupportedViewExpectation", tag)),
     }
     Ok(())
@@ -523,6 +527,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;
     crate::aggregate_delta::admit_format(suite)?;
+    crate::view_paging::admit_format(suite)?;
     crate::now_offset::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;

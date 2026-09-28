@@ -275,7 +275,7 @@ fn identity_views<'i>(
 /// unparameterised view whose filter — where it has one — is decided to admit the row the branch
 /// leaves, from its state and the fields the scenario determined.
 fn one_row_view(ir: &EssIr, view: &ResolvedView, run: &Run) -> bool {
-    view.params.is_empty()
+    super::paging::read_whole(view)
         && view.consistency == Consistency::ReadYourWrites
         && view.assertion_style == AssertionStyle::Expect
         && (view.filter.is_none()

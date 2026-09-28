@@ -246,6 +246,7 @@ impl ConformanceTarget for Offered {
                     ])
                 })
                 .collect(),
+            total: None,
         })
     }
 }
@@ -428,6 +429,7 @@ impl ConformanceTarget for Ambient {
                     ])
                 })
                 .collect(),
+            total: None,
         })
     }
 }

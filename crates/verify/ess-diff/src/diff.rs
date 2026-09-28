@@ -1608,6 +1608,12 @@ fn compare_views(
             after: ranking_contracts(&is.order_by),
         });
     }
+    if was.paging != is.paging {
+        push(ViewChange::PagingChanged {
+            before: was.paging.as_ref().map(paging_contract),
+            after: is.paging.as_ref().map(paging_contract),
+        });
+    }
 
     // Canonical equality over the parsed filters, `None` meaning every instance. D-1's rule again:
     // equal is silence, different is *changed*, and nothing reads the predicates further.
@@ -2149,6 +2155,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "source",
                     "filter",
                     "order_by",
+                    "paging",
                     "consistency",
                     "assertion_style",
                 ],
@@ -2285,5 +2292,14 @@ fn outcome_payload_change(
             before,
             after,
         }
+    }
+}
+
+fn paging_contract(paging: &ess_domain::view::Paging) -> crate::change::PagingContract {
+    crate::change::PagingContract {
+        page: paging.page.clone(),
+        size: paging.size.clone(),
+        first_page: paging.first_page,
+        total: paging.total,
     }
 }

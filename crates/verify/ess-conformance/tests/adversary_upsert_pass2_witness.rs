@@ -362,7 +362,7 @@ impl ConformanceTarget for Store {
                 .collect(),
             other => panic!("unexpected view {other}"),
         };
-        Ok(SemanticViewResult { rows })
+        Ok(SemanticViewResult { rows, total: None })
     }
     fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {
         Err(TargetError::unsupported("external", "none declared"))

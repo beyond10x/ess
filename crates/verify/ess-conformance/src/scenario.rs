@@ -158,6 +158,7 @@ impl ConformanceSuite {
             || crate::absent_input::used_by(self)
             || crate::aggregate_delta::used_by(self)
             || crate::now_offset::used_by(self)
+            || crate::view_paging::used_by(self)
         {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
@@ -2450,6 +2451,39 @@ pub enum ViewExpectation {
         /// The fields of [`fields`](Self::ChangedBy::fields) whose absent value reads as zero.
         #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
         absent_is_zero: BTreeSet<String>,
+    },
+    /// The read was one page of a paged view, and it holds what that page must (suite/26,
+    /// [`crate::view_paging`]).
+    ///
+    /// `page` and `size` are what the read before it sent in the view's paging parameters. The
+    /// page holds exactly [`rows`](Self::Page::rows) rows; where the view declares `total: true`,
+    /// the answer carries a total of at least [`total_at_least`](Self::Page::total_at_least); and
+    /// where [`follows`](Self::Page::follows) is present, the page continues the one this run
+    /// snapshotted of the view: its rows are in the declared order, none ranks before the
+    /// snapshot's last row, and none carries the identity of a snapshot row.
+    ///
+    /// Each claim holds on a target §8 permits to be shared: rows another user made can only add to
+    /// the total and push rows further back, and never shorten a page the scenario's own rows fill
+    /// or reorder two pages of one order.
+    Page {
+        /// The page the read asked for, as the view numbers its pages.
+        page: u64,
+        /// The most rows the read asked a page to hold.
+        size: u64,
+        /// How many rows the page holds: exactly, or at least where
+        /// [`at_least`](Self::Page::at_least) is set.
+        rows: usize,
+        /// `rows` is a floor, not an exact length: the page holds at least `rows` rows and at most
+        /// `size`. A page larger than every row the scenario made is the last page on a target
+        /// nobody else writes to, and one that answers no partial last page answers none of it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        at_least: bool,
+        /// The fewest rows the answer's total may count. Absent: the total is not asserted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total_at_least: Option<u64>,
+        /// The page continues the snapshot of the one before it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        follows: Option<crate::view_paging::Follows>,
     },
 }
 

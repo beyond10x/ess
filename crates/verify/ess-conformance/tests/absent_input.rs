@@ -188,6 +188,7 @@ impl ConformanceTarget for Notes {
                 .keys()
                 .map(|id| BTreeMap::from([("note_id".to_owned(), Node::Text(id.clone()))]))
                 .collect(),
+            total: None,
         })
     }
     fn configure_external_outcome(&self, _: ExternalOutcomeControl) -> Result<(), TargetError> {

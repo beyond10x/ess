@@ -84,7 +84,7 @@ use ess_domain::name::{Naming, QualifiedName, Version};
 use ess_domain::refs::Refs;
 use ess_domain::topology::{Replicas, Resource};
 use ess_domain::types::Primitive;
-use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Ranking};
+use ess_domain::view::{AggregateFunction, AssertionStyle, Consistency, Paging, Ranking};
 use ess_primitives::facts::FactPath;
 use ess_primitives::predicate::Predicate;
 
@@ -1352,6 +1352,13 @@ pub struct ResolvedView {
     /// never shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order_by: Vec<Ranking>,
+    /// How its rows are paged, where they are (ess/16, `docs/design/view-paging.md`).
+    ///
+    /// Omitted when `None`, so the IR bytes and digest of every model without a paged view are
+    /// unchanged. Both parameters it names are in [`Self::params`], and every key of
+    /// [`Self::order_by`] is what a page slices.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paging: Option<Paging>,
     /// How soon it reflects a command that has already returned.
     pub consistency: Consistency,
     /// The block a generated scenario must assert this view in.

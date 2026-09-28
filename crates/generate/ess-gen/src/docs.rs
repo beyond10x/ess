@@ -955,6 +955,9 @@ fn views_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
             ));
         }
         about.prose(order_sentence(view));
+        if let Some(paging) = paging_sentence(view) {
+            about.prose(paging);
+        }
         about.prose(consistency_sentence(view.consistency));
         about.sentence(assertion_sentence(view.assertion_style));
         under.push(section(
@@ -3092,6 +3095,40 @@ fn slug(heading: &str) -> String {
         }
     }
     out
+}
+
+/// What a paged view's page and size select, and whether the answer carries a total (`paging:`,
+/// ess/16, beyond10x/ess#174). `None` for a view that is not paged, whose page keeps its bytes.
+fn paging_sentence(view: &ResolvedView) -> Option<Vec<Inline>> {
+    let paging = view.paging.as_ref()?;
+    let start = if paging.first_page == 0 {
+        format!("{} * {}", paging.page, paging.size)
+    } else {
+        format!(
+            "({} - {}) * {}",
+            paging.page, paging.first_page, paging.size
+        )
+    };
+    let mut out = vec![
+        Inline::text("It is paged: "),
+        Inline::code(paging.page.clone()),
+        Inline::text(" and "),
+        Inline::code(paging.size.clone()),
+        Inline::text(" select "),
+        Inline::code(paging.size.clone()),
+        Inline::text(" rows of that order starting at "),
+        Inline::code(start),
+        Inline::text(format!(
+            ", pages numbered from {}, and a read that sends neither answers every row.",
+            paging.first_page
+        )),
+    ];
+    if paging.total {
+        out.push(Inline::text(
+            " The answer carries the number of rows the filter admits.",
+        ));
+    }
+    Some(out)
 }
 
 #[cfg(test)]

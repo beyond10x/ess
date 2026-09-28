@@ -367,6 +367,10 @@ impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
     pub const fn minimum_format(&self) -> u32 {
         match self {
+            Self::View {
+                changed: ViewChange::PagingChanged { .. },
+                ..
+            } => 9,
             Self::Type {
                 changed: TypeChange::AlphabetChanged { .. },
                 ..
@@ -2605,6 +2609,14 @@ pub enum ViewChange {
         /// The new contract.
         after: Vec<RankingContract>,
     },
+    /// How the view is paged differs (`ess-diff/9`, ess/16 `paging:`). `None` on a side where
+    /// the view is not paged.
+    PagingChanged {
+        /// The paging it had.
+        before: Option<PagingContract>,
+        /// The paging it has.
+        after: Option<PagingContract>,
+    },
 }
 
 impl ViewChange {
@@ -2613,6 +2625,7 @@ impl ViewChange {
         match self {
             Self::ParamsChanged { .. } => "params-changed",
             Self::RankingChanged { .. } => "ranking-changed",
+            Self::PagingChanged { .. } => "paging-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -2664,6 +2677,11 @@ impl ViewChange {
             Self::RankingChanged { before, after } => {
                 format!("ranking changed: {} → {} keys", before.len(), after.len())
             }
+            Self::PagingChanged { before, after } => format!(
+                "{}, was {}",
+                PagingContract::render(after.as_ref()),
+                PagingContract::render(before.as_ref())
+            ),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),
             Self::DomainChanged { before, after } => format!("owned by {after}, was {before}"),
@@ -3147,4 +3165,37 @@ pub struct RankingContract {
     pub field: String,
     /// `asc` or `desc`.
     pub direction: String,
+}
+
+/// A view's paging, as a delta carries it (`ess-diff/9`): the parameters that carry the page and
+/// its size, the number of the first page, and whether a total is answered.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PagingContract {
+    /// The parameter that selects the page.
+    pub page: String,
+    /// The parameter that bounds a page.
+    pub size: String,
+    /// The number of the first page.
+    pub first_page: u64,
+    /// Whether the answer carries the filtered count.
+    pub total: bool,
+}
+
+impl PagingContract {
+    /// One side of a paging change, as a clause.
+    fn render(paging: Option<&Self>) -> String {
+        paging.map_or_else(
+            || "not paged".to_owned(),
+            |paging| {
+                format!(
+                    "paged by `{}` and `{}` from page {}{}",
+                    paging.page,
+                    paging.size,
+                    paging.first_page,
+                    if paging.total { " with a total" } else { "" }
+                )
+            },
+        )
+    }
 }
