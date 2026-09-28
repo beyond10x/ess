@@ -69,6 +69,7 @@ pub const PACKAGE: &str = "essconform";
 /// and the only file that moves is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     crate::direct_response::refuse_generation(suite, "TypeScript")?;
+    crate::go::refuse_unadmitted(suite, "TypeScript")?;
     let json = suite.to_canonical_json()?;
     let mut files = sources(RUNTIME_TS.to_owned());
     files.push(file("suite.json", json));
@@ -220,6 +221,7 @@ pub fn emit_input(
 ) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
     crate::direct_response::refuse_generation(suite.suite(), "TypeScript")?;
+    crate::go::refuse_unadmitted(suite.suite(), "TypeScript")?;
     let mut files = sources(RUNTIME_TS.replace(SUITE_DOCUMENT, INPUT_DOCUMENT));
     files.push(file("suite.json", suite.original_json().into()));
     files.push(file("input.json", input.document().to_canonical_json()?));
@@ -511,14 +513,25 @@ ESS_REPORT_OUT=$PWD/report.json npm test
         version = provenance.specification_version,
         digest = provenance.spec_digest,
     );
-    if provenance.suite_version.major() >= 5 {
-        readme.replace(
-            "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the",
-            "Select `ESS_REPORT_FORMAT=2` explicitly before execution. Set `ESS_REPORT_OUT` to a file path\nand `run` writes an `ess-conformance-report/2` there when the",
-        ).replace(
-            "ESS_REPORT_OUT=$PWD/report.json npm test",
-            "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test",
-        )
+    if crate::go::requires_report_format_2(provenance.suite_version) {
+        readme
+            .replace(
+                "```console\nnpm install\nnpm test\n```\n\n",
+                &crate::go::report_format_requirement(
+                    provenance.suite_version,
+                    "run",
+                    &["npm install"],
+                    "npm test",
+                ),
+            )
+            .replace(
+                "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/1` there when the",
+                "Set `ESS_REPORT_OUT` to a file path and `run` writes an `ess-conformance-report/2` there when the",
+            )
+            .replace(
+                "ESS_REPORT_OUT=$PWD/report.json npm test",
+                "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test",
+            )
     } else {
         readme
     }
