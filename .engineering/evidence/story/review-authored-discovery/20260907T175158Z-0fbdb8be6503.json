@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T17:51:58Z",
+  "actor": "human:timo",
+  "artifact": "story:review-authored-discovery",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS named discovery model validate and compile each exited zero; declaration validity only, no manifest reader result",
+    "reference": "target/review-boundaries-17/preparation/model-check/readback.json"
+  }
+}

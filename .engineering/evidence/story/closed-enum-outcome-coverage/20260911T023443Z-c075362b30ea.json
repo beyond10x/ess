@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T02:34:43Z",
+  "actor": "human:timo",
+  "artifact": "story:closed-enum-outcome-coverage",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Shared typed-invariant validator filters finite/default witnesses;78 focused tests and strict all-target Clippy passed",
+    "reference": "9270428c",
+    "review": "review-result:closed-enum-implementation-adversary-1",
+    "outcome": "fixed"
+  }
+}

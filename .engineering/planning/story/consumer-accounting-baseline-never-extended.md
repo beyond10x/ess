@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:consumer-accounting-baseline-never-extended
 kind: story
 status: active
@@ -186,6 +186,9 @@ scope:
 - confidence: cited
   path: schemas/generated/ess.schema.json
 revision: 50
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T02:25:30Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T02:25:32Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
 ---
 ## Outcome
 

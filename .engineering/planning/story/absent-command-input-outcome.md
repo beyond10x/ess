@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:absent-command-input-outcome
 kind: story
 status: active
@@ -56,6 +56,9 @@ scope:
 - confidence: inferred
   path: docs/design/outcome-shapes.md
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T18:54:48Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T18:55:44Z", actor: "human:timo", revision: 6, imported: true}
 ---
 ## Scope
 

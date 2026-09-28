@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:caller-value-source-and-guard
 kind: story
 status: active
@@ -60,6 +60,9 @@ scope:
 - confidence: cited
   path: website/docs/reference/spec-versions.md
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T19:16:19Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T19:19:27Z", actor: "human:timo", revision: 6, imported: true}
 ---
 ## Scope
 

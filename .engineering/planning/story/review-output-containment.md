@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-output-containment
 kind: story
 status: implemented
@@ -28,6 +28,10 @@ scope:
 - confidence: cited
   path: crates/generate/ess-gen/tests/docs.rs
 revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T10:54:36Z", actor: "human:timo", revision: 9, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T10:55:52Z", actor: "human:timo", revision: 10, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T12:36:04Z", actor: "human:timo", revision: 14, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 ## Finding and source
 

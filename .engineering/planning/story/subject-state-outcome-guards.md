@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:subject-state-outcome-guards
 kind: story
 status: implemented
@@ -70,6 +70,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T06:21:03Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":6,"review_outcome":3}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T06:21:03Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":6,"review_outcome":3}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-13T08:53:42Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":7,"review_outcome":3}}, imported: true}
 ---
 ## Outcome and priority
 

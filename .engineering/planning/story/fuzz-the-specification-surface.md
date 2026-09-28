@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:fuzz-the-specification-surface
 kind: story
 status: implemented
@@ -23,6 +23,10 @@ scope:
 - confidence: inferred
   path: website/docs/reference/formats.md
 revision: 18
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-08T18:52:00Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-08T18:52:00Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-08T23:41:07Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 # Fuzz the specification surface
 

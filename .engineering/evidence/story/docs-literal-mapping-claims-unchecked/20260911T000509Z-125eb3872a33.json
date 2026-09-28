@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T00:05:09Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-literal-mapping-claims-unchecked",
+  "kind": "story",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Corrected eb71c85d: 222 generator tests including 40 docs, 8 domain literal cases, strict Clippy and format checks; final adversary 8 deciding cases exit 0. No full local gate.",
+    "reference": "local-evidence:ess-evolution-20260910/priority-wave/literal/correction-report.md"
+  }
+}

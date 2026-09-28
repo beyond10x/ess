@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T02:27:33Z",
+  "actor": "human:timo",
+  "artifact": "story:authored-entity-state-arrangement",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Fresh source CLI ordinary6/coverage7, report2 and exact lineage: entity_setup_cli1 passed; accessor_cli3 passed",
+    "reference": "00a2cdc2"
+  }
+}

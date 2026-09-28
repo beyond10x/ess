@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-openapi-semantic-accounting
 kind: story
 status: implemented
@@ -28,6 +28,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 21
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T01:44:11Z", actor: "human:timo", revision: 14, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T01:44:12Z", actor: "human:timo", revision: 15, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T08:07:41Z", actor: "human:timo", revision: 21, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding and source
 

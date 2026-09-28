@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-observation-completeness
 kind: story
 status: implemented
@@ -38,6 +38,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T22:51:47Z", actor: "human:timo", revision: 20, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T22:51:48Z", actor: "human:timo", revision: 21, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T23:02:25Z", actor: "human:timo", revision: 22, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Finding and source
 

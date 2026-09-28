@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:schema-unique-items-signed-zero
 kind: story
 status: implemented
@@ -24,6 +24,10 @@ scope:
 - confidence: cited
   path: crates/generate/schema-contract/tests/schema_unique_items.rs
 revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T03:12:33Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T03:12:34Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-12T04:17:18Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 # Correct size-dependent uniqueItems behavior for signed zero
 

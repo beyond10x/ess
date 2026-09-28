@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-expression-typechecking
 kind: story
 status: implemented
@@ -20,6 +20,10 @@ scope:
 - confidence: inferred
   path: docs/design/review-expression-typechecking.md
 revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T01:44:10Z", actor: "human:timo", revision: 10, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T01:44:11Z", actor: "human:timo", revision: 11, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T08:07:40Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Finding and source
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-12T10:21:08Z",
+  "actor": "human:timo",
+  "artifact": "story:enum-variant-in-an-entity-invariant",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check step by step on wave/ess-wave-24 at ab2bb7f1: 11 lanes exit 0 incl. test-workspace and test-xtask under the pinned profile; consumer-check exit 1, red identically at base bd722fa9",
+    "reference": "/var/tmp/ess-wave-24/gate/exits.txt"
+  }
+}

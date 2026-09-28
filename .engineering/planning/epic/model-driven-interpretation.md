@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:model-driven-interpretation
 kind: epic
 status: active
@@ -9,6 +9,9 @@ owner: ess
 relations:
 - serves: vision:O2
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-13T09:34:23Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-13T09:34:26Z", actor: "human:timo", revision: 4, imported: true}
 ---
 # Epic: model-driven interpretation
 

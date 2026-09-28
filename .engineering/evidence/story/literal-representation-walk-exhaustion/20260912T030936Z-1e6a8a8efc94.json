@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-12T03:09:36Z",
+  "actor": "human:timo",
+  "artifact": "story:literal-representation-walk-exhaustion",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on wave/ess-wave-22 at 46c7281e: 9 of 10 steps exit 0 (fmt-check, clippy, doc-check, example-check, projection-check, support-check, fuzz-check, release-check, action-check); the test step re-run package by package, 23 packages each exit 0, logs at /var/tmp/ess-wave-22/gate/t-*.log"
+  }
+}

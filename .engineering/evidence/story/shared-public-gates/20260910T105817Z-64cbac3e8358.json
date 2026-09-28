@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-10T10:58:17Z",
+  "actor": "human:timo",
+  "artifact": "story:shared-public-gates",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Scoped test profiles: all three failing WebAssembly cases and all 123 ess-xtask tests passed; full candidate CI still required",
+    "reference": "local:ess-wasm-profile-fix.log+ess-native-profile-fix.log"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-22T05:04:41Z",
+  "actor": "agent:codex-ekr-completion-20260922",
+  "artifact": "story:retained-command-result-replay",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ekr-retained-replay-design",
+    "review": "review-result:ekr-retained-replay-design",
+    "outcome": "fixed"
+  }
+}

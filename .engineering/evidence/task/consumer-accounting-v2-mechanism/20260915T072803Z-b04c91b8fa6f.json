@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T07:28:03Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task consumer-check: fresh normal native acquisition 8 executed / 8 passed / 0 failed / 0 ignored, then missing-reconciliation refusal; inner exit 1, Task exit 201, no complete matrix qualification",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/correction-pass-1-evidence/normal-task-receipts.sha256"
+  }
+}

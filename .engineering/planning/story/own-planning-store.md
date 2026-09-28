@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:own-planning-store
 kind: story
 status: implemented
@@ -11,6 +11,10 @@ tags:
 relations:
 - decomposes: epic:entity-relations
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-02T22:54:45Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-02T22:54:45Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-02T22:54:45Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # Story: ESS plans in a store of its own
 

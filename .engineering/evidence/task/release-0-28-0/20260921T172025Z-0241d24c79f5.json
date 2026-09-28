@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-21T17:20:25Z",
+  "actor": "human:timo",
+  "artifact": "task:release-0-28-0",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Workspace tests, corrected native xtask tests, docs/examples/projections/support/fuzz/release/action checks and site-build pass; consumer-check exits 201 with the recorded refusal"
+  }
+}

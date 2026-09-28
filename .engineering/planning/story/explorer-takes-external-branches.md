@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:explorer-takes-external-branches
 kind: story
 status: implemented
@@ -9,6 +9,10 @@ relations:
 - supersedes: story:external-mutation-explorer-and-toolchain
 - decomposes: epic:retrofit-findings-20260927
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T07:58:33Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T08:00:41Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T14:57:29Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Scope
 

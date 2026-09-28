@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:witness-search-beyond-64-candidates
 kind: story
 status: active
@@ -17,6 +17,9 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary2_connective_and_source_mutants.rs
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T22:25:49Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T22:26:47Z", actor: "human:timo", revision: 7, imported: true}
 ---
 ## Scope
 

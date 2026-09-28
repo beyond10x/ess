@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T02:32:25Z",
+  "actor": "human:timo",
+  "artifact": "story:conformance-compact-json-output",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integration compact_conformance5 passed; unit81 focused cases and strictClippy; two same-source fixtures39.563247percent smaller; old Rust/Go readers accept",
+    "reference": "32c765bc"
+  }
+}

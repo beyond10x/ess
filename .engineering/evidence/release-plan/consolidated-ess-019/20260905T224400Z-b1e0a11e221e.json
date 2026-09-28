@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T22:44:00Z",
+  "actor": "agent:specification-planner",
+  "artifact": "release-plan:consolidated-ess-019",
+  "kind": "release-plan",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Release workflow passed; four downloaded archive checksums match; downloaded Linux binary reports ess 0.19.0; public release author b10x-bot[bot]",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/33995624881"
+  }
+}

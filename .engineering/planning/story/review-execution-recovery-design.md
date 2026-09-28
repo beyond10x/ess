@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-execution-recovery-design
 kind: story
 status: implemented
@@ -14,6 +14,10 @@ scope:
 - confidence: cited
   path: docs/design/review-execution-recovery.md
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T00:03:53Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T00:03:54Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T00:14:37Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding and source
 

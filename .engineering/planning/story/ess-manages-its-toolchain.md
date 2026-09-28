@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:ess-manages-its-toolchain
 kind: story
 status: implemented
@@ -9,6 +9,10 @@ relations:
 - decomposes: epic:retrofit-findings-20260927
 - serves: vision:O2
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T14:43:23Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T14:44:00Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T14:58:33Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Scope
 

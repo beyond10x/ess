@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:an-entity-may-be-named-for-a-state
 kind: story
 status: archived
@@ -7,6 +7,8 @@ title: An entity may be named for a state
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-14T22:50:06Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## The defect
 

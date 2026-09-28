@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T20:22:06Z",
+  "actor": "human:timo",
+  "artifact": "story:reusable-service-contract",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:service-contract-code-pass-1",
+    "reference": "local-evidence:ess-evolution/waves/0009-service-convergence/service-contract-correction-1/handoff.md",
+    "review": "review-result:service-contract-code-pass-1",
+    "outcome": "fixed"
+  }
+}

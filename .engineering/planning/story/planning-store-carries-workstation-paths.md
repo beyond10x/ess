@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:planning-store-carries-workstation-paths
 kind: story
 status: active
@@ -13,6 +13,9 @@ scope:
 - confidence: cited
   path: crates/edge/ess-xtask/tests/host_paths.rs
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T04:18:09Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T04:18:11Z", actor: "human:timo", revision: 5, imported: true}
 ---
 ## Finding
 

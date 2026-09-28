@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:schema-document-root-import
 kind: story
 status: implemented
@@ -30,6 +30,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/cli.md
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T21:05:36Z", actor: "agent:specification-planner", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T21:05:36Z", actor: "agent:specification-planner", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T21:05:37Z", actor: "agent:specification-planner", revision: 5, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Evidence
 

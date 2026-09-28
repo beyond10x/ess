@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T03:34:30Z",
+  "actor": "human:timo",
+  "artifact": "story:periodic-binding-trigger-contract",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Rust and generated Go now check the complete live interval, including time before stop acknowledgement; intervals beyond five periods refuse. Positive overshoot and missing live-tick mutations verified.",
+    "reference": "local-evidence:priority-wave/periodic/adversary-overshoot-green.log",
+    "review": "review-result:periodic-implementation-adversary-1",
+    "outcome": "fixed"
+  }
+}

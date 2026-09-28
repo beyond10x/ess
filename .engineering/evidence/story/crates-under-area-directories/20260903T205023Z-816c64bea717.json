@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-03T20:50:23Z",
+  "actor": "human:timo",
+  "artifact": "story:crates-under-area-directories",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "finding 5: AGENTS.md and README.md restate the workspace member list; not acted on, reported to the operator",
+    "review": "review-result:adversary-area-layout-round-1",
+    "outcome": "escalated"
+  }
+}

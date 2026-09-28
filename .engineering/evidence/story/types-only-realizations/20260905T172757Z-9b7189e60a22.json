@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T17:27:57Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:types-only-realizations",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from ddbe42a: Shared qualified type plan and TypeScript target: task check exit 0; task site-build exit 0; 7 structural planning tests, 5 schema-bundle CLI integration tests, 7 pinned TypeScript 6.0.3 compiler tests including positive and negative presence/tuple/union/sibling controls. Go/Rust and model-field integration remain unimplemented; story remains active.",
+    "reference": "https://github.com/beyond10x/ess/blob/ddbe42ae92abf36ed7a8229db9e585eefa443bf7/.engineering/planning/journal.jsonl"
+  }
+}

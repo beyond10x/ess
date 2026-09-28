@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:outcome-shapes-beyond-ess-14
 kind: story
 status: implemented
@@ -33,6 +33,10 @@ scope:
 - confidence: inferred
   path: schemas/generated/ess.schema.json
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T14:48:52Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T14:49:26Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T15:01:47Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Scope
 

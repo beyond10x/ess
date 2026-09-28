@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-26T03:15:48Z",
+  "actor": "human:timo",
+  "artifact": "story:observed-bindings-foreign-sidecar",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "CI (task check) on the ess#115 queue merge 90aabc4c",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36213575367"
+  }
+}

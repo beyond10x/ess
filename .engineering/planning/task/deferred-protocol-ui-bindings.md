@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:deferred-protocol-ui-bindings
 kind: task
 status: draft

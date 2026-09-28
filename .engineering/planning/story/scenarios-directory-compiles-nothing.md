@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:scenarios-directory-compiles-nothing
 kind: story
 status: implemented
@@ -18,6 +18,10 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/authored_scenarios_adversary.rs
 revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T00:03:53Z", actor: "human:timo", revision: 8, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T00:03:53Z", actor: "human:timo", revision: 9, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T00:14:36Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 ## The defect
 

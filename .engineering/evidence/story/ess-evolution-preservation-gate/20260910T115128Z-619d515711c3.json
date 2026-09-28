@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-10T11:51:28Z",
+  "actor": "agent:ess-evolution-integration",
+  "artifact": "story:ess-evolution-preservation-gate",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task site-build; exit 0",
+    "reference": "local-evidence:ess-evolution-20260910/ess-preservation-site.log"
+  }
+}

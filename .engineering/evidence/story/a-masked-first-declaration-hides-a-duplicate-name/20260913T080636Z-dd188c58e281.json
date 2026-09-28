@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-13T08:06:36Z",
+  "actor": "human:timo",
+  "artifact": "story:a-masked-first-declaration-hides-a-duplicate-name",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check, 11 lanes, per-lane exit codes",
+    "reference": "0bd387e4 wave/ess-wave-25: 10 lanes exit 0; consumer-check exit 201, identical refusal on main"
+  }
+}

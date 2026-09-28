@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:normalization-followup-publication
 kind: task
 status: archived
@@ -9,6 +9,8 @@ relations:
 - derived_from: story:normalize-positional-array-input
 - serves: vision:O2
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-06T10:39:35Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Outcome
 

@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-04T12:25:37Z",
+  "actor": "human:timo",
+  "artifact": "story:elapsed-time-claims",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check"
+  }
+}

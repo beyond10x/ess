@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:scrub-the-planning-store-or-say-why-not
 kind: story
 status: draft

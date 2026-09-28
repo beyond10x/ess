@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:schema-describes-serialized-strings
 kind: story
 status: implemented
@@ -7,6 +7,10 @@ title: The generated schema describes ExternalRef and Period as the strings they
 relations:
 - serves: vision:O2
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-26T14:02:16Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-26T14:02:54Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-26T14:04:08Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # The generated schema describes ExternalRef and Period as the strings they serialize to
 

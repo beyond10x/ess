@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T07:48:10Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-compiler-core",
+  "kind": "task",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Final S4 compiler package, all-target Clippy, fmt and five wrong-value controls after exact correction",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s4-adoption/correction-1/correction-result.md"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-execution-recovery-implementation
 kind: story
 status: implemented
@@ -83,6 +83,10 @@ scope:
 - confidence: cited
   path: website/docs/status/where-this-stands.md
 revision: 36
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-08T23:44:19Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-08T23:44:20Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-09T10:42:15Z", actor: "human:timo", revision: 36, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 # Story: Implement finite deployment recovery for the existing F11 obligation
 

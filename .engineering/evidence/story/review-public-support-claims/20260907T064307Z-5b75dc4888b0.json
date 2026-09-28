@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T06:43:07Z",
+  "actor": "human:timo",
+  "artifact": "story:review-public-support-claims",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task site-build: direct exit201; MDX refuses introduced HTML support markers at status page43; full workspace test2110passed0failed0ignored",
+    "reference": "home-path:sha256:dfe75346f4468a959757e2e7c84bf495308ed7c6c79bf7960e3fbc5be878a443"
+  }
+}

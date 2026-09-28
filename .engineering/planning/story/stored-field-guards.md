@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:stored-field-guards
 kind: story
 status: active
@@ -7,6 +7,9 @@ title: An outcome can be guarded by the addressed entity's stored fields
 relations:
 - serves: vision:O2
 revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-25T21:42:44Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-25T21:43:14Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Outcome
 

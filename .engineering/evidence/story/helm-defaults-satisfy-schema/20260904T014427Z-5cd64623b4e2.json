@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-04T01:44:27Z",
+  "actor": "human:timo",
+  "artifact": "story:helm-defaults-satisfy-schema",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check",
+    "reference": "Taskfile.yml"
+  }
+}

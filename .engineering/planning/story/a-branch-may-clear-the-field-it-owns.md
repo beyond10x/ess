@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-branch-may-clear-the-field-it-owns
 kind: story
 status: draft

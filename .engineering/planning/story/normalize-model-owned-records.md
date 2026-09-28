@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:normalize-model-owned-records
 kind: story
 status: implemented
@@ -45,6 +45,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T01:40:01Z", actor: "agent:specification-planner", revision: 8, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T01:40:02Z", actor: "agent:specification-planner", revision: 9, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T01:40:03Z", actor: "agent:specification-planner", revision: 10, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Evidence
 

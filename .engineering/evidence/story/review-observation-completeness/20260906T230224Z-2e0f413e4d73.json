@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T23:02:24Z",
+  "actor": "human:timo",
+  "artifact": "story:review-observation-completeness",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task site-build: browser boundary and Docusaurus build passed",
+    "reference": "sha256:57a99715ddff518c25bdd9c266008b91a1e660b977712e448791d86900b1e404"
+  }
+}

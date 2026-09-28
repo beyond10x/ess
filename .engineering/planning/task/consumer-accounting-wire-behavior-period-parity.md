@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-wire-behavior-period-parity
 kind: task
 status: active
@@ -10,6 +10,9 @@ relations:
 - serves: vision:O2
 - depends_on: task:consumer-accounting-aggregate-reference-closure
 revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T12:22:12Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T12:22:15Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
 ---
 ## Outcome
 

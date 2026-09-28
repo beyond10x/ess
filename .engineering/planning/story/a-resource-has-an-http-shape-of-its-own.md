@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-resource-has-an-http-shape-of-its-own
 kind: story
 status: archived
@@ -7,6 +7,8 @@ title: A resource has an HTTP shape of its own
 relations:
 - decomposes: epic:specification-runs-as-a-fake-backend
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-14T22:49:51Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## The gap
 

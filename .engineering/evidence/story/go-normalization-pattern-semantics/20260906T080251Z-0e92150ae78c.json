@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T08:02:51Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:go-normalization-pattern-semantics",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check; task site-build; native normalization corpus",
+    "reference": "verification-report:normalization-recovery-20260906"
+  }
+}

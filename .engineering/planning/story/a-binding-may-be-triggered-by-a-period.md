@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-binding-may-be-triggered-by-a-period
 kind: story
 status: archived
@@ -8,6 +8,8 @@ summary: 'when: admits only an event, so a system that reconciles on a timer can
 relations:
 - informed_by: task:ess-gaps-measured-in-a-consumer-specification
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-11T00:04:29Z", actor: "human:timo", revision: 3, imported: true}
 ---
 **Folded into `task:ess-gaps-measured-in-a-consumer-specification` on 2026-09-11**, at the operator's
 request that all eight measured gaps arrive as one task for the maintainer to decompose. The body below is

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T01:56:54Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-authored-boundaries",
+  "kind": "task",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Root producer75350/78781d: complete ess-xtask package, strict all-target Clippy and fmt exit0 on source00a707e8; mechanism checks only, no matrix qualification; three historical ignored internal_names cases disclosed",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s3-mechanism/implementation-result.md"
+  }
+}

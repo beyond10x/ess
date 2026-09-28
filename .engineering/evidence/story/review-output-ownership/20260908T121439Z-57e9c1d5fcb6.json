@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-08T12:14:39Z",
+  "actor": "human:timo",
+  "artifact": "story:review-output-ownership",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:output-ownership-adversary-wave19-pass1",
+    "reference": "https://github.com/beyond10x/ess/commit/f00467883985a04caf72bd9364642252212a56a6",
+    "review": "review-result:output-ownership-adversary-wave19-pass1",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-18T03:09:22Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-main-cli",
+  "kind": "task",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "S9 finite pass1 correction: reviewer regressions, full affected45-case actual Go Firefox release target, strict scoped-format and hashes exit0; prior whole-package receipt remains pre-correction only",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s9/correction-1/report.md"
+  }
+}

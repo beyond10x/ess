@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-11T02:32:26Z",
+  "actor": "human:timo",
+  "artifact": "story:conformance-compact-json-output",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Coordinator reviewed all6 source/test/design files; no confirmed finding; expected fresh-version merge retained",
+    "review": "review-result:compact-output-coordinator-review",
+    "outcome": "no-op"
+  }
+}

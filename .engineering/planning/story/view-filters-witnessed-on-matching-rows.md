@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:view-filters-witnessed-on-matching-rows
 kind: story
 status: active
@@ -15,6 +15,9 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/adversary_guards.rs
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T21:47:59Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T21:49:36Z", actor: "human:timo", revision: 6, imported: true}
 ---
 ## Scope
 

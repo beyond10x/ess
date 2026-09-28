@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-22T09:15:29Z",
+  "actor": "agent:codex-ekr-completion-20260922",
+  "artifact": "decision-blocker:retained-result-release-qualification",
+  "kind": "decision-blocker",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Operator approval in the active completion session on 2026-09-22",
+    "reference": ".engineering/planning/decision-blocker/retained-result-release-qualification.md"
+  }
+}

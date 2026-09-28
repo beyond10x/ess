@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: verification-report:consumer-coverage-stage1-checkpoint
 kind: verification-report
 status: draft

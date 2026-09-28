@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:unique-wire-field-identity
 kind: story
 status: implemented
@@ -7,6 +7,10 @@ title: Reject colliding wire field names before any projection
 relations:
 - serves: vision:O2
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T21:05:44Z", actor: "agent:specification-planner", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T21:05:44Z", actor: "agent:specification-planner", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T21:05:45Z", actor: "agent:specification-planner", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Evidence
 

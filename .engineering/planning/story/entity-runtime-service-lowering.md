@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:entity-runtime-service-lowering
 kind: story
 status: implemented
@@ -24,6 +24,10 @@ scope:
 - confidence: cited
   path: docs/design/models/entity-runtime-lowering/
 revision: 17
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-16T09:23:04Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-16T12:37:26Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-25T17:33:00Z", actor: "human:timo", revision: 17, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 # Complete the pure ESS to Entity Runtime service projector
 

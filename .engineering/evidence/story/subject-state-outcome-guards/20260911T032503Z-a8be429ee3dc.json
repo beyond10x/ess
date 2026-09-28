@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T03:25:03Z",
+  "actor": "human:timo",
+  "artifact": "story:subject-state-outcome-guards",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Focused subject-state domain and actual Rust/Go conformance: 12 passed, including open-input invalid-move regression, absent and wrong identity, and guard-ignoring mutation; 9.90s compile, 0.58s runtime. No full gate.",
+    "reference": "local-evidence:priority-wave/subject-state/final-focused.log"
+  }
+}

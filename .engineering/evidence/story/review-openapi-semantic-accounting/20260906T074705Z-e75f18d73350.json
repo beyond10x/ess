@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-06T07:47:05Z",
+  "actor": "human:timo",
+  "artifact": "story:review-openapi-semantic-accounting",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:review-boundaries-7-openapi-adversary-pass-1",
+    "reference": "42513466e27248c008d39efe5a676d64c3283d7a",
+    "review": "review-result:review-boundaries-7-openapi-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}

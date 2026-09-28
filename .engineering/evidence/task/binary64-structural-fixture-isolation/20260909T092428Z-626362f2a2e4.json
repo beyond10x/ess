@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T09:24:28Z",
+  "actor": "human:timo",
+  "artifact": "task:binary64-structural-fixture-isolation",
+  "kind": "task",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Old fixture fails with AlreadyExists at line 70 when its PID-named report directory already exists; repaired fixture passes all assertions with the stale directory retained",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/34333417466"
+  }
+}

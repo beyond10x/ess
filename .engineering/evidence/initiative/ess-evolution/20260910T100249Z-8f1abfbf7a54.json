@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-10T10:02:49Z",
+  "actor": "agent:ess-evolution-integration",
+  "artifact": "initiative:ess-evolution",
+  "kind": "initiative",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check: exit 0; TMPDIR=/tmp; staged tree 66bd733886b558be00066658cb41fc83a734be25",
+    "reference": "a local run-cache directory, ess-integration-gate-native-config.log"
+  }
+}

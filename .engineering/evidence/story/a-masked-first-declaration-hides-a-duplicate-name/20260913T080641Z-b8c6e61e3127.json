@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-13T08:06:41Z",
+  "actor": "human:timo",
+  "artifact": "story:a-masked-first-declaration-hides-a-duplicate-name",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-wave25-unit2-pass-1",
+    "reference": "story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts",
+    "review": "review-result:adversary-wave25-unit2-pass-1",
+    "outcome": "escalated"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:aggregate-views
 kind: story
 status: active
@@ -7,6 +7,9 @@ title: A view can return aggregates over one entity's rows
 relations:
 - serves: vision:O2
 revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-25T21:44:43Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-25T21:45:12Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Outcome
 

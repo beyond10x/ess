@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-25T17:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:infrastructure-acceptance-against-independent-observation",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task infra-acceptance, 7/7 rows live (ess#83, 601ed2c68)",
+    "reference": "https://github.com/beyond10x/ess/pull/83"
+  }
+}

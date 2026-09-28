@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:field-wire-names-and-presence-policy
 kind: story
 status: implemented
@@ -9,6 +9,10 @@ relations:
 - decomposes: epic:retrofit-findings-20260927
 - supersedes: story:field-names-wire-and-value-types
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T14:50:35Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T14:51:11Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T15:02:52Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Scope
 

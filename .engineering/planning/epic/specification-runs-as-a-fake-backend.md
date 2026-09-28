@@ -1,11 +1,13 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:specification-runs-as-a-fake-backend
 kind: epic
 status: archived
 title: A specification can be run as a fake backend
 summary: What ESS is missing before a model can serve a frontend without a human writing the behaviour.
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-14T22:49:31Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## What was tried
 

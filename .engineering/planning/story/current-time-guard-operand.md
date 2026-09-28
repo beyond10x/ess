@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:current-time-guard-operand
 kind: story
 status: active
@@ -50,6 +50,9 @@ scope:
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T19:54:46Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T19:55:52Z", actor: "human:timo", revision: 6, imported: true}
 ---
 ## Scope
 

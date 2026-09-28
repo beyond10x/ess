@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T09:16:05Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-composition",
+  "kind": "task",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "fresh canonical extraction before and after direct composition authority adoption",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s6/authority-adoption.md"
+  }
+}

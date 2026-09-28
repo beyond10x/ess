@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: release-plan:runtime-gaps-wave-20260911
 kind: release-plan
 status: draft

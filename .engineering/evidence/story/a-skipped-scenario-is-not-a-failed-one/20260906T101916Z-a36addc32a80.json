@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-06T10:19:16Z",
+  "actor": "human:timo",
+  "artifact": "story:a-skipped-scenario-is-not-a-failed-one",
+  "kind": "story",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:ess-count-writer-adversary-pass-1",
+    "reference": "1be4dbd999b20e44ba0f04e87d1c4ddf81c1b4ab:crates/verify/ess-conformance/src/go/runtime.go quantifier-admission",
+    "review": "review-result:ess-count-writer-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}

@@ -1,10 +1,12 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: release-plan:consolidated-ess-019
 kind: release-plan
 status: active
 title: Consolidate ESS worktrees and release 0.19.0
 revision: 8
+transitions:
+- {from: "draft", to: "active", at: "2026-09-05T21:15:48Z", actor: "agent:specification-planner", revision: 2, imported: true}
 ---
 ## Authorization
 

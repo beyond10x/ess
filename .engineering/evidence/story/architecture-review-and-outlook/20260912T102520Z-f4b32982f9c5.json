@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-12T10:25:20Z",
+  "actor": "human:timo",
+  "artifact": "story:architecture-review-and-outlook",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "coordinator read of the four cited deliverables at e5a97603",
+    "reference": "docs/reviews/2026-09-05-architecture-review.md"
+  }
+}

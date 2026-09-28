@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-05T12:02:19Z",
+  "actor": "human:timo",
+  "artifact": "story:review-output-containment",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:review-boundaries-2-containment-adversary-pass-1",
+    "review": "review-result:review-boundaries-2-containment-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}

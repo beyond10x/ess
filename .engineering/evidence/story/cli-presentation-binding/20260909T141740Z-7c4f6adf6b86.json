@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-09T14:17:40Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-presentation-binding",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:cli-presentation-adversary-r1-20260909",
+    "reference": ".local/tmp/cli-wave/ess-fix-r1.md",
+    "review": "review-result:cli-presentation-adversary-r1-20260909",
+    "outcome": "fixed"
+  }
+}

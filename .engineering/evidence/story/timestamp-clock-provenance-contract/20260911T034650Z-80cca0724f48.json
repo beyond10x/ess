@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T03:46:50Z",
+  "actor": "human:timo",
+  "artifact": "story:timestamp-clock-provenance-contract",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Clock source 737fbfac: correction generation one Rust case, authority regression one Go function and affected Go clock selection three functions passed. Previous 53 bounded implementation cases and strict six-package lint retained separately. No full gate or production calibration claim.",
+    "reference": "local-evidence:priority-wave/clock/correction-report-public.md"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:field-names-wire-and-value-types
 kind: story
 status: archived
@@ -28,6 +28,8 @@ scope:
 - confidence: inferred
   path: schemas/generated/ess.schema.json
 revision: 6
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-27T07:49:02Z", actor: "human:timo", revision: 6, imported: true}
 ---
 ## Scope
 

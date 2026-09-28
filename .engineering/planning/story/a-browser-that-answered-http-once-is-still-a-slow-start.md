@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-browser-that-answered-http-once-is-still-a-slow-start
 kind: story
 status: draft

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T00:11:08Z",
+  "actor": "human:timo",
+  "artifact": "story:binding-mapping-bounded-accessor",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Coordinator reviewed final design correction b9e7e6f5ddf7d3775d7d79e5fd5df92c683feb6b851632f8a9d069445aaa9657: native assignment preserved; wire-observation ambiguity explicitly refused and covered by required cases. Design admitted for implementation; no implementation/adoption verdict.",
+    "reference": "docs/design/binding-mapping-bounded-accessor.md"
+  }
+}

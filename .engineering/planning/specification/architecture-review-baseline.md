@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: specification:architecture-review-baseline
 kind: specification
 status: draft

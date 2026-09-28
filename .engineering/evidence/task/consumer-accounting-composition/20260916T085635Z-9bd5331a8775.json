@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-16T08:56:35Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-composition",
+  "kind": "task",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:composition-source-claim-pass-1",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s6/correction-1/per-finding-disposition.md#finding-8",
+    "review": "review-result:composition-source-claim-pass-1",
+    "outcome": "fixed"
+  }
+}

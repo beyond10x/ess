@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T08:11:06Z",
+  "actor": "human:timo",
+  "artifact": "story:review-expression-typechecking",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "all ten integration lanes on combined d482457: 1880 passed, zero failed or ignored",
+    "reference": "verification-report:review-boundaries-7-integrated"
+  }
+}

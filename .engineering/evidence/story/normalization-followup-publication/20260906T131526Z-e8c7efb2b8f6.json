@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-06T13:15:26Z",
+  "actor": "agent:normalization-coordinator",
+  "artifact": "story:normalization-followup-publication",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:normalization-followup-publication-docs-pass1",
+    "reference": "website/docs/guides/generate-artifacts.md",
+    "review": "review-result:normalization-followup-publication-docs-pass1",
+    "outcome": "fixed"
+  }
+}

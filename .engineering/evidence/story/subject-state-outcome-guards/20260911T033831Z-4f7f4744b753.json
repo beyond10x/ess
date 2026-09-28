@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T03:38:31Z",
+  "actor": "human:timo",
+  "artifact": "story:subject-state-outcome-guards",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Held-state validation now excludes External outcomes when selecting the shared subject authority; nine focused domain cases pass including both external-first ordering regressions.",
+    "reference": "local-evidence:priority-wave/subject-state/adversary-1/correction-green.log",
+    "review": "review-result:subject-state-implementation-adversary-1",
+    "outcome": "fixed"
+  }
+}

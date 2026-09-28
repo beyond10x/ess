@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:string-prefix-suffix-substring-operators
 kind: story
 status: active
@@ -7,6 +7,9 @@ title: String guards can test a prefix, a suffix or a substring
 relations:
 - serves: vision:O2
 revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-25T21:41:01Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-25T21:41:27Z", actor: "human:timo", revision: 3, imported: true}
 ---
 ## Outcome
 

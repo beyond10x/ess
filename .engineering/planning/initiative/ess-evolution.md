@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: initiative:ess-evolution
 kind: initiative
 status: implemented
@@ -8,6 +8,10 @@ relations:
 - informed_by: epic:review-boundary-remediation
 - informed_by: story:cli-presentation-binding
 revision: 19
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-10T08:12:15Z", actor: "agent:ess-evolution-integration", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-10T08:12:15Z", actor: "agent:ess-evolution-integration", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-25T18:40:40Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"test_result":3,"review_outcome":4}}, imported: true}
 ---
 ## Outcome
 

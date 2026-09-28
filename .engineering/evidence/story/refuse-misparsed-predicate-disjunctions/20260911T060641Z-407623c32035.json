@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T06:06:41Z",
+  "actor": "human:timo",
+  "artifact": "story:refuse-misparsed-predicate-disjunctions",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated predicate/version tests: 7 passed with actual Rust-Go-browser round trips, original adversary and 27 finite decimal-text boundaries",
+    "reference": "local-evidence:ess-evolution-20260910/priority-wave/runtime-gaps/integrated-predicate-selection.log"
+  }
+}

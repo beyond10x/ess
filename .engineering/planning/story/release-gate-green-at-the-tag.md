@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:release-gate-green-at-the-tag
 kind: story
 status: implemented
@@ -21,6 +21,10 @@ scope:
 - confidence: cited
   path: website/docs/status/where-this-stands.md
 revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-10T16:56:28Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-10T16:56:29Z", actor: "human:timo", revision: 8, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-10T17:55:47Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Context
 

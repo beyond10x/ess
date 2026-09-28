@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:docs-literal-mapping-claims-unchecked
 kind: story
 status: implemented
@@ -25,6 +25,10 @@ scope:
 - confidence: cited
   path: crates/specify/ess-domain/src/binding.rs
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T06:20:33Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T06:20:33Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-11T06:20:34Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Context
 `specs/services/pusher` (downstream-adopter, 2026-09-10) maps a literal enum value in a binding: `reject-on-refused` supplies `reason: backend_refused` for `pusher.subscription.RejectAuthorization.reason` (`v1/model/components.yaml`). The generated `docs/interactions.md` for that binding says: "Nothing in the model says how to read that as a `pusher.subscription.DenialReason`, so the compiler took it on trust rather than checking it." An adversarial review substituted `reason: not_a_variant_at_all` and ran `ess specify validate`: exit 1, `error[ESS-BINDING-002] … is not a variant of pusher.subscription.DenialReason … variants: rule, backend_refused, backend_unreachable`. The compiler checks the literal; the docs generator says it does not. A committed generated artifact states something false about the model it was generated from.

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-synthesized-suite-has-a-compact-form
 kind: story
 status: archived
@@ -8,6 +8,8 @@ summary: 'Measured: 13 MB for two suites, 24,961 bytes per scenario, 26,527 of 2
 relations:
 - informed_by: task:ess-gaps-measured-in-a-consumer-specification
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-11T00:04:32Z", actor: "human:timo", revision: 3, imported: true}
 ---
 **Folded into `task:ess-gaps-measured-in-a-consumer-specification` on 2026-09-11**, at the operator's
 request that all eight measured gaps arrive as one task for the maintainer to decompose. The body below is

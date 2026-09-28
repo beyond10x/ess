@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-rust-target-feasibility
 kind: story
 status: implemented
@@ -22,6 +22,10 @@ scope:
 - confidence: inferred
   path: docs/design/review-rust-target-feasibility.md
 revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T18:33:23Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T18:35:06Z", actor: "human:timo", revision: 8, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T22:42:13Z", actor: "agent:specification-planner", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}, imported: true}
 ---
 ## Finding and source
 

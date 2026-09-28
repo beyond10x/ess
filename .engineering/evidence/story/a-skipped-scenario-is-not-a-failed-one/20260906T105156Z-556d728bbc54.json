@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T10:51:56Z",
+  "actor": "human:timo",
+  "artifact": "story:a-skipped-scenario-is-not-a-failed-one",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ordered task check steps, task site-build and planning validation: 1918 passed, zero failed or ignored; final actual 19-fixture ESS/AEP correspondence",
+    "reference": "verification-report:review-boundaries-8-integrated"
+  }
+}

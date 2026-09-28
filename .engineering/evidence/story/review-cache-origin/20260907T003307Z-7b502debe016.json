@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-07T00:33:07Z",
+  "actor": "human:timo",
+  "artifact": "story:review-cache-origin",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:cache-origin-source-pass1",
+    "review": "review-result:cache-origin-source-pass1",
+    "outcome": "no-op"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T02:15:15Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:architecture-review-and-outlook",
+  "kind": "story",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from a3f5ea9: task site-build (exit 0; WASM lab and Docusaurus build)",
+    "reference": "https://github.com/beyond10x/ess/blob/a3f5ea97e33dd40c4c01357ff4a8b68e479a6542/.engineering/planning/journal.jsonl"
+  }
+}
