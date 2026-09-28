@@ -164,7 +164,10 @@ impl schemars::JsonSchema for StateName {
 #[serde(deny_unknown_fields)]
 pub struct Transition {
     /// Its own name, such as `IssueInvoice`.
+    // `Transition::NAME_PATTERN`, published so an editor refuses what `local_name` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
     #[serde(deserialize_with = "deserialize_local_name")]
+    #[schemars(regex(pattern = "^[A-Za-z][A-Za-z0-9_-]*$"))]
     pub name: String,
     /// The states it may start in.
     pub from: BTreeSet<StateName>,
@@ -173,6 +176,10 @@ pub struct Transition {
 }
 
 impl Transition {
+    /// What a transition name looks like: one [`QualifiedName`] segment, published in generated
+    /// JSON Schema.
+    pub const NAME_PATTERN: &'static str = "^[A-Za-z][A-Za-z0-9_-]*$";
+
     /// Builds a transition, checking that the name can become the last segment of a qualified name.
     pub fn new(
         name: impl AsRef<str>,

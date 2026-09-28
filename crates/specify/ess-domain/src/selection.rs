@@ -34,6 +34,9 @@ pub const MAX_EXAMINED_BYTES: usize = 1_048_576;
 #[serde(deny_unknown_fields)]
 pub struct SelectionInput {
     /// Binding-local identity.
+    // `Field::PATTERN`, published so an editor refuses what `SelectionPlan::resolve` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// An event field or bounded accessor; never an invented producer field.
     pub from: String,
@@ -49,6 +52,9 @@ pub struct SelectionInput {
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     /// Unique local selector identity.
+    // `Field::PATTERN`, published so an editor refuses what `SelectionPlan::resolve` refuses.
+    // `tests/published_charsets.rs` holds this literal and that constant together.
+    #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub name: String,
     /// Lowest eligible occurrence in the declared input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
