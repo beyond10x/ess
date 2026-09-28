@@ -8,7 +8,7 @@ description: Author an ESS document — the layout, the constructs the model ins
 
 This guide covers authoring an Executable System Specification. The normative example is
 `examples/billing/` in the repository — deliberately the smallest system that exercises the
-current `0.27.0` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
+core of the model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
 one.
 
 ## Layout
@@ -118,34 +118,6 @@ changes. Generated output records the release that produced it, and a regenerati
 release that changes the output prints a `note:` naming both.
 
 ## Validate early, read the refusals
-
-The `ess/2` format, introduced in 0.20.0, adds `Binary64` for finite IEEE-754 values. Use it
-when a source contract requires binary floating-point rounding and signed zero:
-
-```yaml
-format: ess/2
-system: sample
-version: v1
-domains: [sample.settings]
-domain: sample.settings
-types:
-  - name: sample.settings.Ratio
-    kind: newtype
-    of: Binary64
-```
-
-`Integer` retains exact signed integer identity; `Decimal` retains its patterned
-string representation. Neither implicitly assigns to `Binary64`. Map keys cannot
-be Binary64. Format 1 refuses the new primitive, including fields in headerless
-fragments. Authored numeric predicates may compare Binary64 to numeric literals,
-using the existing Number predicate rules; that comparison does not construct a
-floating value.
-
-The qualified executable boundary is [format-5 normalization](generate-artifacts.md).
-Standalone structural Rust/Go codecs and whole-system/conformance targets currently
-refuse Binary64; TypeScript structural output reports the finite codec obligation.
-Adding a Binary64 type to a model selected in full therefore requires checking
-every intended target's support before adopting it.
 
 ```shell-session
 $ ess specify validate --path examples/billing
@@ -334,6 +306,37 @@ structurally: an object with the same members in another order is the same value
 key, a predicate never reads one, and no literal spells one, so a payload fills a `Json` field from
 an input. Entity Runtime stores it as its own JSON field kind. The Rust, Go, web and CLI code
 targets refuse a model that uses it, at every position, until they have a representation for it.
+
+### Carry finite binary floating-point values
+
+The `ess/2` format, introduced in 0.20.0, adds `Binary64` for finite IEEE-754 values. Use it
+when a source contract requires binary floating-point rounding and signed zero:
+
+```yaml
+format: ess/2
+system: sample
+version: v1
+domains: [sample.settings]
+domain: sample.settings
+types:
+  - name: sample.settings.Ratio
+    kind: newtype
+    of: Binary64
+```
+
+`Integer` retains exact signed integer identity; `Decimal` retains its patterned
+string representation. Neither implicitly assigns to `Binary64`. Map keys cannot
+be Binary64. Format 1 refuses the new primitive, including fields in headerless
+fragments. Authored numeric predicates may compare Binary64 to numeric literals,
+using the existing Number predicate rules; that comparison does not construct a
+floating value.
+
+Binary64 values are executed through
+[normalization recipes](generate-artifacts.md#binary64-inputs-and-integer-conversion) (`ess-normalization/5`).
+Standalone structural Rust/Go codecs and whole-system/conformance targets
+refuse Binary64; TypeScript structural output reports the finite codec obligation.
+Adding a Binary64 type to a model selected in full therefore requires checking
+every intended target's support before adopting it.
 
 ### Select an outcome from the held subject state
 

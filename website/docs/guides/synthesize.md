@@ -127,12 +127,8 @@ job.
 ## Honest limits
 
 * **Generated code is structural, never behavioural.** Every algorithm is an obligation.
-* **Obligations are plan entries, not yet artifacts** a task can own and evidence can close. That
-  extension is W7.4, and it is deferred by operator decision rather than blocked:
-  `docs/plan/ess-wave-7-closing-the-loop.md` § *W7.4 — deferred by operator decision* records that
-  nothing else in wave 7 depends on it and that its one precondition — a contract digest that
-  exists in code — is now met. What closes it is scheduling it, which is a decision somebody takes,
-  not a build somebody is waiting on. It is on the [roadmap](../status/roadmap.md) under *Deferred
-  by decision*.
+* **Obligations are plan entries, not records** a task can own and evidence can close. Nothing
+  blocks that extension; it is listed on the [roadmap](../status/roadmap.md#not-scheduled) as not
+  scheduled.
 * **The demonstration is not a deployment**: plain HTTP, no auth, no TLS, one connection at a time,
   no `servers` block because the model has no URL.
