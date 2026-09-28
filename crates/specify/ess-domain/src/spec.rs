@@ -252,6 +252,11 @@ impl Specification {
         // copy would (docs/design/outcome-groups.md, "Where before validation is in this tree").
         let mut files: Vec<(Source, RawSpecFile)> = files.into_iter().collect();
         crate::outcome_group::expand(&mut files, &mut errors);
+        crate::command::set_effects::refuse_below_ess_16(
+            &mut files,
+            &mut errors,
+            &mut collected.refused.moves,
+        );
 
         for (source, file) in files {
             parts.push(collected.absorb(&source, file, &mut errors));
@@ -276,6 +281,7 @@ impl Specification {
         // `{related: …}` is an `ess/16` source; below it the same mapping is the nested one it was.
         crate::command::related_value::read_below_ess_16(system.format, &mut collected.commands);
         crate::command::caller_value::read_below_ess_16(system.format, &mut collected.commands);
+        crate::command::set_effects::read_below_ess_16(system.format, &mut collected.commands);
         let specification = Self {
             system,
             entities: collected.entities,

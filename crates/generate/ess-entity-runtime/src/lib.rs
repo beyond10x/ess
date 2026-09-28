@@ -445,6 +445,10 @@ pub enum LoweringCode {
     /// ess/16): entity-core decides from a command's arguments and the stored row, and has no
     /// operand for who sent the command.
     CallerUnsupported,
+    /// A set effect (ess/16): `instances: {where: …}` changing every row a filter selects, or
+    /// `affects:` changing rows beside the subject. An entity-core operation acts on the one
+    /// instance its request names.
+    SetEffectUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1235,9 +1239,42 @@ impl Projector<'_> {
         }
     }
 
+    /// Refuses every set effect of `command` by name (ess/16, beyond10x/ess#167, #175), and says
+    /// whether it refused one: such a command is not lowered further.
+    fn refuse_set_effects(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in &command.outcomes {
+            let path = format!("{}.{}", command.name, outcome.name.as_str());
+            if outcome.instances.is_some() {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{path}.instances"),
+                    "a branch changing every row a filter selects (ess/16, `instances:`) has no \
+                     Entity Runtime definition; an entity-core operation acts on the one \
+                     instance its request names",
+                );
+                refused = true;
+            }
+            if !outcome.affects.is_empty() {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{path}.affects"),
+                    "a branch changing rows beside its subject (ess/16, `affects:`) has no \
+                     Entity Runtime definition; an entity-core operation acts on the one \
+                     instance its request names",
+                );
+                refused = true;
+            }
+        }
+        refused
+    }
+
     #[allow(clippy::too_many_lines)]
     fn build_command(&mut self, command: &ResolvedCommand) {
         let command_path = command.name.to_string();
+        if self.refuse_set_effects(command) {
+            return;
+        }
         let mut targets = BTreeSet::new();
         for outcome in &command.outcomes {
             if let Some(subject) = &outcome.subject {
@@ -1703,6 +1740,17 @@ impl Projector<'_> {
                 }
             }
             Some(ResolvedPayloadField {
+                value: ResolvedPayloadValue::ChangedCount,
+                ..
+            }) => {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{}.{}.identity", command.name, outcome.name.as_str()),
+                    "a logical identity is not a count of changed rows (ess/16)",
+                );
+                IdentityValue::Literal { value: Value::Null }
+            }
+            Some(ResolvedPayloadField {
                 value: ResolvedPayloadValue::Cleared,
                 ..
             }) => {
@@ -1783,7 +1831,8 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::InputOrGenerated { .. }
                         | ResolvedPayloadValue::Struct { .. }
                         | ResolvedPayloadValue::RelatedField { .. }
-                        | ResolvedPayloadValue::CallerAttribute { .. } => {
+                        | ResolvedPayloadValue::CallerAttribute { .. }
+                        | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
                             )
@@ -2445,6 +2494,16 @@ impl Projector<'_> {
                 kind: ProducedValueKind::Absent,
                 slot: None,
             }),
+            // Admitted on a set outcome only, which `refuse_set_effects` refused before this.
+            ResolvedPayloadValue::ChangedCount => {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    "`{count: changed}` (ess/16) counts the rows a set outcome changed, which \
+                     entity-core does not",
+                );
+                None
+            }
             ResolvedPayloadValue::CallerAttribute { attribute, .. } => {
                 self.diagnostic(
                     LoweringCode::CallerUnsupported,

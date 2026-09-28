@@ -300,6 +300,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::json(ir, plan, crate::Target::Web)?;
     crate::failure::input_absent(ir, plan, crate::Target::Web)?;
     crate::existence::refuse(ir, plan, crate::Target::Web)?;
+    crate::set_effects::refuse(ir, plan, crate::Target::Web)?;
     crate::paging::refuse(ir, plan, crate::Target::Web)?;
     let rust = crate::rust::feasibility::checked(ir, plan, crate::Target::Web)?;
     let layout = Layout::with_rust(ir, rust);

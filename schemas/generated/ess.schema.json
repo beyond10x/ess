@@ -1457,6 +1457,51 @@
       },
       "additionalProperties": false
     },
+    "RawAffect": {
+      "description": "One `affects:` entry as written.",
+      "type": "object",
+      "required": [
+        "entity",
+        "where"
+      ],
+      "properties": {
+        "entity": {
+          "description": "The entity whose rows change.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            }
+          ]
+        },
+        "moves": {
+          "description": "Read so it can be refused by name: a move inside `affects:` is not in this cut.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QualifiedName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sets": {
+          "description": "What every selected row comes to hold.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/RawPayloadSource"
+          }
+        },
+        "where": {
+          "description": "The rows selected, over the entity's fields, `input.` and `subject.`.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawAggregate": {
       "description": "An aggregate as written: a map with exactly one function key and, beside a function that reads a value, `skip_absent: true`.",
       "oneOf": [
@@ -1993,6 +2038,20 @@
       },
       "additionalProperties": false
     },
+    "RawCountSource": {
+      "description": "`{count: changed}` as written.",
+      "type": "object",
+      "required": [
+        "count"
+      ],
+      "properties": {
+        "count": {
+          "description": "`changed`: the rows the outcome changed.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "RawEntitySpec": {
       "description": "An entity, as parsed.\n\nA lifecycle is required rather than defaulted. An entity with one state says so in three lines; a default would invent a state name the author never wrote, and every generated enum, diagram and stored value would then carry a word from this file rather than from the specification.",
       "type": "object",
@@ -2217,6 +2276,24 @@
         }
       ]
     },
+    "RawInstances": {
+      "description": "What `instances:` holds as written.",
+      "type": "object",
+      "required": [
+        "where"
+      ],
+      "properties": {
+        "where": {
+          "description": "The rows selected: a predicate over the entity's stored fields, with `input.` operands.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RawInvocation": {
       "description": "What a binding does.",
       "type": "object",
@@ -2258,6 +2335,13 @@
               "type": "null"
             }
           ]
+        },
+        "affects": {
+          "description": "Secondary effects on the rows filters select (ess/16, beyond10x/ess#175): beside one existing subject only.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RawAffect"
+          }
         },
         "creates": {
           "description": "The entity a new instance of which this outcome brings into existence.",
@@ -2319,6 +2403,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "instances": {
+          "description": "Every stored row a filter selects, instead of `instance:` (ess/16, beyond10x/ess#167): beside `moves:` or `updates:` only.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawInstances"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "into": {
@@ -2573,6 +2668,9 @@
         },
         {
           "$ref": "#/definitions/RawCallerSource"
+        },
+        {
+          "$ref": "#/definitions/RawCountSource"
         },
         {
           "$ref": "#/definitions/RawNestedSources"

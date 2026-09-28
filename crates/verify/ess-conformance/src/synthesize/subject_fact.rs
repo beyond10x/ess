@@ -239,7 +239,7 @@ pub(super) fn row_truth(
 /// [`row_truth`], with the command's input bound under `input.` for a predicate that compares the
 /// row with it (beyond10x/ess#157). Without an input such a comparison is `Unknown`, which is what
 /// the search and the boundary goals see: the row alone does not decide it.
-fn row_truth_with(
+pub(super) fn row_truth_with(
     ir: &EssIr,
     entity: &EntityHandle,
     settled: &BTreeMap<String, super::Determined>,

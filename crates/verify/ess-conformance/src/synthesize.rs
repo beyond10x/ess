@@ -183,6 +183,7 @@ mod caller;
 mod existence;
 mod paging;
 mod related;
+mod set_effects;
 mod subject_fact;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -1325,13 +1326,15 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
             // for an identity no record carries.
             // An `input_absent:` branch (ess/16) is filed by `absent_input::absent_inputs`, sent with
             // no input at all.
+            // A set outcome (ess/16, `instances:`) is filed by `set_effects`, over rows it arranges.
             if matches!(
                 outcome.condition,
                 ResolvedCondition::WrongState
                     | ResolvedCondition::UnknownInstance
                     | ResolvedCondition::InputAbsent
                     | ResolvedCondition::ExistingInstance
-            ) {
+            ) || outcome.instances.is_some()
+            {
                 continue;
             }
             let Some((id, scenario)) =
@@ -1349,6 +1352,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     unknown_instances(ir, &actors, &mut suite, &mut refusals, &mut notes);
     absent_input::absent_inputs(ir, &actors, &mut suite, &mut refusals);
     existence::existence(ir, &actors, &mut suite, &mut refusals);
+    set_effects::set_effects(ir, &actors, &mut suite, &mut refusals);
     notes.extend(partial);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
@@ -3968,7 +3972,9 @@ fn determined_payload(
             // fifth source has to be decided rather than silently ignored.
             ResolvedPayloadValue::ResponseField { .. }
             | ResolvedPayloadValue::Generated
-            | ResolvedPayloadValue::Cleared => {}
+            | ResolvedPayloadValue::Cleared
+            // ess/16 (#167): the rows one scenario changed, asserted by `set_effects` alone.
+            | ResolvedPayloadValue::ChangedCount => {}
             // Read as the target's type, as `settled` reads a `sets:` literal: `ess-domain` admits
             // `true`, a whole number and a decimal over the primitives they spell, and asserting
             // their text would fail every implementation that publishes the number.
@@ -4625,7 +4631,8 @@ fn expression_value(
         | ResolvedPayloadValue::Generated
         | ResolvedPayloadValue::Cleared
         // ess/16 (#168): read only through `caller::synthesize`, which writes the caller's value in.
-        | ResolvedPayloadValue::CallerAttribute { .. } => None,
+        | ResolvedPayloadValue::CallerAttribute { .. }
+        | ResolvedPayloadValue::ChangedCount => None,
     }
 }
 
@@ -4756,7 +4763,8 @@ fn without_literal_fallbacks(
             | ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::RelatedField { .. }
             | ResolvedPayloadValue::Increment { .. }
-            | ResolvedPayloadValue::CallerAttribute { .. } => {}
+            | ResolvedPayloadValue::CallerAttribute { .. }
+            | ResolvedPayloadValue::ChangedCount => {}
         }
     }
     let (held, bound) = (setup.before.as_ref(), &setup.bound);
@@ -5136,9 +5144,9 @@ fn settled(
                     None => continue,
                 }
             }
-            ResolvedPayloadValue::Generated | ResolvedPayloadValue::ResponseField { .. } => {
-                continue
-            }
+            ResolvedPayloadValue::Generated
+            | ResolvedPayloadValue::ResponseField { .. }
+            | ResolvedPayloadValue::ChangedCount => continue,
         };
         out.insert(
             field.target.clone(),
@@ -5681,6 +5689,19 @@ fn arrange_toward_by(
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let filter = view.filter.as_ref()?;
+    arrange_toward_filter(ir, entity, filter, actors, distinction, accept)
+}
+
+/// [`arrange_toward_by`], with the filter handed in rather than lent by a view: a set effect's
+/// `where:` with its operands written in (ess/16, [`set_effects`]).
+fn arrange_toward_filter(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     let states = &ir.entity(entity).lifecycle.states;

@@ -64,6 +64,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::json(ir, plan, crate::Target::Clap)?;
     crate::failure::input_absent(ir, plan, crate::Target::Clap)?;
     crate::existence::refuse(ir, plan, crate::Target::Clap)?;
+    crate::set_effects::refuse(ir, plan, crate::Target::Clap)?;
     crate::paging::refuse(ir, plan, crate::Target::Clap)?;
     let layout = Layout::of(ir);
     let surfaces = tree::surfaces(ir);

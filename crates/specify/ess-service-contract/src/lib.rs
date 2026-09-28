@@ -466,6 +466,7 @@ fn include_payload_field(
             None
         }
         ResolvedPayloadValue::Generated
+        | ResolvedPayloadValue::ChangedCount
         | ResolvedPayloadValue::Literal { .. }
         | ResolvedPayloadValue::Increment { .. }
         | ResolvedPayloadValue::Cleared => None,
