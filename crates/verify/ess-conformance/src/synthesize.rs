@@ -1899,6 +1899,7 @@ fn run(
 }
 
 /// [`run`], for the invocation `witness` names.
+#[allow(clippy::too_many_lines)]
 fn run_as(
     ir: &EssIr,
     command: &ResolvedCommand,
