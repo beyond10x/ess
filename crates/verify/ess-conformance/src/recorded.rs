@@ -100,7 +100,7 @@ pub enum Absent {
 }
 
 /// Where one field sits in a log line: the word `absent` or `{ pointer: /… }`, and no other
-/// spelling. Read by [`absent_or`], not `#[serde(untagged)]`.
+/// spelling. Read by `absent_or`, not `#[serde(untagged)]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldSource {
     /// The log does not carry it.
@@ -177,7 +177,7 @@ pub struct Pointer {
 }
 
 /// Where the completion sits, and what each of the log's words for it means: the word `absent` or
-/// `{ pointer: /…, values: {…} }`, and no other spelling. Read by [`absent_or`].
+/// `{ pointer: /…, values: {…} }`, and no other spelling. Read by `absent_or`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionSource {
     /// The log does not carry it.

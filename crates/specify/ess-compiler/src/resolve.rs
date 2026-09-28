@@ -500,7 +500,7 @@ impl<'a> Locator<'a> {
     /// A span for `path`, located at the first needle that occurs exactly once.
     ///
     /// When a declaration is located — the first declaration needle that is itself unique — a
-    /// trailing-key guess (`<last>:`, see [`whole_name_matters`]) counts only when its one
+    /// trailing-key guess (`<last>:`, see `whole_name_matters`) counts only when its one
     /// occurrence lies inside that declaration's list item. A guess is allowed to be wrong, and a
     /// wrong guess that happens to be unique lands on some other construct's line, possibly in
     /// another file, possibly one that was never refused; requiring it to sit in the refused
