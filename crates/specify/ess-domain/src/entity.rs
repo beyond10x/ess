@@ -2307,6 +2307,7 @@ lifecycle:
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: crate::refs::Refs::new(),
                 sets: BTreeMap::new(),

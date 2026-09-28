@@ -1646,6 +1646,10 @@ pub struct Outcome {
     /// command answers with success and no effect, which a specification could not state before
     /// (beyond10x/ess#144). `preserves:` stays the form for a command with a subject.
     pub accepts_nothing: bool,
+    /// The successful outcome returns the command's declared response (ess/16).
+    /// No persistence or absence of side effects is implied by a direct return.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returns: bool,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1668,6 +1672,7 @@ impl Outcome {
             error: None,
             refuses: true,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1686,6 +1691,7 @@ impl Outcome {
             error: None,
             refuses: true,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1708,6 +1714,7 @@ impl Outcome {
             error: Some(error),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -2025,6 +2032,19 @@ impl CommandSpec {
         let mut errors = ValidationErrors::new();
         let location = self.site().key("outcomes").named(outcome.name.as_str());
 
+        if outcome.returns
+            && (self.response.is_empty()
+                || outcome.error.is_some()
+                || outcome.accepts_nothing
+                || outcome.replays.is_some())
+        {
+            errors.push(ValidationError::at(
+                location.clone().key("returns"),
+                ValidationCode::ConflictingDeclaration,
+                "returns requires a nonempty response and no error, accepts: nothing or replays",
+            ));
+        }
+
         // An accepting wrong-state branch is the one outcome that observably does neither. What a
         // generated scenario checks is that the command answered *this branch* and the subject did
         // not move — which is an observation, and a stronger one than the negative check that was
@@ -2059,6 +2079,7 @@ impl CommandSpec {
             && !preserves
             && !deletes
             && !outcome.accepts_nothing
+            && !outcome.returns
             && outcome.replays.is_none()
         {
             errors.push(
@@ -2858,6 +2879,15 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
         }
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
+            if outcome.returns
+                && spec.system().format.major() < crate::system::FormatVersion::V16.major()
+            {
+                errors.push(ValidationError::at(
+                    at.clone().key("returns"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "direct return outcomes require specification format ess/16",
+                ));
+            }
             for (field, source) in &outcome.sets {
                 // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
                 let generated_admitted = spec.system().format.major()
@@ -4151,6 +4181,9 @@ pub struct RawOutcome {
     /// no event and no error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepts: Option<Accepts>,
+    /// The outcome returns the command's typed response (ess/16), without implying effects.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returns: bool,
     /// The originating success of this same command, retained without another effect (ess/7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replays: Option<OutcomeName>,
@@ -4511,6 +4544,7 @@ impl TryFrom<RawOutcome> for Outcome {
             error: raw.error,
             refuses,
             accepts_nothing: raw.accepts.is_some(),
+            returns: raw.returns,
             summary: raw.summary,
             refs: raw.refs,
         })
@@ -4893,6 +4927,7 @@ impl From<Outcome> for RawOutcome {
             deletes,
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
+            returns: outcome.returns,
             creates,
             moves,
             updates,
@@ -5179,6 +5214,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5225,6 +5261,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5261,6 +5298,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5290,6 +5328,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5350,6 +5389,7 @@ outcomes:
             error,
             refuses: false,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5429,6 +5469,7 @@ outcomes:
             error: None,
             refuses: false,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5473,6 +5514,7 @@ outcomes:
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5655,6 +5697,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5689,6 +5732,7 @@ outcomes:
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5812,6 +5856,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -6132,6 +6177,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -6260,6 +6306,7 @@ outcomes:
                     error: Some(name("billing.invoice.InvalidAmount")),
                     refuses: true,
                     accepts_nothing: false,
+                    returns: false,
                     summary: None,
                     refs: Refs::new(),
                     sets: BTreeMap::new(),

@@ -1,0 +1,2 @@
+EVIDENCE_CACHE/extension/old-reader-source.yaml was refused:
+  - old-reader-source.yaml: unknown field `returns`, expected one of `name`, `when`, `when_subject`, `when_subject_state`, `when_state_changes`, `external`, `wrong_state`, `unknown_instance`, `refuses`, `creates`, `moves`, `updates`, `preserves`, `deletes`, `into`, `accepts`, `replays`, `instance`, `emits`, `payload`, `sets`, `error`, `summary`, `refs`

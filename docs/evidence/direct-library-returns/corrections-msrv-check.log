@@ -1,0 +1,17 @@
+warning: function `same` is never used
+   --> crates/specify/ess-compiler/src/resolve.rs:411:14
+    |
+411 |     const fn same(left: &str, right: &str) -> bool {
+    |              ^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: function `distinct` is never used
+   --> crates/specify/ess-compiler/src/resolve.rs:427:14
+    |
+427 |     const fn distinct(codes: &[Code]) -> bool {
+    |              ^^^^^^^^
+
+warning: `ess-compiler` (lib) generated 2 warnings
+    Checking ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+    Finished `dev` profile [unoptimized] target(s) in 5.63s

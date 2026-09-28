@@ -154,7 +154,9 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::presence::used_by(self) {
+        self.provenance.suite_version = if crate::direct_response::used_by(self) {
+            SuiteFormat::parse("ess-conformance/26").expect("constant suite version")
+        } else if crate::presence::used_by(self) {
             SuiteFormat::parse(&format!("ess-conformance/{}", crate::presence::ORDINARY))
                 .expect("constant suite version")
         } else if crate::outcome_shapes::used_by(self) {
@@ -389,7 +391,8 @@ impl SuiteProvenance {
 /// three times and nothing in it changed meaning. A reader that refused an older number would
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -1820,6 +1823,11 @@ pub enum ScenarioStep {
         /// Closed typed observation authority.
         response: crate::response::Observation,
     },
+    /// Compare the same invocation's actual typed return directly, without an event or view.
+    ExpectDirectResponse {
+        /// Closed response authority and independent literal assertions (suite/26).
+        response: crate::direct_response::Observation,
+    },
     /// Exercise a periodic host lifetime with complete controlled-time causal observation.
     CheckPeriodic {
         /// Standalone required typed host contract and fixture.
@@ -2796,7 +2804,7 @@ mod tests {
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/26").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/28").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

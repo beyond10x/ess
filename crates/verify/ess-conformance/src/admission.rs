@@ -181,20 +181,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=25) {
+    if !matches!(version.major(), 1..=27) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–25",
+            "execution readers admit suite majors 1–27",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for suite/5, suite/7, suite/9, suite/11, suite/13, suite/15, suite/17, suite/19, suite/21, suite/23 and suite/25",
+            "coverage is required exactly for odd suite majors from /5 through /27",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -382,6 +382,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         || (major < 4 && matches!(tag, "expect_halt" | "eventually_halt"))
         || (major < 6 && matches!(tag, "establish_entity" | "expect_reading_order"))
         || (major < 8 && tag == "expect_response_payload")
+        || (major < crate::direct_response::ORDINARY && tag == "expect_direct_response")
         || (major < crate::fixtures::ORDINARY
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
         || crate::outcome_shapes::needs_newer(tag, major)
@@ -396,7 +397,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             &[],
         ),
         "expect_reading_order" => (&["step", "left", "right", "order"], &[]),
-        "expect_response_payload" => (&["step", "response"], &[]),
+        "expect_response_payload" | "expect_direct_response" => (&["step", "response"], &[]),
         "capture_command_result" | "expect_replay_result" if major >= 12 => {
             (&["step", "capture"], &[])
         }
@@ -437,9 +438,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
                 let _: crate::replay::Observation = serde_json::from_str(&field.raw)
                     .map_err(|error| field.error("InvalidReplay", error.to_string()))?;
             }
-            "response" if tag == "expect_response_payload" => {
-                let _: crate::response::Observation = serde_json::from_str(&field.raw)
-                    .map_err(|error| field.error("InvalidResponse", error.to_string()))?;
+            "response" if matches!(tag, "expect_response_payload" | "expect_direct_response") => {
+                response_observation(field, tag == "expect_direct_response")?;
             }
             "left" | "right" if tag == "expect_reading_order" => {
                 let reference: crate::reading::ReadingReference = serde_json::from_str(&field.raw)
@@ -467,6 +467,15 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         }
     }
     Ok(())
+}
+
+fn response_observation(field: &Json, direct: bool) -> Result<(), AdmissionError> {
+    let result = if direct {
+        serde_json::from_str::<crate::direct_response::Observation>(&field.raw).map(|_| ())
+    } else {
+        serde_json::from_str::<crate::response::Observation>(&field.raw).map(|_| ())
+    };
+    result.map_err(|error| field.error("InvalidResponse", error.to_string()))
 }
 
 /// Check the model even when synthesis would omit unsupported fields or whole scenarios.
@@ -499,6 +508,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// The construct-owned format gates: each refuses an explicitly pinned older suite version that
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
+    crate::direct_response::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;

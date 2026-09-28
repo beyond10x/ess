@@ -50,7 +50,7 @@ use crate::name::{Naming, QualifiedName, Version};
 use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
-pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+pub const SUPPORTED_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 /// `true` when this build implements `format`.
 pub fn is_supported_format(format: FormatVersion) -> bool {
@@ -99,6 +99,8 @@ impl FormatVersion {
     /// Outcome shapes, subject guards over input, case-insensitive text, new value types and
     /// aggregates over optional fields (retrofit wave 2, beyond10x/ess#138-#157).
     pub const V15: Self = Self(15);
+    /// Outcomes whose observable result is the command's typed direct return.
+    pub const V16: Self = Self(16);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

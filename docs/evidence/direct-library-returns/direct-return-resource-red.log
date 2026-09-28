@@ -1,0 +1,26 @@
+    Blocking waiting for file lock on build directory
+   Compiling ess-domain v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/specify/ess-domain)
+   Compiling ess-compiler v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/specify/ess-compiler)
+   Compiling ess-gen v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/generate/ess-gen)
+   Compiling ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 35.33s
+     Running tests/direct_returns.rs (EVIDENCE_CACHE/extension/build/debug/deps/direct_returns-02220fe4f762dc57)
+
+running 1 test
+test pure_return_payloads_have_an_independent_lossless_resource_bound ... FAILED
+
+failures:
+
+---- pure_return_payloads_have_an_independent_lossless_resource_bound stdout ----
+
+thread 'pure_return_payloads_have_an_independent_lossless_resource_bound' (2431149) panicked at crates/verify/ess-conformance/tests/direct_returns.rs:176:5:
+[Refusal { origin: "large.yaml", scenario: Some(Authored { domain: DomainRef(QualifiedName(library.api)), name: AuthoredName("pure-return") }), cause: Unreadable { detail: "response literal value: resource" } }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pure_return_payloads_have_an_independent_lossless_resource_bound
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p ess-conformance --test direct_returns`

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Library commands can declare `returns: true` in `ess/16` and assert their actual typed return
+  with `response:` in `ess-scenario/4`, without publishing an event or inventing a stored entity.
+  The Rust conformance runner checks complete response shapes and nested literal values through
+  suite/26 and coverage suite/27; Go and TypeScript producers explicitly refuse this observation.
+
 ## [0.37.0] — 2026-09-27
 
 ### Added
