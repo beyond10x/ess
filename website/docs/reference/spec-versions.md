@@ -114,6 +114,13 @@ its compiled digest.
 
 `ess/15`, introduced in [0.37.0][r37], collects the constructs of the retrofit issues of 2026-09-27 that change what a document may say: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
 
+`ess/16` is unreleased. It adds `returns: true` to an outcome whose command declares a nonempty
+typed `response`. The outcome promises a successful return matching that schema; it makes no
+claim about persistence or side effects. Those require their own declarations and real API
+observations. It cannot also declare an error, `accepts: nothing`, or `replays`. Older readers
+refuse the header, and this build refuses `returns` under an earlier header. A model without it
+keeps its bytes and compiled digest.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 
@@ -224,6 +231,16 @@ TypeScript refuse these envelopes by their version.
 
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
 
+`ess-conformance/26` and `ess-conformance/27` are unreleased. They add
+`expect_direct_response`, which checks the immediately preceding invocation's actual return
+against its complete typed response schema and any authored literals. Version 26 is ordinary;
+27 carries declared coverage and exact-parent lineage. The Rust runner requires report/2.
+Go and TypeScript generation refuse the observation, and older readers refuse these envelopes
+before target callbacks. Historical suites retain their bytes. Direct responses preserve exact
+integers, nested presence policies, collection order and duplicate multiplicity; Binary64
+remains outside the admitted profile. Responses are bounded to 1 MiB, depth 128 and 65,536
+members per collection, without truncation.
+
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every
 direct event, including undeclared names. Incomplete subject views cause a named
@@ -244,6 +261,15 @@ Two readers fail differently at the same document, which is why the number exist
 Rust reader parses a closed tagged enum and fails with `unknown variant` — a message that blames
 the document. An old Go runner abandons a scenario whose first word it does not know and reports it
 skipped, which is the right answer reached by accident. Neither is a verdict anyone should act on.
+
+## `ess-scenario/` — authored conformance scenarios
+
+`ess-scenario/4` is unreleased. An act may declare `response: {field: literal}` to assert
+selected fields of its command's return. Each literal must match its complete declared type;
+unknown fields and invalid nested presence are refused before execution. An empty mapping
+requests only the complete response shape check. Every selected `returns: true` outcome gets
+that shape check even without authored literals. No event, stored subject or view is invented.
+Earlier scenario readers refuse the header; earlier versions refuse the new key.
 
 ## `ess-normalization/` — normalization recipes
 
