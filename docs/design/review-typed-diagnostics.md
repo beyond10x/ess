@@ -22,10 +22,15 @@ is about, without reading the prose. Today it cannot, because both are derived f
 
   One needle is exempt from the whole-name rule and is still a raw substring scan: the
   speculative trailing-key guess `<last>:`, which is not a declaration's name and so has no
-  name boundary to require. `resolve.rs:557` `whole_name_matters` draws that line. The
-  exemption is not safe in the way its neighbours claim — a wrong guess that happens to occur
-  exactly once **is** reported, at a line in a file that holds no refusal, and the base commit
-  behaves identically. `story:a-wrong-trailing-key-guess-is-reported-as-a-line` carries it.
+  name boundary to require. `resolve.rs:674` `whole_name_matters` draws that line. A wrong
+  guess that happened to occur exactly once used to be reported, at a line in a file that holds
+  no refusal; `story:a-wrong-trailing-key-guess-is-reported-as-a-line` closed that twice over.
+  No guess is built for an element of a list written `- name: <x>` (`outcomes`, `input`,
+  `fields`, `params`, `response`, `attributes`, `relations`) except where the same key is a
+  map (a system precondition's `input`); and once a declaration is located, `Locator::span`
+  reports any other guess only inside that declaration's list item. With no declaration located
+  the guess is first-unique as before, because some paths (`topology.workloads.<component>`)
+  have no other needle.
 - `resolve.rs:780` `class_of(ValidationCode)` is already typed, but it collapses `UndeclaredReference`,
   `UnknownWorkflow`, `UnknownProtocol` and four more into `codes::class::UNDECLARED`, so the emitted
   `Code` does not identify the rule either.

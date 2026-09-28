@@ -10,6 +10,33 @@
   unsupported Go/TypeScript generation refuses explicitly. Released source `ess/16` and suites
   `/26` and `/27` retain their existing meaning and bytes.
 
+### Fixed
+
+- A name written as two different kinds (a command and an event, say), or a type name written
+  twice, is now refused as a duplicate even when one of the declarations fails its own conversion
+  or sits in a file with no `domain:`. Before, the refusal appeared only once both copies were
+  sound and in a domain, so fixing one error revealed a second fault that had been there all along.
+- Every extra writing of a name is refused exactly once. Two sound copies of one kind were refused
+  twice, once per reporter; the second refusal is gone. The remaining refusal's hint names the file
+  that wrote the name first when that is another file, and both domains when the copies are filed
+  under different ones.
+- A repeated name filed under a domain that cannot hold it is now refused for that as well, rather
+  than only after the duplicate is removed.
+- The document schema publishes the charset ESS already enforces on ten name positions that were a
+  bare `type: string`: component, command-line binary, command-group and binding names, topology
+  workload keys, transition names, selection input and selector names, and a selection mapping's
+  selector and path. A schema-aware editor now refuses the spellings `ess validate` already
+  refused (for example `Invoice_Service` or `serve--hosted`); no document that validated before is
+  refused now, so no format version changes.
+- A refusal is no longer cited at a line belonging to another construct when the trailing-key
+  guess for its path (`<last>:`) happens to occur exactly once elsewhere. No guess is built for an
+  element of a list written `- name: <x>` (`outcomes`, `input`, `fields`, `params`, `response`,
+  actor `attributes`, entity `relations`; a system precondition's `input` map keeps its guess),
+  and once the refused declaration is located, any other guess is reported only inside that
+  declaration's list item. Relation, attribute and response refusals are now cited at the entity,
+  actor or command they belong to. Paths with no declaration needle, such as
+  `topology.workloads.<component>`, are still cited at their key.
+
 ## [0.38.0] — 2026-09-28
 
 ### Added
