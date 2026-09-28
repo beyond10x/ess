@@ -140,6 +140,7 @@ pub mod go;
 pub mod history;
 pub mod input;
 pub mod interpret;
+pub mod lanes;
 pub mod linearize;
 pub mod mutate;
 pub mod outcome_shapes;

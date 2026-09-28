@@ -524,6 +524,12 @@ enum ConformCommand {
         /// Ordinary (4) or declared coverage (5); coverage emits the paired replay document.
         #[arg(long, default_value = "4", value_parser = ["4", "5"])]
         suite_format: String,
+        /// An `ess-history/1` document: draw it, checked against the specification, as one lane
+        /// per client in a single self-contained `index.html`, printed when `--out` is absent.
+        /// `--out` replaces the files `ess` owns in that directory, the player's included, so
+        /// write history pages and the player to different directories.
+        #[arg(long, conflicts_with_all = ["scenarios", "suite_format"])]
+        history: Option<PathBuf>,
     },
     /// Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent.
     Select {
@@ -3009,9 +3015,16 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
         } => author_suite(&input, scenarios.as_deref(), out.as_deref(), &suite_format),
         ConformCommand::Web {
             input,
+            out,
+            history: Some(history),
+            ..
+        } => conform_web_history(&input, &history, out.as_deref()),
+        ConformCommand::Web {
+            input,
             scenarios,
             out,
             suite_format,
+            history: None,
         } => conform_web(&input, scenarios.as_deref(), out.as_deref(), &suite_format),
         ConformCommand::Select {
             suite,
@@ -3657,6 +3670,37 @@ fn conform_web(
     } else {
         ExitCode::from(1)
     })
+}
+
+/// `ess verify conform web --history`: a recorded history, checked, drawn as client lanes.
+///
+/// Exits 0 once the page is rendered, whatever the verdict: the verdict is `check-history`'s exit
+/// status, and the page is a reading of it.
+fn conform_web_history(input: &SpecPath, history: &Path, out: Option<&Path>) -> Result<ExitCode> {
+    let Ok((ir, _)) = resolved(&input.path, input.format)? else {
+        return Ok(ExitCode::from(1));
+    };
+    let bytes = fs::read(history).with_context(|| format!("reading {}", history.display()))?;
+    let digest = ess_conformance::SuiteProvenance::of(&ir).spec_digest;
+    let recorded = ess_conformance::history::read(&bytes, &digest)
+        .map_err(|refusal| anyhow::anyhow!("{} was refused: {refusal}", history.display()))?;
+    let page =
+        ess_conformance::lanes::render(&ir, &recorded, ess_conformance::linearize::DEFAULT_BUDGET)
+            .map_err(|refusal| {
+                anyhow::anyhow!("{} cannot be checked: {refusal}", history.display())
+            })?;
+    match out {
+        Some(out) => {
+            let artifacts = std::collections::BTreeMap::from([(
+                "index.html".to_owned(),
+                ess_gen::Artifact::new("index.html", page),
+            )]);
+            write_owned_artifacts(Some(out), "conformance-browser", &artifacts)?;
+            println!("1 artifact, written to {}", out.display());
+        }
+        None => print!("{page}"),
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn author_suite(

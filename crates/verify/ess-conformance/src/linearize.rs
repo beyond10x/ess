@@ -1391,6 +1391,215 @@ fn relabel(history: &History) -> History {
     relabelled
 }
 
+// ---- what a page draws -----------------------------------------------------------------------
+
+/// Every subject partition, in subject order, with the order of its operations the search found
+/// — a complete order where one exists, otherwise the longest partial one — by operation id.
+///
+/// The same search [`check`] runs, over every partition rather than up to the first violation,
+/// spending at most `budget` executions of the model between them. A partition searched after the
+/// budget ran out has the longest order found before it did, which may be empty.
+///
+/// # Errors
+///
+/// [`CheckRefusal`] where the history cannot be checked against this model at all.
+pub fn orders(
+    ir: &EssIr,
+    history: &History,
+    budget: u64,
+) -> Result<Vec<(String, Vec<String>)>, CheckRefusal> {
+    let split = split(ir, history)?;
+    let mut remaining = budget;
+    let mut spent = 0;
+    let mut found = Vec::new();
+    for (subject_key, operations) in &split.partitions {
+        let order = match search(ir, operations, &mut remaining, &mut spent)? {
+            Outcome::Linearizable(order) | Outcome::Violation(order) | Outcome::Unknown(order) => {
+                order
+            }
+        };
+        found.push((
+            (*subject_key).to_owned(),
+            order
+                .iter()
+                .map(|&index| operations[index].operation.operation_id.as_str().to_owned())
+                .collect(),
+        ));
+    }
+    Ok(found)
+}
+
+/// One side of a [`Conflict`]: an operation, the state its recorded answer needed its subject in,
+/// and the state an order supplied.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ConflictSide {
+    /// The operation.
+    pub operation_id: String,
+    /// The subject's lifecycle state in each model state from which the operation answers what it
+    /// recorded, sorted; `absent` where no instance with that identity is held.
+    pub required: Vec<String>,
+    /// The subject's lifecycle state in each model state the order supplied to it, sorted, spelt
+    /// as `required` is.
+    pub supplied: Vec<String>,
+}
+
+/// The two operations a command violation turns on.
+///
+/// The longest partial linearization places `against` and cannot then place `failing`: ordered
+/// right after `against`, `failing` finds its subject in `failing.supplied` and needed
+/// `failing.required`. The other way round — `failing` where `against` stands, which the recorded
+/// instants allow — leaves `against` the state in `against.supplied`, from which it cannot answer
+/// what it recorded either; it needed `against.required`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Conflict {
+    /// The subject whose partition decided the violation.
+    pub subject_key: String,
+    /// The first operation, in invoke order, the longest order could not place.
+    pub failing: ConflictSide,
+    /// The latest operation of the longest order from before which `failing` answers what it
+    /// recorded.
+    pub against: ConflictSide,
+}
+
+/// The subject's lifecycle state in each of `stores`, sorted and without repeats.
+fn subject_states<'s>(stores: impl IntoIterator<Item = &'s Store>, subject: &str) -> Vec<String> {
+    let mut states = BTreeSet::new();
+    for store in stores {
+        let mut held = store
+            .instances()
+            .filter(|(_, identity, _)| *identity == subject)
+            .peekable();
+        if held.peek().is_none() {
+            states.insert("absent".to_owned());
+        }
+        for (_, _, instance) in held {
+            states.insert(instance.state.as_str().to_owned());
+        }
+    }
+    states.into_iter().collect()
+}
+
+/// For a command violation `checked` found in `history`: the two operations it turns on, and the
+/// state each needed. `None` for any other verdict, for a read violation, and where no single
+/// operation of the longest order is one the failing operation conflicts with — where the failure
+/// takes more than two operations to explain, or the recorded instants forbid the swap.
+///
+/// Replays [`Checked::linearization`] through the model, keeping every state each prefix can
+/// leave, then walks it back from the end to the last placed operation `against` such that the
+/// first unplaced operation may be ordered before it (nothing placed from `against` on returned
+/// before it was invoked), answers what it recorded from the state before `against` and not from
+/// the state after, and leaves a state from which `against` cannot answer what it recorded. It
+/// does not spend a search budget; it executes the model a bounded number of times per state of
+/// the replay.
+///
+/// # Errors
+///
+/// [`CheckRefusal`] where the history cannot be checked against this model at all.
+pub fn conflict(
+    ir: &EssIr,
+    history: &History,
+    checked: &Checked,
+) -> Result<Option<Conflict>, CheckRefusal> {
+    if checked.verdict != Verdict::Violation || checked.read.is_some() {
+        return Ok(None);
+    }
+    let Some(subject) = checked.subject_key.as_deref() else {
+        return Ok(None);
+    };
+    let split = split(ir, history)?;
+    let Some(operations) = split.partitions.get(subject) else {
+        return Ok(None);
+    };
+    let Some(placed) = checked
+        .linearization
+        .iter()
+        .map(|id| {
+            operations
+                .iter()
+                .position(|prepared| prepared.operation.operation_id.as_str() == id)
+        })
+        .collect::<Option<Vec<usize>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(failing) = move_order(operations)
+        .into_iter()
+        .find(|index| !placed.contains(index))
+    else {
+        return Ok(None);
+    };
+    let mut prefixes: Vec<Vec<Store>> = vec![vec![Store::default()]];
+    for &index in &placed {
+        let mut next: Vec<Store> = Vec::new();
+        for store in prefixes.last().into_iter().flatten() {
+            for reached in step(ir, store, &operations[index])? {
+                if !next.contains(&reached) {
+                    next.push(reached);
+                }
+            }
+        }
+        prefixes.push(next);
+    }
+    let id = |index: usize| operations[index].operation.operation_id.as_str().to_owned();
+    let answers_from = |stores: &[Store], index: usize| -> Result<bool, CheckRefusal> {
+        for store in stores {
+            if !step(ir, store, &operations[index])?.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    for at in (0..placed.len()).rev() {
+        let against = placed[at];
+        // Moving `failing` before `against` moves it before everything placed after `against` too;
+        // an operation there that returned before `failing` was invoked forbids it.
+        if placed[at..]
+            .iter()
+            .any(|&index| precedes(operations[index].operation, operations[failing].operation))
+            || precedes(operations[failing].operation, operations[against].operation)
+        {
+            continue;
+        }
+        let before = &prefixes[at];
+        let after = &prefixes[at + 1];
+        if answers_from(after, failing)? {
+            continue;
+        }
+        let mut explained: Vec<&Store> = Vec::new();
+        let mut instead: Vec<Store> = Vec::new();
+        for store in before {
+            let next = step(ir, store, &operations[failing])?;
+            if !next.is_empty() {
+                explained.push(store);
+                instead.extend(next);
+            }
+        }
+        if explained.is_empty() || answers_from(&instead, against)? {
+            continue;
+        }
+        let mut needed: Vec<&Store> = Vec::new();
+        for store in before {
+            if !step(ir, store, &operations[against])?.is_empty() {
+                needed.push(store);
+            }
+        }
+        return Ok(Some(Conflict {
+            subject_key: subject.to_owned(),
+            failing: ConflictSide {
+                operation_id: id(failing),
+                required: subject_states(explained, subject),
+                supplied: subject_states(after, subject),
+            },
+            against: ConflictSide {
+                operation_id: id(against),
+                required: subject_states(needed, subject),
+                supplied: subject_states(&instead, subject),
+            },
+        }));
+    }
+    Ok(None)
+}
+
 // ---- the report ------------------------------------------------------------------------------
 
 /// What `check-history` prints: the verdict, the longest partial linearization, and for a
