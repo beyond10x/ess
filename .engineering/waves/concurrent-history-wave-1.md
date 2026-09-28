@@ -98,3 +98,13 @@ impl/concurrent-history-format` runs before the first unit merges.
 Gate on `integrate/concurrent-history` `85e251c20`, one exit status per step, own build dir `b10x-target/ess-chc-int`: `task fmt-check` 0; clippy `-p ess-conformance -p ess-cli -p ess-xtask -p ess-domain` 0; doc 0; `cargo test -p ess-conformance` 0 (832 passed, 98 binaries); `-p ess-xtask` 0 (313); `-p ess-domain` 0 (756); `-p ess-cli` 0 (750); `specify validate models/concurrent-history` 0. Full `task check` runs in CI on the final PR and locally before the release tag (ESS `AGENTS.md` § Gate).
 
 Build dirs `ess-chc-format` (17G) and `ess-chc-interp` (23G) deleted after merge; `/` had filled to ENOSPC once during the interp gate.
+
+## Wave 2 (2026-09-28)
+
+| unit | story | branch head | stage |
+|---|---|---|---|
+| checker | `story:linearizability-checker-over-the-interpreter` | `0e8cd39fb` | merged `b08ed292d`; fix `57b8cb105`; implemented |
+
+Gate on `b08ed292d`: every step exit 0 except `cargo test -p ess-xtask` exit 101 (3 failed). `tests/layout.rs` rejected two literal missing paths in the adversary test `crates/edge/ess-cli/tests/check_history_adversary.rs`, fixed in `57b8cb105`. Two `consumer_coverage` unit tests failed with `No such file` and `authority changed` while `/` was at 98%; alone they passed (2 passed), and the full `ess-xtask` rerun on `57b8cb105` passed (313, exit 0). Cause not established; recorded, not dismissed.
+
+Follow-up filed: `story:concurrent-history-records-inputs` (adversary pass 2 finding 4, pre-existing: `ess-history/1` records no inputs).

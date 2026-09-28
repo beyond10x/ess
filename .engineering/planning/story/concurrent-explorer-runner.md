@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:concurrent-explorer-runner
 kind: story
-status: draft
+status: active
 title: The Go and TypeScript explorers record concurrent histories and hand them to ess
 owner: ess
 tags:
@@ -35,7 +35,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/explore_driver_test.go
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore_target.go
-revision: 5
+revision: 7
 ---
 # Story: the Go and TypeScript explorers record concurrent histories and hand them to `ess`
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:linearizability-checker-over-the-interpreter
 kind: story
-status: draft
+status: implemented
 title: A history is checked for linearizability against the interpreter, and shrunk
 owner: ess
 tags:
@@ -20,24 +20,36 @@ scope:
 - confidence: inferred
   path: crates/edge/ess-cli/tests
 - confidence: cited
+  path: crates/edge/ess-cli/tests/check_history.rs
+- confidence: cited
   path: crates/verify/ess-conformance
 - confidence: cited
   path: crates/verify/ess-conformance/src/faulty.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/interpret.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/interpret/execute.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/lib.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/record.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/reference.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/faults.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures/register
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/linearizability.rs
 - confidence: inferred
   path: website/docs/guides/verify-conformance.md
 - confidence: inferred
   path: website/docs/reference/cli.md
-revision: 4
+revision: 8
 ---
 # Story: a history is checked for linearizability against the interpreter, and shrunk
 

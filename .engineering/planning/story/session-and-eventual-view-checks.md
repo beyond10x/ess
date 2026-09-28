@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:session-and-eventual-view-checks
 kind: story
-status: draft
+status: active
 title: Session and eventual views are checked at their declared strength
 owner: ess
 relations:
@@ -20,7 +20,7 @@ scope:
   path: crates/verify/ess-conformance/src/reference.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/faults.rs
-revision: 6
+revision: 8
 ---
 # Story: session and eventual views are checked at their declared strength
 
