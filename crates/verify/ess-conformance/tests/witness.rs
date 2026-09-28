@@ -301,9 +301,9 @@ fn expression_search_limits_do_not_define_type_correctness() {
         .is_satisfied()));
 }
 
-/// A list's cardinality and ordinals are projected since ess#94; a map's are still not.
+/// A list's cardinality and ordinals are projected since ess#94, and a map's cardinality since ess#196.
 #[test]
-fn legal_list_cardinality_is_projected_and_map_cardinality_is_not() {
+fn legal_list_and_map_cardinality_is_projected() {
     let ir = compiled();
     for expression in ["lines.count > 0", "lines.0.quantity > 0"] {
         assert_eq!(
@@ -312,11 +312,9 @@ fn legal_list_cardinality_is_projected_and_map_cardinality_is_not() {
             "{expression}"
         );
     }
-    assert!(
-        facts(&ir, 1.0)
-            .decide(&guard("labels.count > 0"))
-            .unevaluable()
-            .is_some(),
+    assert_eq!(
+        facts(&ir, 1.0).decide(&guard("labels.count > 0")),
+        Decision::Satisfied,
         "labels.count > 0"
     );
 }
@@ -356,9 +354,10 @@ fn an_input_list_publishes_its_count_and_one_fact_per_element_leaf() {
     assert_eq!(facts.decide(&every), Decision::Satisfied);
     assert_eq!(
         facts.fact(&path("labels.count")),
-        None,
-        "a map is still not projected; the decision covers input lists"
+        Some(FactValue::count(1)),
+        "a map publishes its count (ess#196) and nothing for its entries"
     );
+    assert_eq!(facts.fact(&path("labels.region")), None);
 }
 
 /// Text is ordered by its bytes on command input, so `B` is below `a` (ess#94).
@@ -887,7 +886,7 @@ fn only_an_absent_value_says_another_candidate_would_help() {
     let facts = facts(&ir, 1.0);
 
     for undecidable in [
-        "labels.count > 0",
+        "labels.region > 0",
         "currency > 0",
         "amount.vat > 0",
         "lines > 0",
@@ -1063,13 +1062,9 @@ fn resolved_adapter_keeps_semantics_separate_from_collection_projection() {
             .iter()
             .all(|read| read.resolution.scalar.is_some()));
         // Projection is the separate question: an input list publishes its count and elements
-        // (ess#94), and a map still publishes nothing.
+        // (ess#94), and a map its count (ess#196).
         let decision = facts(&ir, 1.0).decide(&guard(expression));
-        if expression.starts_with("labels") {
-            assert!(decision.unevaluable().is_some(), "{expression}: {decision}");
-        } else {
-            assert_eq!(decision, Decision::Satisfied, "{expression}");
-        }
+        assert_eq!(decision, Decision::Satisfied, "{expression}");
     }
 }
 
@@ -1135,7 +1130,7 @@ fn an_integral_witness_is_still_written_with_the_fractional_part_it_does_not_hav
     );
     assert_eq!(
         written,
-        r#"{"amount":{"amount":1.0,"currency":"amount.currency"},"channel":"Email","currency":"currency","express":true,"labels":{},"lines":[],"note":"note","payee":{"kind":"company","value":"payee"},"priced":{"amount":1.0,"currency":"priced.currency"},"quantity":1.0}"#,
+        r#"{"amount":{"amount":1.0,"currency":"amount.currency"},"channel":"Email","currency":"currency","express":true,"labels":{"labels":"labels.0"},"lines":[],"note":"note","payee":{"kind":"company","value":"payee"},"priced":{"amount":1.0,"currency":"priced.currency"},"quantity":1.0}"#,
         "the witness bytes moved"
     );
 }

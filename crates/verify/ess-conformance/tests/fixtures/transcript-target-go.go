@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -62,8 +63,32 @@ func canonical(raw []byte) string {
 	if err := decoder.Decode(&value); err != nil {
 		return "<" + err.Error() + ">"
 	}
-	encoded, _ := json.Marshal(value)
+	encoded, _ := json.Marshal(integralTokens(value))
 	return string(encoded)
+}
+
+// integralTokens spells every whole-number token the way Go does, so `1.0` and `1` compare equal: the
+// Rust reference writes an Integer with a fractional part it does not have, and the value is one.
+func integralTokens(value any) any {
+	switch value := value.(type) {
+	case json.Number:
+		if whole, err := strconv.ParseFloat(value.String(), 64); err == nil && whole == float64(int64(whole)) && whole <= 9007199254740991 && whole >= -9007199254740991 {
+			return json.Number(strconv.FormatInt(int64(whole), 10))
+		}
+		return value
+	case []any:
+		for index, element := range value {
+			value[index] = integralTokens(element)
+		}
+		return value
+	case map[string]any:
+		for key, element := range value {
+			value[key] = integralTokens(element)
+		}
+		return value
+	default:
+		return value
+	}
 }
 
 type transcriptTarget struct {
