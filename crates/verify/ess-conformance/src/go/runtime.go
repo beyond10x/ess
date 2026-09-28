@@ -1236,7 +1236,9 @@ type RepeatedOutcomeTarget interface {
 type CommandResult struct {
 	// Response is the actual returned, declared command response.
 	Response map[string]Node
-	// Outcome is the branch it took, empty when it refused.
+	// Outcome is the name of the branch it took.
+	// A refusal takes a branch too: return the refusing outcome's name here, beside Error, because
+	// the runner compares Outcome for a refusal exactly as for any other branch.
 	Outcome string
 	// Error is the declared error it refused with, empty when it did not.
 	Error string

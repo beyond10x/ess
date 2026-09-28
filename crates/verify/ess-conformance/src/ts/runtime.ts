@@ -2003,7 +2003,11 @@ export interface AbsentInputRequest {
 export interface CommandResult {
   /** The actual returned, declared command response. */
   response?: { [field: string]: Node } | undefined;
-  /** The branch it took, empty when it refused. */
+  /**
+   * The name of the branch it took.
+   * A refusal takes a branch too: return the refusing outcome's name here, beside `error`, because
+   * the runner compares `outcome` for a refusal exactly as for any other branch.
+   */
   outcome?: string | undefined;
   /** The declared error it refused with, empty when it did not. */
   error?: string | undefined;
