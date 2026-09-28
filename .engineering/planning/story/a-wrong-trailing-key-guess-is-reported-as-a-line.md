@@ -2,14 +2,21 @@
 format: aep.planning-md/3
 id: story:a-wrong-trailing-key-guess-is-reported-as-a-line
 kind: story
-status: draft
+status: active
 title: A wrong trailing-key guess is reported as a line
+relations:
+- serves: vision:O2
 scope:
 - confidence: cited
   path: crates/specify/ess-compiler/src/resolve.rs
 - confidence: cited
   path: crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs
-revision: 3
+- confidence: cited
+  path: docs/design/review-typed-diagnostics.md
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T10:14:57Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-09-28T10:14:58Z", actor: "human:timo", revision: 7}
 ---
 # A wrong trailing-key guess is reported as a line
 
@@ -52,6 +59,13 @@ is not tried, or its match is not reported as that refusal's line.
 
 ## Scope
 
-- `crates/specify/ess-compiler/src/resolve.rs` — `cited`
-- `crates/specify/ess-compiler/tests/` — `cited`; the red case lives on
-  `impl/enum-variant-in-an-entity-invariant` and is pinned there as a known defect naming this story
+Re-derived 2026-09-28 by `story-scoper` on `46e367ab2`. Each line **cited** or **inferred**.
+
+- **Status:** open — ignored acceptance test `a_wrong_trailing_key_guess_is_not_cited_at_all` fails at `crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs:215` (cited `b.yaml:13:13`, expected `a.yaml`), run 2026-09-28 — cited
+- **Files:** `crates/specify/ess-compiler/src/resolve.rs:955` `needles_from_tokens` pushes `"{last}:"` unchecked; `:534` `Locator::scan`, `:596` `whole_name_matters` — cited (story's `:889` stale; `needles_for` now `:942`)
+- **Tests:** `crates/specify/ess-compiler/tests/trailing_key_guess_citations.rs` — un-ignore `:206`, delete the defect-pinning case `:175` (doc `:171`) — cited
+- **Also:** doc comments `resolve.rs:571-583`, `:928-941` and `docs/design/review-typed-diagnostics.md:28` name this story as open; rewrite on landing — cited
+- **Also likely:** `resolve.rs:4726` `needle_shapes`, `:4779` unit test, if outcome-path needles change — inferred
+- **Confidence:** high
+- **Would collide with:** units touching the `Locator`/needle code in `resolve.rs` (e.g. `story:a-refusal-records-the-document-it-was-read-from`) — cited
+- **Safety fact:** both locating routes (`needles_for` :677, `needles_of_site` :713) build needles through `needles_from_tokens` — inferred

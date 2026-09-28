@@ -6,7 +6,10 @@ status: draft
 title: A branch may clear the field it owns
 relations:
 - serves: vision:O2
-revision: 1
+scope:
+- confidence: cited
+  path: website/docs/guides/write-a-specification.md
+revision: 3
 ---
 # Story: a branch may clear the field it owns
 
@@ -64,3 +67,13 @@ None.
 ## Open Questions
 
 None.
+
+## Scope
+
+Derived 2026-09-28 by `story-scoper` on `46e367ab2`. Each line **cited** or **inferred**.
+
+- **Status:** partially satisfied — grammar (`PayloadSource::Cleared`, `crates/specify/ess-domain/src/command.rs:944`), Optional refusal (`check_cleared_target`, `command.rs:3514-3535`), synthesis assertion (`crates/verify/ess-conformance/src/synthesize.rs:5181`) and two-act test (`crates/verify/ess-conformance/tests/synthesis.rs:3976`) shipped in `ce2197efb` (0.26.0, `CHANGELOG.md:899`) — cited
+- **Open:** documentation — the value-source table `website/docs/guides/write-a-specification.md:817-828` has no `{cleared: true}` row; "a literal is not a substitute" is only in `CHANGELOG.md:899` and `WHATS-CHANGED.md:138` — cited
+- **Files:** `website/docs/guides/write-a-specification.md` — cited
+- **Confidence:** high
+- **Routing:** the documentation item is handed to the public-docs overhaul (branch `docs/public-docs-overhaul`), which is editing the same guide; not a wave unit — decision by the coordinator, 2026-09-28

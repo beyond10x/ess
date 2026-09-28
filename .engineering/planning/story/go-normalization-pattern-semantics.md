@@ -10,10 +10,16 @@ relations:
 scope:
 - confidence: cited
   path: CHANGELOG.md
+- confidence: inferred
+  path: Cargo.lock
 - confidence: cited
   path: crates/edge/ess-cli/tests/normalization.rs
 - confidence: cited
   path: crates/generate/schema-contract/src/realize.rs
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/normalize/go.sum.txt
+- confidence: inferred
+  path: crates/generate/schema-contract/src/realize/normalize/go_runtime.go.txt
 - confidence: cited
   path: crates/generate/schema-contract/src/realize/normalize/go_target.rs
 - confidence: cited
@@ -28,7 +34,7 @@ scope:
   path: docs/design/source-pinned-data-normalization.md
 - confidence: cited
   path: website/docs/guides/generate-artifacts.md
-revision: 15
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-06T07:58:25Z", actor: "agent:specification-planner", revision: 9, imported: true}
 - {from: "proposed", to: "active", at: "2026-09-06T07:58:25Z", actor: "agent:specification-planner", revision: 10, imported: true}
@@ -81,17 +87,19 @@ pattern-design-page reservations. The binding lives in the existing shared desig
 
 ## Scope
 
-- Primary surface: `crates/generate/schema-contract` — cited; `src/realize/normalize/go_target.rs:12,100` owns Go generation and the current `go_schema_pattern` guard, which examines every selected stage input/output root and its structural obligations before constructing files. `src/realize.rs:163,444` supplies selected referenced closure and actual pattern obligations; arbitrary JSON keys named pattern are not obligations.
-- Runtime and packaging within the primary surface — cited; `src/realize/normalize/go_runtime.go.txt:65,71,149` owns reusable offline validators, compiler construction and schema-refusal conversion; `go_target.rs:25,36` and `go.sum.txt` embed runtime files and exact generated dependency identities. `target.rs:120,160` retains selected schemas, bundles and deterministic report/file digests.
-- Existing evidence within the primary surface — cited; `tests/normalization_go.rs:89,133,168` covers repeat generation/provenance, referenced lookahead refusal, an unselected pattern beside a usable plain root, and generated Go execution under the opt-in go-typecheck lane. `tests/fixtures/normalization_go_tests.go.txt:14` compares complete outcomes/refusals, preserves caller bytes and repeats concurrent calls. Existing Rust/reference execution is the oracle, not evidence that Go already supports patterns.
-- Corpus extension within the primary surface — inferred; extend the existing fixture/harness area with shared ordinary/lookaround/backreference/Unicode/anchor/empty-match/pathological cases, generation refusal locations, selected and referenced roots, every branch/stage, deterministic repeated outcomes and pattern-free/Rust compatibility controls. Exact fixture filenames and supported syntax await binding.
-- CLI publication boundary: `crates/edge/ess-cli` — cited; `tests/normalization.rs:268` currently fixes the lookahead refusal and asserts empty stdout and an absent destination. Preserve this boundary with the eventual supported/refused corpus. The package token matches existing CLI reservations; the expected edit is this focused test file, while `src/normalize.rs:117` already calls complete target generation before publication.
-- Binding document: `docs/design/go-normalization-pattern-semantics.md` — inferred; the story explicitly requires a supported-syntax, Unicode/anchor and deterministic-limit design before implementation. This proposed new page is its narrow home; no binding is supplied by this scope.
-- Existing design: `docs/design/source-pinned-data-normalization.md` — cited; lines 284–307 bind the Go schema validator, blanket pattern refusal, selected closure, stable finding multiset/order, pinned dependencies and native execution evidence. Update only the pattern boundary supported by the later design and measured corpus.
-- Public guide: `website/docs/guides/generate-artifacts.md` — cited; lines 323–331 explicitly state every selected pattern refuses with `go_schema_pattern`; any qualified subset needs corresponding support/refusal wording.
-- Dependency reservation: `Cargo.lock` — inferred; a generator-side qualification/parser dependency may require the workspace lockfile, separate from emitted Go checksums already inside schema-contract. Retire this reservation if the binding establishes no Rust dependency change.
-- Confidence: high — cited; the story names the exact guard and dependency mismatch, and the source/tests identify generation, runtime, publication and documentation boundaries. Matcher selection and resource policy remain deliberately unbound.
-- Would collide with: schema-contract or ess-cli package edits, either named design document, the public generation guide, or Cargo.lock — inferred; use the six exact scheduling tokens below. The CLI package and possible lockfile collide with planned OpenAPI reservations even when intended implementation symbols differ.
-- Exclusions — inferred; no grammar, normalization recipe/report format, global reference-validator policy, structural-target semantics, TypeScript runtime, CLI command/options, OpenAPI logic, public CLI/format reference pages, navigation, infrastructure predicates or cross-repository delivery implementation is required by this bounded story. A later design that changes these boundaries must first refresh scope.
+Re-derived 2026-09-28 by `story-scoper` against `46e367ab2`. Each line is marked **cited** (read from the story or the tree) or **inferred** (a reading that may be wrong).
 
-Independent scope recorded at published fadbc674 on2026-09-06 for complete scheduling inventory. No matcher design, implementation or status change is included. The source report and unresolved design questions remain target/review-boundaries-7/go-pattern-scope/scope-report.md. This story stays outside the selected review wave.
+- **Status on this tree:** partially satisfied — only the exact base64 pattern is qualified; every other pattern refuses; no general ECMA-262 design/corpus — cited (`go_target.rs:14,181-187`; `generate-artifacts.md:494-497`; `CHANGELOG.md:1343-1346`)
+- **Primary surface:** `crates/generate/schema-contract` Go normalization target — cited
+- **Files:** `src/realize/normalize/go_target.rs:14,27,159-194` (`BASE64_PATTERN`, `check_schema_support`, `go_schema_pattern` refusal) — cited
+- **Files:** `src/realize.rs:161,430-466` (`collect_patterns`) — cited
+- **Files:** `tests/normalization_go.rs:197,228,265,301,404`; `tests/fixtures/normalization_base64.rs` (shared with `tests/normalization_rust.rs:22`) — cited
+- **Files:** `src/realize/normalize/go_runtime.go.txt`, `go.sum.txt` if a bounded matcher is embedded — inferred
+- **Files:** `tests/normalization_base64_adversary.rs` (asserts `go_schema_pattern` at :57) — cited presence; inferred change
+- **Files:** new corpus fixture(s) under `tests/fixtures/` — inferred
+- **Files:** `Cargo.lock` only if a Rust dependency is added — inferred
+- **CLI boundary:** `crates/edge/ess-cli/tests/normalization.rs:711` — cited
+- **Docs:** `docs/design/source-pinned-data-normalization.md:290-300,336-350`; `website/docs/guides/generate-artifacts.md:488-497`; `CHANGELOG.md` — cited
+- **Confidence:** high on location; low on size — matcher choice and limit policy are undecided.
+- **Would collide with:** any unit editing Go normalization, `realize.rs` pattern collection, schema-contract normalization tests, `ess-cli/tests/normalization.rs`, the normalization design page, the generate-artifacts guide — inferred
+- **Stale in previous scope:** omitted `go_runtime.go.txt`/`go.sum.txt`; "Current Boundary" paragraph predates base64 unit `c8b8eb10a` — cited
