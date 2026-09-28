@@ -1,0 +1,14 @@
+format: ess/1
+system: demo.owner
+version: v1
+
+domains:
+  - demo.owner.agentstatus
+components:
+  - component: status-component
+    owns:
+      domains: [demo.owner.agentstatus]
+    accepts:
+      commands: [demo.owner.agentstatus.UpdateOwnStatus]
+    publishes:
+      events: [demo.owner.agentstatus.StatusUpdated]

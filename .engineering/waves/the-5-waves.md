@@ -103,3 +103,12 @@ same test name) is safe while its agent runs, and recovered 28G on 2026-09-28 (a
 A background loop does it every 10 minutes during the waves.
 Names repeat across crates (`current_time_guard` in four crates), so a 5-minute threshold deleted
 current binaries of other crates and 44 targets reported "never executed" on 2026-09-28.
+
+## Coordination
+
+The aep-performance session (2026-09-28): per operator decision it will not migrate the ESS store and
+keeps `~/.cargo/bin/aep` at 0.61.1; no message is owed at merge. Operator, 2026-09-28: the AEP store format is fixed upstream; before the PR, on this integration branch, in this order (operator, 2026-09-28): (1) merge the
+remaining units, (2) upgrade `aep` to the latest release and re-install the aep plugin so `/aep:upgrade`
+is current, (3) migrate the ESS store to the latest format (no gates needed for this step), (4) commit
+the store, (5) run the full local gate, (6) record the closing evidence and moves, commit, push, and
+open the PR against remote ess.
