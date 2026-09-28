@@ -714,7 +714,7 @@ fn precondition_input(
             continue;
         }
         if let Err((code, message, hint)) =
-            super::example_admitted(&spec.system().types, &input.type_ref, value)
+            super::precondition_literal_admitted(&spec.system().types, &input.type_ref, value)
         {
             errors.push(
                 ValidationError::new(

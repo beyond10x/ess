@@ -3975,6 +3975,210 @@ fn example_admitted(
     example_layers(&layers.newtypes, example, &value, instant)
 }
 
+/// Whether `literal` is a value `declared` accepts as a precondition's literal input
+/// (beyond10x/ess#205), answered as validation reports it.
+///
+/// A precondition sends its literal as written, so unlike an `example:` it may be structured: a
+/// list of values of the element type, a map of values of the value type under keys spelled as the
+/// key primitive, a struct naming only its declared fields and every required one and holding its
+/// invariants, or `null` where the type is optional. Each scalar leaf is held exactly as an
+/// `example:` is, by [`example_admitted`], so a `Binary64` leaf stays refused; a `Json` leaf and a
+/// union are refused too, because neither has one literal spelling a target compares by.
+pub(crate) fn precondition_literal_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
+                              for `example:`, a list, map or struct of them, or `null` where it \
+                              is optional";
+    let mismatch =
+        |message: String, hint: &'static str| Err((ValidationCode::TypeMismatch, message, hint));
+    let within = |at: String| {
+        move |(code, message, hint): ExampleRefusal| (code, format!("{at}: {message}"), hint)
+    };
+    let layers = types.newtype_layers(declared);
+    if matches!(literal, Node::Null) {
+        return if layers.optional {
+            Ok(())
+        } else {
+            mismatch(
+                format!("`null` is not a value of `{declared}`, which is not optional"),
+                STRUCTURED,
+            )
+        };
+    }
+    match &layers.terminal {
+        TypeRef::Primitive(Primitive::Json) => mismatch(
+            format!(
+                "`{declared}` is a Json, which a precondition literal does not carry: it has no \
+                 one spelling a target compares by"
+            ),
+            STRUCTURED,
+        ),
+        TypeRef::List(element) => {
+            let Node::Seq(items) = literal else {
+                return mismatch(
+                    format!("`{literal}` is not a list, and `{declared}` is one"),
+                    STRUCTURED,
+                );
+            };
+            for (index, item) in items.iter().enumerate() {
+                precondition_literal_admitted(types, element, item)
+                    .map_err(within(format!("element {index}")))?;
+            }
+            Ok(())
+        }
+        TypeRef::Map(key, value) => {
+            let Node::Map(entries) = literal else {
+                return mismatch(
+                    format!("`{literal}` is not a map, and `{declared}` is one"),
+                    STRUCTURED,
+                );
+            };
+            for (spelling, entry) in entries {
+                let spelled = match primitive_literal(*key, spelling) {
+                    Ok(()) => *key != Primitive::Decimal,
+                    Err(Some(_)) => false,
+                    Err(None) => key.admits(&Node::Text(spelling.clone())).is_some(),
+                };
+                if !spelled {
+                    return mismatch(
+                        format!("key `{spelling}` is not a spelling of a `{key}` map key"),
+                        STRUCTURED,
+                    );
+                }
+                precondition_literal_admitted(types, value, entry)
+                    .map_err(within(format!("key `{spelling}`")))?;
+            }
+            Ok(())
+        }
+        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+            Some(crate::types::TypeBody::Struct { fields, invariants }) => {
+                struct_literal_admitted(types, declared, fields, invariants, literal)
+            }
+            Some(crate::types::TypeBody::Union { .. }) => mismatch(
+                format!(
+                    "`{declared}` reaches the union `{name}`, which a precondition literal does \
+                     not carry"
+                ),
+                "declare the input a fixture input of the command, or send a variant through a \
+                 struct input",
+            ),
+            _ => example_admitted(types, declared, literal),
+        },
+        _ => example_admitted(types, declared, literal),
+    }
+}
+
+/// A struct literal: only declared fields, every required one, each held to its type, and the
+/// struct's invariants not false over the scalar fields it writes.
+fn struct_literal_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    fields: &[Field],
+    invariants: &[crate::entity::Invariant],
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    let Node::Map(entries) = literal else {
+        return Err((
+            ValidationCode::TypeMismatch,
+            format!("`{literal}` is not a struct, and `{declared}` is one"),
+            "write the struct as a map of its fields",
+        ));
+    };
+    if let Some(unknown) = entries
+        .keys()
+        .find(|key| !fields.iter().any(|field| &field.name == *key))
+    {
+        return Err((
+            ValidationCode::UndeclaredReference,
+            format!(
+                "`{declared}` declares no field `{unknown}`; it declares {}",
+                join(fields.iter().map(|field| &field.name))
+            ),
+            "write only the fields the struct declares",
+        ));
+    }
+    let mut facts = StructFacts::default();
+    for field in fields {
+        let Some(value) = entries.get(&field.name) else {
+            if matches!(field.type_ref, TypeRef::Optional(_)) {
+                continue;
+            }
+            return Err((
+                ValidationCode::MissingDeclaration,
+                format!("`{declared}` requires the field `{}`", field.name),
+                "write every field the struct does not declare Optional",
+            ));
+        };
+        precondition_literal_admitted(types, &field.type_ref, value).map_err(
+            |(code, message, hint)| (code, format!("field `{}`: {message}", field.name), hint),
+        )?;
+        if let Some(fact) = scalar_fact(types, &field.type_ref, value) {
+            facts.values.insert(field.name.clone(), fact);
+        }
+    }
+    for invariant in invariants {
+        if invariant.predicate.evaluate(&facts) == ess_primitives::predicate::Truth::False {
+            return Err((
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "`{literal}` is not a value of `{declared}`: its invariant `{invariant}` does \
+                     not hold for it"
+                ),
+                "write a literal every invariant of the type holds for",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The fact an admitted scalar literal is, and whether it orders as an instant; `None` for a
+/// structured value or `null`, which a struct invariant then reads as unknown.
+fn scalar_fact(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    literal: &Node,
+) -> Option<(FactValue, bool)> {
+    match &types.newtype_layers(declared).terminal {
+        TypeRef::Primitive(primitive) => primitive
+            .admits(literal)
+            .map(|value| (value, *primitive == Primitive::Timestamp)),
+        TypeRef::Named(_) => literal.as_text().map(|text| (FactValue::text(text), false)),
+        _ => None,
+    }
+}
+
+/// A struct literal's scalar fields, by name: what the struct's invariants read.
+#[derive(Default)]
+struct StructFacts {
+    values: BTreeMap<String, (FactValue, bool)>,
+}
+
+impl StructFacts {
+    fn get(&self, path: &ess_primitives::facts::FactPath) -> Option<&(FactValue, bool)> {
+        match path.segments() {
+            [field] => self.values.get(field.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl ess_primitives::facts::FactSource for StructFacts {
+    fn fact(&self, path: &ess_primitives::facts::FactPath) -> Option<FactValue> {
+        self.get(path).map(|(value, _)| value.clone())
+    }
+
+    fn orders_as_instant(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.get(path).is_some_and(|(_, instant)| *instant)
+    }
+
+    fn orders_text_by_bytes(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        !self.orders_as_instant(path)
+    }
+}
+
 /// Every newtype layer's alphabet and invariants, held against one example read as `value`.
 fn example_layers(
     newtypes: &[&crate::types::NamedType],
