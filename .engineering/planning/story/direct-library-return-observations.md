@@ -2,11 +2,13 @@
 format: aep.planning-md/2
 id: story:direct-library-return-observations
 kind: story
-status: active
+status: implemented
 title: Assert typed direct library returns without invented events
 relations:
 - serves: vision:O2
 scope:
+- confidence: cited
+  path: crates/edge/ess-xtask
 - confidence: cited
   path: crates/specify/ess-compiler
 - confidence: cited
@@ -14,8 +16,16 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance
 - confidence: cited
+  path: docs/design
+- confidence: cited
+  path: docs/evidence/direct-library-returns
+- confidence: cited
+  path: models/toolchain
+- confidence: cited
   path: schemas/generated/ess.schema.json
-revision: 5
+- confidence: cited
+  path: website/docs/reference
+revision: 7
 ---
 # Direct library return observations
 
