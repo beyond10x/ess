@@ -289,6 +289,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
     failure::binary64(ir, &plan, target)?;
     failure::json(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
+    failure::retry_bound(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();
     insert(
         &mut artifacts,

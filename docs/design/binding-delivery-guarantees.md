@@ -102,7 +102,90 @@ The counter-example is in the same history and is the one that had to bump: `ess
 answer forces a version; a refusal does not. `Delivery` is read by `serde`'s derived enum reader,
 which has no such fall-through.
 
+## A bound that is the component's behaviour (`ess/16`, beyond10x/ess#165)
+
+The line below this section used to end at "No retry count". That stays true for a count that is a
+deployment decision — a broker's redelivery policy, an operator's setting. It is not true for a
+count that is a **constant in the sender's code**: "up to 3 attempts; a server error is retried, a
+client error is final; after the last attempt the event is lost". A receiver can observe that
+constant, because it decides whether the receiver sees a second invocation, so it is a claim the
+specification can make and a suite can check.
+
+**Decision.** `retry` takes a block under `ess/16`:
+
+```yaml
+on_failure:
+  retry: {attempts: 3, final: [demo.ledger.Unknown]}
+```
+
+| key | meaning |
+|---|---|
+| `attempts` | invocations in all, the first included; at least 2, because one attempt whose failure is lost is `drop` |
+| `final` | optional; refusals of the invoked command that end the retry at once: an outcome that carries `error:`, by its name, or the error, which stands for every outcome of the command that reports it |
+
+The model has outcomes, not transport status codes, so "5xx retried, 4xx final" is written as the
+invoked command's declared refusals: the ones listed are final, and every other failure is retried
+up to the bound. After the last attempt the event's effect is lost, exactly as under `drop`; there
+is no `then: escalate` in this build. Timing — backoff, deadline — stays out: only the count and
+the final set, which the sender's code fixes, are claims.
+
+`on_failure: retry` written bare keeps its meaning (no count) and its bytes: `BindingSpec::retry`
+and `ResolvedBinding::retry` serialize only when present. The block is refused below `ess/16` with
+`unsupported_format_version`; a `final` name that is no refusal of the invoked command is
+`undeclared_reference`, a repeated one `duplicate_declaration`, fewer than two attempts
+`conflicting_declaration` ([`binding/retry.rs`](../../crates/specify/ess-domain/src/binding/retry.rs)).
+The published schema states the two limits it can: `attempts` has `minimum: 2` and `final` has
+`uniqueItems: true`.
+
+| surface | a bounded retry |
+|---|---|
+| IR ([`ir.rs`](../../crates/specify/ess-compiler/src/ir.rs)) | `ResolvedRetryBound { attempts, final }`, `final` resolved to the invoked command's outcome names; `ResolvedFailure::BoundedRetry`, a policy of its own so no projection renders it as an unbounded retry by leaving an arm out |
+| docs, AsyncAPI ([`docs.rs`](../../crates/generate/ess-gen/src/docs.rs), [`asyncapi.rs`](../../crates/generate/ess-gen/src/asyncapi.rs)) | "retried up to N attempts in all … ends it at once; after the last attempt the work is lost" |
+| semantic diff ([`diff.rs`](../../crates/verify/ess-diff/src/diff.rs)) | a changed count or final set is `binding/<id>/failure-changed`, worded `retry, 3 attempts, final \`rejected\`` |
+| synthesized Rust/Go/Web targets ([`failure.rs`](../../crates/generate/ess-synth/src/failure.rs)) | **refused by name** (`missing-representation`, `bindings.<id>.on_failure.retry`): the generated retry holds the event for the next pump and counts no attempts, so it would retry forever where the specification says three times. The command-line target delivers no bindings and has nothing to refuse |
+
+### What conformance proves
+
+Two scenarios, both forced by injection on an `external:` branch as every §18 failure is, and both
+observed through the invocation count — the one thing a bound changes:
+
+| scenario | forced | required |
+|---|---|---|
+| `<binding>/binding/on-failure` | the first retried refusal (an `external:` branch that carries `error:` and is not in `final`; an external success branch is never forced), on the next `attempts` invocations | exactly `attempts` invocations |
+| `<binding>/binding/final-failure` | the first `final` refusal that is `external:`, on the next invocation | exactly one invocation |
+
+Neither requires the invoked command's success event, so `on-failure` is a scenario, not
+`ESS-SYNTH-010`; a plain `drop` is still refused. `final-failure` is not in `BindingAspect::ALL`:
+only a bound that names `final` refusals makes that claim, so every other binding still accounts
+for exactly four aspects. Where no retried refusal can be forced (every `external:` branch is
+final) `on-failure` is refused with `BindingGap::RetriedUnforcible`; where no final refusal can be
+forced, `final-failure` is refused with `BindingGap::FinalUnforcible`.
+
+The count must see only the attempts the bound made, so the arrangement before the trigger may
+not itself publish the binding's event — directly, or through a chain of event bindings whose
+invoked commands, on any branch, lead to it (each command followed once, so a cycle ends). Where
+the trigger synthesis picks needs such an
+arrangement, the first other publisher of the event whose arrangement does not is used; where
+every publisher needs one, both scenarios are refused with `BindingGap::ArrangementSetsOff`.
+
+The suite carries two new step fields: `configure_external_outcome.times` (force on the next
+`times` invocations) and `expect_invocation.count` (exactly that many matching invocations). Both,
+and a `final-failure` id, take `ess-conformance/26` (`/27` for coverage,
+[`bounded_retry.rs`](../../crates/verify/ess-conformance/src/bounded_retry.rs)); an older reader
+would force one failure and read a count as "at least one", passing a sender that retries forever.
+The Go and TypeScript runtimes refuse /26–/27 by version, so they need no execution support.
+`ConformanceTarget::configure_external_outcome_repeatedly` defaults to `unsupported`, so a target
+written before it reports that one scenario `unsupported` rather than passing it.
+
+The count is observed for the step's whole eventual window: asked of the target until the run's
+deadline passes, it passes only when the matching invocations reach exactly the count and are
+still exactly the count at the deadline, and a count above it at any observation fails at once. A
+sender that makes fewer attempts fails at the deadline; one that makes more fails as soon as the
+extra attempt is visible within the window, including one a target makes visible late. The price
+is that a passing count always waits out the window.
+
 ## Boundaries
 
-No third word. No retry count — how often and for how long is a deployment decision this
-specification does not take. No `exactly_once`, ever.
+No third word. No retry count where the count is a deployment decision — how often and for how
+long is not something this specification takes; a count that is the component's own behaviour is
+the bounded `retry` above. No timing, no `then:` after the bound. No `exactly_once`, ever.

@@ -1528,6 +1528,14 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         self.0.configure_external_outcome(request)
     }
 
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        self.0.configure_external_outcome_repeatedly(request, times)
+    }
+
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
         self.0.redeliver_event(request)
     }

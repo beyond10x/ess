@@ -545,6 +545,19 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         self.inner.configure_external_outcome(request)
     }
 
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        if self.fault == Fault::IgnoreExternalOutcome {
+            // The same defect as above, for the repeated control.
+            return Ok(());
+        }
+        self.inner
+            .configure_external_outcome_repeatedly(request, times)
+    }
+
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {
         self.inner.redeliver_event(request)
     }

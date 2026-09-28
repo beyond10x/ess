@@ -299,6 +299,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     crate::failure::binary64(ir, plan, crate::Target::Web)?;
     crate::failure::json(ir, plan, crate::Target::Web)?;
     crate::failure::input_absent(ir, plan, crate::Target::Web)?;
+    crate::failure::retry_bound(ir, plan, crate::Target::Web)?;
     let rust = crate::rust::feasibility::checked(ir, plan, crate::Target::Web)?;
     let layout = Layout::with_rust(ir, rust);
     let acceptors = refusal::acceptors(ir);

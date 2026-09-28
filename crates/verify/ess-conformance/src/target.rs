@@ -224,6 +224,30 @@ pub trait ConformanceTarget {
         request: ExternalOutcomeControl,
     ) -> Result<(), TargetError>;
 
+    /// Forces the answer of an outcome the input cannot decide on the next `times` invocations of
+    /// its command (suite/26, [`crate::bounded_retry`]).
+    ///
+    /// What a bounded retry is witnessed by: every attempt it makes fails with a retried refusal,
+    /// and the suite counts the attempts. Forcing only the first would let the second succeed.
+    /// Like [`configure_external_outcome`](Self::configure_external_outcome), a test adapter
+    /// control, and it lapses after `times` invocations.
+    ///
+    /// The default answers [`TargetError::Unsupported`], so a target written before the control
+    /// existed reports that one scenario `unsupported` rather than passing it on one failure.
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            format!(
+                "forcing `{}` on the next {times} invocations",
+                request.force
+            ),
+            "this target forces an external outcome on the next invocation only",
+        ))
+    }
+
     /// Delivers an event this context has already published to its bindings a second time (§17).
     ///
     /// The eighth method, and §7's seven cannot express it. `delivery: at_least_once` is precisely

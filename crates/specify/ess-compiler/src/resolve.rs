@@ -3366,6 +3366,12 @@ impl<'a> Resolver<'a> {
             delivery: binding.delivery,
             failure: binding.failure,
             escalation,
+            retry: binding.retry.as_ref().and_then(|bound| {
+                self.spec
+                    .commands()
+                    .get(&binding.command)
+                    .map(|command| crate::ir::ResolvedRetryBound::resolve(bound, command))
+            }),
             naming: binding.naming,
             refs: binding.refs,
         })
@@ -3474,6 +3480,7 @@ impl<'a> Resolver<'a> {
             delivery: binding.delivery,
             failure: binding.failure,
             escalation: None,
+            retry: None,
             naming: binding.naming.clone(),
             refs: binding.refs.clone(),
         })

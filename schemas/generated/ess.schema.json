@@ -215,7 +215,7 @@
       ]
     },
     "BindingFailure": {
-      "description": "What happens when the invoked command does not run: `retry`, `drop`, or an `escalate:` block naming the event the escalation emits.",
+      "description": "What happens when the invoked command does not run: `retry`, `drop`, an `escalate:` block naming the event the escalation emits, or a `retry:` block stating its attempts and final refusals (ess/16).",
       "oneOf": [
         {
           "$ref": "#/definitions/Failure"
@@ -228,6 +228,18 @@
           "properties": {
             "escalate": {
               "$ref": "#/definitions/RawEscalation"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "retry"
+          ],
+          "properties": {
+            "retry": {
+              "$ref": "#/definitions/RetryBound"
             }
           },
           "additionalProperties": false
@@ -3111,6 +3123,30 @@
           "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
           "type": "string",
           "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RetryBound": {
+      "description": "How many attempts a `retry` makes, and which refusals end it at once.\n\nRead from a document as the block under `retry:`, and serialized the same way, so a binding that states no bound serializes exactly as it did before the block existed. The reader is written by hand so that every refusal names `retry:` — `retry: {emits: …}` is the escalation block under the wrong word, and a message naming only `emits` would not say so.",
+      "type": "object",
+      "required": [
+        "attempts"
+      ],
+      "properties": {
+        "attempts": {
+          "description": "Invocations in all, the first included. At least two: one attempt is `drop`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 2.0
+        },
+        "final": {
+          "description": "Refusals of the invoked command that end the retry at once: an outcome name, or an error the command reports. Each name at most once.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false

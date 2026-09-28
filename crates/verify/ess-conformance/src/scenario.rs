@@ -59,6 +59,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::num::NonZeroU32;
 use std::str::FromStr;
 
 use ess_compiler::ir::EssIr;
@@ -157,6 +158,7 @@ impl ConformanceSuite {
         self.provenance.suite_version = if crate::leaf_payloads::used_by(self)
             || crate::absent_input::used_by(self)
             || crate::aggregate_delta::used_by(self)
+            || crate::bounded_retry::used_by(self)
         {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
@@ -929,6 +931,14 @@ pub enum BindingAspect {
     Delivery,
     /// The command does not run, and the declared failure policy is observable (§18).
     OnFailure,
+    /// A bounded retry answered with a `final` refusal makes exactly one attempt (suite/26,
+    /// [`crate::bounded_retry`]).
+    ///
+    /// Not in [`ALL`](Self::ALL): it is a claim only a binding whose `retry:` names `final`
+    /// refusals makes, so no other binding has it to prove or refuse. The synthesis that walks
+    /// [`ALL`](Self::ALL) produces it beside the four for exactly those bindings, as a scenario or
+    /// as a named refusal.
+    FinalFailure,
 }
 
 impl BindingAspect {
@@ -957,6 +967,7 @@ impl BindingAspect {
             Self::Mapping => "mapping",
             Self::Delivery => "delivery",
             Self::OnFailure => "on-failure",
+            Self::FinalFailure => "final-failure",
         }
     }
 
@@ -967,6 +978,7 @@ impl BindingAspect {
             "mapping" => Ok(Self::Mapping),
             "delivery" => Ok(Self::Delivery),
             "on-failure" => Ok(Self::OnFailure),
+            "final-failure" => Ok(Self::FinalFailure),
             _ => Err(()),
         }
     }
@@ -975,7 +987,9 @@ impl BindingAspect {
     fn expected() -> String {
         Self::ALL
             .iter()
-            .map(|(_, written)| format!("`{written}`"))
+            .map(|(_, written)| *written)
+            .chain([Self::FinalFailure.written()])
+            .map(|written| format!("`{written}`"))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -1869,6 +1883,13 @@ pub enum ScenarioStep {
     ConfigureExternalOutcome {
         /// The outcome the adapter must produce next.
         force: OutcomeRef,
+        /// How many invocations in a row it must produce it for, where more than the next one
+        /// (suite/26, [`crate::bounded_retry`]).
+        ///
+        /// A bounded retry is witnessed by failing every attempt it makes; forcing only the first
+        /// would let the second succeed, which proves nothing about the bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        times: Option<NonZeroU32>,
     },
     /// Invoke a command (§9).
     ExecuteCommand {
@@ -2057,6 +2078,14 @@ pub enum ScenarioStep {
         /// claim the specification makes about this input.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         input: BTreeMap<String, ScenarioValue>,
+        /// Exactly how many such invocations there must be, where the number is the claim
+        /// (suite/26, [`crate::bounded_retry`]).
+        ///
+        /// Absent, one matching invocation is enough, as it always was. Present, it is the attempt
+        /// count of a bounded retry: `attempts` when every attempt fails with a retried refusal,
+        /// and one when the refusal is final.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count: Option<NonZeroU32>,
     },
     /// Read a view (§14).
     ///

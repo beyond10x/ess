@@ -52,6 +52,8 @@
 //! that was never established — an unbound instance, a command result that does not exist — and a
 //! cascade of errors buries the one that matters.
 
+mod bounded_retry;
+
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -481,9 +483,13 @@ impl<C: Clock> Runner<C> {
                 fields,
                 state,
             } => establish_entity(instance, entity, identity, fields, state, run, target),
-            ScenarioStep::ConfigureExternalOutcome { force } => {
+            ScenarioStep::ConfigureExternalOutcome { force, times: None } => {
                 configure_external(force, run, target)
             }
+            ScenarioStep::ConfigureExternalOutcome {
+                force,
+                times: Some(times),
+            } => bounded_retry::configure_repeated_external(force, *times, run, target),
             ScenarioStep::ExecuteCommand {
                 command,
                 actor,
@@ -529,7 +535,14 @@ impl<C: Clock> Runner<C> {
                 binding,
                 command,
                 input,
+                count: None,
             } => self.expect_invocation(binding, command, input, run, target),
+            ScenarioStep::ExpectInvocation {
+                binding,
+                command,
+                input,
+                count: Some(count),
+            } => self.expect_invocation_count(binding, command, input, *count, run, target),
             ScenarioStep::QueryView { view, params } => self.query_view(view, params, run, target),
             ScenarioStep::ExpectView { view, expectation } => expect_view(view, expectation, run),
             ScenarioStep::EventuallyEvent {

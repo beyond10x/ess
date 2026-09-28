@@ -1699,6 +1699,12 @@ pub struct ResolvedBinding {
     /// asserts and what shape the assertion has.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub escalation: Option<EventHandle>,
+    /// The bound a [`Failure::Retry`] states, resolved against the invoked command (ess/16).
+    ///
+    /// `None` for a retry with no count, and for every other policy. [`Self::on_failure`] pairs
+    /// it with the word, so a projection reads [`ResolvedFailure::BoundedRetry`] rather than this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry: Option<ResolvedRetryBound>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1706,6 +1712,39 @@ pub struct ResolvedBinding {
     /// Carried through from the declaration so a projection can publish it. Empty by default.
     #[serde(default, skip_serializing_if = "ess_domain::refs::is_empty")]
     pub refs: Refs,
+}
+
+/// How many attempts a bounded retry makes, and which of the invoked command's outcomes end it at
+/// once (ess/16, beyond10x/ess#165).
+///
+/// The document's `final:` names an outcome or the error it reports; here each is resolved to the
+/// outcomes of the invoked command it stands for, in the command's declaration order, so a reader
+/// asks [`is_final`](Self::is_final) about an outcome rather than re-reading names.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedRetryBound {
+    /// Invocations in all, the first included. At least two.
+    pub attempts: u32,
+    /// The invoked command's outcomes that end the retry at once.
+    #[serde(rename = "final", skip_serializing_if = "Vec::is_empty")]
+    pub final_outcomes: Vec<OutcomeName>,
+}
+
+impl ResolvedRetryBound {
+    /// The bound as `command` reads it.
+    pub fn resolve(
+        bound: &ess_domain::binding::retry::RetryBound,
+        command: &ess_domain::command::CommandSpec,
+    ) -> Self {
+        Self {
+            attempts: bound.attempts,
+            final_outcomes: bound.final_outcomes(command).into_iter().cloned().collect(),
+        }
+    }
+
+    /// Whether `outcome` ends the retry at once.
+    pub fn is_final(&self, outcome: &OutcomeName) -> bool {
+        self.final_outcomes.contains(outcome)
+    }
 }
 
 /// What happens when a binding's command does not run, with whatever that publishes.
@@ -1733,6 +1772,16 @@ pub enum ResolvedFailure<'a> {
     /// Publishes nothing, deliberately: an event here would make it a notification, which is a
     /// different decision with a different word.
     Drop,
+    /// Try again up to a stated number of attempts, stop at once on a final refusal, and then
+    /// give up silently (ess/16).
+    ///
+    /// A policy of its own rather than a field beside [`Retry`](Self::Retry), so that a projection
+    /// matching this enum cannot render a bound as "retried on whatever schedule the transport
+    /// provides" by leaving an arm out.
+    BoundedRetry {
+        /// The attempts and the final outcomes.
+        bound: &'a ResolvedRetryBound,
+    },
 }
 
 impl ResolvedBinding {
@@ -1746,7 +1795,10 @@ impl ResolvedBinding {
     /// the same wording, as the handle accessors above.
     pub fn on_failure(&self) -> ResolvedFailure<'_> {
         match self.failure {
-            Failure::Retry => ResolvedFailure::Retry,
+            Failure::Retry => match &self.retry {
+                None => ResolvedFailure::Retry,
+                Some(bound) => ResolvedFailure::BoundedRetry { bound },
+            },
             Failure::Drop => ResolvedFailure::Drop,
             Failure::Escalate => {
                 let Some(emits) = &self.escalation else {
