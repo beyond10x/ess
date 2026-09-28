@@ -987,6 +987,7 @@ fn written_condition(condition: &ResolvedCondition) -> String {
         ResolvedCondition::WrongState => "wrong-state".to_owned(),
         ResolvedCondition::UnknownInstance => "unknown-instance".to_owned(),
         ResolvedCondition::InputAbsent => "input-absent".to_owned(),
+        ResolvedCondition::ExistingInstance => "existing-instance".to_owned(),
     }
 }
 

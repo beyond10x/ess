@@ -551,6 +551,75 @@ From `format: ess/16`, a guard that cannot hold because it needs a required inpu
 is refused as a type mismatch, with a hint naming `input_absent:`. A guard that can still hold
 another way, such as `any: [text == "x", missing(text)]`, is admitted.
 
+### An outcome can be selected by whether the record exists
+
+From `format: ess/16`, a command that addresses a record by an identity the caller supplies can say
+what it does when that record exists and when it does not. Two forms, both built on
+`unknown_instance:`.
+
+**Create or update** (`PUT` semantics). Mark the creating branch `unknown_instance: true`, beside the
+branch that updates or moves the record the same input names:
+
+```yaml
+- name: updated
+  updates: demo.items.Item
+  instance: item_id
+  emits: [demo.items.ItemStored]
+  payload:
+    demo.items.ItemStored: {item_id: input.item_id, label: input.label}
+  sets: {label: input.label}
+- name: created
+  unknown_instance: true
+  creates: demo.items.Item
+  instance: item_id
+  emits: [demo.items.ItemStored]
+  payload:
+    demo.items.ItemStored: {item_id: input.item_id, label: input.label}
+  sets: {label: input.label}
+```
+
+The creation is taken when no row carries the identity, and the update when one does. The creation
+must publish its identity from the same input field the updating branch reads as `instance:`, on the
+same entity; an identity `{generated: true}` is never one a caller names again, and is refused. The
+creating branch names no `error:` and no `refuses:`, and it is the command's one `unknown_instance:`
+branch. The pair is exhaustive, so the command is not refused as undetermined by its input.
+
+**Create or refuse.** Declare the refusal for an identity a record already carries beside the
+creation:
+
+```yaml
+- name: booked
+  creates: demo.items.Slot
+  instance: slot_id
+  emits: [demo.items.SlotBooked]
+  payload:
+    demo.items.SlotBooked: {slot_id: input.slot_id, label: input.label}
+- {name: already-booked, existing_instance: true, error: demo.items.SlotTaken}
+```
+
+`existing_instance:` is at most once per command, names an `error:` and takes no other condition, no
+effect and no `refuses:`. It needs a `creates:` whose identity comes from an input field — `input.f`,
+or an optional id written `{input: f, else: {generated: true}}` — and it
+cannot sit beside a branch that acts on the existing record (`moves:`, `updates:`, `deletes:`,
+`wrong_state:`) — that command is create-or-update instead.
+
+In both forms an input-guarded refusal (`when:` with an `error:`) is answered first: a request such
+a refusal claims is refused whether or not the record exists, and only the rest is answered by
+existence.
+
+The suite checks both with two calls that share one identity. For create-or-update, the creating
+branch is sent an identity no other scenario sends; the updating branch's scenario creates the record
+through the same command, sends the identity again with other values, and requires the update, the
+new values in the views and exactly one row for the identity. For create-or-refuse, the scenario
+creates the record through each creating branch, snapshots it, sends the identity again with other
+values, and requires the declared error, no event and the row unchanged. An input-guarded refusal
+beside either form is checked twice: for an identity nothing stored, and for one a record carries. No new suite step is used. The served surface answers
+`existing_instance:` with `409`. Every generated code target (Rust, Go, Web, Clap) refuses both forms
+by name, and Entity Runtime lowering refuses them with `ExistenceSelectionUnsupported`. Below
+`ess/16` both are refused with `unsupported_format_version`.
+A system precondition cannot invoke a command of either form, because which branch it takes depends
+on a record it cannot observe before it runs.
+
 ### An outcome can delete its subject
 
 From `format: ess/15`, a record the implementation removes at the end of its lifecycle is declared

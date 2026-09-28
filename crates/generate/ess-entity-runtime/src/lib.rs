@@ -436,6 +436,11 @@ pub enum LoweringCode {
     /// in as an argument, so a lowered `before` against the text `now - 60s` would be `Unknown`
     /// for every request.
     CurrentTimeUnsupported,
+    /// A branch selected by whether a record carries the addressed identity (ess/16): a creation
+    /// marked `unknown_instance: true` beside the branch that updates the record, or an
+    /// `existing_instance:` refusal beside a creation. entity-core answers a missing row itself and
+    /// selects no branch by it.
+    ExistenceSelectionUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1270,6 +1275,24 @@ impl Projector<'_> {
         let has_operation = effects
             .iter()
             .any(|effect| !matches!(effect, ResolvedEffect::Creates));
+        // Create-or-update (ess/16) is the one mixed command whose branch is chosen by existence;
+        // it is refused as that, before the entrypoint split it would otherwise meet.
+        let creates_on_unknown = command.outcomes.iter().any(|outcome| {
+            outcome.condition == ResolvedCondition::UnknownInstance
+                && outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+        });
+        if creates_on_unknown {
+            self.diagnostic(
+                LoweringCode::ExistenceSelectionUnsupported,
+                &command_path,
+                "a creation taken for an identity no record carries (ess/16, `unknown_instance:` on \
+                 `creates:`) selects its branch by existence, which entity-core does not",
+            );
+            return;
+        }
         if has_create && has_operation {
             self.diagnostic(
                 LoweringCode::MixedEntrypointUnsupported,
@@ -1780,6 +1803,7 @@ impl Projector<'_> {
         let mut when = None;
         let mut in_state = None;
         let mut wrong_state = false;
+        let mut by_existence = false;
         let source = self.service.source();
         let input = Typing::over(source, &command.input);
         // A stored-field predicate reads the command's input under `input.` (beyond10x/ess#157),
@@ -1859,6 +1883,15 @@ impl Projector<'_> {
                 });
             }
             ResolvedCondition::WrongState => wrong_state = true,
+            // Selection by existence (ess/16): a creation taken for an identity no record carries.
+            ResolvedCondition::UnknownInstance
+                if outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates) =>
+            {
+                by_existence = true;
+            }
             ResolvedCondition::UnknownInstance => self.diagnostic(
                 LoweringCode::OutcomeShapeUnsupported,
                 &path,
@@ -1873,6 +1906,17 @@ impl Projector<'_> {
                  no input never reaches entity-core"
                     .to_owned(),
             ),
+            ResolvedCondition::ExistingInstance => by_existence = true,
+        }
+        if by_existence {
+            self.diagnostic(
+                LoweringCode::ExistenceSelectionUnsupported,
+                &path,
+                "a branch selected by whether a record carries the addressed identity (ess/16, \
+                 `unknown_instance:` on a creation or `existing_instance:`) has no Entity Runtime \
+                 definition; entity-core answers a missing row itself"
+                    .to_owned(),
+            );
         }
         for ordering in input
             .take_refused()

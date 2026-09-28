@@ -316,7 +316,8 @@ fn validate_wrong_state_answer(outcome: &Outcome, at: &ConstructRef) -> Validati
     if !matches!(
         outcome.condition,
         OutcomeCondition::WrongState | OutcomeCondition::UnknownInstance
-    ) {
+    ) || outcome_shapes::creates_unknown(outcome)
+    {
         return errors;
     }
     if outcome.refuses && outcome.error.is_none() {
@@ -480,6 +481,13 @@ pub enum OutcomeCondition {
     /// answered before any input field is read. It carries nothing and names the error it reports;
     /// the command's fields keep their types, so no other branch changes its contract.
     InputAbsent,
+    /// Taken when a record already carries the identity the command's creating branch would
+    /// create (ess/16, `existing_instance:`, beyond10x/ess#164, `docs/design/outcome-shapes.md`).
+    ///
+    /// The other half of [`UnknownInstance`](Self::UnknownInstance): a marker at most one per
+    /// command, beside a `creates:` branch whose identity the caller supplies, naming the error
+    /// reported instead of a second row. It carries nothing and changes nothing.
+    ExistingInstance,
 }
 
 impl OutcomeCondition {
@@ -495,7 +503,8 @@ impl OutcomeCondition {
             | Self::External { .. }
             | Self::WrongState
             | Self::UnknownInstance
-            | Self::InputAbsent => None,
+            | Self::InputAbsent
+            | Self::ExistingInstance => None,
         }
     }
 
@@ -511,7 +520,8 @@ impl OutcomeCondition {
             | Self::Otherwise
             | Self::WrongState
             | Self::UnknownInstance
-            | Self::InputAbsent => None,
+            | Self::InputAbsent
+            | Self::ExistingInstance => None,
         }
     }
 
@@ -530,6 +540,7 @@ impl OutcomeCondition {
             Self::WrongState => TestStrategy::ArrangeState,
             Self::UnknownInstance => TestStrategy::SendUnknownIdentity,
             Self::InputAbsent => TestStrategy::SendNoInput,
+            Self::ExistingInstance => TestStrategy::SendExistingIdentity,
         }
     }
 
@@ -579,7 +590,8 @@ impl OutcomeCondition {
             | Self::External { .. }
             | Self::WrongState
             | Self::UnknownInstance
-            | Self::InputAbsent => None,
+            | Self::InputAbsent
+            | Self::ExistingInstance => None,
         }
     }
 }
@@ -624,6 +636,9 @@ pub enum TestStrategy {
     /// Not an empty input: the request carries no document, which an implementation may answer
     /// differently from `{}`, and the scenario says which it sends.
     SendNoInput,
+    /// Send the command twice for one identity (ess/16, `existing_instance:`): the first call
+    /// creates the record, the second finds it and is refused.
+    SendExistingIdentity,
 }
 
 impl TestStrategy {
@@ -638,6 +653,7 @@ impl TestStrategy {
             Self::InjectFault => "inject_fault",
             Self::ArrangeState => "arrange_state",
             Self::SendUnknownIdentity => "send_unknown_identity",
+            Self::SendExistingIdentity => "send_existing_identity",
             Self::SendNoInput => "send_no_input",
         }
     }
@@ -1887,7 +1903,8 @@ impl Outcome {
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
             | OutcomeCondition::UnknownInstance
-            | OutcomeCondition::InputAbsent => false,
+            | OutcomeCondition::InputAbsent
+            | OutcomeCondition::ExistingInstance => false,
         }
     }
 
@@ -4211,6 +4228,9 @@ impl<'de> serde::Deserialize<'de> for RawSubjectFact {
 /// shape for the same reason: three keys an author writes at most one of, rather than one key whose
 /// value is sometimes a keyword and sometimes a name. Writing none of them says the outcome changes
 /// no entity, which is the honest answer for `SendEmail`.
+// One flag per marker key an author writes (`wrong_state:`, `unknown_instance:`, `input_absent:`,
+// `existing_instance:`): the document's own shape, not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawOutcome {
@@ -4264,6 +4284,14 @@ pub struct RawOutcome {
     /// (beyond10x/ess#170). Beside `unknown_instance:`, alone, naming its `error:`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub input_absent: bool,
+    /// `true` when this is the branch taken because a record already carries the identity the
+    /// command's creating branch would create (ess/16, beyond10x/ess#164).
+    ///
+    /// The refusal half of create-or-refuse: alone, naming its `error:`, beside a `creates:` whose
+    /// identity the caller supplies. The create-or-update half is `unknown_instance: true` on the
+    /// `creates:` branch itself.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub existing_instance: bool,
     /// Whether the command *refuses* in those states, or accepts and changes nothing.
     ///
     /// Absent means it refuses, which is what every wrong-state branch written before this key
@@ -4548,6 +4576,9 @@ impl TryFrom<RawOutcome> for Outcome {
         if raw.input_absent {
             absent_input::alone(&raw)?;
         }
+        if raw.existing_instance {
+            outcome_shapes::existing_alone(&raw)?;
+        }
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
         let subject_fact = raw.when_subject;
         let input_predicate = raw.when.clone();
@@ -4586,6 +4617,8 @@ impl TryFrom<RawOutcome> for Outcome {
         }
         let condition = if raw.input_absent {
             OutcomeCondition::InputAbsent
+        } else if raw.existing_instance {
+            OutcomeCondition::ExistingInstance
         } else if raw.unknown_instance {
             OutcomeCondition::UnknownInstance
         } else {
@@ -4976,6 +5009,7 @@ impl From<Outcome> for RawOutcome {
             .and_then(|subject| subject.into.clone());
         let unknown_instance = outcome.condition == OutcomeCondition::UnknownInstance;
         let input_absent = outcome.condition == OutcomeCondition::InputAbsent;
+        let existing_instance = outcome.condition == OutcomeCondition::ExistingInstance;
         let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
             .condition
         {
@@ -4992,7 +5026,8 @@ impl From<Outcome> for RawOutcome {
             }
             OutcomeCondition::Otherwise
             | OutcomeCondition::UnknownInstance
-            | OutcomeCondition::InputAbsent => (None, None, None, None, false),
+            | OutcomeCondition::InputAbsent
+            | OutcomeCondition::ExistingInstance => (None, None, None, None, false),
             OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
             OutcomeCondition::ExternalWhen { cause, predicate } => {
                 (Some(predicate), None, None, Some(cause), false)
@@ -5056,6 +5091,7 @@ impl From<Outcome> for RawOutcome {
             refuses: ((wrong_state || unknown_instance) && !outcome.refuses).then_some(false),
             unknown_instance,
             input_absent,
+            existing_instance,
             deletes,
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),

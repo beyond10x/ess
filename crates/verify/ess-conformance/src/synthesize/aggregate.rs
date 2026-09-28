@@ -351,7 +351,8 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                 | ResolvedCondition::External { .. }
                 | ResolvedCondition::WrongState
                 | ResolvedCondition::UnknownInstance
-                | ResolvedCondition::InputAbsent => {}
+                | ResolvedCondition::InputAbsent
+                | ResolvedCondition::ExistingInstance => {}
             }
             let written = outcome
                 .sets

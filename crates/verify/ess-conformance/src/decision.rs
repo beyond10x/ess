@@ -38,7 +38,8 @@ pub fn when(outcome: &ResolvedOutcome) -> Option<&Predicate> {
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
-        | ResolvedCondition::InputAbsent => None,
+        | ResolvedCondition::InputAbsent
+        | ResolvedCondition::ExistingInstance => None,
     }
 }
 

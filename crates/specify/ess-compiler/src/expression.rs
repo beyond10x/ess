@@ -330,7 +330,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
-        | ResolvedCondition::InputAbsent => None,
+        | ResolvedCondition::InputAbsent
+        | ResolvedCondition::ExistingInstance => None,
     }
 }
 

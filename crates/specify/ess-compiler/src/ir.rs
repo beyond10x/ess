@@ -648,6 +648,11 @@ pub enum ResolvedCondition {
     /// Taken when the request carries no input at all (ess/16, `input_absent:`): an absent
     /// request body, not `{}`. Answered before any input field is read.
     InputAbsent,
+    /// Taken when a record already carries the identity the command's creating branch would
+    /// create (ess/16, `existing_instance:`): the refusal half of create-or-refuse. An input-guarded
+    /// refusal (`when:` with an `error:`) is answered first; only a request none claims is answered
+    /// by existence (`docs/design/outcome-shapes.md`, "Precedence").
+    ExistingInstance,
 }
 
 /// What one outcome does to the entity it acts on, resolved.

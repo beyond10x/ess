@@ -103,7 +103,9 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::SubjectField { .. }
             | ResolvedCondition::SubjectPredicate { .. }
-            | ResolvedCondition::StateChange { .. },
+            | ResolvedCondition::StateChange { .. }
+            // A duplicate of a record that exists conflicts with that record (ess/16).
+            | ResolvedCondition::ExistingInstance,
             true,
         ) => CONFLICT,
         (ResolvedCondition::UnknownInstance, true) => NOT_FOUND,

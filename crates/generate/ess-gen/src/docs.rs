@@ -1676,14 +1676,38 @@ fn condition_sentence(
             ));
             out
         }
-        ResolvedCondition::UnknownInstance => vec![Inline::text(
-            "Taken when the identity the command names is one no record carries, before any other \
-             answer for it.",
-        )],
+        ResolvedCondition::UnknownInstance => {
+            vec![Inline::text(unknown_instance_sentence(command))]
+        }
         ResolvedCondition::InputAbsent => vec![Inline::text(
             "Taken when the request carries no input at all — an absent body, not an empty one — \
              before any input field is read.",
         )],
+        ResolvedCondition::ExistingInstance => vec![Inline::text(EXISTING_INSTANCE)],
+    }
+}
+
+/// The sentence for an `existing_instance:` branch (ess/16). An input-guarded refusal is answered
+/// first (`docs/design/outcome-shapes.md`, the precedence #178 fixed for accepting branches).
+const EXISTING_INSTANCE: &str = "Taken when a record already carries the identity the command's \
+     creating branch would create, and no input-guarded refusal applies.";
+
+/// The sentence for an `unknown_instance:` branch. On a creation (ess/16, create-or-update) an
+/// input-guarded refusal is answered first; the ess/15 refusal or no-op is the first answer.
+fn unknown_instance_sentence(command: &ResolvedCommand) -> &'static str {
+    let creates = command.outcomes.iter().any(|outcome| {
+        outcome.condition == ResolvedCondition::UnknownInstance
+            && outcome
+                .subject
+                .as_ref()
+                .is_some_and(|subject| subject.effect == ess_compiler::ir::ResolvedEffect::Creates)
+    });
+    if creates {
+        "Taken when no record carries the identity the command names, and no input-guarded \
+         refusal applies; it creates that record."
+    } else {
+        "Taken when the identity the command names is one no record carries, before any other \
+         answer for it."
     }
 }
 
@@ -1716,6 +1740,10 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         }
         TestStrategy::SendNoInput => {
             "A test reaches it by sending the command with no input at all, arranging nothing."
+        }
+        TestStrategy::SendExistingIdentity => {
+            "A test reaches it by sending the command twice with one identity: the first call \
+             creates the record, the second is answered by this branch."
         }
     }
 }
