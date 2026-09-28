@@ -8,7 +8,7 @@ description: Author an ESS document — the layout, the constructs the model ins
 
 This guide covers authoring an Executable System Specification. The normative example is
 `examples/billing/` in the repository — deliberately the smallest system that exercises the
-current `0.27.0` model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
+core of the model. Concepts are covered in [ESS](../concepts/ess.md); this page is about writing
 one.
 
 ## Layout
@@ -119,34 +119,6 @@ release that changes the output prints a `note:` naming both.
 
 ## Validate early, read the refusals
 
-The `ess/2` format, introduced in 0.20.0, adds `Binary64` for finite IEEE-754 values. Use it
-when a source contract requires binary floating-point rounding and signed zero:
-
-```yaml
-format: ess/2
-system: sample
-version: v1
-domains: [sample.settings]
-domain: sample.settings
-types:
-  - name: sample.settings.Ratio
-    kind: newtype
-    of: Binary64
-```
-
-`Integer` retains exact signed integer identity; `Decimal` retains its patterned
-string representation. Neither implicitly assigns to `Binary64`. Map keys cannot
-be Binary64. Format 1 refuses the new primitive, including fields in headerless
-fragments. Authored numeric predicates may compare Binary64 to numeric literals,
-using the existing Number predicate rules; that comparison does not construct a
-floating value.
-
-The qualified executable boundary is [format-5 normalization](generate-artifacts.md).
-Standalone structural Rust/Go codecs and whole-system/conformance targets currently
-refuse Binary64; TypeScript structural output reports the finite codec obligation.
-Adding a Binary64 type to a model selected in full therefore requires checking
-every intended target's support before adopting it.
-
 ```shell-session
 $ ess specify validate --path examples/billing
 billing v3 — 5 file(s), valid
@@ -230,6 +202,11 @@ A literal in `sets:` or `payload:` may also be written as the YAML value it mean
 `"0"` and `"false"` do. An unquoted number or boolean over a text field or an enum is refused with
 the repair, `quote it: label: '0'`. Over any other type it gets the same refusal as its quoted form.
 A decimal such as `1.5` is never a literal, quoted or not; read it from an input.
+
+A literal cannot say that an `Optional` field holds nothing. `metrics: none` is not read as the
+field's type and synthesis drops it, and `lane_id: ""` is an empty string, which a reader tells
+apart from an absent value and which a struct cannot hold at all. To empty a field, write
+`{cleared: true}`; see [value expressions](#value-expressions).
 
 ### Cover every declared enum value
 
@@ -329,6 +306,37 @@ structurally: an object with the same members in another order is the same value
 key, a predicate never reads one, and no literal spells one, so a payload fills a `Json` field from
 an input. Entity Runtime stores it as its own JSON field kind. The Rust, Go, web and CLI code
 targets refuse a model that uses it, at every position, until they have a representation for it.
+
+### Carry finite binary floating-point values
+
+The `ess/2` format, introduced in 0.20.0, adds `Binary64` for finite IEEE-754 values. Use it
+when a source contract requires binary floating-point rounding and signed zero:
+
+```yaml
+format: ess/2
+system: sample
+version: v1
+domains: [sample.settings]
+domain: sample.settings
+types:
+  - name: sample.settings.Ratio
+    kind: newtype
+    of: Binary64
+```
+
+`Integer` retains exact signed integer identity; `Decimal` retains its patterned
+string representation. Neither implicitly assigns to `Binary64`. Map keys cannot
+be Binary64. Format 1 refuses the new primitive, including fields in headerless
+fragments. Authored numeric predicates may compare Binary64 to numeric literals,
+using the existing Number predicate rules; that comparison does not construct a
+floating value.
+
+Binary64 values are executed through
+[normalization recipes](generate-artifacts.md#binary64-inputs-and-integer-conversion) (`ess-normalization/5`).
+Standalone structural Rust/Go codecs and whole-system/conformance targets
+refuse Binary64; TypeScript structural output reports the finite codec obligation.
+Adding a Binary64 type to a model selected in full therefore requires checking
+every intended target's support before adopting it.
 
 ### Select an outcome from the held subject state
 
@@ -827,6 +835,7 @@ the input or a literal:
 | `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
+| `{cleared: true}` | `sets:` | the target field is `Optional<…>`; refused in `payload:`. Synthesis asserts the field is empty in the view, so a target that keeps the old value fails |
 
 A mapping is a source when every key is one of `response`, `generated`, `cleared`, `subject`,
 `increment`, `input` and `else`; any other key makes it a nested mapping. The text
@@ -1519,5 +1528,5 @@ display names and identical keys in separate objects do not conflict.
 
 * [Verify an implementation](./verify-conformance.md) — generate the suite this specification
   obliges, run it, and turn the result into evidence.
-* [A specification and its contracts](../examples/specification-to-contracts.md) — the billing
+* [A specification and its contracts](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) — the billing
   example's source next to its generated output.

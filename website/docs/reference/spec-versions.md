@@ -30,6 +30,33 @@ separately and always have.
 The format of the system a person writes. Read by `ess specify validate` and everything downstream
 of it.
 
+Declare the lowest version that admits every construct the specification uses. A build refuses a
+header newer than it implements, and refuses each construct under a header older than the one that
+introduced it with `unsupported_format_version`. A specification that uses none of a version's
+constructs keeps its bytes and its compiled digest under the older header.
+
+| Version | Released in | What it admits |
+|---|---|---|
+| `ess/1` | [0.1.0][r1] | types, entities, commands, events, errors, views, actors, components, bindings, topology |
+| `ess/2` | [0.20.0][r20] | `Binary64` |
+| `ess/3` | [0.23.0][r23] | `when_subject_state`; binding accessors into an event envelope |
+| `ess/4` | [0.23.0][r23] | error wire names; command response fields mapped into event payloads |
+| `ess/5` | [0.27.0][r27] | an enum variant's own `wire`, `display`, `summary` and `code` |
+| `ess/6` | [0.28.0][r28] | an input guard beside an external cause; `when_subject` over an enum field; `preserves` |
+| `ess/7` | [0.29.0][r29] | `replays`; an effect-free named error as the default of subject-state branches |
+| `ess/8` | [0.34.0][r34] | `starts_with`, `ends_with`, `contains` |
+| `ess/9` | [0.34.0][r34] | `when_subject: {predicate: …}` over stored fields |
+| `ess/10` | [0.34.0][r34] | aggregate views: `aggregate:` and `group_by:` |
+| `ess/11` | [0.34.0][r34] | `alphabet:`, input `example:`, `.count` on a `String` |
+| `ess/12` | [0.34.0][r34] | `outcome_groups:` |
+| `ess/13` | [0.35.0][r35] | `fixture_inputs:` |
+| `ess/14` | [0.36.0][r36] | value expressions in `payload:` and `sets:` |
+| `ess/15` | [0.37.0][r37] | `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing`, `preconditions:`; `input.` in subject guards; `equals_ignore_case`, `in_ignore_case`; `prefix:`, `Json`, `presence:`; aggregates over `Optional` fields |
+| `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`, `{related: …}`, literal `else:` |
+| `ess/17` | unreleased | `returns: true` |
+
+The sections below give each version's rules. The first five are a table:
+
 | Version | Released in | What changed | An older reader |
 |---|---|---|---|
 | `ess/1` | [0.1.0][r1] | The first format: types, commands, events, errors, views, entities. | — |
@@ -112,9 +139,9 @@ its compiled digest.
 
 `ess/14`, introduced in [0.36.0][r36], adds value expressions to `payload:` and `sets:`: `{subject: <field>}` reads the addressed entity as it was before the outcome, `{increment: <number>}` adds to a stored `Integer` or `Decimal`, `{input: <field>, else: {generated: true}}` takes an optional input or a minted value, a nested mapping gives each field of a struct-typed target its own source, and `{generated: true}` is admitted in `sets:`. Synthesis asserts each value where the arrangement determined what it reads, and makes no claim otherwise. An older build refuses the header, and this build refuses each construct under an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its compiled digest. See [value expressions](../guides/write-a-specification.md#value-expressions).
 
-`ess/15`, introduced in [0.37.0][r37], collects the constructs of the retrofit issues of 2026-09-27 that change what a document may say: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
+`ess/15`, introduced in [0.37.0][r37], admits these constructs: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
 
-`ess/16`, introduced in [0.38.0][r38], collects the constructs of the retrofit issues filed against 0.36.0 (beyond10x/ess#162-#179) that change what a document may say. This build admits the header; each construct states its own refusal under an earlier header.
+`ess/16`, introduced in [0.38.0][r38], admits the constructs described in the paragraphs below. This build admits the header; each construct states its own refusal under an earlier header.
 
 Under `ess/16` a command may declare `input_absent: true` with an `error:`: the answer for a request that carries no input at all (beyond10x/ess#170). It is refused below `ess/16` with `unsupported_format_version`. Under `ess/16`, a guard that cannot hold because every way it could hold needs an input `f` that is not `Optional` to be absent (`not defined(f)`, `missing(f)`) is refused as a type mismatch; below `ess/16` it validates as before.
 
@@ -246,20 +273,20 @@ TypeScript refuse these envelopes by their version.
 
 `ess-conformance/24` and `/25`, introduced in [0.37.0][r37], carry a field's presence policy (`ess/15`, beyond10x/ess#139) as `presence: null_when_absent` or `omitted_when_absent` on a payload leaf, and a runner holding the suite fails an implementation that leaves a `null_when_absent` field out or sends an `omitted_when_absent` field as `null`. Version 24 is ordinary and 25 carries declared coverage; each implies every major below it. The Go and TypeScript runtimes refuse both by version. A suite without a policy keeps its earlier format.
 
-`ess-conformance/26` and `/27`, introduced in [0.38.0][r38], are the round-3 pair, carrying several constructs. Per-leaf struct values (beyond10x/ess#179): a nested mapping whose struct has an undetermined leaf, such as `rank: {generated: true}`, is asserted leaf by leaf, each determined leaf under its dotted path (`lead.number`) in the event payload or the view row, and the undetermined leaf by the payload shape for presence and type. Presence of an `Optional` aggregate (beyond10x/ess#176): a view `satisfies` predicate reading `defined(x)` or `missing(x)` where `x` is an `Optional` struct, list, map or `Json` in the view's fields, which a 0.37.0 runner would read as absent for a present value; over an `Optional` scalar the predicate selects nothing, and a view filter or `when_subject` guard is decided at synthesis and never reaches the suite. Version 26 is ordinary and 27 carries declared coverage; each implies every major below it. The Rust runner compares them; the Go and TypeScript runtimes refuse both by version. A suite with none of them keeps its earlier format and bytes. The pair also carries the `changed_by` view expectation (beyond10x/ess#148): an ungrouped aggregate view with no parameter is read and snapshotted before its scenario creates rows, and read again after them, holding exactly one row whose every named `count` and `sum` moved by exactly the stated amount. Only a skipping `sum`, listed in `absent_is_zero`, reads as zero where absent; a `count` or a required `sum` absent on either read fails. The pair also carries the `now_offset` scenario value (beyond10x/ess#171): an instant that many seconds from the moment the runner first sends it, which a guard over the current time is witnessed with.
+`ess-conformance/26` and `/27`, introduced in [0.38.0][r38], carry the vocabulary below for the `ess/16` constructs; `/27` also carries declared coverage. Per-leaf struct values (beyond10x/ess#179): a nested mapping whose struct has an undetermined leaf, such as `rank: {generated: true}`, is asserted leaf by leaf, each determined leaf under its dotted path (`lead.number`) in the event payload or the view row, and the undetermined leaf by the payload shape for presence and type. Presence of an `Optional` aggregate (beyond10x/ess#176): a view `satisfies` predicate reading `defined(x)` or `missing(x)` where `x` is an `Optional` struct, list, map or `Json` in the view's fields, which a 0.37.0 runner would read as absent for a present value; over an `Optional` scalar the predicate selects nothing, and a view filter or `when_subject` guard is decided at synthesis and never reaches the suite. Version 26 is ordinary and 27 carries declared coverage; each implies every major below it. The Rust runner compares them; the Go and TypeScript runtimes refuse both by version. A suite with none of them keeps its earlier format and bytes. The pair also carries the `changed_by` view expectation (beyond10x/ess#148): an ungrouped aggregate view with no parameter is read and snapshotted before its scenario creates rows, and read again after them, holding exactly one row whose every named `count` and `sum` moved by exactly the stated amount. Only a skipping `sum`, listed in `absent_is_zero`, reads as zero where absent; a `count` or a required `sum` absent on either read fails. The pair also carries the `now_offset` scenario value (beyond10x/ess#171): an instant that many seconds from the moment the runner first sends it, which a guard over the current time is witnessed with.
 
-The `execute_command_without_input` step (beyond10x/ess#170) is round-3 vocabulary: it invokes a command with no input document, which is not `execute_command` with `input: {}`, and a suite carrying it takes `/26` or `/27`. A target that cannot send a request without input reports the scenario `unsupported`.
+The `execute_command_without_input` step (beyond10x/ess#170) belongs to this pair: it invokes a command with no input document, which is not `execute_command` with `input: {}`, and a suite carrying it takes `/26` or `/27`. A target that cannot send a request without input reports the scenario `unsupported`.
 
-The `page` view expectation (beyond10x/ess#174) is round-3 vocabulary too: after a read of a paged view that sent its page and size parameters, the page holds exactly `rows` rows (at least `rows`, and at most `size`, with `at_least: true`), the answer carries a total of at least `total_at_least` where one is named, and with `follows` the page continues the one the run snapshotted before it — its rows in `follows.order_by`, none ranked before that page's last row, and none carrying that page's values in all of `follows.distinct_by`. Each claim holds on a target other users share. A suite carrying it takes `ess-conformance/26` or `/27`; the Go and TypeScript runtimes refuse both by version.
+The `page` view expectation (beyond10x/ess#174) belongs to this pair too: after a read of a paged view that sent its page and size parameters, the page holds exactly `rows` rows (at least `rows`, and at most `size`, with `at_least: true`), the answer carries a total of at least `total_at_least` where one is named, and with `follows` the page continues the one the run snapshotted before it — its rows in `follows.order_by`, none ranked before that page's last row, and none carrying that page's values in all of `follows.distinct_by`. Each claim holds on a target other users share. A suite carrying it takes `ess-conformance/26` or `/27`; the Go and TypeScript runtimes refuse both by version.
 
-A bounded retry (beyond10x/ess#165) is round-3 vocabulary too: `configure_external_outcome` may carry `times` (force the outcome on the next `times` invocations), `expect_invocation` may carry `count` (exactly that many matching invocations), and a binding scenario may be filed under the `final-failure` aspect. A suite carrying any of them takes `/26` or `/27`. A target that cannot force an outcome more than once reports the scenario `unsupported`.
+A bounded retry (beyond10x/ess#165) belongs to this pair too: `configure_external_outcome` may carry `times` (force the outcome on the next `times` invocations), `expect_invocation` may carry `count` (exactly that many matching invocations), and a binding scenario may be filed under the `final-failure` aspect. A suite carrying any of them takes `/26` or `/27`. A target that cannot force an outcome more than once reports the scenario `unsupported`.
 
 `ess-conformance/28` and `ess-conformance/29` are unreleased. They add
 `expect_direct_response`, which checks the immediately preceding invocation's actual return
 against its complete typed response schema and any authored literals. Version 28 is ordinary;
 29 carries declared coverage and exact-parent lineage. The Rust runner requires report/2.
 Go and TypeScript generation refuse the observation, and older readers refuse these envelopes
-before target callbacks. Released suites 26 and 27 retain their round-3 meaning and bytes.
+before target callbacks. Released suites 26 and 27 retain their meaning and bytes.
 Direct responses preserve exact integers, nested presence policies, collection order and
 duplicate multiplicity; Binary64 remains outside the admitted profile. Responses are bounded
 to 1 MiB, depth 128 and 65,536 members per collection, without truncation.

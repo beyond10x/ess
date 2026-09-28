@@ -12,22 +12,22 @@ can be compiled into deterministic intermediate representation, inspected as a g
 semantically across revisions, projected into supported concrete formats, and used to generate the
 conformance scenarios an implementation must satisfy.
 
-The canonical command is `ess`.
+The command is `ess`. Its first level is four areas:
 
 ```shell-session
-$ ess specify validate --path examples/billing
-$ ess specify compile --path examples/billing --out target/billing.ir.json
-$ ess generate --path examples/billing --kind site --out target/projections
-$ ess verify conform synthesize --path examples/billing --out target/suite.json
+$ ess specify validate --path spec                                      # is the specification consistent?
+$ ess generate --path spec --kind openapi --out generated               # derive a contract from it
+$ ess verify conform synthesize --path spec --target typescript --out conformance   # the tests it obliges
+$ ess infra import openapi --path api.yaml --out interface.json         # read an existing source
 ```
 
 ## What ESS owns
 
 - typed system, domain, entity, command, event, view, component, binding, and topology semantics;
 - deterministic compilation, inspection, graphing, semantic diff, and impact analysis;
-- repository Markdown, static-site-ready Markdown/sidebar, schema, OpenAPI, and AsyncAPI generation;
+- Markdown documentation, an HTML site, JSON Schema, OpenAPI, and AsyncAPI generation;
 - structural synthesis with explicit implementation obligations;
-- standalone conformance-suite generation, execution, and reporting;
+- conformance-suite generation, runners in Go and TypeScript, and standalone reports;
 - OpenAPI and Kubernetes adapters with declared coverage;
 - sanitized infrastructure observation, analysis, simulation, drift, and projection.
 
@@ -39,7 +39,14 @@ references, obligations, or refusals. Round-trip guarantees apply only to the su
 declares.
 
 ESS generates documentation *from* a typed specification. It does not turn prose or Markdown into a
-specification, and its `site` projection deliberately stops before HTML, theming, and hosting.
+specification, and it does not host the site it renders.
 
-Start with [the walkthrough](./getting-started.md), read [the model](./concepts/ess.md), or follow
-the complete [specification-to-contract example](./examples/specification-to-contracts.md).
+## Where to go next
+
+| You want to | Read |
+|---|---|
+| Install `ess` and get from an empty directory to a passing conformance run | [Getting started](./getting-started.md) |
+| Understand what a specification declares and what is derived from it | [The model](./concepts/ess.md) |
+| See one command's source next to every contract generated from it | [Specification to contracts](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) |
+| Look up a command, a format version or a predicate | [CLI](./reference/cli.md), [format versions](./reference/spec-versions.md), [predicates](./reference/predicates.md) |
+| Know what is supported today and what is not | [Where this stands](./status/where-this-stands.md) |

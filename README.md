@@ -7,6 +7,10 @@ infrastructure against what was declared.
 The canonical command is `ess`, and its first level is the four areas the crates are grouped into:
 `specify`, `generate`, `verify`, `infra`.
 
+New to ESS? [Getting started](https://beyond10x.github.io/docs/ess/getting-started/) goes from
+installing `ess` to a specification of your own, a generated contract and a passing conformance
+run. The commands below run the repository's own examples from a checkout.
+
 ## Point your agent here
 
 The agent plugin is `ess@b10x` in [`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins).
@@ -59,7 +63,7 @@ Pick the target for your machine from the [release page](https://github.com/beyo
 For example, to install the current release for Apple Silicon in the current directory:
 
 ```console
-version=0.9.1
+version=0.38.0
 target=aarch64-apple-darwin
 archive="ess-${version}-${target}.tar.gz"
 base="https://github.com/beyond10x/ess/releases/download/${version}"
@@ -120,7 +124,7 @@ any of these documents.
 `ess-component/1` joins those documents as the release boundary owned by an implementation
 repository. Runtime and chart manifests are bundled as canonical `ess-release-bundle/1`, published
 and fetched through OCI by digest, then revalidated before entering the local cache. Runtime models
-can expose named Services and persistent volumes, and `ess deployment reconcile` applies only the
+can expose named Services and persistent volumes, and `ess generate deployment reconcile` applies only the
 release units changed from an optional previous deployment IR. See the
 [independent component delivery concept](website/docs/concepts/component-delivery.md).
 
@@ -130,9 +134,10 @@ relations shipped in `0.5.0` and their
 and references, what that refuses, and how one extension key (`x-ess-relation`) carries a relation
 into JSON Schema, OpenAPI and Rust.
 
-`ess generate --kind docs` emits repository Markdown and Mermaid. The `site` projection, introduced in
-`0.4.0`, adds frontmatter and `sidebar.json` to the same pages so a static site generator can consume
-them. It does not accept prose as its specification and does not emit HTML, a theme, or hosting.
+`ess generate --kind docs` emits repository Markdown and Mermaid. `--kind site` renders the same
+pages as a static HTML site with a local stylesheet and diagram renderer, and `--kind docs-ir` writes
+the document model both render. None of them reads prose as a specification, and ESS does not host
+the site.
 
 ## The crate tree
 
