@@ -15,9 +15,9 @@
 //!    ([`HistoryRefusal::Malformed`]), or another `format`;
 //! 2. a history recorded against a specification other than the one being checked, before any
 //!    operation is looked at;
-//! 3. an operation whose completion disagrees with its instants or its outcome, one on a client
-//!    the history does not count, two operations with one identity (compared without regard to
-//!    hexadecimal case), and a UUID not written in lower case.
+//! 3. an operation whose completion disagrees with its instants, its outcome or its rows, one on a
+//!    client the history does not count, two operations with one identity (compared without regard
+//!    to hexadecimal case), and a UUID not written in lower case.
 //!
 //! A [`Completion::Returned`] operation carries both its return instant and its outcome. An
 //! operation with no answer is [`Completion::Indeterminate`]. It carries no return instant and
@@ -211,6 +211,14 @@ pub struct Operation {
     /// The outcome it answered with; present exactly when `completion` is `Returned`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<QualifiedName>,
+    /// For a read of a view: the identity of each row it answered with, in the order answered.
+    ///
+    /// Written only on a `Returned` read, and only where every row carries the identity of the
+    /// instance it projects. Absent on a command, and on a read that could not record it; the
+    /// checker judges no read without it ([`crate::linearize`]). A document written before the
+    /// field existed reads unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<Vec<String>>,
 }
 
 /// What [`read`] admits for a [`History`]: the same fields, deserialized only from a JSON object.
@@ -252,6 +260,7 @@ struct OperationWire {
     returned_at: Option<u64>,
     completion: Completion,
     outcome: Option<QualifiedName>,
+    rows: Option<Vec<String>>,
 }
 
 impl From<OperationWire> for Operation {
@@ -265,6 +274,7 @@ impl From<OperationWire> for Operation {
             returned_at: wire.returned_at,
             completion: wire.completion,
             outcome: wire.outcome,
+            rows: wire.rows,
         }
     }
 }
@@ -354,6 +364,12 @@ pub enum HistoryRefusal {
         /// The operation.
         operation_id: String,
     },
+    /// An operation is `Indeterminate` and carries `rows`: a read that never answered answered no
+    /// rows.
+    IndeterminateWithRows {
+        /// The operation.
+        operation_id: String,
+    },
     /// An operation is `Returned` and carries no outcome.
     ReturnedWithoutOutcome {
         /// The operation.
@@ -389,6 +405,7 @@ impl HistoryRefusal {
                 "history.indeterminate-with-return-instant"
             }
             Self::IndeterminateWithOutcome { .. } => "history.indeterminate-with-outcome",
+            Self::IndeterminateWithRows { .. } => "history.indeterminate-with-rows",
             Self::ReturnedWithoutOutcome { .. } => "history.returned-without-outcome",
             Self::NonCanonicalUuid { .. } => "history.non-canonical-uuid",
             Self::IntegerOutOfRange { .. } => "history.integer-out-of-range",
@@ -446,6 +463,10 @@ impl fmt::Display for HistoryRefusal {
             Self::IndeterminateWithOutcome { operation_id } => write!(
                 formatter,
                 "{code}: operation {operation_id} is `Indeterminate` and carries `outcome`"
+            ),
+            Self::IndeterminateWithRows { operation_id } => write!(
+                formatter,
+                "{code}: operation {operation_id} is `Indeterminate` and carries `rows`"
             ),
             Self::ReturnedWithoutOutcome { operation_id } => write!(
                 formatter,
@@ -625,6 +646,11 @@ fn check(operation: &Operation, clients: u64) -> Result<(), HistoryRefusal> {
         }
         (Completion::Indeterminate, None) if operation.outcome.is_some() => {
             Err(HistoryRefusal::IndeterminateWithOutcome {
+                operation_id: operation_id(),
+            })
+        }
+        (Completion::Indeterminate, None) if operation.rows.is_some() => {
+            Err(HistoryRefusal::IndeterminateWithRows {
                 operation_id: operation_id(),
             })
         }

@@ -14,10 +14,10 @@
 //! - an `owns` relation with `via: X` nests the target inside its owner, so the target's field `X`
 //!   is carried by the nesting and is not a field of the target;
 //! - `Integer` is `u64`, `String` is `String`, `Uuid` is `Uuid`, `concurrent.history.T` is `T`,
-//!   `Optional<T>` is `Option<T>` and a `many` relation is `Vec<Target>`; an optional field is not
-//!   `required` in the schema; in the schema `Integer` is `type: integer`, `String` is
-//!   `type: string`, a declared type or `Uuid` is a `$ref` to its definition, `Optional<T>` adds
-//!   `null`, and a relation is an `array` of its target;
+//!   `Optional<T>` is `Option<T>`, `List<T>` is `Vec<T>` and a `many` relation is `Vec<Target>`; an
+//!   optional field is not `required` in the schema; in the schema `Integer` is `type: integer`,
+//!   `String` is `type: string`, a declared type or `Uuid` is a `$ref` to its definition,
+//!   `Optional<T>` adds `null`, and a `List<T>` or a relation is an `array` of its items;
 //! - an enum `concurrent.history.T` is `enum T`, compared by wire name;
 //! - a newtype `concurrent.history.T` is a `struct T` or a `pub use …::T`.
 //!
@@ -113,6 +113,12 @@ fn rust_spelling(model_type: &str) -> String {
         .and_then(|rest| rest.strip_suffix('>'))
     {
         return format!("Option<{}>", rust_spelling(inner));
+    }
+    if let Some(inner) = model_type
+        .strip_prefix("List<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        return format!("Vec<{}>", rust_spelling(inner));
     }
     match model_type {
         "Integer" => "u64".to_owned(),
