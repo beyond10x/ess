@@ -77,12 +77,35 @@ func suiteReference(value any) error {
 		return err
 	}
 	d, ok := r["digest"].(string)
-	if (r["version"] != "ess-conformance/5" && r["version"] != "ess-conformance/7" && r["version"] != "ess-conformance/9" && r["version"] != "ess-conformance/11" && r["version"] != "ess-conformance/13" && r["version"] != "ess-conformance/15" && r["version"] != "ess-conformance/17" && r["version"] != "ess-conformance/19" && r["version"] != "ess-conformance/21") || r["digest_profile"] != "sha256-json-bytes/1" ||
+	version, _ := r["version"].(string)
+	if !coverageMajor(suiteMajor(version)) || r["digest_profile"] != "sha256-json-bytes/1" ||
 		!ok || !strings.HasPrefix(d, "sha256:") || !modelDigest.MatchString(strings.TrimPrefix(d, "sha256:")) {
 		return coverageError()
 	}
 	return nil
 }
+
+// newestSuiteMajor is the highest `ess-conformance/N` this runtime reads.
+//
+// The generator refuses the direct-response majors (/28 and /29) before it writes a package, so
+// every major the synthesizer writes for a Go package is at most this one.
+const newestSuiteMajor = 27
+
+// suiteMajor is N for an `ess-conformance/N` this runtime reads, spelled exactly, and 0 otherwise.
+// Each major implies every major below it, so one number answers every "does this suite carry X"
+// question the admission asks.
+func suiteMajor(version string) int {
+	for major := 1; major <= newestSuiteMajor; major++ {
+		if version == "ess-conformance/"+strconv.Itoa(major) {
+			return major
+		}
+	}
+	return 0
+}
+
+// coverageMajor is whether a suite major carries a coverage inventory: every odd major from /5.
+func coverageMajor(major int) bool { return major >= 5 && major%2 == 1 }
+
 func referenceFor(suite Suite) map[string]any {
 	return map[string]any{"version": suite.Provenance.SuiteVersion, "digest_profile": "sha256-json-bytes/1", "digest": originalDigest(suite.original)}
 }
@@ -895,7 +918,7 @@ func scenarioMeaning(value any) any {
 	for _, value := range scenario["steps"].([]any) {
 		step := copyObject(value.(map[string]any))
 		defaults := map[string]string{
-			"execute_command": "input", "expect_error": "fields", "expect_event": "payload shape",
+			"execute_command": "input caller", "execute_command_without_input": "caller", "expect_error": "fields", "expect_event": "payload shape",
 			"query_view": "params", "eventually_view": "params", "eventually_event": "payload shape",
 			"expect_invocation": "input", "expect_duration": "", "expect_halt": "params", "eventually_halt": "params",
 		}
@@ -904,7 +927,7 @@ func scenarioMeaning(value any) any {
 				step[key] = map[string]any{}
 			}
 		}
-		if step["step"] == "execute_command" {
+		if step["step"] == "execute_command" || step["step"] == "execute_command_without_input" {
 			if _, ok := step["actor"]; !ok {
 				step["actor"] = nil
 			}
@@ -914,7 +937,7 @@ func scenarioMeaning(value any) any {
 				step[key] = valuesMeaning(values)
 			}
 		}
-		for _, key := range []string{"payload", "fields"} {
+		for _, key := range []string{"payload", "fields", "caller"} {
 			if values, ok := step[key]; ok {
 				step[key] = nodeMeaning(values)
 			}
@@ -944,8 +967,35 @@ func scenarioMeaning(value any) any {
 				if _, ok := expected["at_most"]; !ok {
 					expected["at_most"] = nil
 				}
+			case "changed_by":
+				// Amounts, not scenario values, and an unlisted absent_is_zero is an empty one.
+				expected["fields"] = nodeMeaning(expected["fields"])
+				zero := map[string]any{}
+				if listed, ok := expected["absent_is_zero"].([]any); ok {
+					for _, name := range listed {
+						zero[name.(string)] = true
+					}
+				}
+				expected["absent_is_zero"] = zero
+			case "page":
+				if _, ok := expected["at_least"]; !ok {
+					expected["at_least"] = false
+				}
+				if _, ok := expected["total_at_least"]; !ok {
+					expected["total_at_least"] = nil
+				}
+				if follows, ok := expected["follows"].(map[string]any); ok {
+					follows = copyObject(follows)
+					if _, ok := follows["distinct_by"]; !ok {
+						follows["distinct_by"] = []any{}
+					}
+					follows["order_by"] = rankingMeaning(follows["order_by"])
+					expected["follows"] = follows
+				} else {
+					expected["follows"] = nil
+				}
 			}
-			if fields, ok := expected["fields"].(map[string]any); ok {
+			if fields, ok := expected["fields"].(map[string]any); ok && expected["expect"] != "changed_by" {
 				expected["fields"] = valuesMeaning(fields)
 			}
 			if predicate, ok := expected["predicate"]; ok {
@@ -1146,10 +1196,40 @@ type ScenarioContext struct {
 
 // CommandRequest is one command invocation.
 type CommandRequest struct {
-	Command     string
-	Actor       string
+	Command string
+	Actor   string
+	// Caller is the attributes of the caller to send the command as, where its actor declares any
+	// (suite/26, `attributes:`, beyond10x/ess#168); nil otherwise. The target sends the command
+	// authenticated as a caller carrying exactly these values, because the command reads them
+	// from the credential and not from the input. A target that cannot authenticate as the caller
+	// named here returns ErrUnsupported, never the command sent as someone else.
+	Caller      map[string]Node
 	Input       map[string]Node
 	Correlation string
+}
+
+// AbsentInputRequest is one command invocation with no input document at all (suite/26,
+// `input_absent:`, beyond10x/ess#170) — an absent request body, not `{}`, which is the other
+// request and which an implementation may answer differently.
+type AbsentInputRequest struct {
+	Command     string
+	Actor       string
+	Caller      map[string]Node
+	Correlation string
+}
+
+// AbsentInputTarget is what a target implements to send a command with no input. Optional: a
+// target without it reports the one scenario that needs it skipped, never passed.
+type AbsentInputTarget interface {
+	ExecuteCommandWithoutInput(request AbsentInputRequest) (CommandResult, error)
+}
+
+// RepeatedOutcomeTarget is what a target implements to force an external outcome on the next
+// `times` invocations of its command rather than the next one only (suite/26, a binding's bounded
+// retry, beyond10x/ess#165). Optional: a target without it reports the scenario skipped rather
+// than passing it on one forced failure.
+type RepeatedOutcomeTarget interface {
+	ConfigureExternalOutcomeRepeatedly(control ExternalOutcomeControl, times int) error
 }
 
 // CommandResult is what one command did.
@@ -1205,6 +1285,11 @@ type ViewRequest struct {
 // ViewResult is what a view holds.
 type ViewResult struct {
 	Rows []Row
+	// Total is the number of rows the view's filter admits, where the answer carries one: a view
+	// declaring `paging: {total: true}` (suite/26, beyond10x/ess#174) answers it beside a page. Nil
+	// for every other answer. The page and the size a read asks for travel in ViewRequest.Params
+	// under the view's declared parameter names.
+	Total *uint64
 }
 
 // InvocationObservationRequest asks what one binding invoked.
@@ -1483,6 +1568,14 @@ type Step struct {
 	// Never zero in a suite this runner will see: the authored format refuses a halt claimed after
 	// no rows at all, because a reader that takes none never sees one and so never says stop.
 	After int `json:"after,omitempty"`
+	// Caller is the attributes of the caller a command is sent as (suite/26, beyond10x/ess#168).
+	Caller map[string]Node `json:"caller,omitempty"`
+	// Times is how many invocations a forced external outcome holds for (suite/26, a bounded
+	// retry); zero for the next one only.
+	Times int `json:"times,omitempty"`
+	// Count is the exact number of invocations an `expect_invocation` requires (suite/26); zero
+	// for "at least one".
+	Count int `json:"count,omitempty"`
 }
 
 // Held is what one declared payload field must hold.
@@ -1508,6 +1601,10 @@ type Held struct {
 	//
 	// It excuses absence, not the value. See holds.
 	Optional bool `json:"optional,omitempty"`
+	// Presence is how an absent value of an `Optional` field travels (suite/24, beyond10x/ess#139):
+	// `null_when_absent` refuses a left-out key, `omitted_when_absent` refuses a `null`. Empty
+	// permits both, as before.
+	Presence string `json:"presence,omitempty"`
 }
 
 // OutcomeRef names one branch of one command.
@@ -1526,6 +1623,9 @@ type Value struct {
 	Instance  string                `json:"instance,omitempty"`
 	Event     string                `json:"event,omitempty"`
 	Field     string                `json:"field,omitempty"`
+	// Seconds is a `now_offset` value's distance from the moment the runner sends it (suite/26,
+	// beyond10x/ess#171).
+	Seconds int64 `json:"seconds,omitempty"`
 }
 
 // Expectation is what must hold of a view.
@@ -1541,6 +1641,14 @@ type Expectation struct {
 	AtLeast   *int             `json:"at_least,omitempty"`
 	AtMost    *int             `json:"at_most,omitempty"`
 	Position  *Position        `json:"position,omitempty"`
+	// Changes is a `changed_by` expectation's amount per field, and AbsentIsZero the fields whose
+	// absence reads as zero (suite/26, beyond10x/ess#148). Decoded by decodeExpectation, because
+	// `fields` holds plain numbers there and scenario values everywhere else.
+	Changes      map[string]Node `json:"-"`
+	AbsentIsZero []string        `json:"-"`
+	// Paged is a `page` expectation (suite/26, beyond10x/ess#174), decoded the same way: its
+	// `at_least` is a boolean where a count's is a number.
+	Paged *pageExpectation `json:"-"`
 }
 
 // Position is which row of a view an assertion is about.
@@ -1569,8 +1677,8 @@ func Run(t *testing.T, newTarget func() Target) {
 	if err != nil {
 		t.Fatalf("suite admission: %v", err)
 	}
-	if (suite.Provenance.SuiteVersion == "ess-conformance/8" || suite.Provenance.SuiteVersion == "ess-conformance/9" || suite.Provenance.SuiteVersion == "ess-conformance/10" || suite.Provenance.SuiteVersion == "ess-conformance/11" || suite.Provenance.SuiteVersion == "ess-conformance/12" || suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/14" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/16" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/18" || suite.Provenance.SuiteVersion == "ess-conformance/19" || suite.Provenance.SuiteVersion == "ess-conformance/20" || suite.Provenance.SuiteVersion == "ess-conformance/21") && config.version != "2" {
-		t.Fatalf("suite/8 through /21 require explicit ESS_REPORT_FORMAT=2 before execution")
+	if suiteMajor(suite.Provenance.SuiteVersion) >= 8 && config.version != "2" {
+		t.Fatalf("suite/8 through /27 require explicit ESS_REPORT_FORMAT=2 before execution")
 	}
 	if (suite.Provenance.SuiteVersion == "ess-conformance/5" || suite.Provenance.SuiteVersion == "ess-conformance/6" || suite.Provenance.SuiteVersion == "ess-conformance/7") && config.version != "2" {
 		t.Fatalf("suite/5, /6 and /7 require explicit ESS_REPORT_FORMAT=2 before execution")
@@ -1824,6 +1932,10 @@ type run struct {
 	snapshots map[string]subjectSnapshot
 	// queried is which view lastView came from.
 	queried string
+	// viewSnapshots are the rows `snapshot_view` captured, by view (suite/22 and /26).
+	viewSnapshots map[string][]Row
+	// nowFixed is the instant each `now_offset` of this scenario resolved to, by its seconds.
+	nowFixed map[int64]string
 	// status is what this scenario has come to so far: passed until a step fails or skips.
 	status string
 	// callbacksComplete records returned callbacks, independently of a provisional skip/failure.
@@ -1884,7 +1996,16 @@ func (r *run) execute(id string, scenario Scenario) {
 // A failed assertion stops the scenario: the steps after it were written assuming this one held,
 // and running them produces a second failure about the first one's cause.
 func (r *run) step(index int, step Step) bool {
+	r.fixNowOffsets(step)
 	switch step.Step {
+	case "execute_command_without_input":
+		return r.executeCommandWithoutInput(index, step)
+	case "expect_subject_absent":
+		return r.expectSubjectAbsent(index, step)
+	case "snapshot_view":
+		return r.snapshotView(index, step)
+	case "expect_view_unchanged":
+		return r.expectViewUnchanged(index, step)
 	case "resolve_fixtures":
 		return r.fail(index, "fixture resolution must precede scenario activity")
 	case "expect_event_values":
@@ -1982,6 +2103,7 @@ func (r *run) executeCommand(index int, step Step) bool {
 	result, err := r.target.ExecuteCommand(CommandRequest{
 		Command:     step.Command,
 		Actor:       step.Actor,
+		Caller:      sentAs(step.Caller),
 		Input:       input,
 		Correlation: r.correlation,
 	})
@@ -1992,24 +2114,7 @@ func (r *run) executeCommand(index int, step Step) bool {
 	if err != nil {
 		return r.fail(index, "executing `%s`: %v", step.Command, err)
 	}
-	if result.Response != nil {
-		result, err = snapshotResponseResult(result)
-		if err != nil {
-			return r.fail(index, "response observation: %v", err)
-		}
-	}
-	r.consistency = result.Consistency
-	r.last = result
-	r.lastCommand = step.Command
-	// Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
-	// command — a scenario that creates an invoice and then pays it asserts that paying emitted no
-	// `InvoiceCreated`, which would be false against everything seen so far.
-	r.observed = map[string][]ObservedEvent{}
-	for _, event := range result.DirectEvents {
-		r.observed[event.Event] = append(r.observed[event.Event], event)
-		r.remember(event)
-	}
-	return true
+	return r.took(index, step.Command, result)
 }
 
 // remember records an occurrence for the whole scenario, without recording one twice.
@@ -2273,6 +2378,10 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 		return false, "the suite names no expectation, which is a generator defect", true
 	}
 	switch expectation.Expect {
+	case "changed_by":
+		return r.changedBy(step)
+	case "page":
+		return r.pageOf(step)
 	case "contains", "excludes":
 		want, ok := r.resolveAll(index, expectation.Fields)
 		if !ok {
@@ -2384,6 +2493,13 @@ func (r *run) decide(index int, step Step) (bool, string, bool) {
 }
 
 func (r *run) expectInvocation(index int, step Step) bool {
+	if step.Count > 0 {
+		want, absent, ok := r.invocationWanted(index, step)
+		if !ok {
+			return false
+		}
+		return r.expectInvocationCount(index, step, want, absent)
+	}
 	invocations, err := r.target.ObserveInvocations(InvocationObservationRequest{
 		Binding:     step.Binding,
 		Command:     step.Command,
@@ -2399,18 +2515,9 @@ func (r *run) expectInvocation(index int, step Step) bool {
 	if err != nil {
 		return r.fail(index, "observing `%s`: %v", step.Binding, err)
 	}
-	want := map[string]Node{}
-	absent := []string{}
-	for field, value := range step.Input {
-		node, present, err := r.resolveAccessorExpected(value)
-		if err != nil {
-			return r.fail(index, "`%s`: %v", field, err)
-		}
-		if present {
-			want[field] = node
-		} else {
-			absent = append(absent, field)
-		}
+	want, absent, ok := r.invocationWanted(index, step)
+	if !ok {
+		return false
 	}
 	for _, invocation := range invocations {
 		absenceOK := true
@@ -2430,6 +2537,25 @@ func (r *run) expectInvocation(index int, step Step) bool {
 	)
 }
 
+// invocationWanted is the values each named input of an invocation must carry, and the inputs that
+// must be absent.
+func (r *run) invocationWanted(index int, step Step) (map[string]Node, []string, bool) {
+	want := map[string]Node{}
+	absent := []string{}
+	for field, value := range step.Input {
+		node, present, err := r.resolveAccessorExpected(value)
+		if err != nil {
+			return nil, nil, r.fail(index, "`%s`: %v", field, err)
+		}
+		if present {
+			want[field] = node
+		} else {
+			absent = append(absent, field)
+		}
+	}
+	return want, absent, true
+}
+
 func (r *run) redeliver(index int, step Step) bool {
 	err := r.target.RedeliverEvent(RedeliveryRequest{Event: step.Event, Correlation: r.correlation})
 	if errors.Is(err, ErrUnsupported) {
@@ -2445,6 +2571,9 @@ func (r *run) redeliver(index int, step Step) bool {
 func (r *run) configure(index int, step Step) bool {
 	if step.Force == nil {
 		return r.fail(index, "the suite names no outcome to force, which is a generator defect")
+	}
+	if step.Times > 0 {
+		return r.configureRepeatedly(index, step)
 	}
 	err := r.target.ConfigureExternalOutcome(ExternalOutcomeControl{
 		Command:     step.Force.Command,
@@ -2707,6 +2836,12 @@ func (r *run) resolve(value Value) (Node, error) {
 		return copyFixtureValue(resolved)
 	case "literal":
 		return value.Value, nil
+	case "now_offset":
+		instant, ok := r.nowFixed[value.Seconds]
+		if !ok {
+			return nil, fmt.Errorf("now_offset %d names no instant the runner's wall clock can spell", value.Seconds)
+		}
+		return instant, nil
 	case "instance":
 		bound, ok := r.instances[value.Instance]
 		if !ok {
@@ -2739,12 +2874,33 @@ func (r *run) resolve(value Value) (Node, error) {
 // that identify the instance it is about.
 func matches(row map[string]Node, want map[string]Node) bool {
 	for field, expected := range want {
-		actual, ok := row[field]
-		if !ok || !equal(actual, expected) {
+		actual, ok := carriedAt(row, field)
+		if !ok {
+			// A leaf path finds nothing where the leaf, or a struct above it, was not written or
+			// is null: that is the leaf holding nothing, which is what a `null` asks about
+			// (suite/26, beyond10x/ess#179). A plain field name keeps exact comparison.
+			if strings.Contains(field, ".") && expected == nil {
+				continue
+			}
+			return false
+		}
+		if !equal(actual, expected) {
 			return false
 		}
 	}
 	return true
+}
+
+// carriedAt is the value a payload or row carries under key: a field name, or — suite/26 and later
+// (beyond10x/ess#179) — the dotted path of one leaf inside a struct field. A field name holds no
+// dot, so an older suite reads exactly as before. The same reading as ess_conformance::runner's
+// `carried_at`.
+func carriedAt(row map[string]Node, key string) (Node, bool) {
+	value, state, _ := lookup(row, key)
+	if state != reachValue {
+		return nil, false
+	}
+	return value, true
 }
 
 // equal compares two specification values structurally.
@@ -3010,13 +3166,19 @@ func holds(payload map[string]Node, shape map[string]Held) string {
 			// would admit a scalar wherever the specification declares a struct.
 			return fmt.Sprintf("`%s` holds %s, so `%s` is not there to read", at, render(value), path)
 		case reachAbsent:
-			if expected.Optional {
+			if presenceAdmits(expected, true) {
 				continue
+			}
+			if expected.Presence == "null_when_absent" {
+				return fmt.Sprintf("did not carry `%s`, which is declared null_when_absent", path)
 			}
 			return fmt.Sprintf("did not carry `%s`", path)
 		}
 		if value == nil && expected.Optional {
-			continue
+			if presenceAdmits(expected, false) {
+				continue
+			}
+			return fmt.Sprintf("carried `%s` as null, which is declared omitted_when_absent", path)
 		}
 		switch expected.Holds {
 		case "primitive":
@@ -3524,7 +3686,7 @@ func scenarioIdentity(id string) error {
 	case len(p) == 3 && p[1] == "authored":
 		valid = q(p[0]) && k(p[2])
 	case len(p) == 3 && p[1] == "binding":
-		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure")
+		valid = k(p[0]) && (p[2] == "delivery" || p[2] == "flow" || p[2] == "mapping" || p[2] == "on-failure" || p[2] == "final-failure")
 	case len(p) == 5 && p[1] == "state" && (p[3] == "refuses" || p[3] == "accepts"):
 		valid = q(p[0]) && stateName.MatchString(p[2]) && q(p[4])
 	case len(p) == 6 && p[1] == "transition" && p[3] == "by":
@@ -3565,55 +3727,12 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 	if err != nil {
 		return suite, err
 	}
-	major := 0
-	switch version {
-	case "ess-conformance/1":
-		major = 1
-	case "ess-conformance/2":
-		major = 2
-	case "ess-conformance/3":
-		major = 3
-	case "ess-conformance/4":
-		major = 4
-	case "ess-conformance/5":
-		major = 5
-	case "ess-conformance/6":
-		major = 6
-	case "ess-conformance/7":
-		major = 7
-	case "ess-conformance/8":
-		major = 8
-	case "ess-conformance/9":
-		major = 9
-	case "ess-conformance/10":
-		major = 10
-	case "ess-conformance/11":
-		major = 11
-	case "ess-conformance/12":
-		major = 12
-	case "ess-conformance/13":
-		major = 13
-	case "ess-conformance/14":
-		major = 14
-	case "ess-conformance/15":
-		major = 15
-	case "ess-conformance/16":
-		major = 16
-	case "ess-conformance/17":
-		major = 17
-	case "ess-conformance/18":
-		major = 18
-	case "ess-conformance/19":
-		major = 19
-	case "ess-conformance/20":
-		major = 20
-	case "ess-conformance/21":
-		major = 21
-	default:
+	major := suiteMajor(version)
+	if major == 0 {
 		return suite, fmt.Errorf("unsupported suite version %q", version)
 	}
-	if _, present := root["coverage"]; present != (major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 || major == 21) {
-		return suite, fmt.Errorf("coverage is required exactly for suite/5, /7, /9, /11, /13, /15, /17, /19 and /21")
+	if _, present := root["coverage"]; present != coverageMajor(major) {
+		return suite, fmt.Errorf("coverage is required exactly for the odd suite majors from /5 through /27")
 	}
 	for _, key := range []string{"system", "specification_version", "spec_digest", "contract_digest"} {
 		s, err := text(p[key])
@@ -3640,6 +3759,10 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		// An aggregate scenario (beyond10x/ess#96) arrived in suite/16 and /17.
 		if strings.HasSuffix(id, "/aggregate") && major < 16 {
 			return suite, fmt.Errorf("aggregate views require suite/16 or /17")
+		}
+		// A bounded retry's final-failure scenario (beyond10x/ess#165) arrived in suite/26 and /27.
+		if strings.HasSuffix(id, "/binding/final-failure") && major < 26 {
+			return suite, fmt.Errorf("a bounded retry requires suite/26 or /27")
 		}
 		s, err := closed(scenario, "purpose steps source", "")
 		if err != nil {
@@ -3685,7 +3808,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 			}
 		}
 	}
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 || major == 21 {
+	if coverageMajor(major) {
 		coverage, _ := root["coverage"].(map[string]any)
 		if refused, ok := coverage["refused"].([]any); ok {
 			for _, item := range refused {
@@ -3714,7 +3837,7 @@ func admitSuiteDocument(raw string, explicit bool) (Suite, error) {
 		}
 	}
 	suite.original, suite.document = raw, root
-	if major == 5 || major == 7 || major == 9 || major == 11 || major == 13 || major == 15 || major == 17 || major == 19 || major == 21 {
+	if coverageMajor(major) {
 		suite.coverage = root["coverage"].(map[string]any)
 		// Original admission includes parents which will never execute. Retain their exact
 		// unsigned metadata independently of the inherited target API's narrower int fields.
@@ -3745,7 +3868,7 @@ func executionSuite(suite Suite) (Suite, error) {
 			return Suite{}, err
 		}
 		var err error
-		if suite.Provenance.SuiteVersion == "ess-conformance/13" || suite.Provenance.SuiteVersion == "ess-conformance/15" || suite.Provenance.SuiteVersion == "ess-conformance/17" || suite.Provenance.SuiteVersion == "ess-conformance/19" || suite.Provenance.SuiteVersion == "ess-conformance/21" {
+		if suiteMajor(suite.Provenance.SuiteVersion) >= 13 {
 			decoder := json.NewDecoder(strings.NewReader(suite.original))
 			decoder.UseNumber()
 			err = decoder.Decode(&suite)
@@ -3913,6 +4036,10 @@ func admitValues(value any, major int, accessors bool) error {
 			if _, err := admitAccessor(f["accessor"]); err != nil {
 				return err
 			}
+		case "now_offset":
+			if err := admitNowOffset(v, major); err != nil {
+				return err
+			}
 		case "observed":
 			if _, err := closed(v, "kind event field", ""); err != nil {
 				return err
@@ -3950,7 +4077,7 @@ func admitPayload(value any) error {
 	}
 	return nil
 }
-func admitShape(value any) error {
+func admitShape(value any, major int) error {
 	object, ok := value.(map[string]any)
 	if !ok {
 		return fmt.Errorf("shape must be an object")
@@ -3974,8 +4101,16 @@ func admitShape(value any) error {
 		default:
 			return fmt.Errorf("unsupported holds")
 		}
-		if _, err := closed(v, required, "optional"); err != nil {
+		if _, err := closed(v, required, "optional presence"); err != nil {
 			return err
+		}
+		if presence, ok := f["presence"]; ok {
+			if major < 24 {
+				return fmt.Errorf("field presence policies require suite/24 or /25")
+			}
+			if presence != "null_when_absent" && presence != "omitted_when_absent" {
+				return fmt.Errorf("invalid presence %v", presence)
+			}
 		}
 		if optional, ok := f["optional"]; ok {
 			if _, ok := optional.(bool); !ok {
@@ -4015,6 +4150,18 @@ func admitExpectation(value any, major int) error {
 	if major < 2 && (tag == "counts" || tag == "at") {
 		return fmt.Errorf("expectation requires suite/2")
 	}
+	switch tag {
+	case "changed_by":
+		if major < 26 {
+			return fmt.Errorf("the change in an ungrouped aggregate requires suite/26 or /27")
+		}
+		return admitChangedBy(value)
+	case "page":
+		if major < 26 {
+			return fmt.Errorf("a page of a paged view requires suite/26 or /27")
+		}
+		return admitPage(value)
+	}
 	required, optional := "expect", ""
 	switch tag {
 	case "contains", "excludes":
@@ -4037,6 +4184,11 @@ func admitExpectation(value any, major int) error {
 	if fields, ok := f["fields"]; ok {
 		if err := admitValues(fields, major, false); err != nil {
 			return err
+		}
+		for key := range fields.(map[string]any) {
+			if strings.Contains(key, ".") && major < 26 {
+				return fmt.Errorf("per-leaf struct values require suite/26 or /27")
+			}
 		}
 	}
 	for _, key := range []string{"at_least", "at_most"} {
@@ -4302,9 +4454,31 @@ func admitStep(value any, major int) error {
 		required += " left right order"
 	case "configure_external_outcome":
 		required += " force"
+		if major >= 26 {
+			optional = "times"
+		}
 	case "execute_command":
 		required += " command"
 		optional = "actor input"
+		if major >= 26 {
+			optional += " caller"
+		}
+	case "execute_command_without_input":
+		if major < 26 {
+			return fmt.Errorf("a command invoked with no input requires suite/26 or /27")
+		}
+		required += " command"
+		optional = "actor caller"
+	case "expect_subject_absent":
+		if major < 22 {
+			return fmt.Errorf("subject absence requires suite/22 or /23")
+		}
+		required += " view subject"
+	case "snapshot_view", "expect_view_unchanged":
+		if major < 22 {
+			return fmt.Errorf("view snapshots require suite/22 or /23")
+		}
+		required += " view"
 	case "expect_outcome":
 		required += " outcome"
 	case "snapshot_complete_subject":
@@ -4344,6 +4518,9 @@ func admitStep(value any, major int) error {
 	case "expect_invocation":
 		required += " binding command"
 		optional = "input"
+		if major >= 26 {
+			optional += " count"
+		}
 	case "query_view":
 		required += " view"
 		optional = "params"
@@ -4419,6 +4596,13 @@ func admitStep(value any, major int) error {
 			_, err = text(v)
 		case "input", "params", "subject":
 			err = admitValues(v, major, tag == "expect_invocation")
+		case "caller":
+			if _, ok := v.(map[string]any); !ok {
+				return fmt.Errorf("caller must be object")
+			}
+			err = admitPayload(v)
+		case "times", "count":
+			err = admitPositive(v)
 		case "payload", "fields":
 			if tag == "expect_event_values" {
 				err = admitValues(v, major, false)
@@ -4432,7 +4616,7 @@ func admitStep(value any, major int) error {
 			if tag == "snapshot_complete_subject" {
 				err = admitSubjectShape(v)
 			} else {
-				err = admitShape(v)
+				err = admitShape(v, major)
 			}
 		case "expectation":
 			err = admitExpectation(v, major)
@@ -4445,6 +4629,32 @@ func admitStep(value any, major int) error {
 		}
 		if err != nil {
 			return err
+		}
+	}
+	if err := responsePresenceMajor(f, major); err != nil {
+		return err
+	}
+	return admitLeafPaths(tag, f, major)
+}
+
+// admitLeafPaths refuses a dotted payload key (beyond10x/ess#179) below suite/26, and one that
+// names no leaf of the step's own shape — the two refusals ess_conformance::leaf_payloads makes. A
+// field name cannot contain a dot, so a dotted key is always a leaf path.
+func admitLeafPaths(tag string, step map[string]any, major int) error {
+	payload, _ := step["payload"].(map[string]any)
+	if tag != "expect_event" && tag != "eventually_event" && tag != "expect_event_values" {
+		payload = nil
+	}
+	shape, _ := step["shape"].(map[string]any)
+	for key := range payload {
+		if !strings.Contains(key, ".") {
+			continue
+		}
+		if major < 26 {
+			return fmt.Errorf("per-leaf struct values require suite/26 or /27")
+		}
+		if _, declared := shape[key]; len(shape) != 0 && !declared {
+			return fmt.Errorf("`%s` names no leaf of the step's own shape", key)
 		}
 	}
 	return nil
@@ -4504,7 +4714,7 @@ func admitEntitySetups(steps []any) error {
 				return fmt.Errorf("duplicate setup instance binding")
 			}
 			instances[instance] = true
-		case "expect_replay_result", "expect_no_events", "expect_no_error", "expect_subject_unchanged", "expect_complete_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
+		case "expect_replay_result", "expect_no_events", "expect_no_error", "expect_subject_unchanged", "expect_subject_absent", "expect_view_unchanged", "expect_complete_subject_unchanged", "check_periodic", "expect_view", "eventually_view", "expect_outcome", "expect_error", "expect_event", "expect_no_event", "eventually_event", "expect_invocation", "expect_not_before", "expect_within", "expect_quiet", "expect_halt", "eventually_halt":
 			asserted = true
 		}
 	}
@@ -4943,6 +5153,8 @@ type accessorPlan struct {
 type accessorField struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+	// Presence is a response field's presence policy (suite/24); empty everywhere else.
+	Presence string `json:"presence,omitempty"`
 }
 type accessorNode struct {
 	Source    string            `json:"source"`
@@ -7223,4 +7435,676 @@ func predicateNeedsLosslessReader(value any) bool {
 		}
 	}
 	return false
+}
+
+// ---- suite/22 through /27 ----------------------------------------------------------------------
+//
+// The constructs 0.37.0 and 0.38.0 added to the suite vocabulary (beyond10x/ess#188). Each runs
+// the way ess_conformance::runner runs it. A construct a given target cannot answer skips that one
+// scenario with the reason, never the suite.
+
+// wallClock is what a `now_offset` value is resolved against: the machine's clock, which is the
+// clock the implementation reads its own `now` from. A variable so that a test can hold both sides
+// to one instant.
+var wallClock = time.Now
+
+// nowOffsetLimit is the largest offset a suite may carry either way, as
+// ess_conformance::now_offset::MAX_SECONDS: twice the largest offset a guard may write.
+const nowOffsetLimit = 2 * 3155760000
+
+// pageExpectation is a `page` expectation: one page of a paged view (suite/26, beyond10x/ess#174).
+type pageExpectation struct {
+	Page         uint64       `json:"page"`
+	Size         uint64       `json:"size"`
+	Rows         uint64       `json:"rows"`
+	AtLeast      bool         `json:"at_least"`
+	TotalAtLeast *uint64      `json:"total_at_least"`
+	Follows      *pageFollows `json:"follows"`
+}
+
+// pageFollows is how a page continues the one before it: after that page's last row in the
+// declared order, and holding none of its rows again by the named fields.
+type pageFollows struct {
+	OrderBy    []string `json:"order_by"`
+	DistinctBy []string `json:"distinct_by"`
+}
+
+// decodeExpectation decodes a view expectation. `changed_by` and `page` are read by their own
+// shapes; every other expectation decodes exactly as it did before them.
+func decodeExpectation(raw []byte, exact bool) (*Expectation, error) {
+	var tag struct {
+		Expect string `json:"expect"`
+	}
+	if err := json.Unmarshal(raw, &tag); err != nil {
+		return nil, err
+	}
+	switch tag.Expect {
+	case "changed_by":
+		var changed struct {
+			Fields       map[string]Node `json:"fields"`
+			AbsentIsZero []string        `json:"absent_is_zero"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&changed); err != nil {
+			return nil, err
+		}
+		return &Expectation{Expect: tag.Expect, Changes: changed.Fields, AbsentIsZero: changed.AbsentIsZero}, nil
+	case "page":
+		var page pageExpectation
+		if err := json.Unmarshal(raw, &page); err != nil {
+			return nil, err
+		}
+		return &Expectation{Expect: tag.Expect, Paged: &page}, nil
+	}
+	expectation := &Expectation{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if exact {
+		decoder.UseNumber()
+	}
+	if err := decoder.Decode(expectation); err != nil {
+		return nil, err
+	}
+	return expectation, nil
+}
+
+// sentAs is the caller a command step is sent as: nil for a step that names none.
+func sentAs(caller map[string]Node) map[string]Node {
+	if len(caller) == 0 {
+		return nil
+	}
+	return caller
+}
+
+// executeCommandWithoutInput invokes a command with no input document at all (suite/26,
+// `input_absent:`). Everything after it reads its result exactly as after execute_command.
+func (r *run) executeCommandWithoutInput(index int, step Step) bool {
+	absent, ok := r.target.(AbsentInputTarget)
+	if !ok {
+		r.skip("step %d: the target cannot send `%s` with no input document (it does not implement AbsentInputTarget)", index, step.Command)
+		return false
+	}
+	if r.replayMode {
+		snapshot, err := replaySnapshot(map[string]Node{})
+		if err != nil {
+			return r.fail(index, "replay input snapshot: %v", err)
+		}
+		r.lastInput, r.lastActor = snapshot, step.Actor
+	}
+	result, err := absent.ExecuteCommandWithoutInput(AbsentInputRequest{
+		Command:     step.Command,
+		Actor:       step.Actor,
+		Caller:      sentAs(step.Caller),
+		Correlation: r.correlation,
+	})
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target cannot send `%s` with no input: %v", index, step.Command, err)
+		return false
+	}
+	if err != nil {
+		return r.fail(index, "executing `%s` with no input: %v", step.Command, err)
+	}
+	return r.took(index, step.Command, result)
+}
+
+// took records what a command did, for the assertions that read it.
+func (r *run) took(index int, command string, result CommandResult) bool {
+	if result.Response != nil {
+		var err error
+		result, err = snapshotResponseResult(result)
+		if err != nil {
+			return r.fail(index, "response observation: %v", err)
+		}
+	}
+	r.consistency = result.Consistency
+	r.last = result
+	r.lastCommand = command
+	// Cleared, not accumulated. Every `expect_no_event` in a scenario is a claim about *this*
+	// command — a scenario that creates an invoice and then pays it asserts that paying emitted no
+	// `InvoiceCreated`, which would be false against everything seen so far.
+	r.observed = map[string][]ObservedEvent{}
+	for _, event := range result.DirectEvents {
+		r.observed[event.Event] = append(r.observed[event.Event], event)
+		r.remember(event)
+	}
+	return true
+}
+
+// fixNowOffsets resolves every `now_offset` the step names that no earlier step of the scenario
+// resolved, against one reading of the wall clock rounded up to a whole second: a moment that has
+// not yet passed when the target reads its own clock, so a latency under a second cannot move a
+// witness across the boundary it sits a second from. Every later `now_offset` of the same number
+// in the scenario reads the same instant.
+func (r *run) fixNowOffsets(step Step) {
+	pending := []int64{}
+	visit := func(values map[string]Value) {
+		for _, value := range values {
+			if value.Kind != "now_offset" {
+				continue
+			}
+			if _, fixed := r.nowFixed[value.Seconds]; fixed {
+				continue
+			}
+			known := false
+			for _, seconds := range pending {
+				known = known || seconds == value.Seconds
+			}
+			if !known {
+				pending = append(pending, value.Seconds)
+			}
+		}
+	}
+	visit(step.Input)
+	visit(step.Subject)
+	visit(step.Params)
+	if step.Expectation != nil {
+		visit(step.Expectation.Fields)
+	}
+	if step.Step == "expect_event_values" {
+		if raw, err := json.Marshal(step.Payload); err == nil {
+			var values map[string]Value
+			if json.Unmarshal(raw, &values) == nil {
+				visit(values)
+			}
+		}
+	}
+	if len(pending) == 0 {
+		return
+	}
+	now := wallClock().UTC()
+	if now.Nanosecond() != 0 {
+		now = now.Truncate(time.Second).Add(time.Second)
+	}
+	if r.nowFixed == nil {
+		r.nowFixed = map[int64]string{}
+	}
+	for _, seconds := range pending {
+		instant := now.Add(time.Duration(seconds) * time.Second)
+		if instant.Year() < 0 || instant.Year() > 9999 {
+			continue
+		}
+		r.nowFixed[seconds] = instant.Format("2006-01-02T15:04:05Z")
+	}
+}
+
+// queriedRows is the rows of the last query, when it was a query of view.
+func (r *run) queriedRows(index int, view, step string) ([]Row, bool) {
+	if r.queried == "" {
+		r.fail(index, "no consistent view query preceded `%s`", step)
+		return nil, false
+	}
+	if r.queried != view {
+		r.fail(index, "the last query before `%s` names a different view", step)
+		return nil, false
+	}
+	return r.lastView.Rows, true
+}
+
+// expectSubjectAbsent requires that the last query of the view holds no row with the removed
+// subject's identity (suite/22, `deletes:`).
+func (r *run) expectSubjectAbsent(index int, step Step) bool {
+	if len(step.Subject) == 0 {
+		return r.fail(index, "empty subject identity")
+	}
+	selected, ok := r.resolveAll(index, step.Subject)
+	if !ok {
+		return false
+	}
+	rows, ok := r.queriedRows(index, step.View, "expect_subject_absent")
+	if !ok {
+		return false
+	}
+	remaining := 0
+	for _, row := range rows {
+		carries := true
+		for field, value := range selected {
+			actual, present := row[field]
+			if !present || !equal(actual, value) {
+				carries = false
+				break
+			}
+		}
+		if carries {
+			remaining++
+		}
+	}
+	if remaining != 0 {
+		return r.fail(index, "no row of `%s` may carry %s, which the command removed, and %d row(s) still carry it", step.View, describe(selected), remaining)
+	}
+	return true
+}
+
+// copyNode is a deep copy of a value a target returned, so a snapshot cannot change when the
+// target reuses what it handed over.
+func copyNode(value Node) Node {
+	switch value := value.(type) {
+	case map[string]any:
+		copied := make(map[string]any, len(value))
+		for key, item := range value {
+			copied[key] = copyNode(item)
+		}
+		return copied
+	case []any:
+		copied := make([]any, len(value))
+		for i, item := range value {
+			copied[i] = copyNode(item)
+		}
+		return copied
+	default:
+		return value
+	}
+}
+
+// snapshotView captures every row of the last query of the view (suite/22, `accepts: nothing`,
+// and suite/26 for a change or a page read against it).
+func (r *run) snapshotView(index int, step Step) bool {
+	rows, ok := r.queriedRows(index, step.View, "snapshot_view")
+	if !ok {
+		return false
+	}
+	copied := make([]Row, 0, len(rows))
+	for _, row := range rows {
+		copied = append(copied, copyNode(map[string]any(row)).(map[string]any))
+	}
+	if r.viewSnapshots == nil {
+		r.viewSnapshots = map[string][]Row{}
+	}
+	r.viewSnapshots[step.View] = copied
+	return true
+}
+
+// canonicalRows is a view's rows as a sorted list of their JSON spellings: the same multiset in
+// any order reads the same.
+func canonicalRows(rows []Row) []string {
+	rendered := make([]string, 0, len(rows))
+	for _, row := range rows {
+		encoded, _ := json.Marshal(row)
+		rendered = append(rendered, string(encoded))
+	}
+	sort.Strings(rendered)
+	return rendered
+}
+
+// expectViewUnchanged requires the last query of the view to hold exactly the snapshot's rows, in
+// any order (suite/22, `accepts: nothing`): a row added, removed or changed is each a failure.
+func (r *run) expectViewUnchanged(index int, step Step) bool {
+	before, ok := r.viewSnapshots[step.View]
+	if !ok {
+		return r.fail(index, "no view snapshot preceded this assertion")
+	}
+	after, ok := r.queriedRows(index, step.View, "expect_view_unchanged")
+	if !ok {
+		return false
+	}
+	if !reflect.DeepEqual(canonicalRows(before), canonicalRows(after)) {
+		return r.fail(index, "`%s` held %d row(s) before the command and holds %d row(s) after it, not the same ones", step.View, len(before), len(after))
+	}
+	return true
+}
+
+// exactAmount is a number as an exact rational, with an absent value read as zero.
+func exactAmount(value Node) (*big.Rat, bool) {
+	if value == nil {
+		return new(big.Rat), true
+	}
+	return numberValue(value)
+}
+
+// changedBy decides a `changed_by` expectation: the view's one row moved by exactly the stated
+// amounts since its snapshot (suite/26, beyond10x/ess#148).
+func (r *run) changedBy(step Step) (bool, string, bool) {
+	expectation := step.Expectation
+	if len(expectation.Changes) == 0 {
+		return false, "a change that names no field requires nothing, which is a generator defect", true
+	}
+	before, ok := r.viewSnapshots[step.View]
+	if !ok {
+		return false, "no view snapshot preceded this change", true
+	}
+	rows := r.lastView.Rows
+	if len(before) != 1 || len(rows) != 1 {
+		return false, fmt.Sprintf("the snapshot held %d row(s) and this read %d; an ungrouped aggregate view holds one", len(before), len(rows)), false
+	}
+	zero := map[string]bool{}
+	for _, field := range expectation.AbsentIsZero {
+		zero[field] = true
+	}
+	fields := make([]string, 0, len(expectation.Changes))
+	for field := range expectation.Changes {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	wrong := []string{}
+	for _, field := range fields {
+		was, now := before[0][field], rows[0][field]
+		if !zero[field] && (was == nil || now == nil) {
+			wrong = append(wrong, fmt.Sprintf("`%s` was read as %s and then %s; it is never absent: over no row it is 0", field, render(was), render(now)))
+			continue
+		}
+		earlier, ok1 := exactAmount(was)
+		later, ok2 := exactAmount(now)
+		want, ok3 := numberValue(expectation.Changes[field])
+		if !ok1 || !ok2 || !ok3 {
+			wrong = append(wrong, fmt.Sprintf("`%s` was read as %s and then %s, which are not both numbers", field, render(was), render(now)))
+			continue
+		}
+		moved := new(big.Rat).Sub(later, earlier)
+		if moved.Cmp(want) != 0 {
+			wrong = append(wrong, fmt.Sprintf("`%s` changed by %s (%s → %s)", field, moved.RatString(), render(was), render(now)))
+		}
+	}
+	if len(wrong) != 0 {
+		return false, fmt.Sprintf("`%s`: %s", step.View, strings.Join(wrong, "; ")), false
+	}
+	return true, "", false
+}
+
+// pageOf decides a `page` expectation (suite/26, beyond10x/ess#174): the page's exact length (or
+// a floor on it), a floor on the total, and — for the page after the first — that it continues the
+// page before it, which the run snapshotted.
+func (r *run) pageOf(step Step) (bool, string, bool) {
+	page := step.Expectation.Paged
+	if page == nil {
+		return false, "the suite names no page, which is a generator defect", true
+	}
+	if reason := pageDefect(page); reason != "" {
+		return false, reason, true
+	}
+	var before []Row
+	if page.Follows != nil {
+		snapshot, ok := r.viewSnapshots[step.View]
+		if !ok {
+			return false, "no view snapshot of the page before preceded this continuation", true
+		}
+		before = snapshot
+	}
+	rows := r.lastView.Rows
+	held := uint64(len(rows))
+	wrong := []string{}
+	if page.AtLeast && (held < page.Rows || held > page.Size) {
+		wrong = append(wrong, fmt.Sprintf("the page holds %d row(s), and a page of size %d holds at least %d here", held, page.Size, page.Rows))
+	} else if !page.AtLeast && held != page.Rows {
+		wrong = append(wrong, fmt.Sprintf("the page holds %d row(s), and a page of size %d holds %d here", held, page.Size, page.Rows))
+	}
+	if page.TotalAtLeast != nil {
+		total := r.lastView.Total
+		switch {
+		case total == nil:
+			wrong = append(wrong, "the answer carries no total, and the view declares `total: true`")
+		case *total < *page.TotalAtLeast:
+			wrong = append(wrong, fmt.Sprintf("the total is %d, fewer than the %d rows this scenario put in the view", *total, *page.TotalAtLeast))
+		case *total < held:
+			wrong = append(wrong, fmt.Sprintf("the total is %d, fewer than the %d rows the page itself holds", *total, held))
+		}
+	}
+	if page.Follows != nil {
+		sequence := []Row{}
+		if len(before) > 0 {
+			sequence = append(sequence, before[len(before)-1])
+		}
+		sequence = append(sequence, rows...)
+		held, reason, undecidable := ranked(step.View, page.Follows.OrderBy, sequence)
+		if undecidable {
+			return false, reason, true
+		}
+		if !held {
+			wrong = append(wrong, "the page does not continue the one before it in the declared order: "+reason)
+		}
+		if len(page.Follows.DistinctBy) > 0 {
+			for _, row := range rows {
+				for _, earlier := range before {
+					again := true
+					for _, field := range page.Follows.DistinctBy {
+						left, present := earlier[field]
+						right, carried := row[field]
+						if !present || !carried || !equal(left, right) {
+							again = false
+							break
+						}
+					}
+					if again {
+						wrong = append(wrong, fmt.Sprintf("%s was on the page before it as well", describeRow(row)))
+						break
+					}
+				}
+			}
+		}
+	}
+	if len(wrong) != 0 {
+		return false, fmt.Sprintf("page %d of `%s`: %s", page.Page, step.View, strings.Join(wrong, "; ")), false
+	}
+	return true, "", false
+}
+
+// pageDefect is why a page expectation is no claim, if it is none, as
+// ess_conformance::view_paging::defect words it.
+func pageDefect(page *pageExpectation) string {
+	switch {
+	case page.Size == 0:
+		return "a page of size 0 holds no row whatever the target does"
+	case page.Rows > page.Size:
+		return fmt.Sprintf("a page of size %d cannot hold %d rows, so no target can satisfy it", page.Size, page.Rows)
+	case page.TotalAtLeast != nil && *page.TotalAtLeast < page.Rows:
+		return fmt.Sprintf("a total of at least %d is less than the %d rows the page itself holds", *page.TotalAtLeast, page.Rows)
+	case page.Follows != nil && len(page.Follows.OrderBy) == 0:
+		return "a page continues another only in a declared order, and names none"
+	}
+	return ""
+}
+
+// configureRepeatedly forces an external outcome on the next `times` invocations of its command
+// (suite/26, a binding's bounded retry).
+func (r *run) configureRepeatedly(index int, step Step) bool {
+	repeated, ok := r.target.(RepeatedOutcomeTarget)
+	if !ok {
+		r.skip("step %d: the target cannot force `%s` on the next %d invocations (it does not implement RepeatedOutcomeTarget)", index, step.Force.Outcome, step.Times)
+		return false
+	}
+	err := repeated.ConfigureExternalOutcomeRepeatedly(ExternalOutcomeControl{
+		Command:     step.Force.Command,
+		Outcome:     step.Force.Outcome,
+		Correlation: r.correlation,
+	}, step.Times)
+	if errors.Is(err, ErrUnsupported) {
+		r.skip("step %d: the target cannot force `%s` on the next %d invocations: %v", index, step.Force.Outcome, step.Times, err)
+		return false
+	}
+	if err != nil {
+		return r.fail(index, "forcing `%s` on the next %d invocations: %v", step.Force.Outcome, step.Times, err)
+	}
+	return true
+}
+
+// expectInvocationCount requires exactly `count` invocations of the command by the binding,
+// observed for the step's whole eventual window: above the count fails at once, and the count is
+// decided when the window closes (suite/26, a binding's bounded retry).
+func (r *run) expectInvocationCount(index int, step Step, want map[string]Node, absent []string) bool {
+	deadline := r.harness.Deadline()
+	for attempt := 0; attempt < deadline.Attempts; attempt++ {
+		invocations, err := r.target.ObserveInvocations(InvocationObservationRequest{
+			Binding:     step.Binding,
+			Command:     step.Command,
+			Correlation: r.correlation,
+			Deadline:    Deadline{Attempts: deadline.Attempts - attempt},
+		})
+		if errors.Is(err, ErrUnsupported) {
+			r.skip("step %d: the target does not expose what `%s` invoked: %v", index, step.Binding, err)
+			return false
+		}
+		if err != nil {
+			return r.fail(index, "observing `%s`: %v", step.Binding, err)
+		}
+		matching := 0
+		for _, invocation := range invocations {
+			absenceOK := true
+			for _, field := range absent {
+				if _, exists := invocation.Input[field]; exists {
+					absenceOK = false
+				}
+			}
+			if invocation.Command == step.Command && matches(invocation.Input, want) && absenceOK {
+				matching++
+			}
+		}
+		if matching <= step.Count && attempt+1 < deadline.Attempts {
+			continue
+		}
+		if matching != step.Count {
+			return r.fail(index, "`%s` invoked `%s` with %s %d time(s) after %d observation(s), and the specification requires exactly %d", step.Binding, step.Command, describe(want), matching, attempt+1, step.Count)
+		}
+		return true
+	}
+	return r.fail(index, "`%s` was never observed", step.Binding)
+}
+
+// presenceAdmits is ess_conformance::scenario's `LeafShape::admits` for an absent or null value:
+// an `Optional` leaf may be left out or null, unless its presence policy forbids that spelling.
+func presenceAdmits(expected Held, absent bool) bool {
+	if !expected.Optional {
+		return false
+	}
+	if absent {
+		return expected.Presence != "null_when_absent"
+	}
+	return expected.Presence != "omitted_when_absent"
+}
+
+// ---- admission of the suite/22–/27 vocabulary ---------------------------------------------------
+
+// admitPositive admits a `times` or `count`: a whole number of at least one that fits a u32.
+func admitPositive(value any) error {
+	n, err := unsigned(value)
+	if err != nil {
+		return err
+	}
+	if n == 0 || n > 4294967295 {
+		return fmt.Errorf("a repetition is a whole number of at least 1")
+	}
+	return nil
+}
+
+// admitNowOffset admits a `now_offset` value: exactly `kind` and `seconds`, a whole number of at
+// most nowOffsetLimit either way.
+func admitNowOffset(value any, major int) error {
+	if major < 26 {
+		return fmt.Errorf("now_offset values require suite/26 or /27")
+	}
+	f, err := closed(value, "kind seconds", "")
+	if err != nil {
+		return err
+	}
+	number, ok := f["seconds"].(json.Number)
+	if !ok {
+		return fmt.Errorf("now_offset seconds must be a whole number")
+	}
+	seconds, err := strconv.ParseInt(string(number), 10, 64)
+	if err != nil {
+		return fmt.Errorf("now_offset seconds must be a whole number: %w", err)
+	}
+	if seconds > nowOffsetLimit || seconds < -nowOffsetLimit {
+		return fmt.Errorf("now_offset exceeds %d seconds either way", nowOffsetLimit)
+	}
+	return nil
+}
+
+// admitChangedBy admits a `changed_by` expectation: exactly `expect` and `fields`, each amount a
+// finite number, and `absent_is_zero` naming only fields the change names.
+func admitChangedBy(value any) error {
+	f, err := closed(value, "expect fields", "absent_is_zero")
+	if err != nil {
+		return err
+	}
+	fields, ok := f["fields"].(map[string]any)
+	if !ok || len(fields) == 0 {
+		return fmt.Errorf("a change that names no field requires nothing")
+	}
+	for field, amount := range fields {
+		number, ok := amount.(json.Number)
+		if !ok {
+			return fmt.Errorf("the change of `%s` is not a number", field)
+		}
+		if parsed, err := strconv.ParseFloat(string(number), 64); err != nil || math.IsInf(parsed, 0) || math.IsNaN(parsed) {
+			return fmt.Errorf("the change of `%s` is not a number", field)
+		}
+	}
+	if listed, ok := f["absent_is_zero"]; ok {
+		names, err := array(listed)
+		if err != nil {
+			return err
+		}
+		for _, entry := range names {
+			name, err := text(entry)
+			if err != nil {
+				return err
+			}
+			if _, named := fields[name]; !named {
+				return fmt.Errorf("`absent_is_zero` names `%s`, which the change does not", name)
+			}
+		}
+	}
+	return nil
+}
+
+// admitPage admits a `page` expectation: exactly `expect`, `page`, `size` and `rows`, optionally
+// `at_least`, `total_at_least` and `follows`, and a page that is some claim.
+func admitPage(value any) error {
+	f, err := closed(value, "expect page size rows", "at_least total_at_least follows")
+	if err != nil {
+		return err
+	}
+	page := &pageExpectation{}
+	if page.Page, err = unsigned(f["page"]); err != nil {
+		return err
+	}
+	if page.Size, err = unsigned(f["size"]); err != nil {
+		return err
+	}
+	if page.Rows, err = unsigned(f["rows"]); err != nil {
+		return err
+	}
+	if at, ok := f["at_least"]; ok {
+		if _, ok := at.(bool); !ok {
+			return fmt.Errorf("at_least must be boolean")
+		}
+	}
+	if total, ok := f["total_at_least"]; ok {
+		n, err := unsigned(total)
+		if err != nil {
+			return err
+		}
+		page.TotalAtLeast = &n
+	}
+	if follows, ok := f["follows"]; ok {
+		g, err := closed(follows, "order_by", "distinct_by")
+		if err != nil {
+			return err
+		}
+		page.Follows = &pageFollows{}
+		keys, err := array(g["order_by"])
+		if err != nil {
+			return err
+		}
+		for _, key := range keys {
+			s, err := text(key)
+			if err != nil {
+				return err
+			}
+			page.Follows.OrderBy = append(page.Follows.OrderBy, s)
+		}
+		if distinct, ok := g["distinct_by"]; ok {
+			fields, err := array(distinct)
+			if err != nil {
+				return err
+			}
+			for _, field := range fields {
+				if _, err := text(field); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if reason := pageDefect(page); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
+	return nil
 }

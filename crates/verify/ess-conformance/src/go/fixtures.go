@@ -180,7 +180,10 @@ func admitFixtureSteps(steps []any) error {
 			groups = append(groups, step["payload"])
 		}
 		if step["step"] == "expect_view" || step["step"] == "eventually_view" {
-			groups = append(groups, step["expectation"].(map[string]any)["fields"])
+			// A `changed_by` expectation's `fields` are amounts, not scenario values (suite/26).
+			if expectation := step["expectation"].(map[string]any); expectation["expect"] != "changed_by" {
+				groups = append(groups, expectation["fields"])
+			}
 		}
 		for _, raw := range groups {
 			if group, ok := raw.(map[string]any); ok {
