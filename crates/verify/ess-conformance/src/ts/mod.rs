@@ -475,6 +475,19 @@ interface beside `Target` whose method answers with `ClockReadingEvidence`: the 
 observed for one occurrence, which the runtime compares rather than recomputes. Both are reachable
 from this package's entry point; implement it where the specification declares one.
 
+## Numbers a binary64 cannot hold
+
+A value the runtime sends you — a command's `input` and `caller`, an entity setup's `identity` and
+`fields`, a view's `params` — is plain JSON data, except for one kind of number. A number the suite
+writes that a binary64 cannot hold exactly, an integer past 2^53 or a decimal with more places than
+a binary64 keeps, arrives as a `JsonNumber` carrying its digits (`RequestValue` in the types), never
+as a rounded `number`. `String(value)` gives the digits and `Number(value)` the rounded image.
+`JSON.stringify` writes it as a number, digit for digit, on Node 21 and later (`JSON.rawJSON`); on
+Node 20 it writes a `number` where that is exact and otherwise the digits as a JSON string, because a
+string keeps the value where a number would silently round it. Answer such a value with a
+`JsonNumber` or a `BigInt`; your answers are read as `JSON.stringify` reads them, except that a
+`JsonNumber` is kept exact and a `BigInt` is read as the `JsonNumber` of its digits.
+
 ## What to throw when you cannot answer
 
 `ErrUnsupported`, not an ordinary error. A scenario whose semantic the implementation does not

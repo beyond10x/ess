@@ -7,7 +7,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ErrUnsupported, JsonNumber, type ObservedEvent, type Step } from './runtime.js';
+import {
+  ErrUnsupported,
+  JsonNumber,
+  readAsJSON,
+  type ObservedEvent,
+  type Step,
+} from './runtime.js';
 import {
   admitReading,
   clockIntegerText,
@@ -534,6 +540,36 @@ test('unix seconds arrive as a token, as a whole number, or not at all', () => {
       'step 1: clock reading: reading scalar does not match encoding',
     ]);
   }
+});
+
+// A target answers an exact integer with a BigInt, and the reading still reads: directly, through
+// the int64 arm, and through the boundary every answer crosses (`readAsJSON`), which reads a BigInt
+// as the JsonNumber of its digits (beyond10x/ess#188).
+test('a unix-seconds reading a target answers with a BigInt still reads', async () => {
+  const unixReference = reference({
+    contract: {
+      encoding: 'unix_seconds',
+      origins: [{ role: 'producer_process', offset: 'encoding_defined_epoch' }],
+    },
+  });
+  const readings = new RecordingTarget((request) =>
+    evidenceFor(occurrenceKey(request.reading), { formatter: 'unix_seconds' }),
+  );
+  const decide = (seen: ObservedEvent[]): { verdict: boolean; recorded: Recorded } => {
+    const { run, recorded } = runFor(readings, seen);
+    const verdict = expectReadingOrder(run, 1, orderStep('equal', unixReference, unixReference));
+    return { verdict, recorded };
+  };
+  assert.equal(decide([sampled(1709296245n)]).verdict, true);
+
+  const producer = readAsJSON({
+    executeCommand: () => ({ outcome: 'sampled', directEvents: [sampled(1709296245n)] }),
+  });
+  const answered = (await producer.executeCommand()) as { directEvents: ObservedEvent[] };
+  assert.deepEqual(answered.directEvents[0]?.payload.at, new JsonNumber('1709296245'));
+  const { verdict, recorded } = decide(answered.directEvents);
+  assert.deepEqual(recorded.failures, []);
+  assert.equal(verdict, true);
 });
 
 test('the request the target is handed cannot rewrite the contract the assertion uses', () => {

@@ -20,7 +20,8 @@ func decodeStep(raw []byte, exact bool) (Step, error) {
 	value := Step{}
 	decoded := struct {
 		*plain
-		Shape json.RawMessage `json:"shape"`
+		Shape       json.RawMessage `json:"shape"`
+		Expectation json.RawMessage `json:"expectation"`
 	}{plain: (*plain)(&value)}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if exact {
@@ -28,6 +29,13 @@ func decodeStep(raw []byte, exact bool) (Step, error) {
 	}
 	if err := decoder.Decode(&decoded); err != nil {
 		return Step{}, err
+	}
+	if len(decoded.Expectation) != 0 && string(decoded.Expectation) != "null" {
+		expectation, err := decodeExpectation(decoded.Expectation, exact)
+		if err != nil {
+			return Step{}, err
+		}
+		value.Expectation = expectation
 	}
 	if len(decoded.Shape) != 0 {
 		if value.Step == "snapshot_complete_subject" {
@@ -54,7 +62,7 @@ func decodeExactSteps(raw []json.RawMessage) ([]Step, error) {
 }
 
 func decodeExactSuiteSteps(suite *Suite) error {
-	if suite.Provenance.SuiteVersion != "ess-conformance/12" && suite.Provenance.SuiteVersion != "ess-conformance/13" && suite.Provenance.SuiteVersion != "ess-conformance/14" && suite.Provenance.SuiteVersion != "ess-conformance/15" && suite.Provenance.SuiteVersion != "ess-conformance/16" && suite.Provenance.SuiteVersion != "ess-conformance/17" && suite.Provenance.SuiteVersion != "ess-conformance/18" && suite.Provenance.SuiteVersion != "ess-conformance/19" && suite.Provenance.SuiteVersion != "ess-conformance/20" && suite.Provenance.SuiteVersion != "ess-conformance/21" {
+	if suiteMajor(suite.Provenance.SuiteVersion) < 12 {
 		return nil
 	}
 	var raw struct {
@@ -243,7 +251,7 @@ func admitCompleteSubjectSteps(steps []Step) error {
 	queried := ""
 	for _, step := range steps {
 		switch step.Step {
-		case "execute_command":
+		case "execute_command", "execute_command_without_input":
 			for _, saved := range pending {
 				if invocation > saved.invocation {
 					return fmt.Errorf("extra command precedes complete subject comparison")
@@ -774,9 +782,20 @@ func admitReplaySteps(raw []any) error {
 			}
 			if active != nil {
 				original := requests[active.Snapshot]
-				if len(views) == 0 || invocation != originalInvocation || step.Command != original.Command || step.Actor != original.Actor || !replayInputsEqual(step.Input, original.Input) {
+				if len(views) == 0 || invocation != originalInvocation || original.Step != "execute_command" || step.Command != original.Command || step.Actor != original.Actor || !replayInputsEqual(step.Input, original.Input) {
 					return fmt.Errorf("replay substitutes original command, input, or actor")
 				}
+			}
+			command = step.Command
+			outcome = nil
+			invocation++
+			queried = ""
+			request = step
+		// An invocation with no input (suite/26) is an invocation: it cannot be a retry, which repeats
+		// the original request, and it ends whatever the previous one bound.
+		case "execute_command_without_input":
+			if len(pending) != 0 || active != nil {
+				return fmt.Errorf("an invocation with no input interrupted a retained result comparison")
 			}
 			command = step.Command
 			outcome = nil

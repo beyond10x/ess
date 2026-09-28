@@ -179,6 +179,15 @@ func (r responseObservation) compare(response, payload map[string]Node) error {
 	if bytes > 1048576 {
 		return fmt.Errorf("response byte limit")
 	}
+	for _, field := range r.Fields {
+		value, present := response[field.Name]
+		if field.Presence == "null_when_absent" && !present {
+			return fmt.Errorf("response field %s was left out, and it is declared null_when_absent", field.Name)
+		}
+		if field.Presence == "omitted_when_absent" && present && value == nil {
+			return fmt.Errorf("response field %s was sent as null, and it is declared omitted_when_absent", field.Name)
+		}
+	}
 	for target, source := range r.Mappings {
 		actual, exists := response[source]
 		emitted, present := payload[target]
@@ -233,6 +242,12 @@ func admitResponse(value any) error {
 			return e
 		}
 		for _, field := range fields {
+			if key == "fields" {
+				field, e = responseFieldPresence(field)
+				if e != nil {
+					return e
+				}
+			}
 			if e = admitAccessorField(field); e != nil {
 				return e
 			}
@@ -384,4 +399,37 @@ func responseEqual(left, right Node) bool {
 	default:
 		return equal(left, right)
 	}
+}
+
+// responseFieldPresence admits a response field's presence policy (suite/24, beyond10x/ess#139) and
+// returns the field without it, for the admission every other typed field takes.
+func responseFieldPresence(value any) (any, error) {
+	field, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	presence, present := field["presence"]
+	if !present {
+		return value, nil
+	}
+	if presence != "null_when_absent" && presence != "omitted_when_absent" {
+		return nil, fmt.Errorf("invalid presence %v", presence)
+	}
+	rest := copyObject(field)
+	delete(rest, "presence")
+	return rest, nil
+}
+
+// responsePresenceMajor refuses a response field presence policy under a major older than /24.
+func responsePresenceMajor(step map[string]any, major int) error {
+	response, _ := step["response"].(map[string]any)
+	fields, _ := response["fields"].([]any)
+	for _, field := range fields {
+		if entry, ok := field.(map[string]any); ok {
+			if _, present := entry["presence"]; present && major < 24 {
+				return fmt.Errorf("field presence policies require suite/24 or /25")
+			}
+		}
+	}
+	return nil
 }
