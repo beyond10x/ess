@@ -332,6 +332,28 @@ inputs, so a call is explained by any input the suite would submit for its comma
 are listed as not judged. The same history and budget always print the same report; `--format json`
 prints it as JSON.
 
+### Draw a history as client lanes
+
+```shell-session
+$ ess verify conform web \
+    --path examples/billing \
+    --history target/history.json \
+    --out target/lanes
+```
+
+`web --history` checks the history as `check-history` does and writes one `index.html`, or prints
+it when `--out` is absent. Each client is a lane, each call a bar from its invoke to its return, and
+each call the search placed carries its position in the order found. A history that declares more
+than 16 clients draws a lane for each client that made a call and counts the rest in one row. For a violation, the page
+marks the call where the search failed. Where one other call explains the failure, it names that
+call too, with the state each of the two needed and the state the other order left. Below that is
+the shrunk history, drawn the same way. The page carries its stylesheet and no script, so it opens
+from disk and fetches nothing. The same history renders to the same bytes. It exits 0 whatever the
+verdict; the verdict as an exit status is `check-history`'s.
+
+`--out` replaces the files `ess` owns in that directory, including a scenario player's, so write
+history pages and the player to different directories.
+
 ## Opt into explicit outcome counts
 
 ### Where passed, failed and skipped live
