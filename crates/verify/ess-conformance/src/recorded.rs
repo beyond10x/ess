@@ -814,6 +814,9 @@ fn located(refusal: HistoryRefusal, origins: &[(usize, String)]) -> ImportRefusa
         HistoryRefusal::IndeterminateWithRows { operation_id } => {
             (by_id(operation_id), Some("rows"))
         }
+        HistoryRefusal::RetryOfUnknown { operation_id, .. } => {
+            (by_id(operation_id), Some("retry_of"))
+        }
         HistoryRefusal::IntegerOutOfRange { field, .. } => {
             let indexed = field.strip_prefix("operations[").and_then(|rest| {
                 let (index, name) = rest.split_once("].")?;

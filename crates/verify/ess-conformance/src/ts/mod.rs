@@ -203,6 +203,13 @@ throws `unsupported` is left out, and `assertConcurrent` fails on it unless `{ a
 accepts it. `clients` outside 2 to 4 is refused. `Unknown` fails `assertConcurrent` as a violation
 does.
 
+A client's call may also be a read of one of the specification's views, drawn from the seed beside
+the commands. A read of a `read_your_writes` view demands the token the client's own last answered
+command returned (`atLeast`); a read of an `eventual` view demands none. The view is asked at the
+read's return instant, and the identity of each row it answered is written as `rows`, so `ess`
+holds the target to each view's declared consistency. A view that throws `unsupported` is left out
+as a command is.
+
 `{ inject: true }` injects every fault the specification declares, and no other: a second delivery
 (`redeliverEvent`) of an event only `delivery: at_least_once` bindings react to; the same request
 sent again, written with `retry_of` naming the first, for a command declaring `replays:`; and an

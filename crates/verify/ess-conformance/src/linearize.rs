@@ -1830,9 +1830,9 @@ pub fn conflict(
     else {
         return Ok(None);
     };
-    let mut prefixes: Vec<Vec<Store>> = vec![vec![Store::default()]];
+    let mut prefixes: Vec<Vec<Held>> = vec![vec![Held::default()]];
     for &index in &placed {
-        let mut next: Vec<Store> = Vec::new();
+        let mut next: Vec<Held> = Vec::new();
         for store in prefixes.last().into_iter().flatten() {
             for reached in step(ir, store, &operations[index])? {
                 if !next.contains(&reached) {
@@ -1843,7 +1843,7 @@ pub fn conflict(
         prefixes.push(next);
     }
     let id = |index: usize| operations[index].operation.operation_id.as_str().to_owned();
-    let answers_from = |stores: &[Store], index: usize| -> Result<bool, CheckRefusal> {
+    let answers_from = |stores: &[Held], index: usize| -> Result<bool, CheckRefusal> {
         for store in stores {
             if !step(ir, store, &operations[index])?.is_empty() {
                 return Ok(true);
@@ -1867,8 +1867,8 @@ pub fn conflict(
         if answers_from(after, failing)? {
             continue;
         }
-        let mut explained: Vec<&Store> = Vec::new();
-        let mut instead: Vec<Store> = Vec::new();
+        let mut explained: Vec<&Held> = Vec::new();
+        let mut instead: Vec<Held> = Vec::new();
         for store in before {
             let next = step(ir, store, &operations[failing])?;
             if !next.is_empty() {
@@ -1879,7 +1879,7 @@ pub fn conflict(
         if explained.is_empty() || answers_from(&instead, against)? {
             continue;
         }
-        let mut needed: Vec<&Store> = Vec::new();
+        let mut needed: Vec<&Held> = Vec::new();
         for store in before {
             if !step(ir, store, &operations[against])?.is_empty() {
                 needed.push(store);
@@ -1889,13 +1889,13 @@ pub fn conflict(
             subject_key: subject.to_owned(),
             failing: ConflictSide {
                 operation_id: id(failing),
-                required: subject_states(explained, subject),
-                supplied: subject_states(after, subject),
+                required: subject_states(explained.into_iter().map(|held| &held.store), subject),
+                supplied: subject_states(after.iter().map(|held| &held.store), subject),
             },
             against: ConflictSide {
                 operation_id: id(against),
-                required: subject_states(needed, subject),
-                supplied: subject_states(&instead, subject),
+                required: subject_states(needed.into_iter().map(|held| &held.store), subject),
+                supplied: subject_states(instead.iter().map(|held| &held.store), subject),
             },
         }));
     }

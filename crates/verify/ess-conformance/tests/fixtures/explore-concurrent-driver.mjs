@@ -13,6 +13,7 @@ import test from 'node:test';
 
 import { concurrentProblem, exploreConcurrent, goMarshal, SplitMix64 } from './dist/index.js';
 import { newBillingTarget } from './explore-concurrent-billing-target.mjs';
+import { newPairTarget } from './explore-concurrent-pair-target.mjs';
 import { newRetryTarget } from './explore-concurrent-retry-target.mjs';
 import { newTarget } from './explore-target.mjs';
 
@@ -31,10 +32,12 @@ for (const one of cases) {
     try {
       const make =
         one.target === 'billing'
-          ? () => newBillingTarget()
+          ? () => newBillingTarget(one.mutant ?? '')
           : one.target === 'retry'
             ? () => newRetryTarget(one.mutant ?? '')
-            : () => newTarget(one.mutant ?? '', 'low');
+            : one.target === 'pair'
+              ? () => newPairTarget(one.mutant ?? '')
+              : () => newTarget(one.mutant ?? '', 'low');
       const result = await exploreConcurrent(make, {
         ...(one.options ?? {}),
         path: process.env.ESS_CONCURRENT_SPEC,
