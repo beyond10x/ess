@@ -2149,32 +2149,42 @@ func (r *run) expectError(index int, step Step) bool {
 }
 
 func (r *run) expectEvent(index int, step Step) bool {
-	seen := r.observed[step.Event]
-	if len(seen) == 0 {
-		return r.fail(index, "`%s` was not emitted", step.Event)
-	}
-	var mismatch string
-	for _, event := range seen {
-		if !matches(event.Payload, step.Payload) {
-			continue
+	// The first occurrence the last command published, by name alone, as ess_conformance::runner's
+	// `expect_event` selects it: "you published the wrong event" and "you published the right event
+	// carrying the wrong value" are two different repairs.
+	for _, event := range r.observed[step.Event] {
+		if reason := payloadCarries(event.Payload, step.Payload); reason != "" {
+			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		// The declared fields, and what each holds. Asserting only that the event arrived would
 		// pass an implementation that published it empty.
 		if reason := holds(event.Payload, step.Shape); reason != "" {
-			mismatch = reason
-			continue
+			return r.fail(index, "`%s` was emitted, and %s", step.Event, reason)
 		}
 		return true
 	}
-	if mismatch != "" {
-		return r.fail(index, "`%s` was emitted, and %s", step.Event, mismatch)
+	return r.fail(index, "`%s` was not emitted", step.Event)
+}
+
+// payloadCarries is why a payload does not carry every value an event assertion names, or "": each
+// named field or dotted leaf must be carried, and equal. Unlike a row match, a leaf required to be
+// null must be carried as null (ess_conformance::runner's `expect_payload`).
+func payloadCarries(payload, want map[string]Node) string {
+	fields := make([]string, 0, len(want))
+	for field := range want {
+		fields = append(fields, field)
 	}
-	return r.fail(
-		index,
-		"`%s` was emitted, and no instance of it carried %s",
-		step.Event,
-		describe(step.Payload),
-	)
+	sort.Strings(fields)
+	for _, field := range fields {
+		actual, ok := carriedAt(payload, field)
+		if !ok {
+			return fmt.Sprintf("`%s` was not carried", field)
+		}
+		if !equal(actual, want[field]) {
+			return fmt.Sprintf("`%s` = %s, and the specification says %s", field, render(actual), render(want[field]))
+		}
+	}
+	return ""
 }
 
 func (r *run) expectNoEvent(index int, step Step) bool {
@@ -2203,7 +2213,16 @@ func (r *run) eventuallyEvent(index int, step Step) bool {
 			r.observed[event.Event] = append(r.observed[event.Event], event)
 			r.remember(event)
 		}
-		if len(r.observed[step.Event]) > 0 {
+		// The first occurrence of this answer carrying the step's values, held to the same
+		// declaration an immediate one is (ess_conformance::runner's `eventually_event`): crossing a
+		// component boundary changes when a consequence is observable, not what it carries.
+		for _, event := range events {
+			if event.Event != step.Event || !matches(event.Payload, step.Payload) {
+				continue
+			}
+			if reason := holds(event.Payload, step.Shape); reason != "" {
+				return r.fail(index, "`%s` was observed, and %s", step.Event, reason)
+			}
 			return true
 		}
 	}
@@ -3194,10 +3213,14 @@ func holds(payload map[string]Node, shape map[string]Held) string {
 					path, render(value), strings.Join(expected.Variants, ", "),
 				)
 			}
-		default:
-			// A list, a map and a union are containers whose members a path cannot name, so there
-			// is nothing here to compare them against. Re-deriving what they should hold is how two
-			// answers to one question appear.
+		case "list", "map", "union":
+			// A container whose members a path cannot name: only that it is one is checked, as
+			// ess_conformance::scenario's `Holds::admits` checks it — a list is a sequence, a map
+			// and a union are mappings. Re-deriving what the members should hold is how two answers
+			// to one question appear.
+			if !containerHolds(expected.Holds, value) {
+				return fmt.Sprintf("`%s` holds %s and the specification declares %s", path, render(value), containerName(expected.Holds))
+			}
 		}
 	}
 	return ""
@@ -8107,4 +8130,28 @@ func admitPage(value any) error {
 		return fmt.Errorf("%s", reason)
 	}
 	return nil
+}
+
+// containerHolds is whether value is the container a `list`, `map` or `union` leaf declares, whatever
+// Go type a target carries it in: any slice or array for a list, any map for a map or a union.
+func containerHolds(holds string, value Node) bool {
+	if value == nil {
+		return false
+	}
+	kind := reflect.TypeOf(value).Kind()
+	if holds == "list" {
+		return kind == reflect.Slice || kind == reflect.Array
+	}
+	return kind == reflect.Map
+}
+
+// containerName is how a container leaf is named in a diagnostic, as the Rust runner names it.
+func containerName(holds string) string {
+	switch holds {
+	case "list":
+		return "a list"
+	case "map":
+		return "a mapping"
+	}
+	return "a tagged union, as a mapping"
 }
