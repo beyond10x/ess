@@ -58,10 +58,13 @@ func TestExploreConcurrent(t *testing.T) {
 			options.Out = filepath.Join(out, one.Name)
 			newTarget := func() Target { return newExploreFixtureTarget(one.Mutant, "low") }
 			if one.Target == "billing" {
-				newTarget = func() Target { return newExploreBillingTarget() }
+				newTarget = func() Target { return newExploreBillingTarget(one.Mutant) }
 			}
 			if one.Target == "retry" {
 				newTarget = func() Target { return newExploreRetryTarget(one.Mutant) }
+			}
+			if one.Target == "pair" {
+				newTarget = func() Target { return newExplorePairTarget(one.Mutant) }
 			}
 			result, err := ExploreConcurrent(newTarget, options)
 			if err != nil {

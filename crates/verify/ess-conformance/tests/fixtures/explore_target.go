@@ -43,6 +43,8 @@ type exploreFixtureTarget struct {
 	first     string
 	version   int
 	projected []Row
+	// openProjected is what the next `OpenTickets` read shows under `stale-read`.
+	openProjected []Row
 	// completed counts the calls completed through InvokeCommand, for `answer-lost`.
 	completed int
 }
@@ -69,6 +71,7 @@ func (t *exploreFixtureTarget) reset() {
 	t.first = ""
 	t.version = 0
 	t.projected = []Row{}
+	t.openProjected = []Row{}
 	t.completed = 0
 }
 
@@ -234,6 +237,10 @@ func (t *exploreFixtureTarget) QueryView(request ViewRequest) (ViewResult, error
 			if ticket.state == exploreFixtureOpen {
 				rows = append(rows, t.row(ticket))
 			}
+		}
+		if t.mutant == "stale-read" {
+			// The rows as of the read before this one, whatever token the read demands.
+			rows, t.openProjected = t.openProjected, rows
 		}
 		return ViewResult{Rows: rows}, nil
 	case "explore.desk.TicketsByItems":

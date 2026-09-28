@@ -9,6 +9,8 @@
 //   close-unsupported           `CloseTicket` is not exposed
 //   lost-update                 under concurrent exploration, a move reads its ticket's state when it
 //                               is invoked and writes from that state when it returns
+//   stale-read                  `OpenTickets` answers with the rows of the read before it, whatever
+//                               token the read demands
 //   answer-lost                 under concurrent exploration, every third call takes effect and its
 //                               answer never arrives (it throws `indeterminate`)
 //
@@ -34,6 +36,8 @@ export function newTarget(
   let version = 0;
   // What an `eventual` read shows: the rows as of the read before this one.
   let projected = [];
+  // What the next `OpenTickets` read shows under `stale-read`.
+  let openProjected = [];
   // The calls completed through `invokeCommand`, for `answer-lost`.
   let completed = 0;
 
@@ -43,6 +47,7 @@ export function newTarget(
     first = '';
     version = 0;
     projected = [];
+    openProjected = [];
     completed = 0;
   };
   const row = (ticket) => ({
@@ -171,7 +176,12 @@ export function newTarget(
     queryView({ view }) {
       const all = [...tickets.values()];
       if (view === 'explore.desk.OpenTickets') {
-        return { rows: all.filter((ticket) => ticket.state === OPEN).map(row) };
+        const rows = all.filter((ticket) => ticket.state === OPEN).map(row);
+        if (mutant !== 'stale-read') return { rows };
+        // The rows as of the read before this one, whatever token the read demands.
+        const shown = openProjected;
+        openProjected = rows;
+        return { rows: shown };
       }
       if (view === 'explore.desk.TicketsByItems') {
         const shown = projected;

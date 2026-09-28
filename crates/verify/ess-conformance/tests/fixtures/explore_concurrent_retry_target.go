@@ -73,8 +73,16 @@ func (t *exploreRetryTarget) ExecuteCommand(request CommandRequest) (CommandResu
 	return t.seed(key), nil
 }
 
-func (t *exploreRetryTarget) QueryView(ViewRequest) (ViewResult, error) {
-	return ViewResult{}, exploreFixtureUnsupported{"no views"}
+// QueryView answers `Records` with every record, in the order it was created.
+func (t *exploreRetryTarget) QueryView(request ViewRequest) (ViewResult, error) {
+	if request.View != "retry.core.Records" {
+		return ViewResult{}, exploreFixtureUnsupported{request.View + " is not a view of explore-retry"}
+	}
+	rows := []Row{}
+	for n := 1; n <= t.records; n++ {
+		rows = append(rows, Row{"record_id": exploreRetryID(2*n - 1)})
+	}
+	return ViewResult{Rows: rows}, nil
 }
 
 func (t *exploreRetryTarget) ObserveEvents(EventObservationRequest) ([]ObservedEvent, error) {

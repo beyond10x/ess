@@ -24,6 +24,8 @@ const RETRY: &str = "crates/verify/ess-conformance/tests/fixtures/explore-retry/
 const SEEDS: u64 = 200;
 const BILLING_SEEDS: u64 = 40;
 const RETRY_SEEDS: u64 = 20;
+const PAIR: &str = "crates/verify/ess-conformance/tests/fixtures/explore-pair/pair.yaml";
+const PAIR_SEEDS: u64 = 40;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -146,6 +148,10 @@ fn go(root: &Path, spec: &str, cases: &Value) -> Lane {
             "explore_concurrent_retry_target_test.go",
         ),
         (
+            "explore_concurrent_pair_target.go",
+            "explore_concurrent_pair_target_test.go",
+        ),
+        (
             "explore_concurrent_driver_test.go",
             "explore_concurrent_driver_test.go",
         ),
@@ -189,6 +195,7 @@ fn typescript(root: &Path, spec: &str, cases: &Value) -> Lane {
         "explore-target.mjs",
         "explore-concurrent-billing-target.mjs",
         "explore-concurrent-retry-target.mjs",
+        "explore-concurrent-pair-target.mjs",
         "explore-concurrent-driver.mjs",
     ] {
         std::fs::copy(fixture(name), package.join(name)).expect("the fixture copies");
@@ -247,6 +254,7 @@ fn explore_cases(scratch: &Path) -> Value {
         {"name": "lost-update", "target": "explore", "mutant": "lost-update", "options": {"seeds": SEEDS}},
         {"name": "no-ess", "target": "explore", "pathEnv": no_ess(scratch), "options": {"seeds": 1}},
         {"name": "answer-lost", "target": "explore", "mutant": "answer-lost", "options": {"seeds": SEEDS}},
+        {"name": "stale-read", "target": "explore", "mutant": "stale-read", "options": {"seeds": SEEDS}},
         {"name": "close-unsupported", "target": "explore", "mutant": "close-unsupported", "options": {"seeds": 20}},
         {"name": "close-unsupported-allowed", "target": "explore", "mutant": "close-unsupported", "options": {"seeds": 20, "allowExcluded": true}},
         {"name": "clients-five", "target": "explore", "options": {"seeds": 1, "clients": 5}},
@@ -261,6 +269,8 @@ fn billing_cases() -> Value {
     serde_json::json!([
         {"name": "billing", "target": "billing", "options": {"seeds": BILLING_SEEDS}},
         {"name": "billing-injected", "target": "billing", "options": {"seeds": BILLING_SEEDS, "inject": true}},
+        {"name": "double-apply", "target": "billing", "mutant": "double-apply", "options": {"seeds": SEEDS}},
+        {"name": "double-apply-injected", "target": "billing", "mutant": "double-apply", "options": {"seeds": SEEDS, "inject": true}},
     ])
 }
 
@@ -273,11 +283,21 @@ fn retry_cases() -> Value {
     ])
 }
 
-/// Both explore lanes, both billing lanes and both retry lanes, run once for every test below.
+/// Two entities, each created by its own command (`explore-pair/pair.yaml`).
+fn pair_cases() -> Value {
+    serde_json::json!([
+        {"name": "pair", "target": "pair", "options": {"seeds": PAIR_SEEDS}},
+        {"name": "box-lost", "target": "pair", "mutant": "box-lost", "options": {"seeds": PAIR_SEEDS}},
+        {"name": "box-lost-phantom-crate", "target": "pair", "mutant": "box-lost-phantom-crate", "options": {"seeds": PAIR_SEEDS}},
+    ])
+}
+
+/// Every lane pair — explore, billing, retry and pair — run once for every test below.
 struct Lanes {
     explore: (Lane, Lane),
     billing: (Lane, Lane),
     retry: (Lane, Lane),
+    pair: (Lane, Lane),
 }
 
 fn lanes() -> &'static Lanes {
@@ -299,10 +319,16 @@ fn lanes() -> &'static Lanes {
             typescript(&scratch.path().join("retry"), RETRY, &cases),
             go(&scratch.path().join("retry"), RETRY, &cases),
         );
+        let cases = pair_cases();
+        let pair = (
+            typescript(&scratch.path().join("pair"), PAIR, &cases),
+            go(&scratch.path().join("pair"), PAIR, &cases),
+        );
         Lanes {
             explore,
             billing,
             retry,
+            pair,
         }
     })
 }
@@ -478,7 +504,11 @@ fn every_written_history_is_admitted_and_is_the_readers_own_spelling() {
         (&lanes.explore.1, "lost-update", EXPLORE),
         (&lanes.explore.0, "answer-lost", EXPLORE),
         (&lanes.explore.1, "close-unsupported", EXPLORE),
+        (&lanes.explore.0, "stale-read", EXPLORE),
+        (&lanes.explore.1, "stale-read", EXPLORE),
         (&lanes.billing.0, "billing", BILLING),
+        (&lanes.billing.1, "double-apply-injected", BILLING),
+        (&lanes.retry.0, "retry", RETRY),
         (&lanes.billing.1, "billing-injected", BILLING),
         (&lanes.retry.0, "retry-injected", RETRY),
         (&lanes.retry.1, "unretained-injected", RETRY),
@@ -924,6 +954,193 @@ fn a_client_retry_of_a_command_declaring_replays_is_written_equally_and_catches_
         assert_eq!(
             result(lane, "retry")["verdicts"].as_array().unwrap().len() as u64,
             RETRY_SEEDS
+        );
+    }
+}
+
+// ---- view reads (`story:explorers-record-view-reads`) -------------------------------------------
+
+/// The read operations of `name`: those whose `command` is one of `views`.
+fn reads(lane: &Lane, name: &str, views: &[&str]) -> Vec<Value> {
+    operations(lane, name)
+        .into_iter()
+        .filter(|operation| views.contains(&operation["command"].as_str().unwrap()))
+        .collect()
+}
+
+const EXPLORE_VIEWS: [&str; 2] = ["explore.desk.OpenTickets", "explore.desk.TicketsByItems"];
+const BILLING_VIEWS: [&str; 2] = [
+    "billing.invoice.InvoiceById",
+    "billing.invoice.OutstandingInvoices",
+];
+
+#[test]
+fn the_explorers_read_every_view_and_write_rows_only_on_an_answered_read() {
+    let lanes = lanes();
+    for (lane, name, views) in [
+        (&lanes.explore.0, "correct", &EXPLORE_VIEWS[..]),
+        (&lanes.explore.1, "correct", &EXPLORE_VIEWS[..]),
+        (&lanes.billing.0, "billing", &BILLING_VIEWS[..]),
+        (&lanes.billing.1, "billing", &BILLING_VIEWS[..]),
+        (&lanes.retry.0, "retry", &["retry.core.Records"][..]),
+        (&lanes.retry.1, "retry", &["retry.core.Records"][..]),
+    ] {
+        let read = reads(lane, name, views);
+        for view in views {
+            assert!(
+                read.iter().any(|operation| operation["command"] == *view
+                    && operation["rows"]
+                        .as_array()
+                        .is_some_and(|rows| !rows.is_empty())),
+                "`{name}` never read a row of `{view}`"
+            );
+        }
+        for operation in &read {
+            assert_eq!(operation["subject_key"], "", "{operation}");
+            assert_eq!(operation["completion"], "Returned", "{operation}");
+            assert_eq!(operation["outcome"], "read", "{operation}");
+            assert!(operation["rows"].is_array(), "{operation}");
+        }
+        assert!(
+            operations(lane, name)
+                .iter()
+                .filter(|operation| operation.get("rows").is_some())
+                .all(|operation| views.contains(&operation["command"].as_str().unwrap())),
+            "`{name}` wrote rows on a command"
+        );
+    }
+}
+
+#[test]
+fn a_go_history_and_a_typescript_history_from_one_seed_are_equal_bytes_reads_included() {
+    let lanes = lanes();
+    for (pair, name, views) in [
+        (&lanes.explore, "correct", &EXPLORE_VIEWS[..]),
+        (&lanes.explore, "stale-read", &EXPLORE_VIEWS[..]),
+        (&lanes.billing, "double-apply", &BILLING_VIEWS[..]),
+        (&lanes.billing, "double-apply-injected", &BILLING_VIEWS[..]),
+        (&lanes.retry, "retry-injected", &["retry.core.Records"][..]),
+    ] {
+        let (typescript, go) = pair;
+        assert!(
+            !reads(typescript, name, views).is_empty(),
+            "`{name}` recorded no read, so the equality says nothing about reads"
+        );
+        assert_eq!(
+            typescript.histories[name], go.histories[name],
+            "`{name}`: the TypeScript and Go histories differ"
+        );
+        assert_eq!(result(typescript, name), result(go, name), "`{name}`");
+    }
+}
+
+#[test]
+fn the_stale_read_mutant_gives_a_read_violation_under_at_least_one_of_200_seeds() {
+    for lane in [&lanes().explore.0, &lanes().explore.1] {
+        let stale = result(lane, "stale-read");
+        println!(
+            "stale-read: {} violation(s), {} unknown, {} linearizable of {SEEDS}; first failing seed {}",
+            count(stale, "violations"),
+            count(stale, "unknown"),
+            count(stale, "linearizable"),
+            stale["failure"]["seed"]
+        );
+        assert_eq!(count(stale, "histories"), SEEDS, "{stale}");
+        assert!(count(stale, "violations") >= 1, "{stale}");
+        assert_eq!(stale["failure"]["verdict"], "Violation", "{stale}");
+        let report = stale["failure"]["report"]
+            .as_str()
+            .expect("the checker's report");
+        println!("{report}");
+        assert!(
+            report.contains("read violation: client ")
+                && report.contains("of `explore.desk.OpenTickets`, declared read_your_writes"),
+            "{report}"
+        );
+        // The same seeds against the unmutated target.
+        assert_eq!(count(result(lane, "correct"), "violations"), 0);
+    }
+}
+
+#[test]
+fn double_apply_on_redelivery_is_caught_through_a_view_read_with_injection_and_missed_without() {
+    let (typescript, go) = &lanes().billing;
+    for lane in [typescript, go] {
+        let without = result(lane, "double-apply");
+        assert_eq!(count(without, "histories"), SEEDS, "{without}");
+        assert_eq!(count(without, "violations"), 0, "{without}");
+        assert_eq!(count(without, "unknown"), 0, "{without}");
+        let with = result(lane, "double-apply-injected");
+        println!(
+            "double-apply-injected: {} violation(s) of {SEEDS}; first failing seed {}; injected {}",
+            count(with, "violations"),
+            with["failure"]["seed"],
+            with["injected"]
+        );
+        assert!(count(with, "violations") >= 1, "{with}");
+        assert!(
+            injected(with, "redeliveries", "notify-on-invoice-created") > 0,
+            "{with}"
+        );
+        let report = with["failure"]["report"]
+            .as_str()
+            .expect("the checker's report");
+        println!("{report}");
+        assert!(
+            report.contains("read violation: client ") && report.contains("of `billing.invoice."),
+            "{report}"
+        );
+    }
+}
+
+/// A creation that never answered may account for one row of its own entity nobody names, never
+/// for a row of another entity's view. `explore-pair/pair.yaml` has two creatable entities: under
+/// `box-lost` every `OpenBox` opens its box and loses its answer, which is no fault; under
+/// `box-lost-phantom-crate` it also opens a crate nobody asked for, which only a read of `Crates`
+/// shows, and the lost box creations must not hide it.
+#[test]
+fn a_lost_creation_of_one_entity_never_withholds_a_row_of_another_entitys_view() {
+    let (typescript, go) = &lanes().pair;
+    for name in ["pair", "box-lost", "box-lost-phantom-crate"] {
+        assert_eq!(
+            typescript.histories[name], go.histories[name],
+            "`{name}`: the TypeScript and Go histories differ"
+        );
+        assert_eq!(result(typescript, name), result(go, name), "`{name}`");
+    }
+    for lane in [typescript, go] {
+        for name in ["pair", "box-lost"] {
+            let clean = result(lane, name);
+            assert_eq!(count(clean, "histories"), PAIR_SEEDS, "{clean}");
+            assert_eq!(count(clean, "violations"), 0, "{clean}");
+            assert_eq!(count(clean, "unknown"), 0, "{clean}");
+        }
+        let lost = result(lane, "box-lost");
+        assert!(count(lost, "indeterminate") > 0, "{lost}");
+        // Not vacuous: boxes whose creation lost its answer were read, and crates were read.
+        assert!(
+            reads(lane, "box-lost", &["pair.core.Boxes"])
+                .iter()
+                .any(|read| read["rows"].is_array())
+                && reads(lane, "box-lost", &["pair.core.Crates"])
+                    .iter()
+                    .any(|read| read["rows"].as_array().is_some_and(|rows| !rows.is_empty())),
+            "`box-lost` read no box and no crate"
+        );
+        let phantom = result(lane, "box-lost-phantom-crate");
+        println!(
+            "box-lost-phantom-crate: {} violation(s) of {PAIR_SEEDS}; first failing seed {}",
+            count(phantom, "violations"),
+            phantom["failure"]["seed"]
+        );
+        assert!(count(phantom, "violations") >= 1, "{phantom}");
+        let report = phantom["failure"]["report"]
+            .as_str()
+            .expect("the checker's report");
+        println!("{report}");
+        assert!(
+            report.contains("of `pair.core.Crates`, declared read_your_writes: future-read"),
+            "{report}"
         );
     }
 }

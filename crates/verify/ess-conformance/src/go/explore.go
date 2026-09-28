@@ -1843,6 +1843,18 @@ func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 // invokes its next call, or one with a call in flight receives its answer. So one seed writes one
 // history, byte for byte, and the TypeScript port writes the same bytes.
 //
+// A client's call may be a read of one of the specification's views, drawn from the seed beside
+// the commands. A client keeps the consistency token its own last answered command returned, and
+// a read of a `read_your_writes` view demands it (ViewRequest.AtLeast); a read of an `eventual`
+// view demands none. The view is asked at the read's return instant, and what it answered is
+// written as `rows`: the identity of each row, in the order answered, read off the field that
+// carries the identity of the entity the view projects. A read's `outcome` is `read` and its
+// `subject_key` is empty. A read is written without `rows`, which `ess` lists as not judged, when
+// one of its rows does not carry that identity as text. For each creation of that entity invoked
+// before the read returned that never answered, one row no written operation names is left out of
+// `rows`, the first in answer order: it may be what that creation made, which the checker could
+// only read as shown before anyone asked for it. Every other row is written and judged.
+//
 // With ConcurrentOptions.Inject, every fault the specification declares is injected, and no other:
 // a second delivery for each `delivery: at_least_once` binding, a client retry for each command
 // declaring `replays:`, and a delayed or unanswered answer for each command declaring another
@@ -1951,8 +1963,8 @@ type ConcurrentResult struct {
 	// Indeterminate is the number of calls, across every history, that never answered and were
 	// written `Indeterminate`.
 	Indeterminate int `json:"indeterminate"`
-	// Excluded is every command the target answered ErrUnsupported to, and why, in the order found.
-	// The command is still drawn in every seed, so a seed's history does not depend on the seeds
+	// Excluded is every command or view the target answered ErrUnsupported to, and why, in the order
+	// found. It is still drawn in every seed, so a seed's history does not depend on the seeds
 	// before it, but its calls are not written.
 	Excluded []Exclusion `json:"excluded"`
 	// AllowExcluded is ConcurrentOptions.AllowExcluded, so CheckConcurrent can read it.
@@ -2019,19 +2031,32 @@ type exploreOperation struct {
 	dropped bool
 	// retryOf is one more than the index of the operation this one sends again, or 0.
 	retryOf int
+	// creates is the entity a command's creating branch creates, or empty.
+	creates string
+	// source is the entity a read's view projects, or empty for a command.
+	source string
+	// rows is what a returned read answered, each row's identity; nil where it records none.
+	rows []string
 }
 
 type exploreFlight struct {
 	pending PendingCommand
 	command *exploreCommand
 	index   int
+	client  int
 	// timeout is an injected delay (exploreDelayed) or loss (exploreUnanswered), or 0.
 	timeout int
+	// read is the request of a read, which is sent at the return instant; nil for a command.
+	read *ViewRequest
+	// identity is the field a read's rows carry their identity in.
+	identity string
 }
 
+// exploreCall is one call of a client's workload: a command, or a read of view.
 type exploreCall struct {
 	command *exploreCommand
 	step    *exploreStep
+	view    map[string]any
 }
 
 // exploreRetry is a client's retry of the call it invoked last: waiting to be sent, then in flight.
@@ -2068,6 +2093,8 @@ type exploreRecording struct {
 	redeliveries []exploreRedelivery
 	retries      []*exploreRetry
 	injected     ConcurrentInjected
+	// tokens is each client's last consistency token, empty until one of its commands answers one.
+	tokens []string
 }
 
 // exploreKey is an identity as a subject key: its text, or empty when it is not text.
@@ -2110,10 +2137,93 @@ func (h *exploreRecording) reserve(client int, command *exploreCommand, step *ex
 			subject = exploreKey(id)
 		}
 	}
+	creates := ""
+	for _, node := range exploreList(command.node["outcomes"]) {
+		if subject := exploreObject(exploreObject(node)["subject"]); subject["effect"] == "creates" {
+			creates = exploreString(subject["entity"])
+		}
+	}
 	h.clock++
 	index := len(h.operations)
-	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock})
+	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock, creates: creates})
 	return index
+}
+
+// invokeRead reserves a read of view: its request demands the client's last token where the view
+// is `read_your_writes`, and is sent when the read returns.
+func (h *exploreRecording) invokeRead(client int, view map[string]any) *exploreFlight {
+	name := exploreString(view["name"])
+	entity := exploreObject(exploreObject(h.ir["entities"])[exploreString(view["source"])])
+	atLeast := ""
+	if view["consistency"] == "read_your_writes" {
+		atLeast = h.tokens[client]
+	}
+	h.clock++
+	index := len(h.operations)
+	h.operations = append(h.operations, exploreOperation{client: client, command: name, invokedAt: h.clock, source: exploreString(entity["name"])})
+	request := ViewRequest{View: name, Params: map[string]Node{}, AtLeast: atLeast, Correlation: fmt.Sprintf("%s-%d", h.correlation, index+1), Deadline: Deadline{Attempts: 1}}
+	return &exploreFlight{index: index, client: client, read: &request, identity: exploreString(exploreObject(entity["identity"])["name"])}
+}
+
+// completeRead asks the view, at the read's return instant, and writes what it answered.
+func (h *exploreRecording) completeRead(flight *exploreFlight) error {
+	operation := &h.operations[flight.index]
+	answer, err := h.target.QueryView(*flight.read)
+	h.clock++
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrUnsupported):
+		operation.dropped = true
+		for _, known := range h.unsupported {
+			if known.Subject == operation.command {
+				return nil
+			}
+		}
+		h.unsupported = append(h.unsupported, Exclusion{Subject: operation.command, Reason: "the target does not expose it: " + err.Error()})
+		return nil
+	case errors.Is(err, ErrIndeterminate) || errors.Is(err, context.DeadlineExceeded):
+		h.indeterminate++
+		return nil
+	default:
+		return fmt.Errorf("reading `%s` failed: %w", operation.command, err)
+	}
+	operation.returned = true
+	operation.returnedAt = h.clock
+	operation.outcome = "read"
+	rows := []string{}
+	for _, row := range answer.Rows {
+		id, ok := row[flight.identity].(string)
+		if !ok {
+			return nil
+		}
+		rows = append(rows, id)
+	}
+	operation.rows = rows
+	return nil
+}
+
+// exploreWrittenRows is the rows a read is written with: every row it answered, in order, less one
+// row no written operation names for each creation of the view's entity that was invoked before
+// the read returned and never answered. Such a row may be the instance that creation made, which
+// the checker could only read as shown before anyone asked for it; the first such rows in answer
+// order are the ones left out. A named row is always written, and an unnamed row no unanswered
+// creation can account for is written and is the future read it looks like.
+func exploreWrittenRows(read exploreOperation, named map[string]bool, kept []exploreOperation) []string {
+	lost := 0
+	for _, operation := range kept {
+		if !operation.returned && operation.subjectKey == "" && operation.creates == read.source && operation.invokedAt < read.returnedAt {
+			lost++
+		}
+	}
+	written := []string{}
+	for _, row := range read.rows {
+		if !named[row] && lost > 0 {
+			lost--
+			continue
+		}
+		written = append(written, row)
+	}
+	return written
 }
 
 func (h *exploreRecording) send(request CommandRequest) PendingCommand {
@@ -2144,7 +2254,7 @@ func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exp
 			}
 		}
 	}
-	return &exploreFlight{pending: h.send(request), command: command, index: index, timeout: timeout}
+	return &exploreFlight{pending: h.send(request), command: command, index: index, client: client, timeout: timeout}
 }
 
 // invokeRetry sends a client's retry: the request it sent, unchanged, as a new operation.
@@ -2153,7 +2263,7 @@ func (h *exploreRecording) invokeRetry(client int, retry *exploreRetry) *explore
 	index := h.reserve(client, retry.command, retry.step)
 	h.operations[index].retryOf = retry.original + 1
 	h.injected.Retries[retry.command.name]++
-	return &exploreFlight{pending: h.send(request), command: retry.command, index: index}
+	return &exploreFlight{pending: h.send(request), command: retry.command, index: index, client: client}
 }
 
 // queueRedeliveries queues a second delivery of every event result published that only
@@ -2224,6 +2334,9 @@ func exploreCreated(command *exploreCommand, result CommandResult) (Node, string
 // complete writes the answer into the operation flight reserved, and returns the identity a
 // creating branch published and its entity, or nil.
 func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error) {
+	if flight.read != nil {
+		return nil, "", h.completeRead(flight)
+	}
 	operation := &h.operations[flight.index]
 	if flight.timeout == exploreUnanswered {
 		// The client stops waiting, and the target never executes the call.
@@ -2267,6 +2380,9 @@ func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error)
 	if operation.retryOf != 0 {
 		h.injected.Reached[flight.command.name+"/"+result.Outcome]++
 	}
+	if result.Consistency != "" {
+		h.tokens[flight.client] = result.Consistency
+	}
 	operation.returned = true
 	operation.returnedAt = h.clock
 	operation.outcome = result.Outcome
@@ -2303,10 +2419,15 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 	// position is where each written operation stands among the written ones, from 1, for a retry
 	// naming it.
 	position := map[int]int{}
+	// named is every subject a written operation names.
+	named := map[string]bool{}
 	for index, operation := range operations {
 		if !operation.dropped {
 			position[index] = len(kept) + 1
 			kept = append(kept, operation)
+			if operation.subjectKey != "" {
+				named[operation.subjectKey] = true
+			}
 		}
 	}
 	for index, operation := range kept {
@@ -2322,6 +2443,14 @@ func exploreHistoryBytes(digest string, seed, clients int, operations []exploreO
 				[2]string{"returned_at", strconv.Itoa(operation.returnedAt)},
 				[2]string{"completion", exploreQuote("Returned")},
 				[2]string{"outcome", exploreQuote(operation.outcome)})
+			if operation.rows != nil {
+				rows := exploreWrittenRows(operation, named, kept)
+				quoted := make([]string, 0, len(rows))
+				for _, row := range rows {
+					quoted = append(quoted, exploreQuote(row))
+				}
+				members = append(members, [2]string{"rows", "[" + strings.Join(quoted, ",") + "]"})
+			}
 		} else {
 			members = append(members, [2]string{"completion", exploreQuote("Indeterminate")})
 		}
@@ -2366,7 +2495,7 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		return nil, nil, err
 	}
 	defer func() { _ = target.EndScenario(scenario) }()
-	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected()}
+	h := &exploreRecording{target: target, correlation: scenario.Correlation, ir: p.ir, arranging: true, retries: make([]*exploreRetry, clients), injected: newConcurrentInjected(), tokens: make([]string, clients)}
 	if options.Inject {
 		h.injection = NewSplitMix64(uint64(seed) ^ exploreInjectionStream)
 	}
@@ -2397,12 +2526,18 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		}
 	}
 
-	// The workload: each client's calls, drawn against the subjects the prefix created.
+	// The workload: each client's calls, drawn against the subjects the prefix created. A call is
+	// one of the commands or a read of one of the views, each as likely as another.
 	workload := make([][]exploreCall, clients)
 	for client := range workload {
 		for call := 0; call < calls; call++ {
 			for attempt := 0; attempt < exploreAttempts; attempt++ {
-				command := explorePick(r, p.commands)
+				choice := r.Int(0, len(p.commands)+len(p.views)-1)
+				if choice >= len(p.commands) {
+					workload[client] = append(workload[client], exploreCall{view: p.views[choice-len(p.commands)]})
+					break
+				}
+				command := p.commands[choice]
 				if step := exploreDrawStep(command, r, model); step != nil {
 					workload[client] = append(workload[client], exploreCall{command: command, step: step})
 					break
@@ -2457,7 +2592,11 @@ func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string
 		} else {
 			call := workload[client][next[client]]
 			next[client]++
-			flying[client] = h.invoke(client, call.command, call.step)
+			if call.view != nil {
+				flying[client] = h.invokeRead(client, call.view)
+			} else {
+				flying[client] = h.invoke(client, call.command, call.step)
+			}
 		}
 	}
 	return exploreHistoryBytes(digest, seed, clients, h.operations), h, nil

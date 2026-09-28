@@ -3,28 +3,46 @@
 //
 // `explore-concurrent-billing-target.mjs` is the same target in TypeScript, line for line: the two
 // lanes' histories are compared byte for byte, so both mint the same identities in the same order.
-// It is not an InterleavedTarget, so every call takes effect at its return instant.
+// It is not an InterleavedTarget, so every call takes effect at its return instant. Both views
+// answer from the current invoices, which is what `read_your_writes` and `eventual` both allow.
+//
+// The mutant `double-apply` (the argument, or `ESS_EXPLORE_MUTANT`) applies the creation an
+// `InvoiceCreated` announces again when the event is delivered a second time: an invoice nobody
+// created, which only a read of a view shows.
 
 package essconform
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 type exploreBillingTarget struct {
+	mutant   string
 	invoices map[string]string
-	created  int
-	sent     int
+	// order is every invoice, in the order it was created.
+	order   []string
+	created int
+	sent    int
+	// creation is the input of the last `CreateInvoice` that created an invoice.
+	creation map[string]Node
 }
 
-func newExploreBillingTarget() *exploreBillingTarget {
-	target := &exploreBillingTarget{}
+func newExploreBillingTarget(mutant string) *exploreBillingTarget {
+	if mutant == "" {
+		mutant = os.Getenv("ESS_EXPLORE_MUTANT")
+	}
+	target := &exploreBillingTarget{mutant: mutant}
 	target.reset()
 	return target
 }
 
 func (t *exploreBillingTarget) reset() {
 	t.invoices = map[string]string{}
+	t.order = nil
 	t.created = 0
 	t.sent = 0
+	t.creation = nil
 }
 
 func exploreBillingID(n int) string {
@@ -44,6 +62,16 @@ func (t *exploreBillingTarget) Identity() (Identity, error) {
 func (t *exploreBillingTarget) BeginScenario(ScenarioContext) error { t.reset(); return nil }
 func (t *exploreBillingTarget) EndScenario(ScenarioContext) error   { t.reset(); return nil }
 
+// create mints an invoice in `Draft` from input.
+func (t *exploreBillingTarget) create(input map[string]Node) string {
+	t.created++
+	created := exploreBillingID(t.created)
+	t.invoices[created] = "Draft"
+	t.order = append(t.order, created)
+	t.creation = input
+	return created
+}
+
 func (t *exploreBillingTarget) ExecuteCommand(request CommandRequest) (CommandResult, error) {
 	input := request.Input
 	id, _ := input["invoice_id"].(string)
@@ -58,9 +86,7 @@ func (t *exploreBillingTarget) ExecuteCommand(request CommandRequest) (CommandRe
 		if !exploreBillingPositive(input) {
 			return CommandResult{Outcome: "rejected", Error: "billing.invoice.InvalidAmount"}, nil
 		}
-		t.created++
-		created := exploreBillingID(t.created)
-		t.invoices[created] = "Draft"
+		created := t.create(input)
 		return CommandResult{Outcome: "accepted", DirectEvents: []ObservedEvent{{
 			Event: "billing.invoice.InvoiceCreated",
 			Payload: map[string]Node{
@@ -97,8 +123,20 @@ func (t *exploreBillingTarget) ExecuteCommand(request CommandRequest) (CommandRe
 	}
 }
 
+// QueryView answers `InvoiceById` with every invoice and `OutstandingInvoices` with the issued
+// ones, in the order they were created.
 func (t *exploreBillingTarget) QueryView(request ViewRequest) (ViewResult, error) {
-	return ViewResult{}, exploreFixtureUnsupported{"no views"}
+	outstanding := request.View == "billing.invoice.OutstandingInvoices"
+	if !outstanding && request.View != "billing.invoice.InvoiceById" {
+		return ViewResult{}, exploreFixtureUnsupported{request.View + " is not a view of examples/billing"}
+	}
+	rows := []Row{}
+	for _, id := range t.order {
+		if !outstanding || t.invoices[id] == "Issued" {
+			rows = append(rows, Row{"invoice_id": id})
+		}
+	}
+	return ViewResult{Rows: rows}, nil
 }
 
 func (t *exploreBillingTarget) ObserveEvents(EventObservationRequest) ([]ObservedEvent, error) {
@@ -110,10 +148,14 @@ func (t *exploreBillingTarget) ConfigureExternalOutcome(ExternalOutcomeControl) 
 }
 
 // RedeliverEvent delivers `InvoiceCreated` again to `notify-on-invoice-created`, whose mail this target
-// does not model, so nothing changes; any other event it has no binding for.
+// does not model, so nothing changes; any other event it has no binding for. Under `double-apply`
+// the creation it announces is applied again.
 func (t *exploreBillingTarget) RedeliverEvent(request RedeliveryRequest) error {
 	if request.Event != "billing.invoice.InvoiceCreated" {
 		return exploreFixtureUnsupported{"no binding reacts to " + request.Event}
+	}
+	if t.mutant == "double-apply" && t.creation != nil {
+		t.create(t.creation)
 	}
 	return nil
 }
