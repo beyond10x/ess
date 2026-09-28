@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:explorers-record-view-reads
 kind: story
-status: draft
+status: active
 title: The Go and TypeScript explorers record view reads
 summary: Concurrent explorers write rows on view reads so Go/TS targets are held to read_your_writes and eventual
 relations:
@@ -29,7 +29,10 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/explore_concurrent_driver_test.go
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/explore_target.go
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T13:49:31Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "proposed", to: "active", at: "2026-09-28T13:49:31Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":5}}}
 ---
 # Story: the Go and TypeScript explorers record view reads
 

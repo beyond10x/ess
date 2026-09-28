@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:recorded-log-adapter-domain
 kind: story
-status: draft
+status: active
 title: The recorded-log adapter has an ESS domain
 summary: ess-history-adapter/1 is a new noun with no model; add one and hold recorded.rs to it
 relations:
@@ -27,7 +27,10 @@ scope:
   path: models/recorded-log-adapter/system.yaml
 - confidence: inferred
   path: schemas/ess-history-adapter.schema.json
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T13:49:30Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":10}}}
+- {from: "proposed", to: "active", at: "2026-09-28T13:49:30Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":10}}}
 ---
 # Story: the recorded-log adapter has an ESS domain
 
