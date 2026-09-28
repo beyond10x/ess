@@ -204,6 +204,8 @@ pub mod finite;
 pub mod fixture_inputs;
 mod narrowing;
 pub(crate) mod outcome_shapes;
+pub mod related_guard;
+pub use related_guard::RelatedTest;
 pub mod related_value;
 pub use related_value::RelatedVia;
 pub mod set_effects;
@@ -416,6 +418,20 @@ pub enum OutcomeCondition {
         /// Additional input eligibility, the ordinary `when:`.
         input: Option<Predicate>,
     },
+    /// A row of another entity, named by an identity the input carries, is absent — or present and
+    /// satisfying a predicate over its stored fields — conjunctive with an optional input guard
+    /// (`when_related:`, ess/18, beyond10x/ess#211).
+    ///
+    /// It reads a row the command does not address, so it sits on any branch: a `creates:`, a
+    /// refusal naming no subject. One hop, by identity only — see [`related_guard`].
+    Related {
+        /// The input field carrying the other entity's identity, without its `input.` prefix.
+        via: String,
+        /// What the branch requires of that row.
+        test: RelatedTest,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
     /// Taken when the named existing subject is in one of these states and the optional input
     /// guard holds.
     ///
@@ -508,7 +524,7 @@ impl OutcomeCondition {
             Self::SubjectState { predicate, .. }
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
-            Self::SubjectPredicate { input, .. } => input.as_ref(),
+            Self::SubjectPredicate { input, .. } | Self::Related { input, .. } => input.as_ref(),
             Self::Otherwise
             | Self::External { .. }
             | Self::WrongState
@@ -526,6 +542,7 @@ impl OutcomeCondition {
             | Self::SubjectState { .. }
             | Self::SubjectField { .. }
             | Self::SubjectPredicate { .. }
+            | Self::Related { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState
@@ -542,6 +559,7 @@ impl OutcomeCondition {
             Self::SubjectField { .. } | Self::SubjectPredicate { .. } => {
                 TestStrategy::ObserveSubjectFact
             }
+            Self::Related { .. } => TestStrategy::ArrangeRelatedRow,
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
@@ -595,6 +613,7 @@ impl OutcomeCondition {
             Self::When(_)
             | Self::SubjectState { .. }
             | Self::StateChange { .. }
+            | Self::Related { .. }
             | Self::Otherwise
             | Self::ExternalWhen { .. }
             | Self::External { .. }
@@ -649,6 +668,9 @@ pub enum TestStrategy {
     /// Send the command twice for one identity (ess/16, `existing_instance:`): the first call
     /// creates the record, the second finds it and is refused.
     SendExistingIdentity,
+    /// Arrange the row of another entity the input names — or its absence — and send the command
+    /// for it (ess/18, `when_related:`).
+    ArrangeRelatedRow,
 }
 
 impl TestStrategy {
@@ -665,6 +687,7 @@ impl TestStrategy {
             Self::SendUnknownIdentity => "send_unknown_identity",
             Self::SendExistingIdentity => "send_existing_identity",
             Self::SendNoInput => "send_no_input",
+            Self::ArrangeRelatedRow => "arrange_related_row",
         }
     }
 }
@@ -1956,6 +1979,7 @@ impl Outcome {
             | OutcomeCondition::WrongState
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
+            | OutcomeCondition::Related { .. }
             | OutcomeCondition::UnknownInstance
             | OutcomeCondition::InputAbsent
             | OutcomeCondition::ExistingInstance => false,
@@ -2072,6 +2096,7 @@ impl CommandSpec {
                     | OutcomeCondition::StateChange { .. }
                     | OutcomeCondition::SubjectField { .. }
                     | OutcomeCondition::SubjectPredicate { .. }
+                    | OutcomeCondition::Related { .. }
             )
         {
             errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
@@ -2634,6 +2659,12 @@ impl CommandSpec {
             return errors;
         }
 
+        // A command reading a related row (ess/18, beyond10x/ess#211) partitions that row's fields
+        // with the input, which needs the other entity's field types, known at assembly; here its
+        // own branches are checked, including that it selects on nothing else.
+        if related_guard::uses(self) {
+            return related_guard::validate_shape(self);
+        }
         // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
         // two"): a command selecting on stored fields and on the held lifecycle state at once is
         // refused before either partition is asked about it.
@@ -4699,6 +4730,11 @@ pub struct RawOutcome {
     /// predicate over the subject's declared fields (ess/9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject: Option<RawSubjectFact>,
+    /// A row of another entity, named by an identity the input carries: absent (`exists: false`),
+    /// or present and satisfying a predicate over its stored fields, composed with `when`
+    /// (ess/18, beyond10x/ess#211).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_related: Option<related_guard::RawRelatedGuard>,
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject_state: Option<crate::entity::HeldStates>,
@@ -5101,6 +5137,15 @@ impl TryFrom<RawOutcome> for Outcome {
             outcome_shapes::existing_alone(&raw)?;
         }
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
+        let related = match raw.when_related.take() {
+            Some(guard) => {
+                related_guard::alone(&raw)?;
+                let read = guard.read(&raw.name)?;
+                related_guard::absent_alone(&raw, &read.1)?;
+                Some(read)
+            }
+            None => None,
+        };
         let subject_fact = raw.when_subject;
         let input_predicate = raw.when.clone();
         if subject_fact.is_some()
@@ -5162,7 +5207,15 @@ impl TryFrom<RawOutcome> for Outcome {
                 predicate: fact.predicate,
                 input: input_predicate,
             },
-            None => condition,
+            None => match related {
+                // `related_guard::alone` admitted `when:` and nothing else beside it.
+                Some((via, test)) => OutcomeCondition::Related {
+                    via,
+                    test,
+                    input: input_predicate,
+                },
+                None => condition,
+            },
         };
         // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
         // reads like a claim about the outcome and decides nothing, so it is refused where the
@@ -5518,6 +5571,7 @@ impl From<Outcome> for RawOutcome {
     #[allow(clippy::too_many_lines)]
     fn from(outcome: Outcome) -> Self {
         let when_subject = RawSubjectFact::written(&outcome.condition);
+        let when_related = related_guard::RawRelatedGuard::written(&outcome.condition);
         let preserves = outcome
             .subject
             .as_ref()
@@ -5535,30 +5589,30 @@ impl From<Outcome> for RawOutcome {
         let unknown_instance = outcome.condition == OutcomeCondition::UnknownInstance;
         let input_absent = outcome.condition == OutcomeCondition::InputAbsent;
         let existing_instance = outcome.condition == OutcomeCondition::ExistingInstance;
-        let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
-            .condition
-        {
-            OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
-            OutcomeCondition::SubjectField { predicate, .. } => {
-                (predicate, None, None, None, false)
-            }
-            OutcomeCondition::SubjectPredicate { input, .. } => (input, None, None, None, false),
-            OutcomeCondition::SubjectState { state, predicate } => {
-                (predicate, Some(state), None, None, false)
-            }
-            OutcomeCondition::StateChange { changes, predicate } => {
-                (predicate, None, Some(changes), None, false)
-            }
-            OutcomeCondition::Otherwise
-            | OutcomeCondition::UnknownInstance
-            | OutcomeCondition::InputAbsent
-            | OutcomeCondition::ExistingInstance => (None, None, None, None, false),
-            OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
-            OutcomeCondition::ExternalWhen { cause, predicate } => {
-                (Some(predicate), None, None, Some(cause), false)
-            }
-            OutcomeCondition::WrongState => (None, None, None, None, true),
-        };
+        let (when, when_subject_state, when_state_changes, external, wrong_state) =
+            match outcome.condition {
+                OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
+                OutcomeCondition::SubjectField { predicate, .. } => {
+                    (predicate, None, None, None, false)
+                }
+                OutcomeCondition::SubjectPredicate { input, .. }
+                | OutcomeCondition::Related { input, .. } => (input, None, None, None, false),
+                OutcomeCondition::SubjectState { state, predicate } => {
+                    (predicate, Some(state), None, None, false)
+                }
+                OutcomeCondition::StateChange { changes, predicate } => {
+                    (predicate, None, Some(changes), None, false)
+                }
+                OutcomeCondition::Otherwise
+                | OutcomeCondition::UnknownInstance
+                | OutcomeCondition::InputAbsent
+                | OutcomeCondition::ExistingInstance => (None, None, None, None, false),
+                OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
+                OutcomeCondition::ExternalWhen { cause, predicate } => {
+                    (Some(predicate), None, None, Some(cause), false)
+                }
+                OutcomeCondition::WrongState => (None, None, None, None, true),
+            };
         let (creates, moves, updates, instance) = match outcome.subject {
             None => (None, None, None, None),
             Some(Subject {
@@ -5609,6 +5663,7 @@ impl From<Outcome> for RawOutcome {
             when,
             when_subject_state,
             when_subject,
+            when_related,
             when_state_changes,
             external,
             wrong_state,

@@ -367,6 +367,21 @@ pub fn predicates(
                     predicate,
                 ));
             }
+            // And the one over a related row (ess/18, `when_related:`).
+            if let crate::command::OutcomeCondition::Related {
+                test: crate::command::RelatedTest::Holds(predicate),
+                ..
+            } = &outcome.condition
+            {
+                found.push((
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.to_string())
+                        .key(crate::command::related_guard::KEY),
+                    predicate,
+                ));
+            }
         }
     }
     for view in spec.views().values() {

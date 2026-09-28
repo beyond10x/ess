@@ -45,7 +45,7 @@ use ess_domain::command::related_value::{input_carrier, referenced_entity, Refer
 use ess_domain::command::{
     CommandSpec, Effect, ErrorSpec, EventSpec, InstanceSurface, Outcome, OutcomeCondition, Subject,
 };
-use ess_domain::command::{PayloadSource, RelatedVia};
+use ess_domain::command::{PayloadSource, RelatedTest, RelatedVia};
 use ess_domain::component::{ComponentName, ComponentSpec};
 use ess_domain::entity::{EntitySpec, StateMachine};
 use ess_domain::name::QualifiedName;
@@ -66,9 +66,9 @@ use crate::ir::{
     ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
     ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
     ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedRelation,
-    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
-    ViewHandle,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
+    ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
+    ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1935,9 +1935,12 @@ impl<'a> Resolver<'a> {
             let set_effects = self.set_effects(command, outcome, input, entities);
             complete &= set_effects.is_some();
             let (instances, affects) = set_effects.unwrap_or_default();
+            let related = self.related_guard(command, outcome, input);
+            complete &=
+                related.is_some() || !matches!(outcome.condition, OutcomeCondition::Related { .. });
             resolved.push(ResolvedOutcome {
                 name: outcome.name.clone(),
-                condition: condition_of(outcome, subject.as_ref()),
+                condition: condition_of(outcome, subject.as_ref(), related),
                 subject,
                 replays: None,
                 complete_refusal: self.spec.system().format.major() >= 7
@@ -1977,7 +1980,7 @@ impl<'a> Resolver<'a> {
             if let Some(origin) = &outcome.replays {
                 let original = resolved.iter().position(|o| &o.name == origin)?;
                 let subject = resolved[original].subject.clone()?;
-                resolved[index].condition = condition_of(outcome, Some(&subject));
+                resolved[index].condition = condition_of(outcome, Some(&subject), None);
                 resolved[index].replays = Some(crate::ir::ResolvedReplay {
                     origin: origin.clone(),
                     subject,
@@ -2525,6 +2528,31 @@ impl<'a> Resolver<'a> {
             value,
             conversion,
         })
+    }
+
+    /// `when_related:` (ess/18, #211): the input field a related-guard branch reads and the entity
+    /// whose identity it carries, by the rule `ess-domain` validated it with. `None` for a branch
+    /// that reads no related row, and for one whose read did not resolve.
+    fn related_guard(
+        &self,
+        command: &CommandSpec,
+        outcome: &Outcome,
+        input: Option<&[ResolvedField]>,
+    ) -> Option<(ResolvedRelatedVia, EntityHandle)> {
+        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
+            return None;
+        };
+        let read = input?.iter().find(|field| &field.name == via)?;
+        match ess_domain::command::related_guard::related_entity(self.spec, command, via) {
+            Referenced::Entity(entity) => Some((
+                ResolvedRelatedVia::Input {
+                    field: read.name.clone(),
+                    type_ref: read.type_ref.clone(),
+                },
+                EntityHandle::new(entity.name.clone()),
+            )),
+            Referenced::NoEntity | Referenced::Ambiguous(_) => None,
+        }
     }
 
     /// `{related: {via, field}}` (ess/16, #166): the entity `via` names, by the rule
@@ -4329,8 +4357,28 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
 /// carries that transition by value, so the set is read off work this resolver has already done
 /// rather than looked up again — which is the difference between the domain's condition and the
 /// IR's mirror of it.
-fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> ResolvedCondition {
+fn condition_of(
+    outcome: &Outcome,
+    subject: Option<&ResolvedSubject>,
+    related: Option<(ResolvedRelatedVia, EntityHandle)>,
+) -> ResolvedCondition {
     match &outcome.condition {
+        // `related` is `None` only where the command did not resolve, and an incomplete command
+        // reaches no `EssIr`: the default stands in for it until the refusal is reported.
+        OutcomeCondition::Related { test, input, .. } => match related {
+            Some((via, entity)) => ResolvedCondition::Related {
+                via,
+                entity,
+                test: match test {
+                    RelatedTest::Absent => ResolvedRelatedTest::Absent,
+                    RelatedTest::Holds(predicate) => ResolvedRelatedTest::Holds {
+                        predicate: predicate.clone(),
+                    },
+                },
+                input: input.clone(),
+            },
+            None => ResolvedCondition::Otherwise,
+        },
         OutcomeCondition::When(predicate) => ResolvedCondition::When {
             predicate: predicate.clone(),
         },

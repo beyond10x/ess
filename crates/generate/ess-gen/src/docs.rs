@@ -1604,19 +1604,14 @@ fn condition_sentence(
         ],
         // Rendered as `SubjectState` is — the predicate through `Display` — so the published
         // contract names the stored fields the branch reads (ess/9).
-        ResolvedCondition::SubjectPredicate { predicate, input } => {
-            let mut out = vec![
+        ResolvedCondition::SubjectPredicate { predicate, input } => input_guarded(
+            vec![
                 Inline::text("Taken when the existing subject's stored fields satisfy "),
                 Inline::code(predicate.to_string()),
-            ];
-            if let Some(guard) = input {
-                out.push(Inline::text(", and "));
-                out.push(Inline::code(guard.to_string()));
-                out.push(Inline::text(" holds of the input"));
-            }
-            out.push(Inline::text("."));
-            out
-        }
+            ],
+            input.as_ref(),
+        ),
+        ResolvedCondition::Related { .. } => related_condition(condition),
         ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -1726,6 +1721,40 @@ fn unknown_instance_sentence(command: &ResolvedCommand) -> &'static str {
     }
 }
 
+/// A guard over a row of another entity (ess/18, `when_related:`), in the sentence every projection
+/// opens it with.
+fn related_condition(condition: &ResolvedCondition) -> Vec<Inline> {
+    let ResolvedCondition::Related {
+        via,
+        entity,
+        test,
+        input,
+    } = condition
+    else {
+        return Vec::new();
+    };
+    input_guarded(
+        vec![Inline::text(ess_compiler::ir::related_sentence(
+            via, entity, test,
+        ))],
+        input.as_ref(),
+    )
+}
+
+/// A condition sentence with its input guard, where it has one, and the closing stop.
+fn input_guarded(
+    mut out: Vec<Inline>,
+    input: Option<&ess_primitives::predicate::Predicate>,
+) -> Vec<Inline> {
+    if let Some(guard) = input {
+        out.push(Inline::text(", and "));
+        out.push(Inline::code(guard.to_string()));
+        out.push(Inline::text(" holds of the input"));
+    }
+    out.push(Inline::text("."));
+    out
+}
+
 /// How a generated test is meant to reach a branch.
 ///
 /// On the page because the specification computes it once, on the model, so that no two projections
@@ -1759,6 +1788,10 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         TestStrategy::SendExistingIdentity => {
             "A test reaches it by sending the command twice with one identity: the first call \
              creates the record, the second is answered by this branch."
+        }
+        TestStrategy::ArrangeRelatedRow => {
+            "A test reaches it by arranging the row of the other entity the input names, or its \
+             absence, and sending the command for it."
         }
     }
 }

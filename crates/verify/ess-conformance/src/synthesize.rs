@@ -184,6 +184,7 @@ mod caller;
 mod existence;
 mod paging;
 mod related;
+mod related_guard;
 mod set_effects;
 mod subject_fact;
 
@@ -637,6 +638,13 @@ pub enum RefusalCause {
     WitnessRejected(ShapeErrors),
 }
 
+/// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
+/// command's own outcome scenarios and its drivers arrange that row, and any other family has none
+/// to point it at.
+const RELATED_UNARRANGED: &str = "the command is selected by a row of another entity its input \
+     names (`when_related:`), which this scenario family does not arrange; cover it with an \
+     authored scenario (ess-scenario/1)";
+
 /// `RefusalCause::CountUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`crate::aggregate::UNWITNESSED`].
 pub const COUNT_UNWITNESSED: u16 = 18;
@@ -812,6 +820,9 @@ impl RefusalCause {
                 "the branch is selected by the subject's stored fields, which this scenario family \
                  cannot arrange; cover it with an authored scenario (ess-scenario/1)"
             }
+            Self::StrategyWithoutGuard {
+                strategy: TestStrategy::ArrangeRelatedRow,
+            } => RELATED_UNARRANGED,
             Self::StrategyWithoutGuard { .. } => {
                 "`TestStrategy` and `OutcomeCondition` have drifted apart in `ess-domain`"
             }
@@ -901,6 +912,13 @@ impl fmt::Display for RefusalCause {
                 f,
                 "its strategy is `{strategy}`: the subject's stored fields select it, and this \
                  scenario asked for an input that reaches it"
+            ),
+            Self::StrategyWithoutGuard {
+                strategy: strategy @ TestStrategy::ArrangeRelatedRow,
+            } => write!(
+                f,
+                "its command's strategy is `{strategy}`: a row of another entity the input names \
+                 selects its branch, and this scenario family arranges none"
             ),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
@@ -1727,6 +1745,48 @@ fn outcome_scenario(
             }
         }
     }
+    // ess/18 (#211): a related predicate with two or more connective children is witnessed once
+    // more per child, on a further related row isolating it, with whichever branch the command
+    // answers there asserted — so a target dropping one conjunct, or one disjunct, fails. A boundary
+    // no bounded arrangement reaches is refused under this scenario's id, never dropped.
+    if related_guard::routes(command, outcome) {
+        let of = command
+            .outcomes
+            .iter()
+            .position(|branch| branch.name == outcome.name)
+            .expect("the outcome is the command's");
+        for (goal, (refuted, held)) in related_guard::boundary_goals(outcome).iter().enumerate() {
+            let answering: Vec<&ResolvedOutcome> = command
+                .outcomes
+                .iter()
+                .filter(|branch| related_guard::routes(command, branch))
+                .collect();
+            let found = answering.iter().find_map(|branch| {
+                exercise_as(
+                    ir,
+                    command,
+                    branch,
+                    actors,
+                    &id,
+                    &mut Vec::new(),
+                    Witness::RelatedBoundary { of, goal },
+                )
+            });
+            match found {
+                Some((more, depends, _)) => {
+                    steps.extend(more);
+                    source.extend(depends);
+                }
+                None => refusals.push(Refusal::about(
+                    &id,
+                    RefusalCause::GuardUnsatisfiable {
+                        predicate: related_guard::describe_goal(refuted, held),
+                        tried: answering.len(),
+                    },
+                )),
+            }
+        }
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -1745,6 +1805,15 @@ enum Witness {
     /// A further instance arranged in the `n`th state a listed `when_subject_state:` names (ess/18,
     /// beyond10x/ess#201), so every listed state is witnessed and not only the first one reached.
     Listed(usize),
+    /// A further related row the `goal`th boundary of the related predicate of branch `of` (by
+    /// index) names, and the branch the command answers with on it (ess/18, beyond10x/ess#211,
+    /// [`related_guard::boundary_goals`]).
+    RelatedBoundary {
+        /// The branch whose predicate the boundary belongs to, by its index in the command.
+        of: usize,
+        /// Which of that predicate's boundaries.
+        goal: usize,
+    },
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -1980,7 +2049,30 @@ fn run_as(
         return Err(first.expect("nonempty finite lifecycle"));
     }
     let routed = subject_fact::routes(command, outcome);
-    let (mut setup, input) = arranged_as(ir, command, outcome, actors, routed, witness)?;
+    // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,
+    // for every branch it decides; further witnesses are the boundaries of its predicates alone.
+    let related = related_guard::routes(command, outcome);
+    let mut related_at = Distinction::PLAIN;
+    let (mut setup, input) = if related {
+        match witness {
+            Witness::Full => related_guard::prepare(ir, command, outcome, actors)?,
+            Witness::RelatedBoundary { of, goal } => {
+                let goals = command
+                    .outcomes
+                    .get(of)
+                    .map(related_guard::boundary_goals)
+                    .unwrap_or_default();
+                let named = goals.get(goal).ok_or_else(related_guard::unarranged)?;
+                related_at = Distinction::further(goal + 1);
+                related_guard::prepare_at(ir, command, outcome, actors, related_at, Some(named))?
+            }
+            Witness::LiteralFallbacks | Witness::Listed(_) => {
+                return Err(related_guard::unarranged())
+            }
+        }
+    } else {
+        arranged_as(ir, command, outcome, actors, routed, witness)?
+    };
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -2018,8 +2110,29 @@ fn run_as(
     invoke.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref,
     });
+    // A creation guarded by a related row (ess/18, #211) is sent after that row's own creation,
+    // which may publish the same event — a folder inside a folder. So the new row is bound here,
+    // from this command's events, and later steps name it rather than the first occurrence.
+    if related {
+        if let Some(ResolvedSubject {
+            entity,
+            effect: ResolvedEffect::Creates,
+            instance: ResolvedInstance::Observed { event, field },
+            ..
+        }) = &outcome.subject
+        {
+            let name = instance_name(&ir.entity(entity).name, related_at);
+            invoke.push(ScenarioStep::CaptureInstance {
+                instance: name.clone(),
+                entity: EntityRef::from(entity),
+                event: EventRef::from(event),
+                field: field.name.clone(),
+            });
+            setup.instance = Some(name);
+        }
+    }
 
-    if subject_fact::uses(command) && outcome.error.is_none() {
+    if (subject_fact::uses(command) || related) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
     let mut after_steps = if routed {
@@ -2596,6 +2709,8 @@ fn replay_condition(
                 }
                 input.as_ref()
             }
+            // No related row was arranged for the replay: the original's own scenario witnessed it.
+            ResolvedCondition::Related { .. } => return Err(related_guard::unarranged()),
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
@@ -2953,6 +3068,11 @@ fn advance(
                 // A move acts on a row that already exists, so its input names that row and
                 // nothing else: whatever owner it needed was arranged before the row was created.
                 &BTreeMap::new(),
+                &arranging
+                    .iter()
+                    .copied()
+                    .chain([entity])
+                    .collect::<Vec<_>>(),
             )?;
             let mut next = arrangement.clone();
             next.steps.extend(invoked.steps);
@@ -2989,7 +3109,15 @@ fn created(
 
     // Its owner first, and everything that owns *that*. An owned row cannot exist without the row it
     // belongs to, so the arrangement that brings one into being is incomplete without it.
-    let owner = arrange_owner(ir, creator.outcome, entity, actors, distinction, arranging);
+    // Not where the owner is the row a related guard reads through the same field (ess/18): that
+    // row is arranged once, by the related-row search, as the one the guard needs.
+    let related_owner = related_guard::routes(creator.command, creator.outcome)
+        && related_guard::owner_is_related(ir, creator.command, creator.outcome);
+    let owner = if related_owner {
+        None
+    } else {
+        arrange_owner(ir, creator.outcome, entity, actors, distinction, arranging)
+    };
     let bound: BTreeMap<String, InstanceName> = match &owner {
         None => BTreeMap::new(),
         Some((field, arrangement)) => {
@@ -3002,9 +3130,31 @@ fn created(
     };
 
     let mut settled = BTreeMap::new();
-    let created = match input {
-        Some(input) => invoke_with(ir, creator, None, actors, &bound, input),
-        None => invoke(ir, creator, None, None, actors, distinction, &bound)?,
+    // Mid-arrangement of `entity`: a creator that needs a related row of an entity already being
+    // arranged stops there (ess/18).
+    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+    let created = if related_guard::routes(creator.command, creator.outcome) {
+        related_guard::drive(
+            ir,
+            creator,
+            None,
+            actors,
+            distinction,
+            &bound,
+            input,
+            &chain,
+        )
+        .map_err(|_| Unreachable::Unwitnessable {
+            outcome: OutcomeRef::new(
+                CommandRef::new(creator.command.name.clone()),
+                creator.outcome.name.clone(),
+            ),
+        })?
+    } else {
+        match input {
+            Some(input) => invoke_with(ir, creator, None, actors, &bound, input),
+            None => invoke(ir, creator, None, None, actors, distinction, &bound, &chain)?,
+        }
     };
     steps.extend(created.steps);
     source.extend(created.source);
@@ -3115,6 +3265,8 @@ fn arrange_owner(
 /// The outcome is asserted rather than assumed, because an arrangement that quietly failed produces
 /// a scenario that proves nothing and says it passed — which is the shape of green this whole
 /// milestone exists to rule out.
+// One argument per thing an arranging run is told: the arranging chain joined the six (ess/18).
+#[allow(clippy::too_many_arguments)]
 fn invoke(
     ir: &EssIr,
     driver: &Driver<'_>,
@@ -3123,9 +3275,27 @@ fn invoke(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     bound: &BTreeMap<String, InstanceName>,
+    arranging: &[&EntityHandle],
 ) -> Result<Invocation, Unreachable> {
     let command_ref = CommandRef::new(driver.command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), driver.outcome.name.clone());
+    // A branch of a command guarded by a related row (ess/18, #211) is run with the row it needs
+    // arranged first, as its own scenario runs it.
+    if related_guard::routes(driver.command, driver.outcome) {
+        return related_guard::drive(
+            ir,
+            driver,
+            instance,
+            actors,
+            distinction,
+            bound,
+            None,
+            arranging,
+        )
+        .map_err(|_| Unreachable::Unwitnessable {
+            outcome: outcome_ref,
+        });
+    }
     // The cause is not carried up. That branch has a refusal of its own, under its own id, saying
     // exactly why no input reaches it; repeating it here would be one defect reported twice with two
     // repairs to weigh.
@@ -3451,6 +3621,7 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::WrongState
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
+        | ResolvedCondition::Related { .. }
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
         | ResolvedCondition::ExistingInstance => None,
@@ -3747,6 +3918,12 @@ fn reach(
             strategy: outcome.test_strategy,
         });
     }
+    // Every branch of a command guarded by a related row (ess/18, #211) is decided by that row, which
+    // only `related_guard::prepare` arranges: an input chosen here would be sent for a row nobody
+    // arranged, and a correct implementation would answer another branch.
+    if related_guard::uses(command) {
+        return Err(related_guard::unarranged());
+    }
     let (guards, satisfy) = plain_guards(command, outcome)?;
     let mut tried = 0;
     let mut shadow = Shadow::default();
@@ -3985,7 +4162,8 @@ fn plain_guards<'c>(
         | TestStrategy::SendNoInput
         | TestStrategy::SendExistingIdentity
         | TestStrategy::ConstructInputInState
-        | TestStrategy::ObserveSubjectFact => {
+        | TestStrategy::ObserveSubjectFact
+        | TestStrategy::ArrangeRelatedRow => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
         }
     };
@@ -4824,6 +5002,8 @@ fn arranged_as(
         Witness::Full => arranged(ir, command, outcome, actors, routed),
         Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
         Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
+        // Only a command reading a related row builds one, and `run_as` arranges it there.
+        Witness::RelatedBoundary { .. } => Err(related_guard::unarranged()),
     }
 }
 
@@ -6025,10 +6205,13 @@ fn identifying(
             };
             ScenarioValue::instance(bound.clone())
         }
-        // The branch published it, and this scenario is the one that ran the branch.
-        ResolvedInstance::Observed { event, field } => {
-            ScenarioValue::observed(EventRef::from(event), field.name.clone())
-        }
+        // The branch published it, and this scenario is the one that ran the branch — bound right
+        // after it where an earlier step published the same event (ess/18, a related row of the
+        // created entity), and otherwise read from the event itself.
+        ResolvedInstance::Observed { event, field } => instance.map_or_else(
+            || ScenarioValue::observed(EventRef::from(event), field.name.clone()),
+            |bound| ScenarioValue::instance(bound.clone()),
+        ),
     };
     [(named, value)].into_iter().collect()
 }
@@ -6255,6 +6438,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
         TestStrategy::SendUnknownIdentity => "an identity no record carries",
         TestStrategy::SendNoInput => "a request with no input at all",
         TestStrategy::SendExistingIdentity => "a second call with an identity a record carries",
+        TestStrategy::ArrangeRelatedRow => "an arranged row of the entity its input names, or none",
     };
     let text = format!(
         "`{}` answers `{}` for {reached}",

@@ -339,6 +339,14 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                         texts(input, &mut out);
                     }
                 }
+                ResolvedCondition::Related { test, input, .. } => {
+                    if let ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } = test {
+                        texts(predicate, &mut out);
+                    }
+                    if let Some(input) = input {
+                        texts(input, &mut out);
+                    }
+                }
                 ResolvedCondition::When { predicate }
                 | ResolvedCondition::ExternalWhen { predicate, .. } => texts(predicate, &mut out),
                 ResolvedCondition::SubjectState { predicate, .. }

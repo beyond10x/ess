@@ -1,7 +1,8 @@
 # Guards over stored fields and constraints across records
 
-Status: rule 1 implemented in source format `ess/9` (beyond10x/ess#75). Rule 2 stays out of scope, as
-below.
+Status: rule 1 implemented in source format `ess/9` (beyond10x/ess#75). Rule 2 — a constraint over a
+set of rows — stays out of scope, as below; its one-row case, a guard over **one** row of another
+entity named by an identity in the input, is implemented in `ess/18` (beyond10x/ess#211, `when_related:`).
 
 ## Behavior and authority
 
@@ -437,7 +438,7 @@ as a closed domain. No entity field can be named `state`.
 **Widening `SubjectField` in place.** It changes the IR of every ess/6 model that uses it, against
 the byte-preservation rule, for no gain over a sibling variant.
 
-## Rule 2: out of scope, and the one step that is in
+## Rule 2: out of scope, and the steps that are in
 
 A view-level non-overlap constraint was considered:
 
@@ -493,3 +494,87 @@ this page and `wrong_state:` already have. For rule 2 it means: with the booking
 slot key the caller composes, a double booking of a fixed slot is a declared, witnessed refusal,
 without pre-creating every slot as a `Free` row. Range overlap, composite keys and the concurrency
 argument stay out of scope, and `UNMAPPED:` remains the honest marker for them.
+
+### One row of another entity, by identity (`ess/18`, beyond10x/ess#211)
+
+The second step that is in scope: a guard over **one** row of another entity, the row whose
+identity an input field carries. It is not rule 2 — no set of rows, no ordering across rows — but it
+is the cross-record case a creating command most often needs: "there is no configuration for this
+tenant", "the configuration does not register this client".
+
+```yaml
+- name: no-configuration
+  when_related: {via: input.tenant, exists: false}
+  error: demo.signin.NoConfiguration
+- name: no-redirect-entry
+  when_related: {via: input.tenant, predicate: redirect_client != input.client}
+  error: demo.signin.NoRedirectEntry
+- name: initiated
+  creates: demo.signin.SignIn
+  instance: sign_in_id
+```
+
+- **The row.** `via: input.<field>` names a required input whose type is exactly one entity's
+  identity, resolved as `{related: {via, field}}` resolves it (`related_value::referenced_entity`,
+  a `references` relation on the field a creating branch stores the input in breaking a tie). One
+  hop, from the input only. A lookup by any other field is a query, and stays out of scope.
+- **Two tests.** `exists: false` is taken when no row carries the identity. `predicate:` is taken
+  when the row exists and the predicate — over its declared stored fields and, as in a
+  `when_subject` predicate, the input under `input.` — holds. A missing row makes the predicate
+  `Unknown`, so it selects only `exists: false`: never a predicate branch, never the default. A
+  command with a predicate branch therefore declares its `exists: false` branch, or is refused
+  (`non_exhaustive_branches`); `exists: true` is refused in favour of the default or a predicate.
+- **Precedence** (adversary pass 1, 2026-09-29). A missing related row is answered by the
+  `exists: false` branch before any other branch: a predicate branch, an input-guarded branch, the
+  default. So an `exists: false` branch may not carry `when:` (`conflicting_declaration`) — every
+  missing row has exactly one answer — and an accepting `when:` branch that overlaps it is legal:
+  on a missing row `exists: false` answers, whatever the input. The one answer before it is
+  `existing_instance:`: the command's own identity is checked before the related row is read.
+- **Any branch.** The guard reads a row the command does not address, so it sits beside a
+  `creates:`, on a refusal that names no subject, or on a branch that moves or updates one, and
+  composes with `when:` — except on the `exists: false` branch, as above.
+- **Authority.** Beside `when_subject`, `when_subject_state`, `when_state_changes`, `external`,
+  `wrong_state`, `unknown_instance`, `input_absent`, `existing_instance` or `replays` on one branch
+  it is `conflicting_declaration`. In one command it is refused in 0.41 beside `when_subject*`,
+  `wrong_state`, `unknown_instance` and `input_absent`, because which of the two answers first is
+  not stated; `existing_instance:` sits beside it, answering first. One command reads one related
+  row, and declares at most one `exists: false` branch.
+- **Validation.** The rows that exist are partitioned jointly with the input, as the stored-field
+  partition does; where the finite prover declines — a comparison with the input, an open domain —
+  the command needs a genuine default.
+- **Format.** Below `ess/18` the key is refused with `unsupported_format_version` at
+  `outcomes.<name>.when_related`, in YAML and JSON sources alike.
+- **Conformance.** `synthesize/related_guard.rs` arranges every branch of such a command. The
+  `exists: false` branch is sent an identity no row carries, beside two rows of the entity that
+  carry others, so an implementation answering "some row exists" fails it; where an accepting
+  branch is guarded by the input, the witness sends an input that branch takes, so the precedence
+  above is what it holds. Every other branch is sent the identity of a row the scenario creates
+  between two decoys. The row is searched for as a `when_subject` branch's is — every creator and
+  the moves after it, steered toward the command's predicates over the row — so each side of a
+  predicate over a stored field alone (`plan == Basic`) is reached on a row holding it; each
+  row/input comparison is grounded on the row's value. Each decoy is, where the search finds one, a
+  row on which the same input selects another branch, so reading it in place of the named row
+  answers otherwise. The arrangement carries its chain of entities: a creator that would need a
+  related row of an entity it is already arranging — a folder inside a folder — stops there, and
+  the next creator (the root folder's) arranges the parent; the new row is then bound from the
+  branch's own events, not the parent's. `existing_instance:` is witnessed by a creation with the
+  related row arranged, then the same identity sent naming a related row that does not exist:
+  the identity is checked first, so a target reading the related row first answers
+  `exists: false` and fails. A refusal naming no subject, beside a branch that acts on an existing row, is sent for
+  a row that branch could act on, so the related row is the only thing that refuses it. A driver
+  running such a command to arrange a row for another scenario arranges the related row first, as
+  the command's own scenario does, under the witness it arranges: a further row it creates — a
+  ranked companion, a second source state (beyond10x/ess#111) — carries its own supplied identity
+  and its own related row. Where the related row is the row the creation is owned by, named
+  through the same input field (an entry posted into an account that owns it), that row is
+  arranged once, as the related row. A predicate with two or more connective children is
+  witnessed once more per child on a further related row isolating it — a conjunct refuted with
+  every other held, a disjunct held with every other refuted — asserting the branch the command
+  answers there, as a `when_subject` conjunct is (#155, #204); a boundary no bounded arrangement
+  reaches is refused under the branch's scenario id (`ESS-SYNTH-003`). Every other family that would send the command — a boundary,
+  an unknown identity, an illegal move — has no row to point it at and refuses with the strategy
+  `arrange_related_row` named: which of a related guard and a wrong state answers first is not
+  stated.
+- **Runtimes.** The interpreted target does not evaluate the guard and reports such a scenario
+  `unsupported`, naming it. Entity Runtime refuses the command with `RelatedGuardUnsupported`: an
+  entity-core operation reads its arguments and the one row its request names.

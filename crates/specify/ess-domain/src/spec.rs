@@ -336,6 +336,7 @@ impl Specification {
         }
         errors.extend(crate::command::subject_state::validate(self, &registry));
         errors.extend(crate::command::subject_fact::validate(self, &registry));
+        errors.extend(crate::command::related_guard::validate(self, &registry));
         for event in self.events.values() {
             if let Err(event_errors) = event.validate(&registry) {
                 errors.extend(event_errors);
