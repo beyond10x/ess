@@ -79,6 +79,22 @@
   declaration's list item. Relation, attribute and response refusals are now cited at the entity,
   actor or command they belong to. Paths with no declaration needle, such as
   `topology.workloads.<component>`, are still cited at their key.
+- The Go and TypeScript concurrent explorers record view reads: they draw reads from the seed beside
+  commands (a specification with no views draws exactly as before), send each client's last command
+  token on `read_your_writes` reads, and write the answer's row identities as `rows` on a returned
+  read, so `check-history` judges stale reads and phantom rows. A read keeps every row it answered,
+  less at most one unnamed row per lost creation of the view's entity invoked before it returned.
+- `ess-history-adapter/1` is specified in `models/recorded-log-adapter/` and published as
+  `schemas/ess-history-adapter.schema.json`, which admits exactly what `import-history` reads; the
+  reader refuses every spelling the model does not declare (YAML local tags, arrays and nulls in
+  JSON, a field or completion word written twice).
+- `verify conform synthesize` writes the `state/<S>/refuses/<command>` scenario for a command whose
+  sibling branch combines `when:` over the input with `when_subject:` over the subject (#192): a
+  guarded branch is selected in any state before `wrong_state:` applies, so the witness misses an
+  input-only branch through its input, a branch guarded by the stored row alone through the row,
+  and a branch needing both through either. Complementary input guards on two siblings no longer
+  refuse the scenario with ESS-SYNTH-003; where no row refutes every stored guard, it is refused
+  naming the input and stored guards.
 
 ## [0.39.0] — 2026-09-28
 
