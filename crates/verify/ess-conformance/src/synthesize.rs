@@ -2793,7 +2793,9 @@ fn arrange(
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     // Every creating branch is a place to start (ess/15, `into:`): the route is the shortest from
-    // the state some creation lands in, ties to the first creator declared.
+    // the state some creation lands in, ties to the first creator declared. A creation that cannot
+    // be arranged, or whose route cannot be driven, gives way to the next in that order
+    // (beyond10x/ess#198), and the cause kept is the first one's.
     let mut creators = drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -2801,33 +2803,39 @@ fn arrange(
     if creators.peek().is_none() {
         return Err(Unreachable::NothingCreates);
     }
-    let mut chosen: Option<(&Driver<'_>, Vec<Driver<'_>>)> = None;
-    for creator in creators {
-        let Some(path) = route_from(ir, entity, drivers, born(ir, creator), target) else {
-            continue;
-        };
-        if chosen
-            .as_ref()
-            .is_none_or(|(_, held)| path.len() < held.len())
-        {
-            chosen = Some((creator, path));
+    let mut routed: Vec<(&Driver<'_>, Vec<Driver<'_>>)> = creators
+        .filter_map(|creator| {
+            route_from(ir, entity, drivers, born(ir, creator), target).map(|path| (creator, path))
+        })
+        .collect();
+    // Stable: equal lengths keep declaration order.
+    routed.sort_by_key(|(_, path)| path.len());
+    let mut first: Option<Unreachable> = None;
+    for (creator, route) in routed {
+        let arranged = created(ir, entity, creator, actors, distinction, arranging, None).and_then(
+            |arrangement| {
+                advance(
+                    ir,
+                    entity,
+                    arrangement,
+                    route,
+                    target,
+                    actors,
+                    distinction,
+                    arranging,
+                )
+            },
+        );
+        match arranged {
+            Ok(arrangement) => return Ok(arrangement),
+            Err(reason) => {
+                first.get_or_insert(reason);
+            }
         }
     }
-    let (creator, route) = chosen.ok_or_else(|| Unreachable::NoPath {
+    Err(first.unwrap_or_else(|| Unreachable::NoPath {
         from: ir.entity(entity).lifecycle.initial.clone(),
-    })?;
-
-    let arrangement = created(ir, entity, creator, actors, distinction, arranging, None)?;
-    advance(
-        ir,
-        entity,
-        arrangement,
-        route,
-        target,
-        actors,
-        distinction,
-        arranging,
-    )
+    }))
 }
 
 /// The second half of [`arrange`]: an instance already created, driven along `route` to `target`.
@@ -2853,15 +2861,14 @@ fn advance(
         let moved = if subject_fact::uses(driver.command) {
             match subject_fact::step(ir, entity, &driver, &arrangement, actors) {
                 Some(next) => next,
-                None if distinction == Distinction::PLAIN && arranging.is_empty() => {
-                    return subject_fact::reach_state(ir, entity, target, actors).map_err(|_| {
-                        Unreachable::Unwitnessable {
+                None if arranging.is_empty() => {
+                    return subject_fact::reach_state(ir, entity, target, actors, distinction)
+                        .map_err(|_| Unreachable::Unwitnessable {
                             outcome: OutcomeRef::new(
                                 CommandRef::new(driver.command.name.clone()),
                                 driver.outcome.name.clone(),
                             ),
-                        }
-                    });
+                        });
                 }
                 None => {
                     return Err(Unreachable::Unwitnessable {

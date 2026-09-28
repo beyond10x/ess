@@ -272,6 +272,20 @@ identity; only a request no such refusal claims is answered by the creation, the
 `existing_instance:`. The creating half is therefore not "the first answer" the ess/15 marker is;
 the generated page says so.
 
+The same precedence holds on a command that only addresses an existing record (`moves:`,
+`updates:` or `deletes:` with `instance:` from its input, no existence form), and conformance
+witnesses both halves of it (beyond10x/ess#209). The refusal's own scenario sends the refused
+input for an identity nothing stored, as before. It then creates the record through a declared
+creation, the same arrangement the accepting branch gets, drives it to a state the command runs
+from, sends the refused input for it, and requires the error, no event and the row unchanged. A
+target that looks the record up before it checks the input fails the first half; a target that
+checks the input only for unknown records fails the second. If no arrangement reaches that
+record, synthesis withdraws the scenario and refuses it with the arrangement's cause. It is not
+filed to be skipped at run time. Three cases keep their own families: a refusal whose guard reads
+the identity field stays a plain send (#178), a command reading stored fields already sends its
+refusals for an arranged row, and a command whose branches read the held state gets no arranged
+half.
+
 | Code | Refused |
 |---|---|
 | `unsupported_format_version` | either form below `ess/16`, at `unknown_instance` (on a creation) or `existing_instance` |

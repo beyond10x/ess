@@ -126,7 +126,7 @@ pub(super) fn routes(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bo
 /// No arranged row can be sent for it, because sending the row replaces the value its own guard
 /// admits with the row's identity. It is sent as a plain invocation, with the input its guard
 /// admits, and is taken before any row would be read.
-fn reads_identity(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+pub(super) fn reads_identity(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     let Some(guard) = super::is_input_guarded_refusal(outcome)
         .then(|| when(outcome))
         .flatten()
@@ -1101,9 +1101,12 @@ fn successors(
 
 /// Search the rows the declared drivers can leave for one the goal accepts.
 ///
-/// Breadth-first from the rows the creating branch can leave. At each depth every new node is
-/// offered to the goal, and of those it accepts the one closest to the guards wins — ties to the
-/// earlier, so the choice is a function of the model (§37).
+/// Every creating branch is a place to start (beyond10x/ess#198): each is searched in declaration
+/// order, within its own budget of [`MAX_NODES`], and the first whose rows reach the goal wins. So
+/// a branch only the second-declared creation's row selects is witnessed through that creation,
+/// and a model whose first creation already reaches the goal is arranged exactly as before. A
+/// creation that leaves no row, or none the goal accepts, gives way to the next, and the refusal
+/// is the first creation's cause where every one fails.
 fn search<T>(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -1115,14 +1118,52 @@ fn search<T>(
 ) -> Result<(Arrangement, T), RefusalCause> {
     let all = ir.drivers();
     let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
-    let creator = drivers
+    let mut first: Option<RefusalCause> = None;
+    for creator in drivers
         .iter()
-        .find(|driver| matches!(driver.effect, ResolvedEffect::Creates))
-        .ok_or(RefusalCause::InstanceRequired {
-            entity: EntityRef::from(entity),
-            need: InstanceNeed::Updates,
-            reason: Unreachable::NothingCreates,
-        })?;
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+    {
+        match search_from(
+            ir,
+            entity,
+            drivers,
+            creator,
+            actors,
+            hints,
+            distinction,
+            field,
+            &mut goal,
+        ) {
+            Ok(found) => return Ok(found),
+            Err(cause) => {
+                first.get_or_insert(cause);
+            }
+        }
+    }
+    Err(first.unwrap_or(RefusalCause::InstanceRequired {
+        entity: EntityRef::from(entity),
+        need: InstanceNeed::Updates,
+        reason: Unreachable::NothingCreates,
+    }))
+}
+
+/// [`search`] from the rows one creating branch can leave.
+///
+/// Breadth-first. At each depth every new node is offered to the goal, and of those it accepts the
+/// one closest to the guards wins — ties to the earlier, so the choice is a function of the model
+/// (§37).
+#[allow(clippy::too_many_arguments)]
+fn search_from<T>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    drivers: &[Driver<'_>],
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    distinction: Distinction,
+    field: &str,
+    goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<(Arrangement, T), RefusalCause> {
     let mut level = creations(ir, entity, creator, actors, hints, distinction)?;
     let mut seen = BTreeSet::new();
     let mut first: Option<RefusalCause> = None;
@@ -1423,11 +1464,15 @@ pub(super) fn step(
 }
 
 /// A row resting in `target`, reached through branches every row on the way selects.
+///
+/// Arranged under `distinction`, so a further instance searched for here keeps the name its caller
+/// chose it apart by (beyond10x/ess#199).
 pub(super) fn reach_state(
     ir: &EssIr,
     entity: &EntityHandle,
     target: &super::StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
 ) -> Result<Arrangement, RefusalCause> {
     let all = ir.drivers();
     let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
@@ -1439,15 +1484,9 @@ pub(super) fn reach_state(
             }
         }
     }
-    search(
-        ir,
-        entity,
-        actors,
-        &hints,
-        Distinction::PLAIN,
-        "state",
-        |node| Ok((&node.state == target).then_some(())),
-    )
+    search(ir, entity, actors, &hints, distinction, "state", |node| {
+        Ok((&node.state == target).then_some(()))
+    })
     .map(|(arrangement, ())| arrangement)
 }
 
