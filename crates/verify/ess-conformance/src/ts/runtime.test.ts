@@ -21,7 +21,10 @@ import {
   compare,
   countCanonical,
   describeRow,
+  asJSON,
   equal,
+  exactDecimal,
+  exactNumbers,
   exactInteger,
   goMarshal,
   holds,
@@ -749,4 +752,36 @@ test('the marshaller sorts object keys and escapes as Go does', () => {
   assert.equal(goMarshal({ b: 1, a: '<&>' }, true), '{"a":"\\u003c\\u0026\\u003e","b":1}');
   assert.equal(goMarshal({ b: 1, a: '<&>' }, false), '{"a":"<&>","b":1}');
   assert.equal(goMarshal(' '), '"\\u2028"');
+});
+
+// Target answers are read as JSON reads them (beyond10x/ess#188): a key holding `undefined` is
+// absent, an `undefined` list item is null, and a JsonNumber passes untouched.
+test('asJSON reads a target answer as JSON does', () => {
+  const exact = new JsonNumber('9007199254740993');
+  assert.deepEqual(asJSON({ a: undefined, b: null, c: [undefined, { d: undefined }], e: exact }), {
+    b: null,
+    c: [null, {}],
+    e: exact,
+  });
+  assert.equal(Object.hasOwn(asJSON({ a: undefined }) as object, 'a'), false);
+});
+
+// Exponent spellings are the decimals they denote, as `Number::exact_text` spells them, and a
+// value past the `i128` units the Rust arithmetic keeps has no exact spelling.
+test('exactDecimal expands exponent spellings and bounds the units', () => {
+  assert.deepEqual(exactDecimal(0.0000001), [1n, 7]);
+  assert.deepEqual(exactDecimal(new JsonNumber('1e21')), [10n ** 21n, 0]);
+  assert.deepEqual(exactDecimal(new JsonNumber('1.50')), [15n, 1]);
+  assert.deepEqual(exactDecimal(new JsonNumber('-2.5E-3')), [-25n, 4]);
+  assert.equal(exactDecimal(new JsonNumber('1e40')), null);
+  assert.equal(exactDecimal('1'), null);
+});
+
+// A literal stays exactly the number written: a JS number only where it is that number.
+test('exactNumbers keeps an integer past 2^53 exact and plain numbers plain', () => {
+  const big = new JsonNumber('9007199254740993');
+  assert.equal(exactNumbers(big), big);
+  assert.equal(exactNumbers(new JsonNumber('9007199254740992')), 9007199254740992);
+  assert.equal(exactNumbers(new JsonNumber('1.666667')), 1.666667);
+  assert.deepEqual(exactNumbers({ n: [new JsonNumber('3')] }), { n: [3] });
 });

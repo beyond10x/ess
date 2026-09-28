@@ -716,6 +716,32 @@ export function deepEqual(left: Node, right: Node): boolean {
 }
 
 /** plainNumbers is what `json.Unmarshal` without `UseNumber` leaves behind: binary64, everywhere. */
+/**
+ * exactNumbers is `plainNumbers` for a value a suite asserts or sends: a number becomes a JS number
+ * only where that number is exactly the one written, and stays a `JsonNumber` otherwise — an
+ * integer past 2^53, or a decimal with more places than a binary64 keeps. Rounding it would compare,
+ * and send, a value nobody wrote.
+ */
+export function exactNumbers(value: Node): Node {
+  if (value instanceof JsonNumber) {
+    const plain = Number(value.raw);
+    return Number.isFinite(plain) && sameDecimal(exactDecimal(value), exactDecimal(plain))
+      ? plain
+      : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(exactNumbers);
+  }
+  if (isObject(value)) {
+    const result: { [key: string]: Node } = {};
+    for (const key of Object.keys(value)) {
+      result[key] = exactNumbers(value[key]);
+    }
+    return result;
+  }
+  return value;
+}
+
 export function plainNumbers(value: Node): Node {
   if (value instanceof JsonNumber) {
     return Number(value.raw);
@@ -2764,6 +2790,60 @@ export interface ObservedCommandResult {
   directEvents: ObservedEvent[];
 }
 
+/**
+ * asJSON is a value a target answered, as JSON reads it: a key holding `undefined` is absent, and
+ * an `undefined` list item is `null` — what every wire, `goMarshal` and the Rust runner see. Only
+ * plain objects and arrays are rebuilt; a `JsonNumber` or any other class instance passes as is.
+ */
+export function asJSON(value: Node): Node {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item === undefined ? null : asJSON(item)));
+  }
+  if (value !== null && typeof value === 'object') {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return value;
+    }
+    const result: { [key: string]: Node } = {};
+    for (const key of Object.keys(value)) {
+      if (value[key] !== undefined) {
+        result[key] = asJSON(value[key]);
+      }
+    }
+    return result;
+  }
+  return value;
+}
+
+/**
+ * readAsJSON is the boundary between a target and this runtime: every answer a target method
+ * returns, resolved or not, is read through `asJSON` once, here, so no reader of it has to tell an
+ * own property holding `undefined` from an absent one (beyond10x/ess#188). Methods are called on
+ * the target itself, so a class with private fields keeps working, and a method it does not define
+ * stays undefined, which is how optional capabilities are discovered.
+ */
+export function readAsJSON<T extends object>(target: T): T {
+  return new Proxy(target, {
+    get(held, key) {
+      const member = Reflect.get(held, key, held);
+      if (typeof member !== 'function') {
+        return member;
+      }
+      return (...args: unknown[]): unknown => {
+        const answer: unknown = Reflect.apply(member, held, args);
+        if (
+          answer !== null &&
+          typeof answer === 'object' &&
+          typeof (answer as { then?: unknown }).then === 'function'
+        ) {
+          return (answer as Promise<Node>).then(asJSON);
+        }
+        return asJSON(answer as Node);
+      };
+    },
+  });
+}
+
 function normalizeResult(result: CommandResult | undefined): ObservedCommandResult {
   return {
     response: result?.response,
@@ -2837,7 +2917,7 @@ export class ScenarioRun {
 
   constructor(t: TestScope, target: Target, harness: Harness, correlation: string) {
     this.t = t;
-    this.target = target;
+    this.target = readAsJSON(target);
     this.harness = harness;
     this.correlation = correlation;
   }
@@ -4197,18 +4277,18 @@ export class ScenarioRun {
       }
       throw new Error('selection event was not observed');
     }
-    if (value.kind !== 'observed_accessor') {
-      return [this.resolve(value), true];
-    }
-    if (value.accessor === undefined) {
-      throw new Error('missing accessor plan');
-    }
-    for (const event of this.seen) {
-      if (event.event === value.event) {
-        return value.accessor.evaluate(event.payload);
+    if (value.kind === 'observed_accessor') {
+      if (value.accessor === undefined) {
+        throw new Error('missing accessor plan');
       }
+      for (const event of this.seen) {
+        if (event.event === value.event) {
+          return value.accessor.evaluate(event.payload);
+        }
+      }
+      throw new Error('accessor event was not observed');
     }
-    throw new Error('accessor event was not observed');
+    return [this.resolve(value), true];
   }
 
   async checkPeriodic(index: number, step: Step): Promise<boolean> {
@@ -4319,10 +4399,22 @@ export function equal(left: Node, right: Node): boolean {
 /** An exact decimal: `units × 10^-scale`. */
 export type Decimal = [bigint, number];
 
+/** The range of the Rust aggregate arithmetic's units (`i128`). */
+const I128_MAX = 2n ** 127n - 1n;
+const I128_MIN = -(2n ** 127n);
+
+/** A decimal whose units fit the Rust arithmetic, or null: `aggregate::exact` over-/underflows. */
+function withinI128(decimal: Decimal): Decimal | null {
+  return decimal[0] > I128_MAX || decimal[0] < I128_MIN ? null : decimal;
+}
+
 /**
- * exactDecimal reads a number as the exact decimal its spelling denotes, or null for anything else
- * — including an exponent spelling, which the Rust aggregate arithmetic (`aggregate::exact`)
- * refuses too.
+ * exactDecimal reads a number as the exact decimal it denotes, or null for anything else.
+ *
+ * An exponent spelling — `1e-7`, which is what `String(0.0000001)` is, and `1e21` — is expanded
+ * into the plain decimal it denotes, as Rust's `Number::exact_text` spells every number. A value
+ * whose units leave the `i128` range the Rust arithmetic keeps is null, as it has no exact decimal
+ * spelling there either (`aggregate_delta::defect`).
  */
 export function exactDecimal(value: Node): Decimal | null {
   let spelled: string;
@@ -4335,13 +4427,28 @@ export function exactDecimal(value: Node): Decimal | null {
   } else {
     return null;
   }
-  const parts = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(spelled);
+  const parts = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/.exec(spelled);
   if (parts === null) {
     return null;
   }
   const fraction = parts[3] ?? '';
-  const units = BigInt(`${parts[2]}${fraction}`);
-  return [parts[1] === '-' ? -units : units, fraction.length];
+  const exponent = Number(parts[4] ?? '0');
+  // Past this no units fit `i128` anyway, and the power would be a needless giant.
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 1024) {
+    return null;
+  }
+  let units = BigInt(`${parts[2]}${fraction}`);
+  let scale = fraction.length - exponent;
+  if (scale < 0) {
+    units *= 10n ** BigInt(-scale);
+    scale = 0;
+  }
+  // One spelling per value: no trailing zeroes past the point.
+  while (scale > 0 && units % 10n === 0n) {
+    units /= 10n;
+    scale -= 1;
+  }
+  return withinI128([parts[1] === '-' ? -units : units, scale]);
 }
 
 /** How much a numeric aggregate moved, exactly, an absent value reading as zero; null otherwise. */
@@ -4353,7 +4460,7 @@ export function aggregateChange(before: Node, after: Node): Decimal | null {
   }
   const scale = Math.max(was[1], now[1]);
   const widen = ([units, own]: Decimal): bigint => units * 10n ** BigInt(scale - own);
-  return [widen(now) - widen(was), scale];
+  return withinI128([widen(now) - widen(was), scale]);
 }
 
 /** Whether two exact decimals are one value, whatever their spelling (`5`, `5.0`). */
@@ -5279,7 +5386,7 @@ function decodeValues(value: Node): { [field: string]: Value } | undefined {
     const decoded: Value = { kind: written.kind as string };
     if (Object.hasOwn(written, 'fixture')) decoded.fixture = written.fixture as string;
     if (Object.prototype.hasOwnProperty.call(written, 'value')) {
-      decoded.value = plainNumbers(written.value);
+      decoded.value = exactNumbers(written.value);
     }
     if (Object.prototype.hasOwnProperty.call(written, 'instance')) {
       decoded.instance = written.instance as string;
@@ -5397,7 +5504,7 @@ function decodeStep(value: Node): Step {
   const step: Step = {
     order: label('order'),
     identity: Object.prototype.hasOwnProperty.call(written, 'identity')
-      ? plainNumbers(written.identity)
+      ? exactNumbers(written.identity)
       : undefined,
     state: label('state'),
     step: label('step'),
@@ -5415,17 +5522,17 @@ function decodeStep(value: Node): Step {
     after: decodeNumber(written.after),
   };
   if (Object.prototype.hasOwnProperty.call(written, 'fields')) {
-    step.fields = plainNumbers(written.fields) as { [field: string]: Node };
+    step.fields = exactNumbers(written.fields) as { [field: string]: Node };
   }
   if (Object.prototype.hasOwnProperty.call(written, 'payload')) {
-    step.payload = plainNumbers(written.payload) as { [field: string]: Node };
+    step.payload = exactNumbers(written.payload) as { [field: string]: Node };
   }
   const input = decodeValues(written.input);
   if (input !== undefined) {
     step.input = input;
   }
   if (isObject(written.caller)) {
-    step.caller = plainNumbers(written.caller) as { [attribute: string]: Node };
+    step.caller = exactNumbers(written.caller) as { [attribute: string]: Node };
   }
   if (!isNil(written.times)) {
     step.times = decodeNumber(written.times);
@@ -5770,9 +5877,13 @@ export function admitExpectation(value: Node, major: number): void {
       if (!isObject(fields) || Object.keys(fields).length === 0) {
         throw new Error('a change that names no field asserts nothing');
       }
+      // `aggregate_delta::defect`, rule for rule: a number, with an exact decimal spelling.
       for (const [field, amount] of Object.entries(fields)) {
+        if (!(amount instanceof JsonNumber) && typeof amount !== 'number') {
+          throw new Error(`the change of \`${field}\` is not a number`);
+        }
         if (exactDecimal(amount) === null) {
-          throw new Error(`the change in \`${field}\` is not a number`);
+          throw new Error(`the change of \`${field}\` has no exact decimal spelling`);
         }
       }
       for (const field of array(value.absent_is_zero ?? [])) {

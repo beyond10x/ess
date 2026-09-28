@@ -648,9 +648,23 @@ fn variants(source: &str, name: &str) -> Vec<String> {
     found
 }
 
+/// The body of the method of `ScenarioRun` whose declaration starts with `signature`: every line
+/// from it to the `  }` that closes it at the class's indentation.
+fn method<'a>(source: &'a str, signature: &str) -> &'a str {
+    let start = source
+        .find(signature)
+        .unwrap_or_else(|| panic!("runtime.ts declares no `{}`", signature.trim()));
+    let body = &source[start..];
+    let end = body
+        .find("\n  }\n")
+        .unwrap_or_else(|| panic!("`{}` has no end", signature.trim()));
+    &body[..end]
+}
+
 /// Every step, view expectation and scenario value the Rust runner executes is one the TypeScript
-/// runtime executes — a `case '<tag>':` in its admission — or one it refuses by name in
-/// `UNEXECUTED_STEPS`, which refuses the scenario and not the suite. A tag in neither is refused
+/// runtime executes — handled by the executor that runs it, not only read at admission — or one
+/// it refuses by name in `UNEXECUTED_STEPS`, which refuses the scenario and not the suite. A tag
+/// in neither is refused
 /// as an unknown step, which refuses every scenario of the suite: the #188 failure, one tag at a
 /// time. Read off the sources, so a variant Rust gains is required to land in one of the two.
 #[test]
@@ -665,16 +679,36 @@ fn every_rust_suite_tag_is_executed_or_refused_by_name_in_typescript() {
     // Suite/28 vocabulary, which `ts::emit` refuses before a package exists
     // (`direct_response::refuse_generation`), so no TypeScript runtime meets it.
     let beyond: &[&str] = &["expect_direct_response"];
+    // Only the executors count: a label in the admission or decode switch says the tag is read,
+    // not that it is run. Steps are run by `ScenarioRun.step`, expectations decided by
+    // `ScenarioRun.decide`, values resolved by `resolve` and — the two observed-invocation kinds —
+    // `resolveAccessorExpected`.
+    let steps = method(runtime, "  async step(index: number, step: Step)");
+    let expectations = method(runtime, "  decide(index: number, step: Step)");
+    let values = format!(
+        "{}\n{}",
+        method(runtime, "  resolve(value: Value): Node {"),
+        method(runtime, "  resolveAccessorExpected(value: Value)")
+    );
     let mut missing = Vec::new();
     let mut counted = 0;
-    for (enumeration, tags) in [
-        ("ScenarioStep", variants(scenario, "ScenarioStep")),
-        ("ViewExpectation", variants(scenario, "ViewExpectation")),
-        ("ScenarioValue", variants(scenario, "ScenarioValue")),
+    for (enumeration, tags, executor) in [
+        ("ScenarioStep", variants(scenario, "ScenarioStep"), steps),
+        (
+            "ViewExpectation",
+            variants(scenario, "ViewExpectation"),
+            expectations,
+        ),
+        (
+            "ScenarioValue",
+            variants(scenario, "ScenarioValue"),
+            &values,
+        ),
     ] {
         for tag in tags {
             counted += 1;
-            let executed = runtime.contains(&format!("case '{tag}':"));
+            let executed = executor.contains(&format!("case '{tag}':"))
+                || executor.contains(&format!("=== '{tag}'"));
             let refused = unexecuted.contains(&format!("{tag}:"));
             if !(executed || refused || beyond.contains(&tag.as_str())) {
                 missing.push(format!("{enumeration}::{tag}"));
