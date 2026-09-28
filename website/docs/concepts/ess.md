@@ -150,7 +150,7 @@ Everything downstream consumes the IR, and compiling the same source twice is by
 
 Every artifact carries provenance: specification version, a digest of the resolved model, and the
 digest of the model *slice* it derives from (`contract_digest`). Committed output is drift-checked
-in CI. See [the worked example](../examples/specification-to-contracts.md) for real input and
+in CI. See [the worked example](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) for real input and
 output side by side.
 
 The arrow is one-way: the typed ESS YAML is the specification, and the documentation is one
@@ -205,8 +205,8 @@ deliberately corrupted linkage fails exactly the scenario that exists to catch i
 ## The same pattern, pointed somewhere else
 
 The pipeline shape — observe, normalize into a content-addressed IR, declare a desired state, judge
-three-valued — is reused twice more, which is the strongest evidence available that it is a shape
-and not a special case.
+three-valued — is reused for observed infrastructure, which is evidence that it is a shape and not
+a special case of application specifications.
 
 **Infrastructure.** The `infra-*` crates read an observation bundle from an external scanner and
 compile it to a content-addressed IR; a typed graph and twenty coded diagnosis rules read it; a

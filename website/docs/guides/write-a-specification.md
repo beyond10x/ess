@@ -1528,5 +1528,5 @@ display names and identical keys in separate objects do not conflict.
 
 * [Verify an implementation](./verify-conformance.md) — generate the suite this specification
   obliges, run it, and turn the result into evidence.
-* [A specification and its contracts](../examples/specification-to-contracts.md) — the billing
+* [A specification and its contracts](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) — the billing
   example's source next to its generated output.
