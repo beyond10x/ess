@@ -208,7 +208,7 @@ pub fn bind(
                 &mut facts,
                 &mut errors,
             ),
-            None if field.type_ref.is_optional() => {}
+            None if admits_absence(ir, &field.type_ref, 0) => {}
             None if completeness == Completeness::Partial => {}
             None => errors.push(ShapeError::MissingField {
                 at: String::new(),
@@ -229,6 +229,23 @@ pub fn bind(
         Ok(facts)
     } else {
         Err(ShapeErrors(errors))
+    }
+}
+
+/// Whether a member of type `type_ref` may be left out: an `Optional`, through any newtype over one
+/// (beyond10x/ess#205). The rule `ess-domain` admits a precondition literal by, so a member it lets
+/// a literal omit is one this reader accepts omitted.
+fn admits_absence(ir: &EssIr, type_ref: &ResolvedTypeRef, depth: usize) -> bool {
+    if depth > MAX_TYPE_DEPTH {
+        return false;
+    }
+    match type_ref {
+        ResolvedTypeRef::Optional { .. } => true,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => admits_absence(ir, of, depth + 1),
+            _ => false,
+        },
+        _ => false,
     }
 }
 
@@ -1038,7 +1055,7 @@ fn project_value(
                                     errors,
                                 );
                             }
-                            None if field.type_ref.is_optional() => {}
+                            None if admits_absence(ir, &field.type_ref, 0) => {}
                             None => errors.push(ShapeError::MissingField {
                                 at: path.to_string(),
                                 field: field.name.clone(),

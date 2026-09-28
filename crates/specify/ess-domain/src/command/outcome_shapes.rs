@@ -612,7 +612,7 @@ fn validate_precondition(
     }
     let input_errors = precondition_input(spec, index, precondition, command);
     if input_errors.is_empty() {
-        let branch = precondition_branch(command, &precondition.input);
+        let branch = precondition_branch(&spec.system().types, command, &precondition.input);
         if let Ok(selected) = &branch {
             if let Some(refusal) = precondition_row(spec, command, selected, &precondition.input) {
                 errors.push(
@@ -703,35 +703,37 @@ fn precondition_row(
         return None;
     }
     let entity = spec.entities().get(&subject.entity)?;
-    let literal = |field: &str| {
-        input
-            .get(field)
-            .filter(|value| fixture_of(command, field, value).is_none())
+    let types = &spec.system().types;
+    let row = RowSources {
+        types,
+        command,
+        input,
     };
-    let mut members: Vec<(&str, &TypeRef, &Node)> = Vec::new();
-    if let Some(identity) = literal(&subject.instance) {
-        members.push((
+    let mut values: Vec<(&str, &TypeRef, Node)> = Vec::new();
+    if let Sent::Literal(identity) = row.sent(&subject.instance) {
+        values.push((
             entity.identity.name.as_str(),
             &entity.identity.type_ref,
-            identity,
+            identity.clone(),
         ));
     }
     for (target, source) in &selected.sets {
-        let super::PayloadSource::InputField { field } = source else {
+        let Some(declared) = entity
+            .fields
+            .iter()
+            .find(|candidate| &candidate.name == target)
+        else {
             continue;
         };
-        let (Some(declared), Some(value)) = (
-            entity
-                .fields
-                .iter()
-                .find(|candidate| &candidate.name == target),
-            literal(field),
-        ) else {
-            continue;
-        };
-        members.push((target.as_str(), &declared.type_ref, value));
+        if let Some(value) = row.value(&declared.type_ref, source, 0) {
+            values.push((target.as_str(), &declared.type_ref, value));
+        }
     }
-    let mut facts = super::LiteralFacts::of(&spec.system().types, &members);
+    let members: Vec<(&str, &TypeRef, &Node)> = values
+        .iter()
+        .map(|(name, declared, value)| (*name, *declared, value))
+        .collect();
+    let mut facts = super::LiteralFacts::of(types, &members);
     let state = subject.into.as_ref().unwrap_or(&entity.states.initial);
     if let Ok(path) = ess_primitives::facts::FactPath::new("state") {
         facts.set(path, ess_primitives::facts::FactValue::text(state.as_str()));
@@ -744,6 +746,142 @@ fn precondition_row(
             )
         })
     })
+}
+
+/// What a precondition sends for one input.
+enum Sent<'v> {
+    /// A literal value.
+    Literal(&'v Node),
+    /// Nothing, or `null`: an optional input's fallback applies.
+    Omitted,
+    /// A fixture, whose value is not known here.
+    Fixture,
+}
+
+/// The values a precondition's created row holds, read from its `sets:` sources and its literal
+/// input: what the interpreter stores, where the document alone says what that is.
+struct RowSources<'s> {
+    types: &'s crate::types::TypeRegistry,
+    command: &'s CommandSpec,
+    input: &'s BTreeMap<String, Node>,
+}
+
+impl RowSources<'_> {
+    /// What the precondition sends for `path`, an input field or a dotted path into one.
+    fn sent(&self, path: &str) -> Sent<'_> {
+        let mut segments = path.split('.');
+        let Some(field) = segments.next() else {
+            return Sent::Omitted;
+        };
+        let Some(mut value) = self.input.get(field) else {
+            return Sent::Omitted;
+        };
+        if fixture_of(self.command, field, value).is_some() {
+            return Sent::Fixture;
+        }
+        for segment in segments {
+            match value {
+                Node::Map(entries) => match entries.get(segment) {
+                    Some(inner) => value = inner,
+                    None => return Sent::Omitted,
+                },
+                _ => return Sent::Omitted,
+            }
+        }
+        if matches!(value, Node::Null) {
+            Sent::Omitted
+        } else {
+            Sent::Literal(value)
+        }
+    }
+
+    /// The value `source` writes into a member of type `target`, or `None` where it is decided
+    /// outside the document: generated, a fixture, the caller, another record.
+    fn value(&self, target: &TypeRef, source: &super::PayloadSource, depth: usize) -> Option<Node> {
+        use super::PayloadSource;
+        if depth > crate::types::MAX_TYPE_DEPTH {
+            return None;
+        }
+        match source {
+            PayloadSource::InputField { field } => match self.sent(field) {
+                Sent::Literal(value) => Some(value.clone()),
+                Sent::Omitted | Sent::Fixture => None,
+            },
+            PayloadSource::Literal { value } | PayloadSource::Scalar { value, .. } => {
+                literal_node(self.types, target, value)
+            }
+            PayloadSource::InputOrGenerated { field, otherwise } => match self.sent(field) {
+                Sent::Literal(value) => Some(value.clone()),
+                Sent::Fixture => None,
+                Sent::Omitted => otherwise
+                    .as_deref()
+                    .and_then(|fallback| self.value(target, fallback, depth + 1)),
+            },
+            PayloadSource::Struct { fields } => {
+                let layers = self.types.newtype_layers(target);
+                let TypeRef::Named(name) = &layers.terminal else {
+                    return None;
+                };
+                let Some(crate::types::TypeBody::Struct {
+                    fields: declared, ..
+                }) = self.types.get(name).map(|named| &named.body)
+                else {
+                    return None;
+                };
+                let mut members = BTreeMap::new();
+                for member in fields {
+                    let Some(typed) = declared.iter().find(|field| field.name == member.target)
+                    else {
+                        continue;
+                    };
+                    if let Some(value) = self.value(&typed.type_ref, &member.source, depth + 1) {
+                        members.insert(member.target.clone(), value);
+                    }
+                }
+                Some(Node::Map(members))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// The value a literal's text is when read as `target`: the spelling the conformance reader
+/// (`ess-conformance` `input.rs`, `primitive_literal`) gives it, or `None` where it has none.
+fn literal_node(types: &crate::types::TypeRegistry, target: &TypeRef, text: &str) -> Option<Node> {
+    use crate::types::Primitive;
+    match &types.newtype_layers(target).terminal {
+        TypeRef::Primitive(primitive) => {
+            let value = match primitive {
+                Primitive::Boolean => match text {
+                    "true" => Node::Bool(true),
+                    "false" => Node::Bool(false),
+                    _ => return None,
+                },
+                Primitive::Integer => {
+                    let number = text.parse::<i64>().ok()?;
+                    if number.to_string() != text {
+                        return None;
+                    }
+                    Node::Number(number.into())
+                }
+                Primitive::Decimal => {
+                    Node::Number(ess_primitives::facts::Number::decimal_literal(text)?)
+                }
+                Primitive::Binary64 | Primitive::Json => return None,
+                Primitive::String
+                | Primitive::Timestamp
+                | Primitive::Duration
+                | Primitive::Uuid
+                | Primitive::Bytes => Node::Text(text.to_owned()),
+            };
+            primitive.admits(&value).map(|_| value)
+        }
+        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+            Some(crate::types::TypeBody::Enum { .. }) => Some(Node::Text(text.to_owned())),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// A precondition's input names only its command's fields, supplies every required one, and
@@ -850,6 +988,7 @@ fn precondition_input(
 ///
 /// The code and the reason, where the input selects no branch, several, or a refusal.
 pub fn precondition_branch<'c>(
+    types: &crate::types::TypeRegistry,
     command: &'c CommandSpec,
     input: &BTreeMap<String, Node>,
 ) -> Result<&'c Outcome, (ValidationCode, String)> {
@@ -873,18 +1012,19 @@ pub fn precondition_branch<'c>(
                 .to_owned(),
         ));
     }
-    let mut facts = ess_primitives::facts::FactStore::new();
-    for (field, value) in input {
-        let Ok(path) = ess_primitives::facts::FactPath::new(field) else {
-            continue;
-        };
-        match value {
-            Node::Bool(flag) => facts.set(path, *flag),
-            Node::Number(number) => facts.set(path, *number),
-            Node::Text(text) => facts.set(path, text.as_str()),
-            Node::Null | Node::Seq(_) | Node::Map(_) => {}
-        }
-    }
+    // Every literal input as the interpreter reads it (beyond10x/ess#205): scalar leaves, a list's
+    // `.count` and elements, a struct's members, and presence for `defined()`. An input left to a
+    // fixture binds nothing, so a guard reading it is undecided.
+    let members: Vec<(&str, &TypeRef, &Node)> = input
+        .iter()
+        .filter(|(field, value)| fixture_of(command, field, value).is_none())
+        .filter_map(|(field, value)| {
+            command
+                .input_field(field)
+                .map(|declared| (field.as_str(), &declared.type_ref, value))
+        })
+        .collect();
+    let facts = super::LiteralFacts::of(types, &members);
     let mut holding = Vec::new();
     for outcome in &command.outcomes {
         let OutcomeCondition::When(predicate) = &outcome.condition else {
