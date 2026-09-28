@@ -766,6 +766,93 @@ test('asJSON reads a target answer as JSON does', () => {
   assert.equal(Object.hasOwn(asJSON({ a: undefined }) as object, 'a'), false);
 });
 
+// Everything is read exactly as `JSON.parse(JSON.stringify(x))` reads it, with two documented
+// exceptions that keep a number exact: a JsonNumber passes as is, and a BigInt — which
+// JSON.stringify refuses — becomes the JsonNumber of its digits.
+test('asJSON is JSON.stringify then JSON.parse, JsonNumber and BigInt aside', () => {
+  class Row {
+    id = 'a';
+    note: unknown = undefined;
+    hidden = (): number => 1;
+    get computed(): number {
+      return 2;
+    }
+  }
+  class Answer {
+    readonly rows: unknown[];
+    constructor(rows: unknown[]) {
+      this.rows = rows;
+    }
+  }
+  const withToJSON = { toJSON: (key: string) => ({ key, via: 'toJSON' }) };
+  const holey: unknown[] = [1, , 3]; // eslint-disable-line no-sparse-arrays
+  const inherited = Object.create({ inheritedKey: 1 }) as { own?: number };
+  inherited.own = 2;
+  const hiddenKey = {};
+  Object.defineProperty(hiddenKey, 'secret', { value: 1, enumerable: false });
+  const table: unknown[] = [
+    null,
+    true,
+    'text',
+    0,
+    -0,
+    1.5,
+    NaN,
+    Infinity,
+    -Infinity,
+    [undefined, () => 1, Symbol('s'), 4],
+    holey,
+    { a: undefined, b: () => 1, c: Symbol('s'), d: 4, [Symbol('k')]: 5 },
+    new Row(),
+    new Answer([{ id: 'a', note: undefined }, new Row()]),
+    { at: new Date(Date.UTC(2026, 0, 1)) },
+    [new Date(0)],
+    { map: new Map([['k', 1]]), set: new Set([1]) },
+    new Map([['k', 1]]),
+    { nested: withToJSON, list: [withToJSON] },
+    // eslint-disable-next-line no-new-wrappers
+    [new Number(3), new String('s'), new Boolean(false)],
+    inherited,
+    hiddenKey,
+    { deep: { deeper: [{ gone: undefined, kept: null }] } },
+  ];
+  for (const [index, value] of table.entries()) {
+    assert.deepStrictEqual(asJSON(value), JSON.parse(JSON.stringify(value)), `table row ${index}`);
+  }
+  // `undefined`, a function and a symbol at the top are no JSON at all.
+  for (const value of [undefined, () => 1, Symbol('s')]) {
+    assert.equal(asJSON(value), undefined);
+    assert.equal(JSON.stringify(value), undefined);
+  }
+  // Exception two: JSON.stringify refuses a BigInt, and asJSON reads it as its exact digits, at any
+  // depth, and through a toJSON that answers one.
+  assert.throws(() => JSON.stringify({ n: 1n }), TypeError);
+  assert.deepStrictEqual(asJSON({ n: 9007199254740993n, list: [-2n] }), {
+    n: new JsonNumber('9007199254740993'),
+    list: [new JsonNumber('-2')],
+  });
+  assert.deepStrictEqual(asJSON({ toJSON: () => 7n }), new JsonNumber('7'));
+  // A cycle throws, as it does in JSON.stringify.
+  const cycle: { self?: unknown } = {};
+  cycle.self = cycle;
+  assert.throws(() => JSON.stringify(cycle), TypeError);
+  assert.throws(() => asJSON(cycle), TypeError);
+  // A value reached twice, but not through itself, is no cycle.
+  const shared = { id: 1 };
+  assert.deepStrictEqual(asJSON([shared, shared]), [{ id: 1 }, { id: 1 }]);
+});
+
+// A JsonNumber a target forwards with JSON.stringify is written as its digits.
+test('JsonNumber serializes as the number it spells', () => {
+  const big = new JsonNumber('9007199254740993');
+  const written = JSON.stringify({ n: big, m: new JsonNumber('1.5') });
+  if (typeof (JSON as { rawJSON?: unknown }).rawJSON === 'function') {
+    assert.equal(written, '{"n":9007199254740993,"m":1.5}');
+  } else {
+    assert.equal(written, '{"n":"9007199254740993","m":1.5}');
+  }
+});
+
 // Exponent spellings are the decimals they denote, as `Number::exact_text` spells them, and a
 // value past the `i128` units the Rust arithmetic keeps has no exact spelling.
 test('exactDecimal expands exponent spellings and bounds the units', () => {

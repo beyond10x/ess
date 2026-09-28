@@ -106,6 +106,16 @@ import type { FixtureContract } from './fixtures.js';
  */
 export type Node = any;
 
+/**
+ * RequestValue is a value the runtime sends a target in a request: a `Node`, where any number the
+ * suite writes that a binary64 cannot hold exactly — an integer past 2^53, a decimal with more
+ * places than a binary64 keeps — is a `JsonNumber` carrying its digits, never a rounded `number`
+ * (beyond10x/ess#188). It can occur at any depth of `CommandRequest.input` and `.caller`,
+ * `AbsentInputRequest.caller`, `EntitySetupRequest.identity` and `.fields`, and `ViewRequest.params`.
+ * `String(value)` and `JSON.stringify` write its digits; `Number(value)` is the rounded image.
+ */
+export type RequestValue = Node | JsonNumber;
+
 /** Row is one row of a view: a value per projected field name. */
 export type Row = { [field: string]: Node };
 
@@ -129,6 +139,24 @@ export class JsonNumber {
 
   valueOf(): number {
     return Number(this.raw);
+  }
+
+  /**
+   * toJSON is what `JSON.stringify` writes for this number, so a target that forwards a request
+   * with it sends a number and not `{"raw": …}`. Where the runtime has `JSON.rawJSON` (Node 21 and
+   * later) it is the token itself, digit for digit, as a JSON number. Without it: the number, where
+   * a binary64 holds exactly the value written, and otherwise the digits as a JSON string — a
+   * string keeps the value where a number would silently round it.
+   */
+  toJSON(): unknown {
+    const raw = (JSON as { rawJSON?: (text: string) => unknown }).rawJSON;
+    if (typeof raw === 'function') {
+      return raw(this.raw);
+    }
+    const plain = Number(this.raw);
+    return Number.isFinite(plain) && sameDecimal(exactDecimal(this), exactDecimal(plain))
+      ? plain
+      : this.raw;
   }
 
   /** The binary64 image of the token, and whether it has one. */
@@ -1925,8 +1953,8 @@ export interface EntitySetupTarget {
 /** EntitySetupRequest is literal fixture state, not a trusted model-validation certificate. */
 export interface EntitySetupRequest {
   entity: string;
-  identity: Node;
-  fields: { [field: string]: Node };
+  identity: RequestValue;
+  fields: { [field: string]: RequestValue };
   state: string;
   correlation: string;
 }
@@ -1949,14 +1977,14 @@ export interface ScenarioContext {
 export interface CommandRequest {
   command: string;
   actor: string;
-  input: { [field: string]: Node };
+  input: { [field: string]: RequestValue };
   correlation: string;
   /**
    * The attribute values of the caller to send it as, where its actor declares any (suite/26,
    * beyond10x/ess#168); unset otherwise. The target sends the command authenticated as a caller
    * carrying exactly these, or throws ErrUnsupported — never the command sent as someone else.
    */
-  caller?: { [attribute: string]: Node };
+  caller?: { [attribute: string]: RequestValue };
 }
 
 /**
@@ -1968,7 +1996,7 @@ export interface AbsentInputRequest {
   actor: string;
   correlation: string;
   /** As `CommandRequest.caller`. */
-  caller?: { [attribute: string]: Node };
+  caller?: { [attribute: string]: RequestValue };
 }
 
 /** CommandResult is what one command did. */
@@ -2014,7 +2042,7 @@ export interface ViewRequest {
    * the implementation cannot answer without them, and the runner refuses to send a request with a
    * parameter it could not resolve rather than reading a different set of rows.
    */
-  params: { [parameter: string]: Node };
+  params: { [parameter: string]: RequestValue };
   /** The consistency token the read must reflect, empty for a current read. */
   atLeast: string;
   correlation: string;
@@ -2791,28 +2819,91 @@ export interface ObservedCommandResult {
 }
 
 /**
- * asJSON is a value a target answered, as JSON reads it: a key holding `undefined` is absent, and
- * an `undefined` list item is `null` — what every wire, `goMarshal` and the Rust runner see. Only
- * plain objects and arrays are rebuilt; a `JsonNumber` or any other class instance passes as is.
+ * asJSON is a value a target answered, as JSON reads it: exactly `JSON.parse(JSON.stringify(value))`,
+ * with two exceptions, both so a number keeps its exact digits — a `JsonNumber` passes as is, and a
+ * `BigInt` becomes the `JsonNumber` of its decimal digits where `JSON.stringify` would throw. A
+ * target called directly has no JSON wire, and a `BigInt` is how it states an exact integer; the
+ * clock-reading arm reads one (`reading.ts`). Otherwise it is what every wire, `goMarshal` and the
+ * Rust runner see (beyond10x/ess#188):
+ *
+ *   * `toJSON` is called where a value has one, with its key, so a `Date` is its ISO text;
+ *   * a `Number`, `String` or `Boolean` object is its primitive, and a non-finite number `null`;
+ *   * every other object — a class instance, a `Map`, a `Set` — is rebuilt from its own enumerable
+ *     string keys, so a `Map` or a `Set` is `{}`;
+ *   * `undefined`, a function or a symbol is dropped from an object, and is `null` in a list, as
+ *     is a hole;
+ *   * a cycle throws a `TypeError`, as `JSON.stringify` does.
  */
 export function asJSON(value: Node): Node {
-  if (Array.isArray(value)) {
-    return value.map((item) => (item === undefined ? null : asJSON(item)));
+  return jsonValue(value, '', new Set<object>());
+}
+
+function jsonValue(held: Node, key: string, open: Set<object>): Node {
+  let value: Node = held;
+  if (value instanceof JsonNumber) {
+    return value;
   }
-  if (value !== null && typeof value === 'object') {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
+  if (typeof value === 'bigint') {
+    return new JsonNumber(value.toString());
+  }
+  if (typeof value === 'object' && value !== null) {
+    const toJSON: unknown = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === 'function') {
+      value = toJSON.call(value, key) as Node;
+      if (value instanceof JsonNumber) {
+        return value;
+      }
+    }
+  }
+  if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+    value = value.valueOf();
+  }
+  // A `BigInt` a `toJSON` answered, or a `BigInt` object, is the same exact integer.
+  if (typeof value === 'bigint' || value instanceof BigInt) {
+    return new JsonNumber(value.valueOf().toString());
+  }
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
       return value;
+    case 'number':
+      // `JSON.stringify` writes `-0` as `0` and a non-finite number as `null`.
+      return Number.isFinite(value) ? value + 0 : null;
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+      return undefined;
+    default:
+      break;
+  }
+  if (value === null) {
+    return null;
+  }
+  const object = value as object;
+  if (open.has(object)) {
+    throw new TypeError('Converting circular structure to JSON');
+  }
+  open.add(object);
+  try {
+    if (Array.isArray(object)) {
+      const list: Node[] = [];
+      for (let index = 0; index < object.length; index += 1) {
+        const item = jsonValue(object[index], String(index), open);
+        list.push(item === undefined ? null : item);
+      }
+      return list;
     }
     const result: { [key: string]: Node } = {};
-    for (const key of Object.keys(value)) {
-      if (value[key] !== undefined) {
-        result[key] = asJSON(value[key]);
+    for (const field of Object.keys(object)) {
+      const item = jsonValue((object as { [key: string]: Node })[field], field, open);
+      if (item !== undefined) {
+        result[field] = item;
       }
     }
     return result;
+  } finally {
+    open.delete(object);
   }
-  return value;
 }
 
 /**

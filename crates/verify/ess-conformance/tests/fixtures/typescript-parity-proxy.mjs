@@ -9,8 +9,12 @@ import { isUnsupported, JsonNumber } from './dist/runtime.js';
 import { makeTarget } from './target.mjs';
 
 let target = makeTarget();
-// A `JsonNumber` travels as its own digits, so an exact integer reaches Rust unrounded.
-const marked = (_key, value) => (value instanceof JsonNumber ? `\u0000number:${value.raw}` : value);
+// A `JsonNumber` travels as its own digits, so an exact integer reaches Rust unrounded. Read off the
+// holder, because `JSON.stringify` hands a replacer what `toJSON` made of the value.
+function marked(key, value) {
+  const original = this[key];
+  return original instanceof JsonNumber ? `\u0000number:${original.raw}` : value;
+}
 const answer = (value) =>
   process.stdout.write(
     `${JSON.stringify(value, marked).replace(/"\\u0000number:([^"]*)"/g, '$1')}\n`,
