@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T16:49:11Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:schema-bundle-import",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from ddbe42a: task check (exit 0): offline workspace gate, including 9 structural bundle tests and 3 CLI integration tests; task site-build (exit 0)",
+    "reference": "https://github.com/beyond10x/ess/blob/ddbe42ae92abf36ed7a8229db9e585eefa443bf7/.engineering/planning/journal.jsonl"
+  }
+}

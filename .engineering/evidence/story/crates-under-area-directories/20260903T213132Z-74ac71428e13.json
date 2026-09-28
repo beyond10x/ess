@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-03T21:31:32Z",
+  "actor": "human:timo",
+  "artifact": "story:crates-under-area-directories",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check in worktree wt-6cb2ff14f31d at 43cb46a: exit 0, 1310 tests, 99 binaries"
+  }
+}

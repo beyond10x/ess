@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:session-and-eventual-view-checks
 kind: story
 status: implemented
@@ -39,6 +39,10 @@ scope:
 - confidence: cited
   path: schemas/ess-history.schema.json
 revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T23:53:49Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T23:54:58Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:01:53Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 # Story: session and eventual views are checked at their declared strength
 

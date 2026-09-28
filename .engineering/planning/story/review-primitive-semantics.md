@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-primitive-semantics
 kind: story
 status: implemented
@@ -43,6 +43,10 @@ scope:
 - confidence: cited
   path: docs/design/review-primitive-semantics.md
 revision: 47
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-08T23:44:16Z", actor: "human:timo", revision: 27, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-08T23:44:17Z", actor: "human:timo", revision: 28, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-09T10:42:11Z", actor: "human:timo", revision: 47, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding and source
 

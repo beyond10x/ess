@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:concurrent-history-lanes
 kind: story
 status: implemented
@@ -32,6 +32,10 @@ scope:
 - confidence: cited
   path: website/docs/guides/verify-conformance.md
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T02:52:08Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-28T02:53:44Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T08:49:28Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 # Story: a failing history is drawn as client lanes
 

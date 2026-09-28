@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T22:21:40Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:provision-wasm-for-gate",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "GitHub CI 33995345139 on 5201daf: unchanged task check passed with wasm32-unknown-unknown provisioned",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/33995345139"
+  }
+}

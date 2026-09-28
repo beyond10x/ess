@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T11:38:49Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-native-model-behavior",
+  "kind": "task",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Complete affected xtask and unchanged CLI suites; native diagnostic; final independent cases and adopted exact regression",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/native-model-correction-pass-1-evidence/coordinator-verification.md"
+  }
+}

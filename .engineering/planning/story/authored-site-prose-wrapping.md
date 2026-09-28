@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:authored-site-prose-wrapping
 kind: story
 status: implemented
@@ -14,6 +14,10 @@ scope:
 - confidence: cited
   path: docs/design/authored-site-publication.md
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T21:05:26Z", actor: "agent:specification-planner", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T21:05:27Z", actor: "agent:specification-planner", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T21:05:28Z", actor: "agent:specification-planner", revision: 5, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Outcome
 

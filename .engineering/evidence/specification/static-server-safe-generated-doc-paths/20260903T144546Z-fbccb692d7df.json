@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-03T14:45:46Z",
+  "actor": "human:timo",
+  "artifact": "specification:static-server-safe-generated-doc-paths",
+  "kind": "specification",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check (exit 0)",
+    "reference": "local ESS worktree at 6ef4af76b99a8d2cd861a3cc76140c88c1361129 plus migration artifacts"
+  }
+}

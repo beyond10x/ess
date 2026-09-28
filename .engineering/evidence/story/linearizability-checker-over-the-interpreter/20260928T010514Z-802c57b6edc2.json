@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-28T01:05:14Z",
+  "actor": "human:timo",
+  "artifact": "story:linearizability-checker-over-the-interpreter",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:linearizability-checker-over-the-interpreter-adversary-pass-2",
+    "review": "review-result:linearizability-checker-over-the-interpreter-adversary-pass-2",
+    "outcome": "fixed"
+  }
+}

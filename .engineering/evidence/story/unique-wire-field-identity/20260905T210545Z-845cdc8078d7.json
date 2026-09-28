@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T21:05:45Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:unique-wire-field-identity",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Original source and combined integration preview task check/site-build exit 0; restoring the source artifact's implemented state",
+    "reference": "release-plan:consolidated-ess-019"
+  }
+}

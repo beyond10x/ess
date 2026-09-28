@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-11T02:16:24Z",
+  "actor": "human:timo",
+  "artifact": "story:binding-mapping-bounded-accessor",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "Public preflight rejects the direct-helper oversize probe; preserve diagnostic privately, retain passing boundary regression",
+    "review": "review-result:bounded-accessor-implementation-adversary-2",
+    "outcome": "no-op"
+  }
+}

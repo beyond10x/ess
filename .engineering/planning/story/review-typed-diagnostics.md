@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-typed-diagnostics
 kind: story
 status: implemented
@@ -30,6 +30,10 @@ scope:
 - confidence: cited
   path: docs/design/review-typed-diagnostics.md
 revision: 44
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-08T23:44:18Z", actor: "human:timo", revision: 22, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-08T23:44:18Z", actor: "human:timo", revision: 23, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-09T10:42:13Z", actor: "human:timo", revision: 44, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding and source
 

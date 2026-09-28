@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:an-authored-scenario-can-arrange-a-view-row
 kind: story
 status: archived
@@ -8,6 +8,8 @@ summary: 'arrange: carries no fields, so an entity created by no command has no 
 relations:
 - informed_by: task:ess-gaps-measured-in-a-consumer-specification
 revision: 3
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-11T00:04:27Z", actor: "human:timo", revision: 3, imported: true}
 ---
 **Folded into `task:ess-gaps-measured-in-a-consumer-specification` on 2026-09-11**, at the operator's
 request that all eight measured gaps arrive as one task for the maintainer to decompose. The body below is

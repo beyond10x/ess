@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T12:34:37Z",
+  "actor": "human:timo",
+  "artifact": "story:review-output-containment",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "All eight underlying task check steps exited 0; workspace 1475 passed, 0 failed, 0 ignored; task site-build exited 0",
+    "reference": "98defa1b361e053e7fe586b24d777b9843e2f9b5"
+  }
+}

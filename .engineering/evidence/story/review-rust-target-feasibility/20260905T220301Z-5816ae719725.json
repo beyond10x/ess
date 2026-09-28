@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T22:03:01Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:review-rust-target-feasibility",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Coordinator ba43fda records all ten integration lanes on 87338bd, 1634 passed",
+    "reference": "git:ba43fda:.engineering/planning/journal.jsonl"
+  }
+}

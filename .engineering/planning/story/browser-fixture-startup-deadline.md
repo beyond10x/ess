@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:browser-fixture-startup-deadline
 kind: story
 status: active
@@ -15,6 +15,9 @@ scope:
 - confidence: cited
   path: crates/edge/ess-cli/tests/support/browser.rs
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T04:18:07Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T04:18:08Z", actor: "human:timo", revision: 4, imported: true}
 ---
 # The Firefox BiDi fixture assumes a 30-second startup on a shared runner
 

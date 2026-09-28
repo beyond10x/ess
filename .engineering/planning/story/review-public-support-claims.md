@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-public-support-claims
 kind: story
 status: implemented
@@ -30,6 +30,10 @@ scope:
 - confidence: cited
   path: website/docs/status/where-this-stands.md
 revision: 23
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-07T04:07:08Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"review_outcome":2}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-07T04:07:10Z", actor: "human:timo", revision: 19, decided_on: {"recorded":{"review_outcome":2}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-07T07:51:53Z", actor: "human:timo", revision: 23, decided_on: {"recorded":{"test_result":2,"review_outcome":3}}, imported: true}
 ---
 ## Finding and source
 

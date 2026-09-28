@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-25T17:59:35Z",
+  "actor": "human:timo",
+  "artifact": "initiative:ess-evolution",
+  "kind": "initiative",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ESS 0.32.0 release (f4c1bb84): gate and Release green; M5-M8 releases verified, M9 parked (ESS-EVOLUTION.md rev 3)",
+    "reference": "https://github.com/beyond10x/ess/releases/tag/0.32.0"
+  }
+}

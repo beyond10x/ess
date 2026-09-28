@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:command-line-surface
 kind: story
 status: implemented
@@ -24,6 +24,10 @@ scope:
 - confidence: cited
   path: schemas/generated/ess.schema.json
 revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T09:45:13Z", actor: "human:timo", revision: 10, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T09:45:13Z", actor: "human:timo", revision: 11, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-04T09:45:21Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # Story: a component declares a command-line surface, and ESS synthesizes its parser
 

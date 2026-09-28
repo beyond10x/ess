@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: architecture-decision-record:ess-evolution-08-reviewable-source-candidates
 kind: architecture-decision-record
 status: proposed

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:planning-journal-crossed-the-gates-scan-limit
 kind: decision-blocker
 status: cleared
@@ -7,6 +7,8 @@ title: The planning journal crossed the gates scan limit, and nothing can be pus
 relations:
 - blocks: initiative:ess-evolution
 revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-13T16:24:10Z", actor: "human:timo", revision: 4, imported: true}
 ---
 ## What is blocked
 

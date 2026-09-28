@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-15T08:34:25Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-native-model-behavior",
+  "kind": "task",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:native-model-behavior-design-pass-1",
+    "review": "review-result:native-model-behavior-design-pass-1",
+    "outcome": "fixed"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:concurrent-history-conformance
 kind: epic
 status: implemented
@@ -13,6 +13,10 @@ relations:
 - informed_by: epic:model-driven-interpretation
 - depends_on: story:outcome-shapes-beyond-ess-14
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T08:58:17Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-28T08:59:23Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T09:00:44Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
 ---
 # Epic: concurrent history conformance
 

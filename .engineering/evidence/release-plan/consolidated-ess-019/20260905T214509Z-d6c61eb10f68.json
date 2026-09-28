@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T21:45:09Z",
+  "actor": "agent:specification-planner",
+  "artifact": "release-plan:consolidated-ess-019",
+  "kind": "release-plan",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Combined final corrections: 39 feasibility, 14 synthesis adversary and 4 CLI adversary tests passed; includes all seven retained final-review failures and valid-name/map compiler controls",
+    "reference": "review-result:review-boundaries-5-rust-adversary-pass-2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T10:42:09Z",
+  "actor": "human:timo",
+  "artifact": "story:review-typed-diagnostics",
+  "kind": "story",
+  "revision": 43,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check, every lane run individually on wave/review-boundaries-21 at e448671e: 11 lanes exit 0; test 217 lanes 2561 passed 0 failed; consumer-check BaselineUnknown 157677 Supported 54; fuzz-check 25 replay cases",
+    "reference": "docs/plan/2026-09-09-review-boundaries-21.md"
+  }
+}

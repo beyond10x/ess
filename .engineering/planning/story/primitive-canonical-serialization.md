@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:primitive-canonical-serialization
 kind: story
 status: active
@@ -34,6 +34,9 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/src/witness.rs
 revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-12T01:29:11Z", actor: "human:timo", revision: 12, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-12T01:29:14Z", actor: "human:timo", revision: 13, imported: true}
 ---
 # Canonical number serialization: the second stage of F08
 

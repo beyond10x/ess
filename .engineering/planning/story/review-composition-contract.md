@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-composition-contract
 kind: story
 status: implemented
@@ -18,6 +18,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T14:08:53Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T14:08:55Z", actor: "human:timo", revision: 7, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T14:16:16Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Finding and source
 

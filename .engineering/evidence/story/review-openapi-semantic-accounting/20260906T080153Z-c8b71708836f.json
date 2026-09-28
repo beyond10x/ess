@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T08:01:53Z",
+  "actor": "human:timo",
+  "artifact": "story:review-openapi-semantic-accounting",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ordered task check steps, task site-build and planning validation on combined source 8271c3e; final reference site-build on 5d5e87f",
+    "reference": "verification-report:review-boundaries-7-integrated"
+  }
+}

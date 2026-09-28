@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:concurrent-history-format
 kind: story
 status: implemented
@@ -34,6 +34,10 @@ scope:
 - confidence: cited
   path: schemas/ess-history.schema.json
 revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T21:48:31Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T21:55:09Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T23:23:18Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":3}}, imported: true}
 ---
 # Story: a concurrent history has a format
 

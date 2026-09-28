@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:source-pinned-data-normalization
 kind: story
 status: active
@@ -96,6 +96,9 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T21:05:39Z", actor: "agent:specification-planner", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T21:05:40Z", actor: "agent:specification-planner", revision: 4, imported: true}
 ---
 ## Evidence
 

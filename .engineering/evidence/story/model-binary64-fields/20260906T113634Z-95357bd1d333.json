@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T11:36:34Z",
+  "actor": "human:timo",
+  "artifact": "story:model-binary64-fields",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check and task site-build",
+    "reference": ".engineering/planning/verification-report/normalization-binary64-integrated.md"
+  }
+}

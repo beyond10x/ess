@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T22:15:27Z",
+  "actor": "human:timo",
+  "artifact": "task:release-0-21-0",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test --locked --offline -p ess-cli --test coverage_producers: 3 passed after release identity resolution",
+    "reference": ".local/cli-contract-wave-20260909/release-0.21.0/coverage-producers-version-fix.log"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:retained-command-result-replay
 kind: story
 status: implemented
@@ -53,6 +53,10 @@ scope:
 - confidence: cited
   path: website/docs/status/where-this-stands.md
 revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-22T05:00:18Z", actor: "agent:codex-ekr-completion-20260922", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-22T05:00:20Z", actor: "agent:codex-ekr-completion-20260922", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-22T10:03:47Z", actor: "agent:codex-ekr-completion-20260922", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":6}}, imported: true}
 ---
 ## Outcome
 

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:normalize-positional-array-input
 kind: story
 status: implemented
@@ -88,6 +88,10 @@ scope:
 - confidence: cited
   path: docs/design/source-pinned-data-normalization.md
 revision: 17
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T11:40:48Z", actor: "human:timo", revision: 11, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T11:40:48Z", actor: "human:timo", revision: 12, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T13:24:17Z", actor: "agent:normalization-coordinator", revision: 17, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 ## Evidence
 

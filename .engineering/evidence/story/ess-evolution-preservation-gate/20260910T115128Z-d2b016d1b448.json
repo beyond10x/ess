@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-10T11:51:28Z",
+  "actor": "agent:ess-evolution-integration",
+  "artifact": "story:ess-evolution-preservation-gate",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check; staged tree fb5a6b8b9e732af6cf3c84e0412ae479624f54da; exit 0; 152 cases and metadata guard",
+    "reference": "local-evidence:ess-evolution-20260910/ess-preservation-gate.log"
+  }
+}

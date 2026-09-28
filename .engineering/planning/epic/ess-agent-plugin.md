@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: epic:ess-agent-plugin
 kind: epic
 status: archived
@@ -8,6 +8,11 @@ summary: One tag carries the ess binary, the Claude/Codex plugin and its skills 
 relations:
 - serves: vision:O2
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-25T06:25:58Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-25T06:26:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-25T06:26:57Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "implemented", to: "archived", at: "2026-09-25T06:28:36Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # ESS ships its own agent plugin
 

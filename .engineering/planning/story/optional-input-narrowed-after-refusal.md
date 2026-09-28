@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:optional-input-narrowed-after-refusal
 kind: story
 status: draft

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:binding-delivery-at-most-once
 kind: story
 status: proposed
@@ -37,6 +37,8 @@ scope:
 - confidence: cited
   path: schemas/generated/ess.schema.json
 revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-10T11:51:32Z", actor: "agent:ess-evolution-integration", revision: 2, imported: true}
 ---
 ## Context
 `ess/1` bindings require `delivery:`, and `ess-domain::binding::Delivery` has one variant, `AtLeastOnce` (crates/specify/ess-domain/src/binding.rs:194-200, "the only guarantee this build implements"). The review design left the door open: docs/design/ess-review-v0.1.md:95 writes `delivery: at_least_once # the only value v0.1 accepts`. The first consumer that needed the other word arrived on 2026-09-10: `specs/services/pusher` (the consumer repository) models two crossings that are single HTTP attempts — the pusher's authorization request to the backend (`request` with no retry, auth.js:177) and the backend's publish to the pusher (response never read, HttpBrowserPusher.groovy:153). ESS 0.20.0 refused `delivery: at_most_once` with `unknown variant, expected at_least_once`; the model now says `at_least_once` and carries a header comment stating that the word is false. A specification forced to state a stronger guarantee than the system gives is the failure F3 exists to prevent.

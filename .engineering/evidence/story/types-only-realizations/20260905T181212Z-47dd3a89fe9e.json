@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T18:12:12Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:types-only-realizations",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from ddbe42a: CARGO_NET_OFFLINE=true task check exited 0; task site-build exited 0. The optional schema-contract all-features lane passed with TypeScript 6.0.3 and Go 1.26.5, including 3 Go native tests, 3 Rust native tests, 7 shared plan tests and 7 TypeScript compiler tests. ess-cli schema_bundle: 6 passed. This verifies qualified-bundle data libraries, not ESS-model roots or application decoder parity.",
+    "reference": "https://github.com/beyond10x/ess/blob/ddbe42ae92abf36ed7a8229db9e585eefa443bf7/.engineering/planning/journal.jsonl"
+  }
+}

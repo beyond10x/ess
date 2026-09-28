@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-06T09:02:32Z",
+  "actor": "human:timo",
+  "artifact": "story:raw-json-normalization-provenance",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:normalization-raw-json-adversary-pass1-public",
+    "reference": "docs/design/raw-json-normalization.md",
+    "review": "review-result:normalization-raw-json-adversary-pass1-public",
+    "outcome": "no-op"
+  }
+}

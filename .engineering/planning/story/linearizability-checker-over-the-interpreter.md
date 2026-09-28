@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:linearizability-checker-over-the-interpreter
 kind: story
 status: implemented
@@ -50,6 +50,10 @@ scope:
 - confidence: inferred
   path: website/docs/reference/cli.md
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T23:27:13Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T23:28:22Z", actor: "human:timo", revision: 6, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T01:22:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 # Story: a history is checked for linearizability against the interpreter, and shrunk
 

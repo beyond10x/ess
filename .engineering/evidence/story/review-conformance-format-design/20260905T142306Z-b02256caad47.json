@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-05T14:23:06Z",
+  "actor": "human:timo",
+  "artifact": "story:review-conformance-format-design",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:review-boundaries-3-conformance-design-adversary-pass-2",
+    "reference": "impl/review-conformance-format-design",
+    "review": "review-result:review-boundaries-3-conformance-design-adversary-pass-2",
+    "outcome": "fixed"
+  }
+}

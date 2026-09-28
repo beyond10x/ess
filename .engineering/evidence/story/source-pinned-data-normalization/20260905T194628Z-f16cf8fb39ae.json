@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T19:46:28Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:source-pinned-data-normalization",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from ddbe42a: Reference library only: normalization 11 tests; strict Clippy; CARGO_NET_OFFLINE=true task check exit 0; task site-build exit 0. Three-target adapters and consumer parity remain unfinished.",
+    "reference": "https://github.com/beyond10x/ess/blob/ddbe42ae92abf36ed7a8229db9e585eefa443bf7/.engineering/planning/journal.jsonl"
+  }
+}

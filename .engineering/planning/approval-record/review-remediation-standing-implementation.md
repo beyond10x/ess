@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: approval-record:review-remediation-standing-implementation
 kind: approval-record
 status: approved
@@ -7,6 +7,8 @@ title: Standing approval for review remediation implementation waves
 relations:
 - decides: epic:review-boundary-remediation
 revision: 2
+transitions:
+- {from: "draft", to: "approved", at: "2026-09-05T09:35:37Z", actor: "human:timo", revision: 2, imported: true}
 ---
 ## Authorization
 

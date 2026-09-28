@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T20:15:17Z",
+  "actor": "human:timo",
+  "artifact": "story:review-authored-discovery",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "All 11 integrated task check/site-build/AEP lanes exit zero; 2233 tests, 198 summaries, 0 failed or ignored. Gate results SHA256 915337861a2d16d7a2baaf87fa645d9a1ddd1cd1e31b96cc93b9e2efbd85045d; full records in target/review-boundaries-17/gate-f82fbc67a4c1-attempt1. Native finish timestamp retains fractional precision; --at uses supported whole seconds.",
+    "reference": "git:f82fbc67a4c1cfaef920ac94ca1449bf8d947575"
+  }
+}

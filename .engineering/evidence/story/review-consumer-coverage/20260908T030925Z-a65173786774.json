@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-08T03:09:25Z",
+  "actor": "human:timo",
+  "artifact": "story:review-consumer-coverage",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:consumer-coverage-source-pass1",
+    "reference": "home-path:sha256:f2e75dc158bfa64bc23943a55cec878cbba1cef8fe135619875f39d800a0a4e0",
+    "review": "review-result:consumer-coverage-source-pass1",
+    "outcome": "fixed"
+  }
+}

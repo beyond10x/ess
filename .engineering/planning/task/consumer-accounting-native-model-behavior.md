@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-native-model-behavior
 kind: task
 status: implemented
@@ -9,6 +9,10 @@ relations:
 - derived_from: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T08:36:36Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T08:36:38Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"review_outcome":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-15T11:38:50Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Outcome
 

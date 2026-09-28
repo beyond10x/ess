@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-04T11:08:22Z",
+  "actor": "human:timo",
+  "artifact": "story:authored-scenarios",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "ess_conformance",
+    "source": "ess conform run: billing-go v3 against billing/v3 at 56090788443a14b4a51ad151eb5cb3ebded2b98f6defe9ac50826296ac5d0942, 0 of 30 scenario(s) failed",
+    "reference": "home-path:sha256:7bb4914467c5c339287c47f965b89a46a317c3ebfb729aa11a3e37eef45b26fc"
+  }
+}

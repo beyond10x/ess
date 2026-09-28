@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T07:30:05Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-dependency-graph",
+  "kind": "task",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "S5 separating host-field fixture: M3 compiled assertion red, exact restoration and compiler package Clippy fmt green",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s5/attribution-correction/result.md"
+  }
+}

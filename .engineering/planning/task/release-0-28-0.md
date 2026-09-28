@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:release-0-28-0
 kind: task
 status: implemented
@@ -9,6 +9,10 @@ relations:
 - verifies: story:observed-subject-history
 - serves: vision:O2
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-21T16:57:42Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-21T16:57:44Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-21T19:10:08Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":2,"approval":1}}, imported: true}
 ---
 ## Goal
 Integrate the guarded external outcome and observed subject history candidates, validate the release, and publish version 0.28.0 with verified archives.

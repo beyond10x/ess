@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-13T08:53:34Z",
+  "actor": "human:timo",
+  "artifact": "story:authored-entity-state-arrangement",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-conformance --test authored, on main 5b975c78",
+    "reference": "9572af9b; 65 passed, 0 failed"
+  }
+}

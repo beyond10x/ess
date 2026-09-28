@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:go-explorer-concurrent-porcupine
 kind: story
 status: archived
@@ -11,6 +11,8 @@ relations:
 - decomposes: epic:concurrent-history-conformance
 - serves: vision:O2
 revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-09-27T11:34:03Z", actor: "human:timo", revision: 2, imported: true}
 ---
 # Story: the Go explorer checks concurrent runs with an in-house linearizability checker
 

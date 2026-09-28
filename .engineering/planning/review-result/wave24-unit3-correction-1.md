@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: review-result:wave24-unit3-correction-1
 kind: review-result
 status: archived
@@ -7,6 +7,8 @@ title: 'Unit 3 correction round 1: green, and pass 1''s needle premise refuted'
 relations:
 - reviews: story:enum-variant-in-an-entity-invariant
 revision: 2
+transitions:
+- {from: "active", to: "archived", at: "2026-09-12T10:33:43Z", actor: "human:timo", revision: 2, imported: true}
 ---
 # Unit 3, correction round 1: green, and one of pass 1's premises refuted
 

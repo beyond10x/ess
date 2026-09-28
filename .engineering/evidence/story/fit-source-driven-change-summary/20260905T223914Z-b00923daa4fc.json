@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T22:39:14Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:fit-source-driven-change-summary",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Coordinator ba43fda: pinned Docs System 1c8c316 accepted the 320-character summary",
+    "reference": "git:ba43fda:.engineering/planning/journal.jsonl"
+  }
+}

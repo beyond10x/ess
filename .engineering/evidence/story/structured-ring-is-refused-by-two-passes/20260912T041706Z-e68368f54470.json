@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-12T04:17:06Z",
+  "actor": "human:timo",
+  "artifact": "story:structured-ring-is-refused-by-two-passes",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on wave/ess-wave-23 at bd722fa9: 8 non-test steps exit 0; 22 packages exit 0; ess-cli all 50 targets exit 0 including replay_fidelity_browser 30/30; ess-xtask exit 0 under the Taskfile pinned profile RUSTUP_TOOLCHAIN=1.98.1; logs at /var/tmp/ess-wave-23/gate/"
+  }
+}

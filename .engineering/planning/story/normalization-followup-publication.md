@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:normalization-followup-publication
 kind: story
 status: implemented
@@ -17,6 +17,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T13:15:25Z", actor: "agent:normalization-coordinator", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T13:15:26Z", actor: "agent:normalization-coordinator", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T13:24:18Z", actor: "agent:normalization-coordinator", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 ## Outcome
 

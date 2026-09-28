@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:wave24-unit1-leaves-after-two-passes
 kind: decision-blocker
 status: open

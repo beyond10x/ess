@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-skipped-scenario-is-not-a-failed-one
 kind: story
 status: implemented
@@ -25,6 +25,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/formats.md
 revision: 24
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-06T09:36:22Z", actor: "human:timo", revision: 15, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-06T09:36:24Z", actor: "human:timo", revision: 16, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-06T10:53:11Z", actor: "human:timo", revision: 23, decided_on: {"recorded":{"test_result":1,"review_outcome":4}}, imported: true}
 ---
 ## What is wrong
 

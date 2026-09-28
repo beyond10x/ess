@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T09:18:40Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-conformance",
+  "kind": "task",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "S7 complete package Clippy formatting and controlled Rust runner checks",
+    "reference": "local-evidence:ess-evolution/waves/0010-opus-accounting/s7/implementation-result.md"
+  }
+}

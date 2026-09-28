@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:verify-observed-bindings
 kind: task
 status: implemented
@@ -7,6 +7,10 @@ title: Validate semantic implementation bindings against scoped Kubernetes obser
 relations:
 - serves: vision:O2
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-07T11:59:27Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-07T11:59:28Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-07T12:48:57Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 Implement the user-authorized first backend deployment connection as native ESS, reproducible without AI. The exact adopted types and checks are specified in docs/design/observed-component-bindings.md before code is added. Current ess-realization/1 already owns component-to-implementation artifacts (crates/specify/ess-realization/src/lib.rs:201,399); InfraIr separately owns scoped observed workload/container/image identities (crates/infra/infra-compiler/src/ir.rs). The CLI is the existing boundary consuming both.
 

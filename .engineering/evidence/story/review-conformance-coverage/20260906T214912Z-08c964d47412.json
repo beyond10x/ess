@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T21:49:12Z",
+  "actor": "human:timo",
+  "artifact": "story:review-conformance-coverage",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "10 integration lanes at a333949; 2058 Rust cases, 43 actual downstream correspondence cases and 4 no-report controls",
+    "reference": "verification-report:coverage-writer-actual-correspondence"
+  }
+}

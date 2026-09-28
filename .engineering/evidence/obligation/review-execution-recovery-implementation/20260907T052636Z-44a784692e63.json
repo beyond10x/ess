@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-07T05:26:36Z",
+  "actor": "human:timo",
+  "artifact": "obligation:review-execution-recovery-implementation",
+  "kind": "obligation",
+  "revision": 2,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:execution-recovery-authority-pass1",
+    "reference": "home-path:sha256:28cb265d9627873da1a5c7381cb54cc34f9fe321ba169e492496d94cc62e7e69",
+    "review": "review-result:execution-recovery-authority-pass1",
+    "outcome": "fixed"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:output-ownership-tolerates-platform-xattrs
 kind: story
 status: implemented
@@ -13,6 +13,10 @@ scope:
 - confidence: cited
   path: .engineering/planning/story/output-ownership-tolerates-platform-xattrs.md
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T06:20:36Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T06:20:36Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-11T06:20:37Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Context
 

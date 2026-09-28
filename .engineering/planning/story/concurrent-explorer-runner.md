@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:concurrent-explorer-runner
 kind: story
 status: implemented
@@ -40,6 +40,10 @@ scope:
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore_target.go
 revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T23:57:07Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":3}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T23:58:50Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":3}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-28T04:10:52Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"review_outcome":5}}, imported: true}
 ---
 # Story: the Go and TypeScript explorers record concurrent histories and hand them to `ess`
 

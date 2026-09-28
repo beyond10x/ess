@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:retained-result-release-qualification
 kind: decision-blocker
 status: cleared
@@ -8,6 +8,8 @@ relations:
 - blocks: story:retained-command-result-replay
 withholds: test_result
 revision: 4
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-22T09:15:30Z", actor: "agent:codex-ekr-completion-20260922", revision: 4, decided_on: {"recorded":{"approval":1}}, imported: true}
 ---
 ## Decision boundary
 

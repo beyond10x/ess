@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-11T04:04:54Z",
+  "actor": "human:timo",
+  "artifact": "story:binding-list-selection-contract",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:list-selection-implementation-adversary-1",
+    "review": "review-result:list-selection-implementation-adversary-1",
+    "outcome": "fixed"
+  }
+}

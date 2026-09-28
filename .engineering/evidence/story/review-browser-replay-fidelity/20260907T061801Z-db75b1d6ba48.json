@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-07T06:18:01Z",
+  "actor": "human:timo",
+  "artifact": "story:review-browser-replay-fidelity",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:browser-replay-binding-pass1",
+    "reference": "home-path:sha256:f222a05cee8d72366b04cba40b3e6a51476f5f0992fbac6ecb4a34597cd6cf9d",
+    "review": "review-result:browser-replay-binding-pass1",
+    "outcome": "fixed"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-loader-modes
 kind: task
 status: implemented
@@ -8,6 +8,10 @@ relations:
 - decomposes: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T21:19:39Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T21:19:41Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-15T22:47:09Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 ## Approved outcome and missing evidence
 

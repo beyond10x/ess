@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-09T01:45:29Z",
+  "actor": "human:timo",
+  "artifact": "story:review-typed-diagnostics",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:typed-diagnostics-adversary-wave21-pass2",
+    "review": "review-result:typed-diagnostics-adversary-wave21-pass2",
+    "outcome": "fixed"
+  }
+}

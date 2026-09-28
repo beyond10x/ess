@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-composition
 kind: task
 status: implemented
@@ -8,6 +8,10 @@ relations:
 - decomposes: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-16T02:01:21Z", actor: "human:timo", revision: 2, decided_on: {"recorded":{"approval":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-16T02:01:21Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-16T08:56:40Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":2,"approval":1,"review_outcome":9}}, imported: true}
 ---
 ## Approved requirement and evidence gap
 

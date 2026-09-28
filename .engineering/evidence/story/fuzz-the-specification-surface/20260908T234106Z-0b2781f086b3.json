@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-08T23:41:06Z",
+  "actor": "human:timo",
+  "artifact": "story:fuzz-the-specification-surface",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on CI: PR #17 Gate run 34288754559 job 102272521028 exit 0 (rerun after a Firefox startup flake, story:browser-fixture-startup-deadline); local task fuzz-check exit 0 (19 tests, 25 replay cases) and task consumer-check exit 0 (22 cases) on the closure tree; merged 725549b",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/34288754559/job/102272521028"
+  }
+}

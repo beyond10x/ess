@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-06T07:53:14Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:go-normalization-pattern-semantics",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:normalization-base64-adversary-pass1",
+    "reference": "target/resume-base64/implementor-correction-pass1.md",
+    "review": "review-result:normalization-base64-adversary-pass1",
+    "outcome": "fixed"
+  }
+}

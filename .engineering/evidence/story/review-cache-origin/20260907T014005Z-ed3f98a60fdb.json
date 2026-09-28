@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T01:40:05Z",
+  "actor": "human:timo",
+  "artifact": "story:review-cache-origin",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated dbe78c5b15df478ec2cd4883c67d0012cdf90e17: all10 lanes zero,2093 workspace cases,exact CI and Atlas34073139680 delivery,Website99 cases,4 live byte matches",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/34072064491"
+  }
+}

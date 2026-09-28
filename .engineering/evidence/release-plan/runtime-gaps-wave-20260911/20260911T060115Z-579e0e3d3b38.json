@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-11T06:01:15Z",
+  "actor": "human:timo",
+  "artifact": "release-plan:runtime-gaps-wave-20260911",
+  "kind": "release-plan",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:runtime-gap-central-integration",
+    "reference": "local-evidence:ess-evolution-20260910/priority-wave/runtime-gaps/typed-response-admission-green.log",
+    "review": "review-result:runtime-gap-central-integration",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-16T01:40:14Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-dependency-graph",
+  "kind": "task",
+  "revision": 1,
+  "change": {
+    "change": "evidence",
+    "kind": "approval",
+    "source": "Approved ESS evolution M9, existing S5 routing and standing autonomous implementation",
+    "reference": "plan:ess-evolution-20260915"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-consumer-coverage
 kind: story
 status: implemented
@@ -25,6 +25,10 @@ scope:
 - confidence: cited
   path: docs/design/review-consumer-coverage.md
 revision: 24
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-07T20:44:12Z", actor: "human:timo", revision: 11, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-07T20:44:14Z", actor: "human:timo", revision: 12, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-08T06:20:16Z", actor: "human:timo", revision: 24, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 ## Finding and source
 

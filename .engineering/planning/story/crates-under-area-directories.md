@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:crates-under-area-directories
 kind: story
 status: implemented
@@ -21,6 +21,10 @@ scope:
 - confidence: cited
   path: crates
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-03T21:31:33Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-03T21:31:33Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-03T21:31:33Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 # Story: Crates move under area directories; names and consumers unchanged
 

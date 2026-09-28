@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-07T10:25:34Z",
+  "actor": "human:timo",
+  "artifact": "story:review-delivery-trust-contract",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:delivery-trust-binding-pass1",
+    "reference": "home-path:sha256:db9c93967174784102fd2b724dc29610164604621f112634eebf3b9c88bde51f",
+    "review": "review-result:delivery-trust-binding-pass1",
+    "outcome": "no-op"
+  }
+}

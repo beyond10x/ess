@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:d2-constraint-has-a-home
 kind: story
 status: implemented
@@ -21,6 +21,10 @@ scope:
 - confidence: inferred
   path: docs/plan/ess-wave-7-closing-the-loop.md
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-11T10:38:56Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-11T10:38:57Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-11T17:10:31Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 # Story: gap register D-2 is written where it lives
 

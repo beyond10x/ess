@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:interpreted-command-execution
 kind: story
 status: implemented
@@ -40,6 +40,10 @@ scope:
 - confidence: cited
   path: website/docs/guides/verify-conformance.md
 revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-27T21:46:29Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-27T21:47:34Z", actor: "human:timo", revision: 5, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-27T23:22:04Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}, imported: true}
 ---
 # Story: a command's declared outcome is executed from the IR
 

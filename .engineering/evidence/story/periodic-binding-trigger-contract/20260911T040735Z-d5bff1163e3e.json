@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T04:07:35Z",
+  "actor": "human:timo",
+  "artifact": "story:periodic-binding-trigger-contract",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Merged periodic and selection validation: nine selected source cases passed, including explicit periodic-selection refusal",
+    "reference": "local-evidence:priority-wave/gap-scoping/merged-source-cause-tests.log"
+  }
+}

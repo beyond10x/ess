@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-cli-coverage
 kind: task
 status: implemented
@@ -8,6 +8,10 @@ relations:
 - decomposes: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-16T09:08:02Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-16T09:08:04Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-16T14:48:53Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1}}, imported: true}
 ---
 # Complete S8 CLI coverage preservation accounting
 

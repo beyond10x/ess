@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T06:29:04Z",
+  "actor": "human:timo",
+  "artifact": "task:consumer-accounting-v2-mechanism",
+  "kind": "task",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test --package ess-cli --all-targets --locked; source unchanged; terminal 0; 559 passed, 0 failed, 5 pre-existing ignored, 0 filtered",
+    "reference": "local-evidence:ess-evolution/waves/0004-ess-accounting/implementation-evidence/pre-review-complete-ess-cli-attempt-3.log"
+  }
+}

@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-nested-execution
 kind: task
 status: active
@@ -8,6 +8,9 @@ relations:
 - decomposes: story:consumer-accounting-baseline-never-extended
 - serves: vision:O2
 revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-16T15:13:54Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-16T15:13:56Z", actor: "human:timo", revision: 3, imported: true}
 ---
 # Complete measured nested execution for the existing consumer gate
 

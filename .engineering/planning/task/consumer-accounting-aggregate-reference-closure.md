@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:consumer-accounting-aggregate-reference-closure
 kind: task
 status: active
@@ -10,6 +10,9 @@ relations:
 - serves: vision:O2
 - depends_on: task:consumer-accounting-unchanged-behavior-admission
 revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-15T14:40:32Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":4}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-15T14:40:34Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":4}}, imported: true}
 ---
 ## Outcome
 

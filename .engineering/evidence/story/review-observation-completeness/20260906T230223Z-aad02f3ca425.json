@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T23:02:23Z",
+  "actor": "human:timo",
+  "artifact": "story:review-observation-completeness",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check: 2073 passing tests; zero failures or ignored tests",
+    "reference": "sha256:4e98e2d058fb2b7d256148cb9900dc00e48d704a793f9c28ce2dd5a8f5937a12"
+  }
+}

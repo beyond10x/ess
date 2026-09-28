@@ -1,10 +1,14 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:authored-scenarios
 kind: story
 status: implemented
 title: A specification carries the scenarios an author wrote, not only the ones it obliges
 revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T11:08:08Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T11:08:11Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-04T11:08:26Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"ess_conformance":1}}, imported: true}
 ---
 ## What is missing
 

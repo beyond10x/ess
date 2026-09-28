@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-08T13:51:08Z",
+  "actor": "human:timo",
+  "artifact": "story:review-output-ownership",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated f6ebe903: actual CI task check0, 2372 passes; local per-step verification and explicit test continuation; native Macs; task site-build0",
+    "reference": "docs/reviews/2026-09-08-output-ownership-closure.json"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T20:47:52Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:integrate-source-driven-realizations",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Historical observation reconciled from ddbe42a: Uncommitted combined preview wt-6525314b6daa: offline task check exit 0; task site-build exit 0; adopter drift exit 1 fully accounted as provenance migration",
+    "reference": "https://github.com/beyond10x/ess/blob/ddbe42ae92abf36ed7a8229db9e585eefa443bf7/.engineering/planning/journal.jsonl"
+  }
+}

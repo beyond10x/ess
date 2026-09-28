@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T15:48:58Z",
+  "actor": "human:timo",
+  "artifact": "story:review-schema-resource-identity",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Every8 declared task-check lanes,site-build and planning validation at9e82d20 returned0;2018workspacecasespassed0failedignored",
+    "reference": "verification-report:review-boundaries-10-integrated"
+  }
+}

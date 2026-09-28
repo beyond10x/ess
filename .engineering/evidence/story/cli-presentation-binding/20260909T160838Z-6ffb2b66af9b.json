@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T16:08:38Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-presentation-binding",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task site-build: WASM,21 browser claims,28 deterministic steps/64rows and Docusaurus build passed",
+    "reference": ".local/tmp/cli-wave/ess-site-build-01.log"
+  }
+}

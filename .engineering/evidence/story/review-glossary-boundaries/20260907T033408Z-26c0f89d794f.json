@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-07T03:34:08Z",
+  "actor": "human:timo",
+  "artifact": "story:review-glossary-boundaries",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Integrated ecb7efc22ad9b19b85ef4debd8143491d6a66ef3: all10 lanes zero,2093 workspace cases,exact CI and Atlas34079580209 delivery,Website99 cases,5 live byte matches",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/34078983021"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-04T01:18:07Z",
+  "actor": "human:timo",
+  "artifact": "story:oci-component-release",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check",
+    "reference": "local:task-check:2026-09-04"
+  }
+}

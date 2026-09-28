@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-06T01:39:06Z",
+  "actor": "agent:specification-planner",
+  "artifact": "story:normalize-model-owned-records",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check; task site-build; native Go 1.26.5 and Rust normalization targets; all exit 0"
+  }
+}

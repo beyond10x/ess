@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:provision-wasm-for-gate
 kind: story
 status: implemented
@@ -11,6 +11,10 @@ scope:
 - confidence: cited
   path: .github/workflows/ci.yml
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-05T22:11:32Z", actor: "agent:specification-planner", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-05T22:11:32Z", actor: "agent:specification-planner", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-05T22:21:41Z", actor: "agent:specification-planner", revision: 5, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Evidence
 

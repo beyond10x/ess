@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T22:07:54Z",
+  "actor": "human:timo",
+  "artifact": "story:review-conformance-coverage",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Exact source CI, Atlas publication34062674853, Website99 tests and five byte-exact live fetches",
+    "reference": "https://github.com/beyond10x/atlas/actions/runs/34062674853"
+  }
+}

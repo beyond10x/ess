@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-skip-says-why-the-target-could-not-answer
 kind: story
 status: active

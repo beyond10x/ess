@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-09T20:30:05Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-presentation-binding",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check; exact implementation source 6f7ef46163e758f3401945d1a946e0fc80ebc003; exit 0; 152 qualified cases and one metadata guard",
+    "reference": ".local/cli-contract-wave-20260909/ess-full-gate-06.log"
+  }
+}

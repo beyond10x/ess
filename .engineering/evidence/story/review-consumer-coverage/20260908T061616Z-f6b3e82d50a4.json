@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-08T06:16:16Z",
+  "actor": "human:timo",
+  "artifact": "story:review-consumer-coverage",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "All task check lanes, site-build and native consumer readback at 49732ec39da306e277eaf4f1d820e246e08797cf",
+    "reference": "docs/reviews/2026-09-08-consumer-coverage-integration.md; readback SHA256 6c62998a3c951d26d6df63efdb6837d803bde1cad2240ce3f239c47a543fbfa5"
+  }
+}

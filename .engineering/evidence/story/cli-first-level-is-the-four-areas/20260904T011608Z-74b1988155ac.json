@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-04T01:16:08Z",
+  "actor": "human:timo",
+  "artifact": "story:cli-first-level-is-the-four-areas",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "generate conflicts refused with exit 2; area help shows the verb's options; identity claim narrowed to the Usage: line in CHANGELOG, cli.md and both test files (the adversary's full-stderr assertion aligned with story revision 5 by the orchestrator); example-check wording accepted as-is",
+    "review": "review-result:adversary-cli-areas-round-1",
+    "outcome": "fixed"
+  }
+}

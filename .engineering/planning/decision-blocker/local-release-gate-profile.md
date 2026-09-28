@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: decision-blocker:local-release-gate-profile
 kind: decision-blocker
 status: cleared
@@ -8,6 +8,8 @@ relations:
 - blocks: task:release-0-28-0
 withholds: test_result
 revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-09-21T18:05:35Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"approval":1}}, imported: true}
 ---
 ## Decision needed
 The operator requested integration into main and passing checks. The prepared release passes the workspace and tooling tests, source and projection checks, fuzz lane, release metadata and site build. Local task check still refuses consumer-accounting registry drift; the existing CI/release workflow explicitly excludes that lane.

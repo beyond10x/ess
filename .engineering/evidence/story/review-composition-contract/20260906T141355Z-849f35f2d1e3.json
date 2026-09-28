@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-06T14:13:55Z",
+  "actor": "human:timo",
+  "artifact": "story:review-composition-contract",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Every declared task check lane, site-build and planning validation at 4777c1de3a80; 1983 passed, 0 failed/ignored",
+    "reference": "verification-report:review-boundaries-9-integrated"
+  }
+}

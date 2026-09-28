@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-05T14:26:24Z",
+  "actor": "human:timo",
+  "artifact": "story:review-typescript-root-collision",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "All eight task check steps, site-build and explicit TypeScript compiler lane",
+    "reference": "1ef817ea9d51b2e927febce18eb2d540256e8e76"
+  }
+}

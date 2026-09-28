@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T03:34:32Z",
+  "actor": "human:timo",
+  "artifact": "story:periodic-binding-trigger-contract",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Focused periodic conformance after liveness correction: seven tests passed; actual generated Go positive and fault cases include missed overshoot and delayed-close ticks. Compile 4.54s, tests 0.54s. No full gate or production-adoption claim.",
+    "reference": "local-evidence:priority-wave/periodic/adversary-overshoot-green.log"
+  }
+}

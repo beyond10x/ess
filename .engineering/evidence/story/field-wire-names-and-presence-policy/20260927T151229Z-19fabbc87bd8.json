@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-27T15:12:29Z",
+  "actor": "human:timo",
+  "artifact": "story:field-wire-names-and-presence-policy",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-retrofit-w2-types-pass-1",
+    "review": "review-result:adversary-retrofit-w2-types-pass-1",
+    "outcome": "fixed"
+  }
+}

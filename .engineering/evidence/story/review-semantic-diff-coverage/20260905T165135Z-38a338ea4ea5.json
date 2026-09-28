@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-05T16:51:35Z",
+  "actor": "human:timo",
+  "artifact": "story:review-semantic-diff-coverage",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:review-boundaries-4-semantic-adversary-pass-1",
+    "reference": "git:5c009bfc2f2d306b445d86505099eb88af1df23b",
+    "review": "review-result:review-boundaries-4-semantic-adversary-pass-1",
+    "outcome": "fixed"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-11T03:15:46Z",
+  "actor": "human:timo",
+  "artifact": "story:subject-state-outcome-guards",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Focused subject declaration/domain checks: 6 passed. Runtime source/identity refusal and equal-input checks: 3 passed; generated Go witness wrapper: 1 passed. Good Go target passed 9 scenarios; guard-ignoring mutation failed only preserved-state scenario (8 passed, 1 failed), as required. Later open-input guard-source validation correction awaits its new focused regression; no full local gate run.",
+    "reference": "local-evidence:priority-wave/subject-state/runtime-go-green.log"
+  }
+}

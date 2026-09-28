@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: task:cache-writer-fixture-authority
 kind: task
 status: implemented
@@ -8,6 +8,10 @@ relations:
 - derived_from: story:review-cache-origin
 - serves: vision:O2
 revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-09T16:03:49Z", actor: "human:timo", revision: 2, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-09T16:03:52Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-09T16:40:39Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":2}}, imported: true}
 ---
 ## Finding
 Foundation run foundation-1788942852-970971, ESS attempt 7 at 113f5925, retained a failed two_real_writers_publish_one_complete_proof_without_replacement case. The losing driver reported AuthorityMismatch because recovery/etc/ess/recovery/registry.json was empty during parsing; the other driver timed out waiting for the second ORAS writer. cache_lane in crates/edge/ess-cli/tests/support/recovery_driver.rs:329 gives both processes the same arrangement; fake_recovery::publish_registry truncates its registry with std::fs::write at tests/support/fake_recovery.rs:315.

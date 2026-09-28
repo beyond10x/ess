@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:cli-first-level-is-the-four-areas
 kind: story
 status: implemented
@@ -17,6 +17,10 @@ scope:
 - confidence: cited
   path: website/docs/reference/cli.md
 revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-04T00:20:10Z", actor: "human:timo", revision: 3, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-04T00:20:10Z", actor: "human:timo", revision: 4, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-04T01:16:08Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}, imported: true}
 ---
 # Story: `ess --help` shows the four areas; every flat verb stays as a hidden alias
 

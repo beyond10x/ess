@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:review-output-ownership
 kind: story
 status: implemented
@@ -39,6 +39,10 @@ scope:
 - confidence: inferred
   path: website/docs/reference/formats.md
 revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-08T07:28:35Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"static_analysis":1}}, imported: true}
+- {from: "proposed", to: "active", at: "2026-09-08T07:28:37Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"static_analysis":1}}, imported: true}
+- {from: "active", to: "implemented", at: "2026-09-08T13:51:09Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"test_result":1,"static_analysis":1,"review_outcome":1}}, imported: true}
 ---
 ## Finding and source
 

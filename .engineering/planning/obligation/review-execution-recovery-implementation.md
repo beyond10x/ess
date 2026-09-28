@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: obligation:review-execution-recovery-implementation
 kind: obligation
 status: met
@@ -8,6 +8,8 @@ relations:
 - decomposes: epic:review-boundary-remediation
 - depends_on: story:review-execution-recovery-design
 revision: 4
+transitions:
+- {from: "open", to: "met", at: "2026-09-09T10:42:15Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"review_outcome":4}}, imported: true}
 ---
 ## Outstanding outcome
 

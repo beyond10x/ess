@@ -1,5 +1,5 @@
 ---
-format: aep.planning-md/2
+format: aep.planning-md/3
 id: story:a-marked-region-is-not-a-scan-of-what-runs
 kind: story
 status: draft
