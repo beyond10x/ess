@@ -58,7 +58,14 @@ fn generated_docs_ir_target_help_names_the_rule_that_picks_the_version() {
     let help = help();
     let flat = help.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        flat.contains("chosen by the constructs the specification uses"),
+        flat.contains(
+            "`suite_version` is chosen by `--suite-format` and by the constructs the \
+             specification uses"
+        ),
         "the `ir` target does not say how its suite version is chosen:\n{help}"
+    );
+    assert!(
+        flat.contains("--suite-format <SUITE_FORMAT>"),
+        "the help names `--suite-format` as a rule and offers no such option:\n{help}"
     );
 }

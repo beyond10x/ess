@@ -48,6 +48,7 @@ pub const PACKAGE: &str = "essconform";
 /// and the fourth is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     crate::direct_response::refuse_generation(suite, "Go")?;
+    refuse_unadmitted(suite, "Go")?;
     let json = suite.to_canonical_json()?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
@@ -69,6 +70,7 @@ pub fn emit_input(
 ) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
     crate::direct_response::refuse_generation(suite.suite(), "Go")?;
+    refuse_unadmitted(suite.suite(), "Go")?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),
         contents,
@@ -317,13 +319,13 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
         version = provenance.specification_version,
         digest = provenance.spec_digest,
     );
-    if REPORT_FORMAT_2_REQUIRED.contains(&provenance.suite_version.major()) {
+    if requires_report_format_2(provenance.suite_version) {
         readme
             .replace(
                 "## What to return when you cannot answer",
                 &format!(
-                    "{}## What to return when you cannot answer",
-                    running_section(provenance.suite_version, "Run", "go test ./...")
+                    "## Running it\n\n{}## What to return when you cannot answer",
+                    report_format_requirement(provenance.suite_version, "Run", &[], "go test ./...")
                 ),
             )
             .replace(
@@ -334,47 +336,81 @@ ESS_REPORT_OUT=$PWD/report.json go test ./...
                 "ESS_REPORT_OUT=$PWD/report.json go test ./...",
                 "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...",
             )
-    } else if provenance.suite_version.major() >= 5 {
-        readme.replace(
-            "Set `ESS_REPORT_OUT` to a file path and `Run` writes an `ess-conformance-report/1` there when the",
-            "Select `ESS_REPORT_FORMAT=2` explicitly before execution. Set `ESS_REPORT_OUT` to a file path\nand `Run` writes an `ess-conformance-report/2` there when the",
-        ).replace(
-            "ESS_REPORT_OUT=$PWD/report.json go test ./...",
-            "ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...",
-        )
     } else {
         readme
     }
 }
 
-/// The suite majors the Go runner refuses to execute without an explicit `ESS_REPORT_FORMAT=2`:
-/// the version gate in `Run` (`runtime.go`), between suite admission and execution adaptation.
+/// The newest suite major the generated Go and TypeScript runners admit.
 ///
-/// The README states the requirement for exactly these, and `tests/generated_docs.rs` reads the
-/// gate out of the emitted runtime and fails when the two disagree (beyond10x/ess#186).
-const REPORT_FORMAT_2_REQUIRED: std::ops::RangeInclusive<u32> = 5..=21;
+/// The Rust side of `newestSuiteMajor` in `runtime.go` and of the `SUITE_MAJORS` table in
+/// `runtime.ts`. `/28` and `/29` carry direct-return observations neither runner executes, so a
+/// package for them would be refused by its own runner at admission; [`refuse_unadmitted`] refuses
+/// it at generation instead, and `tests/generated_docs.rs` runs both emitted runners over every
+/// major and fails when either disagrees (beyond10x/ess#186).
+pub(crate) const NEWEST_ADMITTED_SUITE_MAJOR: u32 = 27;
 
-/// The README's run instructions for a suite the runner executes only under
-/// `ESS_REPORT_FORMAT=2`.
+/// The oldest suite major the generated runners execute only under an explicit
+/// `ESS_REPORT_FORMAT=2`: `/5` through `/7` and `/8` onwards, the two gates in `Run` / `runWith`.
+pub(crate) const REPORT_FORMAT_2_FROM_SUITE_MAJOR: u32 = 5;
+
+/// `true` when the generated runners stop before the first scenario without `ESS_REPORT_FORMAT=2`.
 ///
-/// Placed beside the wiring rather than under "The report", because it is not a report option:
+/// The one answer the Go and TypeScript READMEs both state, and the one
+/// `tests/generated_docs.rs` holds against both runners' observed behaviour.
+pub(crate) fn requires_report_format_2(version: crate::scenario::SuiteFormat) -> bool {
+    (REPORT_FORMAT_2_FROM_SUITE_MAJOR..=NEWEST_ADMITTED_SUITE_MAJOR).contains(&version.major())
+}
+
+/// Refuses a package whose suite version its own generated runner would refuse at admission.
+///
+/// A README is a promise that the package runs; writing one, with run instructions, for a suite
+/// the runner answers with `unsupported suite version` is the drift beyond10x/ess#186 closes.
+pub(crate) fn refuse_unadmitted(
+    suite: &ConformanceSuite,
+    target: &str,
+) -> Result<(), crate::admission::AdmissionError> {
+    let version = suite.provenance.suite_version;
+    if version.major() > NEWEST_ADMITTED_SUITE_MAJOR {
+        return Err(crate::admission::AdmissionError::new(
+            "UnsupportedTarget",
+            "$.provenance.suite_version",
+            format!(
+                "the generated {target} runner admits suite versions up to \
+                 `ess-conformance/{NEWEST_ADMITTED_SUITE_MAJOR}` and would refuse `{version}`; \
+                 use the Rust runner"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// The README's statement that this suite runs only under `ESS_REPORT_FORMAT=2`, with the
+/// commands that run it.
+///
+/// Part of the run instructions rather than of "The report", because it is not a report option:
 /// without it the run stops before the first scenario whether or not a report was asked for, and
 /// two of two agents in a trial round read it as one (beyond10x/ess#186).
-pub(crate) fn running_section(
+pub(crate) fn report_format_requirement(
     version: crate::scenario::SuiteFormat,
     runner: &str,
+    setup: &[&str],
     command: &str,
 ) -> String {
+    let commands = setup
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .chain(std::iter::once(format!("ESS_REPORT_FORMAT=2 {command}\n")))
+        .collect::<String>();
     format!(
-        "## Running it\n\
-         \n\
-         This suite is `{version}`, and the runner executes it only with `ESS_REPORT_FORMAT=2`\n\
-         set in the environment. Without it `{runner}` stops before the first scenario\n\
-         (`… require explicit ESS_REPORT_FORMAT=2 before execution`), whatever the target does, so\n\
-         set it for every run, not only when you want a report:\n\
+        "This suite is `{version}`, and the runner executes suite/{REPORT_FORMAT_2_FROM_SUITE_MAJOR} \
+         and later only with\n\
+         `ESS_REPORT_FORMAT=2` set in the environment. Without it `{runner}` stops before the first\n\
+         scenario (`… require explicit ESS_REPORT_FORMAT=2 before execution`), whatever the target\n\
+         does, so set it for every run, not only when you want a report:\n\
          \n\
          ```console\n\
-         ESS_REPORT_FORMAT=2 {command}\n\
+         {commands}\
          ```\n\
          \n"
     )

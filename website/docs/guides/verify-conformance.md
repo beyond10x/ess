@@ -257,11 +257,14 @@ await test("conformance", async (t) => {
 });
 ```
 
-Then run the language's own test command. `ESS_REPORT_OUT` names a file for the standalone report:
+Then run the language's own test command. For a suite at `ess-conformance/5` or later, the
+generated runner executes only with `ESS_REPORT_FORMAT=2` set, and without it stops before the first
+scenario; the package's `README.md` names the suite's version and the command. `ESS_REPORT_OUT`
+names a file for the standalone report:
 
 ```shell-session
-$ ESS_REPORT_OUT=$PWD/report.json go test ./...
-$ ESS_REPORT_OUT=$PWD/report.json npm test
+$ ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json go test ./...
+$ ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=$PWD/report.json npm test
 ```
 
 [Getting started](../getting-started.md#hold-an-implementation-to-the-specification) builds a
