@@ -206,6 +206,8 @@ mod narrowing;
 pub(crate) mod outcome_shapes;
 pub mod related_value;
 pub use related_value::RelatedVia;
+pub mod set_effects;
+pub use set_effects::SetEffects;
 pub mod subject_fact;
 pub mod subject_state;
 pub use outcome_shapes::{fixture_of as precondition_fixture, precondition_branch, Accepts};
@@ -999,6 +1001,9 @@ pub enum PayloadSource {
         /// The actor attribute read.
         attribute: String,
     },
+    /// How many rows a set outcome changed: `{count: changed}` (ess/16, beyond10x/ess#167,
+    /// [`set_effects`]). A `payload:` field of an outcome declaring `instances:`, into an `Integer`.
+    ChangedCount,
 }
 
 impl PayloadSource {
@@ -1032,6 +1037,7 @@ impl fmt::Display for PayloadSource {
                 write!(f, "field `{field}` of the row `{via}` names")
             }
             Self::CallerAttribute { attribute } => write!(f, "the caller's `{attribute}`"),
+            Self::ChangedCount => f.write_str("{count: changed}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1069,7 +1075,8 @@ impl PayloadSource {
             | Self::InputOrGenerated { .. }
             | Self::Struct { .. }
             | Self::RelatedField { .. }
-            | Self::CallerAttribute { .. } => true,
+            | Self::CallerAttribute { .. }
+            | Self::ChangedCount => true,
             Self::ResponseField { .. }
             | Self::Generated
             | Self::InputField { .. }
@@ -1123,6 +1130,7 @@ enum RawPayloadSource {
     Explicit(ExplicitPayloadSource),
     Related(RawRelatedSource),
     Caller(caller_value::RawCallerSource),
+    Count(set_effects::RawCountSource),
     Nested(RawNestedSources),
 }
 
@@ -1204,8 +1212,8 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                      `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
                      `{input: <field>, else: {generated: true}}`, \
                      `{input: <field>, else: <literal>}`, \
-                     `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, or a \
-                     mapping of struct fields",
+                     `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
+                     `{count: changed}`, or a mapping of struct fields",
                 )
             }
 
@@ -1252,6 +1260,9 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                 }
                 if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
                     return Ok(RawPayloadSource::Caller(caller));
+                }
+                if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
+                    return Ok(RawPayloadSource::Count(count));
                 }
                 if !entries.is_empty()
                     && entries
@@ -1418,6 +1429,7 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 field,
             }),
             RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
+            RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -1570,6 +1582,7 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::CallerAttribute { attribute } => {
                 Self::Caller(caller_value::RawCallerSource::of(attribute))
             }
+            PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
                     ScalarKind::Integer => by
@@ -1825,6 +1838,9 @@ pub struct Outcome {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// Rows changed by a filter rather than named: `instances:` and `affects:` (ess/16,
+    /// beyond10x/ess#167, #175, [`set_effects`]). Empty on every other outcome.
+    pub set_effects: SetEffects,
 }
 
 impl Outcome {
@@ -1840,6 +1856,7 @@ impl Outcome {
             error: None,
             refuses: true,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1858,6 +1875,7 @@ impl Outcome {
             error: None,
             refuses: true,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1880,6 +1898,7 @@ impl Outcome {
             error: Some(error),
             refuses: true,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -2397,7 +2416,7 @@ impl CommandSpec {
             return errors;
         }
 
-        if outcome.subject.is_none() {
+        if outcome.subject.is_none() && outcome.set_effects.instances.is_none() {
             errors.push(
                 ValidationError::at(
                     location.clone().key("sets"),
@@ -2902,6 +2921,8 @@ struct Resolved<'a> {
     inhabitation: &'a crate::system::Inhabitation,
 }
 
+// One arm per source; ess/16 `{count: changed}` took it past the line limit.
+#[allow(clippy::too_many_lines)]
 fn check_payload_entry(
     at: &ConstructRef,
     (command, outcome): (&CommandSpec, &Outcome),
@@ -2934,6 +2955,9 @@ fn check_payload_entry(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::CallerAttribute { .. } => {}
+        PayloadSource::ChangedCount => {
+            errors.extend(set_effects::check_count(at, outcome, filled));
+        }
         PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => {
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.
@@ -3128,20 +3152,25 @@ pub fn validate_sets(
     // inhabitation set is a fixpoint over the whole registry, and asking it per literal makes one
     // document quadratic in its own size.
     let inhabitation = crate::system::Inhabitation::of(types);
-    for command in commands.values() {
-        for outcome in &command.outcomes {
-            // An outcome that sets fields on nothing was already reported by the command's own
-            // shape check, and an entity nothing declares by the subject's.
-            let Some(subject) = &outcome.subject else {
-                continue;
-            };
-            let Some(entity) = entities.get(&subject.entity) else {
+    let outcomes = commands.values().flat_map(|command| {
+        command.outcomes.iter().flat_map(move |outcome| {
+            set_effects::assignments(outcome)
+                .into_iter()
+                .map(move |set| (command, outcome, set))
+        })
+    });
+    // An outcome that sets fields on nothing was already reported by the command's own shape check,
+    // and an entity nothing declares by the subject's. The rows a set subject or an `affects:` entry
+    // changes are checked as a subject's (ess/16).
+    for (command, outcome, (entity, sets, key)) in outcomes {
+        {
+            let Some(entity) = entities.get(entity) else {
                 continue;
             };
 
-            for (target, source) in &outcome.sets {
+            for (target, source) in sets {
                 let at = format!(
-                    "commands.{}.outcomes.{}.sets.{target}",
+                    "commands.{}.outcomes.{}.{key}.{target}",
                     command.name, outcome.name
                 );
                 // The identity is settable and is a field like any other: an outcome that creates
@@ -4382,6 +4411,14 @@ pub struct RawOutcome {
     /// decides which surface the name is read from — see [`Subject::surface`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
+    /// Every stored row a filter selects, instead of `instance:` (ess/16, beyond10x/ess#167):
+    /// beside `moves:` or `updates:` only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<set_effects::RawInstances>,
+    /// Secondary effects on the rows filters select (ess/16, beyond10x/ess#175): beside one
+    /// existing subject only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affects: Vec<set_effects::RawAffect>,
     /// The events it emits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emits: Vec<QualifiedName>,
@@ -4604,7 +4641,27 @@ impl TryFrom<RawOutcome> for Outcome {
     // One conversion per key an author can write; splitting it would scatter the refusals
     // that name those keys.
     #[allow(clippy::too_many_lines)]
-    fn try_from(raw: RawOutcome) -> Result<Self, Self::Error> {
+    fn try_from(mut raw: RawOutcome) -> Result<Self, Self::Error> {
+        // ess/16 (#167, #175): a set subject takes the verb it is written beside, before the one
+        // subject is read.
+        let instances = set_effects::set_subject(
+            &raw.name,
+            raw.instances.take(),
+            &mut set_effects::Verbs {
+                other: [
+                    raw.creates.as_ref().map(|_| "creates"),
+                    raw.deletes.as_ref().map(|_| "deletes"),
+                    raw.preserves.as_ref().map(|_| "preserves"),
+                ]
+                .into_iter()
+                .flatten()
+                .next(),
+                instance: raw.instance.is_some(),
+                moves: &mut raw.moves,
+                updates: &mut raw.updates,
+            },
+        )?;
+        let affects = set_effects::affects(&raw.name, std::mem::take(&mut raw.affects))?;
         let conflict = |key: &str, message: String, hint: &str| {
             outcome_conflict(&raw.name, key, message, hint)
         };
@@ -4708,6 +4765,7 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.instance,
         )?;
         let subject = outcome_shapes::creation_state(&raw.name, subject, raw.into)?;
+        set_effects::affects_beside(&raw.name, &affects, subject.as_ref(), instances.is_some())?;
         subject_authority(
             &raw.name,
             &condition,
@@ -4745,6 +4803,7 @@ impl TryFrom<RawOutcome> for Outcome {
             accepts_nothing: raw.accepts.is_some(),
             summary: raw.summary,
             refs: raw.refs,
+            set_effects: SetEffects { instances, affects },
         })
     }
 }
@@ -5095,6 +5154,8 @@ impl From<Outcome> for RawOutcome {
                 ..
             }) => (None, None, None, Some(instance)),
         };
+        let (moves, updates, instances, affects) =
+            set_effects::written(outcome.set_effects, moves, updates);
         let payload = PayloadDeclaration(
             outcome
                 .payload
@@ -5136,6 +5197,8 @@ impl From<Outcome> for RawOutcome {
             preserves,
             replays: outcome.replays,
             instance,
+            instances,
+            affects,
             emits: outcome.emits,
             payload,
             sets: PayloadTable(
@@ -5416,6 +5479,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5462,6 +5526,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5498,6 +5563,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5527,6 +5593,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5587,6 +5654,7 @@ outcomes:
             error,
             refuses: false,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5666,6 +5734,7 @@ outcomes:
             error: None,
             refuses: false,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5710,6 +5779,7 @@ outcomes:
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5892,6 +5962,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5926,6 +5997,7 @@ outcomes:
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 refuses: true,
                 accepts_nothing: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -6049,6 +6121,7 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -6369,6 +6442,7 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -6497,6 +6571,7 @@ outcomes:
                     error: Some(name("billing.invoice.InvalidAmount")),
                     refuses: true,
                     accepts_nothing: false,
+                    set_effects: SetEffects::default(),
                     summary: None,
                     refs: Refs::new(),
                     sets: BTreeMap::new(),

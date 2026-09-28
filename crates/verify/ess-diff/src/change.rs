@@ -370,6 +370,10 @@ impl SemanticChange {
             Self::View {
                 changed: ViewChange::PagingChanged { .. },
                 ..
+            }
+            | Self::Command {
+                changed: CommandChange::OutcomeSetEffectChanged { .. },
+                ..
             } => 9,
             Self::Type {
                 changed: TypeChange::AlphabetChanged { .. },
@@ -2251,6 +2255,16 @@ pub enum CommandChange {
         /// The new contract.
         after: bool,
     },
+    /// Which rows a branch changes by a filter moved (`ess-diff/9`, ess/16 `instances:` and
+    /// `affects:`): one line per construct on each side, empty where the branch declares none.
+    OutcomeSetEffectChanged {
+        /// The branch whose behavior changed.
+        outcome: String,
+        /// The previous contract.
+        before: Vec<String>,
+        /// The new contract.
+        after: Vec<String>,
+    },
 }
 
 impl CommandChange {
@@ -2263,6 +2277,7 @@ impl CommandChange {
             Self::OutcomeResponsePayloadChanged { .. } => "outcome-response-payload-changed",
             Self::OutcomeSetsChanged { .. } => "outcome-sets-changed",
             Self::OutcomeRefusesChanged { .. } => "outcome-refuses-changed",
+            Self::OutcomeSetEffectChanged { .. } => "outcome-set-effect-changed",
             Self::Added => "added",
             Self::Removed => "removed",
             Self::DomainChanged { .. } => "domain-changed",
@@ -2303,6 +2318,7 @@ impl CommandChange {
             | Self::OutcomeObservationChanged { outcome, .. }
             | Self::OutcomeSetsChanged { outcome, .. }
             | Self::OutcomeRefusesChanged { outcome, .. }
+            | Self::OutcomeSetEffectChanged { outcome, .. }
             | Self::OutcomeAdded { outcome }
             | Self::OutcomeRemoved { outcome }
             | Self::OutcomeConditionChanged { outcome, .. }
@@ -2321,6 +2337,22 @@ impl CommandChange {
     /// branch's condition, which is exactly the proof this slice refuses to attempt.
     pub const fn relation(&self) -> SemanticRelation {
         SemanticRelation::Changed
+    }
+
+    /// The clause for [`Self::OutcomeSetEffectChanged`], and empty for every other change.
+    fn set_effect_clause(&self) -> String {
+        match self {
+            Self::OutcomeSetEffectChanged {
+                outcome,
+                before,
+                after,
+            } => format!(
+                "outcome `{outcome}` changes [{}], changed [{}]",
+                after.join("; "),
+                before.join("; ")
+            ),
+            _ => String::new(),
+        }
     }
 
     /// The clause for [`Self::InputExampleChanged`], and empty for every other change.
@@ -2355,6 +2387,7 @@ impl CommandChange {
                 before,
                 after,
             } => format!("outcome `{outcome}` refusal {before} → {after}"),
+            Self::OutcomeSetEffectChanged { .. } => self.set_effect_clause(),
             Self::ResponseChanged { .. } => "typed command response changed".to_owned(),
             Self::Added => "declared".to_owned(),
             Self::Removed => "no longer declared".to_owned(),

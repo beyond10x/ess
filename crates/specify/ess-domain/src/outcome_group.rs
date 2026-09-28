@@ -144,6 +144,8 @@ impl RawGroupOutcome {
             accepts: None,
             replays: None,
             instance: None,
+            instances: None,
+            affects: Vec::new(),
             emits: Vec::new(),
             payload: PayloadDeclaration::default(),
             sets: PayloadTable::default(),

@@ -887,6 +887,44 @@ pub struct ResolvedOutcome {
     /// rather than as a bad request. Left out of the document when `false`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub decided_by_caller: bool,
+    /// The rows a `moves:` or `updates:` branch changes by a filter rather than by an input
+    /// (ess/16, beyond10x/ess#167, `instances:`); [`Self::subject`] is `None` beside it. Left out
+    /// of the document otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<ResolvedSetSubject>,
+    /// Secondary effects on the rows filters select (ess/16, beyond10x/ess#175, `affects:`), in the
+    /// order written. Left out of the document when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affects: Vec<ResolvedAffect>,
+}
+
+/// Every stored row of an entity a filter selects, and what a set outcome does to each (ess/16).
+///
+/// A `moves:` takes the selected rows resting in the transition's `from` states and skips the
+/// others; an `updates:` changes every selected row. The outcome's own
+/// [`sets`](ResolvedOutcome::sets) apply to each changed row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedSetSubject {
+    /// The entity whose rows change.
+    pub entity: EntityHandle,
+    /// [`ResolvedEffect::Moves`] or [`ResolvedEffect::Updates`].
+    #[serde(flatten)]
+    pub effect: ResolvedEffect,
+    /// The rows selected: the entity's stored fields, with `input.<field>` operands.
+    pub filter: Predicate,
+}
+
+/// One `affects:` entry (ess/16): every row of an entity its filter selects comes to hold what its
+/// `sets:` say. Where the entity is the subject's, the subject is not among the rows.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedAffect {
+    /// The entity whose rows change.
+    pub entity: EntityHandle,
+    /// The rows selected: the entity's stored fields, `input.<field>` and `subject.<field>` — the
+    /// subject as it was before the outcome.
+    pub filter: Predicate,
+    /// What every selected row comes to hold, in the entity's declaration order.
+    pub sets: Vec<ResolvedPayloadField>,
 }
 
 /// Where a determined payload field's value comes from, resolved.
@@ -979,6 +1017,8 @@ pub enum ResolvedPayloadValue {
         /// Its resolved type.
         type_ref: ResolvedTypeRef,
     },
+    /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
+    ChangedCount,
 }
 
 /// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).
@@ -1040,6 +1080,7 @@ impl ResolvedPayloadValue {
                 via, entity, field, ..
             } => format!("{}.{field} of the row {via} names", entity.name()),
             Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
+            Self::ChangedCount => "how many rows the outcome changed".to_owned(),
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {
                 field,

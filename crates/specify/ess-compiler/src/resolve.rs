@@ -1723,7 +1723,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// One command's outcomes, with the events and errors they name resolved.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn outcomes(
         &mut self,
         command: &CommandSpec,
@@ -1803,6 +1803,9 @@ impl<'a> Resolver<'a> {
                 complete = false;
             }
             let sets = sets.unwrap_or_default();
+            let set_effects = self.set_effects(command, outcome, input, entities);
+            complete &= set_effects.is_some();
+            let (instances, affects) = set_effects.unwrap_or_default();
             resolved.push(ResolvedOutcome {
                 name: outcome.name.clone(),
                 condition: condition_of(outcome, subject.as_ref()),
@@ -1828,6 +1831,8 @@ impl<'a> Resolver<'a> {
                 decided_by_caller: ess_domain::command::caller_value::decides(
                     self.spec, command, outcome,
                 ),
+                instances,
+                affects,
             });
         }
         if complete {
@@ -1853,6 +1858,78 @@ impl<'a> Resolver<'a> {
         Some(())
     }
 
+    /// One outcome's set subject and `affects:` entries (ess/16, beyond10x/ess#167, #175),
+    /// resolved: each entity to a handle, a move to its declared transition, and each entry's
+    /// `sets:` as a subject's are. `ess-domain` refused every undeclared name, so a name that does
+    /// not resolve here is one another refusal already reported.
+    fn set_effects(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        input: Option<&[ResolvedField]>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
+    ) -> Option<(
+        Option<crate::ir::ResolvedSetSubject>,
+        Vec<crate::ir::ResolvedAffect>,
+    )> {
+        let declared = &outcome.set_effects;
+        let instances = match &declared.instances {
+            None => None,
+            Some(set) => {
+                let Found::Handle(entity) = self.entity_of(&set.entity, entities) else {
+                    return None;
+                };
+                let effect = match set.effect.transition() {
+                    None => ResolvedEffect::Updates,
+                    Some(named) => ResolvedEffect::Moves {
+                        transition: entities
+                            .get(&set.entity)?
+                            .lifecycle
+                            .transition(named)?
+                            .clone(),
+                    },
+                };
+                Some(crate::ir::ResolvedSetSubject {
+                    entity,
+                    effect,
+                    filter: set.filter.clone(),
+                })
+            }
+        };
+        let mut affects = Vec::with_capacity(declared.affects.len());
+        let mut complete = true;
+        for affect in &declared.affects {
+            let Found::Handle(handle) = self.entity_of(&affect.entity, entities) else {
+                return None;
+            };
+            let entity = entities.get(&affect.entity)?;
+            let mut sets = Vec::new();
+            for target in std::iter::once(&entity.identity).chain(&entity.fields) {
+                let Some(source) = affect.sets.get(&target.name) else {
+                    continue;
+                };
+                match self.payload_field(
+                    command,
+                    outcome,
+                    SourceBlock::Sets(&entity.name),
+                    target,
+                    source,
+                    input,
+                    Some(entity),
+                ) {
+                    Some(field) => sets.push(field),
+                    None => complete = false,
+                }
+            }
+            affects.push(crate::ir::ResolvedAffect {
+                entity: handle,
+                filter: affect.filter.clone(),
+                sets,
+            });
+        }
+        complete.then_some((instances, affects))
+    }
+
     /// One outcome's declared entity state, resolved against the subject it acts on.
     ///
     /// [`Resolver::payload`] one construct over: the same sources, checked the same way, against
@@ -1874,7 +1951,17 @@ impl<'a> Resolver<'a> {
         }
         // A backstop: `ess-domain` refuses `sets:` on a branch that acts on no entity, so only a
         // hand-built specification reaches this arm, and its own refusal is the one to raise.
-        let Some(declared) = &outcome.subject else {
+        // A set subject's rows (ess/16, `instances:`) take the branch's `sets:` as one subject does.
+        let declared = outcome
+            .subject
+            .as_ref()
+            .map(|subject| &subject.entity)
+            .or(outcome
+                .set_effects
+                .instances
+                .as_ref()
+                .map(|set| &set.entity));
+        let Some(declared) = declared else {
             self.refuse_payload(
                 command,
                 outcome,
@@ -1889,7 +1976,7 @@ impl<'a> Resolver<'a> {
             );
             return None;
         };
-        let Some(entity) = entities.get(&declared.entity) else {
+        let Some(entity) = entities.get(declared) else {
             // The entity itself did not resolve, and the subject walk already said so.
             return None;
         };
@@ -4197,6 +4284,7 @@ fn payload_constant_source(
         | PayloadSource::Struct { .. }
         | PayloadSource::RelatedField { .. }
         | PayloadSource::CallerAttribute { .. } => return None,
+        PayloadSource::ChangedCount => ResolvedPayloadValue::ChangedCount,
         PayloadSource::Increment { by, .. } => ResolvedPayloadValue::Increment { by: by.clone() },
     };
     Some(payload_constant(target, value))

@@ -1424,9 +1424,12 @@ fn outcome_prose(
         out.push(Inline::text("It returns the exact retained result of "));
         out.push(Inline::code(replay.origin.to_string()));
         out.push(Inline::text(" without an error, event, or subject change."));
+    } else if let Some(set) = &outcome.instances {
+        out.extend(crate::set_effects::set_sentence(ir, set));
     } else {
         out.extend(effect_sentence(ir, outcome.subject.as_ref()));
     }
+    out.extend(crate::set_effects::affects_sentences(ir, outcome));
     if let Some(error) = &outcome.error {
         let reported = ir.error(error);
         out.push(Inline::text(" It reports "));

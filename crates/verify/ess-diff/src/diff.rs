@@ -1052,9 +1052,8 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
-                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }) => {
-                    other.describe()
-                }
+                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
                 .conversion
@@ -1924,9 +1923,8 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
-                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }) => {
-                    other.describe()
-                }
+                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::ChangedCount) => other.describe(),
             };
             let conversion = field
                 .conversion
@@ -2141,6 +2139,13 @@ fn outcome_state_changes(
             after: written_sets(&new.sets),
         });
     }
+    if old.instances != new.instances || old.affects != new.affects {
+        push(CommandChange::OutcomeSetEffectChanged {
+            outcome: name.to_owned(),
+            before: written_set_effects(old),
+            after: written_set_effects(new),
+        });
+    }
     if old.refuses != new.refuses {
         push(CommandChange::OutcomeRefusesChanged {
             outcome: name.to_owned(),
@@ -2252,6 +2257,8 @@ fn residual_command(declaration: &mut serde_json::Value) {
                         "refuses",
                         "summary",
                         "sets",
+                        "instances",
+                        "affects",
                     ],
                 );
             });
@@ -2325,4 +2332,27 @@ fn paging_contract(paging: &ess_domain::view::Paging) -> crate::change::PagingCo
         first_page: paging.first_page,
         total: paging.total,
     }
+}
+
+/// A branch's set effects (ess/16), one line per construct: `instances:` with its verb and filter,
+/// then each `affects:` entry with its filter and what it sets.
+fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(set) = &outcome.instances {
+        lines.push(format!(
+            "{} every `{}` where `{}`",
+            set.effect.verb(),
+            set.entity.name(),
+            set.filter
+        ));
+    }
+    for affect in &outcome.affects {
+        lines.push(format!(
+            "affects every `{}` where `{}`: {}",
+            affect.entity.name(),
+            affect.filter,
+            written_sets(&affect.sets).join(", ")
+        ));
+    }
+    lines
 }

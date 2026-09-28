@@ -48,12 +48,22 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     let inhabitation = crate::system::Inhabitation::of(types);
     for command in spec.commands().values() {
         for outcome in &command.outcomes {
-            let subject = outcome.subject.as_ref().and_then(|subject| {
-                let existing = matches!(subject.effect, Effect::Moves { .. } | Effect::Updates);
-                spec.entities()
-                    .get(&subject.entity)
-                    .map(|entity| (entity, existing))
-            });
+            let subject = outcome
+                .subject
+                .as_ref()
+                .map(|subject| {
+                    let existing = matches!(subject.effect, Effect::Moves { .. } | Effect::Updates);
+                    (&subject.entity, existing)
+                })
+                // The rows a set subject changes exist before it (ess/16, `set_effects`).
+                .or(outcome
+                    .set_effects
+                    .instances
+                    .as_ref()
+                    .map(|set| (&set.entity, true)))
+                .and_then(|(entity, existing)| {
+                    spec.entities().get(entity).map(|entity| (entity, existing))
+                });
             let context = Context {
                 spec,
                 command,
@@ -120,6 +130,53 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     }
     // The caller (ess/16, #168): actor attributes, and every guard that reads one.
     errors.extend(super::caller_value::validate(spec));
+    // Set effects (ess/16, #167, #175): `instances:`, `affects:` and `{count: changed}`.
+    errors.extend(super::set_effects::validate(spec));
+    errors
+}
+
+/// The `sets:` of one `affects:` entry (ess/16, #175), checked as a subject's own over `entity`,
+/// whose rows exist before the outcome.
+pub(super) fn validate_affect(
+    spec: &Specification,
+    command: &CommandSpec,
+    outcome: &Outcome,
+    entity: &crate::entity::EntitySpec,
+    sets: &std::collections::BTreeMap<String, PayloadSource>,
+    at: &ConstructRef,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let types = &spec.system().types;
+    let inhabitation = crate::system::Inhabitation::of(types);
+    let context = Context {
+        spec,
+        command,
+        outcome,
+        resolved: Resolved {
+            types,
+            conversions: spec.conversions(),
+            inhabitation: &inhabitation,
+        },
+        subject: Some((entity, true)),
+    };
+    for (target, source) in sets {
+        let held = if entity.identity.name == *target {
+            Some(&entity.identity)
+        } else {
+            entity.field(target)
+        };
+        let Some(held) = held else {
+            continue;
+        };
+        let site = at.clone().key("sets").named(target);
+        check(&context, &site, Place::Sets, held, source, 0, &mut errors);
+        errors.extend(fallback_literal(
+            &context,
+            &Filled::Sets { entity },
+            held,
+            source,
+        ));
+    }
     errors
 }
 
@@ -223,7 +280,11 @@ fn check(
         PayloadSource::Struct { fields } => {
             check_struct(context, at, place, target, fields, depth, errors);
         }
-        PayloadSource::Scalar { .. }
+        PayloadSource::ChangedCount if depth > 0 || place == Place::Sets => {
+            errors.push(super::set_effects::count_elsewhere(at));
+        }
+        PayloadSource::ChangedCount
+        | PayloadSource::Scalar { .. }
         | PayloadSource::InputField { .. }
         | PayloadSource::ResponseField { .. }
         | PayloadSource::Cleared
@@ -239,6 +300,7 @@ fn kind(source: &PayloadSource) -> &'static str {
         PayloadSource::Struct { .. } => "nested mapping",
         PayloadSource::RelatedField { .. } => "`{related: …}`",
         PayloadSource::CallerAttribute { .. } => "`{caller: …}`",
+        PayloadSource::ChangedCount => "`{count: changed}`",
         _ => "payload",
     }
 }

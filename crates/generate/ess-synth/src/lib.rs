@@ -50,6 +50,7 @@ pub(crate) mod paging;
 pub mod plan;
 pub mod rust;
 mod selection;
+pub(crate) mod set_effects;
 pub mod web;
 
 pub(crate) use alias::code_aliases;
@@ -292,6 +293,7 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
     failure::json(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
     existence::refuse(ir, &plan, target)?;
+    set_effects::refuse(ir, &plan, target)?;
     paging::refuse(ir, &plan, target)?;
     failure::retry_bound(ir, &plan, target)?;
     let mut artifacts = BTreeMap::new();

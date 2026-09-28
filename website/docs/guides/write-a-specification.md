@@ -620,6 +620,69 @@ by name, and Entity Runtime lowering refuses them with `ExistenceSelectionUnsupp
 A system precondition cannot invoke a command of either form, because which branch it takes depends
 on a record it cannot observe before it runs.
 
+### An outcome can change every record a filter selects
+
+From `format: ess/16`, a `moves:` or `updates:` outcome can act on every stored record a filter
+selects instead of the one an input names. Write `instances: {where: <predicate>}` in place of
+`instance:`:
+
+```yaml
+- name: ended
+  moves: demo.desk.Session.end
+  instances: {where: team == input.team}
+  emits: [demo.desk.TeamEnded]
+  payload:
+    demo.desk.TeamEnded: {team: input.team, ended: {count: changed}}
+  sets: {note: input.note}
+```
+
+The predicate is the stored-field grammar of `when_subject:`: the entity's fields, compared with
+literals or with the command's input as `input.<field>`. A `moves:` changes the selected records
+resting in the transition's `from` states and skips the others; no selected record at all is an
+accepted answer. `sets:` applies to every changed record and takes a literal, `input.<field>`,
+`{input: …, else: …}`, `{generated: true}` or `{cleared: true}`; a source reading one record
+(`{subject: …}`, `{related: …}`, `{increment: …}`) or the caller is refused by name.
+`{count: changed}` fills an `Integer` payload field with the number of records the outcome changed,
+and is refused anywhere but a `payload:` field of such an outcome. `instance:` beside `instances:`,
+and `instances:` on `creates:`, `deletes:` or `preserves:`, are refused. A set outcome accepts, and
+is selected by `when:` or as the default.
+
+An outcome with one existing subject can also change other records, with `affects:`:
+
+```yaml
+- name: invited
+  updates: demo.desk.Session
+  instance: session_id
+  emits: [demo.desk.Invited]
+  payload:
+    demo.desk.Invited: {session_id: input.session_id}
+  sets: {on_hold: false}
+  affects:
+    - entity: demo.desk.Session
+      where: team == subject.team
+      sets: {on_hold: true}
+```
+
+Each entry changes every record of `entity` its `where:` selects. `where:` reads that entity's
+fields, `input.<field>` and `subject.<field>` — the subject as it was before the outcome. Where
+`entity` is the subject's own, the subject itself is not among the records. `sets:` takes the
+sources `instances:` does; a move inside `affects:` is refused by name. `affects:` sits beside
+`moves:` or `updates:` with `instance:`, never beside `instances:`.
+
+The suite arranges, for each, three records the filter selects, one record per conjunct of the
+filter that fails only that conjunct (or one failing the whole filter), and — for a `moves:` — one
+it selects resting outside the transition's `from` states; runs the command; and reads every record
+back from an immediate, unfiltered view that publishes the identity, the state and every field the
+effect writes: the changed ones in their new state with what `sets:` wrote, the others as they
+were, and `{count: changed}` equal to the records changed. It then sends the command again with an
+input the filter selects no record by, and requires the same outcome, a count of 0 and no record
+changed. Where no such view exists the scenario is refused by name. A `sets:` entry writing the
+entity's identity is refused. No new
+suite step is used. Every generated code target (Rust, Go, Web, Clap) refuses both constructs by
+name, and Entity Runtime lowering refuses them with `SetEffectUnsupported`. Below `ess/16` both are
+refused with `unsupported_format_version`. Atomicity, partial failure and the order in which records
+change are not part of either.
+
 ### An outcome can delete its subject
 
 From `format: ess/15`, a record the implementation removes at the end of its lifecycle is declared

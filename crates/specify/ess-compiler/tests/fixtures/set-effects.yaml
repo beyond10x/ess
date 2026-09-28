@@ -1,0 +1,142 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.desk
+types:
+  - {name: demo.desk.SessionId, kind: newtype, of: String}
+  - {name: demo.desk.Team, kind: newtype, of: String}
+  - {name: demo.desk.Note, kind: newtype, of: String}
+entities:
+  - name: demo.desk.Session
+    identity: {name: session_id, type: demo.desk.SessionId}
+    fields:
+      - {name: team, type: demo.desk.Team}
+      - {name: note, type: demo.desk.Note}
+      - {name: on_hold, type: Boolean}
+    lifecycle:
+      initial: Open
+      states: [Open, Parked, Ended]
+      terminal: [Parked, Ended]
+      transitions:
+        - {name: park, from: [Open], to: Parked}
+        - {name: end, from: [Open], to: Ended}
+events:
+  - name: demo.desk.SessionOpened
+    fields:
+      - {name: session_id, type: demo.desk.SessionId}
+      - {name: team, type: demo.desk.Team}
+  - name: demo.desk.SessionParked
+    fields:
+      - {name: session_id, type: demo.desk.SessionId}
+  - name: demo.desk.TeamEnded
+    fields:
+      - {name: team, type: demo.desk.Team}
+      - {name: ended, type: Integer}
+  - name: demo.desk.TeamNoted
+    fields:
+      - {name: team, type: demo.desk.Team}
+      - {name: noted, type: Integer}
+  - name: demo.desk.Invited
+    fields:
+      - {name: session_id, type: demo.desk.SessionId}
+  - name: demo.desk.SessionClosed
+    fields:
+      - {name: session_id, type: demo.desk.SessionId}
+errors:
+  - name: demo.desk.NotOpen
+    summary: The session is not open.
+    fields: []
+actors:
+  - name: demo.desk.Supervisor
+    may: [demo.desk.Open, demo.desk.Park, demo.desk.Close, demo.desk.EndTeam, demo.desk.NoteTeam, demo.desk.Invite]
+commands:
+  - name: demo.desk.Open
+    input:
+      - {name: team, type: demo.desk.Team}
+      - {name: note, type: demo.desk.Note}
+    outcomes:
+      - name: opened
+        creates: demo.desk.Session
+        instance: session_id
+        emits: [demo.desk.SessionOpened]
+        payload:
+          demo.desk.SessionOpened: {session_id: {generated: true}, team: input.team}
+        sets:
+          team: input.team
+          note: input.note
+          on_hold: false
+  - name: demo.desk.Park
+    input:
+      - {name: session_id, type: demo.desk.SessionId}
+    outcomes:
+      - name: parked
+        moves: demo.desk.Session.park
+        instance: session_id
+        emits: [demo.desk.SessionParked]
+        payload:
+          demo.desk.SessionParked: {session_id: input.session_id}
+      - {name: not-open, wrong_state: true, error: demo.desk.NotOpen}
+  - name: demo.desk.Close
+    input:
+      - {name: session_id, type: demo.desk.SessionId}
+    outcomes:
+      - name: closed
+        moves: demo.desk.Session.end
+        instance: session_id
+        emits: [demo.desk.SessionClosed]
+        payload:
+          demo.desk.SessionClosed: {session_id: input.session_id}
+      - {name: not-open, wrong_state: true, error: demo.desk.NotOpen}
+  - name: demo.desk.EndTeam
+    input:
+      - {name: team, type: demo.desk.Team}
+      - {name: note, type: demo.desk.Note}
+    outcomes:
+      - name: ended
+        moves: demo.desk.Session.end
+        instances: {where: team == input.team}
+        emits: [demo.desk.TeamEnded]
+        payload:
+          demo.desk.TeamEnded: {team: input.team, ended: {count: changed}}
+        sets:
+          note: input.note
+  - name: demo.desk.NoteTeam
+    input:
+      - {name: team, type: demo.desk.Team}
+      - {name: note, type: demo.desk.Note}
+    outcomes:
+      - name: noted
+        updates: demo.desk.Session
+        instances: {where: team == input.team}
+        emits: [demo.desk.TeamNoted]
+        payload:
+          demo.desk.TeamNoted: {team: input.team, noted: {count: changed}}
+        sets:
+          note: input.note
+  - name: demo.desk.Invite
+    input:
+      - {name: session_id, type: demo.desk.SessionId}
+    outcomes:
+      - name: invited
+        updates: demo.desk.Session
+        instance: session_id
+        emits: [demo.desk.Invited]
+        payload:
+          demo.desk.Invited: {session_id: input.session_id}
+        sets:
+          on_hold: false
+        affects:
+          - entity: demo.desk.Session
+            where: team == subject.team
+            sets:
+              on_hold: true
+views:
+  - name: demo.desk.SessionDetails
+    source: demo.desk.Session
+    consistency: read_your_writes
+    fields:
+      - {name: session_id, type: demo.desk.SessionId}
+      - {name: team, type: demo.desk.Team}
+      - {name: note, type: demo.desk.Note}
+      - {name: on_hold, type: Boolean}
+      - {name: state, type: demo.desk.Session.State}
