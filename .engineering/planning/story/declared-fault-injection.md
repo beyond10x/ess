@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:declared-fault-injection
 kind: story
-status: draft
+status: active
 title: Faults the specification declares are injected during concurrent runs
 owner: ess
 relations:
@@ -30,7 +30,7 @@ scope:
   path: crates/verify/ess-conformance/tests/faults.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures
-revision: 4
+revision: 6
 ---
 # Story: faults the specification declares are injected during concurrent runs
 

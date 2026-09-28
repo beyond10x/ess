@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:session-and-eventual-view-checks
 kind: story
-status: active
+status: implemented
 title: Session and eventual views are checked at their declared strength
 owner: ess
 relations:
@@ -10,17 +10,35 @@ relations:
 - depends_on: story:linearizability-checker-over-the-interpreter
 - decomposes: epic:concurrent-history-conformance
 scope:
+- confidence: cited
+  path: crates/edge/ess-cli/src/main.rs
+- confidence: cited
+  path: crates/edge/ess-xtask/tests/history_model.rs
 - confidence: inferred
   path: crates/specify/ess-domain/src/view.rs
 - confidence: cited
   path: crates/verify/ess-conformance
 - confidence: cited
   path: crates/verify/ess-conformance/src/faulty.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/history.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/linearize.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/record.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/reference.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/src/sessions.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/faults.rs
-revision: 8
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/view_consistency.rs
+- confidence: cited
+  path: models/concurrent-history/domains/history.yaml
+- confidence: cited
+  path: schemas/ess-history.schema.json
+revision: 10
 ---
 # Story: session and eventual views are checked at their declared strength
 

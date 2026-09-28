@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:concurrent-explorer-runner
 kind: story
-status: active
+status: implemented
 title: The Go and TypeScript explorers record concurrent histories and hand them to ess
 owner: ess
 tags:
@@ -15,18 +15,22 @@ relations:
 - depends_on: story:concurrent-history-format
 - decomposes: epic:concurrent-history-conformance
 scope:
+- confidence: cited
+  path: crates/edge/ess-cli/tests/explore_concurrent.rs
 - confidence: inferred
   path: crates/edge/ess-cli/tests/explore_package.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/go/explore.go
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/go/mod.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/ts/explore.ts
-- confidence: inferred
+- confidence: cited
   path: crates/verify/ess-conformance/src/ts/mod.rs
 - confidence: cited
   path: crates/verify/ess-conformance/tests/explore.rs
+- confidence: cited
+  path: crates/verify/ess-conformance/tests/fixtures
 - confidence: inferred
   path: crates/verify/ess-conformance/tests/fixtures/explore-driver.mjs
 - confidence: cited
@@ -35,7 +39,7 @@ scope:
   path: crates/verify/ess-conformance/tests/fixtures/explore_driver_test.go
 - confidence: cited
   path: crates/verify/ess-conformance/tests/fixtures/explore_target.go
-revision: 7
+revision: 9
 ---
 # Story: the Go and TypeScript explorers record concurrent histories and hand them to `ess`
 

@@ -108,3 +108,17 @@ Build dirs `ess-chc-format` (17G) and `ess-chc-interp` (23G) deleted after merge
 Gate on `b08ed292d`: every step exit 0 except `cargo test -p ess-xtask` exit 101 (3 failed). `tests/layout.rs` rejected two literal missing paths in the adversary test `crates/edge/ess-cli/tests/check_history_adversary.rs`, fixed in `57b8cb105`. Two `consumer_coverage` unit tests failed with `No such file` and `authority changed` while `/` was at 98%; alone they passed (2 passed), and the full `ess-xtask` rerun on `57b8cb105` passed (313, exit 0). Cause not established; recorded, not dismissed.
 
 Follow-up filed: `story:concurrent-history-records-inputs` (adversary pass 2 finding 4, pre-existing: `ess-history/1` records no inputs).
+
+
+## Wave 3 (2026-09-28)
+
+| unit | story | branch head | stage |
+|---|---|---|---|
+| session | `story:session-and-eventual-view-checks` | `639f90c08` | merged `c589fddb0`; implemented |
+| runner | `story:concurrent-explorer-runner` | `76931b63a` | merged `acd6a0862`; implemented |
+
+Gate on `acd6a0862`, own build dir: fmt, clippy, doc 0; `ess-conformance` 874 passed; `ess-domain` 756; `ess-cli` 785 (Go and Node lanes included); model valid; `ess-xtask` 101 in the gate run, 313 passed on a rerun.
+
+The two `consumer_coverage` failures seen in waves 2 and 3 are explained: `source_files` (`crates/edge/ess-xtask/src/consumer_coverage/mod.rs:323`) hashes every tracked and untracked file, `.engineering/` included, and compares it with the snapshot taken at build time. Coordinator store writes into this tree ran during both gates. Rule from here: no store write into the integration tree while a gate runs.
+
+The installed `aep` became 0.62.0 at 04:08 (not this session), which refuses this `aep.project/3` store; this branch writes through a private 0.61.1 built from tag `0.61.1` (`b6213e1fc`).

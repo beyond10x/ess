@@ -2,7 +2,7 @@
 format: aep.planning-md/2
 id: story:concurrent-history-lanes
 kind: story
-status: draft
+status: active
 title: A failing history is drawn as client lanes
 owner: ess
 relations:
@@ -21,7 +21,7 @@ scope:
   path: crates/verify/ess-conformance/src/lib.rs
 - confidence: cited
   path: crates/verify/ess-conformance/src/web.rs
-revision: 4
+revision: 6
 ---
 # Story: a failing history is drawn as client lanes
 
