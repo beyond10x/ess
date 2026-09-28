@@ -9,13 +9,14 @@
 //! `declare`'s key is `(kind, name)`, so it closes exactly the same-kind half. The cross-kind half
 //! has different reporters — `system.rs`'s `Assembly::claim` and `domain.rs`'s
 //! `DomainSpec::validate` — and a declared *type* is carried to `SystemSpec::merge`. All three read
-//! lists filled only from `Ok(..)` arms, so all three mask in precisely the way the registries did.
-//! Both halves are still open, they are
-//! `story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts`, and the two cases that
-//! pin them are `#[ignore]`d against it at the attribute rather than deleted or weakened:
-//! `review-result:adversary-wave25-unit2-pass-1` is where they were first measured (F1 and F3).
+//! lists filled only from `Ok(..)` arms, so all three masked in precisely the way the registries
+//! did: `review-result:adversary-wave25-unit2-pass-1` is where that was first measured (F1 and F3).
+//! `story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts` closed both with
+//! `spec.rs`'s `Collected::write`, which asks the cross-kind question of every writing, converted
+//! or not, and leaves the pairs that both convert to `Assembly::claim` so each is refused once. The
+//! last four cases here ask that of every soundness combination and count the refusals.
 //!
-//! Each of those pairs a control (both declarations convert — the refusal the tree already makes)
+//! The two first-measured cases each pair a control (both declarations convert — the refusal the tree already makes)
 //! with the same document under one broken declaration, so a failure separates "this was never
 //! refused" from "this stopped being refused when a copy broke". The other cases are green and
 //! stay that way: two of `spec.rs`'s argued-rather-than-built rows, `conversion` and `topology`,
@@ -108,18 +109,13 @@ fn one_name_held_by_two_kinds_is_refused_when_both_declarations_convert() {
     );
 }
 
-/// The same document, one copy broken, and the refusal is gone.
+/// The same document, one copy broken, and the refusal is still there.
 ///
-/// This is the unit's own fault shape: the author is told about the duplicate field, fixes it, and
-/// only then learns that the name was held twice. `declare` does not catch it because its key
-/// carries the kind, and the reporters it names read a member list that a failed conversion never
-/// reaches — which is what `declare`'s comment now says, after this case showed that the
-/// unqualified version of it was false.
+/// This is the unit's own fault shape: the author was told about the duplicate field, fixed it, and
+/// only then learned that the name was held twice. `declare` does not catch it because its key
+/// carries the kind, and `Assembly::claim` reads a member list that a failed conversion never
+/// reaches; `Collected::write` is what refuses it now.
 #[test]
-#[ignore = "story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts — `declare` \
-            is keyed by (kind, name), and the cross-kind reporters read member lists a failed \
-            conversion never reaches; measured as F1 of \
-            review-result:adversary-wave25-unit2-pass-1"]
 fn one_name_held_by_two_kinds_is_still_refused_when_the_first_declaration_is_broken() {
     let errors = refusals(CROSS_KIND_FIRST_BROKEN);
     assert!(
@@ -168,16 +164,13 @@ fn one_type_name_declared_twice_is_refused_when_both_declarations_convert() {
     );
 }
 
-/// The row the unit left open, measured rather than assumed.
+/// The row the first unit left open, measured rather than assumed.
 ///
-/// `declare` is not called for types at all, and the reporter the unit names instead —
-/// `SpecPart` carried to `SystemSpec::merge` — receives only the types that converted. So the
-/// second declaration takes the name in silence and the author sees one error about variants,
-/// which is the exact experience the story was written to end.
+/// `declare` is not called for types at all, and `SpecPart` carried to `SystemSpec::merge` receives
+/// only the types that converted. So the second declaration took the name in silence and the
+/// author saw one error about variants, which is the exact experience the story was written to
+/// end; `Collected::write` refuses it now.
 #[test]
-#[ignore = "story:one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts — types do \
-            not go through `declare` at all, and `SystemSpec::merge` receives only the types that \
-            converted; measured as F3 of review-result:adversary-wave25-unit2-pass-1"]
 fn one_type_name_declared_twice_is_still_refused_when_the_first_declaration_is_broken() {
     let errors = refusals(TYPE_FIRST_BROKEN);
     assert!(
@@ -301,4 +294,206 @@ entities:
              copy taking a broken copy's name: {errors}"
         );
     }
+}
+
+/// How many refusals say `name` is held twice, by either sentence a claim is refused with.
+///
+/// Counted rather than tested for presence: the rule is one refusal per extra writing, and a
+/// reporter that fires beside `Assembly::claim` would satisfy a presence check while telling the
+/// author the same thing twice.
+fn name_refusals(errors: &ValidationErrors, name: &str) -> usize {
+    errors
+        .as_slice()
+        .iter()
+        .filter(|error| {
+            error.code == ValidationCode::DuplicateDeclaration
+                && (error
+                    .message
+                    .starts_with(&format!("`{name}` is declared twice"))
+                    || error
+                        .message
+                        .starts_with(&format!("`{name}` is declared in")))
+        })
+        .count()
+}
+
+/// A command `shop.cart.Thing`, sound or carrying one input twice.
+fn command(sound: bool) -> &'static str {
+    if sound {
+        "
+  - name: shop.cart.Thing
+    outcomes:
+      - name: added
+        emits: [shop.cart.Other]
+"
+    } else {
+        "
+  - name: shop.cart.Thing
+    input:
+      - {name: note, type: String}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        emits: [shop.cart.Other]
+"
+    }
+}
+
+/// An event `shop.cart.Thing`, sound or carrying one field twice.
+fn event(sound: bool) -> &'static str {
+    if sound {
+        "
+  - name: shop.cart.Thing
+    fields: []
+"
+    } else {
+        "
+  - name: shop.cart.Thing
+    fields:
+      - {name: total, type: Decimal}
+      - {name: total, type: Decimal}
+"
+    }
+}
+
+/// A type `shop.cart.Money`, sound or declaring no variants.
+fn money(sound: bool) -> &'static str {
+    if sound {
+        "
+  - name: shop.cart.Money
+    kind: newtype
+    of: Decimal
+"
+    } else {
+        "
+  - name: shop.cart.Money
+    kind: enum
+    variants: []
+"
+    }
+}
+
+/// The four soundness combinations, each with its label.
+const COMBINATIONS: [(&str, bool, bool); 4] = [
+    ("sound, sound", true, true),
+    ("broken, sound", false, true),
+    ("sound, broken", true, false),
+    ("broken, broken", false, false),
+];
+
+/// One name, a command and an event, in all four soundness combinations: refused exactly once.
+///
+/// The first row is `Assembly::claim`'s and the other three are the pre-conversion reporter's, and
+/// no row may have both. The sentence is the same whichever reporter writes it.
+#[test]
+fn one_name_held_by_two_kinds_is_refused_exactly_once_in_all_four_soundness_combinations() {
+    for (label, first, second) in COMBINATIONS {
+        let document = format!(
+            "\ndomain: shop.cart\ncommands:{}events:\n  - name: shop.cart.Other\n    fields: \
+             []{}",
+            command(first),
+            event(second)
+        );
+        let errors = refusals(&document);
+        assert_eq!(
+            name_refusals(&errors, "shop.cart.Thing"),
+            1,
+            "a command and an event of one name ({label}) is one fault, refused once: {errors}"
+        );
+        assert!(
+            refused_as_declared_twice(&errors, "shop.cart.Thing"),
+            "({label}) {errors}"
+        );
+    }
+}
+
+/// One type name, twice, in all four soundness combinations: refused exactly once.
+#[test]
+fn one_type_name_declared_twice_is_refused_exactly_once_in_all_four_soundness_combinations() {
+    for (label, first, second) in COMBINATIONS {
+        let document = format!(
+            "\ndomain: shop.cart\ntypes:{}{}",
+            money(first),
+            money(second)
+        );
+        let errors = refusals(&document);
+        assert_eq!(
+            name_refusals(&errors, "shop.cart.Money"),
+            1,
+            "one type name declared twice ({label}) is one fault, refused once: {errors}"
+        );
+    }
+}
+
+/// The two kinds in two files, the first copy broken: both files are named, as `Assembly::claim`
+/// names them when both copies convert.
+#[test]
+fn one_name_held_by_two_kinds_across_two_files_names_both_when_a_copy_is_broken() {
+    for (label, first, second) in COMBINATIONS {
+        let errors = Specification::assemble(vec![
+            file(
+                "system.yaml",
+                "\nformat: ess/1\nsystem: shop\nversion: v1\n",
+            ),
+            file(
+                "domains/commands.yaml",
+                &format!("\ndomain: shop.cart\ncommands:{}", command(first)),
+            ),
+            file(
+                "domains/events.yaml",
+                &format!(
+                    "\ndomain: shop.cart\nevents:\n  - name: shop.cart.Other\n    fields: \
+                     []{}",
+                    event(second)
+                ),
+            ),
+        ])
+        .expect_err("one name, two kinds");
+        let named: Vec<_> = errors
+            .as_slice()
+            .iter()
+            .filter(|error| {
+                error.message
+                    == "`shop.cart.Thing` is declared in `domains/commands.yaml` and in \
+                        `domains/events.yaml`"
+            })
+            .collect();
+        assert_eq!(
+            named.len(),
+            1,
+            "({label}) one refusal naming both files: {errors}"
+        );
+        assert_eq!(named[0].location, "domain shop.cart.events", "({label})");
+    }
+}
+
+/// A name written three times — twice as one kind, once as another — is refused once per extra
+/// writing, not once per reporter.
+///
+/// The second command is `declare`'s; the event reaches `Assembly::claim` beside the sound
+/// command, and the pre-conversion reporter must stay out of it.
+#[test]
+fn a_name_written_three_times_is_refused_once_per_extra_writing() {
+    let document = format!(
+        "\ndomain: shop.cart\ncommands:{}{}events:\n  - name: shop.cart.Other\n    fields: \
+         []{}",
+        command(false),
+        command(true),
+        event(true)
+    );
+    let errors = refusals(&document);
+    assert_eq!(
+        name_refusals(&errors, "shop.cart.Thing"),
+        1,
+        "the event is refused once, by `Assembly::claim`: {errors}"
+    );
+    assert_eq!(
+        errors
+            .as_slice()
+            .iter()
+            .filter(|error| error.location == "command shop.cart.Thing")
+            .count(),
+        1,
+        "the second command is refused once, by `declare`: {errors}"
+    );
 }
