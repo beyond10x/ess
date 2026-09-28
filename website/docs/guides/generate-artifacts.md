@@ -44,7 +44,7 @@ separate digest of the model slice it derives from, and the regeneration command
 is over the *model*, not the source files, so it does not move when a comment does — a digest that
 moves for no reason is one every reader learns to ignore.
 
-See [the worked example](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) for one command's source next to
+See [the billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) for one command's source next to
 each generated document.
 
 ## Repeated generation and recovery

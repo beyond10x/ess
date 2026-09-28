@@ -47,6 +47,6 @@ specification, and it does not host the site it renders.
 |---|---|
 | Install `ess` and get from an empty directory to a passing conformance run | [Getting started](./getting-started.md) |
 | Understand what a specification declares and what is derived from it | [The model](./concepts/ess.md) |
-| See one command's source next to every contract generated from it | [Specification to contracts](https://beyond10x.github.io/ess/docs/examples/specification-to-contracts) |
+| See one command's source next to every contract generated from it | [The billing example](https://github.com/beyond10x/ess/tree/main/examples/billing) |
 | Look up a command, a format version or a predicate | [CLI](./reference/cli.md), [format versions](./reference/spec-versions.md), [predicates](./reference/predicates.md) |
 | Know what is supported today and what is not | [Where this stands](./status/where-this-stands.md) |
