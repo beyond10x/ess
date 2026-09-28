@@ -416,10 +416,17 @@ pub enum OutcomeCondition {
         /// Additional input eligibility, the ordinary `when:`.
         input: Option<Predicate>,
     },
-    /// Taken when the named existing subject is in this state and the optional input guard holds.
+    /// Taken when the named existing subject is in one of these states and the optional input
+    /// guard holds.
+    ///
+    /// From `ess/18` (beyond10x/ess#201) the guard may list several states, and a refusal may carry
+    /// it without naming a subject of its own: it reads the subject its siblings name, as a
+    /// [`SubjectPredicate`](Self::SubjectPredicate) refusal does. That is how a command answers
+    /// differently in different states its moves do not start from — an accepted no-op in one, a
+    /// refusal in others — where `wrong_state:` gives every such state one answer.
     SubjectState {
-        /// The held lifecycle state, read from the subject rather than the input.
-        state: crate::entity::StateName,
+        /// The held lifecycle states, read from the subject rather than the input.
+        state: crate::entity::HeldStates,
         /// An additional predicate over the unchanged command-input namespace.
         predicate: Option<Predicate>,
     },
@@ -4694,7 +4701,7 @@ pub struct RawOutcome {
     pub when_subject: Option<RawSubjectFact>,
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when_subject_state: Option<crate::entity::StateName>,
+    pub when_subject_state: Option<crate::entity::HeldStates>,
     /// Whether this branch's `moves:` changes the lifecycle state the subject already holds,
     /// composed with `when`.
     ///
@@ -4903,13 +4910,38 @@ fn outcome_conflict(
 fn outcome_condition(
     name: &OutcomeName,
     when: Option<Predicate>,
-    subject_state: Option<crate::entity::StateName>,
+    subject_state: Option<crate::entity::HeldStates>,
     state_changes: Option<bool>,
     external: Option<String>,
     wrong_state: bool,
 ) -> Result<OutcomeCondition, ValidationErrors> {
     let conflict =
         |key: &str, message: String, hint: &str| Err(outcome_conflict(name, key, message, hint));
+    // A listed guard (ess/18, beyond10x/ess#201) names each state once and at least one; it is
+    // then kept in name order, so the order an author listed them in is not part of the model.
+    let subject_state = match subject_state {
+        Some(crate::entity::HeldStates::Listed(states)) => {
+            let mut seen = BTreeSet::new();
+            if let Some(repeated) = states.iter().find(|state| !seen.insert(*state)) {
+                return conflict(
+                    "when_subject_state",
+                    format!("outcome `{name}` lists held state `{repeated}` more than once"),
+                    "name each state once",
+                );
+            }
+            if seen.is_empty() {
+                return conflict(
+                    "when_subject_state",
+                    format!("outcome `{name}` lists no held state, so no subject selects it"),
+                    "name at least one state, or drop the key",
+                );
+            }
+            Some(crate::entity::HeldStates::Listed(
+                seen.into_iter().cloned().collect(),
+            ))
+        }
+        other => other,
+    };
     if subject_state.is_some() && state_changes.is_some() {
         return conflict(
             "when_state_changes",
@@ -4979,6 +5011,7 @@ fn subject_authority(
     condition: &OutcomeCondition,
     subject: Option<&Subject>,
     replays: bool,
+    refusal: bool,
     held_state_key: &str,
 ) -> Result<(), ValidationErrors> {
     if condition.reads_subject_fact()
@@ -4994,8 +5027,16 @@ fn subject_authority(
              refusal beside it",
         ));
     }
+    // A refusal selected by a literal held state names no subject of its own from ess/18
+    // (beyond10x/ess#201): it reads the subject its siblings name, and whether one does is the
+    // command's question (`subject_state::validate_shape`), as it is for the predicate form. The
+    // format gate is `primitive_admission`'s. `when_state_changes:` is not relaxed: it tests the
+    // branch's own move, and a refusal takes none.
+    let subjectless_refusal =
+        refusal && subject.is_none() && matches!(condition, OutcomeCondition::SubjectState { .. });
     if (condition.reads_held_state() || matches!(condition, OutcomeCondition::SubjectField { .. }))
         && !replays
+        && !subjectless_refusal
         && !subject.is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
     {
         let key = if condition.reads_subject_fact() {
@@ -5159,6 +5200,7 @@ impl TryFrom<RawOutcome> for Outcome {
             &condition,
             subject.as_ref(),
             raw.replays.is_some(),
+            raw.error.is_some(),
             held_state_key,
         )?;
         // `updates:` takes no transition and `creates:` starts at the lifecycle's initial state, so

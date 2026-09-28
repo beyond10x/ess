@@ -49,7 +49,7 @@ pub fn uses_state_changes(command: &CommandSpec) -> bool {
 /// branch unreachable would send the author to the wrong line.
 fn admitted(outcome: &Outcome, entity: &EntitySpec) -> Option<BTreeSet<StateName>> {
     match &outcome.condition {
-        OutcomeCondition::SubjectState { state, .. } => Some([state.clone()].into()),
+        OutcomeCondition::SubjectState { state, .. } => Some(state.iter().cloned().collect()),
         OutcomeCondition::StateChange { changes, .. } => {
             let transition = declared_move(outcome, entity)?;
             Some(
@@ -89,6 +89,30 @@ fn declared_move<'a>(
         .find(|declared| declared.name == *transition)
 }
 
+/// The subject one branch of a held-state command selects against.
+///
+/// Its own, or its replay origin's, as [`CommandSpec::selection_subject`] answers; and for a
+/// refusal selected by a literal held state that names none (ess/18, beyond10x/ess#201), the
+/// existing subject its siblings name — the rule a stored-field refusal already reads by
+/// ([`subject_fact::common_subject`](super::subject_fact::common_subject)).
+pub fn selection<'a>(command: &'a CommandSpec, outcome: &'a Outcome) -> Option<&'a super::Subject> {
+    command.selection_subject(outcome).or_else(|| {
+        (outcome.subject.is_none()
+            && outcome.error.is_some()
+            && matches!(outcome.condition, OutcomeCondition::SubjectState { .. }))
+        .then(|| super::subject_fact::common_subject(command))
+        .flatten()
+    })
+}
+
+/// Whether this branch is a refusal selected by a literal held state that names no subject of its
+/// own — the `ess/18` shape of beyond10x/ess#201.
+pub fn is_subjectless_refusal(outcome: &Outcome) -> bool {
+    outcome.subject.is_none()
+        && outcome.replays.is_none()
+        && matches!(outcome.condition, OutcomeCondition::SubjectState { .. })
+}
+
 /// Local declaration checks, also used before a registry or entity map exists.
 pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -119,8 +143,7 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
         if outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none() {
             continue;
         }
-        let Some(subject) = command
-            .selection_subject(outcome)
+        let Some(subject) = selection(command, outcome)
             .filter(|subject| subject.surface() == InstanceSurface::CommandInput)
         else {
             errors.push(ValidationError::at(command.site().key("outcomes").named(outcome.name.as_str()), ValidationCode::UnobservableFact,
@@ -173,9 +196,12 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
         };
         for outcome in &command.outcomes {
             match &outcome.condition {
-                OutcomeCondition::SubjectState { state, .. } => {
-                    errors.extend(validate_move(command, outcome, entity, state));
-                    if !entity.states.states.contains(state) {
+                OutcomeCondition::SubjectState { state: states, .. } => {
+                    for state in states.iter() {
+                        errors.extend(validate_move(command, outcome, entity, state));
+                        if entity.states.states.contains(state) {
+                            continue;
+                        }
                         errors.push(ValidationError::at(
                             command
                                 .site()

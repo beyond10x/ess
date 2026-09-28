@@ -1703,6 +1703,30 @@ fn outcome_scenario(
         steps.extend(more);
         source.extend(depends);
     }
+    // ess/18 (#201): a branch whose `when_subject_state:` lists several states is witnessed in each
+    // of them, on a further row per state after the first invocation, so a target that mishandles
+    // any listed state fails. A state refusal is witnessed per state by `state_refusals`.
+    if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
+        if state.is_listed() && outcome.subject.is_some() && !is_state_refusal(command, outcome) {
+            for (nth, held) in state.iter().enumerate() {
+                if run.before.as_ref() == Some(held) {
+                    continue;
+                }
+                if let Some((more, depends, _)) = exercise_as(
+                    ir,
+                    command,
+                    outcome,
+                    actors,
+                    &id,
+                    refusals,
+                    Witness::Listed(nth),
+                ) {
+                    steps.extend(more);
+                    source.extend(depends);
+                }
+            }
+        }
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -1718,6 +1742,9 @@ enum Witness {
     /// `{input: f, else: <literal>}` left out ([`without_literal_fallbacks`]). A run that can leave
     /// nothing out is not built.
     LiteralFallbacks,
+    /// A further instance arranged in the `n`th state a listed `when_subject_state:` names (ess/18,
+    /// beyond10x/ess#201), so every listed state is witnessed and not only the first one reached.
+    Listed(usize),
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -1943,7 +1970,7 @@ fn run_as(
             .expect("validated common selection subject");
         let mut first = None;
         for state in &ir.entity(&subject.entity).lifecycle.states {
-            match run_state_refusal(ir, command, outcome, state, actors) {
+            match run_state_refusal(ir, command, outcome, state, actors, Distinction::PLAIN) {
                 Ok(run) => return Ok(run),
                 Err(reason) => {
                     first.get_or_insert(reason);
@@ -2155,11 +2182,17 @@ fn unchanged_writes(
         .count()
 }
 
+/// Whether `outcome` is a refusal of a held-state command that names no subject of its own: the
+/// effect-free default (ess/7), or a refusal guarded by a literal held state (ess/18,
+/// beyond10x/ess#201). Both read the subject their siblings name, are witnessed on a row arranged in
+/// each held state that selects them, and change nothing.
 fn is_state_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     has_subject_guards(command)
-        && state_default(outcome)
+        && (state_default(outcome)
+            || matches!(outcome.condition, ResolvedCondition::SubjectState { .. }))
         && outcome.error.is_some()
         && outcome.subject.is_none()
+        && outcome.replays.is_none()
 }
 
 fn run_state_refusal(
@@ -2168,8 +2201,9 @@ fn run_state_refusal(
     outcome: &ResolvedOutcome,
     state: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
 ) -> Result<Run, RefusalCause> {
-    let input = reach_in_state(ir, command, outcome, state, Distinction::PLAIN)?;
+    let input = reach_in_state(ir, command, outcome, state, distinction)?;
     let subject = command
         .selection_subject(outcome)
         .expect("validated common selection subject");
@@ -2178,7 +2212,7 @@ fn run_state_refusal(
         &subject.entity,
         std::slice::from_ref(state),
         actors,
-        Distinction::PLAIN,
+        distinction,
         &[],
     )
     .map_err(|reason| RefusalCause::InstanceRequired {
@@ -2245,6 +2279,13 @@ fn run_state_refusal(
     })
 }
 
+/// One `<entity>/state/<S>/refuses/<command>` scenario per held state a subjectless refusal is
+/// selected in.
+///
+/// Every such refusal of the command that some input selects in `S` is witnessed there, in
+/// declaration order, each on a row of its own (a further distinction per refusal after the first),
+/// so two refusals of one state that the input tells apart (ess/18, beyond10x/ess#201) share the one
+/// id the state has and are both asserted, rather than colliding on it.
 fn state_refusals(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -2252,52 +2293,73 @@ fn state_refusals(
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
-        for outcome in command
+        let refusing: Vec<&ResolvedOutcome> = command
             .outcomes
             .iter()
             .filter(|o| is_state_refusal(command, o))
-        {
-            let subject = command
-                .selection_subject(outcome)
-                .expect("validated common selection subject");
-            for state in &ir.entity(&subject.entity).lifecycle.states {
-                let id = ScenarioId::Refusal {
-                    entity: EntityRef::from(&subject.entity),
-                    state: state.clone(),
-                    command: CommandRef::new(command.name.clone()),
-                    refuses: true,
+            .collect();
+        let Some(first) = refusing.first() else {
+            continue;
+        };
+        let subject = command
+            .selection_subject(first)
+            .expect("validated common selection subject");
+        for state in &ir.entity(&subject.entity).lifecycle.states {
+            let id = ScenarioId::Refusal {
+                entity: EntityRef::from(&subject.entity),
+                state: state.clone(),
+                command: CommandRef::new(command.name.clone()),
+                refuses: true,
+            };
+            let mut steps = Vec::new();
+            let mut source = BTreeSet::new();
+            let mut failed = false;
+            let mut witnessed = 0;
+            for outcome in &refusing {
+                let distinction = if witnessed == 0 {
+                    Distinction::PLAIN
+                } else {
+                    Distinction::further(witnessed)
                 };
-                match run_state_refusal(ir, command, outcome, state, actors) {
+                match run_state_refusal(ir, command, outcome, state, actors, distinction) {
                     Ok(run) => {
-                        let mut steps = run.steps();
+                        witnessed += 1;
+                        steps.extend(run.steps());
                         steps.push(ScenarioStep::ExpectError {
                             error: ErrorRef::from(outcome.error.as_ref().expect("named refusal")),
                             fields: BTreeMap::new(),
                         });
-                        insert(
-                            suite,
-                            id,
-                            ConformanceScenario::new(
-                                ScenarioPurpose::new(format!(
-                                    "`{}` refuses in held state `{state}` without effects",
-                                    command.name
-                                ))
-                                .expect("nonempty purpose"),
-                                steps,
-                                run.source,
-                            ),
-                            refusals,
-                        );
+                        source.extend(run.source);
                     }
-                    // No input reaches the refusal in this state: not a refusal of its own, as
+                    // No input reaches this refusal in this state: not a refusal of its own, as
                     // before a count guard past the cap was named.
                     Err(
                         RefusalCause::GuardUnsatisfiable { .. }
                         | RefusalCause::CountUnwitnessed { .. },
                     ) => {}
-                    Err(cause) => refusals.push(Refusal::about(&id, cause)),
+                    Err(cause) => {
+                        failed = true;
+                        refusals.push(Refusal::about(&id, cause));
+                    }
                 }
             }
+            if steps.is_empty() || failed {
+                continue;
+            }
+            insert(
+                suite,
+                id,
+                ConformanceScenario::new(
+                    ScenarioPurpose::new(format!(
+                        "`{}` refuses in held state `{state}` without effects",
+                        command.name
+                    ))
+                    .expect("nonempty purpose"),
+                    steps,
+                    source,
+                ),
+                refusals,
+            );
         }
     }
 }
@@ -2522,7 +2584,7 @@ fn replay_condition(
             }
             ResolvedCondition::SubjectPredicate { predicate, input } => {
                 observed.extend(subject_fact::read_by(ir, &subject.entity, predicate));
-                match subject_fact::row_truth(ir, &subject.entity, settled, predicate) {
+                match subject_fact::row_truth(ir, &subject.entity, settled, Some(held), predicate) {
                     Truth::True => {}
                     Truth::False => return Ok(false),
                     Truth::Unknown => return Err(RefusalCause::NoWitness(WitnessGap {
@@ -3380,7 +3442,7 @@ fn has_subject_guards(command: &ResolvedCommand) -> bool {
 /// their partition. The single place the partition decides anything is [`admits_held_state`].
 fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>> {
     match condition {
-        ResolvedCondition::SubjectState { state, .. } => Some(BTreeSet::from([state])),
+        ResolvedCondition::SubjectState { state, .. } => Some(state.iter().collect()),
         ResolvedCondition::StateChange { states, .. } => Some(states.iter().collect()),
         ResolvedCondition::When { .. }
         | ResolvedCondition::Otherwise
@@ -3501,7 +3563,7 @@ fn prepare_state_input(
     // move to CHANGE the held state would have had the arrival state offered to it, and a scenario
     // that arranges a state the branch refuses proves nothing about the branch it names.
     let states: Vec<_> = match &outcome.condition {
-        ResolvedCondition::SubjectState { state, .. } => vec![state.clone()],
+        ResolvedCondition::SubjectState { state, .. } => state.iter().cloned().collect(),
         _ => lifecycle.states.iter().cloned().collect(),
     };
     let mut first = None;
@@ -3667,8 +3729,18 @@ fn reach(
     // which `has_subject_guards` now answers for it. `run` and `invoke` both route such a command
     // through `prepare_state_input`, which decides the state and the input together and is the only
     // place allowed to pick.
+    // A listed guard (ess/18) is reached in the first state it lists that an input selects it in.
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
-        return reach_in_state(ir, command, outcome, state, distinction);
+        let mut first = None;
+        for held in state.iter() {
+            match reach_in_state(ir, command, outcome, held, distinction) {
+                Ok(input) => return Ok(input),
+                Err(reason) => {
+                    first.get_or_insert(reason);
+                }
+            }
+        }
+        return Err(first.expect("a held-state guard names at least one state"));
     }
     if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         return Err(RefusalCause::StrategyWithoutGuard {
@@ -3855,7 +3927,13 @@ fn selects_branch(
         };
     }
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
-        return selected_in_state(command, outcome, state, &facts);
+        // The held state the arrangement left, where the guard admits it; otherwise the first it
+        // lists, which is the state a listed guard (ess/18) is reached in by [`reach`].
+        let held = held
+            .filter(|held| state.contains(held))
+            .or_else(|| state.iter().next())
+            .expect("a held-state guard names at least one state");
+        return selected_in_state(command, outcome, held, &facts);
     }
     if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
@@ -4745,6 +4823,7 @@ fn arranged_as(
     match witness {
         Witness::Full => arranged(ir, command, outcome, actors, routed),
         Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
+        Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
     }
 }
 
@@ -4781,6 +4860,33 @@ fn arranged_without_fallbacks(
         return Err(no_literal_fallback_run(command));
     }
     Ok((setup, omitted))
+}
+
+/// The arrangement and input of [`Witness::Listed`]: a further instance, under a distinction of its
+/// own, arranged in and observed at the `nth` state the branch's listed guard names, with an input
+/// the branch is selected by there.
+fn arranged_in_listed_state(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    nth: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let without = || RefusalCause::StrategyWithoutGuard {
+        strategy: outcome.test_strategy,
+    };
+    let ResolvedCondition::SubjectState { state, .. } = &outcome.condition else {
+        return Err(without());
+    };
+    let held = state.iter().nth(nth).ok_or_else(without)?;
+    let distinction = Distinction::further(FRESH_WITNESSES + 2 + nth);
+    let input = reach_in_state(ir, command, outcome, held, distinction)?;
+    let mut setup = prepare_in(ir, outcome, actors, Some(held), distinction)?;
+    let instance = setup.instance.clone().ok_or_else(without)?;
+    let (observed, view) = observe_subject_state(ir, outcome, &instance, held)?;
+    setup.steps.extend(observed);
+    setup.source.insert(view.into());
+    Ok((setup, input))
 }
 
 /// Why [`Witness::LiteralFallbacks`] builds nothing. Never reported: the full invocation is the
@@ -6256,19 +6362,83 @@ fn lifecycle(
                     command: CommandRef::new((*command).clone()),
                     refuses,
                 };
-                let Some((scenario, unobserved)) =
-                    refused_here(ir, handle, &drivers, command, state, actors, &id, refusals)
-                else {
-                    continue;
-                };
-                if !unobserved.is_empty() {
-                    notes.push(Note::PartialObservation {
-                        scenario: id.clone(),
-                        unobserved,
-                    });
+                if let Some(scenario) = wrong_state_scenario(
+                    ir, handle, &drivers, command, state, actors, &id, refusals, notes,
+                ) {
+                    insert(suite, id, scenario, refusals);
                 }
-                insert(suite, id, scenario, refusals);
             }
+        }
+    }
+}
+
+/// The `<entity>/state/<S>/refuses/<command>` scenario of one wrong state, or `None` with the
+/// refusal recorded.
+///
+/// Guarded branches reading `state` select before `wrong_state:` applies (ess/18, the #192
+/// ruling): each that may be taken in `S` is witnessed on a row of its own
+/// ([`subject_fact::state_answered_rows`]), ahead of the plain wrong-state row, which is written
+/// only where some input and row still reach it. A state they answer together, over their input
+/// halves, is still this state's scenario, and never dropped.
+#[allow(clippy::too_many_arguments)]
+fn wrong_state_scenario(
+    ir: &EssIr,
+    handle: &EntityHandle,
+    drivers: &[Driver<'_>],
+    command: &QualifiedName,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
+) -> Option<ConformanceScenario> {
+    let answered = ir.commands().get(command).map_or_else(
+        || Ok((Vec::new(), BTreeSet::new())),
+        |declared| subject_fact::state_answered_rows(ir, declared, handle, state, actors),
+    );
+    let (rows, depends) = match answered {
+        Ok(found) => found,
+        Err(cause) => {
+            refusals.push(Refusal::about(id, cause));
+            return None;
+        }
+    };
+    let mut plain = Vec::new();
+    match refused_here(ir, handle, drivers, command, state, actors, id, &mut plain) {
+        Some((mut scenario, unobserved)) => {
+            refusals.extend(plain);
+            if !unobserved.is_empty() {
+                notes.push(Note::PartialObservation {
+                    scenario: id.clone(),
+                    unobserved,
+                });
+            }
+            let mut steps = rows;
+            steps.append(&mut scenario.steps);
+            scenario.steps = steps;
+            scenario.source.extend(depends);
+            Some(scenario)
+        }
+        // No input and row reach the plain wrong-state case: the guards answer every one, so
+        // their rows are the scenario.
+        None if !rows.is_empty()
+            && plain.iter().all(|refused| {
+                matches!(refused.cause, RefusalCause::GuardUnsatisfiable { .. })
+            }) =>
+        {
+            Some(ConformanceScenario::new(
+                ScenarioPurpose::new(format!(
+                    "`{command}` in held state `{state}` is answered by the guarded branches \
+                     reading it"
+                ))
+                .expect("nonempty purpose"),
+                rows,
+                depends,
+            ))
+        }
+        None => {
+            refusals.extend(plain);
+            None
         }
     }
 }

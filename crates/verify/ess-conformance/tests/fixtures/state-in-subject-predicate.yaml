@@ -1,0 +1,71 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.shop
+summary: A ready order carrying a hold note stays ready; every other order moves to pending.
+types:
+  - {name: demo.shop.OrderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.shop.Order
+    identity: {name: order_id, type: demo.shop.OrderId}
+    fields:
+      - {name: hold_note, type: String}
+    lifecycle:
+      initial: Draft
+      states: [Draft, Pending, Ready]
+      terminal: []
+      transitions:
+        - {name: ready, from: [Draft, Pending, Ready], to: Ready}
+        - {name: back_to_pending, from: [Draft, Pending, Ready], to: Pending}
+actors:
+  - name: demo.shop.Clerk
+    may: [demo.shop.PlaceOrder, demo.shop.MarkReady, demo.shop.ReportPending]
+events:
+  - name: demo.shop.OrderPlaced
+    fields: [{name: order_id, type: demo.shop.OrderId}]
+  - name: demo.shop.OrderChanged
+    fields: [{name: order_id, type: demo.shop.OrderId}]
+commands:
+  - name: demo.shop.PlaceOrder
+    input: [{name: hold_note, type: String}]
+    outcomes:
+      - name: placed
+        creates: demo.shop.Order
+        instance: order_id
+        sets: {hold_note: input.hold_note}
+        emits: [demo.shop.OrderPlaced]
+        payload: {demo.shop.OrderPlaced: {order_id: {generated: true}}}
+  - name: demo.shop.MarkReady
+    input: [{name: order_id, type: demo.shop.OrderId}]
+    outcomes:
+      - name: readied
+        moves: demo.shop.Order.ready
+        instance: order_id
+        emits: [demo.shop.OrderChanged]
+        payload: {demo.shop.OrderChanged: {order_id: input.order_id}}
+  - name: demo.shop.ReportPending
+    input: [{name: order_id, type: demo.shop.OrderId}]
+    outcomes:
+      - name: kept-ready
+        when_subject:
+          predicate:
+            all:
+              - state == Ready
+              - hold_note != ""
+        updates: demo.shop.Order
+        instance: order_id
+        emits: [demo.shop.OrderChanged]
+        payload: {demo.shop.OrderChanged: {order_id: input.order_id}}
+      - name: pending
+        moves: demo.shop.Order.back_to_pending
+        instance: order_id
+        emits: [demo.shop.OrderChanged]
+        payload: {demo.shop.OrderChanged: {order_id: input.order_id}}
+views:
+  - name: demo.shop.Orders
+    source: demo.shop.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: demo.shop.OrderId}
+      - {name: hold_note, type: String}
+      - {name: state, type: demo.shop.Order.State}

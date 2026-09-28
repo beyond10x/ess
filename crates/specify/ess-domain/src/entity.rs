@@ -146,6 +146,124 @@ impl schemars::JsonSchema for StateName {
     }
 }
 
+/// The held lifecycle states a `when_subject_state:` guard admits: one state, or a list (ess/18,
+/// beyond10x/ess#201).
+///
+/// Two cases rather than a set, so a guard written as one state keeps its document and IR bytes: a
+/// scalar is written as the state itself, a list as a sequence. A list is admitted from `ess/18`
+/// even with one entry, because an older reader refuses the sequence spelling. An empty list and a
+/// state named twice are refused where the outcome is read (`command::outcome_condition`); the list
+/// is then kept in name order, so two documents listing the same states in a different order
+/// compile to one model.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HeldStates {
+    /// `when_subject_state: Shipped`.
+    One(StateName),
+    /// `when_subject_state: [Delivered, Cancelled]` (ess/18).
+    Listed(Vec<StateName>),
+}
+
+impl HeldStates {
+    /// Every state admitted, in the order this value holds them.
+    pub fn iter(&self) -> impl Iterator<Item = &StateName> {
+        match self {
+            Self::One(state) => std::slice::from_ref(state).iter(),
+            Self::Listed(states) => states.iter(),
+        }
+    }
+
+    /// Whether `state` is one this guard admits.
+    pub fn contains(&self, state: &StateName) -> bool {
+        self.iter().any(|admitted| admitted == state)
+    }
+
+    /// Whether the document spelled this as a list, the `ess/18` shape.
+    pub fn is_listed(&self) -> bool {
+        matches!(self, Self::Listed(_))
+    }
+}
+
+impl From<StateName> for HeldStates {
+    fn from(state: StateName) -> Self {
+        Self::One(state)
+    }
+}
+
+/// The states joined by `or`, as a sentence reads them: `Delivered or Cancelled`.
+impl fmt::Display for HeldStates {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, state) in self.iter().enumerate() {
+            if index > 0 {
+                f.write_str(" or ")?;
+            }
+            write!(f, "{state}")?;
+        }
+        Ok(())
+    }
+}
+
+impl serde::Serialize for HeldStates {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::One(state) => state.serialize(serializer),
+            Self::Listed(states) => states.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for HeldStates {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Written {
+            One(String),
+            Listed(Vec<String>),
+        }
+        let parse = |raw: String| StateName::new(raw).map_err(serde::de::Error::custom);
+        match Written::deserialize(deserializer).map_err(|_| {
+            serde::de::Error::custom(
+                "`when_subject_state` is one state, such as `Shipped`, or a list of states, \
+                 such as `[Delivered, Cancelled]`",
+            )
+        })? {
+            Written::One(raw) => parse(raw).map(Self::One),
+            Written::Listed(raw) => raw
+                .into_iter()
+                .map(parse)
+                .collect::<Result<_, _>>()
+                .map(Self::Listed),
+        }
+    }
+}
+
+impl schemars::JsonSchema for HeldStates {
+    fn schema_name() -> String {
+        "HeldStates".to_owned()
+    }
+
+    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        // The list the model admits: each state once, at least one (`outcome_condition`).
+        let mut listed = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Array.into()),
+            ..Default::default()
+        };
+        let array = listed.array();
+        array.items = Some(generator.subschema_for::<StateName>().into());
+        array.min_items = Some(1);
+        array.unique_items = Some(true);
+        let mut schema = schemars::schema::SchemaObject {
+            subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
+                any_of: Some(vec![generator.subschema_for::<StateName>(), listed.into()]),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        schema.metadata().description =
+            Some("One held lifecycle state, or a nonempty list of them (ess/18).".to_owned());
+        schema.into()
+    }
+}
+
 /// A named move between states.
 ///
 /// The name is the transition's own, unqualified, and it is a name *inside the entity*: the entity's
