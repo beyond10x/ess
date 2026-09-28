@@ -613,8 +613,11 @@ impl Specification {
 ///
 /// **The only refusal of a same-kind repeat, so it names both files.** [`Collected::write`] keeps
 /// the repeat away from `Assembly::claim`, which used to refuse it a second time and was, for two
-/// files, the only sentence that named the first one. The sentence here is unchanged; the hint
-/// names the file that declared the name first whenever that is another file.
+/// files, the only sentence that named the first one and the other domain. The sentence here is
+/// unchanged; the hint names the file that wrote the name first, as any kind, whenever that is
+/// another file, and both domains whenever the two copies are filed under different ones. The
+/// first writing is `earlier`, from [`Collected::write`]'s record, because this function's own key
+/// carries the kind and would name the first file of *this* kind instead.
 ///
 /// Keyed by kind as well as by name, which is the same-kind half of the class. One name held by two
 /// *different* kinds — and one type name written twice, since types do not come through here — is
@@ -634,6 +637,7 @@ fn declare(
     kind: &'static str,
     name: &impl std::fmt::Display,
     source: &Source,
+    (earlier, owner): (Option<&Claim>, Option<&QualifiedName>),
     errors: &mut ValidationErrors,
 ) -> bool {
     let first = match declared.entry((kind, name.to_string())) {
@@ -643,18 +647,25 @@ fn declare(
         }
         std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
     };
-    let hint = "a name identifies one thing; two declarations cannot both be it";
+    let first = earlier.map_or(&first, Claim::source);
+    let mut hint = Vec::new();
+    if first != source {
+        hint.push(format!("{first} declares it first"));
+    }
+    if let (Some(there), Some(here)) = (earlier.and_then(Claim::owner), owner) {
+        if there != here {
+            hint.push(format!("claimed by `{there}` and by `{here}`"));
+        }
+    }
+    hint.push("a name identifies one thing; two declarations cannot both be it".to_owned());
+    let hint = hint.join("; ");
     errors.push(
         ValidationError::new(
             ValidationCode::DuplicateDeclaration,
             format!("{kind} {name}"),
             format!("`{name}` is declared more than once; {source} declares it again"),
         )
-        .with_hint(if &first == source {
-            hint.to_owned()
-        } else {
-            format!("{first} declares it first; {hint}")
-        }),
+        .with_hint(hint),
     );
     false
 }
@@ -784,6 +795,8 @@ struct Written {
     /// Whether a copy of the name has been kept for `Assembly::claim`: converted, and a type or a
     /// member of a domain.
     claimed: bool,
+    /// The domain the claimed copy was filed under, which `DomainSpec::validate` checks it against.
+    claimed_under: Option<QualifiedName>,
 }
 
 /// Declarations refused by their own conversion: declared, and absent from every registry.
@@ -884,6 +897,11 @@ impl Collected {
     /// copy that does. The refusal here is [`Claim::refuse`]'s sentence, the one the assembly
     /// writes for the same pair, and it is written against the first copy in the order the
     /// assembly claims them, so which copy converted does not change it.
+    ///
+    /// A copy kept out of its domain is also kept out of `DomainSpec::validate`, which is what
+    /// refuses a name its domain cannot hold. So a dropped copy is asked that here, through the same
+    /// [`DomainSpec::misplaced`], unless it is filed under the domain the kept copy was — there
+    /// `validate` already asks it of the kept one.
     fn write(
         &mut self,
         name: &QualifiedName,
@@ -894,12 +912,14 @@ impl Collected {
         let kind = claim.kind();
         let reaches = kind == MemberKind::Type || claim.owner().is_some();
         let Some(written) = self.written.get_mut(name) else {
+            let claimed_under = claim.owner().filter(|_| converted).cloned();
             self.written.insert(
                 name.clone(),
                 Written {
                     first: claim,
                     kinds: BTreeSet::from([kind]),
                     claimed: converted && reaches,
+                    claimed_under,
                 },
             );
             return converted;
@@ -911,7 +931,46 @@ impl Collected {
         written.kinds.insert(kind);
         let keep = converted && !(reaches && written.claimed);
         written.claimed |= keep && reaches;
+        if keep && reaches {
+            written.claimed_under = claim.owner().cloned();
+        }
+        // A copy kept out of its domain is not seen by `DomainSpec::validate`, so it is asked
+        // here whether that domain could hold it at all.
+        if converted && !keep {
+            if let Some(owner) = claim
+                .owner()
+                .filter(|&owner| written.claimed_under.as_ref() != Some(owner))
+            {
+                if let Some(misplaced) = DomainSpec::misplaced(owner, kind, name) {
+                    errors.push(misplaced);
+                }
+            }
+        }
         keep
+    }
+
+    /// [`declare`] for a domain member, told the first writing of its name of any kind.
+    ///
+    /// `declare` is keyed by kind, so on its own it knows only the first copy of *this* kind; the
+    /// file that wrote the name first, and the domain it filed it under, are
+    /// [`Collected::write`]'s. `owner` is the domain this file files the member under.
+    fn declare_member(
+        &mut self,
+        kind: &'static str,
+        name: &QualifiedName,
+        source: &Source,
+        owner: Option<&QualifiedName>,
+        errors: &mut ValidationErrors,
+    ) -> bool {
+        let earlier = self.written.get(name).map(|written| &written.first);
+        declare(
+            &mut self.declared,
+            kind,
+            name,
+            source,
+            (earlier, owner),
+            errors,
+        )
     }
 
     /// Takes one file's members, and returns what that file contributes to the system.
@@ -921,7 +980,7 @@ impl Collected {
     /// a reference to nothing.
     ///
     /// Kinds are taken in the order `Assembly::absorb_domain` claims them — types, entities,
-    /// commands, events, views, errors, actors — so that [`Collected::write`] names the same first
+    /// commands, events, errors, views, actors — so that [`Collected::write`] names the same first
     /// copy the assembly would.
     fn absorb(
         &mut self,
@@ -952,7 +1011,7 @@ impl Collected {
         let mut members = DomainMembers::default();
 
         for raw in file.entities {
-            let first = declare(&mut self.declared, "entity", &raw.name, source, errors);
+            let first = self.declare_member("entity", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let converted = match EntitySpec::try_from(raw) {
                 Ok(entity) => {
@@ -973,7 +1032,7 @@ impl Collected {
         }
         self.absorb_commands(source, owner, file.commands, &mut members, errors);
         for raw in file.events {
-            let first = declare(&mut self.declared, "event", &raw.name, source, errors);
+            let first = self.declare_member("event", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let converted = match EventSpec::try_from(raw) {
                 Ok(event) => {
@@ -992,10 +1051,10 @@ impl Collected {
                 members.events.extend(converted);
             }
         }
-        self.absorb_views_errors_and_actors(
+        self.absorb_errors_views_and_actors(
             source,
             owner,
-            (file.views, file.errors, file.actors),
+            (file.errors, file.views, file.actors),
             &mut members,
             errors,
         );
@@ -1029,41 +1088,22 @@ impl Collected {
         part
     }
 
-    /// One file's views, errors and actors, in that order — the order `Assembly::absorb_domain`
+    /// One file's errors, views and actors, in that order — the order `Assembly::absorb_domain`
     /// claims them in — each declared, converted and written like any other member.
-    fn absorb_views_errors_and_actors(
+    fn absorb_errors_views_and_actors(
         &mut self,
         source: &Source,
         owner: Option<&QualifiedName>,
-        (views, declared_errors, actors): (
-            Vec<crate::view::RawViewSpec>,
+        (declared_errors, views, actors): (
             Vec<crate::command::RawErrorSpec>,
+            Vec<crate::view::RawViewSpec>,
             Vec<crate::actor::RawActorSpec>,
         ),
         members: &mut DomainMembers,
         errors: &mut ValidationErrors,
     ) {
-        for raw in views {
-            let first = declare(&mut self.declared, "view", &raw.name, source, errors);
-            let name = raw.name.clone();
-            let converted = match ViewSpec::try_from(raw) {
-                Ok(view) => {
-                    let converted = view.name.clone();
-                    record(first, &mut self.views, view.name.clone(), view);
-                    Some(converted)
-                }
-                Err(member_errors) => {
-                    errors.extend(member_errors);
-                    None
-                }
-            };
-            let claim = Claim::new(source, owner, MemberKind::View);
-            if self.write(&name, claim, converted.is_some(), errors) {
-                members.views.extend(converted);
-            }
-        }
         for raw in declared_errors {
-            let first = declare(&mut self.declared, "error", &raw.name, source, errors);
+            let first = self.declare_member("error", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let converted = match ErrorSpec::try_from(raw) {
                 Ok(error) => {
@@ -1082,8 +1122,27 @@ impl Collected {
                 members.errors.extend(converted);
             }
         }
+        for raw in views {
+            let first = self.declare_member("view", &raw.name, source, owner, errors);
+            let name = raw.name.clone();
+            let converted = match ViewSpec::try_from(raw) {
+                Ok(view) => {
+                    let converted = view.name.clone();
+                    record(first, &mut self.views, view.name.clone(), view);
+                    Some(converted)
+                }
+                Err(member_errors) => {
+                    errors.extend(member_errors);
+                    None
+                }
+            };
+            let claim = Claim::new(source, owner, MemberKind::View);
+            if self.write(&name, claim, converted.is_some(), errors) {
+                members.views.extend(converted);
+            }
+        }
         for raw in actors {
-            let first = declare(&mut self.declared, "actor", &raw.name, source, errors);
+            let first = self.declare_member("actor", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let converted = match ActorSpec::try_from(raw) {
                 Ok(actor) => {
@@ -1114,7 +1173,7 @@ impl Collected {
         errors: &mut ValidationErrors,
     ) {
         for raw in commands {
-            let first = declare(&mut self.declared, "command", &raw.name, source, errors);
+            let first = self.declare_member("command", &raw.name, source, owner, errors);
             let name = raw.name.clone();
             let moves: Vec<QualifiedName> = raw
                 .outcomes
@@ -1164,7 +1223,14 @@ impl Collected {
         // Components, bindings and topology sit above the domains rather than inside one: a
         // component owns domains, and a binding joins two of them, so neither can belong to either.
         for raw in components {
-            let first = declare(&mut self.declared, "component", &raw.name, source, errors);
+            let first = declare(
+                &mut self.declared,
+                "component",
+                &raw.name,
+                source,
+                (None, None),
+                errors,
+            );
             let name = raw.name.clone();
             match crate::component::ComponentSpec::try_from(raw) {
                 Ok(component) => {
@@ -1186,7 +1252,14 @@ impl Collected {
             }
         }
         for raw in bindings {
-            let first = declare(&mut self.declared, "binding", &raw.name, source, errors);
+            let first = declare(
+                &mut self.declared,
+                "binding",
+                &raw.name,
+                source,
+                (None, None),
+                errors,
+            );
             match crate::binding::BindingSpec::try_from(raw) {
                 Ok(binding) => {
                     record(first, &mut self.bindings, binding.name.clone(), binding);

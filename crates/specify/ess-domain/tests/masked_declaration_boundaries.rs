@@ -538,3 +538,62 @@ fn one_name_of_one_kind_in_two_files_is_refused_once_naming_both_files() {
         "the first file is named: {errors}"
     );
 }
+
+/// One event name written twice under a domain that cannot hold it: the kept copy's misplacement
+/// is `DomainSpec::validate`'s, the dropped copy is not refused for it a second time.
+#[test]
+fn a_misplaced_name_written_twice_under_one_domain_is_refused_for_it_once() {
+    let misplaced = "\ndomain: shop.b\nevents:\n  - name: shop.a.Thing\n    fields: []\n";
+    let errors = Specification::assemble(vec![
+        file(
+            "system.yaml",
+            "\nformat: ess/1\nsystem: shop\nversion: v1\n",
+        ),
+        file("a.yaml", misplaced),
+        file("b.yaml", misplaced),
+    ])
+    .expect_err("misplaced and declared twice");
+    assert_eq!(
+        errors
+            .as_slice()
+            .iter()
+            .filter(|error| {
+                error.code == ValidationCode::ConflictingDeclaration
+                    && error.location == "domain shop.b.events"
+            })
+            .count(),
+        1,
+        "one domain, one name, one misplacement: {errors}"
+    );
+}
+
+/// A document with no duplicate at all reports a broken error before a broken view, as it did
+/// before `Collected` learned to refuse a name held by two kinds.
+#[test]
+fn a_broken_error_is_reported_before_a_broken_view_as_it_always_was() {
+    let errors = refusals(
+        r"
+domain: shop.cart
+entities:
+  - name: shop.cart.Cart
+    identity: {name: id, type: Uuid}
+    lifecycle: {states: [Open], initial: Open, terminal: [Open]}
+errors:
+  - name: shop.cart.Oops
+    fields:
+      - {name: total, type: Decimal}
+      - {name: total, type: Decimal}
+views:
+  - name: shop.cart.Look
+    source: shop.cart.Cart
+",
+    );
+    let position = |needle: &str| {
+        errors
+            .as_slice()
+            .iter()
+            .position(|error| error.location.contains(needle))
+            .unwrap_or_else(|| panic!("`{needle}` is refused: {errors}"))
+    };
+    assert!(position("Oops") < position("Look"), "{errors}");
+}

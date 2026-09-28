@@ -823,6 +823,11 @@ impl Claim {
         self.kind
     }
 
+    /// The source that carries the declaration.
+    pub(crate) fn source(&self) -> &Source {
+        &self.source
+    }
+
     /// The domain that claims the name, or `None` when it is the system's.
     pub(crate) fn owner(&self) -> Option<&QualifiedName> {
         self.owner.as_ref()
@@ -1059,8 +1064,10 @@ impl Assembly {
             source,
         );
         self.absorb_names(position, domain.events, MemberKind::Event, &owner, source);
-        self.absorb_names(position, domain.views, MemberKind::View, &owner, source);
+        // Errors before views: the order `spec.rs`'s `Collected` reads them in, so a name written as
+        // both is refused against the same first copy whichever copy converts.
         self.absorb_names(position, domain.errors, MemberKind::Error, &owner, source);
+        self.absorb_names(position, domain.views, MemberKind::View, &owner, source);
         self.absorb_names(position, domain.actors, MemberKind::Actor, &owner, source);
     }
 
