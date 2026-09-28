@@ -3023,11 +3023,11 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             };
             let suite = admitted.suite();
             let report = coverage::execute(&admitted, &report_format, || match target {
-                ReferenceTarget::Billing => ess_conformance::Runner::for_suite(suite)
+                ReferenceTarget::Billing => wall_clock_runner(suite)
                     .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
-                ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
+                ReferenceTarget::OracleFixture => wall_clock_runner(suite)
                     .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-                ReferenceTarget::Interpreted => ess_conformance::Runner::for_suite(suite)
+                ReferenceTarget::Interpreted => wall_clock_runner(suite)
                     .run_admitted(&admitted, &ess_conformance::interpret::Interpreted::new()),
             })?;
             render_conformance_report(
@@ -3041,6 +3041,37 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
         }
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
     }
+}
+
+/// The machine's clock, in epoch milliseconds: the wall a `now_offset` is resolved against.
+fn machine_clock() -> ess_primitives::time::Timestamp {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis());
+    ess_primitives::time::Timestamp::from_epoch_millis(u64::try_from(millis).unwrap_or(u64::MAX))
+}
+
+/// The runner `ess verify conform run` executes a suite with: `Runner::for_suite`'s deterministic
+/// clock for budgets and durations, and the machine's clock as the wall a `now_offset` value is
+/// resolved against (beyond10x/ess#171, `docs/design/current-time-guards.md`). `ess-conformance`
+/// reads no clock of the machine's; the CLI, which runs against an implementation reading one,
+/// supplies it.
+fn wall_clock_runner(
+    suite: &ess_conformance::ConformanceSuite,
+) -> ess_conformance::Runner<
+    ess_conformance::now_offset::WithWall<
+        ess_conformance::AdvancingClock,
+        fn() -> ess_primitives::time::Timestamp,
+    >,
+> {
+    ess_conformance::Runner::new(
+        ess_conformance::RunnerConfig::default(),
+        ess_conformance::now_offset::WithWall::new(
+            ess_conformance::AdvancingClock::default(),
+            machine_clock as fn() -> ess_primitives::time::Timestamp,
+        ),
+        ess_conformance::Ids::for_suite(suite),
+    )
 }
 
 /// `ess verify conform mutate`, by the one of `--target`, `--emit` and `--collect` clap admitted.
@@ -4075,6 +4106,31 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    /// The wall `conform run` resolves a `now_offset` against is the machine's clock, not the
+    /// runner's budget clock, which starts at 2023-11-14 (beyond10x/ess#171).
+    #[test]
+    fn conform_run_resolves_now_offsets_against_the_machine_clock() {
+        use ess_conformance::Clock as _;
+        let mut clock = ess_conformance::now_offset::WithWall::new(
+            ess_conformance::AdvancingClock::default(),
+            machine_clock as fn() -> ess_primitives::time::Timestamp,
+        );
+        let machine = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after the epoch")
+            .as_millis();
+        let wall = u128::from(clock.wall().epoch_millis());
+        assert!(
+            wall.abs_diff(machine) < 5_000,
+            "wall {wall} ms against the machine's {machine} ms"
+        );
+        assert_eq!(
+            clock.now().epoch_millis(),
+            ess_conformance::AdvancingClock::DEFAULT_START_MS,
+            "budgets keep the deterministic clock"
+        );
+    }
 
     /// `--class` offers exactly the library's classes, in its order, under its names.
     #[test]

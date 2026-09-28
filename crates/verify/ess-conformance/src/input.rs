@@ -755,6 +755,12 @@ impl FactSource for InputFacts<'_> {
     fn orders_as_instant(&self, path: &FactPath) -> bool {
         declared_as(self.ir, &self.command.input, path, Primitive::Timestamp)
     }
+
+    /// The reference instant a candidate is decided against where a guard reads the current time
+    /// (beyond10x/ess#171): a candidate is an offset from it, sent as a `now_offset`.
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        Some(crate::now_offset::reference())
+    }
 }
 
 /// Where a fact path lands in a set of declared fields.

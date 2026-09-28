@@ -2369,7 +2369,11 @@ impl CommandSpec {
         // form of the same site rather than a second spelling of it.
         let owner = location.clone().key("when");
         let rendered = owner.render();
-        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        // Every input guard of an outcome — a plain `when:`, or the `when:` beside a held state,
+        // a state change, a stored field, a `when_subject:` or an external cause — is read while
+        // the request is handled, which is the moment `now` names (beyond10x/ess#171).
+        let environment =
+            crate::expression::DomainEnvironment::new(types, &self.input).with_current_time();
         let checked = crate::expression::check_predicate(&environment, predicate, &rendered);
         let mut errors = ValidationErrors::new();
         for error in &checked.errors {

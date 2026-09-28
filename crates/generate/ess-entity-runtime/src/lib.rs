@@ -428,6 +428,11 @@ pub enum LoweringCode {
     /// An outcome shape of ess/15 — an `unknown_instance:` branch, a `deletes:` effect, a creation
     /// `into:` a declared state, or `accepts: nothing` — which entity-core has no definition for.
     OutcomeShapeUnsupported,
+    /// A command guard orders a `Timestamp` against the current time (`starts_at < now - 60s`,
+    /// ess/16), and entity-core has no clock operand: it reads the clock at the edge and hands it
+    /// in as an argument, so a lowered `before` against the text `now - 60s` would be `Unknown`
+    /// for every request.
+    CurrentTimeUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -563,6 +568,17 @@ impl Projector<'_> {
             predicate,
             at,
         );
+        for path in &checked.current_time {
+            self.diagnostic(
+                LoweringCode::CurrentTimeUnsupported,
+                at,
+                format!(
+                    "`{predicate}` orders `{path}` against the current time, and Entity Runtime \
+                     has no clock operand: entity-core reads the clock at the edge and takes it as \
+                     an argument, so a lowered rule would be Unknown for every request"
+                ),
+            );
+        }
         for read in checked.reads {
             if read.resolution.access.text_length {
                 self.diagnostic(
