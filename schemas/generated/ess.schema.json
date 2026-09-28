@@ -634,6 +634,22 @@
       "type": "string",
       "pattern": "^ess/[1-9][0-9]*$"
     },
+    "HeldStates": {
+      "description": "One held lifecycle state, or a nonempty list of them (ess/18).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/StateName"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StateName"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      ]
+    },
     "HostInputContract": {
       "description": "A binding-local required interface; a declaration is not proof of authentication.",
       "type": "object",
@@ -2574,7 +2590,7 @@
           "description": "Equality against the existing subject's declared lifecycle state, composed with `when`.",
           "anyOf": [
             {
-              "$ref": "#/definitions/StateName"
+              "$ref": "#/definitions/HeldStates"
             },
             {
               "type": "null"

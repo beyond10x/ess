@@ -596,10 +596,15 @@ pub enum ResolvedCondition {
         /// The predicate.
         predicate: Predicate,
     },
-    /// The existing subject must have this held state and satisfy the optional input guard.
+    /// The existing subject must hold one of these states and satisfy the optional input guard.
+    ///
+    /// One state is written as the state itself, so every model before `ess/18` keeps its IR
+    /// bytes; a list (ess/18, beyond10x/ess#201) is written as a sequence in name order. A refusal
+    /// may carry it without a subject of its own and reads the one its siblings name — see
+    /// [`ResolvedCommand::selection_subject`].
     SubjectState {
-        /// The declared lifecycle state immediately before command selection.
-        state: StateName,
+        /// The declared lifecycle states immediately before command selection.
+        state: ess_domain::entity::HeldStates,
         /// The additional ordinary input predicate, when declared.
         predicate: Option<Predicate>,
     },
@@ -1267,11 +1272,13 @@ impl ResolvedCommand {
             })
             .or_else(|| {
                 // A refusal guarded by the subject's stored fields names no subject of its own and
-                // reads the existing one its siblings name (ess/9).
-                matches!(
+                // reads the existing one its siblings name (ess/9); so does a refusal guarded by
+                // a literal held state (ess/18, beyond10x/ess#201).
+                (matches!(
                     outcome.condition,
                     ResolvedCondition::SubjectPredicate { .. }
-                )
+                ) || (matches!(outcome.condition, ResolvedCondition::SubjectState { .. })
+                    && outcome.error.is_some()))
                 .then(|| {
                     self.outcomes
                         .iter()

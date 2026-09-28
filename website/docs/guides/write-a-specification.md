@@ -363,6 +363,28 @@ state/input assignments for gaps and overlaps using the shared finite coverage
 proof; unsupported or open input domains require a genuine default. Runtime
 witnesses additionally validate their concrete inputs and invariants.
 
+From `ess/18` (unreleased) the guard may list several states, and a refusal may carry it without
+naming a subject; it reads the subject its sibling branches name. That is how a command answers
+differently in different states its moves do not start from, where `wrong_state` gives them all
+one answer:
+
+```yaml
+- name: shipped
+  moves: demo.ship.Order.ship
+  instance: order_id
+- name: already-shipped            # a re-send is accepted and changes nothing
+  when_subject_state: Shipped
+  preserves: demo.ship.Order
+  instance: order_id
+- name: gone
+  when_subject_state: [Delivered, Cancelled]
+  error: demo.ship.Gone
+```
+
+Every state no guard claims falls to the default, whose move must start there. The synthesized
+suite arranges an order in `Delivered` and one in `Cancelled`, each refused with `Gone` and left
+unchanged.
+
 ### Guard an outcome by the subject's stored fields
 
 "Express parcels over 20 kg are refused at dispatch" depends on two fields stored when the parcel
@@ -403,7 +425,10 @@ commands:
 ```
 
 The predicate reads the entity's declared fields and nothing else: not the input, which stays in
-`when:` beside it, and not `state`, which stays with `when_subject_state:`. The refusal names no
+`when:` beside it, and — before `ess/18` — not `state`. From `ess/18` (unreleased) it may read
+`state`, the lifecycle state the row holds, to select by the state and a stored field together:
+`{all: [state == Ready, hold_note != ""]}`; a branch reading it that moves must be able to move
+from every state it may be selected in. The refusal names no
 subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
 absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
 

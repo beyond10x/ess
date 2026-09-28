@@ -159,10 +159,11 @@ row. **(a) is chosen**, and (b)'s arrangement follows from it anyway:
   takes that one; a guarded `moves:` or `updates:` branch names it itself. A command whose only
   subject-bearing branch is `creates:` has no subject to read, and is refused.
 - **Namespace.** The predicate reads the entity's declared `fields` and nothing else: not the
-  input, and not `state`. Input stays in `when:`, conjunctive with the subject predicate as it is
-  today for `{field, equals}`. The lifecycle stays with `when_subject_state:` and
-  `when_state_changes:`, and combining those with `when_subject` on sibling branches stays refused
-  (below, "one strategy or two").
+  input, and not `state` (from `ess/15` the input under `input.`, and from `ess/18` the held
+  state as `state` — see "The held state in the predicate" below). Input stays in `when:`,
+  conjunctive with the subject predicate as it is today for `{field, equals}`. The lifecycle
+  guards `when_subject_state:` and `when_state_changes:` stay their own authority, and combining
+  those with `when_subject` on sibling branches stays refused (below, "one strategy or two").
 - **Literals.** The bare-word rule of `crates/specify/ess-primitives/src/predicate.rs` applies
   unchanged: a right-hand side without a dot is a literal, so `service == Express` compares with
   the text `Express`, and the checker refuses a bare word that names a declared field
@@ -183,7 +184,9 @@ row. **(a) is chosen**, and (b)'s arrangement follows from it anyway:
 | `{field, equals}` and `{predicate}` in one `when_subject` | the reader's own refusal: one shape per branch |
 | beside `when_subject_state:`, `when_state_changes:`, `external:` or `wrong_state:` on the same branch | `conflicting_declaration` — "a subject fact has one selection authority" (`command.rs`), as today |
 | on a `creates:` branch, or in a command with no subject-bearing sibling | `conflicting_declaration`, sited at `outcomes.<name>.when_subject` — not at `when_state_changes` |
-| a field the entity does not declare, `state`, or an input path | `unobservable_fact` at `outcomes.<name>.when_subject`, from the expression checker with the entity's fields as its environment |
+| a field the entity does not declare | `unobservable_fact` at `outcomes.<name>.when_subject`, from the expression checker with the entity's fields as its environment |
+| an `input.` path below `ess/15`, or `state` below `ess/18` | `unsupported_format_version` at `outcomes.<name>.when_subject`: the document is not wrong, its header is |
+| `state` on a branch whose `moves:` does not start in a state the predicate may select it in (`ess/18`) | `conflicting_declaration` at `outcomes.<name>.when_subject` |
 | a literal of the wrong type, a bare word naming a field, an ordering against a non-RFC 3339 text for a `Timestamp` | `type_mismatch` / `undeclared_reference` — the checker's existing diagnostics, unchanged |
 | sibling `when_subject` predicates over different entities or identity fields | `conflicting_declaration` at `outcomes` — "subject fact branches must share one entity, identity" (`command/subject_fact.rs`), with the "and enum field" clause dropped |
 | `when_subject` beside a lifecycle guard in one command | `conflicting_declaration` at `outcomes` — "cannot be combined in one command", as today |
@@ -341,8 +344,9 @@ mixing them in one command stands. Folding the two would either give the lifecyc
 partition of the field predicate, losing the completeness proof they have, or bound field
 predicates to closed domains, losing rule 1. A command that needs both today has `wrong_state:`
 beside `when_subject` for the lifecycle complement, which the ess/6 fixture
-(`crates/verify/ess-conformance/tests/fixtures/subject-history.yaml`) already does. Admitting
-`state` as a predicate leaf is a later milestone, if a model needs it.
+(`crates/verify/ess-conformance/tests/fixtures/subject-history.yaml`) already does. From `ess/18`
+`state` is also a leaf of the fact strategy's predicate (below); the lifecycle strategy and the
+refusal on mixing the two in one command are unchanged.
 
 ### Projections
 
@@ -390,10 +394,45 @@ require specification format ess/9". `{field, equals}` documents keep ess/6 and 
 
 **The inverted default** (design (b) alone): stated above.
 
-**`state` in the predicate namespace**, subsuming `when_subject_state:`. It would give two spellings
-of one condition, need `validate_move`'s "cannot take move `X`, which does not start there" applied
-to predicate leaves, and cannot express `when_state_changes:`, whose whole content is a derivation
-from the move. Rule 1 does not need it.
+**`state` in the predicate namespace**, subsuming `when_subject_state:`. Rejected for rule 1 and
+admitted from `ess/18` for a narrower need (beyond10x/ess#204): a branch selected by the held state
+*and* a stored field together, which `when_subject_state:` beside `when_subject:` cannot say
+without two selection authorities. It does not subsume `when_subject_state:` — a command still uses
+one strategy or the other — and it does not express `when_state_changes:`. The move check it
+needed is the one below.
+
+### The held state in the predicate (`ess/18`, beyond10x/ess#204)
+
+A `when_subject` predicate may read `state`, the lifecycle state the addressed row holds
+immediately before selection: `{all: [state == Ready, hold_note != ""]}`. It is the pseudo-field
+entity invariants already read, typed by the lifecycle's own enum, so the finite prover treats it
+as a closed domain. No entity field can be named `state`.
+
+- **Format.** Below `ess/18` the path is refused with `unsupported_format_version` at
+  `outcomes.<name>.when_subject`; a model without it keeps its bytes and digest.
+- **Authority.** One per branch, as before: `when_subject_state:` beside `when_subject:` stays
+  `conflicting_declaration`, and so does a lifecycle guard beside `when_subject` in one command.
+- **Moves.** A branch reading `state` that takes a move must be able to take it in every state the
+  predicate may select it in: each declared state the move does not start from is bound as `state`
+  alone, and a predicate not then decided false is refused (`conflicting_declaration`).
+- **Precedence.** Guarded branches select before `wrong_state:` applies (the #192 ruling), so a
+  predicate may name a state no move of the command starts from — `state == Closed and note != ""`
+  answers a closed row carrying a note before `wrong_state:` answers every other closed row.
+- **Conformance.** The arranged row's held state is bound as `state` wherever a stored-field
+  predicate is evaluated over it (`synthesize/subject_fact.rs`, `row_truth_with`), so the search
+  reaches the state and the boundary rows refute each conjunct: a `Ready` row without the note,
+  a row in another state with it. A row in a wrong state is answered by the guarded branch only
+  where that branch reads `state`; every other wrong-state row stays the wrong-state family's. Each
+  wrong state `S` keeps its `<entity>/state/<S>/refuses/<command>` scenario: it first witnesses,
+  in declaration order and each on a row of its own, every guarded branch reading `state` whose
+  predicate is not false with `state` bound to `S` alone, sent an input selecting it there; then the
+  plain wrong-state row, only where some input and row still reach it. Whether the guards answer
+  `S` is decided by that search over every branch together, input halves included: where no input
+  and row miss them all, their rows are the scenario. A branch that may be taken in `S` and that no
+  bounded arrangement reaches refuses the scenario with that cause; no state is dropped.
+- **Runtimes.** Entity Runtime lowers `state` to `$from_state`: `$state` in an outcome selector
+  is the destination, which entity-core refuses. The interpreted target does not evaluate a
+  subject guard and reports such a scenario `unsupported`, naming the guard.
 
 **Widening `SubjectField` in place.** It changes the IR of every ess/6 model that uses it, against
 the byte-preservation rule, for no gain over a sibling variant.

@@ -32,7 +32,7 @@ One new source format, `ess/18`, carries every new authored key in this batch (#
 |---|---|
 | A | mutate (#203 + #210, `mutate.rs`), mapwitness (#196, `witness.rs`), arrangement (#198 then #209 then #199, `synthesize.rs` arrange/prepare + `subject_fact.rs` creator loop), preconditions (#205) |
 | B | state-scoped (#201 + #204, registers `ess/18`), viewfilter (#193, `synthesize.rs` shows/bound + `aggregate.rs` held), distinguish (#202, `synthesize.rs` distinguished) |
-| C | related-guard (#211), binding-context (#195) |
+| C | related-guard (#211), binding-context (#195), linkguard (#193 part 2 guard case) |
 
 Integration branch: `integrate/ess-0.41`, cut from `main` after PR #208 merges (0.40.0).
 
@@ -42,3 +42,4 @@ Integration branch: `integrate/ess-0.41`, cut from `main` after PR #208 merges (
 - #203/#210: the manifest also moves to `ess-mutation-manifest/2` (its reader refuses unknown fields, so the refusal list needs a new version); `--collect` still reads `/1`, comparing refusal counts only. Report and manifest are registered together in `FORMAT_RELEASES` (`/2` unreleased).
 - #198 (2026-09-28, arrangement adversary pass 1): creators are tried in command-name order, not declaration order — the IR keeps commands in a name-keyed map, so declaration order is not available there; name order is deterministic and keeps existing arrangements byte-identical.
 - #210 F2 refined (2026-09-28, mutate adversary pass 2): only an excluded scenario whose mutant copy differs from the baseline copy makes an unkilled mutant `inconclusive`; an unchanged excluded scenario cannot kill it, so the mutant stays `survived`. Refusal keys for ESS-SYNTH-005 and ESS-SYNTH-014 use the view as subject.
+- #193 (2026-09-28, viewfilter unit): the `when_subject` guard comparing a link field with an input (ESS-SYNTH-003, issue part 2) needs instance-valued inputs in the subject-fact input search and a second arranged owner for `!=`; it lands in `subject_fact.rs`, which state-scoped edits. Split into unit linkguard, wave C, based on the integration head after state-scoped and viewfilter merge. Tokens and `bound()` from viewfilter are reused; probe `~/.cache/ess-wave-n2/viewfilter/guard-case-probe.rs` is its red test.

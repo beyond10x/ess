@@ -23,7 +23,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | Place | What the predicate reads | Notes |
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
-| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | Not `state`. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
+| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
 | an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
@@ -36,7 +36,7 @@ Two outcome keys that look like guards are **not** predicates:
   variant. Its other shape, `when_subject: {predicate: …}` (`ess/9`), is a predicate and is listed
   above. A mapping that writes keys of both shapes is refused while the document is read, and the
   predicate shape under a header older than `ess/9` is refused with `unsupported_format_version`.
-- `when_subject_state` is one lifecycle state name.
+- `when_subject_state` is one lifecycle state name, or from `ess/18` a list of them.
 
 A binding's `when:` names its cause, such as `periodic:`. It is not a predicate.
 

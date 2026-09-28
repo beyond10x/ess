@@ -54,6 +54,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/15` | [0.37.0][r37] | `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing`, `preconditions:`; `input.` in subject guards; `equals_ignore_case`, `in_ignore_case`; `prefix:`, `Json`, `presence:`; aggregates over `Optional` fields |
 | `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`, `{related: …}`, literal `else:` |
 | `ess/17` | [0.39.0][r39] | `returns: true` |
+| `ess/18` | Unreleased | a list in `when_subject_state:`, and `when_subject_state:` on a refusal naming no subject; `state` in a `when_subject` predicate |
 
 The sections below give each version's rules. The first five are a table:
 
@@ -167,6 +168,18 @@ claim about persistence or side effects. Those require their own declarations an
 observations. It cannot also declare an error, `accepts: nothing`, or `replays`. Older readers
 refuse the header, and this build refuses `returns` under an earlier header. A model without it
 keeps its bytes and compiled digest.
+
+`ess/18` is unreleased: in the current source and no release yet. It collects the new authored
+constructs of the next release; each is refused under an earlier header with
+`unsupported_format_version`, and a model without them keeps its bytes and compiled digest.
+`when_subject_state:` may list several held states, `[Delivered, Cancelled]`, and a refusal may
+carry it without naming a subject: it reads the subject its siblings name, so a command can accept
+a re-send in one state no move starts from and refuse in others, where `wrong_state:` gives them
+all one answer (beyond10x/ess#201). `when_state_changes:` still needs the branch's own move. A
+`when_subject` predicate may read `state`, the lifecycle state the addressed row holds before
+selection, beside its stored fields: `{all: [state == Ready, hold_note != ""]}`
+(beyond10x/ess#204). A guarded branch selects before `wrong_state:` applies, and one taking a
+move must be able to take it in every state its predicate may select it in.
 
 ## `ess-diff/` — what moved between two revisions
 
