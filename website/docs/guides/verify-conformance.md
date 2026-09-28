@@ -42,37 +42,31 @@ not rewrite an already committed suite.
 
 ## Select authored scenarios explicitly
 
-The manifest capability described here was introduced in 0.21.0.
-`--scenarios` accepts one file or one directory. An immediate `ess-inputs.yaml` in that directory
-selects its exact `scenarios` list, including explicitly listed nested files of any extension.
-The [mixed-layout example](write-a-specification.md#keep-sources-and-generated-output-together)
-can serve both roles:
+Scenarios a person wrote (`ess-scenario/*` documents) join the generated ones only when
+`--scenarios` names them. It takes one file or one directory:
+
+| `--scenarios` names | What is read |
+|---|---|
+| a file | that file, whatever its extension |
+| a directory with an `ess-inputs.yaml` | exactly the files its `scenarios:` list names, nested or not, of any extension |
+| a directory without one | its immediate lowercase `.yaml` and `.yml` files; subdirectories are not searched |
+| nothing | no authored scenarios, even when the model's `ess-inputs.yaml` lists some |
+
+An empty selection is refused before anything is written or run. The
+[mixed-layout example](write-a-specification.md#keep-sources-and-generated-output-together) keeps
+the model and the scenarios in one directory, so the same directory serves both options:
 
 ```shell-session
 $ ess verify conform author --path . --scenarios . --suite-format 5 --out output/authored.json
 ```
 
-Without that immediate manifest, a directory selects only immediate lowercase `.yaml`/`.yml`
-entries; subdirectories are not searched. An explicit file bypasses extension filtering and parent
-configuration. An explicit empty selection refuses before outputs or execution. Omitted
-`--scenarios` selects no authored inputs, even if the model's manifest lists scenarios or the working
-directory contains `scenarios/`.
+`ess-inputs.yaml` refuses duplicate paths, a path listed as both a specification and a scenario,
+a path that leaves the directory, and a symlink. A coverage suite (`--suite-format 5`) records each
+scenario's relative path and source text: moving the directory or reordering the list leaves the
+suite unchanged, and changing line endings changes it. Its coverage describes the selected
+scenarios, not every scenario file below the directory.
 
-The manifest validates both lists but opens only the active role. It rejects duplicate paths,
-paths shared by both roles, escaping paths and selected symlinks. Suite/4 legacy invocations retain
-their supported file/root links; manifest invocations require real contained files. Each listed
-document still reaches its existing semantic reader, including malformed or foreign documents.
-
-Suite/5 retains the exact listed relative identities and original source text. Relocating the root
-or reordering the lists preserves these bytes; changing LF to CRLF changes source evidence. Copies
-and hardlinks with distinct paths remain separate requested identities. The manifest itself adds
-no suite source entry or provenance digest. Coverage describes this explicit selection, not every
-scenario that might exist below the directory.
-
-Committed `run --suite` and `run --suite-input` retain their acquisition bypass and argument
-conflicts. Impact still loads both model revisions, and release qualification still loads its
-explicit model. Discovery refusals precede output or runner activity; existing document-level
-semantic refusals can still retain incomplete diagnostic evidence.
+`ess verify conform run --suite FILE` runs the committed suite as it is and selects nothing.
 
 ## Establish backend state in an authored scenario
 
@@ -209,6 +203,69 @@ $ ess verify conform run \
     --target billing \
     --format json
 ```
+
+## Hold your own implementation to the suite
+
+`ess verify conform run` runs a suite only against the targets built into `ess`. Your own
+implementation is held to its suite through a test package that `ess` writes in Go or TypeScript:
+
+```shell-session
+$ ess verify conform synthesize --path spec --target go --out internal/conformance
+$ ess verify conform synthesize --path spec --target typescript --out conformance
+```
+
+Each writes one package, `essconform`, below `--out`: the suite (`suite.json`), the compiled model
+(`ir.json`), the runner, a predicate evaluator and a `README.md` describing the wiring. Nothing in it
+is edited by hand; regenerate it after every change to the specification. Files you add beside the
+generated ones, such as your test file, are kept.
+
+The runner asks the implementation questions through one interface, `Target`, and asserts the
+answers itself:
+
+| Method (Go / TypeScript) | What it answers |
+|---|---|
+| `Identity` / `identity` | the implementation's name and version, for the report |
+| `BeginScenario`, `EndScenario` / `beginScenario`, `endScenario` | bracket one scenario; state from one scenario must not satisfy another |
+| `ExecuteCommand` / `executeCommand` | run one command as the named actor; return the outcome taken, the declared error if it refused, and the events it emitted directly |
+| `QueryView` / `queryView` | read one view; a `read_your_writes` view must already show the command that just returned |
+| `ObserveEvents` / `observeEvents` | the events seen for one activity, away from the command that caused them |
+| `ConfigureExternalOutcome` / `configureExternalOutcome` | force an outcome declared `external:` |
+| `RedeliverEvent` / `redeliverEvent` | deliver an event a second time, for `delivery: at_least_once` |
+| `ObserveInvocations` / `observeInvocations` | the commands one binding invoked and what it passed |
+
+A refused command reports both the outcome name and the error, for example
+`{outcome: "rejected", error: "tasks.list.InvalidPriority"}`. A method the implementation cannot
+answer returns `ErrUnsupported` (Go) or throws it (TypeScript). The scenario is then reported as
+skipped, which is a different fact from failed, and a run with a skipped scenario is
+`inconclusive`, not `passed`. Specifications that declare backend setup, clock readings or periodic
+hosts ask for further optional interfaces (`EntitySetupTarget`, `ClockReadingTarget`,
+`PeriodicTarget`); the generated `README.md` names the ones a suite needs.
+
+Hand a factory to the runner from one test. The runner builds one target per scenario:
+
+```go
+func TestConformance(t *testing.T) {
+    essconform.Run(t, func() essconform.Target { return newTarget() })
+}
+```
+
+```ts
+await test("conformance", async (t) => {
+  await run(t, (): Target => newTarget());
+});
+```
+
+Then run the language's own test command. `ESS_REPORT_OUT` names a file for the standalone report:
+
+```shell-session
+$ ESS_REPORT_OUT=$PWD/report.json go test ./...
+$ ESS_REPORT_OUT=$PWD/report.json npm test
+```
+
+[Getting started](../getting-started.md#hold-an-implementation-to-the-specification) builds a
+complete TypeScript target for a small specification and runs it green. For separate passed, failed
+and skipped counts, see [explicit outcome counts](#opt-into-explicit-outcome-counts). A target
+reports what it observed; it must not report its own unobserved success.
 
 ## Audit the suite with specification mutants
 
@@ -475,9 +532,10 @@ does not prove that the target is independently operated, deployed in production
 behavior the suite never exercised. A consumer may translate this report into its own evidence
 vocabulary at that consumer’s boundary; ESS itself publishes no workflow or planning record.
 
-## Add a target
+## A target in Rust
 
-The built-in targets demonstrate the runner contract. A new target implements the Rust
-`ConformanceTarget` boundary and must preserve scenario identity, request/response correlation,
-refusal semantics, and deterministic reporting. It must not report its own unobserved success as a
-verifier result.
+The generated Go and TypeScript packages [above](#hold-your-own-implementation-to-the-suite) are the
+route for an implementation outside this repository. A Rust implementation can instead implement
+the `ConformanceTarget` trait of the `ess-conformance` crate, which is what the built-in targets do.
+It must preserve scenario identity, request/response correlation and refusal semantics, and it must
+not report its own unobserved success.
