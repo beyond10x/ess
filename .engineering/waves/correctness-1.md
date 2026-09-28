@@ -36,9 +36,9 @@ Nothing else: no tag, no version bump, no release.
 
 | unit | story | objective | scope | worktree (managed id) | branch | build dir | scratch | stage |
 |---|---|---|---|---|---|---|---|---|
-| onename | `one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts` | vision:O2 | cited (high) | `ess-c1-onename` | `impl/one-name-two-kinds` | `~/.cache/b10x-target/ess-c1-onename` | `~/.cache/ess-wave-c1/onename` | adversary 2 (head 8ce4a54c2) |
-| charset | `a-field-constrained-by-a-charset-publishes-that-charset` | vision:O2 | cited + inferred (medium) | `ess-c1-charset` | `impl/charset-publishes` | `~/.cache/b10x-target/ess-c1-charset` | `~/.cache/ess-wave-c1/charset` | correction 1 |
-| trailing | `a-wrong-trailing-key-guess-is-reported-as-a-line` | vision:O2 | cited (high) | `ess-c1-trailing` | `impl/trailing-key-guess` | `~/.cache/b10x-target/ess-c1-trailing` | `~/.cache/ess-wave-c1/trailing` | correction 2 |
+| onename | `one-name-held-by-two-kinds-is-refused-whether-or-not-it-converts` | vision:O2 | cited (high) | `ess-c1-onename` | `impl/one-name-two-kinds` | `~/.cache/b10x-target/ess-c1-onename` | `~/.cache/ess-wave-c1/onename` | merged (86b5e89c2) |
+| charset | `a-field-constrained-by-a-charset-publishes-that-charset` | vision:O2 | cited + inferred (medium) | `ess-c1-charset` | `impl/charset-publishes` | `~/.cache/b10x-target/ess-c1-charset` | `~/.cache/ess-wave-c1/charset` | adversary 2 (head 5519a581c) |
+| trailing | `a-wrong-trailing-key-guess-is-reported-as-a-line` | vision:O2 | cited (high) | `ess-c1-trailing` | `impl/trailing-key-guess` | `~/.cache/b10x-target/ess-c1-trailing` | `~/.cache/ess-wave-c1/trailing` | merged (b0c89d384) |
 
 Acceptance for `onename` and `trailing` is an existing `#[ignore]`d test that fails on
 `46e367ab2` (scoper runs, 2026-09-28): `masked_declaration_boundaries.rs:119-123,178-181`,
@@ -86,3 +86,7 @@ Left out:
 - 12:40 charset: adversary pass 1 red (F1 introduced: xtask schema-metadata pin stale, 10 ess-xtask cases red; F2/F3 story class: Transition.name, Selection/SelectionInput.name; F4 alias not published → filed story:the-published-schema-admits-the-name-aliases-the-parser-reads, outcome no-op); recorded review-result:adversary-c1-charset-pass-1; correction round 1 (assignment widened to reviewed-schema-metadata.json, entity.rs, selection.rs).
 - 12:42 onename: correction 1 green (ess-domain 926→936, 9 adversary cases green), committed 8ce4a54c2; 3 outcomes fixed; adversary pass 2 dispatched.
 - 12:43 trailing: adversary pass 2 red — ledger: carried 0, new 3, resolved 3 (pass 1: 3 → pass 2: 3); recorded review-result:adversary-c1-trailing-pass-2; correction 2 to the same implementor, verified by the coordinator's diff read (no third attack).
+- 12:48 trailing: correction 2 green (ess-compiler 215→220); coordinator read the diff (test-file change is doc-only; no assertion dropped); VERIFIED (acceptance test red on base, green on c1ad14182); merged into integrate/correctness-1 as b0c89d384.
+- 12:48 charset: correction 1 green (ess-domain 929→934, ess-xtask consumer_coverage 118→128), committed 5519a581c; 3 outcomes fixed (+1 no-op for F4); adversary pass 2 dispatched.
+- 12:50 onename: adversary pass 2 red (N1, N2, N4 introduced; N3 pre-existing note) — pass 1: 3 → pass 2: 4, carried 0; recorded review-result:adversary-c1-onename-pass-2; correction 2 (last), coordinator-verified. N4 routed: restore Collected order, change Assembly::claim order instead.
+- 12:55 onename: correction 2 green (ess-domain 936→945); coordinator read the diff (tests additions only; misplaced refusal moved byte-identical); VERIFIED; merged as 86b5e89c2. N3 fixed in-unit, no story filed.
