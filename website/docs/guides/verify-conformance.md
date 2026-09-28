@@ -332,6 +332,55 @@ inputs, so a call is explained by any input the suite would submit for its comma
 are listed as not judged. The same history and budget always print the same report; `--format json`
 prints it as JSON.
 
+### Import a recorded log
+
+A service that logs its calls can be judged from its log. `import-history` reads a JSON Lines log,
+one call per line in the log's own shape, through an adapter you write, and writes `ess-history/1`:
+
+```yaml
+format: ess-history-adapter/1
+fields:
+  operation_id: { pointer: /correlation }
+  client: { pointer: /request/client }
+  command: { pointer: /request/command }
+  subject_key: { pointer: /request/subject }
+  invoked_at: { pointer: /request/at_ms }
+  returned_at: { pointer: /response/at_ms }
+  outcome: { pointer: /response/outcome }
+  completion:
+    pointer: /response/status
+    values: { ok: Returned, timeout: Indeterminate }
+```
+
+```shell-session
+$ ess verify conform import-history --path examples/billing \
+    --log calls.jsonl --adapter adapter.yaml --output target/history.json
+$ ess verify conform check-history --path examples/billing --history target/history.json
+```
+
+Every field is either a JSON pointer or `absent`. Nothing is guessed. If a line lacks a field that
+the call cannot be judged without, the import is refused (exit 2) and each such field is named on
+its line. Those fields are the client, command, subject, invoke instant and completion, plus the
+return instant and outcome of a `Returned` call. Refusals name the log line and the field. Other
+fields can be missing, and each case is reported as a `coverage-gap`:
+
+- A missing `operation_id` is given a generated version-8 UUID. No ESS writer uses version 8, so a
+  generated ID cannot collide with a carried one.
+- `rows` is optional in the adapter. A view read without rows is imported, but `check-history` will
+  not judge it.
+- The document's `seed` is never carried and is written as 0.
+
+Gaps are printed on stderr. With `--output FILE`, they are also written as a JSON array to
+`FILE.gaps.json`. This file is always written; it is never empty because `seed` is always a gap.
+A history imported with gaps carries seed 0 and generated IDs by construction, and only the gaps
+file records which values were not in the log. An `--output` is refused if it or its gaps file is
+the `--log` or `--adapter` file (hard links included) or a file of the `--path` specification.
+Both files are written to temporary siblings, and replace existing files only once both writes have
+succeeded.
+
+Instants must be unsigned integers, such as epoch milliseconds. Client labels are numbered in the
+order they first appear.
+
 ## Opt into explicit outcome counts
 
 ### Where passed, failed and skipped live

@@ -659,6 +659,40 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = MachineFormat::Text)]
         format: MachineFormat,
     },
+    /// Convert a recorded command/response log into an `ess-history/1` document.
+    ///
+    /// `--log` is JSON Lines, one call per line, in the log's own shape. `--adapter` is an
+    /// `ess-history-adapter/1` document that names, for every operation field, the JSON pointer
+    /// it sits at in a line, or declares it `absent`, and maps the log's completion words to
+    /// `Returned` and `Indeterminate`. Nothing is guessed: a field an operation cannot be judged
+    /// without is refused, named on every line that lacks it, and a field the history does
+    /// without is reported on stderr as a coverage gap. The document is recorded against the
+    /// specification at `--path`; judge it with `check-history`.
+    ///
+    /// With `--output FILE`, the coverage gaps are also written as a JSON array to
+    /// `FILE.gaps.json`, always (the document seed is never carried, so the list is never empty).
+    /// A history imported with gaps carries seed 0 and generated operation identities by
+    /// construction; the gaps file is the record of which.
+    ///
+    /// Exit 0: written, to `--output` or standard output. Exit 2: the specification, the adapter
+    /// or the log was refused, or `--output` (or its gaps file) is the `--log` or `--adapter`
+    /// file (a hard link included) or a file of the `--path` specification, or a write failed;
+    /// nothing was written. The two files are written to temporary siblings and renamed into
+    /// place only when both writes succeeded.
+    ImportHistory {
+        /// One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml`.
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// The JSON Lines log.
+        #[arg(long)]
+        log: PathBuf,
+        /// The `ess-history-adapter/1` document, YAML or JSON.
+        #[arg(long)]
+        adapter: PathBuf,
+        /// Where to write the `ess-history/1` document; standard output when absent.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 /// The mutant classes `mutate --class` takes, one per `ess_conformance::mutate::MutantClass`.
@@ -3028,7 +3062,247 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             settle,
             format,
         } => Ok(check_history(&path, &history, budget, settle, format)),
+        ConformCommand::ImportHistory {
+            path,
+            log,
+            adapter,
+            output,
+        } => Ok(import_history(&path, &log, &adapter, output.as_deref())),
     }
+}
+
+/// `ess verify conform import-history`: 0 written, 2 refused.
+fn import_history(path: &Path, log: &Path, adapter: &Path, output: Option<&Path>) -> ExitCode {
+    const REFUSED: u8 = 2;
+    let loaded = match resolved(path, Format::Text) {
+        Ok(Ok((loaded, _))) => loaded,
+        Ok(Err(_)) => return ExitCode::from(REFUSED),
+        Err(error) => {
+            eprintln!("import-history.specification-unreadable: {error:#}");
+            return ExitCode::from(REFUSED);
+        }
+    };
+    if output.is_some_and(|output| import_output_clashes(output, path, log, adapter)) {
+        return ExitCode::from(REFUSED);
+    }
+    let read = |file: &Path, what: &str| {
+        fs::read(file).map_err(|error| {
+            eprintln!(
+                "import-history.{what}-unreadable: reading {}: {error}",
+                file.display()
+            );
+        })
+    };
+    let Ok(adapter_bytes) = read(adapter, "adapter") else {
+        return ExitCode::from(REFUSED);
+    };
+    let Ok(log_bytes) = read(log, "log") else {
+        return ExitCode::from(REFUSED);
+    };
+    let declared = match std::str::from_utf8(&adapter_bytes)
+        .map_err(|error| ess_conformance::recorded::ImportRefusal::Adapter {
+            detail: error.to_string(),
+        })
+        .and_then(ess_conformance::recorded::adapter)
+    {
+        Ok(declared) => declared,
+        Err(refusal) => {
+            eprintln!("{} was refused: {refusal}", adapter.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    let imported = match ess_conformance::recorded::import_for(&log_bytes, &declared, &loaded) {
+        Ok(imported) => imported,
+        Err(refusal) => {
+            eprintln!("{} was refused: {refusal}", log.display());
+            return ExitCode::from(REFUSED);
+        }
+    };
+    for gap in &imported.gaps {
+        eprintln!("{gap}");
+    }
+    write_imported(&imported, output)
+}
+
+/// Where `import-history --output FILE` writes its coverage gaps: `FILE.gaps.json`.
+fn gaps_path(output: &Path) -> PathBuf {
+    let mut name = output.as_os_str().to_owned();
+    name.push(".gaps.json");
+    PathBuf::from(name)
+}
+
+/// `path` made absolute and canonical; for a path that does not exist yet, its canonical parent
+/// joined with its name.
+fn canonical_or_parent(path: &Path) -> Option<PathBuf> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Some(canonical);
+    }
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    Some(parent.canonicalize().ok()?.join(path.file_name()?))
+}
+
+/// Whether two existing paths are one file: by device and inode on Unix, so a hard link counts.
+#[cfg(unix)]
+fn same_identity(first: &Path, second: &Path) -> Option<bool> {
+    use std::os::unix::fs::MetadataExt as _;
+    let (first, second) = (fs::metadata(first).ok()?, fs::metadata(second).ok()?);
+    Some(first.dev() == second.dev() && first.ino() == second.ino())
+}
+
+/// Elsewhere there is no portable file identity; the canonical-path comparison decides.
+#[cfg(not(unix))]
+fn same_identity(_: &Path, _: &Path) -> Option<bool> {
+    None
+}
+
+/// Whether `candidate` names the same file as the existing `existing`: by file identity where both
+/// exist, otherwise by canonical path.
+fn same_file(candidate: &Path, existing: &Path) -> bool {
+    if let Some(same) = same_identity(candidate, existing) {
+        return same;
+    }
+    match (canonical_or_parent(candidate), existing.canonicalize()) {
+        (Some(candidate), Ok(existing)) => candidate == existing,
+        _ => false,
+    }
+}
+
+/// Whether `candidate` is `root`, lies inside the directory `root`, or is one file with any file
+/// under it.
+fn within(candidate: &Path, root: &Path) -> bool {
+    if same_file(candidate, root) {
+        return true;
+    }
+    if !root.is_dir() {
+        return false;
+    }
+    if let (Some(candidate), Ok(root)) = (canonical_or_parent(candidate), root.canonicalize()) {
+        if candidate.starts_with(&root) {
+            return true;
+        }
+    }
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if same_file(candidate, &path) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Refuses an `--output` whose document or gaps file would overwrite `--log`, `--adapter`, or the
+/// `--path` specification (the file, or any file of the directory).
+fn import_output_clashes(output: &Path, spec: &Path, log: &Path, adapter: &Path) -> bool {
+    let mut clash = false;
+    for written in [output.to_path_buf(), gaps_path(output)] {
+        for (read, what) in [(log, "--log"), (adapter, "--adapter")] {
+            if same_file(&written, read) {
+                eprintln!(
+                    "import-history.output-overwrites-input: {} is the {what} file {}; \
+                     nothing was written",
+                    written.display(),
+                    read.display()
+                );
+                clash = true;
+            }
+        }
+        if within(&written, spec) {
+            eprintln!(
+                "import-history.output-overwrites-input: {} is a file of the --path \
+                 specification {}; nothing was written",
+                written.display(),
+                spec.display()
+            );
+            clash = true;
+        }
+    }
+    clash
+}
+
+/// The temporary sibling `path` is written to before it is renamed into place.
+fn temporary_sibling(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(format!(".import-{}.tmp", std::process::id()));
+    PathBuf::from(name)
+}
+
+/// Writes the history to `output` and its gaps to `output.gaps.json`, or the history to
+/// standard output.
+///
+/// The pair is written to temporary siblings first, and renamed into place only when both writes
+/// succeeded: the gaps file first, then the history. A failed write leaves every existing file as
+/// it was and removes the temporaries.
+fn write_imported(
+    imported: &ess_conformance::recorded::Imported,
+    output: Option<&Path>,
+) -> ExitCode {
+    const REFUSED: u8 = 2;
+    let mut document = match serde_json::to_string_pretty(&imported.history) {
+        Ok(document) => document,
+        Err(error) => {
+            eprintln!("import-history.unwritable: {error}");
+            return ExitCode::from(REFUSED);
+        }
+    };
+    document.push('\n');
+    let Some(file) = output else {
+        print!("{document}");
+        return ExitCode::SUCCESS;
+    };
+    let pair = [
+        (gaps_path(file), imported.gaps_json()),
+        (file.to_path_buf(), document),
+    ];
+    for (path, _) in &pair {
+        if path.is_dir() {
+            eprintln!(
+                "import-history.output-unwritable: {} is a directory; nothing was written",
+                path.display()
+            );
+            return ExitCode::from(REFUSED);
+        }
+    }
+    let temporaries: Vec<PathBuf> = pair
+        .iter()
+        .map(|(path, _)| temporary_sibling(path))
+        .collect();
+    let discard = |temporaries: &[PathBuf]| {
+        for temporary in temporaries {
+            let _ = fs::remove_file(temporary);
+        }
+    };
+    for ((path, text), temporary) in pair.iter().zip(&temporaries) {
+        if let Err(error) = fs::write(temporary, text) {
+            eprintln!(
+                "import-history.output-unwritable: writing {}: {error}; nothing was written",
+                path.display()
+            );
+            discard(&temporaries);
+            return ExitCode::from(REFUSED);
+        }
+    }
+    for ((path, _), temporary) in pair.iter().zip(&temporaries) {
+        if let Err(error) = fs::rename(temporary, path) {
+            eprintln!(
+                "import-history.output-unwritable: replacing {}: {error}",
+                path.display()
+            );
+            discard(&temporaries);
+            return ExitCode::from(REFUSED);
+        }
+    }
+    ExitCode::SUCCESS
 }
 
 /// `ess verify conform check-history`: 0 linearizable, 1 violation, 3 unknown, 2 refused.
@@ -4457,7 +4731,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 64;
+    const AREA_LEAVES: usize = 65;
     const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
 
     /// The order they are offered in is checked where it is rendered, in

@@ -148,6 +148,7 @@ pub mod presence;
 pub mod quoted_predicate_format;
 pub mod reading;
 pub mod record;
+pub mod recorded;
 pub mod reference;
 /// Exact observations of retained command results.
 pub mod replay;
