@@ -2,9 +2,13 @@
 format: aep.planning-md/3
 id: epic:retrofit-findings-20260927
 kind: epic
-status: draft
+status: implemented
 title: 'Retrofit findings of 2026-09-27: what ess/13 could not state'
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T07:46:01Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-28T07:46:01Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-28T07:46:01Z", actor: "human:timo", revision: 5}
 ---
 ## Problem
 
