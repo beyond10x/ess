@@ -17,6 +17,14 @@
 //! compiled models; the only tolerated difference is a consumer treating a required value as
 //! optional. Owner-declared types are referenceable, not added to the client surface.
 //!
+//! Under [`READER_COMPOSITION_FORMAT`] a conformance may carry `reader: true`: the local type only
+//! reads the imported one off the wire, so it may also read a newtype as its primitive, an enum as
+//! `String`, enum variants by wire name, a struct or `String`-keyed map as `Map<String, Json>`, and
+//! a subset of the imported fields. `reader: true` also asserts that the consumer's reader ignores
+//! keys it does not declare; ESS-generated closed types (`additionalProperties: false`,
+//! `deny_unknown_fields`) do not, so a consumer reading through them must not use `reader` for a
+//! field subset.
+//!
 //! The persisted input formats are [`SUPPORTED_COMPOSITION_FORMATS`]. Generated clients consume
 //! the derived [`EssClientPlan`] rather than reinterpreting multiple service models independently.
 //! The Rust client constrains operation descriptors to that selection, but forwards request and
@@ -43,8 +51,11 @@ pub const COMPOSITION_FORMAT: &str = "ess-composition/1";
 /// The composition format that admits `conformances` and references to owner-declared types.
 pub const CONFORMANCE_COMPOSITION_FORMAT: &str = "ess-composition/2";
 
+/// The composition format that also admits `reader: true` on a `conformances` entry.
+pub const READER_COMPOSITION_FORMAT: &str = "ess-composition/3";
+
 /// Every `ess-composition/N` major this build reads; any other marker is refused.
-pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2];
+pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2, 3];
 
 /// The language-neutral client-plan format emitted from composition IR.
 pub const CLIENT_PLAN_FORMAT: &str = "ess-client-plan/1";
@@ -319,11 +330,15 @@ impl TypeBinding {
     }
 }
 
-/// An `ess-composition/2` assertion that a consumer's local type has an imported type's shape.
+/// An `ess-composition/2` or `/3` assertion that a consumer's local type has an imported type's
+/// shape.
 ///
 /// Both ends must be referenceable in their selected components. The shapes are compared field by
 /// field; a local value may be optional where the imported one is required, and nothing else may
 /// differ. A difference is refused as [`CompositionCode::TypeConformanceDrift`].
+///
+/// A reader assertion (`reader: true`, `ess-composition/3` only) also admits the widening a
+/// consumer that only reads the imported type may do; see [`TypeConformance::for_reader`].
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -331,12 +346,73 @@ impl TypeBinding {
 pub struct TypeConformance {
     local: TypeBinding,
     conforms_to: TypeBinding,
+    /// `reader:` as authored (`ess-composition/3`): `None` when the key is absent, `Some(None)`
+    /// for an authored `null`. Absent from every `/2` entry, which keeps its bytes; refused under
+    /// `/1` and `/2` whatever its value.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    reader: Option<ReaderKey>,
+}
+
+/// An authored `reader:` value, `null` included; kept apart from absence by `Option<ReaderKey>`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+struct ReaderKey(Option<bool>);
+
+/// Records that a key was written, `null` included, which a plain `Option` field cannot tell from
+/// an absent one.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 impl TypeConformance {
     /// Asserts that `local` conforms to `conforms_to`.
     pub fn new(local: TypeBinding, conforms_to: TypeBinding) -> Self {
-        Self { local, conforms_to }
+        Self {
+            local,
+            conforms_to,
+            reader: None,
+        }
+    }
+
+    /// Asserts that `local` reads every value `conforms_to` allows (`ess-composition/3`).
+    ///
+    /// Beyond [`TypeConformance::new`]'s rule, the local type may read a newtype (through any
+    /// chain) as its representation, an enum as `String` (`Optional<String>` where the imported
+    /// enum is optional), an enum by wire name with a superset of the imported wire names, a
+    /// struct or `String`-keyed map as `Map<String, Json>`, and a subset of a struct's fields. A
+    /// local field the imported struct lacks by name is compared with the imported field that
+    /// shares its wire name, or else must be optional and not `null_when_absent`.
+    ///
+    /// The assertion includes a precondition the comparison cannot see: the consumer's reader
+    /// ignores keys it does not declare. ESS-generated closed types (`additionalProperties: false`,
+    /// `deny_unknown_fields`) do not, so a consumer reading through them must not use `reader` for
+    /// a field subset.
+    pub fn for_reader(local: TypeBinding, conforms_to: TypeBinding) -> Self {
+        Self {
+            local,
+            conforms_to,
+            reader: Some(ReaderKey(Some(true))),
+        }
+    }
+
+    /// Whether this is a reader assertion (`reader: true`).
+    pub fn reader(&self) -> bool {
+        self.reader == Some(ReaderKey(Some(true)))
+    }
+
+    /// Whether the `reader` key was written, whatever its value.
+    fn reader_key(&self) -> bool {
+        self.reader.is_some()
     }
 
     /// The consumer's own type.
@@ -359,8 +435,8 @@ pub struct CompositionSpec {
     services: Vec<ServiceImportSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     references: Vec<CompositionRef>,
-    /// Present only in `ess-composition/2`; a `/1` document carrying the key, even empty, is
-    /// refused by [`compile`].
+    /// Present only from `ess-composition/2`; a `/1` document carrying the key, even empty, is
+    /// refused by [`compile`], as is a `/2` entry carrying `reader`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     conformances: Option<Vec<TypeConformance>>,
 }
@@ -395,6 +471,20 @@ impl CompositionSpec {
             services,
             references,
             conformances: (!conformances.is_empty()).then_some(conformances),
+        }
+    }
+
+    /// Creates an `ess-composition/3` input, whose conformances may be reader assertions
+    /// ([`TypeConformance::for_reader`]). Semantic validation happens in [`compile`].
+    pub fn with_reader_conformances(
+        composition: ServiceKey,
+        services: Vec<ServiceImportSpec>,
+        references: Vec<CompositionRef>,
+        conformances: Vec<TypeConformance>,
+    ) -> Self {
+        Self {
+            format: READER_COMPOSITION_FORMAT.to_owned(),
+            ..Self::with_conformances(composition, services, references, conformances)
         }
     }
 
@@ -484,7 +574,7 @@ pub enum CompositionCode {
     /// A semantic name exists in the model but is outside the selected component surface.
     ReferenceOutsideComponent,
     /// A local type asserted to conform to an imported type differs from it in a field's name,
-    /// presence or type (`ess-composition/2`).
+    /// presence or type (from `ess-composition/2`).
     TypeConformanceDrift,
 }
 
@@ -591,7 +681,7 @@ pub struct ResolvedService {
     errors: BTreeSet<ErrorRef>,
     types: BTreeSet<DeclaredTypeRef>,
     /// Every type declared in a domain the component owns. Referenceable under
-    /// `ess-composition/2`; never serialised, so neither IR nor client-plan bytes move.
+    /// `ess-composition/2` and `/3`; never serialised, so neither IR nor client-plan bytes move.
     #[serde(skip)]
     declared_types: BTreeSet<DeclaredTypeRef>,
 }
@@ -644,7 +734,7 @@ impl ResolvedService {
     }
 
     /// Every type declared in a domain the selected component owns, whether or not the client
-    /// surface reaches it. `ess-composition/2` references and conformances may name these.
+    /// surface reaches it. `ess-composition/2` and `/3` references and conformances may name these.
     pub fn declared_types(&self) -> &BTreeSet<DeclaredTypeRef> {
         &self.declared_types
     }
@@ -702,7 +792,7 @@ impl EssCompositionIr {
         &self.references
     }
 
-    /// Every checked type conformance assertion (`ess-composition/2`).
+    /// Every checked type conformance assertion (`ess-composition/2` and `/3`).
     pub fn conformances(&self) -> &BTreeSet<TypeConformance> {
         &self.conformances
     }
@@ -1255,7 +1345,7 @@ pub fn compile<'a>(
         registry: &registry,
         declared_keys: &declared_keys,
         resolved: &resolved,
-        owner_declared: format == CONFORMANCE_COMPOSITION_FORMAT,
+        owner_declared: format != COMPOSITION_FORMAT,
     };
     let references = resolve_references(specification, &admission, &mut diagnostics);
     let conformances =
@@ -1282,13 +1372,14 @@ fn validate_format(
     let format = match specification.format.as_str() {
         COMPOSITION_FORMAT => COMPOSITION_FORMAT,
         CONFORMANCE_COMPOSITION_FORMAT => CONFORMANCE_COMPOSITION_FORMAT,
+        READER_COMPOSITION_FORMAT => READER_COMPOSITION_FORMAT,
         other => {
             diagnostics.push(CompositionDiagnostic::new(
                 CompositionCode::UnsupportedFormat,
                 None,
                 format!(
-                    "format {other:?} is unsupported; expected {COMPOSITION_FORMAT} or \
-                     {CONFORMANCE_COMPOSITION_FORMAT}"
+                    "format {other:?} is unsupported; expected {COMPOSITION_FORMAT}, \
+                     {CONFORMANCE_COMPOSITION_FORMAT} or {READER_COMPOSITION_FORMAT}"
                 ),
             ));
             return COMPOSITION_FORMAT;
@@ -1304,6 +1395,21 @@ fn validate_format(
             ),
         ));
     }
+    if format != READER_COMPOSITION_FORMAT
+        && specification
+            .conformances()
+            .iter()
+            .any(TypeConformance::reader_key)
+    {
+        diagnostics.push(CompositionDiagnostic::new(
+            CompositionCode::UnsupportedFormat,
+            None,
+            format!(
+                "`reader` on a conformance is an {READER_COMPOSITION_FORMAT} construct; \
+                 {format} does not admit it, whatever its value"
+            ),
+        ));
+    }
     format
 }
 
@@ -1312,7 +1418,7 @@ struct Admission<'a, 'ir> {
     registry: &'a BTreeMap<ServiceKey, &'ir EssIr>,
     declared_keys: &'a BTreeSet<ServiceKey>,
     resolved: &'a BTreeMap<ServiceKey, ResolvedService>,
-    /// Whether a type declared in an owned domain is referenceable (`ess-composition/2`).
+    /// Whether a type declared in an owned domain is referenceable (from `ess-composition/2`).
     owner_declared: bool,
 }
 

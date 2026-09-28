@@ -1,4 +1,4 @@
-//! `ess-composition/2` type conformance: a consumer's local type against an imported one.
+//! `ess-composition/2` and `/3` type conformance: a consumer's local type against an imported one.
 //!
 //! The comparison is structural, because the two ends live in different compiled models and share
 //! no handle. Two named types conform when they have the same kind and:
@@ -16,6 +16,17 @@
 //! names are not
 //! compared. A pair of named types already on the current path is taken as conforming, so recursive
 //! shapes terminate.
+//!
+//! A reader assertion (`reader: true`, `ess-composition/3`) admits what a consumer that only reads
+//! the imported type can also afford, because it rejects no value the imported type allows: an
+//! imported newtype read as what it wraps, through any chain; an imported enum read as `String`;
+//! enum variants compared by wire name, the local set including every imported one; a value that is
+//! always a JSON object (a struct, or a map with `String` keys) read as `Map<String, Json>`; and a
+//! subset of a struct's fields. An extra local field is matched by wire name against every imported
+//! field, omitted ones included, and compared as a reader when the keys meet; one that meets none
+//! must be `Optional` and not `null_when_absent`. Everything else is compared as above. The subset
+//! assumes a tolerant reader that ignores keys it does not declare; ESS-generated closed types do
+//! not, and that is the author's assertion, not something this comparison can see.
 
 use std::collections::BTreeSet;
 
@@ -23,7 +34,7 @@ use ess_compiler::ir::{ResolvedBody, ResolvedField, ResolvedType, ResolvedTypeRe
 use ess_compiler::refs::EssSemanticRef;
 use ess_compiler::EssIr;
 use ess_domain::name::QualifiedName;
-use ess_domain::types::{EnumVariant, Presence};
+use ess_domain::types::{EnumVariant, Presence, Primitive};
 
 use crate::{Admission, CompositionCode, CompositionDiagnostic, CompositionSpec, TypeConformance};
 
@@ -51,6 +62,7 @@ pub(crate) fn resolve_conformances(
         let mut comparison = Comparison {
             local: local_ir,
             imported: imported_ir,
+            reader: asserted.reader(),
             visiting: BTreeSet::new(),
             drifts: Vec::new(),
         };
@@ -83,6 +95,8 @@ pub(crate) fn resolve_conformances(
 struct Comparison<'ir> {
     local: &'ir EssIr,
     imported: &'ir EssIr,
+    /// A reader assertion (`ess-composition/3`): the widenings [`Comparison::widened`] names apply.
+    reader: bool,
     /// Named-type pairs on the current path, so a recursive shape terminates while a pair reached
     /// through two fields is compared, and reported, at each.
     visiting: BTreeSet<(QualifiedName, QualifiedName)>,
@@ -133,38 +147,106 @@ impl Comparison<'_> {
         }
     }
 
+    /// Two structs' fields, matched by name. A reader may omit an imported field, and may add one
+    /// the imported struct lacks when it is `Optional` and not `null_when_absent`.
+    fn structs(
+        &mut self,
+        path: &str,
+        (local, mine): (&QualifiedName, &[ResolvedField]),
+        (imported, theirs): (&QualifiedName, &[ResolvedField]),
+    ) {
+        for field in theirs {
+            let at = join(path, &field.name);
+            match mine.iter().find(|candidate| candidate.name == field.name) {
+                // A reader may leave out a field it does not read.
+                None if self.reader => {}
+                None => self.drifts.push(format!(
+                    "field `{at}`: `{imported}` declares it and `{local}` does not"
+                )),
+                Some(own) => {
+                    self.field_naming(&at, own, field, imported);
+                    self.references(&at, &own.type_ref, &field.type_ref);
+                }
+            }
+        }
+        for field in mine {
+            if theirs.iter().any(|candidate| candidate.name == field.name) {
+                continue;
+            }
+            let at = join(path, &field.name);
+            // A reader decodes by wire name: a local field that travels as a key the imported
+            // struct sends reads that field, whatever either end calls it, omitted or not.
+            if self.reader {
+                if let Some(sent) = theirs
+                    .iter()
+                    .find(|candidate| wire_name(candidate) == wire_name(field))
+                {
+                    self.field_naming(&at, field, sent, imported);
+                    self.references(&at, &field.type_ref, &sent.type_ref);
+                    continue;
+                }
+            }
+            let optional = matches!(field.type_ref, ResolvedTypeRef::Optional { .. });
+            if !(self.reader && optional) {
+                self.drifts.push(format!(
+                    "field `{at}`: `{local}` declares it and `{imported}` does not"
+                ));
+            } else if field.naming.presence == Some(Presence::NullWhenAbsent) {
+                // The imported type never sends the key; a reader that expects it always sent
+                // rejects every value.
+                self.drifts.push(format!(
+                    "field `{at}`: `{local}` reads it as {} and `{imported}` does not declare it",
+                    presence(field.naming.presence)
+                ));
+            }
+        }
+    }
+
+    /// A reader's enum against an imported one, by wire name: a reader that knows every wire name
+    /// the imported enum sends rejects none of its values, whatever it calls them.
+    fn wire_names(
+        &mut self,
+        path: &str,
+        (local, mine): (&QualifiedName, &[EnumVariant]),
+        (imported, theirs): (&QualifiedName, &[EnumVariant]),
+    ) {
+        let known: BTreeSet<_> = mine.iter().map(EnumVariant::wire).collect();
+        let unknown: BTreeSet<_> = theirs
+            .iter()
+            .map(EnumVariant::wire)
+            .filter(|wire| !known.contains(wire))
+            .map(str::to_owned)
+            .collect();
+        if !unknown.is_empty() {
+            self.drifts.push(format!(
+                "{}: `{local}` lacks wire names {} that `{imported}` sends",
+                at(path),
+                names(&unknown)
+            ));
+        }
+    }
+
     fn bodies(&mut self, path: &str, local: &ResolvedType, imported: &ResolvedType) {
         match (&local.body, &imported.body) {
             (
                 ResolvedBody::Struct { fields: mine, .. },
                 ResolvedBody::Struct { fields: theirs, .. },
-            ) => {
-                for field in theirs {
-                    let at = join(path, &field.name);
-                    match mine.iter().find(|candidate| candidate.name == field.name) {
-                        None => self.drifts.push(format!(
-                            "field `{at}`: `{}` declares it and `{}` does not",
-                            imported.name, local.name
-                        )),
-                        Some(own) => {
-                            self.field_naming(&at, own, field, &imported.name);
-                            self.references(&at, &own.type_ref, &field.type_ref);
-                        }
-                    }
-                }
-                for field in mine {
-                    if !theirs.iter().any(|candidate| candidate.name == field.name) {
-                        self.drifts.push(format!(
-                            "field `{}`: `{}` declares it and `{}` does not",
-                            join(path, &field.name),
-                            local.name,
-                            imported.name
-                        ));
-                    }
-                }
-            }
+            ) => self.structs(
+                path,
+                (&local.name, mine.as_slice()),
+                (&imported.name, theirs),
+            ),
             (ResolvedBody::Newtype { of: mine, .. }, ResolvedBody::Newtype { of: theirs, .. }) => {
                 self.references(path, mine, theirs);
+            }
+            (ResolvedBody::Enum { variants: mine }, ResolvedBody::Enum { variants: theirs })
+                if self.reader =>
+            {
+                self.wire_names(
+                    path,
+                    (&local.name, mine.as_slice()),
+                    (&imported.name, theirs),
+                );
             }
             (ResolvedBody::Enum { variants: mine }, ResolvedBody::Enum { variants: theirs }) => {
                 let mine: BTreeSet<_> = mine.iter().map(variant_spelling).collect();
@@ -235,6 +317,9 @@ impl Comparison<'_> {
                 ResolvedTypeRef::Primitive { name: mine },
                 ResolvedTypeRef::Primitive { name: theirs },
             ) if mine == theirs => {}
+            // A value that is always a JSON object is read by `Map<String, Json>`.
+            (local, imported)
+                if self.reader && reads_any_object(local) && self.object_shaped(imported) => {}
             (
                 ResolvedTypeRef::Map {
                     key: my_key,
@@ -251,6 +336,7 @@ impl Comparison<'_> {
             ) => {
                 self.named(path, mine.name(), theirs.name());
             }
+            _ if self.reader && self.widened(path, local, imported) => {}
             _ => self.drifts.push(format!(
                 "{}: `{}` where the imported type has `{}`",
                 at(path),
@@ -259,6 +345,74 @@ impl Comparison<'_> {
             )),
         }
     }
+
+    /// A reader's widening of `imported` into a `local` reference that is not a named type, or
+    /// `false` when none applies:
+    ///
+    /// * an imported newtype, through any chain, is read as what it wraps;
+    /// * an imported enum is read as `String`.
+    ///
+    /// `Json` is not widened: it may be an array or a scalar, which `Map<String, Json>` rejects.
+    /// A widening that applies but recurses into a drift records it and still returns `true`.
+    fn widened(&mut self, path: &str, local: &ResolvedTypeRef, imported: &ResolvedTypeRef) -> bool {
+        match imported {
+            ResolvedTypeRef::Declared { name } => {
+                let Some(declared) = self.imported.types().get(name.name()) else {
+                    return false;
+                };
+                match &declared.body {
+                    ResolvedBody::Newtype { of, .. } => {
+                        self.references(path, local, of);
+                        true
+                    }
+                    ResolvedBody::Enum { .. } => matches!(
+                        local,
+                        ResolvedTypeRef::Primitive {
+                            name: Primitive::String
+                        }
+                    ),
+                    ResolvedBody::Struct { .. } | ResolvedBody::Union { .. } => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether every value of the imported reference is a JSON object: a map with `String` keys,
+    /// or a struct, directly or through a chain of newtypes. `Json`, `Optional` (which may be
+    /// `null`), lists, enums and unions are not.
+    fn object_shaped(&self, imported: &ResolvedTypeRef) -> bool {
+        match imported {
+            ResolvedTypeRef::Map { key, .. } => *key == Primitive::String,
+            ResolvedTypeRef::Declared { name } => {
+                match self
+                    .imported
+                    .types()
+                    .get(name.name())
+                    .map(|found| &found.body)
+                {
+                    Some(ResolvedBody::Struct { .. }) => true,
+                    Some(ResolvedBody::Newtype { of, .. }) => self.object_shaped(of),
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+/// `Map<String, Json>`: the reader that accepts every JSON object.
+fn reads_any_object(local: &ResolvedTypeRef) -> bool {
+    matches!(
+        local,
+        ResolvedTypeRef::Map { key: Primitive::String, value }
+            if matches!(**value, ResolvedTypeRef::Primitive { name: Primitive::Json })
+    )
+}
+
+/// A field's key on the wire.
+fn wire_name(field: &ResolvedField) -> &str {
+    field.naming.wire.as_deref().unwrap_or(&field.name)
 }
 
 fn join(path: &str, name: &str) -> String {

@@ -1,7 +1,7 @@
 # A consumer names an owner's types, and proves its own copy matches
 
-beyond10x/ess#162. Composition format `ess-composition/2`; the source format (`ess/N`) and the
-suite formats do not move.
+beyond10x/ess#162. Composition format `ess-composition/2`; reader assertions (#191) are
+`ess-composition/3`. The source format (`ess/N`) and the suite formats do not move.
 
 ## The gap
 
@@ -73,10 +73,56 @@ to `owner` type `demo.owner.agentstatus.StatusView`: field `since`: `demo.owner.
 declares it and `demo.consumer.dashboard.RenamedStatus` does not; field `updated_at`: …
 ```
 
+## Reader assertions (`ess-composition/3`)
+
+beyond10x/ess#191. A consumer that mirrors an owner type only to read it off the wire differs from
+it in ways the rule above refuses and a reader can afford. In one consumer 14 of 15 mirrored types
+were refused for these differences alone. Under `ess-composition/3` a conformance entry may carry
+`reader: true`:
+
+```yaml
+format: ess-composition/3
+conformances:
+  - local: {service: consumer, type: demo.consumer.dashboard.StatusSummary}
+    conforms_to: {service: owner, type: demo.owner.agentstatus.StatusView}
+    reader: true
+```
+
+The test for every widening is one question: can the local type reject a value the imported type
+allows? If it cannot, the difference is admitted. If it can, it stays `type_conformance_drift`.
+
+| widening | admitted | still drift |
+|---|---|---|
+| newtype as its representation | an imported newtype, through any chain of newtypes, read as what the chain wraps (`CallRef` → `CallId` → `String` read as `String`) | a different primitive (`Uuid` for a newtype of `String`) |
+| enum as `String` | a required imported enum read as `String` or `Optional<String>`; an optional one as `Optional<String>` | an optional imported enum read as a required `String` |
+| variants by wire name | local wire names include every imported wire name; variant names and extra local variants do not matter | an imported wire name the local enum lacks |
+| object as a map | a value that is always a JSON object — a struct, or a map with `String` keys, directly or through newtypes — read as `Map<String, Json>` | `Json` read as any map, bare or through a newtype, `Optional`, `List` or `Map`: it may be an array or a scalar; a map whose value type is not `Json` |
+| field subset | a local struct that omits imported fields; an extra local field that shares its wire name with an imported field (omitted or renamed by `wire`) and reads it as a reader; an extra local field no imported field sends, when it is `Optional` and not `null_when_absent` | a local field required where the imported one is optional or absent; an extra local field that reads an imported wire key as another type; a `null_when_absent` local field the imported struct never sends |
+
+A reader decodes by wire name, so an extra local field is matched by wire name against every
+imported field, including the ones it omits, and compared with the reader rules when the keys meet.
+This holds inside union variant payloads too. Field wire names, the `presence` of fields that are
+optional at both ends, map keys, lists, unions and every rule not in the table are compared as
+without `reader`. Without `reader: true` nothing changes, under `/3` as under `/2`. The known limit
+above carries over: a local newtype's `alphabet` and `prefix` are still not compared.
+
+**Precondition.** A field subset holds only for a tolerant reader. `reader: true` also asserts that
+the consumer's reader ignores keys it does not declare; ESS-generated closed types
+(`additionalProperties: false`, `deny_unknown_fields`) do not, so a consumer reading through them
+must not use `reader` for a field subset. The comparison cannot see this; the author asserts it.
+
+**Departure from the issue.** #191 gives reading a JSON value as `Map<String, String>` as an
+example. `Json` read as any map is refused here, `Map<String, Json>` included, because a JSON value
+may be an array or a scalar; the issue's own rule — anything that could reject a producer value
+stays drift — decides it. Only a value that is always an object is read as `Map<String, Json>`.
+
 ## Compatibility
 
-- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2]`; `cargo xtask docs` reads it, so a new major
+- `SUPPORTED_COMPOSITION_FORMATS` is `[1, 2, 3]`; `cargo xtask docs` reads it, so a new major
   without a release row and a reference page is refused.
+- A `/1` or `/2` document whose conformance entry carries `reader`, whatever its value (`false` and
+  `null` included), is refused as `unsupported_format`, naming `/3`. `/3` keeps the key as written; an entry without it is
+  serialised without it, so a `/2` entry's authored and compiled bytes are unchanged.
 - A `/1` document carrying `conformances`, even `[]`, is refused as `unsupported_format`. `/1`
   documents compile exactly as before.
 - The compiled composition echoes the authored marker. A `/1` composition's compiled bytes do not
