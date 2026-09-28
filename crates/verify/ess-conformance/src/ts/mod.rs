@@ -173,6 +173,35 @@ scenario ends. `external` reports each external branch as `reached`, `unreached`
 `unarrangeable` (the target threw `unsupported` when asked to arrange it). An unarrangeable branch
 is not a disagreement and not `unreached`; `assertExplored` fails on it unless `allowExcluded` is
 set. `external` is absent when the specification declares no external branch.
+
+## Concurrent histories
+
+`exploreConcurrent` drives fresh targets from two to four clients at once and writes each run as
+an `ess-history/1` document, one per seed, into `out`. It does not judge them itself: it runs
+`ess verify conform check-history --path <path>` on each and reports the verdict, and for a
+violation the checker's report with its shrunk history. `ess` must be on `PATH`; without it the
+call throws `NO_ESS`, and nothing is skipped.
+
+```ts
+await test("concurrent histories", async () => {
+  const result = await exploreConcurrent(() => newTarget(), {
+    path: "../spec",
+    out: "concurrent-histories",
+    seeds: 200,
+  });
+  assertConcurrent(result);
+});
+```
+
+Concurrency is simulated: a seed draws the workload and picks, at every tick of a logical clock,
+which client invokes its next call or receives its answer, and each move is awaited before the
+next, so one seed writes one history, byte for byte, in TypeScript and in Go alike. A target with
+`invokeCommand` does part of a call's work at its invoke and the rest in `complete`; any other
+target does all of it at the return. A call that throws `indeterminate(...)` (or a `TimeoutError`) is
+written `Indeterminate` and counted; anything else thrown fails the exploration. A command that
+throws `unsupported` is left out, and `assertConcurrent` fails on it unless `{ allowExcluded: true }`
+accepts it. `clients` outside 2 to 4 is refused. `Unknown` fails `assertConcurrent` as a violation
+does.
 "#;
 
 /// Emit an immutable suite/5 input with all exact original ancestors.

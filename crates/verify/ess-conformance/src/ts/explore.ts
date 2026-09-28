@@ -34,8 +34,10 @@
 // over. It is read only after that digest matches, so a package whose two files came from different
 // specifications is refused rather than explored against the wrong model.
 
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { facts, fromNode, TruthFalse, TruthTrue, TruthUnknown } from './predicate.js';
 import type { FactSource, Predicate } from './predicate.js';
@@ -52,7 +54,7 @@ import {
   sortStrings,
   strictJSON,
 } from './runtime.js';
-import type { Answer, CommandResult, Node, Row, Target } from './runtime.js';
+import type { Answer, CommandRequest, CommandResult, Node, Row, Target } from './runtime.js';
 
 /** What one exploration is asked to do. */
 export interface ExploreOptions {
@@ -229,7 +231,7 @@ function nonEmpty(value: Node): boolean {
 // ---- input types --------------------------------------------------------------------------------
 
 type Kind =
-  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' }
+  | { kind: 'integer' | 'boolean' | 'string' | 'uuid' | 'decimal' }
   | { kind: 'enum'; variants: string[] }
   | { kind: 'struct'; fields: [string, Kind][] }
   | { kind: 'identity'; entity: string; base: Kind }
@@ -243,7 +245,13 @@ function identityOwner(ir: Node, type: string): string | null {
   return null;
 }
 
-function resolveKind(ir: Node, ref: Node, depth = 0): Kind {
+/**
+ * The kind of values an input of type `ref` is drawn from. With `concurrent` it also draws a `decimal`
+ * and a type whose values are constrained: concurrent exploration does not judge an answer by this
+ * model, `ess` does, so a drawn value outside the constraint is a question the target answers and the
+ * checker judges.
+ */
+function resolveKind(ir: Node, ref: Node, depth = 0, concurrent = false): Kind {
   if (depth > 32) return { kind: 'unsupported', why: 'nested too deeply' };
   if (ref?.kind === 'primitive') {
     switch (ref.name) {
@@ -252,6 +260,9 @@ function resolveKind(ir: Node, ref: Node, depth = 0): Kind {
       case 'string':
       case 'uuid':
         return { kind: ref.name };
+      case 'decimal':
+        if (concurrent) return { kind: ref.name };
+        return { kind: 'unsupported', why: `a \`${ref.name}\`` };
       default:
         return { kind: 'unsupported', why: `a \`${ref.name}\`` };
     }
@@ -259,13 +270,13 @@ function resolveKind(ir: Node, ref: Node, depth = 0): Kind {
   if (ref?.kind !== 'declared') return { kind: 'unsupported', why: `a \`${ref?.kind}\`` };
   const body = ir.types?.[ref.name]?.body;
   if (
-    list(body?.invariants).length > 0 ||
-    (body?.alphabet !== undefined && body?.alphabet !== null)
+    !concurrent &&
+    (list(body?.invariants).length > 0 || (body?.alphabet !== undefined && body?.alphabet !== null))
   ) {
     return { kind: 'unsupported', why: `\`${ref.name}\`, which constrains its values` };
   }
   if (body?.kind === 'newtype') {
-    const base = resolveKind(ir, body.of, depth + 1);
+    const base = resolveKind(ir, body.of, depth + 1, concurrent);
     if (base.kind === 'unsupported') return base;
     const owner = identityOwner(ir, ref.name);
     return owner === null ? base : { kind: 'identity', entity: owner, base };
@@ -281,7 +292,7 @@ function resolveKind(ir: Node, ref: Node, depth = 0): Kind {
   if (body?.kind === 'struct') {
     const fields: [string, Kind][] = [];
     for (const field of list(body.fields)) {
-      const kind = resolveKind(ir, field.type_ref, depth + 1);
+      const kind = resolveKind(ir, field.type_ref, depth + 1, concurrent);
       if (kind.kind === 'unsupported') return kind;
       fields.push([field.name, kind]);
     }
@@ -412,7 +423,11 @@ function effectRefusal(outcome: Node): string | null {
     : `outcome \`${outcome.name}\` ${subject.effect} its subject from \`${from}\``;
 }
 
-function plan(ir: Node): Plan {
+/**
+ * What exploration may call and read. With `concurrent` it resolves inputs as `resolveKind` does then
+ * and keeps a command no actor may invoke, which is then sent with no actor.
+ */
+function plan(ir: Node, concurrent = false): Plan {
   const excluded: Exclusion[] = [];
   const excludedCommands = new Set<string>();
   const declared = new Map<string, string[]>();
@@ -462,7 +477,7 @@ function plan(ir: Node): Plan {
     }
     const inputs: [string, Kind][] = [];
     for (const field of list(node.input)) {
-      const kind = resolveKind(ir, field.type_ref);
+      const kind = resolveKind(ir, field.type_ref, 0, concurrent);
       if (reason === null && kind.kind === 'unsupported') {
         reason = `input \`${field.name}\` is ${kind.why}`;
       }
@@ -476,7 +491,7 @@ function plan(ir: Node): Plan {
       if (typeof guard === 'string') reason = `the guard of \`${outcome.name}\`: ${guard}`;
       else guards.set(outcome.name, guard);
     }
-    const actor = actorFor.get(node.name);
+    const actor = actorFor.get(node.name) ?? (concurrent ? '' : undefined);
     if (reason === null && actor === undefined) reason = 'no actor may invoke it';
     if (reason !== null || actor === undefined) {
       excluded.push({ subject: node.name, reason: reason ?? 'no actor may invoke it' });
@@ -819,6 +834,7 @@ function drawValue(
       return drawValue(kind.base, rng, command, model, path, false, refs);
     }
     case 'integer':
+    case 'decimal':
       return rng.chance(0.7) ? rng.pick(command.pools.integers) : rng.int(-10, 10000);
     case 'boolean':
       return rng.chance(0.5);
@@ -1485,5 +1501,589 @@ export function assertExplored(result: ExploreResult, options: AssertOptions = {
   for (const note of result.undetermined) console.log(`explore: undetermined: ${note}`);
   for (const note of result.ambiguous) console.log(`explore: ambiguous: ${note}`);
   const problem = exploreProblem(result, options);
+  if (problem !== null) throw new Error(problem);
+}
+
+// ---- concurrent histories -----------------------------------------------------------------------
+//
+// `exploreConcurrent` drives the target from two to four clients at once and writes what each call
+// did as an `ess-history/1` document, one per seed. It does not decide whether a history is
+// linearizable: it runs `ess verify conform check-history` on each one and reports that verdict,
+// and for a violation the checker's report with its shrunk history. The checker, the model and the
+// shrinking exist once, in the `ess` binary that emitted this package, so `ess` must be on PATH;
+// without it concurrent exploration fails, and is never skipped.
+//
+// Nothing races on a wall clock or on the event loop. A seed draws the workload — a sequential
+// prefix of creations on client 0, then a list of calls per client — and a second generator,
+// SplitMix64 as `ess` records with, picks at every tick of a logical clock which client acts next:
+// one with no call in flight invokes its next call, or one with a call in flight receives its
+// answer. Each move is awaited before the next is drawn, so one seed writes one history, byte for
+// byte, and the Go port writes the same bytes.
+
+/** One call between its invoke and its return. */
+export interface PendingCommand {
+  /**
+   * The answer arriving. A throw that `isIndeterminate` recognises is a call whose outcome is
+   * unknown: it is written `Indeterminate`, because it may still have taken effect. An `unsupported`
+   * throw leaves the call out of the history and the command in `excluded`. Anything else thrown
+   * fails the exploration. A throw from `invokeCommand` is read the same way.
+   */
+  complete(): Answer<CommandResult>;
+}
+
+/**
+ * A target whose calls have an invoke and a return with other clients' calls in between. A target
+ * without `invokeCommand` does all of a call's work at its return instant, which is what an atomic
+ * call is.
+ */
+export interface InterleavedTarget extends Target {
+  invokeCommand(request: CommandRequest): Answer<PendingCommand>;
+}
+
+/** What one concurrent exploration is asked to do. */
+export interface ConcurrentOptions {
+  /** The specification `ess` checks each history against, as `--path` takes it. */
+  path?: string;
+  /** The directory each history is written into, as `history-<seed>.json`. */
+  out?: string;
+  /** Histories to record, seeded `1…seeds`. Default 200. */
+  seeds?: number;
+  /** Record exactly this one history, overriding `seeds`. */
+  seed?: number;
+  /** How many clients call at once, 2 to 4. Default: drawn from each seed. */
+  clients?: number;
+  /** How many calls each client makes after the prefix. Default 3. */
+  calls?: number;
+  /**
+   * Accept commands the target does not expose (it threw `unsupported`), whose calls are then not
+   * written to any history. An explicit, reviewable opt-out, as `assertExplored` has.
+   */
+  allowExcluded?: boolean;
+}
+
+/** The first history `ess` did not find linearizable. */
+export interface ConcurrentFailure {
+  seed: number;
+  /** `Violation` or `Unknown`. */
+  verdict: string;
+  /** The file it was written to, inside `out`. */
+  history: string;
+  /**
+   * What `ess verify conform check-history` printed: for a violation, the longest partial
+   * linearization and the shrunk history.
+   */
+  report: string;
+}
+
+/** What a concurrent exploration found. */
+export interface ConcurrentResult {
+  histories: number;
+  linearizable: number;
+  violations: number;
+  unknown: number;
+  /** The calls, across every history, that never answered and were written `Indeterminate`. */
+  indeterminate: number;
+  /**
+   * Every command the target threw `unsupported` for, and why, in the order found. The command is still
+   * drawn in every seed, so a seed's history does not depend on the seeds before it, but its calls
+   * are not written.
+   */
+  excluded: Exclusion[];
+  /** `allowExcluded` from the options, so `concurrentProblem` can read it. */
+  allowExcluded: boolean;
+  /** Each history's verdict, in seed order. */
+  verdicts: string[];
+  failure?: ConcurrentFailure;
+}
+
+/** The refusal when `ess` is not on PATH. */
+export const NO_ESS =
+  'explore: concurrent exploration checks every history with `ess verify conform check-history`, and `ess` is not on PATH';
+
+const INDETERMINATE = Symbol.for('ess.conformance.indeterminate');
+
+/**
+ * What a target throws, or names as the `cause` of what it throws, for a call whose outcome it cannot
+ * know: it timed out, or the connection dropped after the request left. The call is written
+ * `Indeterminate`, because it may still have taken effect. An error named `TimeoutError` (what
+ * `AbortSignal.timeout` rejects with) is read the same way. Anything else thrown fails the
+ * exploration: a call that failed is not a call that may have succeeded.
+ */
+export function indeterminate(reason: string): Error {
+  return Object.assign(new Error(reason), { [INDETERMINATE]: true });
+}
+
+/**
+ * True for an error `indeterminate` made, a `TimeoutError`, or one that holds either through its
+ * `cause` or, for an `AggregateError`, among its `errors`: the tree Go's `errors.Is` walks through
+ * `%w` and `errors.Join`.
+ */
+export function isIndeterminate(error: unknown): boolean {
+  const pending: unknown[] = [error];
+  for (let visited = 0; pending.length > 0 && visited < 256; visited += 1) {
+    const current = pending.shift();
+    if (current === null || typeof current !== 'object') continue;
+    if ((current as Record<symbol, unknown>)[INDETERMINATE] === true) return true;
+    if ((current as { name?: unknown }).name === 'TimeoutError') return true;
+    pending.push((current as { cause?: unknown }).cause);
+    const errors = (current as { errors?: unknown }).errors;
+    if (Array.isArray(errors)) pending.push(...errors);
+  }
+  return false;
+}
+
+export const DEFAULT_CONCURRENT_SEEDS = 200;
+const CONCURRENT_CALLS = 3;
+const CONCURRENT_PREFIX = 2;
+const UNDECLARED = '<undeclared>';
+const MASK_64 = (1n << 64n) - 1n;
+
+/** The generator that picks which client acts next, as `ess` records with. */
+export class SplitMix64 {
+  private state: bigint;
+
+  constructor(seed: number) {
+    this.state = BigInt(seed) & MASK_64;
+  }
+
+  next(): bigint {
+    this.state = (this.state + 0x9e3779b97f4a7c15n) & MASK_64;
+    let z = this.state;
+    z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & MASK_64;
+    z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & MASK_64;
+    return z ^ (z >> 31n);
+  }
+
+  below(bound: number): number {
+    return Number(this.next() % BigInt(bound));
+  }
+}
+
+interface Operation {
+  client: number;
+  command: string;
+  subjectKey: string;
+  invokedAt: number;
+  returnedAt?: number;
+  outcome?: string;
+  /** A call the target does not expose: it is not written. */
+  dropped?: boolean;
+}
+
+interface Flight {
+  pending: PendingCommand;
+  command: Command;
+  index: number;
+}
+
+interface Recording {
+  target: Target;
+  correlation: string;
+  clock: number;
+  operations: Operation[];
+  /** The calls written `Indeterminate`. */
+  indeterminate: number;
+  /** Every command the target threw `unsupported` for, with its reason, in the order found. */
+  unsupported: Exclusion[];
+}
+
+/** An identity as a subject key: its text, or empty when it is not text. */
+function subjectKey(value: Node): string {
+  return typeof value === 'string' ? value : '';
+}
+
+async function invokeCall(
+  h: Recording,
+  client: number,
+  command: Command,
+  step: Step,
+): Promise<Flight> {
+  const request: CommandRequest = {
+    command: command.name,
+    actor: command.actor,
+    input: step.input,
+    correlation: h.correlation,
+  };
+  let subject = '';
+  const supplied = suppliedOutcome(command);
+  if (supplied !== undefined) {
+    subject = subjectKey(readPath(step.input, String(supplied.subject?.instance?.field?.name)));
+  }
+  h.clock += 1;
+  const index = h.operations.length;
+  h.operations.push({ client, command: command.name, subjectKey: subject, invokedAt: h.clock });
+  const target = h.target as Partial<InterleavedTarget> & Target;
+  let pending: PendingCommand;
+  if (typeof target.invokeCommand === 'function') {
+    try {
+      pending = await target.invokeCommand(request);
+    } catch (error) {
+      // Classified where the answer would have arrived, exactly as a throw from `complete` is.
+      pending = {
+        complete: () => {
+          throw error;
+        },
+      };
+    }
+  } else {
+    pending = { complete: () => target.executeCommand(request) };
+  }
+  return { pending, command, index };
+}
+
+/**
+ * Writes the answer into the operation `flight` reserved, and returns the identity a creating
+ * branch published and its entity, or null.
+ */
+async function completeCall(
+  h: Recording,
+  flight: Flight,
+): Promise<{ id: string; entity: string } | null> {
+  let result: CommandResult;
+  try {
+    result = await flight.pending.complete();
+  } catch (error) {
+    h.clock += 1;
+    const operation = h.operations[flight.index] as Operation;
+    if (isUnsupported(error)) {
+      operation.dropped = true;
+      if (!h.unsupported.some((known) => known.subject === flight.command.name)) {
+        h.unsupported.push({
+          subject: flight.command.name,
+          reason: `the target does not expose it: ${errorText(error)}`,
+        });
+      }
+      return null;
+    }
+    if (isIndeterminate(error)) {
+      h.indeterminate += 1;
+      return null;
+    }
+    throw new Error(`\`${flight.command.name}\` failed: ${errorText(error)}`);
+  }
+  h.clock += 1;
+  const operation = h.operations[flight.index] as Operation;
+  const taken = result.outcome ?? '';
+  operation.returnedAt = h.clock;
+  operation.outcome = taken === '' ? UNDECLARED : taken;
+  for (const outcome of list(flight.command.node.outcomes)) {
+    if (String(outcome.name) !== taken) continue;
+    const subject = outcome.subject;
+    if (subject?.effect !== 'creates') return null;
+    const carrier = subject.instance?.event;
+    const field = subject.instance?.field?.name;
+    for (const event of result.directEvents ?? []) {
+      if (event.event !== carrier) continue;
+      const id = subjectKey(event.payload?.[field]);
+      if (id === '') return null;
+      if (operation.subjectKey === '') operation.subjectKey = id;
+      return { id, entity: String(subject.entity) };
+    }
+    return null;
+  }
+  return null;
+}
+
+function uuidOf(n: bigint): string {
+  return `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+}
+
+/** A JSON string as `ess` writes one: no HTML escaping. */
+function quote(text: string): string {
+  return goMarshal(text, false);
+}
+
+/** A JSON object of `members`, in the order given, each value already written. */
+function jsonObject(members: [string, string][]): string {
+  return `{${members.map(([key, value]) => `${quote(key)}:${value}`).join(',')}}`;
+}
+
+/**
+ * The history in the one spelling `ess` reads and writes: compact, keys in declaration order, an
+ * absent `returned_at` and `outcome` for a call that never answered.
+ */
+function historyText(
+  digest: string,
+  seed: number,
+  clients: number,
+  operations: Operation[],
+): string {
+  const written = operations
+    .filter((operation) => operation.dropped !== true)
+    .map((operation, index) => {
+      const members: [string, string][] = [
+        ['operation_id', quote(uuidOf(BigInt(index) + 1n))],
+        ['client', String(operation.client)],
+        ['command', quote(operation.command)],
+        ['subject_key', quote(operation.subjectKey)],
+        ['invoked_at', String(operation.invokedAt)],
+      ];
+      if (operation.returnedAt !== undefined && operation.outcome !== undefined) {
+        members.push(['returned_at', String(operation.returnedAt)]);
+        members.push(['completion', quote('Returned')]);
+        members.push(['outcome', quote(operation.outcome)]);
+      } else {
+        members.push(['completion', quote('Indeterminate')]);
+      }
+      return jsonObject(members);
+    });
+  return jsonObject([
+    ['format', quote('ess-history/1')],
+    ['history_id', quote(uuidOf(BigInt(seed) & 0xffffffffffffn))],
+    ['spec_digest', quote(digest)],
+    ['seed', String(seed)],
+    ['clients', String(clients)],
+    ['operations', `[${written.join(',')}]`],
+  ]);
+}
+
+/** Records the history `seed` names against a fresh target. */
+async function recordHistory(
+  p: Plan,
+  newTarget: () => Answer<Target>,
+  digest: string,
+  seed: number,
+  options: ConcurrentOptions,
+): Promise<[string, Recording]> {
+  const rng = new Mulberry32(seed);
+  const clients = options.clients || rng.int(2, 4);
+  const calls = options.calls || CONCURRENT_CALLS;
+  const target = await newTarget();
+  const scenario = {
+    scenario: `explore/concurrent/seed-${seed}`,
+    correlation: newHarness(p.system).correlation(),
+  };
+  await target.beginScenario(scenario);
+  try {
+    const h: Recording = {
+      target,
+      correlation: scenario.correlation,
+      clock: 0,
+      operations: [],
+      indeterminate: 0,
+      unsupported: [],
+    };
+    const model = new Model();
+
+    // The prefix: creations on client 0, one at a time, so the clients have subjects to share.
+    const creating = p.commands.filter((command) =>
+      list(command.node.outcomes).some((outcome: Node) => outcome.subject?.effect === 'creates'),
+    );
+    for (let index = 0; index < CONCURRENT_PREFIX && creating.length > 0; index += 1) {
+      const command = rng.pick(creating);
+      const step = draw(command, rng, model);
+      if (step === null) continue;
+      const created = await completeCall(h, await invokeCall(h, 0, command, step));
+      if (created !== null) model.of(created.entity).push({ id: created.id, fields: {} });
+    }
+
+    // The workload: each client's calls, drawn against the subjects the prefix created.
+    const workload: { command: Command; step: Step }[][] = [];
+    for (let client = 0; client < clients; client += 1) {
+      const own: { command: Command; step: Step }[] = [];
+      for (let call = 0; call < calls; call += 1) {
+        for (let attempt = 0; attempt < ATTEMPTS_PER_STEP; attempt += 1) {
+          const command = rng.pick(p.commands);
+          const step = draw(command, rng, model);
+          if (step !== null) {
+            own.push({ command, step });
+            break;
+          }
+        }
+      }
+      workload.push(own);
+    }
+
+    // The interleaving.
+    const schedule = new SplitMix64(seed);
+    const next = workload.map(() => 0);
+    const flying: (Flight | null)[] = workload.map(() => null);
+    for (;;) {
+      const enabled: number[] = [];
+      workload.forEach((own, client) => {
+        if (flying[client] !== null || (next[client] as number) < own.length) enabled.push(client);
+      });
+      if (enabled.length === 0) break;
+      const client = enabled[schedule.below(enabled.length)] as number;
+      const flight = flying[client] as Flight | null;
+      if (flight !== null) {
+        await completeCall(h, flight);
+        flying[client] = null;
+      } else {
+        const call = (workload[client] as { command: Command; step: Step }[])[
+          next[client] as number
+        ] as { command: Command; step: Step };
+        next[client] = (next[client] as number) + 1;
+        flying[client] = await invokeCall(h, client, call.command, call.step);
+      }
+    }
+    return [historyText(digest, seed, clients, h.operations), h];
+  } finally {
+    await target.endScenario(scenario);
+  }
+}
+
+/**
+ * Records one concurrent history per seed against a fresh target, writes each into `out`, and runs
+ * `ess verify conform check-history --path <path>` on it.
+ *
+ * Throws when `ess` is not on PATH (`NO_ESS`, before any target is made), when the model cannot be
+ * used, when a history cannot be written, and when `ess` refuses one: a history nobody could check
+ * is not a verdict. A violation or an unknown verdict is in the result.
+ */
+export async function exploreConcurrent(
+  newTarget: () => Answer<Target>,
+  options: ConcurrentOptions = {},
+): Promise<ConcurrentResult> {
+  const clients = options.clients ?? 0;
+  if (clients !== 0 && !(clients >= 2 && clients <= 4)) {
+    throw new Error(
+      `explore: \`Clients\` is ${clients}; concurrent exploration runs 2 to 4 clients, or draws how many from each seed when it is 0`,
+    );
+  }
+  if ((options.seeds ?? 0) < 0) {
+    throw new Error(
+      `explore: \`Seeds\` is ${String(options.seeds)}; concurrent exploration records at least one history, or 200 when it is 0`,
+    );
+  }
+  if ((options.seed ?? 0) < 0) {
+    throw new Error(
+      `explore: \`Seed\` is ${String(options.seed)}; a replayed seed is at least 1, or none when it is 0`,
+    );
+  }
+  if ((options.calls ?? 0) < 0) {
+    throw new Error(
+      `explore: \`Calls\` is ${String(options.calls)}; each client makes at least one call, or 3 when it is 0`,
+    );
+  }
+  if (spawnSync('ess', ['--version'], { encoding: 'utf8' }).error !== undefined) {
+    throw new Error(NO_ESS);
+  }
+  const path = options.path ?? '';
+  const out = options.out ?? '';
+  if (path === '') {
+    throw new Error(
+      'explore: concurrent exploration needs `Path`, the specification `ess` checks each history against',
+    );
+  }
+  if (out === '') {
+    throw new Error(
+      'explore: concurrent exploration needs `Out`, the directory each history is written into',
+    );
+  }
+  const ir = loadModel();
+  if (nonEmpty(ir.preconditions)) {
+    throw new Error(
+      "explore: concurrent exploration does not run the specification's preconditions, so it does not record against one that declares them",
+    );
+  }
+  const digest = String(strictJSON(packageFile('suite.json'))?.provenance?.spec_digest ?? '');
+  const p = plan(ir, true);
+  if (p.commands.length === 0) {
+    throw new Error(
+      'explore: the specification declares no command concurrent exploration can call',
+    );
+  }
+  try {
+    mkdirSync(out, { recursive: true });
+  } catch (error) {
+    throw new Error(`explore: cannot create ${out}: ${errorText(error)}`);
+  }
+  const seeds: number[] = [];
+  if (options.seed) seeds.push(options.seed);
+  else
+    for (let seed = 1; seed <= (options.seeds || DEFAULT_CONCURRENT_SEEDS); seed += 1)
+      seeds.push(seed);
+
+  const result: ConcurrentResult = {
+    histories: 0,
+    linearizable: 0,
+    violations: 0,
+    unknown: 0,
+    indeterminate: 0,
+    excluded: [],
+    allowExcluded: options.allowExcluded === true,
+    verdicts: [],
+  };
+  for (const seed of seeds) {
+    if (p.commands.length === 0) break;
+    let text: string;
+    let recording: Recording;
+    try {
+      [text, recording] = await recordHistory(p, newTarget, digest, seed, options);
+    } catch (error) {
+      throw new Error(`explore: seed ${seed}: ${errorText(error)}`);
+    }
+    result.indeterminate += recording.indeterminate;
+    for (const exclusion of recording.unsupported) {
+      if (!result.excluded.some((earlier) => earlier.subject === exclusion.subject))
+        result.excluded.push(exclusion);
+    }
+    const name = `history-${seed}.json`;
+    const file = join(out, name);
+    try {
+      writeFileSync(file, text);
+    } catch (error) {
+      throw new Error(`explore: cannot write ${file}: ${errorText(error)}`);
+    }
+    const check = spawnSync(
+      'ess',
+      ['verify', 'conform', 'check-history', '--path', path, '--history', file],
+      { encoding: 'utf8', maxBuffer: 1 << 30 },
+    );
+    if (check.error !== undefined) {
+      throw new Error(`explore: cannot run \`ess\`: ${check.error.message}`);
+    }
+    let verdict: string;
+    switch (check.status) {
+      case 0:
+        verdict = 'Linearizable';
+        result.linearizable += 1;
+        break;
+      case 1:
+        verdict = 'Violation';
+        result.violations += 1;
+        break;
+      case 3:
+        verdict = 'Unknown';
+        result.unknown += 1;
+        break;
+      default:
+        throw new Error(
+          `explore: \`ess verify conform check-history\` refused ${name} (exit ${String(check.status)}): ${check.stderr.trim()}`,
+        );
+    }
+    result.histories += 1;
+    result.verdicts.push(verdict);
+    if (verdict !== 'Linearizable' && result.failure === undefined) {
+      result.failure = { seed, verdict, history: name, report: check.stdout };
+    }
+  }
+  return result;
+}
+
+/** What `assertConcurrent` would fail with, or null when every history was linearizable. */
+export function concurrentProblem(result: ConcurrentResult): string | null {
+  const problems: string[] = [];
+  if (result.violations !== 0 || result.unknown !== 0) {
+    let message = `explore: ${result.violations} of ${result.histories} concurrent histories were violations and ${result.unknown} unknown`;
+    const failure = result.failure;
+    if (failure !== undefined) {
+      message += `\nseed ${failure.seed} (${failure.history}): ${failure.verdict}\n${failure.report.replace(/\n+$/, '')}`;
+    }
+    problems.push(message);
+  }
+  if (result.excluded.length > 0 && !result.allowExcluded) {
+    const lines = result.excluded.map((exclusion) => `  ${exclusion.subject}: ${exclusion.reason}`);
+    problems.push(
+      `explore: ${result.excluded.length} command(s) the target does not expose were left out of concurrent exploration:\n${lines.join('\n')}\naccept them explicitly with { allowExcluded: true }`,
+    );
+  }
+  return problems.length === 0 ? null : problems.join('\n');
+}
+
+/** Throws unless every concurrent history was linearizable. `Unknown` is never a pass. */
+export function assertConcurrent(result: ConcurrentResult): void {
+  const problem = concurrentProblem(result);
   if (problem !== null) throw new Error(problem);
 }
