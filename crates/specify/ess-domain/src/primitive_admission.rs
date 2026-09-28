@@ -477,6 +477,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     errors.extend(crate::command::validate_response_contracts(spec));
     errors.extend(crate::command::value_expression::validate(spec));
     errors.extend(crate::command::outcome_shapes::validate(spec));
+    errors.extend(crate::command::absent_input::validate(spec));
     let format = spec.system().format;
     for binding in spec.bindings().values() {
         if format.major() < 3
@@ -552,6 +553,7 @@ pub(crate) fn specification(spec: &Specification) -> ValidationErrors {
     for view in spec.views().values() {
         aggregate_view(view, format, &mut errors);
         errors.extend(view.absent_value_admission(format, &spec.system().types));
+        errors.extend(view.paging_admission(format));
         if let Some(members) = view.projected_fields(&spec.system().types) {
             fields(
                 members,

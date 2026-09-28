@@ -452,6 +452,12 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. } => {
                 return gap(format!("the guard over the subject's held state of `{at}`"));
             }
+            ResolvedCondition::InputAbsent => {
+                return gap(format!("the absent-input branch of `{at}`"));
+            }
+            ResolvedCondition::ExistingInstance => {
+                return gap(format!("the existing-instance branch of `{at}`"));
+            }
         }
         if !recorded && (outcome.replays.is_some() || outcome.retains_result) {
             return gap(format!("the retained result of `{at}`"));

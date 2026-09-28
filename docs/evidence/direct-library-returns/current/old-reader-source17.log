@@ -1,0 +1,2 @@
+$HOME/.cache/er-ess-release/ess/fixtures/direct-source.yaml was refused:
+  - direct-source.yaml: unknown field `returns`, expected one of `name`, `when`, `when_subject`, `when_subject_state`, `when_state_changes`, `external`, `wrong_state`, `unknown_instance`, `input_absent`, `existing_instance`, `refuses`, `creates`, `moves`, `updates`, `preserves`, `deletes`, `into`, `accepts`, `replays`, `instance`, `instances`, `affects`, `emits`, `payload`, `sets`, `error`, `summary`, `refs`

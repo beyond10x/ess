@@ -68,6 +68,11 @@
 //! is told — and giving it an event would turn it into a notification, which is a different policy
 //! that already has a name. Its accountability is a document someone signed, not a runtime fact.
 //!
+//! A `retry` may state a **bound** under `ess/16` — `retry: {attempts: 3, final: [<refusal>]}` —
+//! where the count is a constant in the sender's code rather than a deployment decision. Nothing
+//! new is published for it either: the bound is observed as the number of invocations. See
+//! [`retry`].
+//!
 //! # Where each rule runs
 //!
 //! [`BindingSpec::validate`] is everything a binding can be wrong about on its own — the shape of
@@ -147,7 +152,9 @@ use crate::types::{
 };
 
 pub mod periodic;
+pub mod retry;
 use periodic::PeriodicCause;
+use retry::RetryBound;
 
 /// The real cause of a binding; periodic work carries no fabricated event.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -374,7 +381,8 @@ impl std::fmt::Display for Failure {
 /// |---|---|
 /// | `retry`, `escalate`, `drop` | that policy, with nothing published |
 /// | `escalate:` with `emits:` under it | that policy, publishing that event |
-/// | `retry:`/`drop:` with a block | refused while the document is read: only `escalate` publishes |
+/// | `retry:` with `attempts:` and `final:` under it | a bounded retry ([`retry`], ess/16) |
+/// | `drop:` with a block, or `retry:` with a key it does not take | refused while the document is read |
 /// | two words under one `on_failure:` | refused while the document is read: a binding has one policy |
 /// | a word that is none of the three | refused while the document is read, naming the three |
 ///
@@ -388,6 +396,8 @@ pub struct RawFailure {
     pub failure: Failure,
     /// The event an escalation publishes, when the document named one.
     pub emits: Option<QualifiedName>,
+    /// The bound a `retry:` block states, when the document wrote one.
+    pub retry: Option<RetryBound>,
 }
 
 /// What an `escalate:` block says, as a document says it.
@@ -420,6 +430,7 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
                 Ok(RawFailure {
                     failure: policy_word(written)?,
                     emits: None,
+                    retry: None,
                 })
             }
 
@@ -427,12 +438,30 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                let Some((written, block)) = map.next_entry::<String, Option<RawEscalation>>()?
-                else {
+                let Some(written) = map.next_key::<String>()? else {
                     return Err(serde::de::Error::custom(
                         "`on_failure` says nothing; write `retry`, `drop`, or `escalate:` with \
                          `emits: <event>` under it",
                     ));
+                };
+                let failure = policy_word(&written)?;
+                // The word chooses the block's reader: `escalate:` names what it publishes, and
+                // `retry:` states its bound (ess/16). `drop` publishes nothing and makes one attempt,
+                // so it has nothing a block could say.
+                let (emits, retry) = match failure {
+                    Failure::Escalate => (
+                        map.next_value::<Option<RawEscalation>>()?
+                            .and_then(|escalation| escalation.emits),
+                        None,
+                    ),
+                    Failure::Retry => (None, Some(map.next_value::<RetryBound>()?)),
+                    Failure::Drop => {
+                        return Err(serde::de::Error::custom(format!(
+                            "`{written}` is written as a bare word — `on_failure: {written}`. \
+                             Only `escalate` and `retry` take a block: `escalate` names what it \
+                             publishes, and `retry` states its bound"
+                        )));
+                    }
                 };
                 if let Some((second, _)) = map.next_entry::<String, serde::de::IgnoredAny>()? {
                     return Err(serde::de::Error::custom(format!(
@@ -440,17 +469,10 @@ impl<'de> serde::Deserialize<'de> for RawFailure {
                          a command that does not run"
                     )));
                 }
-                let failure = policy_word(&written)?;
-                if failure != Failure::Escalate {
-                    return Err(serde::de::Error::custom(format!(
-                        "`{written}` is written as a bare word — `on_failure: {written}`. Only \
-                         `escalate` takes a block, because it is the only policy that publishes \
-                         anything"
-                    )));
-                }
                 Ok(RawFailure {
                     failure,
-                    emits: block.and_then(|escalation| escalation.emits),
+                    emits,
+                    retry,
                 })
             }
         }
@@ -481,19 +503,33 @@ impl schemars::JsonSchema for RawFailure {
             generator.subschema_for::<RawEscalation>(),
         );
         block.object().required.insert("escalate".to_owned());
-        // Only `escalate` takes a block; `retry:` and `drop:` with one are refused by the reader,
-        // and the published schema has to say the same thing or the two disagree.
+        // Only `escalate` and `retry` take a block; `drop:` with one is refused by the reader, and
+        // the published schema has to say the same thing or the two disagree.
         block.object().additional_properties =
+            Some(Box::new(schemars::schema::Schema::Bool(false)));
+
+        let mut bounded = schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Object.into()),
+            ..Default::default()
+        };
+        bounded
+            .object()
+            .properties
+            .insert("retry".to_owned(), generator.subschema_for::<RetryBound>());
+        bounded.object().required.insert("retry".to_owned());
+        bounded.object().additional_properties =
             Some(Box::new(schemars::schema::Schema::Bool(false)));
 
         let mut schema = schemars::schema::SchemaObject::default();
         schema.subschemas().one_of = Some(vec![
             generator.subschema_for::<Failure>(),
             schemars::schema::Schema::Object(block),
+            schemars::schema::Schema::Object(bounded),
         ]);
         schema.metadata().description = Some(
-            "What happens when the invoked command does not run: `retry`, `drop`, or an \
-             `escalate:` block naming the event the escalation emits."
+            "What happens when the invoked command does not run: `retry`, `drop`, an \
+             `escalate:` block naming the event the escalation emits, or a `retry:` block stating \
+             its attempts and final refusals (ess/16)."
                 .to_owned(),
         );
         schema.into()
@@ -841,6 +877,13 @@ pub struct BindingSpec {
     /// state change or an error; escalation named an effect outside the system and left the system
     /// with nothing to show for it, so a scenario could not assert that it happened.
     pub escalation: Option<QualifiedName>,
+    /// How many attempts a [`Failure::Retry`] makes and which refusals end it, when the document
+    /// states a bound (ess/16, [`retry`]).
+    ///
+    /// `None` is `on_failure: retry` with no count, which is what it always meant. Serialized only
+    /// when present, so a binding that states no bound keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<RetryBound>,
     /// What it is called on the wire, and what a person is shown.
     pub naming: Naming,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -863,6 +906,7 @@ impl BindingSpec {
         let prefix = MappingSource::EVENT_PREFIX;
 
         errors.extend(self.check_escalation());
+        errors.extend(retry::check_shape(self));
         errors.extend(self.check_periodic_cause());
 
         for (target, source) in &self.mapping {
@@ -1125,6 +1169,7 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             delivery: raw.delivery,
             failure: raw.on_failure.failure,
             escalation: raw.on_failure.emits,
+            retry: raw.on_failure.retry,
             naming: Naming {
                 summary: raw.naming.summary.or(raw.summary),
                 ..raw.naming
@@ -3008,8 +3053,8 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         let schema =
             serde_json::to_value(schemars::schema_for!(RawBindingSpec)).expect("serialises");
         let policy = &schema["definitions"]["BindingFailure"];
-        let spellings = policy["oneOf"].as_array().expect("two spellings");
-        assert_eq!(spellings.len(), 2, "{policy}");
+        let spellings = policy["oneOf"].as_array().expect("three spellings");
+        assert_eq!(spellings.len(), 3, "{policy}");
         assert_eq!(
             spellings[0]["$ref"],
             serde_json::json!("#/definitions/Failure"),
@@ -3023,7 +3068,18 @@ on_failure: {escalate: {emits: billing.email.DeliveryEscalated}}
         assert_eq!(
             spellings[1]["additionalProperties"],
             serde_json::json!(false),
-            "only `escalate` takes a block: {policy}"
+            "the escalation block takes nothing else: {policy}"
+        );
+        // The bounded retry (ess/16): the third spelling, closed like the second.
+        assert_eq!(
+            spellings[2]["required"],
+            serde_json::json!(["retry"]),
+            "{policy}"
+        );
+        assert_eq!(
+            spellings[2]["additionalProperties"],
+            serde_json::json!(false),
+            "the bound block takes nothing else: {policy}"
         );
     }
 

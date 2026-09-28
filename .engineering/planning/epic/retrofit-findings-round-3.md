@@ -2,9 +2,13 @@
 format: aep.planning-md/3
 id: epic:retrofit-findings-round-3
 kind: epic
-status: draft
+status: implemented
 title: 'Retrofit findings round 3: seventeen issues filed against 0.36.0'
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-28T07:46:00Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-09-28T07:46:00Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-28T07:46:01Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

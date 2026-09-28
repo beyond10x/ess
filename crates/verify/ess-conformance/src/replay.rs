@@ -375,6 +375,7 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
                 command: c,
                 actor,
                 input,
+                ..
             } => {
                 if !unchanged.is_empty() {
                     return Err("command interrupted retained subject comparison".into());
@@ -394,6 +395,19 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
                 invocation += 1;
                 queried = None;
                 arguments = Some((actor, input));
+            }
+            // An invocation with no input (suite/26) is an invocation: it cannot be a retry, which
+            // repeats the original request, and it ends whatever the previous one bound.
+            ScenarioStep::ExecuteCommandWithoutInput { .. } => {
+                if !unchanged.is_empty() || active.is_some() {
+                    return Err(
+                        "an invocation with no input interrupted a retained result comparison"
+                            .into(),
+                    );
+                }
+                invocation += 1;
+                queried = None;
+                arguments = None;
             }
             ScenarioStep::CaptureCommandResult { capture } => {
                 if active.is_some() || !unchanged.is_empty() {
@@ -455,6 +469,12 @@ fn validate_bindings(steps: &[ScenarioStep]) -> Result<(), String> {
                 command = Some(c);
                 outcome = None;
                 input = Some(args);
+            }
+            ScenarioStep::ExecuteCommandWithoutInput { command: c, .. } => {
+                invocation += 1;
+                command = Some(c);
+                outcome = None;
+                input = None;
             }
             ScenarioStep::ExpectOutcome { outcome: o } => outcome = Some(o),
             ScenarioStep::CaptureInstance {

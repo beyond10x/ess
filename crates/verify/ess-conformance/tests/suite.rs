@@ -170,6 +170,16 @@ fn invoice_created_shape() -> PayloadShape {
     shape
 }
 
+/// `CreateInvoice` sent with `amount`, as nobody in particular.
+fn create_invoice(handle: &CommandHandle, amount: i64) -> ScenarioStep {
+    ScenarioStep::ExecuteCommand {
+        command: CommandRef::from(handle),
+        actor: None,
+        caller: BTreeMap::new(),
+        input: create_invoice_input(amount),
+    }
+}
+
 fn worked_example(ir: &EssIr) -> ConformanceSuite {
     let mut suite = ConformanceSuite::new(SuiteProvenance::of(ir));
     let handle = command_handle(ir, "billing.invoice.CreateInvoice");
@@ -210,11 +220,7 @@ fn worked_example(ir: &EssIr) -> ConformanceSuite {
                 ScenarioPurpose::new("a positive amount is accepted, and says so by emitting")
                     .expect("one line"),
                 [
-                    ScenarioStep::ExecuteCommand {
-                        command: CommandRef::from(handle),
-                        actor: None,
-                        input: create_invoice_input(120),
-                    },
+                    create_invoice(handle, 120),
                     ScenarioStep::ExpectOutcome {
                         outcome: accepted.clone(),
                     },
@@ -245,11 +251,7 @@ fn worked_example(ir: &EssIr) -> ConformanceSuite {
                 ScenarioPurpose::new("a zero amount is refused, and nothing is created")
                     .expect("one line"),
                 [
-                    ScenarioStep::ExecuteCommand {
-                        command: CommandRef::from(handle),
-                        actor: None,
-                        input: create_invoice_input(0),
-                    },
+                    create_invoice(handle, 0),
                     ScenarioStep::ExpectOutcome {
                         outcome: rejected.clone(),
                     },

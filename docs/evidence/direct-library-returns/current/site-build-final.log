@@ -1,0 +1,40 @@
+task: [site-lab] cmp generated/web/billing/bridge.js website/src/pages/lab/_bridge.mjs
+task: [site-lab] node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_source.test.mjs
+the lab's copy of invoice.yaml: verbatim, 445 lines
+task: [site-lab] cargo build --release --target wasm32-unknown-unknown --manifest-path examples/billing-web/Cargo.toml
+    Finished `release` profile [optimized] target(s) in 0.75s
+task: [site-lab] mkdir -p website/static/lab
+task: [site-lab] cp examples/billing-web/target/wasm32-unknown-unknown/release/billing_web_realized.wasm website/static/lab/billing_web_realized.wasm
+task: [site-lab] node examples/billing-web/smoke.mjs generated/web/billing/bridge.js website/static/lab/billing_web_realized.wasm
+browser boundary: 21 claims held — catalogue, dispatch, transport, view, refusal, redelivery
+task: [site-lab] node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON website/src/pages/lab/_run.test.mjs
+the lab's run: 28 steps over 64 rows, deterministic, every highlight in range
+task: [site-build] npm --prefix website ci
+npm warn skipping integrity check for git dependency https://github.com/beyond10x/docs-system.git
+npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+
+added 1413 packages, and audited 1414 packages in 29s
+
+427 packages are looking for funding
+  run `npm fund` for details
+
+30 vulnerabilities (25 moderate, 5 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+npm warn install-scripts 2 packages had install scripts blocked because they are not covered by allowScripts:
+npm warn install-scripts   @swc/core@1.16.1 (postinstall: node postinstall.js)
+npm warn install-scripts   core-js@3.50.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+task: [site-build] npm --prefix website run build
+npm notice run website@0.0.0 build
+npm notice run docusaurus build
+[INFO] [en] Creating an optimized production build...
+[SUCCESS] Generated static files in "build".
+[INFO] Use `npm run serve` command to test your build locally.

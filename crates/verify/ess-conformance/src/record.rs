@@ -235,6 +235,7 @@ pub(crate) fn command_request(
     let request = SemanticCommandRequest {
         command: CommandRef::new(name),
         actor: None,
+        caller: None,
         input,
         correlation,
     };

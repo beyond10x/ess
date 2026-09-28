@@ -68,7 +68,9 @@ fn admitted(outcome: &Outcome, entity: &EntitySpec) -> Option<BTreeSet<StateName
         | OutcomeCondition::External { .. }
         | OutcomeCondition::ExternalWhen { .. }
         | OutcomeCondition::WrongState
-        | OutcomeCondition::UnknownInstance => None,
+        | OutcomeCondition::UnknownInstance
+        | OutcomeCondition::InputAbsent
+        | OutcomeCondition::ExistingInstance => None,
     }
 }
 
@@ -98,6 +100,8 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
             OutcomeCondition::External { .. }
                 | OutcomeCondition::ExternalWhen { .. }
                 | OutcomeCondition::UnknownInstance
+                | OutcomeCondition::InputAbsent
+                | OutcomeCondition::ExistingInstance
         ) {
             continue;
         }
@@ -193,7 +197,9 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 | OutcomeCondition::External { .. }
                 | OutcomeCondition::ExternalWhen { .. }
                 | OutcomeCondition::WrongState
-                | OutcomeCondition::UnknownInstance => {}
+                | OutcomeCondition::UnknownInstance
+                | OutcomeCondition::InputAbsent
+                | OutcomeCondition::ExistingInstance => {}
             }
         }
         errors.extend(validate_partition(command, entity, types));
@@ -218,6 +224,8 @@ fn validate_partition(
                         | OutcomeCondition::ExternalWhen { .. }
                         | OutcomeCondition::WrongState
                         | OutcomeCondition::UnknownInstance
+                        | OutcomeCondition::InputAbsent
+                        | OutcomeCondition::ExistingInstance
                 )
         })
         .collect();

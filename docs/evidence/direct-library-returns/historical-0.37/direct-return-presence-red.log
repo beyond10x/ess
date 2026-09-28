@@ -1,0 +1,24 @@
+   Compiling ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 0.59s
+     Running tests/direct_returns.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/direct_returns-02220fe4f762dc57)
+
+running 1 test
+test pure_return_nested_presence_is_preserved_and_checked ... FAILED
+
+failures:
+
+---- pure_return_nested_presence_is_preserved_and_checked stdout ----
+
+thread 'pure_return_nested_presence_is_preserved_and_checked' (2973280) panicked at crates/verify/ess-conformance/tests/direct_returns.rs:352:13:
+assertion `left == right` failed: null_when_absent: {"item": Map({"label": Text("nested"), "ordinal": Number(Number(Exact { units: 9007199254740993, scale: 0, binary: 9007199254740992.0 }))}), "sequence": Seq([Number(Number(Exact { units: 1, scale: 0, binary: 1.0 })), Number(Number(Exact { units: 2, scale: 0, binary: 2.0 })), Number(Number(Exact { units: 2, scale: 0, binary: 2.0 }))]), "value": Text("actual")}
+  left: true
+ right: false
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pure_return_nested_presence_is_preserved_and_checked
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p ess-conformance --test direct_returns`

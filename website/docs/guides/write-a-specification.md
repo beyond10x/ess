@@ -198,6 +198,12 @@ outcomes:
 A command with a precondition has at least two results. A specification recording only the happy one
 generates a suite that never checks the branch where the money does not move.
 
+Two guards may both hold of one input. A refusal with a `when:` over the input is taken before any
+accepting branch whose guard it overlaps, whatever order they are written in. With `closed: open ==
+false` and `id-required: ticket_id == ""`, the input `{ticket_id: "", open: false}` is refused as
+`id-required`, and the generated suite sends it and requires that. An accepting branch cannot read
+the identity to step aside, so this precedence is how such a command is written.
+
 ### An invariant reads only what every creation sets
 
 An entity invariant that reads a required field needs every `creates:` branch of that entity to set
@@ -395,10 +401,16 @@ absent value is unknown and selects no branch, so write `not defined(field)` to 
 
 Validation partitions closed enum fields jointly with the input, so two branches that split an enum
 need no default. An open comparison such as `weight_kg > 20` needs a genuine default, here
-`dispatched`. Declare an immediate, unfiltered view that projects the identity, `state` and every
-guarded field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg
-for the refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that
-view, and dispatches it. The older `when_subject: {field, equals}` form keeps `ess/6`.
+`dispatched`. Declare an unfiltered view that projects the identity, `state` and every guarded
+field: conformance arranges a parcel through `Create`'s `sets:` mappings — Express at 21 kg for the
+refusal, Express at 20 kg and Standard at 21 kg for the default — observes it through that view,
+and dispatches it. A `read_your_writes` view is read once; where the only such view is `eventual`,
+the observation goes in an `eventually` block that waits until the view shows the arranged parcel.
+A refused parcel is asserted unchanged only through a `read_your_writes` view: an `eventual` view
+that has not caught up shows the old row too, so without one that check is left out.
+In a state the command does not move from, no branch is selected by the stored fields, and the
+refusal scenario sends the command as it does for a command without `when_subject`. The older
+`when_subject: {field, equals}` form keeps `ess/6`.
 
 ### An outcome the input cannot decide says that too
 
@@ -514,6 +526,162 @@ before `wrong_state`. The suite checks it under its own outcome id, sending an i
 scenario sends and arranging nothing; the `wrong_state` branch keeps its scenarios in the states it
 answers. The generated seams carry its variant like any other outcome's, and the served surface
 answers a refusing one with `404`.
+
+### A request with no input can have its own outcome
+
+From `format: ess/16`, a command whose implementation answers a request that arrives with no body at
+all, before any field is validated, says so without making its fields `Optional`:
+
+```yaml
+- {name: body-missing, input_absent: true, error: demo.notes.BodyMissing}
+```
+
+`input_absent:` sits beside `wrong_state:` and `unknown_instance:`, at most once per command, on a
+command that takes input. It names an `error:` and takes no other condition, no effect and no
+`refuses:`. The command's fields keep their types, so every other branch keeps its contract. The
+suite checks it under its own outcome id with an `execute_command_without_input` step, which sends
+no input document at all and is not `execute_command` with `input: {}`; it requires the outcome,
+the error and that no declared event is published. A target that cannot send a request without a
+body reports that scenario `unsupported`. The `OpenAPI` projection marks the request body not
+required and documents the answer as `400`. Every generated code target (Rust, Go, Web, Clap) and
+Entity Runtime lowering refuse the branch by name.
+
+From `format: ess/16`, a guard that cannot hold because it needs a required input to be absent —
+`not defined(text)` or `missing(text)` where `text` is not `Optional`, or a conjunction with one —
+is refused as a type mismatch, with a hint naming `input_absent:`. A guard that can still hold
+another way, such as `any: [text == "x", missing(text)]`, is admitted.
+
+### An outcome can be selected by whether the record exists
+
+From `format: ess/16`, a command that addresses a record by an identity the caller supplies can say
+what it does when that record exists and when it does not. Two forms, both built on
+`unknown_instance:`.
+
+**Create or update** (`PUT` semantics). Mark the creating branch `unknown_instance: true`, beside the
+branch that updates or moves the record the same input names:
+
+```yaml
+- name: updated
+  updates: demo.items.Item
+  instance: item_id
+  emits: [demo.items.ItemStored]
+  payload:
+    demo.items.ItemStored: {item_id: input.item_id, label: input.label}
+  sets: {label: input.label}
+- name: created
+  unknown_instance: true
+  creates: demo.items.Item
+  instance: item_id
+  emits: [demo.items.ItemStored]
+  payload:
+    demo.items.ItemStored: {item_id: input.item_id, label: input.label}
+  sets: {label: input.label}
+```
+
+The creation is taken when no row carries the identity, and the update when one does. The creation
+must publish its identity from the same input field the updating branch reads as `instance:`, on the
+same entity; an identity `{generated: true}` is never one a caller names again, and is refused. The
+creating branch names no `error:` and no `refuses:`, and it is the command's one `unknown_instance:`
+branch. The pair is exhaustive, so the command is not refused as undetermined by its input.
+
+**Create or refuse.** Declare the refusal for an identity a record already carries beside the
+creation:
+
+```yaml
+- name: booked
+  creates: demo.items.Slot
+  instance: slot_id
+  emits: [demo.items.SlotBooked]
+  payload:
+    demo.items.SlotBooked: {slot_id: input.slot_id, label: input.label}
+- {name: already-booked, existing_instance: true, error: demo.items.SlotTaken}
+```
+
+`existing_instance:` is at most once per command, names an `error:` and takes no other condition, no
+effect and no `refuses:`. It needs a `creates:` whose identity comes from an input field — `input.f`,
+or an optional id written `{input: f, else: {generated: true}}` — and it
+cannot sit beside a branch that acts on the existing record (`moves:`, `updates:`, `deletes:`,
+`wrong_state:`) — that command is create-or-update instead.
+
+In both forms an input-guarded refusal (`when:` with an `error:`) is answered first: a request such
+a refusal claims is refused whether or not the record exists, and only the rest is answered by
+existence.
+
+The suite checks both with two calls that share one identity. For create-or-update, the creating
+branch is sent an identity no other scenario sends; the updating branch's scenario creates the record
+through the same command, sends the identity again with other values, and requires the update, the
+new values in the views and exactly one row for the identity. For create-or-refuse, the scenario
+creates the record through each creating branch, snapshots it, sends the identity again with other
+values, and requires the declared error, no event and the row unchanged. An input-guarded refusal
+beside either form is checked twice: for an identity nothing stored, and for one a record carries. No new suite step is used. The served surface answers
+`existing_instance:` with `409`. Every generated code target (Rust, Go, Web, Clap) refuses both forms
+by name, and Entity Runtime lowering refuses them with `ExistenceSelectionUnsupported`. Below
+`ess/16` both are refused with `unsupported_format_version`.
+A system precondition cannot invoke a command of either form, because which branch it takes depends
+on a record it cannot observe before it runs.
+
+### An outcome can change every record a filter selects
+
+From `format: ess/16`, a `moves:` or `updates:` outcome can act on every stored record a filter
+selects instead of the one an input names. Write `instances: {where: <predicate>}` in place of
+`instance:`:
+
+```yaml
+- name: ended
+  moves: demo.desk.Session.end
+  instances: {where: team == input.team}
+  emits: [demo.desk.TeamEnded]
+  payload:
+    demo.desk.TeamEnded: {team: input.team, ended: {count: changed}}
+  sets: {note: input.note}
+```
+
+The predicate is the stored-field grammar of `when_subject:`: the entity's fields, compared with
+literals or with the command's input as `input.<field>`. A `moves:` changes the selected records
+resting in the transition's `from` states and skips the others; no selected record at all is an
+accepted answer. `sets:` applies to every changed record and takes a literal, `input.<field>`,
+`{input: …, else: …}`, `{generated: true}` or `{cleared: true}`; a source reading one record
+(`{subject: …}`, `{related: …}`, `{increment: …}`) or the caller is refused by name.
+`{count: changed}` fills an `Integer` payload field with the number of records the outcome changed,
+and is refused anywhere but a `payload:` field of such an outcome. `instance:` beside `instances:`,
+and `instances:` on `creates:`, `deletes:` or `preserves:`, are refused. A set outcome accepts, and
+is selected by `when:` or as the default.
+
+An outcome with one existing subject can also change other records, with `affects:`:
+
+```yaml
+- name: invited
+  updates: demo.desk.Session
+  instance: session_id
+  emits: [demo.desk.Invited]
+  payload:
+    demo.desk.Invited: {session_id: input.session_id}
+  sets: {on_hold: false}
+  affects:
+    - entity: demo.desk.Session
+      where: team == subject.team
+      sets: {on_hold: true}
+```
+
+Each entry changes every record of `entity` its `where:` selects. `where:` reads that entity's
+fields, `input.<field>` and `subject.<field>` — the subject as it was before the outcome. Where
+`entity` is the subject's own, the subject itself is not among the records. `sets:` takes the
+sources `instances:` does; a move inside `affects:` is refused by name. `affects:` sits beside
+`moves:` or `updates:` with `instance:`, never beside `instances:`.
+
+The suite arranges, for each, three records the filter selects, one record per conjunct of the
+filter that fails only that conjunct (or one failing the whole filter), and — for a `moves:` — one
+it selects resting outside the transition's `from` states; runs the command; and reads every record
+back from an immediate, unfiltered view that publishes the identity, the state and every field the
+effect writes: the changed ones in their new state with what `sets:` wrote, the others as they
+were, and `{count: changed}` equal to the records changed. It then sends the command again with an
+input the filter selects no record by, and requires the same outcome, a count of 0 and no record
+changed. Where no such view exists the scenario is refused by name. A `sets:` entry writing the
+entity's identity is refused. No new
+suite step is used. Every generated code target (Rust, Go, Web, Clap) refuses both constructs by
+name, and Entity Runtime lowering refuses them with `SetEffectUnsupported`. Below `ess/16` both are
+refused with `unsupported_format_version`. Atomicity, partial failure and the order in which records
+change are not part of either.
 
 ### An outcome can delete its subject
 
@@ -654,6 +822,9 @@ the input or a literal:
 | `{subject: <field>}` | `payload:`, `sets:` | the outcome `moves:` or `updates:` an existing subject; `creates:` has no row before it |
 | `{increment: <number>}` | `sets:` | the target is a required `Integer` (a whole number) or `Decimal`; a negative number decrements |
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
+| `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
+| `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity |
+| `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 
@@ -667,8 +838,153 @@ arrangement wrote, the input the scenario sent. Where it did not, a payload fiel
 presence and type only, and a `sets:` target is not asserted on the row. Entity Runtime lowering
 refuses these sources.
 
+From source `ess/16` a fallback can be a literal instead of `{generated: true}`:
+
+```yaml
+sets:
+  tier: {input: tier, else: Standard}       # the caller's tier, or Standard when none is sent
+  rank: {input: rank, else: 3}
+```
+
+The literal is checked against the target exactly as a literal written there is: a variant of the
+enum, text for a String-backed type, `3` over an `Integer`, `'3'` rather than `3` over a `String`.
+Nothing else follows `else:` — not `input.<field>`, not `{subject: …}`. Below `ess/16` a literal
+fallback is refused with `unsupported_format_version`. The outcome's synthesized scenario checks
+both halves: it first sends the input and asserts the sent value, then invokes the branch again
+without the input and asserts the literal. An implementation that ignores the input fails the
+first check, and one that stores another default fails the second.
+
+From source `ess/16` a value can come from a field of the row the subject references:
+
+```yaml
+- name: dispatched
+  updates: demo.shipping.Shipment
+  instance: shipment_id
+  emits: [demo.shipping.ShipmentDispatched]
+  payload:
+    demo.shipping.ShipmentDispatched:
+      shipment_id: input.shipment_id
+      region: {related: {via: customer_id, field: region}}   # the region of the shipment's customer
+```
+
+`via` is a field of the subject as it was before the outcome (on `creates:`, a field the
+branch sets from its input), or `input.<field>`, and its type is the identity of the entity it
+names — exactly, not `Optional<…>` or a list. Where several entities share that identity type, the
+relation on the subject field says which one: a `references` relation of cardinality `one` that
+the subject declares on it, or the `owns` relation of the subject's owner; an input is settled by
+the relation on the field the branch sets from it. `field` is a field of that entity, typed as the
+target admits. One hop only. `{related: …}` is written alone and holds exactly `via` and `field`;
+any other mapping under `related` is a nested mapping, and below `ess/16` so is this one.
+
+The scenario creates the referenced row between two others of its entity, points the subject at
+it, and asserts that row's value, so an implementation that reads another row, the first or the
+last, fails. Where the specification has an `updates:` branch that changes the field read, the
+scenario runs it on the referenced row just before the branch and asserts the new value, so an
+implementation that copied the value earlier fails too. Below `ess/16` the source is refused with
+`unsupported_format_version`, and Entity Runtime lowering refuses it.
+
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
+
+### Read the caller's credential
+
+From source `ess/16` an actor may declare `attributes:`: typed fields its credential carries, such as
+the account it acts for. A command reads one as `{caller: <attribute>}` in `payload:` and `sets:`, and
+as `caller.<attribute>` in a guard, compared with an input field in `when:` or with a stored field in
+`when_subject:`:
+
+```yaml
+actors:
+  - name: demo.notes.AccountUser
+    attributes:
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: agent_id, type: demo.notes.AgentId}
+    may: [demo.notes.CreateNote, demo.notes.EditNote]
+commands:
+  - name: demo.notes.CreateNote
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: created
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {account_id: {caller: account_id}, agent_id: {caller: agent_id}, text: input.text}
+  - name: demo.notes.EditNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: text, type: String}
+    outcomes:
+      - name: forbidden
+        when_subject: {predicate: agent_id != caller.agent_id}   # not the note's agent
+        error: demo.notes.NotYourNote
+      - name: edited
+        updates: demo.notes.Note
+        instance: note_id
+        sets: {text: input.text}
+```
+
+The attribute is not an input: the credential is its authority, not the request. It is readable
+only where every actor whose `may` names the command declares it, at one type; a command whose
+actors disagree, or that no actor may invoke, is refused where it reads the attribute. A guard
+compares a caller attribute with `==` or `!=` against a field of the same declared type and nothing
+else. An input or a stored field named `caller` keeps being read as itself. Below `ess/16` actor
+attributes and a `caller.` operand are refused with `unsupported_format_version`, and
+`{caller: …}` is the nested mapping it always was.
+
+A refusal the caller decides answers `403` in the generated `OpenAPI` contract, and every operation
+names the caller attributes it reads under `x-ess-caller`. The conformance suite (suite/26) says
+which caller sends each command, and the target sends it authenticated as that caller; a target
+that cannot answers `unsupported`. Synthesis uses two callers: the refusal is sent by one caller on
+the other's note, and every scenario of a command that reads the caller runs a second time with the
+two callers' roles swapped, so an implementation that records one fixed account or admits one
+caller by name fails. Entity Runtime lowering refuses a caller read with `CallerUnsupported`.
+
+### An input refused when absent is present afterwards
+
+From source `ess/16`, an `Optional<T>` input reads as `T` in a branch that is only ever taken with
+the input present. There are two such branches:
+
+- the default branch, written with no `when:`, when a sibling refuses exactly the input's
+  absence with `error:` — `when: not defined(x)` or `when: missing(x)`;
+- a branch whose own guard requires the input: `when: defined(x)`, or an `all:` with it as a
+  member.
+
+```yaml
+commands:
+  - name: demo.notes.SubmitNote
+    input:
+      - {name: account_id, type: Optional<demo.notes.AccountId>}
+      - {name: text, type: String}
+    outcomes:
+      - name: account-missing
+        when: not defined(account_id)
+        error: demo.notes.AccountMissing
+      - name: submitted                       # the default: the account is present here
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {account_id: input.account_id, text: input.text}
+        emits: [demo.notes.NoteSubmitted]
+        payload:
+          demo.notes.NoteSubmitted: {note_id: {generated: true}, account_id: input.account_id, text: input.text}
+```
+
+`input.account_id` fills the required `account_id` fields with no `conversions:` entry. A
+conversion from `Optional<AccountId>` to `AccountId` would admit the same copy on every command,
+whether anything refuses the absence first or not. Narrowing does not depend on the order outcomes
+are declared in. It applies to `input.<x>` in `payload:`, in `sets:` and in a leaf of a nested
+mapping, and only to a top-level input.
+
+Nothing else narrows. A refusal of the absence *and* something else, such as
+`{all: ["not defined(x)", "kind == Draft"]}`, leaves some absent requests to the default branch. A
+sibling that succeeds when `x` is absent refuses nothing. A guarded branch other than the default can
+match a request the refusal also matches. That includes a branch written `when: true`: it is a
+guard that always holds, not the default, and a runtime that tries branches in declared order would
+take it before a refusal declared after it. Write the default with no `when:`.
+
+The synthesized suite checks the narrowing: the refusal's scenario sends no `account_id` and requires
+`account-missing`, and the success scenario sends one. Below `ess/16` the copy is refused as a
+`type_mismatch`, as it always has been.
+[Design](https://github.com/beyond10x/ess/blob/main/docs/design/optional-input-narrowing.md).
 
 ### A view declares its consistency
 
@@ -707,6 +1023,44 @@ still checks each of its fields against the source entity. Compiled IR carries b
 and the checked expansion; OpenAPI uses the handle as a real `$ref`, so the row schema is emitted
 once rather than copied per view.
 
+### A view can be paged
+
+A list endpoint that answers one page of its rows at a time declares `paging:` beside its
+`order_by:`. It needs `format: ess/16`.
+
+```yaml
+views:
+  - name: demo.jobs.JobList
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    params:
+      - {name: type, type: Optional<demo.jobs.JobType>}
+      - {name: page, type: Integer}
+      - {name: size, type: Integer}
+    filter: type == param.type
+    order_by: [job_id asc]
+    paging: {page: page, size: size, total: true}
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: type, type: demo.jobs.JobType}
+```
+
+`page` and `size` name two declared parameters, each `Integer`, a newtype of it or
+`Optional<Integer>`. A paged read answers `size` rows of the rows the filter admits, in `order_by:`
+order, starting at `page * size`; `first_page: 1` numbers pages from 1, so the first row is at
+`(page - 1) * size`. With `total: true` the answer also carries how many rows the filter admits. A
+read that sends neither parameter answers every row, in order. A filter may not read a paging
+parameter, and a view without `order_by:` cannot be paged: a slice of an unordered view names no
+particular rows. Below `ess/16`, `paging:` is refused with `unsupported_format_version`.
+
+The synthesized suite arranges four rows and reads two pages of one row, two pages of two rows,
+and one page larger than all of them, which must hold at least those rows: each page holds exactly
+its size, the total is at least the rows the scenario made, and the second page
+continues the first — ranked no earlier, and not the same row. Each claim holds on a target other
+users share. A free-form filter expression the caller supplies is not something `paging:` or
+`params:` can declare; a closed set of filter fields can still be declared one optional parameter
+at a time. [Design](https://github.com/beyond10x/ess/blob/main/docs/design/view-paging.md).
+
 ### Aggregate views
 
 A read API that reports counts, sums and extremes over one entity's rows is a view with `group_by:`
@@ -743,8 +1097,11 @@ that every row holds, so an `Optional` argument or group key is refused, and so 
 Conformance creates the rows itself, through the declared creating outcome, and asserts every
 group's exact numbers. Because a target may be shared, the rows are kept apart from every other
 scenario's by a group key or a parameter compared with one (`queue_id == param.queue_id`) that is a
-`String` or `Uuid` the creating command sets from its input. A view with neither gets no scenario
-and the refusal `ESS-SYNTH-016`.
+`String` or `Uuid` the creating command sets from its input. An ungrouped view with no parameter
+is over every row, including other scenarios' rows, so conformance reads it before creating its rows
+and asserts only how much each `count` and `sum` changed; its other aggregates are not asserted. A
+grouped view with neither, or an ungrouped one with no `count` or `sum`, gets no scenario and the
+refusal `ESS-SYNTH-016`.
 
 ### A binding says what happens when it fails
 
@@ -785,6 +1142,24 @@ invocation really is a single attempt — one HTTP call with no retry, or one wh
 reads — because a specification claiming the stronger guarantee is a claim the system does not
 keep. A conformance suite for an `at_most_once` binding contains no redelivery scenario, since
 redelivery is the thing that word says will not happen.
+
+### Bound a retry
+
+`on_failure: retry` says nothing about how often. Where the count is a constant in the sender's
+code rather than a deployment setting, state it (`format: ess/16`):
+
+```yaml
+on_failure:
+  retry: {attempts: 3, final: [demo.ledger.Unknown]}
+```
+
+`attempts` counts invocations including the first, and is at least 2 — one attempt is `drop`.
+`final` names refusals of the invoked command that end the retry at once: an outcome that carries
+`error:`, by name, or the error itself. Any other failure is retried up to the bound, and after the
+last attempt the event's effect is lost. The conformance suite forces a retried `external:` refusal
+on every attempt and requires exactly `attempts` invocations, and forces a final one once and
+requires exactly one. The generated Rust, Go and Web targets refuse a bounded retry by name,
+because their retry counts no attempts.
 
 ### Read a field inside an event envelope
 

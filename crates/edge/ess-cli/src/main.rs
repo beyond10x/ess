@@ -117,13 +117,13 @@ enum SpecifyCommand {
     },
     /// Compile exact component surfaces into composition IR and generated clients.
     Compose {
-        /// An `ess-composition/1` JSON or YAML document.
+        /// An `ess-composition/1` or `ess-composition/2` JSON or YAML document.
         #[arg(long)]
         path: PathBuf,
         /// A compiled ESS source, written `service-key=path`. Repeat for every import.
         #[arg(long = "service", value_name = "KEY=PATH", required = true)]
         services: Vec<ServiceInput>,
-        /// Where to write canonical `ess-composition/1` IR.
+        /// Where to write canonical composition IR; its format echoes the input's (`/1` or `/2`).
         #[arg(long)]
         out: Option<PathBuf>,
         /// Where to write canonical `ess-client-plan/1`.
@@ -3429,11 +3429,11 @@ fn conform_run(command: ConformCommand) -> Result<ExitCode> {
         ReferenceTarget::Billing | ReferenceTarget::OracleFixture => None,
     };
     let report = coverage::execute(&admitted, &report_format, || match target {
-        ReferenceTarget::Billing => ess_conformance::Runner::for_suite(suite)
+        ReferenceTarget::Billing => wall_clock_runner(suite)
             .run_admitted(&admitted, &ess_conformance::reference::Billing::new()),
-        ReferenceTarget::OracleFixture => ess_conformance::Runner::for_suite(suite)
+        ReferenceTarget::OracleFixture => wall_clock_runner(suite)
             .run_admitted(&admitted, &ess_conformance::reference::Oracle::new()),
-        ReferenceTarget::Interpreted => ess_conformance::Runner::for_suite(suite).run_admitted(
+        ReferenceTarget::Interpreted => wall_clock_runner(suite).run_admitted(
             &admitted,
             interpreted
                 .as_ref()
@@ -3473,6 +3473,37 @@ fn interpreter_for(
         );
     }
     Ok(Ok(ess_conformance::interpret::Interpreted::for_model(*ir)))
+}
+
+/// The machine's clock, in epoch milliseconds: the wall a `now_offset` is resolved against.
+fn machine_clock() -> ess_primitives::time::Timestamp {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis());
+    ess_primitives::time::Timestamp::from_epoch_millis(u64::try_from(millis).unwrap_or(u64::MAX))
+}
+
+/// The runner `ess verify conform run` executes a suite with: `Runner::for_suite`'s deterministic
+/// clock for budgets and durations, and the machine's clock as the wall a `now_offset` value is
+/// resolved against (beyond10x/ess#171, `docs/design/current-time-guards.md`). `ess-conformance`
+/// reads no clock of the machine's; the CLI, which runs against an implementation reading one,
+/// supplies it.
+fn wall_clock_runner(
+    suite: &ess_conformance::ConformanceSuite,
+) -> ess_conformance::Runner<
+    ess_conformance::now_offset::WithWall<
+        ess_conformance::AdvancingClock,
+        fn() -> ess_primitives::time::Timestamp,
+    >,
+> {
+    ess_conformance::Runner::new(
+        ess_conformance::RunnerConfig::default(),
+        ess_conformance::now_offset::WithWall::new(
+            ess_conformance::AdvancingClock::default(),
+            machine_clock as fn() -> ess_primitives::time::Timestamp,
+        ),
+        ess_conformance::Ids::for_suite(suite),
+    )
 }
 
 /// `ess verify conform mutate`, by the one of `--target`, `--emit` and `--collect` clap admitted.
@@ -3686,7 +3717,7 @@ fn fresh_legacy_run_suite(
             bail!("`{id}` is already in the suite");
         }
     }
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(ir);
     Ok(Some(ess_conformance::AdmittedSuite::from_suite(&suite)?))
 }
 
@@ -3830,7 +3861,7 @@ fn synthesize_suite(
         }
         return Ok(ExitCode::from(1));
     }
-    synthesis.suite.select_fresh_format();
+    synthesis.suite.select_fresh_format_for(&ir);
     let json = if compact {
         synthesis.suite.to_compact_json()?
     } else {
@@ -3927,7 +3958,7 @@ fn conform_web(
         println!("{refusal}");
     }
 
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(&ir);
     let artifacts = ess_conformance::web::emit(&ir, &suite)?;
     write_owned_artifacts(out, "conformance-browser", &artifacts)?;
     println!(
@@ -4000,7 +4031,7 @@ fn author_suite(
             bail!("`{id}` is already in the suite");
         }
     }
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(&ir);
     let json = suite.to_canonical_json()?;
     let written = match out {
         Some(out) => {
@@ -4018,14 +4049,25 @@ fn author_suite(
                 println!("{refusal}");
             }
             println!(
-                "{} authored scenario(s) from {} file(s), {} refusal(s), {written}",
+                "{} authored scenario(s) from {} file(s), {} refusal(s), suite {}, {written}",
                 suite.len(),
                 sources.len(),
                 authoring.refusals.len(),
+                suite.provenance.suite_version,
             );
         }
-        Format::Json => print!("{json}"),
-        Format::Yaml => render(&suite, Format::Yaml)?,
+        // Standard output is the document; a refused scenario is named on standard error, so an
+        // exit of 1 never arrives without saying which scenario did not compile or why.
+        Format::Json | Format::Yaml => {
+            for refusal in &authoring.refusals {
+                eprintln!("{refusal}");
+            }
+            if matches!(input.format, Format::Json) {
+                print!("{json}");
+            } else {
+                render(&suite, Format::Yaml)?;
+            }
+        }
     }
     Ok(if complete {
         ExitCode::SUCCESS
@@ -4539,6 +4581,31 @@ fn infra(command: InfraCommand) -> Result<ExitCode> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    /// The wall `conform run` resolves a `now_offset` against is the machine's clock, not the
+    /// runner's budget clock, which starts at 2023-11-14 (beyond10x/ess#171).
+    #[test]
+    fn conform_run_resolves_now_offsets_against_the_machine_clock() {
+        use ess_conformance::Clock as _;
+        let mut clock = ess_conformance::now_offset::WithWall::new(
+            ess_conformance::AdvancingClock::default(),
+            machine_clock as fn() -> ess_primitives::time::Timestamp,
+        );
+        let machine = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after the epoch")
+            .as_millis();
+        let wall = u128::from(clock.wall().epoch_millis());
+        assert!(
+            wall.abs_diff(machine) < 5_000,
+            "wall {wall} ms against the machine's {machine} ms"
+        );
+        assert_eq!(
+            clock.now().epoch_millis(),
+            ess_conformance::AdvancingClock::DEFAULT_START_MS,
+            "budgets keep the deterministic clock"
+        );
+    }
 
     /// `--class` offers exactly the library's classes, in its order, under its names.
     #[test]

@@ -228,7 +228,6 @@ fn adversary2_nested_input_guard_connective_mutants_are_all_killed() {
 /// witness search gives up after 64 candidates, so neither the branch nor either connective mutant
 /// gets a scenario.
 #[test]
-#[ignore = "story:witness-search-beyond-64-candidates: the witness search stops at 64 candidates for a guard over three inputs"]
 fn adversary2_a_three_input_nested_guard_is_witnessed_and_its_mutants_killed() {
     let text = CHECK.replace(
         "GUARD",

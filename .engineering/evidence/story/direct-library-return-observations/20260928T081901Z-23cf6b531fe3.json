@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T08:19:01Z",
+  "actor": "human:timo",
+  "artifact": "story:direct-library-return-observations",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "Touched tests, direct-return and compatibility regressions, ci-lint, xtask, MSRV1.85, site build and six corrected adversary probes passed",
+    "reference": "docs/evidence/direct-library-returns"
+  }
+}

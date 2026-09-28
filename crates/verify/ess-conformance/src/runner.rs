@@ -52,6 +52,8 @@
 //! that was never established — an unbound instance, a command result that does not exist — and a
 //! cascade of errors buries the one that matters.
 
+mod bounded_retry;
+
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -73,12 +75,15 @@ use crate::scenario::{
     ScenarioStep, ScenarioValue, ViewExpectation, ViewRef,
 };
 use crate::target::{
-    ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
+    AbsentInputRequest, ConformanceTarget, Deadline, ElapsedObservation, ElapsedObservationRequest,
     EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
     InvocationObservationRequest, ObservedEvent, OrderedScanRequest, RedeliveryRequest,
     ScenarioContext, SemanticCommandRequest, SemanticCommandResult, SemanticViewRequest,
     SemanticViewResult, TargetError, ViewRow,
 };
+
+mod page;
+use page::{page_of, PageRequired};
 
 // ---- the clock -------------------------------------------------------------------------------
 
@@ -104,6 +109,19 @@ use crate::target::{
 pub trait Clock {
     /// The current time, advanced by this read.
     fn now(&mut self) -> Timestamp;
+
+    /// The time the target's own clock is expected to read: what a `now_offset` value is resolved
+    /// against when a step first names it (beyond10x/ess#171, [`crate::now_offset`]).
+    ///
+    /// [`Self::now`] by default, which keeps a run a function of what was run: this crate reads no
+    /// clock of the machine's. But that is the runner's own measure of budgets and durations, and
+    /// [`AdvancingClock`] starts in 2023, while a guard over the current time is decided by the
+    /// implementation's clock. So a caller running a suite that carries `now_offset` values against
+    /// a target reading the machine's clock hands the runner that clock as its wall —
+    /// [`crate::now_offset::WithWall`] — and a test holding both sides fixed hands it a fixed one.
+    fn wall(&mut self) -> Timestamp {
+        self.now()
+    }
 }
 
 /// A clock that starts at a fixed instant and advances by a fixed step on every read.
@@ -460,6 +478,8 @@ impl<C: Clock> Runner<C> {
         run: &mut Run,
         target: &T,
     ) -> Flow {
+        let wall = &mut self.clock;
+        run.now.fix(step, || wall.wall());
         match step {
             ScenarioStep::ResolveFixtures { .. } | ScenarioStep::ExpectEventValues { .. } => {
                 fixture_step(step, run)
@@ -469,6 +489,9 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::ExpectReplayResult { capture } => retained_result(capture, false, run),
             ScenarioStep::ExpectResponsePayload { response } => {
                 expect_response_payload(response, run)
+            }
+            ScenarioStep::ExpectDirectResponse { response } => {
+                expect_direct_response(response, run)
             }
             ScenarioStep::CheckPeriodic { check } => check_periodic(check, run, target),
             ScenarioStep::ExpectReadingOrder { left, right, order } => {
@@ -481,14 +504,24 @@ impl<C: Clock> Runner<C> {
                 fields,
                 state,
             } => establish_entity(instance, entity, identity, fields, state, run, target),
-            ScenarioStep::ConfigureExternalOutcome { force } => {
+            ScenarioStep::ConfigureExternalOutcome { force, times: None } => {
                 configure_external(force, run, target)
             }
+            ScenarioStep::ConfigureExternalOutcome {
+                force,
+                times: Some(times),
+            } => bounded_retry::configure_repeated_external(force, *times, run, target),
             ScenarioStep::ExecuteCommand {
                 command,
                 actor,
+                caller,
                 input,
-            } => execute_command(command, actor.as_ref(), input, run, target),
+            } => execute_command(command, (actor.as_ref(), caller), input, run, target),
+            ScenarioStep::ExecuteCommandWithoutInput {
+                command,
+                actor,
+                caller,
+            } => execute_command_without_input(command, (actor.as_ref(), caller), run, target),
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
@@ -526,7 +559,14 @@ impl<C: Clock> Runner<C> {
                 binding,
                 command,
                 input,
+                count: None,
             } => self.expect_invocation(binding, command, input, run, target),
+            ScenarioStep::ExpectInvocation {
+                binding,
+                command,
+                input,
+                count: Some(count),
+            } => self.expect_invocation_count(binding, command, input, *count, run, target),
             ScenarioStep::QueryView { view, params } => self.query_view(view, params, run, target),
             ScenarioStep::ExpectView { view, expectation } => expect_view(view, expectation, run),
             ScenarioStep::EventuallyEvent {
@@ -924,7 +964,7 @@ impl<C: Clock> Runner<C> {
         let Ok(bound) = resolve_params(view, params, run) else {
             return Flow::Stop;
         };
-        let required = match Required::of(expectation, run) {
+        let required = match Required::of_view(view, expectation, run) {
             Ok(required) => required,
             Err(reason) => {
                 run.record(unresolvable(view, &run.id, &reason));
@@ -1101,7 +1141,7 @@ fn expect_reading_order<T: ConformanceTarget>(
 /// Invokes a command, with every reference the suite carries resolved first (§9).
 fn execute_command<T: ConformanceTarget>(
     command: &CommandRef,
-    actor: Option<&ActorRef>,
+    (actor, caller): (Option<&ActorRef>, &BTreeMap<String, Node>),
     input: &BTreeMap<String, ScenarioValue>,
     run: &mut Run,
     target: &T,
@@ -1129,6 +1169,7 @@ fn execute_command<T: ConformanceTarget>(
     let request = SemanticCommandRequest {
         command: command.clone(),
         actor: actor.cloned(),
+        caller: sent_as(caller),
         input: resolved.clone(),
         correlation: run.context.correlation.clone(),
     };
@@ -1147,6 +1188,50 @@ fn execute_command<T: ConformanceTarget>(
             run.record(target_failure(
                 &run.id,
                 &format!("invoking `{command}`"),
+                &error,
+            ));
+            Flow::Stop
+        }
+    }
+}
+
+/// The caller a command step is sent as (suite/26, [`crate::caller_values`]): `None` for a step
+/// that names none.
+fn sent_as(caller: &BTreeMap<String, Node>) -> Option<BTreeMap<String, Node>> {
+    (!caller.is_empty()).then(|| caller.clone())
+}
+
+/// Invokes a command with no input document at all (suite/26, `input_absent:`).
+///
+/// Everything after it reads its result exactly as after [`execute_command`]; the recorded input
+/// is empty, and quoted as `Command()`.
+fn execute_command_without_input<T: ConformanceTarget>(
+    command: &CommandRef,
+    (actor, caller): (Option<&ActorRef>, &BTreeMap<String, Node>),
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    let request = AbsentInputRequest {
+        command: command.clone(),
+        actor: actor.cloned(),
+        caller: sent_as(caller),
+        correlation: run.context.correlation.clone(),
+    };
+    match target.execute_command_without_input(request) {
+        Ok(result) => {
+            run.remember(&result.direct_events);
+            run.last_command = Some(Executed {
+                command: command.to_string(),
+                actor: actor.cloned(),
+                input: BTreeMap::new(),
+                result,
+            });
+            Flow::Continue
+        }
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                &format!("invoking `{command}` with no input"),
                 &error,
             ));
             Flow::Stop
@@ -1245,6 +1330,41 @@ fn expect_error(error: &ErrorRef, fields: &BTreeMap<String, Node>, run: &mut Run
 }
 
 /// Only the immediately preceding exact invocation supplies response authority.
+fn expect_direct_response(response: &crate::direct_response::Observation, run: &mut Run) -> Flow {
+    let result = (|| {
+        let executed = run
+            .last_command
+            .as_ref()
+            .ok_or("no preceding command".to_owned())?;
+        if executed.command != response.command.to_string()
+            || response
+                .outcome
+                .as_ref()
+                .is_some_and(|outcome| executed.result.outcome.as_ref() != Some(outcome))
+        {
+            return Err("direct response names a different command or outcome".to_owned());
+        }
+        if executed.result.error.is_some() {
+            return Err(
+                "command returned an error instead of the declared successful response".to_owned(),
+            );
+        }
+        response.compare(executed.result.response.as_ref())
+    })();
+    let about = format!("direct response {}", response.command);
+    match result {
+        Ok(()) => run.record(CheckResult::passed(CheckCode::Payload, about)),
+        Err(reason) => run.record(CheckResult::failed(
+            about,
+            Diagnostic::new(CheckCode::Payload, run.id.clone())
+                .declared_by(response.command.clone())
+                .expected("actual typed return satisfies its complete schema and authored literals")
+                .observed(reason),
+        )),
+    }
+    Flow::Continue
+}
+
 fn expect_response_payload(response: &crate::response::Observation, run: &mut Run) -> Flow {
     let result = (|| {
         let executed = run
@@ -1488,11 +1608,11 @@ fn expect_payload(
     // other two look like consequences of it.
     let mut wrong = Vec::new();
     for (field, expected) in values {
-        if carried.get(field) == Some(expected) {
+        if carried_at(carried, field) == Some(expected) {
             continue;
         }
         diagnostic = diagnostic.expected(format!("{event}.{field} = {}", quote(expected)));
-        wrong.push(match carried.get(field) {
+        wrong.push(match carried_at(carried, field) {
             Some(observed) => format!("{field} = {}", quote(observed)),
             None => format!("{field} was not carried"),
         });
@@ -1958,7 +2078,7 @@ fn expect_view(view: &ViewRef, expectation: &ViewExpectation, run: &mut Run) -> 
         ));
         return Flow::Continue;
     }
-    let required = match Required::of(expectation, run) {
+    let required = match Required::of_view(view, expectation, run) {
         Ok(required) => required,
         Err(reason) => {
             run.record(unresolvable(view, &run.id, &reason));
@@ -2345,6 +2465,8 @@ struct Run {
     /// The instants an earlier step named, so a window measured from an unmarked one is a suite
     /// defect rather than a measurement from whatever was in hand.
     marked: BTreeSet<InstantName>,
+    /// The instant each `now_offset` resolved to in this scenario (beyond10x/ess#171).
+    now: crate::now_offset::Resolved,
     seen: Vec<ObservedEvent>,
     checks: Vec<CheckResult>,
 }
@@ -2365,6 +2487,7 @@ impl Run {
             retained: BTreeMap::new(),
             established: Vec::new(),
             marked: BTreeSet::new(),
+            now: crate::now_offset::Resolved::default(),
             seen: Vec::new(),
             checks: Vec::new(),
         }
@@ -2400,6 +2523,7 @@ impl Run {
                 }
             }
             ScenarioValue::Literal { value } => Ok(value.clone()),
+            ScenarioValue::NowOffset { seconds } => self.now.get(*seconds),
             ScenarioValue::Instance { instance } => self
                 .instances
                 .get(instance)
@@ -2461,7 +2585,23 @@ impl Run {
 fn matches(payload: &BTreeMap<String, Node>, wanted: &BTreeMap<String, Node>) -> bool {
     wanted
         .iter()
-        .all(|(field, value)| payload.get(field) == Some(value))
+        .all(|(field, value)| match carried_at(payload, field) {
+            Some(carried) => carried == value,
+            // A leaf path finds nothing where the leaf, or a struct above it, was not written or
+            // is null: that is the leaf holding nothing, which is what a `null` asks about
+            // (suite/26, beyond10x/ess#179). A plain field name keeps exact comparison.
+            None => field.contains('.') && matches!(value, Node::Null),
+        })
+}
+
+/// The value a payload or row carries under `key`: a field name, or — suite/26 and later
+/// (beyond10x/ess#179) — the dotted path of one leaf inside a struct field. A field name holds no
+/// dot, so an older suite reads exactly as before.
+fn carried_at<'a>(payload: &'a BTreeMap<String, Node>, key: &str) -> Option<&'a Node> {
+    match reach_into(payload, key) {
+        Reached::Value(value) => Some(value),
+        Reached::Absent | Reached::Blocked { .. } => None,
+    }
 }
 
 /// The first field that does not carry what was required, rendered for a diagnostic.
@@ -2472,9 +2612,10 @@ fn mismatch(
 ) -> Option<String> {
     wanted
         .iter()
-        .find_map(|(field, value)| match payload.get(field) {
+        .find_map(|(field, value)| match carried_at(payload, field) {
             Some(observed) if observed == value => None,
             Some(observed) => Some(format!("{subject}.{field} = {}", quote(observed))),
+            None if field.contains('.') && matches!(value, Node::Null) => None,
             None => Some(format!("{subject} carried no field `{field}`")),
         })
 }
@@ -2550,6 +2691,68 @@ fn decide(required: &Required, result: &SemanticViewResult) -> Verdict {
         Required::At {
             position, fields, ..
         } => at(position, fields, result),
+        Required::ChangedBy {
+            before,
+            fields,
+            absent_is_zero,
+        } => changed_by(before, fields, absent_is_zero, result),
+        Required::Page(page) => page_of(page, result),
+    }
+}
+
+/// The view's one row moved by exactly the stated amounts since its snapshot (suite/26).
+///
+/// Both reads must hold one row, as an ungrouped aggregate view always does; either holding
+/// another number is the implementation contradicting the view's definition, not a change of any
+/// size. Every field that moved by another amount is named, with both values it was read at.
+///
+/// A field absent on either read reads as zero only when `absent_is_zero` lists it (a skipping
+/// `sum`). Any other field is `0` over no row, so its absence is the implementation contradicting
+/// the view, whatever the other read held.
+fn changed_by(
+    before: &[ViewRow],
+    fields: &BTreeMap<String, Node>,
+    absent_is_zero: &BTreeSet<String>,
+    result: &SemanticViewResult,
+) -> Verdict {
+    let ([earlier], [later]) = (before, result.rows.as_slice()) else {
+        return Verdict::Unsatisfied(format!(
+            "the snapshot held {} row(s) and this read {}; an ungrouped aggregate view holds one",
+            before.len(),
+            result.rows.len()
+        ));
+    };
+    let mut wrong = Vec::new();
+    for (field, expected) in fields {
+        let was = earlier.get(field).unwrap_or(&Node::Null);
+        let now = later.get(field).unwrap_or(&Node::Null);
+        if !absent_is_zero.contains(field) && (*was == Node::Null || *now == Node::Null) {
+            wrong.push(format!(
+                "`{field}` was read as {} and then {}; it is never absent: over no row it is 0",
+                quote(was),
+                quote(now)
+            ));
+            continue;
+        }
+        match crate::aggregate::change(was, now) {
+            Some(moved) if crate::aggregate::same_number(&moved, expected) == Some(true) => {}
+            Some(moved) => wrong.push(format!(
+                "`{field}` changed by {} ({} → {})",
+                quote(&moved),
+                quote(was),
+                quote(now)
+            )),
+            None => wrong.push(format!(
+                "`{field}` was read as {} and then {}, which are not both numbers",
+                quote(was),
+                quote(now)
+            )),
+        }
+    }
+    if wrong.is_empty() {
+        Verdict::Satisfied
+    } else {
+        Verdict::Unsatisfied(wrong.join("; "))
     }
 }
 
@@ -2688,9 +2891,48 @@ enum Required {
         /// What that row must match.
         fields: BTreeMap<String, Node>,
     },
+    /// The view's one row moved by these amounts since its snapshot (suite/26).
+    ChangedBy {
+        /// Every row the snapshot of this view captured.
+        before: Vec<ViewRow>,
+        /// The amount each named field must have changed by.
+        fields: BTreeMap<String, Node>,
+        /// The fields whose absent value reads as zero.
+        absent_is_zero: BTreeSet<String>,
+    },
+    /// The read was one page of a paged view (suite/26).
+    Page(PageRequired),
 }
 
 impl Required {
+    /// [`Self::of`], for an expectation of `view`: a change is resolved against the snapshot this
+    /// run took of that view, which only the view names.
+    fn of_view(view: &ViewRef, expectation: &ViewExpectation, run: &Run) -> Result<Self, String> {
+        if let ViewExpectation::Page { .. } = expectation {
+            return PageRequired::of(view, expectation, run).map(Self::Page);
+        }
+        let ViewExpectation::ChangedBy {
+            fields,
+            absent_is_zero,
+        } = expectation
+        else {
+            return Self::of(expectation, run);
+        };
+        if let Some(reason) = crate::aggregate_delta::defect(fields, absent_is_zero) {
+            return Err(reason);
+        }
+        let before = run
+            .view_snapshots
+            .get(view)
+            .cloned()
+            .ok_or_else(|| "no view snapshot preceded this change".to_owned())?;
+        Ok(Self::ChangedBy {
+            before,
+            fields: fields.clone(),
+            absent_is_zero: absent_is_zero.clone(),
+        })
+    }
+
     /// Resolves every reference an expectation carries against what this run has bound.
     fn of(expectation: &ViewExpectation, run: &Run) -> Result<Self, String> {
         let resolve = |fields: &BTreeMap<String, ScenarioValue>| {
@@ -2739,6 +2981,14 @@ impl Required {
                     position: position.clone(),
                     fields: resolve(fields)?,
                 }
+            }
+            // Read only through `of_view`, which knows whose snapshot it is.
+            ViewExpectation::ChangedBy { .. } => {
+                return Err("a change is read against a snapshot of the view it names".to_owned())
+            }
+            // Read only through `of_view`, which knows whose snapshot a continuation reads.
+            ViewExpectation::Page { .. } => {
+                return Err("a page is read against the view it names".to_owned())
             }
         })
     }
@@ -2889,6 +3139,15 @@ fn wanted(view: &ViewRef, required: &Required) -> String {
                 .join(", then ");
             format!("{view} holds its rows ordered by {keys}")
         }
+        Required::ChangedBy { fields, .. } => {
+            let amounts = fields
+                .iter()
+                .map(|(field, amount)| format!("`{field}` by {}", quote(amount)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{view}'s one row changed since its snapshot: {amounts}")
+        }
+        Required::Page(page) => page.wanted(view),
     }
 }
 
@@ -2927,8 +3186,9 @@ fn quote_row(row: &ViewRow) -> String {
 /// value is walked structurally — `total` holding `{amount, currency}` binds `total.amount` and
 /// `total.currency`.
 ///
-/// A sequence binds nothing, for the reason [`flatten`](crate::flatten) does not project a list: a
-/// fact path has no index, so `lines.0.quantity` is not a path this model can spell. A row that does
+/// A sequence binds nothing but its presence, for the reason [`flatten`](crate::flatten) does not
+/// project a list: a fact path has no index, so `lines.0.quantity` is not a path this model can
+/// spell. A mapping or a sequence is present at its own path (beyond10x/ess#176). A row that does
 /// not publish what a predicate reads makes that predicate `Unknown`, which
 /// [`decide`] reports rather than retries.
 fn row_facts(row: &ViewRow) -> FactStore {
@@ -2942,13 +3202,18 @@ fn row_facts(row: &ViewRow) -> FactStore {
 }
 
 /// Binds one scalar leaf, or walks into a mapping.
+///
+/// A mapping or a sequence is recorded as present at its own path, even when empty: that is what
+/// `defined()` over an `Optional` struct, list or map reads (beyond10x/ess#176). `null` is absent.
 fn bind(path: &FactPath, value: &Node, facts: &mut FactStore) {
     match value {
-        Node::Null | Node::Seq(_) => {}
+        Node::Null => {}
+        Node::Seq(_) => facts.mark_present(path.clone()),
         Node::Bool(flag) => facts.set(path.clone(), FactValue::bool(*flag)),
         Node::Number(number) => facts.set(path.clone(), FactValue::from(*number)),
         Node::Text(text) => facts.set(path.clone(), FactValue::text(text.clone())),
         Node::Map(entries) => {
+            facts.mark_present(path.clone());
             for (key, entry) in entries {
                 bind(&path.child(key), entry, facts);
             }

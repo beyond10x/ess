@@ -68,6 +68,7 @@ pub const PACKAGE: &str = "essconform";
 /// Deterministic: the same suite produces the same bytes, because every `.ts` file is a constant
 /// and the only file that moves is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
+    crate::direct_response::refuse_generation(suite, "TypeScript")?;
     let json = suite.to_canonical_json()?;
     let mut files = sources(RUNTIME_TS.to_owned());
     files.push(file("suite.json", json));
@@ -218,6 +219,7 @@ pub fn emit_input(
     input: &crate::coverage::AdmittedInput,
 ) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
+    crate::direct_response::refuse_generation(suite.suite(), "TypeScript")?;
     let mut files = sources(RUNTIME_TS.replace(SUITE_DOCUMENT, INPUT_DOCUMENT));
     files.push(file("suite.json", suite.original_json().into()));
     files.push(file("input.json", input.document().to_canonical_json()?));

@@ -50,6 +50,7 @@ use ess_primitives::error::{
 use ess_primitives::node::Node;
 use ess_primitives::predicate::Predicate;
 
+use crate::command::set_effects;
 use crate::name::{Naming, QualifiedName};
 #[cfg(test)]
 use crate::types::TypeBody;
@@ -946,7 +947,7 @@ pub(crate) fn validate_lifecycle_causes_after(
     refused: &crate::spec::Refused,
 ) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
-    let mut performed: BTreeSet<(&QualifiedName, &str)> = BTreeSet::new();
+    let mut performed: BTreeSet<_> = set_effects::performed(commands).collect();
 
     for command in commands.values() {
         for outcome in &command.outcomes {
@@ -2307,6 +2308,8 @@ lifecycle:
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: crate::command::SetEffects::default(),
                 summary: None,
                 refs: crate::refs::Refs::new(),
                 sets: BTreeMap::new(),

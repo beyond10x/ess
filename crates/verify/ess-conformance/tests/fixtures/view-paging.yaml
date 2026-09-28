@@ -1,0 +1,47 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.jobs
+summary: A job list the caller filters and pages (beyond10x/ess#174).
+types:
+  - {name: demo.jobs.JobId, kind: newtype, of: Uuid}
+  - {name: demo.jobs.JobType, kind: newtype, of: String}
+entities:
+  - name: demo.jobs.Job
+    identity: {name: job_id, type: demo.jobs.JobId}
+    fields:
+      - {name: type, type: demo.jobs.JobType}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - {name: demo.jobs.Clerk, may: [demo.jobs.CreateJob]}
+commands:
+  - name: demo.jobs.CreateJob
+    input:
+      - {name: type, type: demo.jobs.JobType}
+    outcomes:
+      - name: created
+        creates: demo.jobs.Job
+        instance: job_id
+        sets: {type: input.type}
+        emits: [demo.jobs.JobCreated]
+        payload:
+          demo.jobs.JobCreated: {job_id: {generated: true}, type: input.type}
+events:
+  - name: demo.jobs.JobCreated
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: type, type: demo.jobs.JobType}
+views:
+  - name: demo.jobs.JobList
+    source: demo.jobs.Job
+    consistency: read_your_writes
+    params:
+      - {name: type, type: Optional<demo.jobs.JobType>}
+      - {name: page, type: Integer}
+      - {name: size, type: Integer}
+    filter: type == param.type
+    order_by: [job_id asc]
+    paging: {page: page, size: size, total: true}
+    fields:
+      - {name: job_id, type: demo.jobs.JobId}
+      - {name: type, type: demo.jobs.JobType}

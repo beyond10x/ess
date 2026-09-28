@@ -63,10 +63,17 @@ func (t truth) not() truth {
 
 // factSource is a flattened row: a scalar per dotted path.
 //
+// A mapping or a sequence also holds `aggregatePresent{}` at its own path, even when it is empty:
+// what `defined()` over an Optional struct, list or map reads (beyond10x/ess#176). No value read
+// sees it — `readLeaf` treats it as unbound.
+//
 // A collection publishes its size as `<path>.count` and its elements as `<path>.0.…`, which is what
 // a quantifier counts through. Same convention the specification half uses, so a predicate written
 // against the model evaluates here without translation.
 type factSource map[string]Node
+
+// aggregatePresent marks a path holding a mapping or a sequence, which binds no scalar of its own.
+type aggregatePresent struct{}
 
 // facts flattens one row into the paths a predicate reads.
 func facts(row Row) factSource {
@@ -80,12 +87,14 @@ func facts(row Row) factSource {
 func bindFact(into factSource, path string, value Node) {
 	switch value := value.(type) {
 	case map[string]any:
+		into[path] = aggregatePresent{}
 		for key, nested := range value {
 			bindFact(into, path+"."+key, nested)
 		}
 	case []any:
 		// The size as well as the elements: a quantifier has no collection value to ask for a
 		// length, so the length is a fact like any other.
+		into[path] = aggregatePresent{}
 		into[path+".count"] = float64(len(value))
 		for index, nested := range value {
 			bindFact(into, fmt.Sprintf("%s.%d", path, index), nested)
@@ -640,8 +649,7 @@ func (p predicate) evaluate(source factSource) truth {
 		}
 		return truthOf(isTruthy(value))
 	case "defined":
-		_, ok := readLeaf(source, p.path)
-		return truthOf(ok)
+		return truthOf(present(source, p.path))
 	case "any_of", "none_of":
 		value, ok := readLeaf(source, p.path)
 		if !ok {
@@ -827,6 +835,9 @@ func (o operand) resolve(source factSource) (Node, bool) {
 // Unknown.
 func readLeaf(source factSource, path string) (Node, bool) {
 	if value, ok := source[path]; ok {
+		if _, aggregate := value.(aggregatePresent); aggregate {
+			return nil, false
+		}
 		return value, true
 	}
 	parent, last, found := cutLast(path)
@@ -837,6 +848,17 @@ func readLeaf(source factSource, path string) (Node, bool) {
 		return float64(utf8.RuneCountInString(text)), true
 	}
 	return nil, false
+}
+
+// present is what `defined()` reads, the rule every evaluator lane shares (beyond10x/ess#176): a
+// bound scalar, a text's derived length, or a mapping or sequence — present even when empty — is
+// present; `null` and a path nothing binds are absent.
+func present(source factSource, path string) bool {
+	if value, ok := source[path]; ok {
+		return value != nil
+	}
+	_, ok := readLeaf(source, path)
+	return ok
 }
 
 // cutLast splits a dotted path at its last dot.

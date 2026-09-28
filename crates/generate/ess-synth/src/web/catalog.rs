@@ -354,7 +354,7 @@ fn bindings(bridge: &Bridge<'_>) -> Value {
     for binding in bridge.ir.bindings().values() {
         let source = binding.name.to_string();
         let (failure, escalation) = match binding.on_failure() {
-            ResolvedFailure::Retry => ("retry", None),
+            ResolvedFailure::Retry | ResolvedFailure::BoundedRetry { .. } => ("retry", None),
             ResolvedFailure::Drop => ("drop", None),
             ResolvedFailure::Escalate { emits } => ("escalate", Some(emits.to_string())),
         };

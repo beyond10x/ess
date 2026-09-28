@@ -215,7 +215,7 @@ impl ConformanceTarget for Tombstones {
                 .collect(),
             other => panic!("unexpected view {other}"),
         };
-        Ok(SemanticViewResult { rows })
+        Ok(SemanticViewResult { rows, total: None })
     }
 }
 
@@ -379,6 +379,7 @@ impl ConformanceTarget for Queues {
                     ])
                 })
                 .collect(),
+            total: None,
         })
     }
 }
@@ -530,6 +531,7 @@ impl ConformanceTarget for Sessions {
                     ])
                 })
                 .collect(),
+            total: None,
         })
     }
 }

@@ -1,0 +1,64 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.notes
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: text, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - {name: demo.notes.Service, may: [demo.notes.SubmitNote, demo.notes.RewordNote]}
+errors:
+  - name: demo.notes.BodyMissing
+    summary: The request carried no body.
+    fields: []
+commands:
+  - name: demo.notes.SubmitNote
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: body-missing
+        input_absent: true
+        error: demo.notes.BodyMissing
+      - name: submitted
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {text: input.text}
+        emits: [demo.notes.NoteSubmitted]
+        payload:
+          demo.notes.NoteSubmitted: {note_id: {generated: true}}
+  - name: demo.notes.RewordNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: text, type: String}
+    outcomes:
+      - name: reworded
+        updates: demo.notes.Note
+        instance: note_id
+        sets: {text: input.text}
+        emits: [demo.notes.NoteReworded]
+        payload:
+          demo.notes.NoteReworded: {note_id: input.note_id}
+events:
+  - name: demo.notes.NoteSubmitted
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+  - name: demo.notes.NoteReworded
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+views:
+  - name: demo.notes.NoteDetails
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+components:
+  - component: notes-service
+    owns: {domains: [demo.notes]}
+    accepts: {commands: [demo.notes.SubmitNote, demo.notes.RewordNote]}
+    publishes: {events: [demo.notes.NoteSubmitted, demo.notes.NoteReworded]}
+    reached_by: network

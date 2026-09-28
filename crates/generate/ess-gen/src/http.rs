@@ -80,6 +80,16 @@ pub const CONFLICT: &str = "409";
 /// (`unknown_instance:`, ess/15).
 pub const NOT_FOUND: &str = "404";
 
+/// The request carried no input at all, and the command declares that answer (`input_absent:`,
+/// ess/16). A `400` and not a `422`: nothing was there to understand, which is the request the
+/// server could not read rather than one it refused on domain grounds.
+pub const NO_INPUT: &str = "400";
+
+/// The caller is not one the branch admits: its guard compares the authenticated caller with the
+/// input or the record (`caller.<attribute>`, ess/16). A `403` and not a `409` or a `422`: the
+/// request and the record are fine, and the same request from the record's own agent is accepted.
+pub const FORBIDDEN: &str = "403";
+
 /// Which status one declared outcome is.
 ///
 /// The whole mapping, in one place, so that "which HTTP status does this refusal get" has exactly
@@ -87,6 +97,8 @@ pub const NOT_FOUND: &str = "404";
 /// statuses were computed separately would agree on the day it was written.
 pub fn status(outcome: &ResolvedOutcome) -> &'static str {
     match (&outcome.condition, outcome.error.is_some()) {
+        // First: who sent it decided the refusal, whatever else the guard reads.
+        (_, true) if outcome.decided_by_caller => FORBIDDEN,
         (ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }, true) => {
             UPSTREAM
         }
@@ -98,15 +110,97 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             | ResolvedCondition::SubjectState { .. }
             | ResolvedCondition::SubjectField { .. }
             | ResolvedCondition::SubjectPredicate { .. }
-            | ResolvedCondition::StateChange { .. },
+            | ResolvedCondition::StateChange { .. }
+            // A duplicate of a record that exists conflicts with that record (ess/16).
+            | ResolvedCondition::ExistingInstance,
             true,
         ) => CONFLICT,
         (ResolvedCondition::UnknownInstance, true) => NOT_FOUND,
+        (ResolvedCondition::InputAbsent, true) => NO_INPUT,
         (ResolvedCondition::When { .. } | ResolvedCondition::Otherwise, true) => REFUSED,
         // An external branch that emits rather than errors is still a branch that was taken; what
         // decided it does not change what happened.
         (_, false) => TAKEN,
     }
+}
+
+/// The caller attributes a command reads (ess/16, beyond10x/ess#168), each once, in name order:
+/// every `{caller: <attribute>}` of its values and every `caller.<attribute>` of its guards.
+///
+/// What a request has to be authenticated as for the command to mean what the specification says,
+/// which the input does not carry and a reader of the contract cannot otherwise see.
+pub fn caller_attributes(ir: &EssIr, command: &ess_compiler::ir::ResolvedCommand) -> Vec<String> {
+    use ess_compiler::ir::ResolvedPayloadValue;
+    use ess_domain::command::caller_value::CALLER_NAMESPACE;
+
+    fn values(value: &ResolvedPayloadValue, found: &mut std::collections::BTreeSet<String>) {
+        match value {
+            ResolvedPayloadValue::CallerAttribute { attribute, .. } => {
+                found.insert(attribute.clone());
+            }
+            ResolvedPayloadValue::Struct { fields } => {
+                for leaf in fields {
+                    values(&leaf.value, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = std::collections::BTreeSet::new();
+    let mut guard = |predicate: &ess_primitives::predicate::Predicate,
+                     roots: &[ess_compiler::ir::ResolvedField]| {
+        if roots.iter().any(|field| field.name == CALLER_NAMESPACE) {
+            return;
+        }
+        for path in predicate.fact_paths() {
+            if path.namespace() == CALLER_NAMESPACE && path.segments().len() == 2 {
+                found.insert(path.segments()[1].clone());
+            }
+        }
+    };
+    for outcome in &command.outcomes {
+        match &outcome.condition {
+            ResolvedCondition::When { predicate }
+            | ResolvedCondition::ExternalWhen { predicate, .. } => {
+                guard(predicate, &command.input);
+            }
+            ResolvedCondition::SubjectField {
+                predicate: Some(predicate),
+                ..
+            }
+            | ResolvedCondition::SubjectState {
+                predicate: Some(predicate),
+                ..
+            }
+            | ResolvedCondition::StateChange {
+                predicate: Some(predicate),
+                ..
+            } => guard(predicate, &command.input),
+            ResolvedCondition::SubjectPredicate { predicate, input } => {
+                if let Some(input) = input {
+                    guard(input, &command.input);
+                }
+                let stored = command
+                    .selection_subject(outcome)
+                    .map(|subject| ir.entity(&subject.entity).fields.clone())
+                    .unwrap_or_default();
+                guard(predicate, &stored);
+            }
+            _ => {}
+        }
+    }
+    let mut read = found;
+    for outcome in &command.outcomes {
+        for field in outcome
+            .payload
+            .iter()
+            .flat_map(|payload| &payload.fields)
+            .chain(&outcome.sets)
+        {
+            values(&field.value, &mut read);
+        }
+    }
+    read.into_iter().collect()
 }
 
 /// The two methods this surface uses, and no others.

@@ -1,0 +1,78 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.queue
+summary: A queue that holds its metrics only while it is paused.
+types:
+  - {name: demo.queue.QueueId, kind: newtype, of: Uuid}
+  - name: demo.queue.Metrics
+    kind: struct
+    fields:
+      - {name: waiting, type: Integer}
+entities:
+  - name: demo.queue.Queue
+    identity: {name: queue_id, type: demo.queue.QueueId}
+    fields:
+      - {name: metrics, type: Optional<demo.queue.Metrics>}
+    invariants:
+      - any: [state == Paused, {not: "defined(metrics)"}]
+    lifecycle:
+      initial: Running
+      states: [Running, Paused]
+      transitions:
+        - {name: pause, from: [Running], to: Paused}
+        - {name: resume, from: [Paused], to: Running}
+actors:
+  - name: demo.queue.Operator
+    may: [demo.queue.OpenQueue, demo.queue.PauseQueue, demo.queue.ResumeQueue]
+errors:
+  - name: demo.queue.QueueStateConflict
+    summary: The queue is not in a state this command acts from.
+    fields: [{name: state, type: demo.queue.Queue.State}]
+commands:
+  - name: demo.queue.OpenQueue
+    input: []
+    outcomes:
+      - name: opened
+        creates: demo.queue.Queue
+        instance: queue_id
+        emits: [demo.queue.QueueOpened]
+        payload: {demo.queue.QueueOpened: {queue_id: {generated: true}}}
+        summary: A running queue exists and holds no metrics.
+  - name: demo.queue.PauseQueue
+    input:
+      - {name: queue_id, type: demo.queue.QueueId}
+      - {name: metrics, type: demo.queue.Metrics}
+    outcomes:
+      - name: paused
+        moves: demo.queue.Queue.pause
+        instance: queue_id
+        sets: {metrics: input.metrics}
+        emits: [demo.queue.QueuePaused]
+        payload: {demo.queue.QueuePaused: {queue_id: input.queue_id}}
+        summary: The queue is paused and holds the metrics it was paused with.
+      - {name: wrong-state, wrong_state: true, error: demo.queue.QueueStateConflict, summary: The queue is not running.}
+  - name: demo.queue.ResumeQueue
+    input:
+      - {name: queue_id, type: demo.queue.QueueId}
+    outcomes:
+      - name: resumed
+        moves: demo.queue.Queue.resume
+        instance: queue_id
+        sets: {metrics: {cleared: true}}
+        emits: [demo.queue.QueueResumed]
+        payload: {demo.queue.QueueResumed: {queue_id: input.queue_id}}
+        summary: The queue runs again and its metrics are gone.
+      - {name: wrong-state, wrong_state: true, error: demo.queue.QueueStateConflict, summary: The queue is not paused.}
+events:
+  - {name: demo.queue.QueueOpened, fields: [{name: queue_id, type: demo.queue.QueueId}]}
+  - {name: demo.queue.QueuePaused, fields: [{name: queue_id, type: demo.queue.QueueId}]}
+  - {name: demo.queue.QueueResumed, fields: [{name: queue_id, type: demo.queue.QueueId}]}
+views:
+  - name: demo.queue.QueueById
+    source: demo.queue.Queue
+    consistency: read_your_writes
+    fields:
+      - {name: queue_id, type: demo.queue.QueueId}
+      - {name: state, type: demo.queue.Queue.State}
+      - {name: metrics, type: Optional<demo.queue.Metrics>}

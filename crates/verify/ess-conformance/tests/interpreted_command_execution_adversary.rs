@@ -251,6 +251,7 @@ fn adversary_a_determined_refusal_reached_through_two_open_branches_is_answered(
         target.execute_command(SemanticCommandRequest {
             command: CommandRef::new(name(command)),
             actor: None,
+            caller: None,
             input,
             correlation: correlation.clone(),
         })
@@ -362,6 +363,7 @@ fn adversary_a_sequential_history_of_the_unfaulted_reference_is_one_the_step_all
             .execute_command(SemanticCommandRequest {
                 command: CommandRef::new(name(command)),
                 actor: None,
+                caller: None,
                 input,
                 correlation: correlation.clone(),
             })

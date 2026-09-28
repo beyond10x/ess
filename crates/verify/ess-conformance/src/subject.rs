@@ -116,7 +116,8 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
     let mut queried = None;
     for step in steps {
         match step {
-            ScenarioStep::ExecuteCommand { .. } => {
+            ScenarioStep::ExecuteCommand { .. }
+            | ScenarioStep::ExecuteCommandWithoutInput { .. } => {
                 if snapshots.values().any(|(at, _)| *at < invocation) {
                     return Err("command interrupted complete subject comparison".into());
                 }

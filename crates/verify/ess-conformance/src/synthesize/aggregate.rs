@@ -250,6 +250,14 @@ struct Plan<'ir> {
     scopes: Vec<Scope>,
     /// The group tuples in assignment order, labelled `A`, `B`, `C`, `B2`, …, `N1`, …
     tuples: Vec<(String, Vec<Node>)>,
+    /// Whether the view is ungrouped and nothing scopes it, so it is asserted as the change its
+    /// rows make ([`observe_change`]).
+    delta: bool,
+}
+
+/// Whether a function changes, when rows are added, by an amount those rows alone decide.
+fn additive(function: AggregateFunction) -> bool {
+    matches!(function, AggregateFunction::Count | AggregateFunction::Sum)
 }
 
 impl Plan<'_> {
@@ -342,7 +350,9 @@ fn model_literals(ir: &EssIr) -> BTreeSet<String> {
                 ResolvedCondition::Otherwise
                 | ResolvedCondition::External { .. }
                 | ResolvedCondition::WrongState
-                | ResolvedCondition::UnknownInstance => {}
+                | ResolvedCondition::UnknownInstance
+                | ResolvedCondition::InputAbsent
+                | ResolvedCondition::ExistingInstance => {}
             }
             let written = outcome
                 .sets
@@ -657,7 +667,16 @@ fn scenario(
         };
         keys.push((key.clone(), chosen));
     }
-    if !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() {
+    // An ungrouped view with no parameter is over every row of its source, so only the change its
+    // own rows make is the scenario's to assert — and only a `count` or a `sum` changes by an
+    // amount those rows alone decide (`docs/design/aggregate-views.md`, "Scoping").
+    let delta = aggregation.is_ungrouped()
+        && scopes.is_empty()
+        && aggregation
+            .functions
+            .values()
+            .any(|aggregate| additive(aggregate.function));
+    if !keys.iter().any(|(_, key)| matches!(key, Key::Scoped(_))) && scopes.is_empty() && !delta {
         return Err(RefusalCause::AggregateUnscoped {
             view: ViewRef::new(view.name.clone()),
         });
@@ -808,6 +827,7 @@ fn scenario(
         skipping,
         scopes,
         tuples: Vec::new(),
+        delta,
     };
     assign_tuples(&mut plan);
     let rows = rows(&plan, &inputs, m);
@@ -1327,6 +1347,10 @@ fn observe(
         source.extend(row.arrangement.source.iter().cloned());
     }
 
+    if plan.delta {
+        return observe_change(plan, arranged, &name, steps, source);
+    }
+
     let groups = groups(plan, arranged)?;
 
     let mut expectations = Vec::new();
@@ -1458,36 +1482,133 @@ fn aggregates_over(
 ) -> Result<Vec<(String, Node)>, RefusalCause> {
     let mut out = Vec::new();
     for (field, aggregate) in &plan.aggregation.functions {
-        let (values, kind) = match &aggregate.input {
-            None => (vec![Node::Null; members.len()], ValueKind::Other),
-            Some(input) => {
-                let mut values = Vec::new();
-                for index in members {
-                    values.push(
-                        held(plan, &arranged[*index], *index, &input.name).ok_or_else(|| {
-                            plan.unwitnessed(format!(
-                                "row `{}` holds a value of `{}` nothing determined",
-                                arranged[*index].row.label, input.name
-                            ))
-                        })?,
-                    );
-                }
-                (values, kind(plan.ir, plan.entity, &input.name))
-            }
-        };
-        let value = if aggregate.skip_absent {
-            evaluate_skipping_absent(aggregate.function, &values, kind)
-        } else {
-            evaluate(aggregate.function, &values, kind)
-        }
-        .ok_or_else(|| {
-            plan.unwitnessed(format!(
-                "`{field}` has no exact value over the arranged rows"
-            ))
-        })?;
-        out.push((field.clone(), value));
+        out.push((
+            field.clone(),
+            aggregate_over(plan, arranged, members, field, aggregate)?,
+        ));
     }
     Ok(out)
+}
+
+/// One aggregate field's expected value over the admitted rows `members`.
+fn aggregate_over(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    members: &[usize],
+    field: &str,
+    aggregate: &ess_compiler::ir::ResolvedAggregate,
+) -> Result<Node, RefusalCause> {
+    let (values, kind) = match &aggregate.input {
+        None => (vec![Node::Null; members.len()], ValueKind::Other),
+        Some(input) => {
+            let mut values = Vec::new();
+            for index in members {
+                values.push(
+                    held(plan, &arranged[*index], *index, &input.name).ok_or_else(|| {
+                        plan.unwitnessed(format!(
+                            "row `{}` holds a value of `{}` nothing determined",
+                            arranged[*index].row.label, input.name
+                        ))
+                    })?,
+                );
+            }
+            (values, kind(plan.ir, plan.entity, &input.name))
+        }
+    };
+    let value = if aggregate.skip_absent {
+        evaluate_skipping_absent(aggregate.function, &values, kind)
+    } else {
+        evaluate(aggregate.function, &values, kind)
+    }
+    .ok_or_else(|| {
+        plan.unwitnessed(format!(
+            "`{field}` has no exact value over the arranged rows"
+        ))
+    })?;
+    Ok(value)
+}
+
+/// An ungrouped view nothing scopes: read and snapshotted before the first row is created, and
+/// read again after the last with the change in every `count` and `sum` and its one row.
+///
+/// The change is what the admitted rows add: a `count` by how many there are, a `sum` by the
+/// total of their values (`0` where none holds one, as a skipping `sum` over no present value
+/// changes by nothing). Every other function's change depends on rows the scenario did not make,
+/// so it is named in the purpose as not asserted rather than asserted as a number the target's
+/// other users decide.
+fn observe_change(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    name: &ViewRef,
+    arranging: Vec<ScenarioStep>,
+    source: BTreeSet<EssSemanticRef>,
+) -> Result<ConformanceScenario, RefusalCause> {
+    let admitted: Vec<usize> = (0..arranged.len())
+        .filter(|index| arranged[*index].admitted)
+        .collect();
+    let mut changes = BTreeMap::new();
+    let mut absent_is_zero = BTreeSet::new();
+    let mut unasserted = Vec::new();
+    for (field, aggregate) in &plan.aggregation.functions {
+        if !additive(aggregate.function) {
+            unasserted.push(format!("`{field}`"));
+            continue;
+        }
+        let value = match aggregate_over(plan, arranged, &admitted, field, aggregate)? {
+            Node::Null => Node::Number(Number::from(0_usize)),
+            value => value,
+        };
+        // Only a skipping `sum` is absent over no present value; a `count` and a required `sum`
+        // are `0` over no row, so their absence on either read is a failure, not a zero.
+        if aggregate.skip_absent && aggregate.function == AggregateFunction::Sum {
+            absent_is_zero.insert(field.clone());
+        }
+        changes.insert(field.clone(), value);
+    }
+    let mut steps = vec![
+        ScenarioStep::QueryView {
+            view: name.clone(),
+            params: BTreeMap::new(),
+        },
+        ScenarioStep::SnapshotView { view: name.clone() },
+    ];
+    steps.extend(arranging);
+    read(
+        plan.view,
+        name,
+        &BTreeMap::new(),
+        vec![
+            ViewExpectation::ChangedBy {
+                fields: changes,
+                absent_is_zero,
+            },
+            ViewExpectation::Counts {
+                at_least: Some(1),
+                at_most: Some(1),
+            },
+        ],
+        &mut steps,
+    );
+    let purpose = if unasserted.is_empty() {
+        format!(
+            "`{}` changes by exactly what the rows this scenario made add; its absolute value \
+             also counts rows other users made, and is not asserted",
+            plan.view.name
+        )
+    } else {
+        format!(
+            "`{}` changes by exactly what the rows this scenario made add; {} not asserted, \
+             since {} change depends on rows other users made",
+            plan.view.name,
+            unasserted.join(", ") + if unasserted.len() == 1 { " is" } else { " are" },
+            if unasserted.len() == 1 {
+                "its"
+            } else {
+                "their"
+            }
+        )
+    };
+    Ok(ConformanceScenario::new(clipped(&purpose), steps, source))
 }
 
 /// One read of the view with these parameters, holding every expectation, in the block its

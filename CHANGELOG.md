@@ -2,6 +2,90 @@
 
 ## [Unreleased]
 
+### Added
+
+- Direct library returns: `returns: true` in source `ess/17`, literal `response:` assertions in
+  authored `ess-scenario/4`, and typed direct-response observations in suites `ess-conformance/28`
+  and `/29`. The Rust runner checks actual return values without invented events or persistence;
+  unsupported Go/TypeScript generation refuses explicitly. Released source `ess/16` and suites
+  `/26` and `/27` retain their existing meaning and bytes.
+
+## [0.38.0] — 2026-09-28
+
+### Added
+
+- Source format `ess/16` collects the round-3 retrofit constructs (#162–#179). Each is refused
+  under an earlier header as `unsupported_format_version`; suites carrying a new step or
+  expectation take `ess-conformance/26` (ordinary) and `/27` (coverage), which the Go and
+  TypeScript runtimes refuse by version. A suite without them keeps its earlier format and bytes.
+- `{input: <field>, else: <literal>}` in `payload:` and `sets:` (#163): the literal is checked
+  and refused exactly as a bare literal in that place. An outcome scenario with a literal fallback
+  sends the input and asserts it, then invokes the branch again without it and asserts the literal.
+- `defined(x)` and `missing(x)` accept an `Optional` struct, list or map (#176). An entity
+  invariant can require an optional field to be gone outside a state
+  (`any: [state == Paused, {not: "defined(metrics)"}]`), checked after every branch that changes
+  the entity. Rust, Go and TypeScript read a present struct, list or map as defined even when
+  empty, and `null` as absent.
+- A nested `sets:`/payload struct with an undetermined leaf is asserted leaf by leaf under dotted
+  paths (`lead.number`) in the event payload and the view row; the generated leaf by the payload
+  shape (#179).
+- `input_absent: true` with an `error:` answers a request with no input at all, as opposed to `{}`
+  (#170). Conformance gets an `execute_command_without_input` step, OpenAPI marks the body not
+  required, and code targets refuse the branch by name. A guard that cannot hold because it needs
+  a required path absent is refused with a hint naming `input_absent:`.
+- `{related: {via: <field>, field: <field>}}` (#166): a `payload:` or `sets:` value read from a
+  field of the row the subject, its input, or a `creates:` field references. Synthesis arranges
+  the referenced row between two decoys, so a read of another, the first or the last row, or an
+  earlier copy, fails.
+- An ungrouped aggregate view with no parameter (#148) is witnessed instead of refused with
+  ESS-SYNTH-016: the scenario snapshots the view and asserts the change in every `count` and
+  `sum` (new `changed_by` view expectation). Decimal aggregate inputs are arranged as whole
+  amounts; a concurrent writer to the source can fail a correct shared target.
+- A command `when:` can order a `Timestamp` input against the current time: `now`, `now - 60s`,
+  `now + 5m` (#171). Synthesis witnesses it one second either side of the boundary, suites carry
+  the value as `now_offset`, and `ess verify conform run` resolves it from the machine clock; the
+  library default stays deterministic. Entity Runtime refuses the guard (`CurrentTimeUnsupported`).
+- An outcome can be selected by whether the addressed record exists (#164): `unknown_instance:
+  true` on a `creates:` beside the `updates:`/`moves:` of the same record (create or update), or
+  `existing_instance: true` with an `error:` beside a creation (create or refuse). Conformance
+  witnesses both with calls sharing one identity; the served surface answers `existing_instance:`
+  with 409; code targets and Entity Runtime refuse both by name.
+- `attributes:` on an actor, read as `{caller: <attribute>}` in `payload:`/`sets:` and as
+  `caller.<attribute>` in `when:`/`when_subject:` equality guards (#168). Conformance command steps
+  carry `caller`, synthesis runs a refusal the caller decides as two callers, OpenAPI answers 403
+  for it, and Entity Runtime refuses caller reads with `CallerUnsupported`.
+- A binding can bound its retry: `on_failure: {retry: {attempts: 3, final: [<refusal>]}}` (#165).
+  `final` names refusals of the invoked command that end the retry at once; after the last attempt
+  the event is lost. Conformance requires exactly `attempts` invocations with a retried refusal
+  forced, and one with a final refusal, watched for the whole eventual window. Generated Rust, Go
+  and Web targets refuse the bound by name.
+- A view with `order_by:` can declare `paging: {page, size, first_page, total}` (#174).
+  Conformance reads three pages with the new `page` expectation: two one-row pages and one partial
+  page. OpenAPI documents page and size and an optional `total`; code targets refuse paged views
+  by name; `ess-diff/9` adds `paging-changed`. The caller-supplied free-form filter of #174 is
+  declined.
+- An outcome can change every record a filter selects: `instances: {where: …}` on `moves:`/`updates:`, with `{count: changed}` for the number changed (`ess/16`, #167); an outcome with one subject can change other records with `affects: [{entity, where, sets}]`, where `where` may read `subject.<field>` (#175). Conformance arranges two matching rows, one non-matching row and, for a move, one row outside its `from` states, and requires exactly the matching rows changed and the count right. Entity Runtime refuses both (`SetEffectUnsupported`); Rust, Go, Web and Clap synthesis refuse them by name; `ess-diff/9` adds `outcome-set-effect-changed`.
+- `ess-composition/2` (#162): a composition may reference any type declared in a domain the
+  selected component owns, and `conformances:` asserts that a consumer's local type matches an
+  imported component type; any difference other than a consumer treating a required value as
+  optional is refused as `type_conformance_drift`. `ess-composition/1` keeps its rule and bytes.
+
+### Changed
+
+- An `Optional<T>` input reads as `T` in a default branch once a sibling refuses exactly its
+  absence, and in a branch whose own guard requires `defined(x)` (#169); copying it into a
+  required field needs no `conversions:` entry.
+- An input-guarded refusal (`when:` + `error:`) is taken before any accepting branch whose input
+  guard it overlaps (#178); synthesis sends it at every overlap point, a shadowed branch is refused
+  naming the refusal, and Entity Runtime lowering orders these refusals first.
+- A `when_subject:` command whose entity has only `eventual` views gets scenarios for every branch
+  (#172), and `state/<S>/refuses/<command>` is written for a `when_subject:` command with a
+  guard-less fallback; the internal ESS-SYNTH-008 "drifted apart" message is gone (#173).
+- Synthesis witnesses guards over many inputs (seven comparisons in one `all`) instead of
+  refusing with ESS-SYNTH-003 after 64 candidates (#155 follow-up).
+- Synthesis asserts a view whose filter reads a row field over a row that filter matches;
+  case-insensitive filters are also asserted over a row with the literal in its other ASCII case.
+
 ## [0.37.0] — 2026-09-27
 
 ### Added

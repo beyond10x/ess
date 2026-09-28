@@ -659,6 +659,14 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         Ok(result)
     }
 
+    /// Forwarded unchanged: no fault this wrapper carries is about a request with no input.
+    fn execute_command_without_input(
+        &self,
+        request: crate::target::AbsentInputRequest,
+    ) -> Result<SemanticCommandResult, TargetError> {
+        self.inner.execute_command_without_input(request)
+    }
+
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let view = request.view.clone();
         // Only a read that *demanded* the write is perturbed: an eventual read asks at `Current` and
@@ -714,6 +722,19 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
             return Ok(());
         }
         self.inner.configure_external_outcome(request)
+    }
+
+    fn configure_external_outcome_repeatedly(
+        &self,
+        request: ExternalOutcomeControl,
+        times: std::num::NonZeroU32,
+    ) -> Result<(), TargetError> {
+        if self.fault == Fault::IgnoreExternalOutcome {
+            // The same defect as above, for the repeated control.
+            return Ok(());
+        }
+        self.inner
+            .configure_external_outcome_repeatedly(request, times)
     }
 
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError> {

@@ -120,6 +120,26 @@ pub trait TypeEnvironment {
     fn admits_text_length(&self) -> bool {
         true
     }
+    /// Whether this environment admits `defined(x)` where `x` is an `Optional` aggregate — a
+    /// struct, list, map, union or `Json` — which `ess/16` introduced (beyond10x/ess#176).
+    ///
+    /// `true` by default, for the reason [`Self::admits_text_length`] is.
+    fn admits_aggregate_presence(&self) -> bool {
+        true
+    }
+    /// Where and under which format this environment admits the current-time operand, `now`, in an
+    /// ordering over a `Timestamp` (beyond10x/ess#171, `ess/16`).
+    ///
+    /// Admitted everywhere by default, for the reason [`Self::admits_text_length`] is: the
+    /// compiler's environment reads an IR that validation already admitted. [`DomainEnvironment`]
+    /// admits it only where a command outcome's input guard (`when:`) is checked, under `ess/16`
+    /// or later.
+    fn current_time(&self) -> CurrentTimeAdmission {
+        CurrentTimeAdmission {
+            site: true,
+            format: true,
+        }
+    }
     /// One declared struct member, without using wire aliases.
     fn member(&self, reference: &Self::Type, name: &str) -> Option<Self::Type>;
     /// Whether the reserved filter parameter namespace exists in this environment.
@@ -135,6 +155,27 @@ pub trait TypeEnvironment {
     fn parameter_namespace(&self) -> &'static str {
         "param"
     }
+    /// Whether `caller.<attribute>` reads the authenticated caller in this environment (ess/16,
+    /// beyond10x/ess#168). A root field named `caller` keeps being read as itself.
+    fn has_caller(&self) -> bool {
+        false
+    }
+    /// One attribute every actor that may invoke the command declares.
+    fn caller_attribute(&self, _name: &str) -> Option<Self::Type> {
+        None
+    }
+}
+
+/// Whether a predicate site admits the current-time operand (beyond10x/ess#171), in two parts
+/// because they are refused differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CurrentTimeAdmission {
+    /// The site is a command outcome's input guard (a `when:`, alone or beside a held state, a
+    /// state change, a stored field, a `when_subject:` or an external cause): the predicate over a
+    /// request's input, read while it is being handled, which is the moment `now` names.
+    pub site: bool,
+    /// The specification's format is `ess/16` or later.
+    pub format: bool,
 }
 
 /// Required traversal operations, independent of projection capability.
@@ -214,6 +255,9 @@ pub struct Checked<T> {
     pub reads: Vec<Read<T>>,
     /// Free parameter names used at any depth, excluding shadowed binders.
     pub parameters: BTreeSet<String>,
+    /// Every `Timestamp` path ordered against the current-time operand (beyond10x/ess#171), in
+    /// stable AST order: what a consumer that cannot read a clock refuses by name.
+    pub current_time: Vec<FactPath>,
 }
 
 impl<T> Checked<T> {
@@ -233,6 +277,8 @@ pub struct DomainEnvironment<'a> {
     fields: &'a [Field],
     params: Option<&'a [Field]>,
     namespace: &'static str,
+    current_time: bool,
+    caller: Option<&'a [Field]>,
 }
 
 impl<'a> DomainEnvironment<'a> {
@@ -243,7 +289,16 @@ impl<'a> DomainEnvironment<'a> {
             fields,
             params: None,
             namespace: "param",
+            current_time: false,
+            caller: None,
         }
+    }
+    /// Enable the `caller` namespace over the attributes every actor that may invoke the command
+    /// declares (ess/16, beyond10x/ess#168).
+    #[must_use]
+    pub fn with_caller(mut self, attributes: &'a [Field]) -> Self {
+        self.caller = Some(attributes);
+        self
     }
     /// Enable the reserved param namespace, including when no parameters are declared.
     #[must_use]
@@ -257,6 +312,13 @@ impl<'a> DomainEnvironment<'a> {
     pub fn with_input(mut self, input: &'a [Field]) -> Self {
         self.params = Some(input);
         self.namespace = "input";
+        self
+    }
+    /// Admit the current-time operand, `now`, where the format does (`ess/16`): the environment a
+    /// command outcome's input guard (`when:`) is checked in (beyond10x/ess#171).
+    #[must_use]
+    pub fn with_current_time(mut self) -> Self {
+        self.current_time = true;
         self
     }
 }
@@ -276,8 +338,22 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             .format()
             .is_none_or(|format| format.major() >= crate::system::FormatVersion::V11.major())
     }
+    fn admits_aggregate_presence(&self) -> bool {
+        self.registry
+            .format()
+            .is_none_or(|format| format.major() >= crate::system::FormatVersion::V16.major())
+    }
     fn is_clock_reading(&self, reference: &TypeRef) -> bool {
         matches!(reference, TypeRef::Named(name) if self.registry.get(name).is_some_and(|declared| declared.reading.is_some()))
+    }
+    fn current_time(&self) -> CurrentTimeAdmission {
+        CurrentTimeAdmission {
+            site: self.current_time,
+            format: self
+                .registry
+                .format()
+                .is_none_or(|format| format.major() >= crate::system::FormatVersion::V16.major()),
+        }
     }
     type Type = TypeRef;
 
@@ -336,6 +412,15 @@ impl TypeEnvironment for DomainEnvironment<'_> {
     }
     fn parameter(&self, name: &str) -> Option<TypeRef> {
         self.params?
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.type_ref.clone())
+    }
+    fn has_caller(&self) -> bool {
+        self.caller.is_some()
+    }
+    fn caller_attribute(&self, name: &str) -> Option<TypeRef> {
+        self.caller?
             .iter()
             .find(|field| field.name == name)
             .map(|field| field.type_ref.clone())
@@ -426,6 +511,12 @@ fn root_cursor<E: TypeEnvironment>(
                 format!("`{path}` reads undeclared {noun} `{name}`"),
             )
         })?)
+    } else if environment.has_caller()
+        && root == crate::command::caller_value::CALLER_NAMESPACE
+        && environment.root(root).is_none()
+    {
+        position = 2;
+        Some(caller_root(environment, path, owner)?)
     } else {
         environment.root(root)
     }
@@ -444,6 +535,36 @@ fn root_cursor<E: TypeEnvironment>(
         optional,
         access,
         context,
+    })
+}
+
+/// The type of the caller attribute `caller.<attribute>` names (ess/16, beyond10x/ess#168).
+fn caller_root<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    owner: &str,
+) -> Result<E::Type, ExpressionError> {
+    let root = path.namespace();
+    let Some(name) = path.segments().get(1) else {
+        return Err(error(
+            owner,
+            ValidationCode::UnobservableFact,
+            Some(path),
+            Some(root),
+            format!("`{path}` names the caller without an attribute selector"),
+        ));
+    };
+    environment.caller_attribute(name).ok_or_else(|| {
+        error(
+            owner,
+            ValidationCode::UndeclaredReference,
+            Some(path),
+            Some(name),
+            format!(
+                "`{path}` reads caller attribute `{name}`, which not every actor that may \
+                 invoke the command declares"
+            ),
+        )
     })
 }
 
@@ -664,6 +785,7 @@ pub fn check_predicate<E: TypeEnvironment>(
             errors: Vec::new(),
             reads: Vec::new(),
             parameters: BTreeSet::new(),
+            current_time: Vec::new(),
         },
     };
     checker.predicate(predicate);
@@ -732,20 +854,25 @@ impl<E: TypeEnvironment> Checker<'_, E> {
         }
     }
 
+    /// What a resolved read is, as an operand.
+    fn typed(&self, resolved: Resolution<E::Type>) -> ValueType {
+        ValueType {
+            instant: self.environment.is_instant(&resolved.terminal),
+            duration: self.environment.is_duration(&resolved.terminal),
+            string: self.environment.is_string(&resolved.terminal),
+            declaring_variants: resolved
+                .variants
+                .is_some()
+                .then(|| resolved.terminal.to_string()),
+            declared: resolved.declared,
+            scalar: resolved.scalar,
+            variants: resolved.variants,
+        }
+    }
+
     fn operand(&mut self, operand: &Operand) -> Option<ValueType> {
         match operand {
-            Operand::Fact(path) => self.read(path, false).map(|resolved| ValueType {
-                instant: self.environment.is_instant(&resolved.terminal),
-                duration: self.environment.is_duration(&resolved.terminal),
-                string: self.environment.is_string(&resolved.terminal),
-                declaring_variants: resolved
-                    .variants
-                    .is_some()
-                    .then(|| resolved.terminal.to_string()),
-                declared: resolved.declared,
-                scalar: resolved.scalar,
-                variants: resolved.variants,
-            }),
+            Operand::Fact(path) => self.read(path, false).map(|resolved| self.typed(resolved)),
             Operand::Literal(value) => {
                 let scalar = ScalarKind::literal(value);
                 Some(ValueType {
@@ -888,6 +1015,9 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             ));
             return;
         }
+        if typed.instant && self.current_time_literal(expression, path, op, text) {
+            return;
+        }
         if typed.instant
             && op.needs_ordering()
             && ess_primitives::time::Rfc3339Instant::parse_rfc3339(text).is_none()
@@ -903,6 +1033,105 @@ impl<E: TypeEnvironment> Checker<'_, E> {
                 ),
             ));
         }
+    }
+
+    /// A text literal written as the current-time operand against the `Timestamp` `path`
+    /// (beyond10x/ess#171, `ess/16`): recorded where it is admitted, refused by what it lacks
+    /// elsewhere. `true` when this decided the literal; `false` leaves it to the rules every other
+    /// text literal meets, which is what a format before `ess/16` keeps for everything but an
+    /// ordering in a `when:` — so an equality with the word `now` means what it meant there.
+    fn current_time_literal(
+        &mut self,
+        expression: &Predicate,
+        path: &FactPath,
+        op: CompareOp,
+        text: &str,
+    ) -> bool {
+        use ess_primitives::time::CurrentTime;
+        if !CurrentTime::mentions(text) {
+            return false;
+        }
+        let admission = self.environment.current_time();
+        let parsed = CurrentTime::parse(text).is_some();
+        let (code, message, hint) = match (op.needs_ordering(), parsed, admission) {
+            (
+                true,
+                true,
+                CurrentTimeAdmission {
+                    site: true,
+                    format: true,
+                },
+            ) => {
+                self.checked.current_time.push(path.clone());
+                return true;
+            }
+            (
+                true,
+                true,
+                CurrentTimeAdmission {
+                    site: true,
+                    format: false,
+                },
+            ) => (
+                ValidationCode::UnsupportedFormatVersion,
+                format!(
+                    "`{expression}` orders the Timestamp `{path}` against the current time, \
+                     `{text}`, which requires specification format ess/16"
+                ),
+                "write `format: ess/16` on the source that declares the system".to_owned(),
+            ),
+            // A site that refuses the operand names where it is admitted, whatever else is wrong
+            // with the comparison, and never suggests writing it again here.
+            (
+                ordering,
+                parsed,
+                CurrentTimeAdmission {
+                    site: false,
+                    format: true,
+                },
+            ) if ordering || parsed => (
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{expression}` compares the Timestamp `{path}` with the current time, \
+                     `{text}`, which is admitted only in a command outcome's `when:` over its \
+                     input: that is the one predicate read while a request is being handled, and \
+                     an invariant, a view filter, a selection or a `when_subject:` predicate over \
+                     stored fields is not"
+                ),
+                "compare with a fixed RFC 3339 instant here, such as \"2020-01-01T00:00:00Z\", \
+                 or move the rule into the command's `when:`"
+                    .to_owned(),
+            ),
+            (true, false, CurrentTimeAdmission { format: true, .. }) => (
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{expression}` orders the Timestamp `{path}` against \"{text}\", which is \
+                     neither an RFC 3339 instant nor the current time; write {} (a whole number \
+                     of seconds, minutes or hours, at most {} seconds either way)",
+                    CurrentTime::SPELLINGS,
+                    CurrentTime::MAX_OFFSET_SECONDS
+                ),
+                "a day is written `24h`: the offset has no calendar".to_owned(),
+            ),
+            (false, true, CurrentTimeAdmission { format: true, .. }) => (
+                ValidationCode::TypeMismatch,
+                format!(
+                    "`{expression}` compares the Timestamp `{path}` with the current time by \
+                     `{op}`; an instant is ordered against now, never equated with it, because \
+                     no request arrives at exactly the moment it names"
+                ),
+                format!("order it, such as `{path} >= {text}`"),
+            ),
+            _ => return false,
+        };
+        self.checked.errors.push(error(
+            self.owner,
+            code,
+            Some(path),
+            None,
+            format!("{message}; {hint}"),
+        ));
+        true
     }
 
     /// Refuses an ordering over a `Duration`, which has none: its ISO 8601 text would put `PT10M`
@@ -1151,20 +1380,39 @@ impl<E: TypeEnvironment> Checker<'_, E> {
             Predicate::Not(inner) => self.predicate(inner),
             Predicate::Compare { left, op, right } => self.compare(predicate, left, *op, right),
             Predicate::Truthy(path) | Predicate::Defined(path) => {
-                if let Some(value) = self.operand(&Operand::Fact(path.clone())) {
-                    if value.scalar.is_none() {
-                        self.mismatch(
-                            predicate,
-                            if matches!(predicate, Predicate::Truthy(_)) {
-                                "Truthy"
-                            } else {
-                                "Defined"
-                            },
-                            &value,
-                            None,
-                        );
-                    }
+                let Some(resolved) = self.read(path, false) else {
+                    return;
+                };
+                if resolved.scalar.is_some() {
+                    return;
                 }
+                let optional = resolved.optional;
+                let value = self.typed(resolved);
+                let defined = matches!(predicate, Predicate::Defined(_));
+                // Presence is a property of the `Optional`, not of what it holds (beyond10x/ess#176):
+                // an `Optional` aggregate is present or absent like an `Optional` scalar is.
+                if defined && optional {
+                    if !self.environment.admits_aggregate_presence() {
+                        self.checked.errors.push(error(
+                            self.owner,
+                            ValidationCode::UnsupportedFormatVersion,
+                            Some(path),
+                            None,
+                            format!(
+                                "`{predicate}`: `defined()` over an Optional aggregate (`{}`) \
+                                 requires specification format ess/16",
+                                value.declared
+                            ),
+                        ));
+                    }
+                    return;
+                }
+                self.mismatch(
+                    predicate,
+                    if defined { "Defined" } else { "Truthy" },
+                    &value,
+                    None,
+                );
             }
             Predicate::AnyOf { path, values } | Predicate::NoneOf { path, values } => {
                 let Some(typed) = self.operand(&Operand::Fact(path.clone())) else {

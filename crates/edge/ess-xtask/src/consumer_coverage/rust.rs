@@ -208,6 +208,11 @@ fn representation(a: &Attribute, owner: &str) -> Result<()> {
                 let nested = l.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
                 nested.len()==1&&nested.iter().all(|x|matches!(x,Meta::NameValue(n) if n.path.is_ident("pattern")&&matches!(&n.value,syn::Expr::Lit(x) if matches!(x.lit,syn::Lit::Str(_)))))
             }
+            // An integer bound the schema states and the reader enforces (`RetryBound.attempts`).
+            ("schemars", Meta::List(l)) if key == "range" => {
+                let nested = l.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+                !nested.is_empty()&&nested.iter().all(|x|matches!(x,Meta::NameValue(n) if (n.path.is_ident("min")||n.path.is_ident("max"))&&matches!(&n.value,syn::Expr::Lit(x) if matches!(x.lit,syn::Lit::Int(_)))))
+            }
             ("repr", Meta::Path(_)) => matches!(
                 key.as_str(),
                 "C" | "transparent" | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64"

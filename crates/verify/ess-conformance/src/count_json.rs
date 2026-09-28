@@ -24,6 +24,33 @@ enum Kind {
 }
 
 struct Fields(Vec<(String, Box<RawValue>)>);
+
+/// Only an actual direct-response expectation in a new suite gets a payload-local budget.
+/// The finite envelope path prevents an identically named nested key from resetting it again.
+#[derive(Clone, Copy)]
+enum Scope {
+    Plain,
+    Suite,
+    Scenarios,
+    Scenario,
+    Steps,
+    Step,
+    Response,
+    Expected,
+}
+
+impl Scope {
+    fn field(self, key: &str, direct_step: bool) -> Self {
+        match (self, key) {
+            (Self::Suite, "scenarios") => Self::Scenarios,
+            (Self::Scenarios, _) => Self::Scenario,
+            (Self::Scenario, "steps") => Self::Steps,
+            (Self::Step, "response") if direct_step => Self::Response,
+            (Self::Response, "expected") => Self::Expected,
+            _ => Self::Plain,
+        }
+    }
+}
 impl<'de> Deserialize<'de> for Fields {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         struct ObjectVisitor;
@@ -53,9 +80,47 @@ impl<'de> Deserialize<'de> for Fields {
 
 impl Json {
     pub fn parse(raw: &str, path: &str) -> Result<Self> {
-        Self::parse_at(raw, path, 0)
+        Self::parse_at(raw, path, 0, Scope::Plain)
     }
-    fn parse_at(raw: &str, path: &str, depth: u16) -> Result<Self> {
+
+    pub fn parse_suite(raw: &str) -> Result<(Self, bool)> {
+        #[derive(Deserialize)]
+        struct Provenance {
+            suite_version: String,
+        }
+        // RawValue skips payloads without consuming a recursive value-deserialization budget.
+        // Full duplicate, vocabulary and provenance checks still follow before any effects.
+        let direct_profile = serde_json::from_str::<Fields>(raw)
+            .ok()
+            .and_then(|fields| fields.0.into_iter().find(|(key, _)| key == "provenance"))
+            .and_then(|(_, value)| serde_json::from_str::<Provenance>(value.get()).ok())
+            .is_some_and(|p| {
+                matches!(
+                    p.suite_version.as_str(),
+                    "ess-conformance/28" | "ess-conformance/29"
+                )
+            });
+        let scope = if direct_profile {
+            Scope::Suite
+        } else {
+            Scope::Plain
+        };
+        Self::parse_at(raw, "$suite", 0, scope).map(|value| (value, direct_profile))
+    }
+
+    /// Decode only after this tree has enforced its complete bounded structural depth.
+    pub fn decode_checked_depth<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
+        let mut decoder = serde_json::Deserializer::from_str(&self.raw);
+        decoder.disable_recursion_limit();
+        let value = T::deserialize(&mut decoder)
+            .map_err(|error| self.error("InvalidSuite", error.to_string()))?;
+        decoder
+            .end()
+            .map_err(|error| self.error("InvalidSuite", error.to_string()))?;
+        Ok(value)
+    }
+
+    fn parse_at(raw: &str, path: &str, depth: u16, scope: Scope) -> Result<Self> {
         if depth > 128 {
             return Err(EssAdmissionError::new(
                 "InvalidDocument",
@@ -76,11 +141,25 @@ impl Json {
         let kind = match raw.as_bytes()[0] {
             b'{' => {
                 let fields: Fields = serde_json::from_str(raw).map_err(syntax)?;
+                let direct_step = fields.0.iter().any(|(key, value)| {
+                    key == "step"
+                        && serde_json::from_str::<String>(value.get())
+                            .is_ok_and(|tag| tag == "expect_direct_response")
+                });
                 let mut object = BTreeMap::new();
                 for (key, value) in fields.0 {
                     object.insert(
                         key.clone(),
-                        Self::parse_at(value.get(), &format!("{path}.{key}"), depth + 1)?,
+                        Self::parse_at(
+                            value.get(),
+                            &format!("{path}.{key}"),
+                            if matches!(scope, Scope::Expected) {
+                                0
+                            } else {
+                                depth + 1
+                            },
+                            scope.field(&key, direct_step),
+                        )?,
                     );
                 }
                 Kind::Object(object)
@@ -92,7 +171,16 @@ impl Json {
                         .iter()
                         .enumerate()
                         .map(|(index, value)| {
-                            Self::parse_at(value.get(), &format!("{path}[{index}]"), depth + 1)
+                            Self::parse_at(
+                                value.get(),
+                                &format!("{path}[{index}]"),
+                                depth + 1,
+                                if matches!(scope, Scope::Steps) {
+                                    Scope::Step
+                                } else {
+                                    Scope::Plain
+                                },
+                            )
                         })
                         .collect::<Result<_>>()?,
                 )

@@ -4,7 +4,10 @@ Status: E1–E5 implemented in source format `ess/14` (beyond10x/ess#133, #134, 
 E1 (#135) needs no format version; E2–E5 are refused below `ess/14` with
 `unsupported_format_version`. E6 (#157) and E7 (#140) are implemented in source format `ess/15` and
 refused below it with `unsupported_format_version`; E7 carries suite formats `ess-conformance/20`
-and `/21`.
+and `/21`. E4's literal fallback (#163) is implemented in source format `ess/16` and refused below
+it with `unsupported_format_version`. E5's per-leaf comparison (#179) carries suite formats
+`ess-conformance/26` and `/27`. E8 (#166) is implemented in source format `ess/16` and refused
+below it with `unsupported_format_version`; it needs no suite format.
 
 ## Behavior and authority
 
@@ -64,12 +67,42 @@ arrangement determined `before`.
 `{generated: true}` is admitted in `sets:`: the implementation decides the new value. Synthesis
 makes no claim about the field after the outcome, so preservation no longer asserts the old value.
 
-### E4 — `{input: <field>, else: {generated: true}}` (#137)
+### E4 — `{input: <field>, else: {generated: true}}` (#137) and `else: <literal>` (#163, `ess/16`)
 
 The caller's value when the optional input is present, otherwise a value the implementation mints.
 The input must be `Optional<T>` with `T` assignable to the target. Admitted in `payload:` and
-`sets:`. `else` admits `{generated: true}` only in this cut. Synthesis asserts the supplied value
-when the scenario sends one, and the shape only when it omits the input.
+`sets:`. Synthesis asserts the supplied value when the scenario sends one, and the shape only when
+it omits the input.
+
+From `ess/16` the fallback may instead be a literal: `tier: {input: tier, else: Standard}`,
+`rank: {input: rank, else: 3}`. The literal is held to the rule a literal written in the target's
+place is — a variant of the enum the target is, text for a String-backed target, an unquoted
+boolean, whole number or decimal over the primitive it spells, `'0'` rather than `0` over a
+`String` — and `subject.<field>` after `else:` is refused as the misspelling E2 describes. In a
+payload it also gets the bare payload literal's `misspelled_reference` checks: `else: rank` names
+an input without its prefix, and `else: inptu.rank` or `else: event.rank` misspells one. `else:`
+admits nothing else: `input.<field>`, `{subject: …}`, `{cleared: true}`, a nested mapping or a
+second `{input: …}` are refused where they are written. Below `ess/16` a literal fallback is
+refused with `unsupported_format_version`; `{generated: true}` keeps its `ess/14` meaning and its
+IR bytes. The IR carries the literal as `otherwise` on the same `input_or_generated` source, left
+out when the fallback is generated.
+
+Synthesis asserts both halves in the outcome's scenario. Its first invocation sends the witness
+input as before, so the sent value is asserted and an implementation that always stores the
+literal fails. After everything that invocation asserts, the branch runs again on a further
+instance, with every optional input that the outcome reads only through literal fallbacks left
+out, and asserts the literal, read as the target's type, on the event and the row. An input is
+kept where anything else reads it (a plain `input.<field>`, a generated fallback, the subject's
+identity, a fixture), and where the branch is no longer selected without it, one field at a time.
+An implementation storing a different default fails that second invocation. A branch selected by
+the held state or the stored row, a replayed branch and a state refusal get only the first
+invocation: their arrangement searches fix the plain witness, and arranging it twice would repeat
+its identities.
+
+A refusal of the literal reads as the refusal of the same literal written bare in that place: same
+code, path, owner and reason. Only the hint differs, and only where the bare repair is one `else:`
+refuses: a misspelled reference is repaired with a literal or `else: {generated: true}`, and a
+quoted spelling keeps its wrapper (`label: {input: label, else: '0'}`).
 
 ### E5 — nested mappings for a struct target (#136)
 
@@ -87,9 +120,35 @@ A mapping is read as a source when every key is a source keyword (`response`, `g
 `cleared`, `subject`, `increment`, `input`, `else`), and as a nested mapping otherwise. The
 target must be a struct (through newtypes and `Optional`); every declared struct field must be
 given a source, as `ess/4` requires of every emitted field. Nesting depth is bounded by the type.
-Synthesis asserts the whole struct where every leaf is determined; otherwise the field is covered
-by the shape. Per-leaf comparison would change the suite's payload key semantics in three runners
-and is left for a later suite format.
+Synthesis asserts the whole struct where every leaf is determined, as one value under the field's
+name. Where one leaf is not — `rank: {generated: true}` beside four `input.` leaves
+(beyond10x/ess#179) — each determined leaf is asserted on its own, and the undetermined one stays
+covered by the shape for presence and type.
+
+**Representation: dotted keys.** A determined leaf is written as its own entry under its dotted
+path, `lead.number`, in the event payload and in the view row expectation — not as a partial nested
+map. The Rust runner already walks dotted paths for the payload shape (`reach_into`), whose leaves
+are keyed by the same paths, so the comparison is that walk applied to value keys; a field name
+cannot contain a dot, so an older suite's keys read exactly as before. A partial map would instead
+have turned map equality into a subset test, which a `Json` value (compared structurally) must not
+get. A dotted payload key must name a leaf of the step's own shape, or the suite is refused.
+
+A leaf of a nested struct is walked to its scalar leaves, and so is a struct value a leaf reads whole (`place: input.place`), by its declared fields; a part the value does not carry (an absent `Optional` struct) is left unasserted. The row entries come from the branch's
+own `sets:` where the view projects the field at the entity's type; the fields the arrangement
+settled are not given dotted entries, so a later act's claims about the row stay by field name.
+
+A view row carries no shape, so the undetermined leaves a nested `sets:` mapping writes are claimed
+separately: for each one whose declared type is never absent (not `Optional`, not `Json`), the row
+expectation is followed by an `excludes` of the subject's identity with that dotted path `null`. The
+runner reads a dotted path that finds nothing as `null`, so a row that never writes `lead.rank`
+fails. Nothing is claimed when the view does not project the identity. **The row type of a
+generated leaf is not asserted; the payload shape is**: no view expectation can say "holds an
+`Integer`", and adding one would be a new step kind.
+
+Suites carrying such a leaf take `ess-conformance/26` (ordinary) and `/27` (coverage), the round-3
+pair: an older reader would look for a top-level field named `lead.number` and fail a conforming
+implementation. The Go and TypeScript runtimes refuse both by version. A suite without a partly
+determined struct keeps its earlier format and bytes.
 
 ### E6 — `input.<field>` in a `when_subject` predicate (#157, `ess/15`)
 
@@ -142,8 +201,121 @@ text orderings.
   (coverage); each implies every major below it. Rust, Go and TypeScript admit those majors;
   browser replay refuses them by version, and `infra-spec/1` refuses the operators.
 
+### E8 — `{related: {via: <field>, field: <field>}}` (#166, `ess/16`)
+
+A field of the row another row references, as it is when the outcome runs. Dispatching a shipment
+emits the region stored on the shipment's customer:
+
+```yaml
+payload:
+  demo.shipping.ShipmentDispatched:
+    shipment_id: input.shipment_id
+    region: {related: {via: customer_id, field: region}}
+```
+
+- **`via`** is a field of the subject or of the input (`input.customer_id`, on any outcome). A
+  subject field is read as it was before the outcome, so on `moves:` and `updates:` as for E2. On
+  `creates:` there is no row before, and a subject field is admitted only where the branch sets it
+  from its input unchanged (`sets: {customer_id: input.customer_id}`): it then holds that input,
+  and the read is the input's. Any other subject field on `creates:` is `conflicting_declaration`.
+  The type of `via` must be an entity's identity type itself: `Optional<…>`, `List<…>` and
+  `Map<…>` are refused with `type_mismatch`, because the source reads one row that is always
+  there. A missing referenced row is the implementation's refusal or a declared outcome, not
+  something this source decides.
+- **Which entity.** The relation the subject field carries names it: a `references` relation of
+  cardinality `one` the subject declares on it, or an `owns` relation another entity declares over
+  the subject through it (the owner; a field carries one relation, so an owned subject cannot also
+  declare a `references`). An input read is settled by the relation on the subject field the
+  branch sets from that input. Otherwise the one entity whose identity is that type names it. A
+  type that is no entity's identity is `type_mismatch`. A type that several entities are identified
+  by, with no relation to say which, is `conflicting_declaration`, and every hint names a remedy
+  that validates on that branch:
+  - a subject field: declare the `references` relation on it, or the owner's `owns`;
+  - an input, on a branch that sets a subject field from it: declare the `references` relation on
+    that field. On `creates:` the hint says there is no row before, which is why the field the
+    branch sets is the one to use;
+  - an input, on a branch that sets none: set a subject field from the input and declare the
+    relation on it;
+  - an input, on a branch with no subject: give the entities distinct identity types.
+
+  The rule is `ess_domain::command::related_value::referenced_entity` (with `input_carrier`),
+  called by the validator and the compiler alike.
+- **`field`** is a field of that entity (its identity included), assignable to the target or
+  covered by a declared conversion, exactly as for `input.<field>`. `via` and `field` each name one
+  field; a dotted name is `undeclared_reference`.
+- One hop. Admitted in `payload:`, in `sets:` and as a leaf of a nested mapping.
+
+**Spelling.** `related:` holds a mapping of its own, and `{related: …}` is written alone. The
+issue's flat `{via, entity, field}` would have made `via` and `field` source keywords, so a struct
+with a field called `field` could no longer be filled by a nested mapping. The entity is derived
+from the type or the relation rather than written a second time.
+
+`related` is **not** a source keyword. The reader recognises one exact shape — a mapping whose only
+key is `related`, holding exactly `via` and `field` as text — and reads every other mapping under a
+`related` key as a nested mapping, as before. The reader cannot know the format (the header may be
+in another file), so it recognises the shape in every format, and the assembled specification
+reads it back as a nested mapping below `ess/16` (`related_value::read_below_ess_16`): a struct
+field `related` whose fields `via` and `field` take the texts written, each read as a bare text is.
+So no `ess/14` or `ess/15` document changes meaning. That mapping over a target that is not a
+struct is refused below `ess/16` with `unsupported_format_version`. From `ess/16`, a mapping keyed
+`related` that is not the exact shape, over a target that is not a struct, is `type_mismatch`, with
+a hint giving the shape.
+
+**IR.** `related_field` with `via` (`{from: subject | input, field, type_ref}`), `entity`, `field`
+and `type_ref`. A document without the source keeps its IR bytes.
+
+**Synthesis.** For each `via` a branch reads, the arrangement creates three rows of the referenced
+entity where its lifecycle starts, ahead of everything else: a decoy, the referenced row, and a
+second decoy.
+- **Distinctions.** The referenced row is at a multiple of 27720 (= lcm(1..=12)) and the decoys
+  are one below and one above it. A decoy is one away from the referenced row, and the witness
+  cycles enum variants by distinction, so every decoy field of an enum with two or more variants
+  holds another variant; a text or number differs by construction.
+- **Pointing the subject at the referenced row.**
+  - An input `via`, or a `creates:` subject field set from one, is bound to the referenced row, as
+    an owner's input is. Where it is already bound to the owner the arrangement created for an
+    owned `creates:` subject, that owner is the referenced row. It sits at the plain witness, so
+    its decoys, one away from a multiple of 27720, differ from it for every enum of up to twelve
+    variants. The decoys go before the owner and right after its capture.
+  - A subject field of an existing subject is pointed at the referenced row by rewriting the
+    subject's creating act, through that branch's `sets: <via>: input.<field>` (the link
+    `arrange_owner` reads), and only where no later act rewrote the field.
+- **The value at the branch.** Where the document declares an `updates:` branch of the referenced
+  entity that writes a read field from its input unchanged, that branch is run on the referenced
+  row after everything else in the arrangement and just before the branch under test. Its input is
+  chosen to write a value neither the referenced row nor a decoy held, where one of the first
+  twelve further witnesses does, else one that at least differs from the referenced row's. The
+  value it wrote is the one asserted. So an implementation that copied the value when the subject
+  was created publishes the old one and fails. Branches chosen by the row's stored fields, or
+  decided by an injected external outcome, are not used. Where the document declares no such
+  branch, the value at the branch is the value at creation, and a copy made at creation cannot be
+  told apart from a read at the branch.
+- **What is asserted.** The referenced row's value is asserted on the event and, for `sets:`, on
+  the row. An implementation reading a decoy, the row created first or the row created last fails.
+- **Where nothing is asserted.** If the rows cannot be arranged or the link is not declared, the
+  source is undetermined: the payload shape covers it, and the row gets no claim. A branch reached
+  through the stored-row search (a `when_subject` predicate) is arranged by that search and does
+  not get the rows.
+- **Where the value is kept.** It is carried in the arrangement's settled fields under a key that
+  is neither a field name nor a fact path, so no view row, filter or lookup by field name reads it.
+
+No new step, step field or value kind, so no suite format: a suite asserting a related value is a
+literal in an `expect_event` payload or a view row, which every runtime already compares.
+Entity Runtime refuses the source with `ValueExpressionUnsupported`, as it does every value
+expression: entity-core has no join. `ess-gen` documentation describes it as it describes every
+other source (`demo.shipping.Customer.region of the row subject.customer_id names`). `ess-synth`
+renders no payload source except a response field. Neither has anything to refuse.
+
+### E9 — `{caller: <attribute>}` and `caller.<attribute>` (#168, `ess/16`)
+
+A value read from the authenticated caller, and a guard operand comparing it with an input or a
+stored field. Its binding design is [`caller-values.md`](caller-values.md): actor `attributes:`,
+the every-actor rule, the `==`/`!=`-against-a-field restriction, the suite/26 `caller` field on
+command steps, and synthesis under two caller assignments.
+
 ## Not in this design
 
 - Arbitrary arithmetic, string functions or conditionals beyond E4's one fallback.
-- A source read from a row other than the subject.
+- A source read through more than one reference, or through an `Optional` or list reference (E8).
+- A guard reading a related row (for example, refusing when the referenced customer is `Closed`).
 - Per-leaf struct comparison in suites (E5).

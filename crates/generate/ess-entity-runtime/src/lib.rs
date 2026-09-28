@@ -428,6 +428,27 @@ pub enum LoweringCode {
     /// An outcome shape of ess/15 — an `unknown_instance:` branch, a `deletes:` effect, a creation
     /// `into:` a declared state, or `accepts: nothing` — which entity-core has no definition for.
     OutcomeShapeUnsupported,
+    /// An `input_absent:` branch (ess/16): the answer for a request with no input at all. An absent
+    /// request body is a transport fact entity-core never sees, so it has no definition for it.
+    InputAbsentUnsupported,
+    /// A command guard orders a `Timestamp` against the current time (`starts_at < now - 60s`,
+    /// ess/16), and entity-core has no clock operand: it reads the clock at the edge and hands it
+    /// in as an argument, so a lowered `before` against the text `now - 60s` would be `Unknown`
+    /// for every request.
+    CurrentTimeUnsupported,
+    /// A branch selected by whether a record carries the addressed identity (ess/16): a creation
+    /// marked `unknown_instance: true` beside the branch that updates the record, or an
+    /// `existing_instance:` refusal beside a creation. entity-core answers a missing row itself and
+    /// selects no branch by it.
+    ExistenceSelectionUnsupported,
+    /// A value or a guard reads the authenticated caller (`{caller: …}`, `caller.<attribute>`,
+    /// ess/16): entity-core decides from a command's arguments and the stored row, and has no
+    /// operand for who sent the command.
+    CallerUnsupported,
+    /// A set effect (ess/16): `instances: {where: …}` changing every row a filter selects, or
+    /// `affects:` changing rows beside the subject. An entity-core operation acts on the one
+    /// instance its request names.
+    SetEffectUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -563,6 +584,17 @@ impl Projector<'_> {
             predicate,
             at,
         );
+        for path in &checked.current_time {
+            self.diagnostic(
+                LoweringCode::CurrentTimeUnsupported,
+                at,
+                format!(
+                    "`{predicate}` orders `{path}` against the current time, and Entity Runtime \
+                     has no clock operand: entity-core reads the clock at the edge and takes it as \
+                     an argument, so a lowered rule would be Unknown for every request"
+                ),
+            );
+        }
         for read in checked.reads {
             if read.resolution.access.text_length {
                 self.diagnostic(
@@ -597,6 +629,17 @@ impl Projector<'_> {
             });
             if lowered {
                 let at = site.site.render();
+                if reads_caller(&site) {
+                    self.diagnostic(
+                        LoweringCode::CallerUnsupported,
+                        &at,
+                        format!(
+                            "`{}` reads the caller (ess/16), and entity-core has no operand for \
+                             who sent the command",
+                            site.predicate
+                        ),
+                    );
+                }
                 let input = (!site.input.is_empty()).then_some(site.input.as_slice());
                 self.refuse_text_lengths(&site.fields, input, site.predicate, &at);
             }
@@ -1196,9 +1239,42 @@ impl Projector<'_> {
         }
     }
 
+    /// Refuses every set effect of `command` by name (ess/16, beyond10x/ess#167, #175), and says
+    /// whether it refused one: such a command is not lowered further.
+    fn refuse_set_effects(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in &command.outcomes {
+            let path = format!("{}.{}", command.name, outcome.name.as_str());
+            if outcome.instances.is_some() {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{path}.instances"),
+                    "a branch changing every row a filter selects (ess/16, `instances:`) has no \
+                     Entity Runtime definition; an entity-core operation acts on the one \
+                     instance its request names",
+                );
+                refused = true;
+            }
+            if !outcome.affects.is_empty() {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{path}.affects"),
+                    "a branch changing rows beside its subject (ess/16, `affects:`) has no \
+                     Entity Runtime definition; an entity-core operation acts on the one \
+                     instance its request names",
+                );
+                refused = true;
+            }
+        }
+        refused
+    }
+
     #[allow(clippy::too_many_lines)]
     fn build_command(&mut self, command: &ResolvedCommand) {
         let command_path = command.name.to_string();
+        if self.refuse_set_effects(command) {
+            return;
+        }
         let mut targets = BTreeSet::new();
         for outcome in &command.outcomes {
             if let Some(subject) = &outcome.subject {
@@ -1251,6 +1327,24 @@ impl Projector<'_> {
         let has_operation = effects
             .iter()
             .any(|effect| !matches!(effect, ResolvedEffect::Creates));
+        // Create-or-update (ess/16) is the one mixed command whose branch is chosen by existence;
+        // it is refused as that, before the entrypoint split it would otherwise meet.
+        let creates_on_unknown = command.outcomes.iter().any(|outcome| {
+            outcome.condition == ResolvedCondition::UnknownInstance
+                && outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+        });
+        if creates_on_unknown {
+            self.diagnostic(
+                LoweringCode::ExistenceSelectionUnsupported,
+                &command_path,
+                "a creation taken for an identity no record carries (ess/16, `unknown_instance:` on \
+                 `creates:`) selects its branch by existence, which entity-core does not",
+            );
+            return;
+        }
         if has_create && has_operation {
             self.diagnostic(
                 LoweringCode::MixedEntrypointUnsupported,
@@ -1353,11 +1447,20 @@ impl Projector<'_> {
         for (_, outcome) in &mut compiled {
             remap_outcome_slots(outcome, &remap, &slots.references);
         }
+        // Entity Runtime takes the first branch whose guard holds. An input-guarded refusal is
+        // taken before any accepting branch whose guard it overlaps
+        // (`docs/design/input-guard-overlap-precedence.md`), so every one of them comes first,
+        // then the other guarded branches, the default, and the wrong-state branch.
         compiled.sort_by_key(|(index, outcome)| {
+            let source = &command.outcomes[*index];
             let category = if outcome.wrong_state {
-                2
+                3
+            } else if source.error.is_some()
+                && matches!(source.condition, ResolvedCondition::When { .. })
+            {
+                0
             } else {
-                usize::from(outcome.is_default_branch())
+                1 + usize::from(outcome.is_default_branch())
             };
             (category, *index)
         });
@@ -1637,6 +1740,17 @@ impl Projector<'_> {
                 }
             }
             Some(ResolvedPayloadField {
+                value: ResolvedPayloadValue::ChangedCount,
+                ..
+            }) => {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{}.{}.identity", command.name, outcome.name.as_str()),
+                    "a logical identity is not a count of changed rows (ess/16)",
+                );
+                IdentityValue::Literal { value: Value::Null }
+            }
+            Some(ResolvedPayloadField {
                 value: ResolvedPayloadValue::Cleared,
                 ..
             }) => {
@@ -1644,6 +1758,18 @@ impl Projector<'_> {
                     LoweringCode::ClearedValueUnsupported,
                     format!("{}.{}.identity", command.name, outcome.name.as_str()),
                     "a logical identity cannot be cleared",
+                );
+                IdentityValue::Literal { value: Value::Null }
+            }
+            Some(ResolvedPayloadField {
+                value: ResolvedPayloadValue::CallerAttribute { .. },
+                ..
+            }) => {
+                self.diagnostic(
+                    LoweringCode::CallerUnsupported,
+                    format!("{}.{}.identity", command.name, outcome.name.as_str()),
+                    "a logical identity is not lowered from the caller (ess/16); entity-core has \
+                     no operand for who sent the command",
                 );
                 IdentityValue::Literal { value: Value::Null }
             }
@@ -1703,7 +1829,10 @@ impl Projector<'_> {
                         | ResolvedPayloadValue::SubjectField { .. }
                         | ResolvedPayloadValue::Increment { .. }
                         | ResolvedPayloadValue::InputOrGenerated { .. }
-                        | ResolvedPayloadValue::Struct { .. } => {
+                        | ResolvedPayloadValue::Struct { .. }
+                        | ResolvedPayloadValue::RelatedField { .. }
+                        | ResolvedPayloadValue::CallerAttribute { .. }
+                        | ResolvedPayloadValue::ChangedCount => {
                             unreachable!(
                                 "literals, clears and value expressions were handled above"
                             )
@@ -1751,6 +1880,7 @@ impl Projector<'_> {
         let mut when = None;
         let mut in_state = None;
         let mut wrong_state = false;
+        let mut by_existence = false;
         let source = self.service.source();
         let input = Typing::over(source, &command.input);
         // A stored-field predicate reads the command's input under `input.` (beyond10x/ess#157),
@@ -1830,6 +1960,15 @@ impl Projector<'_> {
                 });
             }
             ResolvedCondition::WrongState => wrong_state = true,
+            // Selection by existence (ess/16): a creation taken for an identity no record carries.
+            ResolvedCondition::UnknownInstance
+                if outcome
+                    .subject
+                    .as_ref()
+                    .is_some_and(|subject| subject.effect == ResolvedEffect::Creates) =>
+            {
+                by_existence = true;
+            }
             ResolvedCondition::UnknownInstance => self.diagnostic(
                 LoweringCode::OutcomeShapeUnsupported,
                 &path,
@@ -1837,6 +1976,24 @@ impl Projector<'_> {
                  row is the runtime's own answer"
                     .to_owned(),
             ),
+            ResolvedCondition::InputAbsent => self.diagnostic(
+                LoweringCode::InputAbsentUnsupported,
+                &path,
+                "an `input_absent:` branch (ess/16) has no Entity Runtime definition; a request with \
+                 no input never reaches entity-core"
+                    .to_owned(),
+            ),
+            ResolvedCondition::ExistingInstance => by_existence = true,
+        }
+        if by_existence {
+            self.diagnostic(
+                LoweringCode::ExistenceSelectionUnsupported,
+                &path,
+                "a branch selected by whether a record carries the addressed identity (ess/16, \
+                 `unknown_instance:` on a creation or `existing_instance:`) has no Entity Runtime \
+                 definition; entity-core answers a missing row itself"
+                    .to_owned(),
+            );
         }
         for ordering in input
             .take_refused()
@@ -2337,10 +2494,32 @@ impl Projector<'_> {
                 kind: ProducedValueKind::Absent,
                 slot: None,
             }),
+            // Admitted on a set outcome only, which `refuse_set_effects` refused before this.
+            ResolvedPayloadValue::ChangedCount => {
+                self.diagnostic(
+                    LoweringCode::SetEffectUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    "`{count: changed}` (ess/16) counts the rows a set outcome changed, which \
+                     entity-core does not",
+                );
+                None
+            }
+            ResolvedPayloadValue::CallerAttribute { attribute, .. } => {
+                self.diagnostic(
+                    LoweringCode::CallerUnsupported,
+                    format!("{}.{}", command.name, outcome.name.as_str()),
+                    format!(
+                        "the caller's `{attribute}` (ess/16) has no entity-core lowering; \
+                         entity-core has no operand for who sent the command"
+                    ),
+                );
+                None
+            }
             value @ (ResolvedPayloadValue::SubjectField { .. }
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
-            | ResolvedPayloadValue::Struct { .. }) => {
+            | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. }) => {
                 self.diagnostic(
                     LoweringCode::ValueExpressionUnsupported,
                     format!("{}.{}", command.name, outcome.name.as_str()),
@@ -3160,6 +3339,18 @@ enum Scalar {
 }
 
 /// The ess/14 sources, which entity-core has no value expression for.
+/// Whether a predicate the IR holds reads the authenticated caller (ess/16): `caller.<attribute>`,
+/// where no field it is read over is itself named `caller`.
+fn reads_caller(site: &ess_compiler::expression::PredicateSite<'_>) -> bool {
+    let caller = ess_domain::command::caller_value::CALLER_NAMESPACE;
+    !site.fields.iter().any(|field| field.name == caller)
+        && site
+            .predicate
+            .fact_paths()
+            .iter()
+            .any(|path| path.namespace() == caller && path.segments().len() > 1)
+}
+
 fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
     matches!(
         value,
@@ -3167,6 +3358,7 @@ fn is_value_expression(value: &ResolvedPayloadValue) -> bool {
             | ResolvedPayloadValue::Increment { .. }
             | ResolvedPayloadValue::InputOrGenerated { .. }
             | ResolvedPayloadValue::Struct { .. }
+            | ResolvedPayloadValue::RelatedField { .. }
     )
 }
 

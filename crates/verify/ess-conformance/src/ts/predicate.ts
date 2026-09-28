@@ -76,10 +76,40 @@ export function truthOf(value: boolean): Truth {
  * a quantifier counts through. Same convention the specification half uses, so a predicate written
  * against the model evaluates here without translation.
  *
+ * A mapping or a sequence binds no fact of its own, but is recorded as present in {@link presence},
+ * even when it is empty: what `defined()` over an Optional struct, list or map reads
+ * (beyond10x/ess#176). Beside the map rather than in it, so no value read can see it.
+ *
  * A `Map` and not an object, because a fact path is arbitrary text: a row publishing
  * `constructor` or `__proto__` must be one fact, not a reader of `Object.prototype`.
  */
 export type FactSource = Map<string, Node>;
+
+/** The paths of each source that hold a mapping or a sequence; the Go runtime's `aggregatePresent`. */
+const aggregates = new WeakMap<FactSource, Set<string>>();
+
+/** The paths of `source` that hold a present mapping or sequence. */
+export function presence(source: FactSource): Set<string> {
+  let paths = aggregates.get(source);
+  if (paths === undefined) {
+    paths = new Set();
+    aggregates.set(source, paths);
+  }
+  return paths;
+}
+
+/**
+ * What `defined()` reads, the Go runtime's `present` (beyond10x/ess#176): a bound scalar, a text's
+ * derived length, or a mapping or sequence — present even when empty — is present; `null` and a
+ * path nothing binds are absent.
+ */
+export function present(source: FactSource, path: string): boolean {
+  if (source.has(path)) {
+    const value = source.get(path);
+    return value !== null && value !== undefined;
+  }
+  return aggregates.get(source)?.has(path) === true || readLeaf(source, path)[1];
+}
 
 /** Flattens one row into the paths a predicate reads. */
 /**
@@ -109,6 +139,7 @@ export function bindFact(into: FactSource, path: string, value: Node): void {
   if (Array.isArray(value)) {
     // The size as well as the elements: a quantifier has no collection value to ask for a
     // length, so the length is a fact like any other.
+    presence(into).add(path);
     into.set(`${path}.count`, value.length);
     for (const [index, nested] of value.entries()) {
       bindFact(into, `${path}.${index}`, nested);
@@ -116,6 +147,7 @@ export function bindFact(into: FactSource, path: string, value: Node): void {
     return;
   }
   if (value !== null && typeof value === 'object') {
+    presence(into).add(path);
     for (const [key, nested] of Object.entries(value)) {
       bindFact(into, `${path}.${key}`, nested);
     }
@@ -260,7 +292,7 @@ export class Predicate {
         return truthOf(isTruthy(value));
       }
       case 'defined':
-        return truthOf(readLeaf(source, this.path)[1]);
+        return truthOf(present(source, this.path));
       case 'any_of':
       case 'none_of': {
         const [value, ok] = readLeaf(source, this.path);
@@ -371,6 +403,16 @@ export function rebind(source: FactSource, bind: string, prefix: string): FactSo
     }
     if (path.startsWith(`${prefix}.`)) {
       bound.set(`${bind}.${path.slice(prefix.length + 1)}`, value);
+    }
+  }
+  const held = aggregates.get(source);
+  if (held !== undefined) {
+    const rebound = presence(bound);
+    for (const path of held) {
+      rebound.add(path);
+      if (path === prefix) rebound.add(bind);
+      else if (path.startsWith(`${prefix}.`))
+        rebound.add(`${bind}.${path.slice(prefix.length + 1)}`);
     }
   }
   return bound;

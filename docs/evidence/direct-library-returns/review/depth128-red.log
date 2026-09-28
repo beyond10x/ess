@@ -1,0 +1,15 @@
+
+running 1 test
+
+thread 'reviewer_documented_depth128_literal_survives_original_byte_admission' (1031417) panicked at $HOME/.cache/er-ess-release/ess-review/probe.rs:36:10:
+a valid direct response contract must survive the actual original-byte boundary: AdmissionError { issues: [AdmissionIssue { reason: "InvalidDocument", path: "$suite.scenarios.library.api.Read/outcome/returned.steps[2].response.expected.value[0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0]", detail: "JSON nesting exceeds 128" }] }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test reviewer_documented_depth128_literal_survives_original_byte_admission ... FAILED
+
+failures:
+
+failures:
+    reviewer_documented_depth128_literal_survives_original_byte_admission
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.08s
+

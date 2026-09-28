@@ -1,0 +1,24 @@
+   Compiling ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 0.47s
+     Running tests/direct_returns.rs (EVIDENCE_CACHE/er-ess-extension/build/debug/deps/direct_returns-02220fe4f762dc57)
+
+running 1 test
+test pure_return_json_obeys_the_same_recursive_resource_bounds ... FAILED
+
+failures:
+
+---- pure_return_json_obeys_the_same_recursive_resource_bounds stdout ----
+
+thread 'pure_return_json_obeys_the_same_recursive_resource_bounds' (3090415) panicked at crates/verify/ess-conformance/tests/direct_returns.rs:425:9:
+assertion `left == right` failed
+  left: true
+ right: false
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pure_return_json_obeys_the_same_recursive_resource_bounds
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p ess-conformance --test direct_returns`

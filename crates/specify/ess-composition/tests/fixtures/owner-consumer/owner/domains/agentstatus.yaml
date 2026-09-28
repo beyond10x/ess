@@ -1,0 +1,45 @@
+domain: demo.owner.agentstatus
+
+types:
+  - name: demo.owner.agentstatus.AgentId
+    kind: newtype
+    of: Uuid
+  - name: demo.owner.agentstatus.Availability
+    kind: enum
+    variants: [Online, Away]
+  - name: demo.owner.agentstatus.StatusView
+    kind: struct
+    fields:
+      - { name: agent_id, type: demo.owner.agentstatus.AgentId }
+      - { name: availability, type: demo.owner.agentstatus.Availability }
+      - { name: note, type: Optional<String> }
+      - { name: since, type: Timestamp }
+
+entities:
+  - name: demo.owner.agentstatus.AgentStatus
+    identity: { name: agent_id, type: demo.owner.agentstatus.AgentId }
+    fields:
+      - { name: availability, type: demo.owner.agentstatus.Availability }
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+commands:
+  - name: demo.owner.agentstatus.UpdateOwnStatus
+    input:
+      - { name: availability, type: demo.owner.agentstatus.Availability }
+    outcomes:
+      - name: updated
+        creates: demo.owner.agentstatus.AgentStatus
+        instance: agent_id
+        emits: [demo.owner.agentstatus.StatusUpdated]
+        payload:
+          demo.owner.agentstatus.StatusUpdated:
+            availability: input.availability
+
+events:
+  - name: demo.owner.agentstatus.StatusUpdated
+    fields:
+      - { name: agent_id, type: demo.owner.agentstatus.AgentId }
+      - { name: availability, type: demo.owner.agentstatus.Availability }

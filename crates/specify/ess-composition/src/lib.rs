@@ -11,11 +11,17 @@
 //! row shapes/fields are retained as references. View parameters are not traversed. These names
 //! describe the selected surface; they do not carry complete payload definitions or codecs.
 //!
-//! The persisted input format is [`COMPOSITION_FORMAT`]. Generated clients consume the derived
-//! [`EssClientPlan`] rather than reinterpreting multiple service models independently. The Rust
-//! client constrains operation descriptors to that selection, but forwards request and response
-//! bytes unchanged through an application-provided transport. It does no payload admission,
-//! response decoding, authority verification or live endpoint/model identity handshake.
+//! Under [`CONFORMANCE_COMPOSITION_FORMAT`] a reference may also name any type declared in a domain
+//! the selected component owns, and `conformances` asserts that a consumer's local type has the
+//! shape of an imported component's type. That assertion is checked field by field against both
+//! compiled models; the only tolerated difference is a consumer treating a required value as
+//! optional. Owner-declared types are referenceable, not added to the client surface.
+//!
+//! The persisted input formats are [`SUPPORTED_COMPOSITION_FORMATS`]. Generated clients consume
+//! the derived [`EssClientPlan`] rather than reinterpreting multiple service models independently.
+//! The Rust client constrains operation descriptors to that selection, but forwards request and
+//! response bytes unchanged through an application-provided transport. It does no payload
+//! admission, response decoding, authority verification or live endpoint/model identity handshake.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -29,8 +35,16 @@ use ess_compiler::refs::{
 use ess_compiler::EssIr;
 use ess_domain::name::{QualifiedName, Version};
 
-/// The only composition document format this reader understands.
+mod conformance;
+
+/// The composition document format [`CompositionSpec::new`] writes: services and references only.
 pub const COMPOSITION_FORMAT: &str = "ess-composition/1";
+
+/// The composition format that admits `conformances` and references to owner-declared types.
+pub const CONFORMANCE_COMPOSITION_FORMAT: &str = "ess-composition/2";
+
+/// Every `ess-composition/N` major this build reads; any other marker is refused.
+pub const SUPPORTED_COMPOSITION_FORMATS: &[u32] = &[1, 2];
 
 /// The language-neutral client-plan format emitted from composition IR.
 pub const CLIENT_PLAN_FORMAT: &str = "ess-client-plan/1";
@@ -277,6 +291,65 @@ impl CompositionRef {
     }
 }
 
+/// One end of a [`TypeConformance`]: a declared type in the service selected by its key.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct TypeBinding {
+    service: ServiceKey,
+    #[serde(rename = "type")]
+    declared: DeclaredTypeRef,
+}
+
+impl TypeBinding {
+    /// Names a declared type in one imported service.
+    pub fn new(service: ServiceKey, declared: DeclaredTypeRef) -> Self {
+        Self { service, declared }
+    }
+
+    /// The service whose compiled model declares the type.
+    pub fn service(&self) -> &ServiceKey {
+        &self.service
+    }
+
+    /// The declared type's stable name.
+    pub fn declared(&self) -> &DeclaredTypeRef {
+        &self.declared
+    }
+}
+
+/// An `ess-composition/2` assertion that a consumer's local type has an imported type's shape.
+///
+/// Both ends must be referenceable in their selected components. The shapes are compared field by
+/// field; a local value may be optional where the imported one is required, and nothing else may
+/// differ. A difference is refused as [`CompositionCode::TypeConformanceDrift`].
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct TypeConformance {
+    local: TypeBinding,
+    conforms_to: TypeBinding,
+}
+
+impl TypeConformance {
+    /// Asserts that `local` conforms to `conforms_to`.
+    pub fn new(local: TypeBinding, conforms_to: TypeBinding) -> Self {
+        Self { local, conforms_to }
+    }
+
+    /// The consumer's own type.
+    pub fn local(&self) -> &TypeBinding {
+        &self.local
+    }
+
+    /// The imported type the local one must match.
+    pub fn conforms_to(&self) -> &TypeBinding {
+        &self.conforms_to
+    }
+}
+
 /// The human-authored persisted composition input.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -286,6 +359,10 @@ pub struct CompositionSpec {
     services: Vec<ServiceImportSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     references: Vec<CompositionRef>,
+    /// Present only in `ess-composition/2`; a `/1` document carrying the key, even empty, is
+    /// refused by [`compile`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    conformances: Option<Vec<TypeConformance>>,
 }
 
 impl CompositionSpec {
@@ -300,6 +377,24 @@ impl CompositionSpec {
             composition,
             services,
             references,
+            conformances: None,
+        }
+    }
+
+    /// Creates an `ess-composition/2` input, which may reference owner-declared types and assert
+    /// type conformances. Semantic validation happens in [`compile`].
+    pub fn with_conformances(
+        composition: ServiceKey,
+        services: Vec<ServiceImportSpec>,
+        references: Vec<CompositionRef>,
+        conformances: Vec<TypeConformance>,
+    ) -> Self {
+        Self {
+            format: CONFORMANCE_COMPOSITION_FORMAT.to_owned(),
+            composition,
+            services,
+            references,
+            conformances: (!conformances.is_empty()).then_some(conformances),
         }
     }
 
@@ -331,6 +426,11 @@ impl CompositionSpec {
     /// Cross-service semantic names, before resolution.
     pub fn references(&self) -> &[CompositionRef] {
         &self.references
+    }
+
+    /// Type conformance assertions, before resolution. Empty when the key is absent.
+    pub fn conformances(&self) -> &[TypeConformance] {
+        self.conformances.as_deref().unwrap_or_default()
     }
 
     /// Canonical JSON with a trailing newline.
@@ -383,6 +483,9 @@ pub enum CompositionCode {
     UnknownComponent,
     /// A semantic name exists in the model but is outside the selected component surface.
     ReferenceOutsideComponent,
+    /// A local type asserted to conform to an imported type differs from it in a field's name,
+    /// presence or type (`ess-composition/2`).
+    TypeConformanceDrift,
 }
 
 impl fmt::Display for CompositionCode {
@@ -401,6 +504,7 @@ impl fmt::Display for CompositionCode {
             Self::UnresolvedSemanticReference => "unresolved_semantic_reference",
             Self::UnknownComponent => "unknown_component",
             Self::ReferenceOutsideComponent => "reference_outside_component",
+            Self::TypeConformanceDrift => "type_conformance_drift",
         };
         formatter.write_str(code)
     }
@@ -486,6 +590,10 @@ pub struct ResolvedService {
     events: BTreeSet<EventRef>,
     errors: BTreeSet<ErrorRef>,
     types: BTreeSet<DeclaredTypeRef>,
+    /// Every type declared in a domain the component owns. Referenceable under
+    /// `ess-composition/2`; never serialised, so neither IR nor client-plan bytes move.
+    #[serde(skip)]
+    declared_types: BTreeSet<DeclaredTypeRef>,
 }
 
 impl ResolvedService {
@@ -535,14 +643,22 @@ impl ResolvedService {
         &self.types
     }
 
-    fn exports(&self, reference: &EssSemanticRef) -> bool {
+    /// Every type declared in a domain the selected component owns, whether or not the client
+    /// surface reaches it. `ess-composition/2` references and conformances may name these.
+    pub fn declared_types(&self) -> &BTreeSet<DeclaredTypeRef> {
+        &self.declared_types
+    }
+
+    fn exports(&self, reference: &EssSemanticRef, owner_declared: bool) -> bool {
         match reference {
             EssSemanticRef::Command { name } => self.commands.contains(name),
             EssSemanticRef::Outcome { name } => self.commands.contains(&name.command),
             EssSemanticRef::Event { name } => self.events.contains(name),
             EssSemanticRef::Error { name } => self.errors.contains(name),
             EssSemanticRef::View { name } => self.queries.contains(name),
-            EssSemanticRef::Type { name } => self.types.contains(name),
+            EssSemanticRef::Type { name } => {
+                self.types.contains(name) || (owner_declared && self.declared_types.contains(name))
+            }
             EssSemanticRef::Component { name } => name == &self.component,
             EssSemanticRef::Domain { .. }
             | EssSemanticRef::Entity { .. }
@@ -561,6 +677,8 @@ pub struct EssCompositionIr {
     services: BTreeMap<ServiceKey, ResolvedService>,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     references: BTreeSet<CompositionRef>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    conformances: BTreeSet<TypeConformance>,
 }
 
 impl EssCompositionIr {
@@ -582,6 +700,11 @@ impl EssCompositionIr {
     /// Every resolved cross-service semantic name.
     pub fn references(&self) -> &BTreeSet<CompositionRef> {
         &self.references
+    }
+
+    /// Every checked type conformance assertion (`ess-composition/2`).
+    pub fn conformances(&self) -> &BTreeSet<TypeConformance> {
+        &self.conformances
     }
 
     /// Canonical JSON with a trailing newline.
@@ -1125,39 +1248,133 @@ pub fn compile<'a>(
     services: impl IntoIterator<Item = CompiledService<'a>>,
 ) -> Result<EssCompositionIr, CompositionDiagnostics> {
     let mut diagnostics = Vec::new();
-    validate_format(specification, &mut diagnostics);
+    let format = validate_format(specification, &mut diagnostics);
     let registry = collect_registry(services, &mut diagnostics);
     let (declared_keys, resolved) = resolve_services(specification, &registry, &mut diagnostics);
-    let references = resolve_references(
-        specification,
-        &registry,
-        &declared_keys,
-        &resolved,
-        &mut diagnostics,
-    );
+    let admission = Admission {
+        registry: &registry,
+        declared_keys: &declared_keys,
+        resolved: &resolved,
+        owner_declared: format == CONFORMANCE_COMPOSITION_FORMAT,
+    };
+    let references = resolve_references(specification, &admission, &mut diagnostics);
+    let conformances =
+        conformance::resolve_conformances(specification, &admission, &mut diagnostics);
 
     if diagnostics.is_empty() {
         Ok(EssCompositionIr {
-            format: COMPOSITION_FORMAT.to_owned(),
+            format: format.to_owned(),
             composition: specification.composition.clone(),
             services: resolved,
             references,
+            conformances,
         })
     } else {
         Err(CompositionDiagnostics(diagnostics))
     }
 }
 
-fn validate_format(specification: &CompositionSpec, diagnostics: &mut Vec<CompositionDiagnostic>) {
-    if specification.format != COMPOSITION_FORMAT {
+/// The admitted format marker; an unsupported one reads as `ess-composition/1` after refusal.
+fn validate_format(
+    specification: &CompositionSpec,
+    diagnostics: &mut Vec<CompositionDiagnostic>,
+) -> &'static str {
+    let format = match specification.format.as_str() {
+        COMPOSITION_FORMAT => COMPOSITION_FORMAT,
+        CONFORMANCE_COMPOSITION_FORMAT => CONFORMANCE_COMPOSITION_FORMAT,
+        other => {
+            diagnostics.push(CompositionDiagnostic::new(
+                CompositionCode::UnsupportedFormat,
+                None,
+                format!(
+                    "format {other:?} is unsupported; expected {COMPOSITION_FORMAT} or \
+                     {CONFORMANCE_COMPOSITION_FORMAT}"
+                ),
+            ));
+            return COMPOSITION_FORMAT;
+        }
+    };
+    if format == COMPOSITION_FORMAT && specification.conformances.is_some() {
         diagnostics.push(CompositionDiagnostic::new(
             CompositionCode::UnsupportedFormat,
             None,
             format!(
-                "format {:?} is unsupported; expected {COMPOSITION_FORMAT}",
-                specification.format
+                "`conformances` is an {CONFORMANCE_COMPOSITION_FORMAT} construct; \
+                 {COMPOSITION_FORMAT} does not admit it"
             ),
         ));
+    }
+    format
+}
+
+/// What every reference and conformance end is admitted against.
+struct Admission<'a, 'ir> {
+    registry: &'a BTreeMap<ServiceKey, &'ir EssIr>,
+    declared_keys: &'a BTreeSet<ServiceKey>,
+    resolved: &'a BTreeMap<ServiceKey, ResolvedService>,
+    /// Whether a type declared in an owned domain is referenceable (`ess-composition/2`).
+    owner_declared: bool,
+}
+
+impl<'ir> Admission<'_, 'ir> {
+    /// Admits one service-qualified semantic name, returning its compiled model when the selected
+    /// component exports it and recording why when it does not.
+    fn admit(
+        &self,
+        service: &ServiceKey,
+        semantic: &EssSemanticRef,
+        diagnostics: &mut Vec<CompositionDiagnostic>,
+    ) -> Option<&'ir EssIr> {
+        let Some(ir) = self.registry.get(service).copied() else {
+            diagnostics.push(CompositionDiagnostic::new(
+                CompositionCode::UnknownReferenceService,
+                Some(service.clone()),
+                format!(
+                    "reference `{semantic}` selects service `{service}`, which has no compiled input"
+                ),
+            ));
+            return None;
+        };
+        if !self.declared_keys.contains(service) {
+            diagnostics.push(CompositionDiagnostic::new(
+                CompositionCode::UnknownReferenceService,
+                Some(service.clone()),
+                format!(
+                    "reference `{semantic}` selects service `{service}`, which is not imported"
+                ),
+            ));
+            return None;
+        }
+        if !ir.resolves(semantic) {
+            diagnostics.push(CompositionDiagnostic::new(
+                CompositionCode::UnresolvedSemanticReference,
+                Some(service.clone()),
+                format!("service `{service}` does not resolve `{semantic}`"),
+            ));
+            return None;
+        }
+        let resolved = self.resolved.get(service)?;
+        if resolved.exports(semantic, self.owner_declared) {
+            return Some(ir);
+        }
+        let hint = if !self.owner_declared && resolved.exports(semantic, true) {
+            format!(
+                "; a type its owned domains declare is referenceable under \
+                 {CONFORMANCE_COMPOSITION_FORMAT}"
+            )
+        } else {
+            String::new()
+        };
+        diagnostics.push(CompositionDiagnostic::new(
+            CompositionCode::ReferenceOutsideComponent,
+            Some(service.clone()),
+            format!(
+                "service `{service}` resolves `{semantic}`, but selected component `{}` does not \
+                 export it{hint}",
+                resolved.component
+            ),
+        ));
+        None
     }
 }
 
@@ -1347,6 +1564,12 @@ fn resolved_service(
         collect_field_types(ir, &view.fields, &mut types);
     }
 
+    let declared_types = component
+        .owns
+        .iter()
+        .flat_map(|domain| ir.domain(domain).types.iter().map(DeclaredTypeRef::from))
+        .collect();
+
     Some(ResolvedService {
         system: ir.system().clone(),
         version: *ir.version(),
@@ -1357,6 +1580,7 @@ fn resolved_service(
         events,
         errors,
         types,
+        declared_types,
     })
 }
 
@@ -1394,55 +1618,16 @@ fn collect_declared_type(ir: &EssIr, handle: &TypeHandle, types: &mut BTreeSet<D
 
 fn resolve_references(
     specification: &CompositionSpec,
-    registry: &BTreeMap<ServiceKey, &EssIr>,
-    declared_keys: &BTreeSet<ServiceKey>,
-    resolved: &BTreeMap<ServiceKey, ResolvedService>,
+    admission: &Admission<'_, '_>,
     diagnostics: &mut Vec<CompositionDiagnostic>,
 ) -> BTreeSet<CompositionRef> {
     let mut references = BTreeSet::new();
     for reference in &specification.references {
-        let Some(ir) = registry.get(&reference.service).copied() else {
-            diagnostics.push(CompositionDiagnostic::new(
-                CompositionCode::UnknownReferenceService,
-                Some(reference.service.clone()),
-                format!(
-                    "reference `{}` selects service `{}`, which has no compiled input",
-                    reference.semantic, reference.service
-                ),
-            ));
-            continue;
-        };
-        if !declared_keys.contains(&reference.service) {
-            diagnostics.push(CompositionDiagnostic::new(
-                CompositionCode::UnknownReferenceService,
-                Some(reference.service.clone()),
-                format!(
-                    "reference `{}` selects service `{}`, which is not imported",
-                    reference.semantic, reference.service
-                ),
-            ));
-        } else if !ir.resolves(&reference.semantic) {
-            diagnostics.push(CompositionDiagnostic::new(
-                CompositionCode::UnresolvedSemanticReference,
-                Some(reference.service.clone()),
-                format!(
-                    "service `{}` does not resolve `{}`",
-                    reference.service, reference.semantic
-                ),
-            ));
-        } else if let Some(service) = resolved.get(&reference.service) {
-            if service.exports(&reference.semantic) {
-                references.insert(reference.clone());
-            } else {
-                diagnostics.push(CompositionDiagnostic::new(
-                    CompositionCode::ReferenceOutsideComponent,
-                    Some(reference.service.clone()),
-                    format!(
-                        "service `{}` resolves `{}`, but selected component `{}` does not export it",
-                        reference.service, reference.semantic, service.component
-                    ),
-                ));
-            }
+        if admission
+            .admit(&reference.service, &reference.semantic, diagnostics)
+            .is_some()
+        {
+            references.insert(reference.clone());
         }
     }
     references

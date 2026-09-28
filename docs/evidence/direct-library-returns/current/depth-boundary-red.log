@@ -1,0 +1,22 @@
+   Compiling ess-conformance v0.38.0 ($HOME/.local/state/worktree/trees/b10x/ess/er-library-conformance-current/crates/verify/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 0.55s
+     Running tests/direct_returns.rs (target/debug/deps/direct_returns-f90a315b8a7db012)
+
+running 1 test
+test pure_return_depth_boundary_survives_original_suite_bytes ... FAILED
+
+failures:
+
+---- pure_return_depth_boundary_survives_original_suite_bytes stdout ----
+
+thread 'pure_return_depth_boundary_survives_original_suite_bytes' (1161210) panicked at crates/verify/ess-conformance/tests/direct_returns.rs:601:37:
+depth-128 literal survives its suite envelope: AdmissionError { issues: [AdmissionIssue { reason: "InvalidDocument", path: "$suite.scenarios.library.api.Read/outcome/returned.steps[2].response.expected.value[0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0][0]", detail: "JSON nesting exceeds 128" }] }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pure_return_depth_boundary_survives_original_suite_bytes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p ess-conformance --test direct_returns`

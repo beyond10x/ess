@@ -1544,7 +1544,7 @@ fn contained(dir: &str) -> Result<(), String> {
 fn synthesized(ir: &EssIr) -> (crate::ConformanceSuite, usize) {
     let synthesis = crate::synthesize(ir);
     let mut suite = synthesis.suite;
-    suite.select_fresh_format();
+    suite.select_fresh_format_for(ir);
     (suite, synthesis.refusals.len())
 }
 

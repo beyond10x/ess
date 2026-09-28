@@ -1,0 +1,16 @@
+   Compiling ess-conformance v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/verify/ess-conformance)
+   Compiling er-ess-conformance v0.1.0 (WORKTREE_ROOT/entity-runtime/er-store-executor-contracts/checks/ess-conformance)
+    Finished `test` profile [unoptimized] target(s) in 16.26s
+     Running tests/ess_direct_return_adversary.rs (checks/ess-conformance/target/debug/deps/ess_direct_return_adversary-7a27d50981916623)
+
+running 7 tests
+test authored_named_literal_requires_nested_null_when_absent ... ok
+test authored_named_literal_rejects_nested_null_when_omitted ... ok
+test json_return_depth_limit_is_enforced ... ok
+test nested_omitted_when_absent_rejects_explicit_null ... ok
+test nested_null_when_absent_requires_explicit_null ... ok
+test json_return_collection_limit_is_enforced ... ok
+test valid_presence_and_partial_top_level_literals_remain_admitted ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

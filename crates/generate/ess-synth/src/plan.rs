@@ -703,6 +703,10 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
         ResolvedCondition::External { cause } => format!("externally decided ({cause})"),
         ResolvedCondition::WrongState => "from a state no declared move starts in".to_owned(),
         ResolvedCondition::UnknownInstance => "for an identity no record carries".to_owned(),
+        ResolvedCondition::InputAbsent => "for a request with no input at all".to_owned(),
+        ResolvedCondition::ExistingInstance => {
+            "for an identity a record already carries".to_owned()
+        }
     }
 }
 

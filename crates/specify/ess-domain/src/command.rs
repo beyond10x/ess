@@ -198,9 +198,16 @@
 //! for [`UnknownState`](ValidationCode::UnknownState), which an AEP workflow and an ESS lifecycle
 //! have shared since wave 1.
 
+pub(crate) mod absent_input;
+pub mod caller_value;
 pub mod finite;
 pub mod fixture_inputs;
+mod narrowing;
 pub(crate) mod outcome_shapes;
+pub mod related_value;
+pub use related_value::RelatedVia;
+pub mod set_effects;
+pub use set_effects::SetEffects;
 pub mod subject_fact;
 pub mod subject_state;
 pub use outcome_shapes::{fixture_of as precondition_fixture, precondition_branch, Accepts};
@@ -312,7 +319,8 @@ fn validate_wrong_state_answer(outcome: &Outcome, at: &ConstructRef) -> Validati
     if !matches!(
         outcome.condition,
         OutcomeCondition::WrongState | OutcomeCondition::UnknownInstance
-    ) {
+    ) || outcome_shapes::creates_unknown(outcome)
+    {
         return errors;
     }
     if outcome.refuses && outcome.error.is_none() {
@@ -469,6 +477,20 @@ pub enum OutcomeCondition {
     /// (`docs/design/outcome-shapes.md`, beyond10x/ess#145). It carries nothing: the branch names
     /// the error it reports, or `refuses: false` for an accepted no-op.
     UnknownInstance,
+    /// Taken when the request carries no input at all — an absent request body, not `{}` (ess/16,
+    /// beyond10x/ess#170, `docs/design/outcome-shapes.md`).
+    ///
+    /// A marker beside [`UnknownInstance`](Self::UnknownInstance), at most one per command, and
+    /// answered before any input field is read. It carries nothing and names the error it reports;
+    /// the command's fields keep their types, so no other branch changes its contract.
+    InputAbsent,
+    /// Taken when a record already carries the identity the command's creating branch would
+    /// create (ess/16, `existing_instance:`, beyond10x/ess#164, `docs/design/outcome-shapes.md`).
+    ///
+    /// The other half of [`UnknownInstance`](Self::UnknownInstance): a marker at most one per
+    /// command, beside a `creates:` branch whose identity the caller supplies, naming the error
+    /// reported instead of a second row. It carries nothing and changes nothing.
+    ExistingInstance,
 }
 
 impl OutcomeCondition {
@@ -480,9 +502,12 @@ impl OutcomeCondition {
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
             Self::SubjectPredicate { input, .. } => input.as_ref(),
-            Self::Otherwise | Self::External { .. } | Self::WrongState | Self::UnknownInstance => {
-                None
-            }
+            Self::Otherwise
+            | Self::External { .. }
+            | Self::WrongState
+            | Self::UnknownInstance
+            | Self::InputAbsent
+            | Self::ExistingInstance => None,
         }
     }
 
@@ -497,7 +522,9 @@ impl OutcomeCondition {
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState
-            | Self::UnknownInstance => None,
+            | Self::UnknownInstance
+            | Self::InputAbsent
+            | Self::ExistingInstance => None,
         }
     }
 
@@ -515,6 +542,8 @@ impl OutcomeCondition {
             Self::External { .. } | Self::ExternalWhen { .. } => TestStrategy::InjectFault,
             Self::WrongState => TestStrategy::ArrangeState,
             Self::UnknownInstance => TestStrategy::SendUnknownIdentity,
+            Self::InputAbsent => TestStrategy::SendNoInput,
+            Self::ExistingInstance => TestStrategy::SendExistingIdentity,
         }
     }
 
@@ -563,7 +592,9 @@ impl OutcomeCondition {
             | Self::ExternalWhen { .. }
             | Self::External { .. }
             | Self::WrongState
-            | Self::UnknownInstance => None,
+            | Self::UnknownInstance
+            | Self::InputAbsent
+            | Self::ExistingInstance => None,
         }
     }
 }
@@ -603,6 +634,14 @@ pub enum TestStrategy {
     /// Neither an input the caller could choose to select the branch nor an arranged world: the
     /// scenario arranges nothing, and the identity it sends is one no other scenario sends.
     SendUnknownIdentity,
+    /// Send the command with no input at all (ess/16, `input_absent:`).
+    ///
+    /// Not an empty input: the request carries no document, which an implementation may answer
+    /// differently from `{}`, and the scenario says which it sends.
+    SendNoInput,
+    /// Send the command twice for one identity (ess/16, `existing_instance:`): the first call
+    /// creates the record, the second finds it and is refused.
+    SendExistingIdentity,
 }
 
 impl TestStrategy {
@@ -617,6 +656,8 @@ impl TestStrategy {
             Self::InjectFault => "inject_fault",
             Self::ArrangeState => "arrange_state",
             Self::SendUnknownIdentity => "send_unknown_identity",
+            Self::SendExistingIdentity => "send_existing_identity",
+            Self::SendNoInput => "send_no_input",
         }
     }
 }
@@ -923,16 +964,46 @@ pub enum PayloadSource {
         scalar: ScalarKind,
     },
     /// The optional input's value when the caller sent one, otherwise a value the implementation
-    /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137).
+    /// mints: `{input: seq, else: {generated: true}}` (ess/14, #137), or the literal written after
+    /// `else:`: `{input: tier, else: Standard}` (ess/16, #163).
     InputOrGenerated {
         /// The optional input field read.
         field: String,
+        /// The fallback when it is a literal — only ever a [`Literal`](Self::Literal) or a
+        /// [`Scalar`](Self::Scalar), checked against the target as a literal written there would
+        /// be. `None` is `{generated: true}`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        otherwise: Option<Box<PayloadSource>>,
     },
     /// One source per field of a struct-typed target (ess/14, #136), in the order written.
     Struct {
         /// The struct's fields and where each comes from.
         fields: Vec<PayloadField>,
     },
+    /// A field of the row another row references: `{related: {via: customer_id, field: region}}`
+    /// (ess/16, beyond10x/ess#166).
+    ///
+    /// `via` holds the other row's identity — a field of the subject as it was before the outcome,
+    /// or `input.<field>` — and `field` is read from that row. Which entity `via` names is
+    /// [`related_value::referenced_entity`]'s answer.
+    RelatedField {
+        /// Where the other row's identity is read.
+        via: RelatedVia,
+        /// The field of the referenced row.
+        field: String,
+    },
+    /// An attribute of the authenticated caller: `{caller: account_id}` (ess/16,
+    /// beyond10x/ess#168, [`caller_value`]).
+    ///
+    /// Declared by every actor that may invoke the command, and carried by the credential rather
+    /// than by the input.
+    CallerAttribute {
+        /// The actor attribute read.
+        attribute: String,
+    },
+    /// How many rows a set outcome changed: `{count: changed}` (ess/16, beyond10x/ess#167,
+    /// [`set_effects`]). A `payload:` field of an outcome declaring `instances:`, into an `Integer`.
+    ChangedCount,
 }
 
 impl PayloadSource {
@@ -962,14 +1033,26 @@ impl fmt::Display for PayloadSource {
             Self::Generated => f.write_str("implementation-generated"),
             Self::Cleared => f.write_str("cleared"),
             Self::SubjectField { field } => write!(f, "subject field `{field}`"),
+            Self::RelatedField { via, field } => {
+                write!(f, "field `{field}` of the row `{via}` names")
+            }
+            Self::CallerAttribute { attribute } => write!(f, "the caller's `{attribute}`"),
+            Self::ChangedCount => f.write_str("{count: changed}"),
             Self::Increment { by, .. } => write!(f, "increment by {by}"),
-            Self::InputOrGenerated { field } => {
+            Self::InputOrGenerated {
+                field,
+                otherwise: None,
+            } => {
                 write!(
                     f,
                     "{}{field}, else implementation-generated",
                     Self::INPUT_PREFIX
                 )
             }
+            Self::InputOrGenerated {
+                field,
+                otherwise: Some(literal),
+            } => write!(f, "{}{field}, else {literal}", Self::INPUT_PREFIX),
             Self::Struct { fields } => write!(
                 f,
                 "{{{}}}",
@@ -990,7 +1073,10 @@ impl PayloadSource {
             Self::SubjectField { .. }
             | Self::Increment { .. }
             | Self::InputOrGenerated { .. }
-            | Self::Struct { .. } => true,
+            | Self::Struct { .. }
+            | Self::RelatedField { .. }
+            | Self::CallerAttribute { .. }
+            | Self::ChangedCount => true,
             Self::ResponseField { .. }
             | Self::Generated
             | Self::InputField { .. }
@@ -1042,7 +1128,58 @@ enum RawPayloadSource {
     Unsigned(u64),
     Decimal(f64),
     Explicit(ExplicitPayloadSource),
+    Related(RawRelatedSource),
+    Caller(caller_value::RawCallerSource),
+    Count(set_effects::RawCountSource),
     Nested(RawNestedSources),
+}
+
+/// `{related: {via: <field>, field: <field>}}` (ess/16, #166): written alone, because its value is
+/// a mapping of its own rather than one more keyword beside the others.
+///
+/// Recognised by its exact shape — one key, `related`, holding exactly `via` and `field` as text —
+/// and by nothing else, so `related` is no source keyword: any other mapping under a `related` key
+/// is a nested mapping, as it was before `ess/16`. A document below `ess/16` whose struct happens to
+/// have this shape is read back as that nested mapping by
+/// [`related_value::read_below_ess_16`], so no earlier document changes meaning.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRelatedSource {
+    related: RawRelated,
+}
+
+/// What `related:` holds: the field holding the other row's identity, and the field read there.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRelated {
+    /// A field of the subject, or `input.<field>`.
+    via: String,
+    /// A field of the entity `via` names.
+    field: String,
+}
+
+impl RawRelatedSource {
+    /// The mapping `{related: {via: <text>, field: <text>}}`, and nothing else.
+    fn recognise(entries: &[(String, RawPayloadSource)]) -> Option<Self> {
+        let [(key, RawPayloadSource::Nested(RawNestedSources(inner)))] = entries else {
+            return None;
+        };
+        let (mut via, mut field) = (None, None);
+        for (name, value) in inner {
+            match (name.as_str(), value) {
+                ("via", RawPayloadSource::Text(text)) => via = Some(text.clone()),
+                ("field", RawPayloadSource::Text(text)) => field = Some(text.clone()),
+                _ => return None,
+            }
+        }
+        (key == "related" && inner.len() == 2).then_some(())?;
+        Some(Self {
+            related: RawRelated {
+                via: via?,
+                field: field?,
+            },
+        })
+    }
 }
 
 /// The keys that make a mapping a source rather than a nested mapping (ess/14, #136).
@@ -1073,7 +1210,10 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                 f.write_str(
                     "a string, a boolean, a number, `{response: <field>}`, `{generated: true}`, \
                      `{cleared: true}`, `{subject: <field>}`, `{increment: <number>}`, \
-                     `{input: <field>, else: {generated: true}}`, or a mapping of struct fields",
+                     `{input: <field>, else: {generated: true}}`, \
+                     `{input: <field>, else: <literal>}`, \
+                     `{related: {via: <field>, field: <field>}}`, `{caller: <attribute>}`, \
+                     `{count: changed}`, or a mapping of struct fields",
                 )
             }
 
@@ -1114,6 +1254,15 @@ impl<'de> serde::Deserialize<'de> for RawPayloadSource {
                         )));
                     }
                     entries.push((key, value));
+                }
+                if let Some(related) = RawRelatedSource::recognise(&entries) {
+                    return Ok(RawPayloadSource::Related(related));
+                }
+                if let Some(caller) = caller_value::RawCallerSource::recognise(&entries) {
+                    return Ok(RawPayloadSource::Caller(caller));
+                }
+                if let Some(count) = set_effects::RawCountSource::recognise(&entries) {
+                    return Ok(RawPayloadSource::Count(count));
                 }
                 if !entries.is_empty()
                     && entries
@@ -1270,6 +1419,17 @@ impl TryFrom<RawPayloadSource> for PayloadSource {
                 })
                 .ok_or("a decimal literal must be a finite number"),
             RawPayloadSource::Explicit(explicit) => Self::from_explicit(explicit),
+            RawPayloadSource::Related(RawRelatedSource {
+                related: RawRelated { via, field },
+            }) => Ok(Self::RelatedField {
+                // Kept as written. Each name is checked where the format is known
+                // (`value_expression`): below `ess/16` this is a nested mapping, and its texts are
+                // whatever the struct's leaves were given.
+                via: RelatedVia::parse(&via),
+                field,
+            }),
+            RawPayloadSource::Caller(caller) => Ok(caller.into_source()),
+            RawPayloadSource::Count(_) => Ok(Self::ChangedCount),
             RawPayloadSource::Nested(RawNestedSources(entries)) => entries
                 .into_iter()
                 .map(|(target, source)| {
@@ -1290,10 +1450,23 @@ fn decimal_text(value: f64) -> Option<String> {
 }
 
 impl PayloadSource {
+    /// What follows `else:`: `None` for `{generated: true}`, the literal for a literal.
+    ///
+    /// A literal is admitted here in every format and refused below `ess/16` by
+    /// `value_expression::validate`, which knows the format and the target's type.
+    fn fallback(otherwise: RawPayloadSource) -> Result<Option<Box<Self>>, &'static str> {
+        match Self::try_from(otherwise)? {
+            Self::Generated => Ok(None),
+            literal @ (Self::Literal { .. } | Self::Scalar { .. }) => Ok(Some(Box::new(literal))),
+            _ => Err("`else:` admits `{generated: true}` only, or a literal (format ess/16)"),
+        }
+    }
+
     fn from_explicit(explicit: ExplicitPayloadSource) -> Result<Self, &'static str> {
         const ONE_OF: &str = "payload source requires exactly one of {response: field}, \
                               {generated: true}, {cleared: true}, {subject: field}, \
-                              {increment: number} or {input: field, else: {generated: true}}";
+                              {increment: number} or {input: field, else: {generated: true} or a \
+                              literal}";
         match explicit {
             ExplicitPayloadSource {
                 response: Some(field),
@@ -1367,19 +1540,19 @@ impl PayloadSource {
                 increment: None,
                 input: Some(field),
                 otherwise: Some(otherwise),
-            } => match Self::try_from(*otherwise)? {
-                Self::Generated => source_field(field)
-                    .map(|field| Self::InputOrGenerated { field })
-                    .ok_or("`{input: <field>, else: …}` names one field of the command's input"),
-                _ => Err("`else:` admits `{generated: true}` only"),
-            },
+            } => {
+                let otherwise = Self::fallback(*otherwise)?;
+                source_field(field)
+                    .map(|field| Self::InputOrGenerated { field, otherwise })
+                    .ok_or("`{input: <field>, else: …}` names one field of the command's input")
+            }
             ExplicitPayloadSource {
                 input: Some(_),
                 otherwise: None,
                 ..
             } => Err(
-                "`{input: <field>}` needs `else: {generated: true}`; a plain input is \
-                      written `input.<field>`",
+                "`{input: <field>}` needs `else: {generated: true}` or `else: <literal>`; a plain \
+                 input is written `input.<field>`",
             ),
             _ => Err(ONE_OF),
         }
@@ -1400,6 +1573,16 @@ impl From<&PayloadSource> for RawPayloadSource {
             PayloadSource::Generated => explicit(&|e| e.generated = Some(true)),
             PayloadSource::Cleared => explicit(&|e| e.cleared = Some(true)),
             PayloadSource::SubjectField { field } => explicit(&|e| e.subject = Some(field.clone())),
+            PayloadSource::RelatedField { via, field } => Self::Related(RawRelatedSource {
+                related: RawRelated {
+                    via: via.to_string(),
+                    field: field.clone(),
+                },
+            }),
+            PayloadSource::CallerAttribute { attribute } => {
+                Self::Caller(caller_value::RawCallerSource::of(attribute))
+            }
+            PayloadSource::ChangedCount => Self::Count(set_effects::RawCountSource::changed()),
             PayloadSource::Increment { by, scalar } => explicit(&|e| {
                 e.increment = Some(match scalar {
                     ScalarKind::Integer => by
@@ -1408,9 +1591,11 @@ impl From<&PayloadSource> for RawPayloadSource {
                     ScalarKind::Boolean | ScalarKind::Decimal => RawIncrement::Text(by.clone()),
                 });
             }),
-            PayloadSource::InputOrGenerated { field } => explicit(&|e| {
+            PayloadSource::InputOrGenerated { field, otherwise } => explicit(&|e| {
                 e.input = Some(field.clone());
-                e.otherwise = Some(Box::new(Self::from(&PayloadSource::Generated)));
+                e.otherwise = Some(Box::new(Self::from(
+                    otherwise.as_deref().unwrap_or(&PayloadSource::Generated),
+                )));
             }),
             PayloadSource::Struct { fields } => Self::Nested(RawNestedSources(
                 fields
@@ -1646,6 +1831,10 @@ pub struct Outcome {
     /// command answers with success and no effect, which a specification could not state before
     /// (beyond10x/ess#144). `preserves:` stays the form for a command with a subject.
     pub accepts_nothing: bool,
+    /// The successful outcome returns the command's declared response (ess/17).
+    /// No persistence or absence of side effects is implied by a direct return.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returns: bool,
     /// One line for generated documentation and for the generated scenario's title.
     pub summary: Option<String>,
     /// The records outside this model that explain it, such as `jira:DEV-630`.
@@ -1653,6 +1842,9 @@ pub struct Outcome {
     /// Empty by default. See [`crate::refs`] for why this is a reference and not a paragraph.
     #[serde(default, skip_serializing_if = "crate::refs::is_empty")]
     pub refs: Refs,
+    /// Rows changed by a filter rather than named: `instances:` and `affects:` (ess/16,
+    /// beyond10x/ess#167, #175, [`set_effects`]). Empty on every other outcome.
+    pub set_effects: SetEffects,
 }
 
 impl Outcome {
@@ -1668,6 +1860,8 @@ impl Outcome {
             error: None,
             refuses: true,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1686,6 +1880,8 @@ impl Outcome {
             error: None,
             refuses: true,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1708,6 +1904,8 @@ impl Outcome {
             error: Some(error),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             sets: BTreeMap::new(),
             refs: Refs::new(),
@@ -1751,7 +1949,9 @@ impl Outcome {
             | OutcomeCondition::WrongState
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
-            | OutcomeCondition::UnknownInstance => false,
+            | OutcomeCondition::UnknownInstance
+            | OutcomeCondition::InputAbsent
+            | OutcomeCondition::ExistingInstance => false,
         }
     }
 
@@ -1999,6 +2199,7 @@ impl CommandSpec {
 
         errors.extend(self.validate_branch_coverage(types));
         errors.extend(outcome_shapes::validate_command(self));
+        errors.extend(absent_input::validate_command(self));
         errors
     }
 
@@ -2025,6 +2226,19 @@ impl CommandSpec {
         let mut errors = ValidationErrors::new();
         let location = self.site().key("outcomes").named(outcome.name.as_str());
 
+        if outcome.returns
+            && (self.response.is_empty()
+                || outcome.error.is_some()
+                || outcome.accepts_nothing
+                || outcome.replays.is_some())
+        {
+            errors.push(ValidationError::at(
+                location.clone().key("returns"),
+                ValidationCode::ConflictingDeclaration,
+                "returns requires a nonempty response and no error, accepts: nothing or replays",
+            ));
+        }
+
         // An accepting wrong-state branch is the one outcome that observably does neither. What a
         // generated scenario checks is that the command answered *this branch* and the subject did
         // not move — which is an observation, and a stronger one than the negative check that was
@@ -2044,6 +2258,7 @@ impl CommandSpec {
             .as_ref()
             .is_some_and(|subject| subject.effect == Effect::Deletes);
         errors.extend(outcome_shapes::validate_outcome(outcome, &location));
+        errors.extend(absent_input::validate_outcome(outcome, &location));
         if preserves
             && (!outcome.sets.is_empty() || !outcome.emits.is_empty() || outcome.error.is_some())
         {
@@ -2059,6 +2274,7 @@ impl CommandSpec {
             && !preserves
             && !deletes
             && !outcome.accepts_nothing
+            && !outcome.returns
             && outcome.replays.is_none()
         {
             errors.push(
@@ -2221,7 +2437,7 @@ impl CommandSpec {
             return errors;
         }
 
-        if outcome.subject.is_none() {
+        if outcome.subject.is_none() && outcome.set_effects.instances.is_none() {
             errors.push(
                 ValidationError::at(
                     location.clone().key("sets"),
@@ -2279,6 +2495,10 @@ impl CommandSpec {
         for path in predicate.fact_paths() {
             let root = path.namespace();
             if !inputs.contains(root) {
+                // `caller.<attribute>` (ess/16) is checked with the actors in hand.
+                if caller_value::is_caller_path(path, &self.input) {
+                    continue;
+                }
                 errors.push(
                     ValidationError::at(
                         location.clone().key("when"),
@@ -2339,10 +2559,23 @@ impl CommandSpec {
         // form of the same site rather than a second spelling of it.
         let owner = location.clone().key("when");
         let rendered = owner.render();
-        let environment = crate::expression::DomainEnvironment::new(types, &self.input);
+        // Every input guard of an outcome — a plain `when:`, or the `when:` beside a held state,
+        // a state change, a stored field, a `when_subject:` or an external cause — is read while
+        // the request is handled, which is the moment `now` names (beyond10x/ess#171).
+        let environment =
+            crate::expression::DomainEnvironment::new(types, &self.input).with_current_time();
         let checked = crate::expression::check_predicate(&environment, predicate, &rendered);
         let mut errors = ValidationErrors::new();
         for error in &checked.errors {
+            // `caller.<attribute>` (ess/16) is checked with the actors in hand, and so is the
+            // comparison it sits in.
+            if error
+                .path
+                .as_ref()
+                .is_some_and(|path| caller_value::is_caller_path(path, &self.input))
+            {
+                continue;
+            }
             let mut diagnostic = error.validation_error();
             if let Some(path) = &error.path {
                 if error.segment.as_deref() == Some(path.namespace())
@@ -2677,7 +2910,7 @@ pub fn validate_payloads(
                         .named(target);
                     errors.extend(check_payload_entry(
                         &at,
-                        command,
+                        (command, outcome),
                         event,
                         target,
                         source,
@@ -2709,9 +2942,11 @@ struct Resolved<'a> {
     inhabitation: &'a crate::system::Inhabitation,
 }
 
+// One arm per source; ess/16 `{count: changed}` took it past the line limit.
+#[allow(clippy::too_many_lines)]
 fn check_payload_entry(
     at: &ConstructRef,
-    command: &CommandSpec,
+    (command, outcome): (&CommandSpec, &Outcome),
     event: &EventSpec,
     target: &str,
     source: &PayloadSource,
@@ -2738,7 +2973,12 @@ fn check_payload_entry(
         | PayloadSource::SubjectField { .. }
         | PayloadSource::Increment { .. }
         | PayloadSource::InputOrGenerated { .. }
-        | PayloadSource::Struct { .. } => {}
+        | PayloadSource::Struct { .. }
+        | PayloadSource::RelatedField { .. }
+        | PayloadSource::CallerAttribute { .. } => {}
+        PayloadSource::ChangedCount => {
+            errors.extend(set_effects::check_count(at, outcome, filled));
+        }
         PayloadSource::InputField { field } | PayloadSource::ResponseField { field } => {
             // An input nothing declares was already reported by the outcome's own shape check,
             // and the type of a field that does not exist is not a second finding.
@@ -2758,7 +2998,15 @@ fn check_payload_entry(
                 ));
                 return errors;
             };
-            if conversions.permits(&read.type_ref, &filled.type_ref) {
+            // From `ess/16` an `Optional` input also reads at its present type in a branch only
+            // ever taken with it present (`narrowing`, #169); a declared crossing still applies.
+            let admitted = if matches!(source, PayloadSource::InputField { .. }) {
+                let format = resolved.types.format();
+                command.admits_input_read(outcome, read, &filled.type_ref, conversions, format)
+            } else {
+                conversions.permits(&read.type_ref, &filled.type_ref)
+            };
+            if admitted {
                 return errors;
             }
             errors.push(
@@ -2858,6 +3106,15 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
         }
         for outcome in &command.outcomes {
             let at = command.site().key("outcomes").named(outcome.name.as_str());
+            if outcome.returns
+                && spec.system().format.major() < crate::system::FormatVersion::V17.major()
+            {
+                errors.push(ValidationError::at(
+                    at.clone().key("returns"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    "direct return outcomes require specification format ess/17",
+                ));
+            }
             for (field, source) in &outcome.sets {
                 // `ess/14` hands a field to the implementation with `{generated: true}` (#134).
                 let generated_admitted = spec.system().format.major()
@@ -2925,20 +3182,25 @@ pub fn validate_sets(
     // inhabitation set is a fixpoint over the whole registry, and asking it per literal makes one
     // document quadratic in its own size.
     let inhabitation = crate::system::Inhabitation::of(types);
-    for command in commands.values() {
-        for outcome in &command.outcomes {
-            // An outcome that sets fields on nothing was already reported by the command's own
-            // shape check, and an entity nothing declares by the subject's.
-            let Some(subject) = &outcome.subject else {
-                continue;
-            };
-            let Some(entity) = entities.get(&subject.entity) else {
+    let outcomes = commands.values().flat_map(|command| {
+        command.outcomes.iter().flat_map(move |outcome| {
+            set_effects::assignments(outcome)
+                .into_iter()
+                .map(move |set| (command, outcome, set))
+        })
+    });
+    // An outcome that sets fields on nothing was already reported by the command's own shape check,
+    // and an entity nothing declares by the subject's. The rows a set subject or an `affects:` entry
+    // changes are checked as a subject's (ess/16).
+    for (command, outcome, (entity, sets, key)) in outcomes {
+        {
+            let Some(entity) = entities.get(entity) else {
                 continue;
             };
 
-            for (target, source) in &outcome.sets {
+            for (target, source) in sets {
                 let at = format!(
-                    "commands.{}.outcomes.{}.sets.{target}",
+                    "commands.{}.outcomes.{}.{key}.{target}",
                     command.name, outcome.name
                 );
                 // The identity is settable and is a field like any other: an outcome that creates
@@ -3009,7 +3271,9 @@ pub fn validate_sets(
                 let Some(read) = command.input_field(field) else {
                     continue;
                 };
-                if conversions.permits(&read.type_ref, &held.type_ref) {
+                // Read as `payload:` reads it: narrowed from `ess/16` (#169), declared first.
+                let format = types.format();
+                if command.admits_input_read(outcome, read, &held.type_ref, conversions, format) {
                     continue;
                 }
                 errors.push(
@@ -4058,6 +4322,9 @@ impl<'de> serde::Deserialize<'de> for RawSubjectFact {
 /// shape for the same reason: three keys an author writes at most one of, rather than one key whose
 /// value is sometimes a keyword and sometimes a name. Writing none of them says the outcome changes
 /// no entity, which is the honest answer for `SendEmail`.
+// One flag per marker key an author writes (`wrong_state:`, `unknown_instance:`, `input_absent:`,
+// `existing_instance:`): the document's own shape, not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RawOutcome {
@@ -4105,6 +4372,20 @@ pub struct RawOutcome {
     /// `wrong_state:` it names an `error:`, or declares `refuses: false` for an accepted no-op.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unknown_instance: bool,
+    /// `true` when this is the branch taken for a request that carries no input at all (ess/16).
+    ///
+    /// An absent request body, as distinct from `{}` and from a body lacking a field
+    /// (beyond10x/ess#170). Beside `unknown_instance:`, alone, naming its `error:`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub input_absent: bool,
+    /// `true` when this is the branch taken because a record already carries the identity the
+    /// command's creating branch would create (ess/16, beyond10x/ess#164).
+    ///
+    /// The refusal half of create-or-refuse: alone, naming its `error:`, beside a `creates:` whose
+    /// identity the caller supplies. The create-or-update half is `unknown_instance: true` on the
+    /// `creates:` branch itself.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub existing_instance: bool,
     /// Whether the command *refuses* in those states, or accepts and changes nothing.
     ///
     /// Absent means it refuses, which is what every wrong-state branch written before this key
@@ -4151,6 +4432,9 @@ pub struct RawOutcome {
     /// no event and no error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepts: Option<Accepts>,
+    /// The outcome returns the command's typed response (ess/17), without implying effects.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub returns: bool,
     /// The originating success of this same command, retained without another effect (ess/7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replays: Option<OutcomeName>,
@@ -4160,6 +4444,14 @@ pub struct RawOutcome {
     /// decides which surface the name is read from — see [`Subject::surface`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance: Option<String>,
+    /// Every stored row a filter selects, instead of `instance:` (ess/16, beyond10x/ess#167):
+    /// beside `moves:` or `updates:` only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<set_effects::RawInstances>,
+    /// Secondary effects on the rows filters select (ess/16, beyond10x/ess#175): beside one
+    /// existing subject only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affects: Vec<set_effects::RawAffect>,
     /// The events it emits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emits: Vec<QualifiedName>,
@@ -4382,10 +4674,36 @@ impl TryFrom<RawOutcome> for Outcome {
     // One conversion per key an author can write; splitting it would scatter the refusals
     // that name those keys.
     #[allow(clippy::too_many_lines)]
-    fn try_from(raw: RawOutcome) -> Result<Self, Self::Error> {
+    fn try_from(mut raw: RawOutcome) -> Result<Self, Self::Error> {
+        // ess/16 (#167, #175): a set subject takes the verb it is written beside, before the one
+        // subject is read.
+        let instances = set_effects::set_subject(
+            &raw.name,
+            raw.instances.take(),
+            &mut set_effects::Verbs {
+                other: [
+                    raw.creates.as_ref().map(|_| "creates"),
+                    raw.deletes.as_ref().map(|_| "deletes"),
+                    raw.preserves.as_ref().map(|_| "preserves"),
+                ]
+                .into_iter()
+                .flatten()
+                .next(),
+                instance: raw.instance.is_some(),
+                moves: &mut raw.moves,
+                updates: &mut raw.updates,
+            },
+        )?;
+        let affects = set_effects::affects(&raw.name, std::mem::take(&mut raw.affects))?;
         let conflict = |key: &str, message: String, hint: &str| {
             outcome_conflict(&raw.name, key, message, hint)
         };
+        if raw.input_absent {
+            absent_input::alone(&raw)?;
+        }
+        if raw.existing_instance {
+            outcome_shapes::existing_alone(&raw)?;
+        }
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
         let subject_fact = raw.when_subject;
         let input_predicate = raw.when.clone();
@@ -4422,7 +4740,11 @@ impl TryFrom<RawOutcome> for Outcome {
                 "keep `unknown_instance: true` alone, naming its `error:` or `refuses: false`",
             ));
         }
-        let condition = if raw.unknown_instance {
+        let condition = if raw.input_absent {
+            OutcomeCondition::InputAbsent
+        } else if raw.existing_instance {
+            OutcomeCondition::ExistingInstance
+        } else if raw.unknown_instance {
             OutcomeCondition::UnknownInstance
         } else {
             outcome_condition(
@@ -4476,6 +4798,7 @@ impl TryFrom<RawOutcome> for Outcome {
             raw.instance,
         )?;
         let subject = outcome_shapes::creation_state(&raw.name, subject, raw.into)?;
+        set_effects::affects_beside(&raw.name, &affects, subject.as_ref(), instances.is_some())?;
         subject_authority(
             &raw.name,
             &condition,
@@ -4511,8 +4834,10 @@ impl TryFrom<RawOutcome> for Outcome {
             error: raw.error,
             refuses,
             accepts_nothing: raw.accepts.is_some(),
+            returns: raw.returns,
             summary: raw.summary,
             refs: raw.refs,
+            set_effects: SetEffects { instances, affects },
         })
     }
 }
@@ -4811,6 +5136,8 @@ impl From<Outcome> for RawOutcome {
             .as_ref()
             .and_then(|subject| subject.into.clone());
         let unknown_instance = outcome.condition == OutcomeCondition::UnknownInstance;
+        let input_absent = outcome.condition == OutcomeCondition::InputAbsent;
+        let existing_instance = outcome.condition == OutcomeCondition::ExistingInstance;
         let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
             .condition
         {
@@ -4825,9 +5152,10 @@ impl From<Outcome> for RawOutcome {
             OutcomeCondition::StateChange { changes, predicate } => {
                 (predicate, None, Some(changes), None, false)
             }
-            OutcomeCondition::Otherwise | OutcomeCondition::UnknownInstance => {
-                (None, None, None, None, false)
-            }
+            OutcomeCondition::Otherwise
+            | OutcomeCondition::UnknownInstance
+            | OutcomeCondition::InputAbsent
+            | OutcomeCondition::ExistingInstance => (None, None, None, None, false),
             OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
             OutcomeCondition::ExternalWhen { cause, predicate } => {
                 (Some(predicate), None, None, Some(cause), false)
@@ -4860,6 +5188,8 @@ impl From<Outcome> for RawOutcome {
                 ..
             }) => (None, None, None, Some(instance)),
         };
+        let (moves, updates, instances, affects) =
+            set_effects::written(outcome.set_effects, moves, updates);
         let payload = PayloadDeclaration(
             outcome
                 .payload
@@ -4890,15 +5220,20 @@ impl From<Outcome> for RawOutcome {
             // outcome would change every document that has ever been read and re-emitted.
             refuses: ((wrong_state || unknown_instance) && !outcome.refuses).then_some(false),
             unknown_instance,
+            input_absent,
+            existing_instance,
             deletes,
             into,
             accepts: outcome.accepts_nothing.then_some(Accepts::Nothing),
+            returns: outcome.returns,
             creates,
             moves,
             updates,
             preserves,
             replays: outcome.replays,
             instance,
+            instances,
+            affects,
             emits: outcome.emits,
             payload,
             sets: PayloadTable(
@@ -5179,6 +5514,8 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5225,6 +5562,8 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5261,6 +5600,8 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5290,6 +5631,8 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5350,6 +5693,8 @@ outcomes:
             error,
             refuses: false,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5429,6 +5774,8 @@ outcomes:
             error: None,
             refuses: false,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -5473,6 +5820,8 @@ outcomes:
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5655,6 +6004,8 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5689,6 +6040,8 @@ outcomes:
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -5812,6 +6165,8 @@ outcomes:
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
+            returns: false,
+            set_effects: SetEffects::default(),
             summary: None,
             refs: Refs::new(),
             sets: BTreeMap::new(),
@@ -6132,6 +6487,8 @@ outcomes:
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
+                returns: false,
+                set_effects: SetEffects::default(),
                 summary: None,
                 refs: Refs::new(),
                 sets: BTreeMap::new(),
@@ -6260,6 +6617,8 @@ outcomes:
                     error: Some(name("billing.invoice.InvalidAmount")),
                     refuses: true,
                     accepts_nothing: false,
+                    returns: false,
+                    set_effects: SetEffects::default(),
                     summary: None,
                     refs: Refs::new(),
                     sets: BTreeMap::new(),

@@ -48,7 +48,7 @@
 //! caller — which is the same misattribution the crate exists to prevent, pointing the other way.
 //! [`ShapeErrors`] accumulates, as every other validation in this workspace does.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedTypeRef};
@@ -127,11 +127,20 @@ impl<'a> TypedFacts<'a> {
     pub(crate) fn set(&mut self, path: FactPath, value: FactValue) {
         self.facts.set(path, value);
     }
+
+    /// Absorbs every fact and presence mark of `other`, overwriting on conflict.
+    pub(crate) fn extend(&mut self, other: FactStore) {
+        self.facts.extend(other);
+    }
 }
 
 impl FactSource for TypedFacts<'_> {
     fn fact(&self, path: &FactPath) -> Option<FactValue> {
         self.facts.fact(path)
+    }
+
+    fn present(&self, path: &FactPath) -> bool {
+        self.facts.present(path)
     }
 
     fn scales(&self) -> &Scales {
@@ -727,6 +736,10 @@ impl FactSource for InputFacts<'_> {
         self.facts.fact(path)
     }
 
+    fn present(&self, path: &FactPath) -> bool {
+        self.facts.present(path)
+    }
+
     fn scales(&self) -> &Scales {
         &self.scales
     }
@@ -741,6 +754,12 @@ impl FactSource for InputFacts<'_> {
     /// A path whose declared terminal type is `Timestamp`, through any newtype or `Optional`.
     fn orders_as_instant(&self, path: &FactPath) -> bool {
         declared_as(self.ir, &self.command.input, path, Primitive::Timestamp)
+    }
+
+    /// The reference instant a candidate is decided against where a guard reads the current time
+    /// (beyond10x/ess#171): a candidate is an offset from it, sent as a `now_offset`.
+    fn now(&self) -> Option<ess_primitives::time::Rfc3339Instant> {
+        Some(crate::now_offset::reference())
     }
 }
 
@@ -837,11 +856,54 @@ pub(crate) fn predicate_projectable(
 ) -> bool {
     let checked =
         ess_compiler::expression::check_predicate(ir, fields, predicate, "conformance projection");
+    let mut presence = BTreeSet::new();
+    presence_reads(predicate, &mut presence);
     checked.errors.is_empty()
-        && checked
-            .reads
-            .iter()
-            .all(|read| projection_target(ir, &read.resolution).is_scalar())
+        && checked.reads.iter().all(|read| {
+            projection_target(ir, &read.resolution).is_scalar()
+                || aggregate_presence(ir, read, &presence)
+        })
+}
+
+/// Whether `read` is a `defined()` (or `missing()`) of an `Optional` struct, union, list, map or
+/// `Json`, which a surface publishes as its presence (beyond10x/ess#176). `presence` is what
+/// [`presence_reads`] found in the same predicate.
+///
+/// The one answer to that question: synthesis projects such a read, an authored `satisfies`
+/// admits it, and a suite carrying it takes suite/26 ([`crate::defined_aggregates`]).
+pub(crate) fn aggregate_presence(
+    ir: &EssIr,
+    read: &ess_domain::expression::Read<ResolvedTypeRef>,
+    presence: &BTreeSet<FactPath>,
+) -> bool {
+    read.resolution.optional
+        && presence.contains(&read.path)
+        && matches!(
+            projection_target(ir, &read.resolution),
+            Target::Aggregate("a struct" | "a union" | "a list" | "a map" | "an aggregate")
+        )
+}
+
+/// Every path a `defined()` under `predicate` reads, binder names kept as written.
+///
+/// An `Optional` aggregate is projected as its presence and nothing else (beyond10x/ess#176), so a
+/// surface publishing one publishes what `defined()` asks of it, and no other read.
+pub(crate) fn presence_reads(predicate: &Predicate, found: &mut BTreeSet<FactPath>) {
+    match predicate {
+        Predicate::Defined(path) => {
+            found.insert(path.clone());
+        }
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                presence_reads(child, found);
+            }
+        }
+        Predicate::Not(inner) => presence_reads(inner, found),
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            presence_reads(&quantified.body, found);
+        }
+        _ => {}
+    }
 }
 
 /// Binds one fact per scalar leaf of `value`, guided by `type_ref`.
@@ -856,7 +918,21 @@ fn variant_names(variants: &[ess_domain::types::EnumVariant]) -> Vec<String> {
         .collect()
 }
 
+/// Binds `value` at `path`, and records it as present where it is an aggregate ([`mark_aggregate`]).
 fn project(
+    ir: &EssIr,
+    type_ref: &ResolvedTypeRef,
+    value: &Node,
+    path: &FactPath,
+    depth: usize,
+    facts: &mut FactStore,
+    errors: &mut Vec<ShapeError>,
+) {
+    mark_aggregate(type_ref, value, path, facts);
+    project_value(ir, type_ref, value, path, depth, facts, errors);
+}
+
+fn project_value(
     ir: &EssIr,
     type_ref: &ResolvedTypeRef,
     value: &Node,
@@ -980,6 +1056,29 @@ fn project(
                 }
             }
         }
+    }
+}
+
+/// Records a struct, list, map, union or `Json` value as present at `path`.
+///
+/// None of them binds a fact at its own path — a struct and a list bind their leaves, a map, a
+/// union and `Json` nothing — so presence is recorded beside the facts, and an empty one is present
+/// too: what `defined()` over an `Optional` one reads (beyond10x/ess#176). `null` is absent. A value
+/// of the wrong shape is marked as well, and refused by the walk.
+fn mark_aggregate(
+    type_ref: &ResolvedTypeRef,
+    value: &Node,
+    path: &FactPath,
+    facts: &mut FactStore,
+) {
+    let json = matches!(
+        type_ref,
+        ResolvedTypeRef::Primitive {
+            name: Primitive::Json
+        }
+    );
+    if matches!(value, Node::Map(_) | Node::Seq(_)) || (json && !matches!(value, Node::Null)) {
+        facts.mark_present(path.clone());
     }
 }
 

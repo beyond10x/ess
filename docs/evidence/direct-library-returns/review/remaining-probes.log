@@ -1,0 +1,10 @@
+
+running 5 tests
+test reviewer_binary64_in_a_forged_direct_contract_is_refused_before_execution ... ok
+test reviewer_absent_input_uses_its_own_response_even_for_the_same_command ... ok
+test reviewer_exact_integer_extremes_survive_suite_bytes ... ok
+test reviewer_typed_map_collection_boundary_is_independent_of_byte_bound ... ok
+test reviewer_response_byte_bound_counts_json_escaping_and_field_names ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.11s
+

@@ -1,0 +1,57 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+    Checking serde_core v1.0.229
+    Checking typenum v1.20.1
+    Checking memchr v2.8.3
+    Checking itoa v1.0.18
+    Checking hybrid-array v0.4.15
+    Checking zmij v1.0.23
+    Checking serde v1.0.229
+    Checking hashbrown v0.17.1
+    Checking equivalent v1.0.2
+    Checking serde_json v1.0.151
+    Checking indexmap v2.14.2
+    Checking unsafe-libyaml v0.2.11
+    Checking dyn-clone v1.0.20
+    Checking ryu v1.0.23
+    Checking schemars v0.8.22
+    Checking serde_yaml v0.9.34+deprecated
+    Checking thiserror v2.0.21
+    Checking block-buffer v0.12.1
+    Checking crypto-common v0.2.2
+    Checking const-oid v0.10.2
+    Checking utf8parse v0.2.2
+    Checking anstyle-parse v1.0.0
+    Checking ess-primitives v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/specify/ess-primitives)
+    Checking digest v0.11.3
+    Checking is_terminal_polyfill v1.70.2
+    Checking cfg-if v1.0.5
+    Checking anstyle-query v1.1.5
+    Checking cpufeatures v0.3.1
+    Checking bitflags v2.13.2
+    Checking anstyle v1.0.14
+    Checking colorchoice v1.0.5
+    Checking unicode-ident v1.0.26
+    Checking proc-macro2 v1.0.107
+    Checking ess-domain v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/specify/ess-domain)
+    Checking anstream v1.0.0
+    Checking sha2 v0.11.0
+    Checking strsim v0.11.1
+    Checking clap_lex v1.1.1
+    Checking pulldown-cmark-escape v0.11.0
+    Checking unicase v2.9.0
+    Checking pulldown-cmark v0.13.4
+    Checking clap_builder v4.6.7
+   Compiling ess-xtask v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/edge/ess-xtask)
+    Checking quote v1.0.47
+    Checking ess-compiler v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/specify/ess-compiler)
+    Checking linux-raw-sys v0.12.1
+    Checking rustix v1.1.4
+    Checking ess-gen v0.37.0 (WORKTREE_ROOT/ess/er-library-conformance/crates/generate/ess-gen)
+    Checking syn v2.0.119
+    Checking clap v4.6.7
+    Checking anyhow v1.0.104
+    Finished `dev` profile [unoptimized] target(s) in 27.72s

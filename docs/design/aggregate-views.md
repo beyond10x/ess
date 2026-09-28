@@ -470,11 +470,24 @@ values that no other scenario of the suite produces:
 - An aggregate view is **scoped** when at least one group key is scopable, or when its filter has a
   top-level conjunct `f == param.p` with `f` scopable. In the second case the scenario binds `p` to a
   scoped value `"<view>/in"` and gives every row the filter **admits** `f` = that value.
-- **Unscoped** views (for example, grouped only by an enum with no scoping parameter) get no
-  scenario and a new refusal: **`RefusalCause::AggregateUnscoped { view }`, `ESS-SYNTH-016`**. Hint:
-  "group by, or filter by a parameter over, a `String` or `Uuid` field the creating command sets
-  from its input". An exact aggregate over rows the scenario did not make is a claim about the
-  target's other users, and this crate does not make those (`synthesize.rs:146-160`).
+- An **ungrouped view with no parameter** holds one row over every row of the source, the rows
+  other users of the target made included. Its absolute value is theirs to decide, so it is never
+  asserted and the target is never assumed empty. What the scenario's own rows decide is the
+  **change** they make, and only a `count` or a `sum` changes by an amount those rows alone decide:
+  a `count` by how many admitted rows there are, a `sum` by the total of their values (`0` when
+  none holds one; a skipping `sum` over no present value changes by nothing). Such a view is
+  witnessed by its **change** (below, "Observation": "The change of an ungrouped view"), provided it
+  declares at least one `count` or `sum`. Its `min`, `max`, `avg` and `count_distinct` fields are
+  not asserted, and the scenario's purpose names them: each one's change depends on the values the
+  target already held.
+- **Unscoped** views — grouped only by keys nothing scopes (for example, only by an enum) with no
+  scoping parameter, or ungrouped with no parameter and no `count` or `sum` — get no scenario and a
+  new refusal: **`RefusalCause::AggregateUnscoped { view }`, `ESS-SYNTH-016`**. Hint: "group by, or
+  filter by a parameter over, a `String` or `Uuid` field the creating command sets from its input".
+  An exact aggregate over rows the scenario did not make is a claim about the target's other users,
+  and this crate does not make those (`synthesize.rs:146-160`). A grouped view is not witnessed by
+  its change: which groups another user's rows land in is not the scenario's to know, so no group
+  of it has a row the scenario alone moves.
 - Runs of one suite repeat these values, and the runner's correlation ids repeat too
   (`crates/verify/ess-conformance/src/runner.rs:170-216`). A target that keeps rows from an earlier
   run must isolate runs as §8 already requires. The aggregate scenario is where a target that does
@@ -539,8 +552,9 @@ Which rows exist:
   row's value stays distinct from the others, because `i ≤ I−1 ≤ m−3` means that row has `t ≥ 1`.
   All A values stay below `100·i + 85`, so b, x, c and bₖ never repeat an A value (`t ≤ 7` gives at
   most `57`).
-- **The ladder (type, ordinal `n`):** `Integer` `n`; `Decimal` `n`; `String`
-  `"<view>/<path>/<n:03>"` (zero-padded, so byte order is numeric order); `Timestamp`
+- **The ladder (type, ordinal `n`):** `Integer` `n`; `Decimal` `n` (whole amounts: "Decimal
+  aggregate inputs use whole amounts", below); `String` `"<view>/<path>/<n:03>"` (zero-padded,
+  so byte order is numeric order); `Timestamp`
   `2026-01-01T00:00:00Z` plus `n` minutes, written with `Z`; enum variant `n mod len`; `Boolean`
   `n` odd; `Uuid` `uuid("<view>#<path>#<n>")`. On an enum or `Boolean` input the distinct counts
   collapse to the domain's size, and the input-distinguishing guarantee above holds only for types
@@ -650,7 +664,71 @@ there is one. The block holds:
     hold `Contains { count: 0, sum: 0, count_distinct: 0, min/max/avg: null }` (whichever the view
     declares) and `Counts {1, 1}` (decision 4).
 
-The runner is unchanged. `Contains` and `Excludes` match by `Node` equality (`runner.rs:2221-2225`,
+**The change of an ungrouped view** (story `ungrouped-aggregate-views-are-witnessed`,
+beyond10x/ess#148). An ungrouped view with no parameter is observed differently, and never with an
+absolute `Contains`:
+
+- Before the first row is created, a `QueryView` with no parameter and a `SnapshotView` of it
+  capture its one row. The query is `Current` when no command has run in the scenario, and no older
+  than the last precondition's token when one has.
+- After the last row, one read in the view's block holds
+  `ViewExpectation::ChangedBy { fields, absent_is_zero }` (suite/26, `crate::aggregate_delta`)
+  with every `count` and `sum` field at the change the admitted rows make, and `Counts { 1, 1 }`.
+  `absent_is_zero` lists the skipping `sum` fields: the only ones absent over no present value.
+  The empty read is not made: its absolute values are the target's.
+- The runner resolves `ChangedBy` against the snapshot of the same view (`Required::of_view`). Both
+  reads must hold exactly one row; each named field's `after − before` must equal the amount
+  exactly (`aggregate::change`, `aggregate::same_number`). A field in `absent_is_zero` reads as
+  zero where it is absent. Any other field — a `count`, a `sum` over a required input — is `0` over no row (the
+  zero-row table under "Result types"), so its absence on either read fails the expectation, even
+  when the two reads would otherwise differ by the amount (correction round 1: a `count` reported
+  absent over an empty source passed when every absence read as zero). A missing
+  snapshot is a suite defect, reported as an error, not a verdict. In an `eventually` block the read
+  is retried, like any other expectation, until the change holds or the deadline passes.
+- **What it assumes of an `eventual` view.** The snapshot is one read. A projection still catching
+  up with writes made before the scenario began is caught up by the retried read too, and the change
+  then includes them: such a target fails. §8 isolation already asks a target to separate
+  scenarios; a shared `eventual` target must also have settled earlier work before a scenario
+  starts. A `read_your_writes` view is current at the snapshot by definition.
+- **A concurrent writer fails a correct shared target.** A row another user of the target writes to
+  the source between the snapshot and the read after the last row moves the change by its own
+  values, and the scenario then fails a target that computed the view correctly. The change is
+  sound only where nothing else writes to the source while the scenario runs, which §8 isolation
+  of concurrent scenarios is expected to give.
+- **Format.** A suite carrying `changed_by` is ordinary suite/26 or coverage suite/27, the
+  round-3 pair (`crate::leaf_payloads`); an older label is refused with `UnsupportedVocabulary`,
+  typed (`aggregate_delta::admit_format`) and in the original bytes (`admission.rs`, `expectation`).
+  A change that names no field, an amount that is not a number or has no exact decimal spelling
+  (`1e40`, or one past 38 digits), or an `absent_is_zero` entry that is not one of its fields, is
+  refused as `InvalidSuite`.
+  The Go and TypeScript runtimes refuse suite/26 and /27 by version and need no execution support.
+  Entity Runtime lowers no view, and the generated targets (`ess-gen`, `ess-synth`) render the view
+  as before: nothing there reads a suite expectation.
+
+**Mutants of the change** (fixture `aggregate-optional-fields.yaml`, `DurationTotal`, a skipping
+`sum` over rows 1, 1, 3 and one that lacks `duration`: a change of 5):
+
+| target | result |
+|---|---|
+| starts empty, correct | passes (absent → 5) |
+| already holds a row with `duration` 40 and one without, correct | passes (40 → 45) |
+| already holds only rows without `duration`, correct | passes (absent → 5) |
+| counts the rows that hold a `duration` instead of summing them | fails on all three targets (a change of 3) |
+
+Over the `aggregate-views.yaml` fixture (`tests/adversary_aggdelta_pass1.rs`), a `count` or a
+required `sum` reported absent instead of `0` over no row fails on an empty target, where the
+snapshot is that absent value.
+**Not killed by a change** — what a change cannot tell apart, by construction:
+
+| mutant | why no change catches it |
+|---|---|
+| a constant offset (every read one too many) on a target that already holds rows | the offset is in both reads and cancels out of `after − before`; only an empty target, where the snapshot is `0`, shows it |
+| an absent `duration` read as 0 in a skipping `sum` | a 0 adds nothing to a sum, so the change is the same; the parameter-scoped `DurationForCustomer`, asserted absolutely, is where absent-as-zero is caught (its `mean`) |
+| any wrong `min`, `max`, `avg` or `count_distinct` of the view | not asserted: its change depends on the values the target already held |
+| a wrong absolute value that moves correctly (a target that started at the wrong number) | only the change is asserted, never the value |
+| a `Decimal` stored or summed as an integer | every arranged `Decimal` amount is whole ("Decimal aggregate inputs use whole amounts") |
+
+The runner is otherwise unchanged. `Contains` and `Excludes` match by `Node` equality (`runner.rs:2221-2225`,
 `2291-2305`). `Decimal` values reach the runner as numbers, as `Decimal` input fields already do
 in view assertions (`synthesize.rs:3260-3265`). The schema-string versus node-number disagreement
 is the existing one (`review-primitive-semantics.md:42-45`). `select_fresh_format`
@@ -889,10 +967,11 @@ input the invocation omits leaves the `Optional` field it fills absent, and the 
 **Not killed.** Half-even against half-away-from-zero (as before). The size of a null group that
 nothing else scopes. An absent value of an input that is not an aggregate argument.
 
-**The issue's `DurationTotal`** (ungrouped, no parameter) is `ESS-SYNTH-016`: nothing keeps its one
-row to rows the scenario made, which is the page's rule for every aggregate view and not one about
-absent values. The fixture's `DurationForCustomer` is the same total scoped by a parameter, and it
-is witnessed.
+**The issue's `DurationTotal`** (ungrouped, no parameter) was `ESS-SYNTH-016` here: nothing keeps
+its one row to rows the scenario made. It is now witnessed by the change its rows make ("The change
+of an ungrouped view", under "Observation"): `total` changes by 5, whatever the target held
+before. The fixture's `DurationForCustomer` is the same total scoped by a parameter, and it is
+asserted absolutely.
 
 ## Out of scope
 
@@ -961,6 +1040,16 @@ instead.
   `<view>/out`. A filter whose truth depends on an input the pattern fixes, and that no reachable
   state decides as the row needs, is `ESS-SYNTH-017` naming the row. That is a refusal the page
   permits ("a filter truth it cannot reach"), never a wrong number.
+- **Decimal aggregate inputs use whole amounts** (a limit, recorded by story
+  `ungrouped-aggregate-views-are-witnessed`, adversary pass 2). The `Decimal` ladder is the
+  `Integer` one, so every arranged amount is whole and a target that stores or sums a `Decimal`
+  as an integer passes every aggregate scenario, the change of an ungrouped view included
+  (`tests/adversary_aggdelta_pass2.rs`, `a_target_that_truncates_decimal_amounts_fails_its_change`,
+  pins it). A fractional ladder (`n + 0.5`) kills it and leaves the committed generated suites
+  unchanged, but the earlier adversary case
+  `adversary_three_skipping_kinds_beside_a_required_mean_and_an_optional_key_match_sql` recomputes
+  its expectations from whole `Decimal` amounts and would have to be rewritten with it; that is a
+  later change.
 - **The `Timestamp` ladder** writes `2026-01-DDTHH:MM:00Z`, `n` minutes after midnight on
   2026-01-01, as the page says; an ordinal of a month or more is outside every arrangement here.
 - **The TypeScript `scenarioIdentity` refuses an `…/aggregate` id by name** rather than admitting it.

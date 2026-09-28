@@ -175,6 +175,29 @@ pub fn present(values: &[Node]) -> Vec<Node> {
         .collect()
 }
 
+/// How much a numeric aggregate moved from `before` to `after`, exactly: `after − before`, where an
+/// absent value (`Node::Null`) is zero — a `sum` over no present value, as a change reads it.
+///
+/// `None` where either is neither absent nor a number with an exact decimal spelling.
+pub fn change(before: &Node, after: &Node) -> Option<Node> {
+    let zero = |value: &Node| match value {
+        Node::Null => Some((0, 0)),
+        other => exact(other),
+    };
+    let (before, after) = (zero(before)?, zero(after)?);
+    let common = before.1.max(after.1);
+    let widen =
+        |(units, scale): (i128, u32)| units.checked_mul(10_i128.checked_pow(common - scale)?);
+    decimal(widen(after)?.checked_sub(widen(before)?)?, common)
+}
+
+/// Whether two numbers are one value, whatever their spelling (`5`, `5.0`).
+///
+/// `None` where either is not a number with an exact decimal spelling.
+pub fn same_number(left: &Node, right: &Node) -> Option<bool> {
+    equal(left, right, ValueKind::Numeric)
+}
+
 /// Whether `avg` over `values` rounded (half-even) and truncated at [`AVG_SCALE`] places are two
 /// different numbers — the only case in which an asserted mean catches a truncating `avg`.
 ///
@@ -357,5 +380,25 @@ mod tests {
         assert_eq!(text(0, 6), "0");
         assert_eq!(text(-2, 6), "-0.000002");
         assert_eq!(text(85_000_000, 6), "85");
+    }
+
+    #[test]
+    fn a_change_is_exact_and_reads_an_absent_value_as_zero() {
+        let n = |text: &str| match FactValue::parse_literal(text) {
+            FactValue::Number(number) => Node::Number(number),
+            other => panic!("{other:?}"),
+        };
+        let moved = |before: &Node, after: &Node| match change(before, after) {
+            Some(Node::Number(number)) => number.exact_text(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(moved(&n("40"), &n("45")), "5");
+        assert_eq!(moved(&Node::Null, &n("5")), "5");
+        assert_eq!(moved(&n("1.25"), &n("3")), "1.75");
+        assert_eq!(moved(&n("7"), &n("4")), "-3");
+        assert_eq!(moved(&Node::Null, &Node::Null), "0");
+        assert_eq!(change(&Node::Text("5".into()), &n("5")), None);
+        assert_eq!(same_number(&n("5"), &n("5.0")), Some(true));
+        assert_eq!(same_number(&n("5"), &n("4")), Some(false));
     }
 }

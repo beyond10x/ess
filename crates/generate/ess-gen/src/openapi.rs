@@ -190,7 +190,8 @@ use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
     CommandHandle, EssIr, ResolvedActor, ResolvedCommand, ResolvedComponent, ResolvedCondition,
-    ResolvedEffect, ResolvedError, ResolvedOutcome, ResolvedView, TypeHandle, ViewHandle,
+    ResolvedEffect, ResolvedError, ResolvedOutcome, ResolvedTypeRef, ResolvedView, TypeHandle,
+    ViewHandle,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::component::Reach;
@@ -198,7 +199,7 @@ use ess_domain::view::Consistency;
 use serde_json::{json, Map, Value};
 
 use crate::artifact::{Artifact, Generator};
-use crate::http::{self, status, CONFLICT, READ, REFUSED, UPSTREAM};
+use crate::http::{self, status, CONFLICT, FORBIDDEN, NO_INPUT, READ, REFUSED, UPSTREAM};
 use ess_compiler::refs::{ActorRef, BindingRef, ComponentRef, EssSemanticRef};
 
 use crate::provenance::{Provenance, ProvenanceMint, SlicedProvenance};
@@ -389,6 +390,13 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
              ordering and no filter parameter, because the specification states none — a view's \
              filter is part of the projection, not of the request.",
         );
+        if ir.views().values().any(|view| !view.params.is_empty()) {
+            text.push_str(
+                " A view that declares `params:` is the exception: each is a query parameter, \
+                 described on its operation, and a view that declares `paging:` takes its page \
+                 and size there.",
+            );
+        }
     }
     text
 }
@@ -451,6 +459,7 @@ fn operation(ir: &EssIr, handle: &CommandHandle, grants: &Grants<'_>) -> Operati
         description: command.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: may_invoke(handle, grants),
+        caller: http::caller_attributes(ir, command),
         accessors: ir
             .bindings()
             .values()
@@ -497,9 +506,10 @@ fn query(ir: &EssIr, handle: &ViewHandle) -> Operation {
         description: view.naming.summary.clone(),
         tags: vec![domain.naming.wire_or(&domain.name).to_owned()],
         may_invoke: Vec::new(),
+        caller: Vec::new(),
         accessors: Vec::new(),
         consistency: Some(view.consistency.as_str()),
-        parameters: Vec::new(),
+        parameters: view_parameters(view),
         request_body: None,
         responses: [(
             READ.to_owned(),
@@ -520,6 +530,13 @@ fn view_description(ir: &EssIr, view: &ResolvedView) -> String {
         view.name,
         ir.entity(&view.source).name
     )];
+    if view.paging.is_some() {
+        parts[0] = format!(
+            "One page of the rows of `{}`, a projection of `{}`, in the declared order.",
+            view.name,
+            ir.entity(&view.source).name
+        );
+    }
     if let Some(filter) = &view.filter {
         parts.push(format!("Contains the instances where `{filter}` holds."));
     } else {
@@ -529,6 +546,7 @@ fn view_description(ir: &EssIr, view: &ResolvedView) -> String {
         parts.push(aggregation.grouping_sentence());
         parts.push(format!("{}.", aggregation.clauses().join("; ")));
     }
+    parts.extend(paging_sentences(view));
     parts.push(match view.consistency {
         Consistency::ReadYourWrites => {
             "Read-your-writes: a caller that has just issued a command sees its effect here."
@@ -614,10 +632,16 @@ fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
     }
     Some(RequestBody {
         description: format!("The input `{}` declares.", command.name),
+        // An `input_absent:` branch (ess/16) declares the answer for a request with no body, so the
+        // body is not required even where its fields are.
         required: command
             .input
             .iter()
-            .any(|field| !field.type_ref.is_optional()),
+            .any(|field| !field.type_ref.is_optional())
+            && !command
+                .outcomes
+                .iter()
+                .any(|outcome| outcome.condition == ResolvedCondition::InputAbsent),
         content: content(json!({"$ref": reference(&format!("{}.Input", command.name))})),
     })
 }
@@ -693,6 +717,14 @@ fn meaning(status: &str) -> &'static str {
             "the input was acceptable and the subject is in a state this command does not act \
              from. Resending the same request changes nothing until something else moves it."
         }
+        NO_INPUT => {
+            "the request carried no input at all. The body names the declared error the command \
+             reports for a request without its body."
+        }
+        FORBIDDEN => {
+            "the caller is not one this branch admits: its guard compares the authenticated caller \
+             with the input or the record. The same request from an admitted caller is accepted."
+        }
         _ => {
             "the branch the specification declares for this input. Events this branch emits are \
              published to consumers, not returned here."
@@ -758,6 +790,7 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
             );
             roots.extend(types::field_leaves(&view.fields));
         }
+        roots.extend(types::field_leaves(&view.params));
         out.insert(view_key(view), written(view_schema(view)));
     }
 
@@ -825,7 +858,7 @@ fn view_schema(view: &ResolvedView) -> Value {
         .shape
         .as_ref()
         .map_or_else(|| row_key(view), ToString::to_string);
-    json!({
+    let mut schema = json!({
         "type": "object",
         "additionalProperties": false,
         "description": format!("The rows of `{}`.", view.name),
@@ -837,7 +870,9 @@ fn view_schema(view: &ResolvedView) -> Value {
                 "items": {"$ref": reference(&row)},
             },
         },
-    })
+    });
+    paged_schema(view, &mut schema);
+    schema
 }
 
 /// The `components.schemas` key for one view's row.
@@ -974,6 +1009,16 @@ fn condition_description(condition: &ResolvedCondition) -> String {
         }
         ResolvedCondition::UnknownInstance => {
             "Taken when the request names an identity no record carries.".to_owned()
+        }
+        ResolvedCondition::InputAbsent => {
+            "Taken when the request carries no input at all — an absent body, not `{}` — before \
+             any input field is read."
+                .to_owned()
+        }
+        ResolvedCondition::ExistingInstance => {
+            "Taken when a record already carries the identity the request would create, and no \
+             input-guarded refusal applies."
+                .to_owned()
         }
     }
 }
@@ -1329,6 +1374,12 @@ struct Operation {
     /// prove it. See the module documentation's "What this refuses to guess".
     #[serde(rename = "x-ess-may-invoke", skip_serializing_if = "Vec::is_empty")]
     may_invoke: Vec<String>,
+    /// The attributes of the caller the command reads (ess/16, beyond10x/ess#168): what the
+    /// request has to be authenticated as, which its body does not carry. An annotation, for the
+    /// reason `x-ess-may-invoke` is one: the model states what the credential carries, not how a
+    /// caller proves it.
+    #[serde(rename = "x-ess-caller", skip_serializing_if = "Vec::is_empty")]
+    caller: Vec<String>,
     /// How soon a view reflects a command that has already returned.
     ///
     /// An annotation and not a header, because it is a property of the projection rather than of
@@ -1393,4 +1444,103 @@ struct BindingAccessor {
     target: String,
     path: String,
     may_miss: bool,
+}
+
+/// Every parameter a view declares, as a query parameter under its wire name, in declaration order.
+/// Empty for a view with no `params:`, whose operation keeps its bytes.
+///
+/// A filter parameter is required unless it is declared `Optional`, and its schema is its declared
+/// type. A paging parameter (`paging:`, ess/16, beyond10x/ess#174) is an optional integer whatever
+/// type it is declared at, because `paging:` declares that a read sending neither answers every row.
+fn view_parameters(view: &ResolvedView) -> Vec<Parameter> {
+    view.params
+        .iter()
+        .map(|param| {
+            let name = types::wire_name(param).to_owned();
+            match &view.paging {
+                Some(paging) if paging.page == param.name => Parameter {
+                    name,
+                    location: "query",
+                    description: format!(
+                        "Which page of the declared order to answer, numbered from {}.",
+                        paging.first_page
+                    ),
+                    required: false,
+                    schema: written(json!({"type": "integer", "minimum": paging.first_page})),
+                },
+                Some(paging) if paging.size == param.name => Parameter {
+                    name,
+                    location: "query",
+                    description: "How many rows a page holds at most.".to_owned(),
+                    required: false,
+                    schema: written(json!({"type": "integer", "minimum": 1})),
+                },
+                _ => Parameter {
+                    name,
+                    location: "query",
+                    description: param.naming.summary.clone().unwrap_or_else(|| {
+                        format!(
+                            "Read by the view's filter as `param.{}`; it selects which rows the \
+                             view holds.",
+                            param.name
+                        )
+                    }),
+                    required: !matches!(param.type_ref, ResolvedTypeRef::Optional { .. }),
+                    schema: embedded(&types::field(param)),
+                },
+            }
+        })
+        .collect()
+}
+
+/// What a paged view's page and size select, and whether the answer carries a total.
+fn paging_sentences(view: &ResolvedView) -> Vec<String> {
+    let Some(paging) = &view.paging else {
+        return Vec::new();
+    };
+    // The query keys a request carries, not the declared names: they differ under `wire:`.
+    let wire = |name: &str| {
+        view.params
+            .iter()
+            .find(|param| param.name == name)
+            .map_or(name, types::wire_name)
+            .to_owned()
+    };
+    let (page, size) = (wire(&paging.page), wire(&paging.size));
+    let start = if paging.first_page == 0 {
+        format!("`{page} * {size}`")
+    } else {
+        format!("`({page} - {}) * {size}`", paging.first_page)
+    };
+    let mut sentences = vec![format!(
+        "Paged: `{size}` rows of the declared order starting at {start}, pages numbered from {}; a \
+         read that sends neither answers every row.",
+        paging.first_page
+    )];
+    if paging.total {
+        sentences.push("The answer carries the number of rows the filter admits.".to_owned());
+    }
+    sentences
+}
+
+/// A paged view's response body (`paging:`, ess/16): `rows` is one page of the declared order, and
+/// with `total: true` an optional integer `total` carries the number of rows the filter admits. A
+/// view without `paging:` keeps its schema's bytes.
+fn paged_schema(view: &ResolvedView, schema: &mut Value) {
+    let Some(paging) = &view.paging else {
+        return;
+    };
+    let properties = &mut schema["properties"];
+    properties["rows"]["description"] = Value::String(
+        "One page of the rows the filter admits, in the declared order; every row where the read \
+         sends no page and no size."
+            .to_owned(),
+    );
+    if paging.total {
+        properties["total"] = json!({
+            "type": "integer",
+            "minimum": 0,
+            "description": "The number of rows the filter admits, over every page.",
+        });
+    }
 }
