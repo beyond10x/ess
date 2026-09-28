@@ -37,6 +37,7 @@
 package essconform
 
 import (
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -45,6 +46,9 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -302,6 +306,13 @@ func exploreIdentityOwner(ir map[string]any, name string) string {
 }
 
 func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKind {
+	return exploreResolveAs(ir, ref, depth, false)
+}
+
+// exploreResolveAs is exploreResolve, and with `concurrent` it also draws a `decimal` and a type whose
+// values are constrained: concurrent exploration does not judge an answer by this model, `ess` does,
+// so a drawn value outside the constraint is a question the target answers and the checker judges.
+func exploreResolveAs(ir map[string]any, ref map[string]any, depth int, concurrent bool) exploreKind {
 	if depth > 32 {
 		return exploreKind{kind: "unsupported", why: "nested too deeply"}
 	}
@@ -310,6 +321,11 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 		switch name {
 		case "integer", "boolean", "string", "uuid":
 			return exploreKind{kind: name}
+		case "decimal":
+			if concurrent {
+				return exploreKind{kind: name}
+			}
+			return exploreKind{kind: "unsupported", why: fmt.Sprintf("a `%s`", name)}
 		default:
 			return exploreKind{kind: "unsupported", why: fmt.Sprintf("a `%s`", name)}
 		}
@@ -319,12 +335,12 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 	}
 	name := exploreString(ref["name"])
 	body := exploreObject(exploreObject(exploreObject(ir["types"])[name])["body"])
-	if len(exploreList(body["invariants"])) > 0 || body["alphabet"] != nil {
+	if !concurrent && (len(exploreList(body["invariants"])) > 0 || body["alphabet"] != nil) {
 		return exploreKind{kind: "unsupported", why: fmt.Sprintf("`%s`, which constrains its values", name)}
 	}
 	switch body["kind"] {
 	case "newtype":
-		base := exploreResolve(ir, exploreObject(body["of"]), depth+1)
+		base := exploreResolveAs(ir, exploreObject(body["of"]), depth+1, concurrent)
 		if base.kind == "unsupported" {
 			return base
 		}
@@ -349,7 +365,7 @@ func exploreResolve(ir map[string]any, ref map[string]any, depth int) exploreKin
 		fields := []exploreField{}
 		for _, field := range exploreList(body["fields"]) {
 			field := exploreObject(field)
-			kind := exploreResolve(ir, exploreObject(field["type_ref"]), depth+1)
+			kind := exploreResolveAs(ir, exploreObject(field["type_ref"]), depth+1, concurrent)
 			if kind.kind == "unsupported" {
 				return kind
 			}
@@ -559,6 +575,12 @@ func exploreEffectRefusal(outcome map[string]any) string {
 }
 
 func explorePlanOf(ir map[string]any) *explorePlan {
+	return explorePlanAs(ir, false)
+}
+
+// explorePlanAs is explorePlanOf, and with `concurrent` it resolves inputs as exploreResolveAs does and
+// keeps a command no actor may invoke, which is then sent with no actor.
+func explorePlanAs(ir map[string]any, concurrent bool) *explorePlan {
 	p := &explorePlan{ir: ir, system: fmt.Sprint(ir["system"]), excluded: []Exclusion{}, excludedCommands: map[string]bool{}, unarrangeable: map[string]string{}}
 	actorFor := map[string]string{}
 	for _, actor := range exploreSorted(ir["actors"]) {
@@ -605,7 +627,7 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 		inputs := []exploreField{}
 		for _, field := range exploreList(node["input"]) {
 			field := exploreObject(field)
-			kind := exploreResolve(ir, exploreObject(field["type_ref"]), 0)
+			kind := exploreResolveAs(ir, exploreObject(field["type_ref"]), 0, concurrent)
 			if reason == "" && kind.kind == "unsupported" {
 				reason = fmt.Sprintf("input `%v` is %s", field["name"], kind.why)
 			}
@@ -628,7 +650,7 @@ func explorePlanOf(ir map[string]any) *explorePlan {
 			ordered = append(ordered, guard)
 		}
 		actor, ok := actorFor[name]
-		if reason == "" && !ok {
+		if reason == "" && !ok && !concurrent {
 			reason = "no actor may invoke it"
 		}
 		if reason != "" {
@@ -1065,7 +1087,7 @@ func exploreDraw(kind exploreKind, r *Mulberry32, command *exploreCommand, model
 			return known[index].id, nil
 		}
 		return exploreDraw(*kind.base, r, command, model, path, false, refs)
-	case "integer":
+	case "integer", "decimal":
 		if r.Chance(0.7) {
 			return explorePick(r, command.pools.integers), nil
 		}
@@ -1802,6 +1824,552 @@ func AssertExplored(t testing.TB, result ExploreResult, options AssertOptions) {
 		t.Logf("explore: ambiguous: %s", note)
 	}
 	if err := CheckExplored(result, options); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ---- concurrent histories -----------------------------------------------------------------------
+//
+// ExploreConcurrent drives the target from two to four clients at once and writes what each call
+// did as an `ess-history/1` document, one per seed. It does not decide whether a history is
+// linearizable: it runs `ess verify conform check-history` on each one and reports that verdict,
+// and for a violation the checker's report with its shrunk history. The checker, the model and
+// the shrinking exist once, in the `ess` binary that emitted this package, so `ess` must be on
+// PATH; without it concurrent exploration fails, and is never skipped.
+//
+// Nothing races on a wall clock. A seed draws the workload — a sequential prefix of creations on
+// client 0, then a list of calls per client — and a second generator, SplitMix64 as `ess` records
+// with, picks at every tick of a logical clock which client acts next: one with no call in flight
+// invokes its next call, or one with a call in flight receives its answer. So one seed writes one
+// history, byte for byte, and the TypeScript port writes the same bytes.
+
+// PendingCommand is one call between its invoke and its return.
+type PendingCommand interface {
+	// Complete is the answer arriving. An error that is, or wraps, ErrIndeterminate or
+	// context.DeadlineExceeded is a call whose outcome is unknown: it is written `Indeterminate`,
+	// because it may still have taken effect. ErrUnsupported leaves the call out of the history and
+	// the command in `Excluded`. Any other error fails the exploration.
+	Complete() (CommandResult, error)
+}
+
+// InterleavedTarget is a Target whose calls have an invoke and a return with other clients' calls
+// in between. A Target that is not one does all of a call's work at its return instant, which is
+// what an atomic call is.
+type InterleavedTarget interface {
+	Target
+	InvokeCommand(request CommandRequest) PendingCommand
+}
+
+type exploreAtomicCall struct {
+	target  Target
+	request CommandRequest
+}
+
+func (c exploreAtomicCall) Complete() (CommandResult, error) {
+	return c.target.ExecuteCommand(c.request)
+}
+
+// ConcurrentOptions is what one concurrent exploration is asked to do.
+type ConcurrentOptions struct {
+	// Path is the specification `ess` checks each history against, as `--path` takes it.
+	Path string `json:"path,omitempty"`
+	// Out is the directory each history is written into, as `history-<seed>.json`.
+	Out string `json:"out,omitempty"`
+	// Seeds is the number of histories, seeded 1…Seeds. Zero means 200.
+	Seeds int `json:"seeds,omitempty"`
+	// Seed, when not zero, records exactly that one history and overrides Seeds.
+	Seed int `json:"seed,omitempty"`
+	// Clients is how many clients call at once, 2 to 4. Zero draws it from each seed.
+	Clients int `json:"clients,omitempty"`
+	// Calls is how many calls each client makes after the prefix. Zero means 3.
+	Calls int `json:"calls,omitempty"`
+	// AllowExcluded accepts commands the target does not expose (ErrUnsupported), whose calls are
+	// then not written to any history. An explicit, reviewable opt-out, as AssertOptions has.
+	AllowExcluded bool `json:"allowExcluded,omitempty"`
+}
+
+// ConcurrentFailure is the first history `ess` did not find linearizable.
+type ConcurrentFailure struct {
+	Seed int `json:"seed"`
+	// Verdict is `Violation` or `Unknown`.
+	Verdict string `json:"verdict"`
+	// History is the file it was written to, inside Out.
+	History string `json:"history"`
+	// Report is what `ess verify conform check-history` printed: for a violation, the longest
+	// partial linearization and the shrunk history.
+	Report string `json:"report"`
+}
+
+// ConcurrentResult is what a concurrent exploration found.
+type ConcurrentResult struct {
+	Histories    int `json:"histories"`
+	Linearizable int `json:"linearizable"`
+	Violations   int `json:"violations"`
+	Unknown      int `json:"unknown"`
+	// Indeterminate is the number of calls, across every history, that never answered and were
+	// written `Indeterminate`.
+	Indeterminate int `json:"indeterminate"`
+	// Excluded is every command the target answered ErrUnsupported to, and why, in the order found.
+	// The command is still drawn in every seed, so a seed's history does not depend on the seeds
+	// before it, but its calls are not written.
+	Excluded []Exclusion `json:"excluded"`
+	// AllowExcluded is ConcurrentOptions.AllowExcluded, so CheckConcurrent can read it.
+	AllowExcluded bool `json:"allowExcluded"`
+	// Verdicts is each history's verdict, in seed order.
+	Verdicts []string           `json:"verdicts"`
+	Failure  *ConcurrentFailure `json:"failure,omitempty"`
+}
+
+// ErrNoEss is the refusal when `ess` is not on PATH.
+var ErrNoEss = errors.New("explore: concurrent exploration checks every history with `ess verify conform check-history`, and `ess` is not on PATH")
+
+// ErrIndeterminate is what a target returns, or wraps, for a call whose outcome it cannot know: it
+// timed out, or the connection dropped after the request left. The call is written `Indeterminate`,
+// because it may still have taken effect. A context.DeadlineExceeded is read the same way. Any other
+// error fails the exploration: a call that failed is not a call that may have succeeded.
+var ErrIndeterminate = errors.New("the call did not answer, and may have taken effect")
+
+const (
+	exploreConcurrentSeeds  = 200
+	exploreConcurrentCalls  = 3
+	exploreConcurrentPrefix = 2
+	exploreUndeclared       = "<undeclared>"
+)
+
+// SplitMix64 is the generator that picks which client acts next, as `ess` records with.
+type SplitMix64 struct {
+	state uint64
+}
+
+// NewSplitMix64 starts a generator at seed.
+func NewSplitMix64(seed uint64) *SplitMix64 {
+	return &SplitMix64{state: seed}
+}
+
+// Next is the next 64-bit output.
+func (r *SplitMix64) Next() uint64 {
+	r.state += 0x9e3779b97f4a7c15
+	z := r.state
+	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+	z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+	return z ^ (z >> 31)
+}
+
+func (r *SplitMix64) below(bound int) int {
+	return int(r.Next() % uint64(bound))
+}
+
+type exploreOperation struct {
+	client     int
+	command    string
+	subjectKey string
+	invokedAt  int
+	returnedAt int
+	returned   bool
+	outcome    string
+	// dropped is a call the target does not expose: it is not written.
+	dropped bool
+}
+
+type exploreFlight struct {
+	pending PendingCommand
+	command *exploreCommand
+	index   int
+}
+
+type exploreCall struct {
+	command *exploreCommand
+	step    *exploreStep
+}
+
+type exploreRecording struct {
+	target      Target
+	correlation string
+	clock       int
+	operations  []exploreOperation
+	// indeterminate counts the calls written `Indeterminate`.
+	indeterminate int
+	// unsupported is every command the target answered ErrUnsupported to, with its reason, in the
+	// order found.
+	unsupported []Exclusion
+}
+
+// exploreKey is an identity as a subject key: its text, or empty when it is not text.
+func exploreKey(value Node) string {
+	text, _ := value.(string)
+	return text
+}
+
+func (h *exploreRecording) invoke(client int, command *exploreCommand, step *exploreStep) *exploreFlight {
+	request := CommandRequest{Command: command.name, Actor: command.actor, Input: map[string]Node(step.input), Correlation: h.correlation}
+	subject := ""
+	if supplied := exploreSupplied(command); supplied != nil {
+		field := exploreString(exploreObject(exploreObject(exploreObject(supplied["subject"])["instance"])["field"])["name"])
+		if id, ok := exploreReadPath(map[string]any(step.input), field); ok {
+			subject = exploreKey(id)
+		}
+	}
+	h.clock++
+	index := len(h.operations)
+	h.operations = append(h.operations, exploreOperation{client: client, command: command.name, subjectKey: subject, invokedAt: h.clock})
+	var pending PendingCommand = exploreAtomicCall{target: h.target, request: request}
+	if interleaved, ok := h.target.(InterleavedTarget); ok {
+		pending = interleaved.InvokeCommand(request)
+	}
+	return &exploreFlight{pending: pending, command: command, index: index}
+}
+
+// complete writes the answer into the operation flight reserved, and returns the identity a
+// creating branch published and its entity, or nil.
+func (h *exploreRecording) complete(flight *exploreFlight) (Node, string, error) {
+	result, err := flight.pending.Complete()
+	h.clock++
+	operation := &h.operations[flight.index]
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrUnsupported):
+		operation.dropped = true
+		for _, known := range h.unsupported {
+			if known.Subject == flight.command.name {
+				return nil, "", nil
+			}
+		}
+		h.unsupported = append(h.unsupported, Exclusion{Subject: flight.command.name, Reason: "the target does not expose it: " + err.Error()})
+		return nil, "", nil
+	case errors.Is(err, ErrIndeterminate) || errors.Is(err, context.DeadlineExceeded):
+		h.indeterminate++
+		return nil, "", nil
+	default:
+		return nil, "", fmt.Errorf("`%s` failed: %w", flight.command.name, err)
+	}
+	operation.returned = true
+	operation.returnedAt = h.clock
+	operation.outcome = result.Outcome
+	if operation.outcome == "" {
+		operation.outcome = exploreUndeclared
+	}
+	for _, node := range exploreList(flight.command.node["outcomes"]) {
+		outcome := exploreObject(node)
+		if fmt.Sprint(outcome["name"]) != result.Outcome {
+			continue
+		}
+		subject := exploreObject(outcome["subject"])
+		if subject["effect"] != "creates" {
+			return nil, "", nil
+		}
+		instance := exploreObject(subject["instance"])
+		carrier := exploreString(instance["event"])
+		field := exploreString(exploreObject(instance["field"])["name"])
+		for _, event := range result.DirectEvents {
+			if event.Event != carrier {
+				continue
+			}
+			id := exploreKey(event.Payload[field])
+			if id == "" {
+				return nil, "", nil
+			}
+			if operation.subjectKey == "" {
+				operation.subjectKey = id
+			}
+			return id, exploreString(subject["entity"]), nil
+		}
+		return nil, "", nil
+	}
+	return nil, "", nil
+}
+
+func exploreUUID(n uint64) string {
+	return fmt.Sprintf("00000000-0000-4000-8000-%012x", n)
+}
+
+// exploreQuote is a JSON string as `ess` writes one: no HTML escaping.
+func exploreQuote(text string) string {
+	var out strings.Builder
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(text)
+	return strings.TrimSuffix(out.String(), "\n")
+}
+
+// exploreHistoryBytes is the history in the one spelling `ess` reads and writes: compact, keys in
+// declaration order, an absent `returned_at` and `outcome` for a call that never answered.
+func exploreHistoryBytes(digest string, seed, clients int, operations []exploreOperation) []byte {
+	written := []string{}
+	kept := []exploreOperation{}
+	for _, operation := range operations {
+		if !operation.dropped {
+			kept = append(kept, operation)
+		}
+	}
+	for index, operation := range kept {
+		members := [][2]string{
+			{"operation_id", exploreQuote(exploreUUID(uint64(index) + 1))},
+			{"client", strconv.Itoa(operation.client)},
+			{"command", exploreQuote(operation.command)},
+			{"subject_key", exploreQuote(operation.subjectKey)},
+			{"invoked_at", strconv.Itoa(operation.invokedAt)},
+		}
+		if operation.returned {
+			members = append(members,
+				[2]string{"returned_at", strconv.Itoa(operation.returnedAt)},
+				[2]string{"completion", exploreQuote("Returned")},
+				[2]string{"outcome", exploreQuote(operation.outcome)})
+		} else {
+			members = append(members, [2]string{"completion", exploreQuote("Indeterminate")})
+		}
+		written = append(written, exploreJSONObject(members))
+	}
+	return []byte(exploreJSONObject([][2]string{
+		{"format", exploreQuote("ess-history/1")},
+		{"history_id", exploreQuote(exploreUUID(uint64(seed) & 0xffffffffffff))},
+		{"spec_digest", exploreQuote(digest)},
+		{"seed", strconv.Itoa(seed)},
+		{"clients", strconv.Itoa(clients)},
+		{"operations", "[" + strings.Join(written, ",") + "]"},
+	}))
+}
+
+// exploreJSONObject is a JSON object of members, in the order given, each value already written.
+func exploreJSONObject(members [][2]string) string {
+	parts := make([]string, 0, len(members))
+	for _, member := range members {
+		parts = append(parts, exploreQuote(member[0])+":"+member[1])
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// exploreRecordHistory records the history seed names against a fresh target.
+func exploreRecordHistory(p *explorePlan, newTarget func() Target, digest string, seed int, options ConcurrentOptions) ([]byte, *exploreRecording, error) {
+	r := NewMulberry32(uint32(seed))
+	clients := options.Clients
+	if clients == 0 {
+		clients = r.Int(2, 4)
+	}
+	calls := options.Calls
+	if calls == 0 {
+		calls = exploreConcurrentCalls
+	}
+	target := newTarget()
+	scenario := ScenarioContext{Scenario: fmt.Sprintf("explore/concurrent/seed-%d", seed), Correlation: NewHarness(p.system).Correlation()}
+	if err := target.BeginScenario(scenario); err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = target.EndScenario(scenario) }()
+	h := &exploreRecording{target: target, correlation: scenario.Correlation}
+	model := &exploreModel{records: map[string][]*exploreRecord{}}
+
+	// The prefix: creations on client 0, one at a time, so the clients have subjects to share.
+	creating := []*exploreCommand{}
+	for _, command := range p.commands {
+		for _, node := range exploreList(command.node["outcomes"]) {
+			if exploreObject(exploreObject(node)["subject"])["effect"] == "creates" {
+				creating = append(creating, command)
+				break
+			}
+		}
+	}
+	for index := 0; index < exploreConcurrentPrefix && len(creating) > 0; index++ {
+		command := explorePick(r, creating)
+		step := exploreDrawStep(command, r, model)
+		if step == nil {
+			continue
+		}
+		id, entity, err := h.complete(h.invoke(0, command, step))
+		if err != nil {
+			return nil, nil, err
+		}
+		if id != nil {
+			model.records[entity] = append(model.records[entity], &exploreRecord{id: id, fields: Row{}})
+		}
+	}
+
+	// The workload: each client's calls, drawn against the subjects the prefix created.
+	workload := make([][]exploreCall, clients)
+	for client := range workload {
+		for call := 0; call < calls; call++ {
+			for attempt := 0; attempt < exploreAttempts; attempt++ {
+				command := explorePick(r, p.commands)
+				if step := exploreDrawStep(command, r, model); step != nil {
+					workload[client] = append(workload[client], exploreCall{command: command, step: step})
+					break
+				}
+			}
+		}
+	}
+
+	// The interleaving.
+	draw := NewSplitMix64(uint64(seed))
+	next := make([]int, clients)
+	flying := make([]*exploreFlight, clients)
+	for {
+		enabled := []int{}
+		for client := range workload {
+			if flying[client] != nil || next[client] < len(workload[client]) {
+				enabled = append(enabled, client)
+			}
+		}
+		if len(enabled) == 0 {
+			break
+		}
+		client := enabled[draw.below(len(enabled))]
+		if flying[client] != nil {
+			if _, _, err := h.complete(flying[client]); err != nil {
+				return nil, nil, err
+			}
+			flying[client] = nil
+		} else {
+			call := workload[client][next[client]]
+			next[client]++
+			flying[client] = h.invoke(client, call.command, call.step)
+		}
+	}
+	return exploreHistoryBytes(digest, seed, clients, h.operations), h, nil
+}
+
+// ExploreConcurrent records one concurrent history per seed against a fresh target, writes each
+// into Out, and runs `ess verify conform check-history --path Path` on it.
+//
+// It returns an error when `ess` is not on PATH (ErrNoEss, before any target is made), when the
+// model cannot be used, when a history cannot be written, and when `ess` refuses one: a history
+// nobody could check is not a verdict. A violation or an unknown verdict is in the result.
+func ExploreConcurrent(newTarget func() Target, options ConcurrentOptions) (ConcurrentResult, error) {
+	if options.Clients != 0 && (options.Clients < 2 || options.Clients > 4) {
+		return ConcurrentResult{}, fmt.Errorf("explore: `Clients` is %d; concurrent exploration runs 2 to 4 clients, or draws how many from each seed when it is 0", options.Clients)
+	}
+	if options.Seeds < 0 {
+		return ConcurrentResult{}, fmt.Errorf("explore: `Seeds` is %d; concurrent exploration records at least one history, or 200 when it is 0", options.Seeds)
+	}
+	if options.Seed < 0 {
+		return ConcurrentResult{}, fmt.Errorf("explore: `Seed` is %d; a replayed seed is at least 1, or none when it is 0", options.Seed)
+	}
+	if options.Calls < 0 {
+		return ConcurrentResult{}, fmt.Errorf("explore: `Calls` is %d; each client makes at least one call, or 3 when it is 0", options.Calls)
+	}
+	ess, err := exec.LookPath("ess")
+	if err != nil {
+		return ConcurrentResult{}, ErrNoEss
+	}
+	if options.Path == "" {
+		return ConcurrentResult{}, errors.New("explore: concurrent exploration needs `Path`, the specification `ess` checks each history against")
+	}
+	if options.Out == "" {
+		return ConcurrentResult{}, errors.New("explore: concurrent exploration needs `Out`, the directory each history is written into")
+	}
+	ir, err := exploreLoad(exploreIR, exploreSuite)
+	if err != nil {
+		return ConcurrentResult{}, err
+	}
+	if exploreNonEmpty(ir["preconditions"]) {
+		return ConcurrentResult{}, errors.New("explore: concurrent exploration does not run the specification's preconditions, so it does not record against one that declares them")
+	}
+	suite, _ := strictJSON(exploreSuite)
+	digest := exploreString(exploreObject(exploreObject(suite)["provenance"])["spec_digest"])
+	p := explorePlanAs(ir, true)
+	if len(p.commands) == 0 {
+		return ConcurrentResult{}, errors.New("explore: the specification declares no command concurrent exploration can call")
+	}
+	if err := os.MkdirAll(options.Out, 0o755); err != nil {
+		return ConcurrentResult{}, fmt.Errorf("explore: cannot create %s: %w", options.Out, err)
+	}
+	seeds := []int{}
+	if options.Seed != 0 {
+		seeds = append(seeds, options.Seed)
+	} else {
+		count := options.Seeds
+		if count == 0 {
+			count = exploreConcurrentSeeds
+		}
+		for seed := 1; seed <= count; seed++ {
+			seeds = append(seeds, seed)
+		}
+	}
+	result := ConcurrentResult{Verdicts: []string{}, Excluded: []Exclusion{}, AllowExcluded: options.AllowExcluded}
+	for _, seed := range seeds {
+		if len(p.commands) == 0 {
+			break
+		}
+		bytes, recording, err := exploreRecordHistory(p, newTarget, digest, seed, options)
+		if err != nil {
+			return ConcurrentResult{}, fmt.Errorf("explore: seed %d: %w", seed, err)
+		}
+		result.Indeterminate += recording.indeterminate
+		for _, exclusion := range recording.unsupported {
+			known := false
+			for _, earlier := range result.Excluded {
+				known = known || earlier.Subject == exclusion.Subject
+			}
+			if !known {
+				result.Excluded = append(result.Excluded, exclusion)
+			}
+		}
+		name := fmt.Sprintf("history-%d.json", seed)
+		file := filepath.Join(options.Out, name)
+		if err := os.WriteFile(file, bytes, 0o644); err != nil {
+			return ConcurrentResult{}, fmt.Errorf("explore: cannot write %s: %w", file, err)
+		}
+		var stdout, stderr strings.Builder
+		check := exec.Command(ess, "verify", "conform", "check-history", "--path", options.Path, "--history", file)
+		check.Stdout = &stdout
+		check.Stderr = &stderr
+		code := 0
+		if err := check.Run(); err != nil {
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) {
+				return ConcurrentResult{}, fmt.Errorf("explore: cannot run `ess`: %w", err)
+			}
+			code = exit.ExitCode()
+		}
+		verdict := ""
+		switch code {
+		case 0:
+			verdict = "Linearizable"
+			result.Linearizable++
+		case 1:
+			verdict = "Violation"
+			result.Violations++
+		case 3:
+			verdict = "Unknown"
+			result.Unknown++
+		default:
+			return ConcurrentResult{}, fmt.Errorf("explore: `ess verify conform check-history` refused %s (exit %d): %s", name, code, strings.TrimSpace(stderr.String()))
+		}
+		result.Histories++
+		result.Verdicts = append(result.Verdicts, verdict)
+		if verdict != "Linearizable" && result.Failure == nil {
+			result.Failure = &ConcurrentFailure{Seed: seed, Verdict: verdict, History: name, Report: stdout.String()}
+		}
+	}
+	return result, nil
+}
+
+// CheckConcurrent is what AssertConcurrent would fail with, or nil when every history was
+// linearizable. `Unknown` is never a pass.
+func CheckConcurrent(result ConcurrentResult) error {
+	problems := []string{}
+	if result.Violations != 0 || result.Unknown != 0 {
+		message := fmt.Sprintf("explore: %d of %d concurrent histories were violations and %d unknown", result.Violations, result.Histories, result.Unknown)
+		if failure := result.Failure; failure != nil {
+			message += fmt.Sprintf("\nseed %d (%s): %s\n%s", failure.Seed, failure.History, failure.Verdict, strings.TrimRight(failure.Report, "\n"))
+		}
+		problems = append(problems, message)
+	}
+	if len(result.Excluded) > 0 && !result.AllowExcluded {
+		lines := []string{}
+		for _, exclusion := range result.Excluded {
+			lines = append(lines, fmt.Sprintf("  %s: %s", exclusion.Subject, exclusion.Reason))
+		}
+		problems = append(problems, fmt.Sprintf("explore: %d command(s) the target does not expose were left out of concurrent exploration:\n%s\naccept them explicitly with ConcurrentOptions{AllowExcluded: true}", len(result.Excluded), strings.Join(lines, "\n")))
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "\n"))
+}
+
+// AssertConcurrent fails t unless every concurrent history was linearizable.
+func AssertConcurrent(t testing.TB, result ConcurrentResult) {
+	t.Helper()
+	if err := CheckConcurrent(result); err != nil {
 		t.Fatal(err)
 	}
 }

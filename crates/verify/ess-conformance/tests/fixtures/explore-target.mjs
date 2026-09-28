@@ -7,13 +7,17 @@
 //   fourth-create-reuses-first  the 4th `OpenTicket` answers with the first ticket's identity
 //   third-return-refused        the 3rd time a ticket re-enters a state, the move is refused
 //   close-unsupported           `CloseTicket` is not exposed
+//   lost-update                 under concurrent exploration, a move reads its ticket's state when it
+//                               is invoked and writes from that state when it returns
+//   answer-lost                 under concurrent exploration, every third call takes effect and its
+//                               answer never arrives (it throws `indeterminate`)
 //
 // `ESS_EXPLORE_GRADE` says which branch a score from 50 to 60 takes, where the specification's
 // two guards overlap: `low` (the default) or `high`. Either is correct.
 //
 // `explore_target.go` is the same target in Go, line for line.
 
-import { unsupported } from './dist/index.js';
+import { indeterminate, unsupported } from './dist/index.js';
 
 const OPEN = 'Open';
 const HELD = 'Held';
@@ -30,6 +34,8 @@ export function newTarget(
   let version = 0;
   // What an `eventual` read shows: the rows as of the read before this one.
   let projected = [];
+  // The calls completed through `invokeCommand`, for `answer-lost`.
+  let completed = 0;
 
   const reset = () => {
     tickets = new Map();
@@ -37,6 +43,7 @@ export function newTarget(
     first = '';
     version = 0;
     projected = [];
+    completed = 0;
   };
   const row = (ticket) => ({
     ticket_id: ticket.ticket_id,
@@ -132,6 +139,33 @@ export function newTarget(
         default:
           throw unsupported(`${command} is not a command of explore.yaml`);
       }
+    },
+
+    // One call in flight. Under `lost-update` a move carries the state its ticket was in when the
+    // call was invoked, and acts on that state at its return: the read and the write are two moves
+    // with no lock between them, so a move another client made in between is lost.
+    invokeCommand(request) {
+      let read = '';
+      switch (request.command) {
+        case 'explore.desk.HoldTicket':
+        case 'explore.desk.ReleaseTicket':
+        case 'explore.desk.CloseTicket': {
+          const ticket = tickets.get(request.input.ticket_id);
+          if (ticket !== undefined && mutant === 'lost-update') read = ticket.state;
+        }
+      }
+      return {
+        complete: () => {
+          const ticket = tickets.get(request.input.ticket_id);
+          if (ticket !== undefined && read !== '') ticket.state = read;
+          const result = this.executeCommand(request);
+          completed += 1;
+          // The call took effect and its answer never arrived.
+          if (mutant === 'answer-lost' && completed % 3 === 0)
+            throw new Error('the answer was lost', { cause: indeterminate('the answer was lost') });
+          return result;
+        },
+      };
     },
 
     queryView({ view }) {
