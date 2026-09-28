@@ -67,6 +67,14 @@ types:
       - {{name: low, type: Integer}}
       - {{name: high, type: Integer}}
     invariants: [low >= 0]
+  - name: shop.session.Span
+    kind: struct
+    fields:
+      - {{name: start, type: 'Optional<Integer>'}}
+    invariants: [start >= 0]
+  - name: shop.session.Memo
+    kind: newtype
+    of: 'Optional<String>'
 entities:
   - name: shop.session.User
     identity: {{name: user_id, type: String}}
@@ -87,6 +95,8 @@ commands:
       - {{name: extra, type: 'Optional<Json>'}}
       - {{name: digest, type: 'Optional<List<Binary64>>'}}
       - {{name: tags, type: 'Optional<List<shop.session.AccountCode>>'}}
+      - {{name: span, type: 'Optional<shop.session.Span>'}}
+      - {{name: memo, type: shop.session.Memo}}
     outcomes:
       - name: opened
         creates: shop.session.User
@@ -211,4 +221,36 @@ fn json_and_binary64_leaves_stay_refused() {
         "Binary64",
     );
     admitted("user_id: u1, accounts: [], extra: null, digest: []");
+}
+
+/// A struct invariant must be true of the literal, as the setup reader requires: one that reads a
+/// member the literal leaves out is unknown, and refused.
+#[test]
+fn a_struct_invariant_the_literal_leaves_unknown_is_refused() {
+    admitted("user_id: u1, accounts: [], span: {start: 1}");
+    assert_code(
+        &refused("user_id: u1, accounts: [], span: {}"),
+        ValidationCode::ConflictingDeclaration,
+        "unknown",
+    );
+}
+
+/// An input whose type admits absence through a newtype over `Optional` may be left out, as a
+/// struct member of such a type may.
+#[test]
+fn an_input_typed_by_an_optional_newtype_may_be_left_out() {
+    admitted("user_id: u1, accounts: []");
+    admitted("user_id: u1, accounts: [], memo: null");
+    admitted("user_id: u1, accounts: [], memo: kept");
+}
+
+/// `{fixture: name}` on an input its command declares no fixture for is a literal; where it is no
+/// value of the input type either, the refusal names the fixture it reads.
+#[test]
+fn a_fixture_reference_without_a_fixture_input_is_refused_as_one() {
+    assert_code(
+        &refused("user_id: {fixture: users}, accounts: []"),
+        ValidationCode::UndeclaredReference,
+        "fixture `users`",
+    );
 }

@@ -10,11 +10,11 @@ Refusals under `ess/15`, by validation code:
 
 | Code | Refused |
 |---|---|
-| `conflicting_declaration` | `unknown_instance:` beside another condition, twice on one command, with an effect, or with `refuses: false` and an `error:`; `deletes:` with `sets:` or beside another verb; `into:` without `creates:`; `accepts: nothing` beside a subject, event, error, assignment, replay or a condition other than `when:`/default; a precondition whose input selects a refusing branch or several branches |
+| `conflicting_declaration` | `unknown_instance:` beside another condition, twice on one command, with an effect, or with `refuses: false` and an `error:`; `deletes:` with `sets:` or beside another verb; `into:` without `creates:`; `accepts: nothing` beside a subject, event, error, assignment, replay or a condition other than `when:`/default; a precondition whose input selects a refusing branch or several branches; a precondition literal a struct or newtype invariant is not true of (unknown included, as the setup reader requires), or whose created row a false entity invariant forbids |
 | `missing_declaration` | a refusing `unknown_instance:` branch with no `error:`; a precondition leaving a required, non-fixture input out, or a struct literal in one leaving a non-optional field out |
 | `unreachable_branch` | `unknown_instance:` on a command with no `moves:`/`updates:`/`deletes:` branch reading `instance:` from input |
 | `unknown_state` | `into:` naming a state the lifecycle does not declare |
-| `undeclared_reference` | a precondition naming an undeclared command, input field, actor, an actor not granted the command, or a fixture the command does not declare for that input; a struct literal in a precondition naming a field its type does not declare |
+| `undeclared_reference` | a precondition naming an undeclared command, input field, actor, an actor not granted the command, or a fixture the command does not declare for that input; a struct literal in a precondition naming a field its type does not declare. `{fixture: name}` is a fixture reference only on an input its command declares a fixture input for, and a literal elsewhere |
 | `type_mismatch` | a precondition literal that is not a value of its input's type, held to it down to every scalar leaf as an `example:` is; a list, map or struct literal is a value (beyond10x/ess#205), `null` only where the type is optional, and a `Json` or `Binary64` leaf or a union literal never |
 | `unobservable_fact` | a precondition whose guard its literal input leaves undecided, or whose command selects by the existing subject |
 | `non_exhaustive_branches` | a precondition whose input selects no branch |

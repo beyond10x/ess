@@ -612,7 +612,27 @@ fn validate_precondition(
     }
     let input_errors = precondition_input(spec, index, precondition, command);
     if input_errors.is_empty() {
-        if let Err((code, reason)) = precondition_branch(command, &precondition.input) {
+        let branch = precondition_branch(command, &precondition.input);
+        if let Ok(selected) = &branch {
+            if let Some(refusal) = precondition_row(spec, command, selected, &precondition.input) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::ConflictingDeclaration,
+                        format!("system.preconditions[{index}].input"),
+                        format!(
+                            "precondition {index} invokes `{}`, and {refusal}",
+                            command.name
+                        ),
+                    )
+                    .with_hint(
+                        "give it an input the row it creates can hold: a precondition must \
+                         succeed, and no correct implementation stores a row its invariants \
+                         forbid",
+                    ),
+                );
+            }
+        }
+        if let Err((code, reason)) = branch {
             errors.push(
                 ValidationError::new(
                     code,
@@ -664,6 +684,68 @@ fn precondition_actor(
     errors
 }
 
+/// Why the row a precondition's selected branch creates breaks its entity's invariants, if it does
+/// (beyond10x/ess#205).
+///
+/// The row holds what the precondition writes: its identity from the `instance:` input, each field
+/// the branch `sets:` from an input the precondition supplies as a literal, and the state it lands
+/// in. A field set from anywhere else — generated, a fixture, a literal in the outcome — is not
+/// known here, so an invariant reading one is left to the run; one these facts make false is
+/// refused.
+fn precondition_row(
+    spec: &Specification,
+    command: &CommandSpec,
+    selected: &super::Outcome,
+    input: &BTreeMap<String, Node>,
+) -> Option<String> {
+    let subject = selected.subject.as_ref()?;
+    if subject.effect != super::Effect::Creates {
+        return None;
+    }
+    let entity = spec.entities().get(&subject.entity)?;
+    let literal = |field: &str| {
+        input
+            .get(field)
+            .filter(|value| fixture_of(command, field, value).is_none())
+    };
+    let mut members: Vec<(&str, &TypeRef, &Node)> = Vec::new();
+    if let Some(identity) = literal(&subject.instance) {
+        members.push((
+            entity.identity.name.as_str(),
+            &entity.identity.type_ref,
+            identity,
+        ));
+    }
+    for (target, source) in &selected.sets {
+        let super::PayloadSource::InputField { field } = source else {
+            continue;
+        };
+        let (Some(declared), Some(value)) = (
+            entity
+                .fields
+                .iter()
+                .find(|candidate| &candidate.name == target),
+            literal(field),
+        ) else {
+            continue;
+        };
+        members.push((target.as_str(), &declared.type_ref, value));
+    }
+    let mut facts = super::LiteralFacts::of(&spec.system().types, &members);
+    let state = subject.into.as_ref().unwrap_or(&entity.states.initial);
+    if let Ok(path) = ess_primitives::facts::FactPath::new("state") {
+        facts.set(path, ess_primitives::facts::FactValue::text(state.as_str()));
+    }
+    entity.invariants.iter().find_map(|invariant| {
+        (facts.truth(invariant) == ess_primitives::predicate::Truth::False).then(|| {
+            format!(
+                "the `{}` it creates breaks the invariant `{invariant}` of `{}`",
+                subject.entity, entity.name
+            )
+        })
+    })
+}
+
 /// A precondition's input names only its command's fields, supplies every required one, and
 /// types each literal; a `{fixture: name}` value reads the command's own fixture input.
 fn precondition_input(
@@ -694,28 +776,37 @@ fn precondition_input(
             );
             continue;
         };
-        if let Some(fixture) = fixture_of(value) {
+        let undeclared_fixture = |fixture: &str| {
+            ValidationError::new(
+                ValidationCode::UndeclaredReference,
+                format!("{at}.input.{field}"),
+                format!(
+                    "precondition {index} reads `{field}` from fixture `{fixture}`, and `{}` \
+                     declares no such fixture input for it",
+                    command.name
+                ),
+            )
+        };
+        if let Some(fixture) = fixture_of(command, field, value) {
             if command
                 .fixture_inputs
                 .get(field)
                 .map(super::fixture_inputs::FixtureName::as_str)
                 != Some(fixture)
             {
-                errors.push(ValidationError::new(
-                    ValidationCode::UndeclaredReference,
-                    format!("{at}.input.{field}"),
-                    format!(
-                        "precondition {index} reads `{field}` from fixture `{fixture}`, and `{}` \
-                         declares no such fixture input for it",
-                        command.name
-                    ),
-                ));
+                errors.push(undeclared_fixture(fixture));
             }
             continue;
         }
         if let Err((code, message, hint)) =
             super::precondition_literal_admitted(&spec.system().types, &input.type_ref, value)
         {
+            // Written as a fixture reference for an input with no fixture, and no value of its
+            // type either: the reference is what was meant, so its refusal is the one reported.
+            if let Some(fixture) = written_fixture(value) {
+                errors.push(undeclared_fixture(fixture));
+                continue;
+            }
             errors.push(
                 ValidationError::new(
                     code,
@@ -729,7 +820,7 @@ fn precondition_input(
     for field in &command.input {
         let supplied = precondition.input.contains_key(&field.name)
             || command.fixture_inputs.contains_key(&field.name)
-            || matches!(field.type_ref, TypeRef::Optional(_));
+            || spec.system().types.newtype_layers(&field.type_ref).optional;
         if !supplied {
             errors.push(
                 ValidationError::new(
@@ -843,8 +934,17 @@ pub fn precondition_branch<'c>(
     Ok(selected)
 }
 
-/// The fixture a precondition input reads, when it is written `{fixture: name}`.
-pub fn fixture_of(value: &Node) -> Option<&str> {
+/// The fixture a precondition's input `field` reads: written `{fixture: name}` for an input its
+/// command declares a fixture input for.
+///
+/// Anywhere else the same map is a literal of the input's type (beyond10x/ess#205): a struct with a
+/// field named `fixture`, or a map with that key.
+pub fn fixture_of<'v>(command: &CommandSpec, field: &str, value: &'v Node) -> Option<&'v str> {
+    written_fixture(value).filter(|_| command.fixture_inputs.contains_key(field))
+}
+
+/// A value written `{fixture: name}`, whichever input it sits on.
+fn written_fixture(value: &Node) -> Option<&str> {
     let Node::Map(entries) = value else {
         return None;
     };

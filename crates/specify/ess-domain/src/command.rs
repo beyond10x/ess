@@ -3992,23 +3992,56 @@ pub(crate) fn precondition_literal_admitted(
     const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
                               for `example:`, a list, map or struct of them, or `null` where it \
                               is optional";
-    let mismatch =
-        |message: String, hint: &'static str| Err((ValidationCode::TypeMismatch, message, hint));
-    let within = |at: String| {
-        move |(code, message, hint): ExampleRefusal| (code, format!("{at}: {message}"), hint)
-    };
     let layers = types.newtype_layers(declared);
     if matches!(literal, Node::Null) {
         return if layers.optional {
             Ok(())
         } else {
-            mismatch(
+            Err((
+                ValidationCode::TypeMismatch,
                 format!("`null` is not a value of `{declared}`, which is not optional"),
                 STRUCTURED,
-            )
+            ))
         };
     }
-    match &layers.terminal {
+    let structured = matches!(layers.terminal, TypeRef::List(_) | TypeRef::Map(..))
+        || matches!(&layers.terminal, TypeRef::Named(name) if matches!(
+            types.get(name).map(|named| &named.body),
+            Some(crate::types::TypeBody::Struct { .. })
+        ));
+    precondition_terminal_admitted(types, declared, &layers.terminal, literal)?;
+    // A scalar's newtype layers are held by `example_admitted`; a structured value's are held here,
+    // over the whole literal read as `value`, as the setup reader holds them.
+    if structured {
+        for layer in &layers.newtypes {
+            let crate::types::TypeBody::Newtype { of, invariants, .. } = &layer.body else {
+                continue;
+            };
+            let facts = LiteralFacts::of(types, &[("value", of, literal)]);
+            for invariant in invariants {
+                facts.holds(invariant, literal, &layer.name)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// [`precondition_literal_admitted`] for the terminal a literal's newtype layers wrap.
+fn precondition_terminal_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    terminal: &TypeRef,
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
+                              for `example:`, a list, map or struct of them, or `null` where it \
+                              is optional";
+    let mismatch =
+        |message: String, hint: &'static str| Err((ValidationCode::TypeMismatch, message, hint));
+    let within = |at: String| {
+        move |(code, message, hint): ExampleRefusal| (code, format!("{at}: {message}"), hint)
+    };
+    match terminal {
         TypeRef::Primitive(Primitive::Json) => mismatch(
             format!(
                 "`{declared}` is a Json, which a precondition literal does not carry: it has no \
@@ -4100,10 +4133,9 @@ fn struct_literal_admitted(
             "write only the fields the struct declares",
         ));
     }
-    let mut facts = StructFacts::default();
     for field in fields {
         let Some(value) = entries.get(&field.name) else {
-            if matches!(field.type_ref, TypeRef::Optional(_)) {
+            if types.newtype_layers(&field.type_ref).optional {
                 continue;
             }
             return Err((
@@ -4115,67 +4147,186 @@ fn struct_literal_admitted(
         precondition_literal_admitted(types, &field.type_ref, value).map_err(
             |(code, message, hint)| (code, format!("field `{}`: {message}", field.name), hint),
         )?;
-        if let Some(fact) = scalar_fact(types, &field.type_ref, value) {
-            facts.values.insert(field.name.clone(), fact);
-        }
     }
+    let written: Vec<(&str, &TypeRef, &Node)> = fields
+        .iter()
+        .filter_map(|field| {
+            entries
+                .get(&field.name)
+                .map(|value| (field.name.as_str(), &field.type_ref, value))
+        })
+        .collect();
+    let facts = LiteralFacts::of(types, &written);
     for invariant in invariants {
-        if invariant.predicate.evaluate(&facts) == ess_primitives::predicate::Truth::False {
-            return Err((
-                ValidationCode::ConflictingDeclaration,
-                format!(
-                    "`{literal}` is not a value of `{declared}`: its invariant `{invariant}` does \
-                     not hold for it"
-                ),
-                "write a literal every invariant of the type holds for",
-            ));
-        }
+        facts.holds(invariant, literal, name_of(declared))?;
     }
     Ok(())
 }
 
-/// The fact an admitted scalar literal is, and whether it orders as an instant; `None` for a
-/// structured value or `null`, which a struct invariant then reads as unknown.
-fn scalar_fact(
-    types: &TypeRegistry,
-    declared: &TypeRef,
-    literal: &Node,
-) -> Option<(FactValue, bool)> {
-    match &types.newtype_layers(declared).terminal {
-        TypeRef::Primitive(primitive) => primitive
-            .admits(literal)
-            .map(|value| (value, *primitive == Primitive::Timestamp)),
-        TypeRef::Named(_) => literal.as_text().map(|text| (FactValue::text(text), false)),
-        _ => None,
+/// The name a refusal cites for a struct: the named type the reference reaches.
+fn name_of(declared: &TypeRef) -> &dyn fmt::Display {
+    match declared {
+        TypeRef::Optional(of) => name_of(of),
+        TypeRef::Named(name) => name,
+        other => other,
     }
 }
 
-/// A struct literal's scalar fields, by name: what the struct's invariants read.
-#[derive(Default)]
-struct StructFacts {
-    values: BTreeMap<String, (FactValue, bool)>,
+/// An admitted literal, flattened into the facts an invariant over it reads (beyond10x/ess#205).
+///
+/// The projection the conformance setup reader makes (`ess-conformance` `input.rs`, `project`),
+/// so a literal validation admits is one that reader admits: every scalar leaf at its dotted path,
+/// a newtype transparent, a struct's members one segment deeper, a list's size at `<path>.count`
+/// and each element at `<path>.<index>`, and a struct, list, map or `Json` value marked present.
+/// `null` and a left-out member bind nothing, so an invariant reading one is unknown.
+pub(crate) struct LiteralFacts {
+    facts: ess_primitives::facts::FactStore,
+    instants: BTreeSet<ess_primitives::facts::FactPath>,
+    durations: BTreeSet<ess_primitives::facts::FactPath>,
 }
 
-impl StructFacts {
-    fn get(&self, path: &ess_primitives::facts::FactPath) -> Option<&(FactValue, bool)> {
-        match path.segments() {
-            [field] => self.values.get(field.as_str()),
-            _ => None,
+impl LiteralFacts {
+    /// The facts of each `(member, type, literal)`, each rooted at its member name.
+    pub(crate) fn of(types: &TypeRegistry, members: &[(&str, &TypeRef, &Node)]) -> Self {
+        let mut facts = Self {
+            facts: ess_primitives::facts::FactStore::new(),
+            instants: BTreeSet::new(),
+            durations: BTreeSet::new(),
+        };
+        for (member, declared, literal) in members {
+            if let Ok(path) = ess_primitives::facts::FactPath::new(member) {
+                facts.project(types, declared, literal, &path, 0);
+            }
+        }
+        facts
+    }
+
+    /// Binds one more fact, such as a created row's `state`.
+    pub(crate) fn set(&mut self, path: ess_primitives::facts::FactPath, value: FactValue) {
+        self.facts.set(path, value);
+    }
+
+    fn project(
+        &mut self,
+        types: &TypeRegistry,
+        declared: &TypeRef,
+        literal: &Node,
+        path: &ess_primitives::facts::FactPath,
+        depth: usize,
+    ) {
+        if depth > crate::types::MAX_TYPE_DEPTH || matches!(literal, Node::Null) {
+            return;
+        }
+        let layers = types.newtype_layers(declared);
+        if matches!(literal, Node::Map(_) | Node::Seq(_))
+            || matches!(layers.terminal, TypeRef::Primitive(Primitive::Json))
+        {
+            self.facts.mark_present(path.clone());
+        }
+        match &layers.terminal {
+            // Any JSON value, and no fact, as the setup reader projects one.
+            TypeRef::Primitive(Primitive::Json) | TypeRef::Map(..) | TypeRef::Optional(_) => {}
+            TypeRef::Primitive(primitive) => {
+                if let Some(value) = primitive.admits(literal) {
+                    self.facts.set(path.clone(), value);
+                    match primitive {
+                        Primitive::Timestamp => {
+                            self.instants.insert(path.clone());
+                        }
+                        Primitive::Duration => {
+                            self.durations.insert(path.clone());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            TypeRef::List(element) => {
+                if let Node::Seq(items) = literal {
+                    self.facts
+                        .set(path.child("count"), FactValue::count(items.len()));
+                    for (index, item) in items.iter().enumerate() {
+                        self.project(
+                            types,
+                            element,
+                            item,
+                            &path.child(&index.to_string()),
+                            depth + 1,
+                        );
+                    }
+                }
+            }
+            TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+                Some(crate::types::TypeBody::Enum { .. }) => {
+                    if let Some(text) = literal.as_text() {
+                        self.facts.set(path.clone(), FactValue::text(text));
+                    }
+                }
+                Some(crate::types::TypeBody::Struct { fields, .. }) => {
+                    if let Node::Map(entries) = literal {
+                        for field in fields {
+                            if let Some(value) = entries.get(&field.name) {
+                                self.project(
+                                    types,
+                                    &field.type_ref,
+                                    value,
+                                    &path.child(&field.name),
+                                    depth + 1,
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            },
+        }
+    }
+
+    /// The invariant's truth over these facts: what a created row's check reads.
+    pub(crate) fn truth(
+        &self,
+        invariant: &crate::entity::Invariant,
+    ) -> ess_primitives::predicate::Truth {
+        invariant.predicate.evaluate(self)
+    }
+
+    /// Refused unless `invariant` is true of `literal` of the type `owner`, as the setup reader
+    /// requires: an invariant these facts leave unknown is refused too.
+    fn holds(
+        &self,
+        invariant: &crate::entity::Invariant,
+        literal: &Node,
+        owner: &dyn fmt::Display,
+    ) -> Result<(), ExampleRefusal> {
+        match self.truth(invariant) {
+            ess_primitives::predicate::Truth::True => Ok(()),
+            truth => Err((
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "`{literal}` is not a value of `{owner}`: its invariant `{invariant}` is {} \
+                     for it, and a literal must make it true",
+                    truth.as_str()
+                ),
+                "write a literal every invariant of the type holds for",
+            )),
         }
     }
 }
 
-impl ess_primitives::facts::FactSource for StructFacts {
+impl ess_primitives::facts::FactSource for LiteralFacts {
     fn fact(&self, path: &ess_primitives::facts::FactPath) -> Option<FactValue> {
-        self.get(path).map(|(value, _)| value.clone())
+        self.facts.fact(path)
+    }
+
+    fn present(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.facts.present(path)
     }
 
     fn orders_as_instant(&self, path: &ess_primitives::facts::FactPath) -> bool {
-        self.get(path).is_some_and(|(_, instant)| *instant)
+        self.instants.contains(path)
     }
 
     fn orders_text_by_bytes(&self, path: &ess_primitives::facts::FactPath) -> bool {
-        !self.orders_as_instant(path)
+        !self.durations.contains(path)
     }
 }
 
