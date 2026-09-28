@@ -385,9 +385,12 @@ $ ess verify conform check-history \
 
 The search is split by subject: calls on different instances are checked apart. A call that never
 answered may have taken effect or not, and is placed after every other call. A history records no
-inputs, so a call is explained by any input the suite would submit for its command. Reads of views
-are listed as not judged. The same history and budget always print the same report; `--format json`
-prints it as JSON.
+inputs, so a call is explained by any input the suite would submit for its command. A read of a view
+that records its rows is judged at the consistency the view declares: under `read_your_writes` no
+client reads a state older than its own last write, and under `eventual` each client's reads converge
+once its first `--settle` reads after the last write (default 4) are past. Reads that cannot be judged
+are listed with their reason. The same history and budget always print the same report;
+`--format json` prints it as JSON.
 
 ### Draw a history as client lanes
 

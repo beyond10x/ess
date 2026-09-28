@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/concurrent-history-0.39.0
+repository: ess
+publishedAt: 2026-09-28T18:00:00Z
+title: Concurrent histories checked against the model, and direct library returns
+summary: >-
+  `ess verify conform check-history` checks an `ess-history/1` run of several clients for linearizability against the interpreted model and holds each view to its declared consistency; the Go and TypeScript explorers record concurrent histories and inject declared faults. Source format `ess/17` adds `returns: true`, checked as a typed direct response.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.39.0
+  version: 0.39.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
