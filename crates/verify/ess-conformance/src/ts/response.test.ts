@@ -802,3 +802,44 @@ test('responseEqual compares tokens exactly and everything else structurally', (
   assert.equal(responseEqual(1, 1), true);
   assert.equal(responseEqual(1, token('1')), true, 'a binary64 on the left falls back to equal');
 });
+
+// ---- presence policies on a response field (suite/24, beyond10x/ess#139) --------------------------
+
+function withPresence(presence: string): ResponseObservation {
+  return observation({
+    fields: [{ name: 'receipt', type: 'Optional<String>', presence }],
+    targets: [{ name: 'receiptId', type: 'Optional<String>' }],
+  });
+}
+
+test('a response field presence policy is suite/24 vocabulary', () => {
+  const carrying = wire({
+    fields: [{ name: 'receipt', type: 'Optional<String>', presence: 'null_when_absent' }],
+    targets: [{ name: 'receiptId', type: 'Optional<String>' }],
+  });
+  admitResponse(carrying, 24);
+  assert.throws(() => admitResponse(carrying, 22), /field presence policies require suite\/24/);
+  assert.throws(
+    () =>
+      decodeResponseObservation(
+        wire({ fields: [{ name: 'receipt', type: 'Optional<String>', presence: 'maybe' }] }),
+      ),
+    /presence must be null_when_absent or omitted_when_absent/,
+  );
+});
+
+test('a response field is held to the spelling of absence it declares', () => {
+  const nulled = withPresence('null_when_absent');
+  compareResponse(nulled, { receipt: null }, {});
+  assert.throws(
+    () => compareResponse(nulled, {}, {}),
+    /response field receipt was left out, and it is declared null_when_absent/,
+  );
+  const omitted = withPresence('omitted_when_absent');
+  compareResponse(omitted, {}, {});
+  assert.throws(
+    () => compareResponse(omitted, { receipt: null }, {}),
+    /response field receipt was sent as null, and it is declared omitted_when_absent/,
+  );
+  compareResponse(omitted, { receipt: 'r-1' }, { receiptId: 'r-1' });
+});

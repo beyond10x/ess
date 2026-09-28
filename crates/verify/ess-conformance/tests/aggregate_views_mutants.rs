@@ -400,10 +400,11 @@ fn every_mutant_the_page_names_fails_the_scenarios_the_page_says_catch_it() {
 }
 
 /// The generated Go runtime runs the suite against a Go port of the target: the implementation
-/// passes, the mutant that ignores the filter fails, and the TypeScript runtime refuses the suite's
-/// version before constructing a target.
+/// passes, the mutant that ignores the filter fails. The TypeScript runtime admits the suite
+/// (beyond10x/ess#188) and reaches the target; `tests/typescript_suite_versions.rs` runs an
+/// aggregate suite through it against a target and holds it to the Rust verdicts.
 #[test]
-fn the_go_lane_runs_the_suite_and_the_typescript_lane_refuses_it_before_any_callback() {
+fn the_go_lane_runs_the_suite_and_the_typescript_lane_admits_it() {
     let suite = suite();
     let root = std::env::temp_dir().join(format!("ess-aggregate-views-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
@@ -522,12 +523,10 @@ fn run_typescript(suite: &ConformanceSuite, root: &std::path::Path, docs: &std::
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    // The target this fixture builds throws, so the run fails at the target and not at admission.
     assert!(!output.status.success(), "{log}");
-    assert!(
-        log.contains("unsupported suite version \"ess-conformance/16\""),
-        "{log}"
-    );
-    assert!(log.contains("constructed: 0"), "{log}");
+    assert!(!log.contains("unsupported suite version"), "{log}");
+    assert!(log.contains("constructed: 1"), "{log}");
     assert!(
         log.contains("aggregate-refusal-admission: refused"),
         "{log}"
