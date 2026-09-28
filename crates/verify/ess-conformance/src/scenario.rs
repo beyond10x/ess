@@ -158,6 +158,7 @@ impl ConformanceSuite {
             || crate::absent_input::used_by(self)
             || crate::aggregate_delta::used_by(self)
             || crate::now_offset::used_by(self)
+            || crate::caller_values::used_by(self)
         {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
@@ -1908,6 +1909,10 @@ pub enum ScenarioStep {
         /// As whom, where the specification grants commands to actors.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         actor: Option<ActorRef>,
+        /// The attributes the caller it is sent as carries (suite/26, [`crate::caller_values`]):
+        /// empty where the actor declares none.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        caller: BTreeMap<String, Node>,
         /// The input, by declared field name.
         ///
         /// A [`ScenarioValue`] per field: either a [`Node`] tree — the workspace's one
@@ -1932,6 +1937,9 @@ pub enum ScenarioStep {
         /// As whom, where the specification grants commands to actors.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         actor: Option<ActorRef>,
+        /// The attributes the caller it is sent as carries (suite/26, [`crate::caller_values`]).
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        caller: BTreeMap<String, Node>,
     },
     /// Require that the command took this declared branch (§10).
     ///

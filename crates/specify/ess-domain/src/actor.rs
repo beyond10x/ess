@@ -34,9 +34,13 @@
 
 use std::collections::BTreeSet;
 
-use ess_primitives::error::{ValidationCode, ValidationError, ValidationErrors};
+use ess_primitives::error::{
+    ConstructKind, ConstructRef, ValidationCode, ValidationError, ValidationErrors,
+};
 
 use crate::name::{Naming, QualifiedName};
+use crate::system::FormatVersion;
+use crate::types::{Field, TypeRegistry};
 
 /// Someone or something that interacts with the system.
 ///
@@ -56,9 +60,63 @@ pub struct ActorSpec {
     /// What it is called on the wire and shown as.
     #[serde(skip_serializing_if = "Naming::is_empty")]
     pub naming: Naming,
+    /// What its credential carries about it, such as the account it acts for (ess/16,
+    /// beyond10x/ess#168, `docs/design/caller-values.md`).
+    ///
+    /// Typed fields a command it invokes reads as `{caller: <attribute>}` in `payload:` and
+    /// `sets:`, and as `caller.<attribute>` in a guard. They are not the command's input: the
+    /// caller is not the authority on them, the credential is.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attributes: Vec<Field>,
 }
 
 impl ActorSpec {
+    /// The attribute named `name`, where this actor declares one.
+    pub fn attribute(&self, name: &str) -> Option<&Field> {
+        self.attributes.iter().find(|field| field.name == name)
+    }
+
+    /// Checks the declared attributes: the format that admits them, one declaration per name, and
+    /// types that resolve.
+    pub fn validate_attributes(
+        &self,
+        format: FormatVersion,
+        types: &TypeRegistry,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        if self.attributes.is_empty() {
+            return errors;
+        }
+        let site = ConstructRef::new(ConstructKind::Actor, self.name.to_string()).key("attributes");
+        if format.major() < FormatVersion::V16.major() {
+            errors.push(
+                ValidationError::at(
+                    site,
+                    ValidationCode::UnsupportedFormatVersion,
+                    "`attributes` on an actor require specification format ess/16",
+                )
+                .with_hint("write `format: ess/16` on the source that declares the system"),
+            );
+            return errors;
+        }
+        let mut seen = BTreeSet::new();
+        for (index, field) in self.attributes.iter().enumerate() {
+            if !seen.insert(field.name.as_str()) {
+                errors.push(ValidationError::at(
+                    site.clone().index(index),
+                    ValidationCode::DuplicateDeclaration,
+                    format!(
+                        "attribute `{}` is declared more than once on `{}`",
+                        field.name, self.name
+                    ),
+                ));
+            }
+            errors
+                .extend(types.resolve_at(&field.type_ref, &site.clone().index(index).key("type")));
+        }
+        errors
+    }
+
     /// `true` when this actor may invoke `command`.
     ///
     /// Matched on the qualified name, so renaming a command's wire form — the HTTP path, the topic
@@ -127,6 +185,9 @@ pub struct RawActorSpec {
     /// What it is called on the wire and shown as.
     #[serde(default)]
     pub naming: Naming,
+    /// What its credential carries about it (ess/16).
+    #[serde(default)]
+    pub attributes: Vec<Field>,
 }
 
 impl TryFrom<RawActorSpec> for ActorSpec {
@@ -143,6 +204,7 @@ impl TryFrom<RawActorSpec> for ActorSpec {
             name: raw.name,
             may: raw.may,
             naming: raw.naming,
+            attributes: raw.attributes,
         })
     }
 }

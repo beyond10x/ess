@@ -437,6 +437,7 @@ fn segment(
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
         input: supply(command, &second, None, None, &BTreeMap::new()),
+        caller: BTreeMap::new(),
     });
     steps.push(ScenarioStep::ExpectOutcome {
         outcome: branch.clone(),

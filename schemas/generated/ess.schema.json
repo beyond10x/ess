@@ -1391,6 +1391,14 @@
         "name"
       ],
       "properties": {
+        "attributes": {
+          "description": "What its credential carries about it (ess/16).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        },
         "may": {
           "description": "The commands it may invoke.\n\nAbsent means it may invoke none, which is a legitimate thing to say: an actor that only observes still belongs in the model, because \"who is in this picture\" is part of what the specification describes.",
           "default": [],
@@ -1622,6 +1630,20 @@
               "$ref": "#/definitions/RawTrigger"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawCallerSource": {
+      "description": "`{caller: <attribute>}` (ess/16, #168), written alone.\n\nRecognised by its exact shape — one key, `caller`, holding a text — so `caller` is no source keyword: any other mapping under a `caller` key is a nested mapping, as it was before `ess/16`. A document below `ess/16` whose struct happens to have this shape is read back as that nested mapping by [`read_below_ess_16`].",
+      "type": "object",
+      "required": [
+        "caller"
+      ],
+      "properties": {
+        "caller": {
+          "description": "An attribute every actor that may invoke the command declares.",
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -2519,6 +2541,9 @@
         },
         {
           "$ref": "#/definitions/RawRelatedSource"
+        },
+        {
+          "$ref": "#/definitions/RawCallerSource"
         },
         {
           "$ref": "#/definitions/RawNestedSources"

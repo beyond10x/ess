@@ -486,6 +486,14 @@ pub struct SemanticCommandRequest {
     pub command: CommandRef,
     /// As whom, where the specification grants commands to actors.
     pub actor: Option<crate::scenario::ActorRef>,
+    /// The attributes of the caller to send it as, where its actor declares any (suite/26,
+    /// ess/16, [`crate::caller_values`]); `None` otherwise.
+    ///
+    /// The target sends the command authenticated as a caller carrying exactly these values —
+    /// the account, the agent — because the command reads them from the credential and not from
+    /// the input. A target that cannot authenticate as the caller named here answers
+    /// [`TargetError::unsupported`], never the command sent as someone else.
+    pub caller: Option<BTreeMap<String, Node>>,
     /// The input, by declared field name, with every reference already resolved by the runner.
     pub input: BTreeMap<String, Node>,
     /// The scenario this belongs to.
@@ -502,6 +510,8 @@ pub struct AbsentInputRequest {
     pub command: CommandRef,
     /// As whom, where the specification grants commands to actors.
     pub actor: Option<crate::scenario::ActorRef>,
+    /// The attributes of the caller to send it as, as [`SemanticCommandRequest::caller`].
+    pub caller: Option<BTreeMap<String, Node>>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
 }

@@ -306,6 +306,13 @@ expression: entity-core has no join. `ess-gen` documentation describes it as it 
 other source (`demo.shipping.Customer.region of the row subject.customer_id names`). `ess-synth`
 renders no payload source except a response field. Neither has anything to refuse.
 
+### E9 — `{caller: <attribute>}` and `caller.<attribute>` (#168, `ess/16`)
+
+A value read from the authenticated caller, and a guard operand comparing it with an input or a
+stored field. Its binding design is [`caller-values.md`](caller-values.md): actor `attributes:`,
+the every-actor rule, the `==`/`!=`-against-a-field restriction, the suite/26 `caller` field on
+command steps, and synthesis under two caller assignments.
+
 ## Not in this design
 
 - Arbitrary arithmetic, string functions or conditionals beyond E4's one fallback.

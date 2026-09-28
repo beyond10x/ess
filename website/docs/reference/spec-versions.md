@@ -120,6 +120,8 @@ Under `ess/16` a command may declare `input_absent: true` with an `error:`: the 
 
 Under `ess/16` an outcome may be selected by whether the addressed record exists (beyond10x/ess#164): a `creates:` branch marked `unknown_instance: true` beside the branch that updates the record the same input names (create or update), or an `existing_instance: true` branch with an `error:` beside a creation whose identity the caller supplies (create or refuse). Each is refused below `ess/16` with `unsupported_format_version`. See [selection by existence](../guides/write-a-specification.md#an-outcome-can-be-selected-by-whether-the-record-exists).
 
+Under `ess/16` an actor may declare `attributes:` its credential carries, which a command reads as `{caller: <attribute>}` in `payload:` and `sets:` and as `caller.<attribute>` in a `when:` or `when_subject:` comparison (beyond10x/ess#168). Below `ess/16` the attributes and a `caller.` operand are refused with `unsupported_format_version`, and `{caller: …}` stays a nested mapping.
+
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
 

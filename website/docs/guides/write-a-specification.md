@@ -761,6 +761,7 @@ the input or a literal:
 | `{input: <field>, else: {generated: true}}` | `payload:`, `sets:` | the input is `Optional<…>` |
 | `{input: <field>, else: <literal>}` | `payload:`, `sets:` | source `ess/16`; the input is `Optional<…>` and the literal is one the target admits |
 | `{related: {via: <field>, field: <field>}}` | `payload:`, `sets:` | source `ess/16`; `via` is a field of an existing subject, or `input.<field>`, typed as exactly one entity's identity |
+| `{caller: <attribute>}` | `payload:`, `sets:` | source `ess/16`; every actor that may invoke the command declares the attribute, at one type the target admits |
 | a nested mapping | `payload:`, `sets:` | the target is a struct; every struct field has a source |
 | `{generated: true}` | `sets:` | always (`payload:` has admitted it since `ess/4`) |
 
@@ -821,6 +822,59 @@ implementation that copied the value earlier fails too. Below `ess/16` the sourc
 
 A literal over a `Decimal` target is admitted in every format, quoted (`'0.25'`) or unquoted
 (`0.25`): an optional `-`, digits without a leading zero, optionally a point and digits.
+
+### Read the caller's credential
+
+From source `ess/16` an actor may declare `attributes:`: typed fields its credential carries, such as
+the account it acts for. A command reads one as `{caller: <attribute>}` in `payload:` and `sets:`, and
+as `caller.<attribute>` in a guard, compared with an input field in `when:` or with a stored field in
+`when_subject:`:
+
+```yaml
+actors:
+  - name: demo.notes.AccountUser
+    attributes:
+      - {name: account_id, type: demo.notes.AccountId}
+      - {name: agent_id, type: demo.notes.AgentId}
+    may: [demo.notes.CreateNote, demo.notes.EditNote]
+commands:
+  - name: demo.notes.CreateNote
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: created
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {account_id: {caller: account_id}, agent_id: {caller: agent_id}, text: input.text}
+  - name: demo.notes.EditNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: text, type: String}
+    outcomes:
+      - name: forbidden
+        when_subject: {predicate: agent_id != caller.agent_id}   # not the note's agent
+        error: demo.notes.NotYourNote
+      - name: edited
+        updates: demo.notes.Note
+        instance: note_id
+        sets: {text: input.text}
+```
+
+The attribute is not an input: the credential is its authority, not the request. It is readable
+only where every actor whose `may` names the command declares it, at one type; a command whose
+actors disagree, or that no actor may invoke, is refused where it reads the attribute. A guard
+compares a caller attribute with `==` or `!=` against a field of the same declared type and nothing
+else. An input or a stored field named `caller` keeps being read as itself. Below `ess/16` actor
+attributes and a `caller.` operand are refused with `unsupported_format_version`, and
+`{caller: …}` is the nested mapping it always was.
+
+A refusal the caller decides answers `403` in the generated `OpenAPI` contract, and every operation
+names the caller attributes it reads under `x-ess-caller`. The conformance suite (suite/26) says
+which caller sends each command, and the target sends it authenticated as that caller; a target
+that cannot answers `unsupported`. Synthesis uses two callers: the refusal is sent by one caller on
+the other's note, and every scenario of a command that reads the caller runs a second time with the
+two callers' roles swapped, so an implementation that records one fixed account or admits one
+caller by name fails. Entity Runtime lowering refuses a caller read with `CallerUnsupported`.
 
 ### An input refused when absent is present afterwards
 

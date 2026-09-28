@@ -1820,6 +1820,7 @@ impl Compiler<'_> {
             Completeness::Total,
         );
         self.steps.push(ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor,
             input,

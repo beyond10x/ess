@@ -1590,6 +1590,7 @@ fn legacy_preservation_and_subjectless_errors_coexist_with_complete_snapshots() 
         ScenarioStep::ExecuteCommand {
             command: "retained.core.Seed".parse().unwrap(),
             actor: None,
+            caller: std::collections::BTreeMap::new(),
             input: BTreeMap::new(),
         },
         ScenarioStep::ExpectError {

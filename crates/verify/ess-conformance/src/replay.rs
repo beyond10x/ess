@@ -375,6 +375,7 @@ pub(crate) fn validate_steps(steps: &[ScenarioStep]) -> Result<(), String> {
                 command: c,
                 actor,
                 input,
+                ..
             } => {
                 if !unchanged.is_empty() {
                     return Err("command interrupted retained subject comparison".into());

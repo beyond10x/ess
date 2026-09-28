@@ -1051,7 +1051,10 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
-                | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }) => other.describe(),
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }) => {
+                    other.describe()
+                }
             };
             let conversion = field
                 .conversion
@@ -1898,7 +1901,10 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
                 | ess_compiler::ir::ResolvedPayloadValue::Increment { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::InputOrGenerated { .. }
                 | ess_compiler::ir::ResolvedPayloadValue::Struct { .. }
-                | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }) => other.describe(),
+                | ess_compiler::ir::ResolvedPayloadValue::RelatedField { .. }
+                | ess_compiler::ir::ResolvedPayloadValue::CallerAttribute { .. }) => {
+                    other.describe()
+                }
             };
             let conversion = field
                 .conversion

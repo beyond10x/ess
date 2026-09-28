@@ -42,7 +42,11 @@ fn without_input_of_retry(steps: &[ScenarioStep], before: usize) -> ScenarioStep
             _ => None,
         })
         .expect("a command runs before");
-    ScenarioStep::ExecuteCommandWithoutInput { command, actor }
+    ScenarioStep::ExecuteCommandWithoutInput {
+        command,
+        actor,
+        caller: std::collections::BTreeMap::new(),
+    }
 }
 
 /// Replay admission refuses a second invocation between the retry and the replay comparison

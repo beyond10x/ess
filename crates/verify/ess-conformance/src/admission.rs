@@ -423,8 +423,8 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
         "snapshot_complete_subject" if major >= 12 => (&["step", "view", "subject", "shape"], &[]),
         "expect_complete_subject_unchanged" if major >= 12 => (&["step", "view"], &[]),
         "configure_external_outcome" => (&["step", "force"], &[]),
-        "execute_command" => (&["step", "command"], &["actor", "input"]),
-        "execute_command_without_input" => (&["step", "command"], &["actor"]),
+        "execute_command" => (&["step", "command"], &["actor", "caller", "input"]),
+        "execute_command_without_input" => (&["step", "command"], &["actor", "caller"]),
         "expect_outcome" => (&["step", "outcome"], &[]),
         "expect_no_error" if major >= 10 => (&["step"], &[]),
         "snapshot_subject" if major >= 10 => (&["step", "view", "subject"], &[]),
@@ -473,7 +473,7 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             }
             "input" | "params" | "subject" => values(field, major, tag == "expect_invocation")?,
             "identity" => field.payload()?,
-            "fields" | "payload" => {
+            "fields" | "payload" | "caller" => {
                 field.object()?;
                 field.payload()?;
             }
@@ -524,6 +524,7 @@ fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::leaf_payloads::admit_format(suite)?;
     crate::aggregate_delta::admit_format(suite)?;
     crate::now_offset::admit_format(suite)?;
+    crate::caller_values::admit_format(suite)?;
     crate::outcome_shapes::admit_suite(suite)?;
     crate::presence::admit_format(suite)?;
     crate::replay::admit_suite(suite)?;

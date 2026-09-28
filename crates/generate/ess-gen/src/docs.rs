@@ -1039,6 +1039,15 @@ fn actors_section(ir: &EssIr, domain: &ResolvedDomain) -> Vec<Block> {
         let mut about = Blocks::new();
         about.prose(naming_sentence(&actor.naming, &actor.name));
         about.prose(grants_sentence(ir, domain, actor));
+        // ess/16 (#168): what the credential carries, which a command it invokes may read.
+        if !actor.attributes.is_empty() {
+            about.sentence("Its credential carries:");
+            about.push(bullets(actor.attributes.iter().map(field_bullet).collect()));
+            about.sentence(
+                "A command it invokes reads these as `{caller: …}` or `caller.…`, never from its \
+                 input: the credential is their authority, not the caller.",
+            );
+        }
         under.push(section(
             3,
             vec![Inline::code(relative(&actor.name, &domain.name))],

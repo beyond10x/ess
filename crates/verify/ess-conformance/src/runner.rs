@@ -502,11 +502,14 @@ impl<C: Clock> Runner<C> {
             ScenarioStep::ExecuteCommand {
                 command,
                 actor,
+                caller,
                 input,
-            } => execute_command(command, actor.as_ref(), input, run, target),
-            ScenarioStep::ExecuteCommandWithoutInput { command, actor } => {
-                execute_command_without_input(command, actor.as_ref(), run, target)
-            }
+            } => execute_command(command, (actor.as_ref(), caller), input, run, target),
+            ScenarioStep::ExecuteCommandWithoutInput {
+                command,
+                actor,
+                caller,
+            } => execute_command_without_input(command, (actor.as_ref(), caller), run, target),
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
@@ -1119,7 +1122,7 @@ fn expect_reading_order<T: ConformanceTarget>(
 /// Invokes a command, with every reference the suite carries resolved first (§9).
 fn execute_command<T: ConformanceTarget>(
     command: &CommandRef,
-    actor: Option<&ActorRef>,
+    (actor, caller): (Option<&ActorRef>, &BTreeMap<String, Node>),
     input: &BTreeMap<String, ScenarioValue>,
     run: &mut Run,
     target: &T,
@@ -1147,6 +1150,7 @@ fn execute_command<T: ConformanceTarget>(
     let request = SemanticCommandRequest {
         command: command.clone(),
         actor: actor.cloned(),
+        caller: sent_as(caller),
         input: resolved.clone(),
         correlation: run.context.correlation.clone(),
     };
@@ -1172,19 +1176,26 @@ fn execute_command<T: ConformanceTarget>(
     }
 }
 
+/// The caller a command step is sent as (suite/26, [`crate::caller_values`]): `None` for a step
+/// that names none.
+fn sent_as(caller: &BTreeMap<String, Node>) -> Option<BTreeMap<String, Node>> {
+    (!caller.is_empty()).then(|| caller.clone())
+}
+
 /// Invokes a command with no input document at all (suite/26, `input_absent:`).
 ///
 /// Everything after it reads its result exactly as after [`execute_command`]; the recorded input
 /// is empty, and quoted as `Command()`.
 fn execute_command_without_input<T: ConformanceTarget>(
     command: &CommandRef,
-    actor: Option<&ActorRef>,
+    (actor, caller): (Option<&ActorRef>, &BTreeMap<String, Node>),
     run: &mut Run,
     target: &T,
 ) -> Flow {
     let request = AbsentInputRequest {
         command: command.clone(),
         actor: actor.cloned(),
+        caller: sent_as(caller),
         correlation: run.context.correlation.clone(),
     };
     match target.execute_command_without_input(request) {

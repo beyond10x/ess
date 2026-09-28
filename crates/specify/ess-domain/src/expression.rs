@@ -155,6 +155,15 @@ pub trait TypeEnvironment {
     fn parameter_namespace(&self) -> &'static str {
         "param"
     }
+    /// Whether `caller.<attribute>` reads the authenticated caller in this environment (ess/16,
+    /// beyond10x/ess#168). A root field named `caller` keeps being read as itself.
+    fn has_caller(&self) -> bool {
+        false
+    }
+    /// One attribute every actor that may invoke the command declares.
+    fn caller_attribute(&self, _name: &str) -> Option<Self::Type> {
+        None
+    }
 }
 
 /// Whether a predicate site admits the current-time operand (beyond10x/ess#171), in two parts
@@ -269,6 +278,7 @@ pub struct DomainEnvironment<'a> {
     params: Option<&'a [Field]>,
     namespace: &'static str,
     current_time: bool,
+    caller: Option<&'a [Field]>,
 }
 
 impl<'a> DomainEnvironment<'a> {
@@ -280,7 +290,15 @@ impl<'a> DomainEnvironment<'a> {
             params: None,
             namespace: "param",
             current_time: false,
+            caller: None,
         }
+    }
+    /// Enable the `caller` namespace over the attributes every actor that may invoke the command
+    /// declares (ess/16, beyond10x/ess#168).
+    #[must_use]
+    pub fn with_caller(mut self, attributes: &'a [Field]) -> Self {
+        self.caller = Some(attributes);
+        self
     }
     /// Enable the reserved param namespace, including when no parameters are declared.
     #[must_use]
@@ -398,6 +416,15 @@ impl TypeEnvironment for DomainEnvironment<'_> {
             .find(|field| field.name == name)
             .map(|field| field.type_ref.clone())
     }
+    fn has_caller(&self) -> bool {
+        self.caller.is_some()
+    }
+    fn caller_attribute(&self, name: &str) -> Option<TypeRef> {
+        self.caller?
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.type_ref.clone())
+    }
 }
 
 #[derive(Clone)]
@@ -484,6 +511,12 @@ fn root_cursor<E: TypeEnvironment>(
                 format!("`{path}` reads undeclared {noun} `{name}`"),
             )
         })?)
+    } else if environment.has_caller()
+        && root == crate::command::caller_value::CALLER_NAMESPACE
+        && environment.root(root).is_none()
+    {
+        position = 2;
+        Some(caller_root(environment, path, owner)?)
     } else {
         environment.root(root)
     }
@@ -502,6 +535,36 @@ fn root_cursor<E: TypeEnvironment>(
         optional,
         access,
         context,
+    })
+}
+
+/// The type of the caller attribute `caller.<attribute>` names (ess/16, beyond10x/ess#168).
+fn caller_root<E: TypeEnvironment>(
+    environment: &E,
+    path: &FactPath,
+    owner: &str,
+) -> Result<E::Type, ExpressionError> {
+    let root = path.namespace();
+    let Some(name) = path.segments().get(1) else {
+        return Err(error(
+            owner,
+            ValidationCode::UnobservableFact,
+            Some(path),
+            Some(root),
+            format!("`{path}` names the caller without an attribute selector"),
+        ));
+    };
+    environment.caller_attribute(name).ok_or_else(|| {
+        error(
+            owner,
+            ValidationCode::UndeclaredReference,
+            Some(path),
+            Some(name),
+            format!(
+                "`{path}` reads caller attribute `{name}`, which not every actor that may \
+                 invoke the command declares"
+            ),
+        )
     })
 }
 

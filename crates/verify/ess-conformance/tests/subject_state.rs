@@ -241,6 +241,7 @@ fn absent_or_different_subject_is_never_created_or_selected_as_initial() {
         let request = SemanticCommandRequest {
             command: "calls.core.Report".parse().unwrap(),
             actor: None,
+            caller: None,
             correlation: ess_primitives::ids::CorrelationId::new("subject-absence").unwrap(),
             input: [
                 (

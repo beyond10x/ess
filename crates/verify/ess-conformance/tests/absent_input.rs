@@ -170,6 +170,7 @@ impl ConformanceTarget for Notes {
             Mode::ReadsAbsentAsEmpty => self.execute_command(SemanticCommandRequest {
                 command,
                 actor: request.actor,
+                caller: request.caller,
                 input: BTreeMap::new(),
                 correlation: request.correlation,
             }),
@@ -277,7 +278,7 @@ fn the_issue_repro_synthesizes_a_scenario_that_sends_no_input_and_requires_the_e
         "ess-conformance/26"
     );
     let absent = scenario(&synthesis.suite, ID);
-    let ScenarioStep::ExecuteCommandWithoutInput { command, actor } = &absent.steps[0] else {
+    let ScenarioStep::ExecuteCommandWithoutInput { command, actor, .. } = &absent.steps[0] else {
         panic!(
             "the command is sent with no input, arranging nothing: {:#?}",
             absent.steps

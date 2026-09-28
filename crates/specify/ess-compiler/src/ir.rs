@@ -881,6 +881,12 @@ pub struct ResolvedOutcome {
     /// Empty is the common case and a statement, not a gap, exactly as for `payload`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sets: Vec<ResolvedPayloadField>,
+    /// Whether the authenticated caller decides the branch (ess/16, beyond10x/ess#168): its guard
+    /// reads `caller.<attribute>` in `when:` or `when_subject:`, or it is an unguarded refusal
+    /// after an accepting branch whose guard does. A refusal decided so is answered as forbidden
+    /// rather than as a bad request. Left out of the document when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub decided_by_caller: bool,
 }
 
 /// Where a determined payload field's value comes from, resolved.
@@ -965,6 +971,14 @@ pub enum ResolvedPayloadValue {
         /// Its resolved type.
         type_ref: ResolvedTypeRef,
     },
+    /// An attribute of the authenticated caller (ess/16, beyond10x/ess#168): `{caller:
+    /// account_id}`. Every actor that may invoke the command declares it, at this type.
+    CallerAttribute {
+        /// The actor attribute read.
+        attribute: String,
+        /// Its resolved type.
+        type_ref: ResolvedTypeRef,
+    },
 }
 
 /// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).
@@ -1025,6 +1039,7 @@ impl ResolvedPayloadValue {
             Self::RelatedField {
                 via, entity, field, ..
             } => format!("{}.{field} of the row {via} names", entity.name()),
+            Self::CallerAttribute { attribute, .. } => format!("the caller's {attribute}"),
             Self::Increment { by } => format!("its previous value plus {by}"),
             Self::InputOrGenerated {
                 field,
@@ -1526,6 +1541,11 @@ pub struct ResolvedActor {
     pub may: BTreeSet<CommandHandle>,
     /// What it is called on the wire, and shown as.
     pub naming: Naming,
+    /// What its credential carries about it (ess/16, beyond10x/ess#168), each type resolved.
+    ///
+    /// Left out of the document when empty, so a model without them keeps its bytes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attributes: Vec<ResolvedField>,
 }
 
 impl ResolvedActor {
@@ -2068,6 +2088,23 @@ impl EssIr {
     /// Every resolved command, by name.
     pub fn commands(&self) -> &BTreeMap<QualifiedName, ResolvedCommand> {
         &self.commands
+    }
+    /// This IR with every command passed through `rewrite`, and nothing else changed.
+    ///
+    /// For a consumer that reads the model under one fixed choice it cannot otherwise express —
+    /// conformance synthesis reads each caller attribute as the value one chosen caller carries
+    /// (ess/16, beyond10x/ess#168). The result is a view for that consumer, not a compilation: no
+    /// reference is re-resolved, so `rewrite` may change values and guards but not names.
+    #[must_use]
+    pub fn with_commands_rewritten(
+        &self,
+        rewrite: impl Fn(&ResolvedCommand) -> ResolvedCommand,
+    ) -> Self {
+        let mut rewritten = self.clone();
+        for command in rewritten.commands.values_mut() {
+            *command = rewrite(command);
+        }
+        rewritten
     }
     /// Every resolved event, by name.
     pub fn events(&self) -> &BTreeMap<QualifiedName, ResolvedEvent> {
