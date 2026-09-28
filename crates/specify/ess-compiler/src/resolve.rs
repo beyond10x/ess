@@ -563,8 +563,8 @@ impl<'a> Locator<'a> {
     /// 5, its siblings `outcomes:`, `input:` sit at indent 4 and belong to it, and the next
     /// `  - name: Y` at indent 2 ends it. YAML key order is free, so the item also reaches
     /// *upwards* from a declaration key written after other keys (`  - mapping: …` above
-    /// `    id: X`), as far as the `- ` that opens the item. Blank lines and comments neither
-    /// open nor close it.
+    /// `    id: X`), as far as the `-` that opens the item, whether its first key follows the dash
+    /// or the dash stands alone. Blank lines and comments neither open nor close it.
     fn encloses(&self, label: &str, declared: Location, at: Location) -> bool {
         let Some(text) = self.sources.get(label) else {
             return false;
@@ -579,7 +579,8 @@ impl<'a> Locator<'a> {
         let declared_at = declared.line - 1;
 
         // The item's first line: the declaration's own when its key follows the `- `; otherwise
-        // the nearest line above, indented less than the key, that opens an item.
+        // the nearest line above, indented less than the key, that opens an item — `- …`, or a
+        // bare `-` whose keys start on the next line.
         let mut first = declared_at;
         let key_opens_the_line = lines
             .get(declared_at)
@@ -590,7 +591,8 @@ impl<'a> Locator<'a> {
                 if neutral(line) || indent_of(line) >= indent {
                     continue;
                 }
-                if line.trim_start_matches(' ').starts_with("- ") {
+                let body = line.trim_start_matches(' ');
+                if body == "-" || body.starts_with("- ") {
                     first = index;
                 }
                 break;
@@ -944,9 +946,27 @@ fn class_of(code: ValidationCode) -> u16 {
 ///
 /// Read off `ess-domain`'s raw types, not guessed: `outcomes` is `Vec<RawOutcome>` /
 /// `Vec<RawGroupOutcome>`, `input` is `Vec<InputField>` / `Vec<Field>`, `fields` is `Vec<Field>` /
-/// `Vec<RawViewField>`, `params` is `Vec<Field>` — every one a struct with a `name`. A path
-/// `<…>.<key>.<x>` under one of them names the element, and the element is never written `<x>:`.
-const NAMED_LISTS: &[&str] = &["outcomes", "input", "fields", "params"];
+/// `Vec<RawViewField>`, `params` and `response` and `attributes` are `Vec<Field>`, `relations` is
+/// `Vec<RelationSpec>` — every one a struct with a `name`. A path `<…>.<key>.<x>` under one of
+/// them names the element, and the element is never written `<x>:`.
+///
+/// The key alone does not decide it everywhere: [`MAPS_UNDER`] lists where the same key is a map.
+const NAMED_LISTS: &[&str] = &[
+    "outcomes",
+    "input",
+    "fields",
+    "params",
+    "response",
+    "attributes",
+    "relations",
+];
+
+/// `(key, ancestor)`: under `ancestor` in a path, `key` is a map written `<x>: <value>`, not a
+/// [`NAMED_LISTS`] list, and the trailing-key guess is exactly how its entries are written.
+///
+/// `system.preconditions[i].input` is `BTreeMap<String, Node>` (`ess-domain` `system.rs`,
+/// `Precondition`), where a command's `input` is `Vec<InputField>`.
+const MAPS_UNDER: &[(&str, &str)] = &[("input", "preconditions")];
 
 /// The keys a document path passes *through*, which never name a declaration.
 ///
@@ -1007,6 +1027,11 @@ const STRUCTURAL: &[&str] = &[
     "topology",
     // An outcome group's exceptions: `outcome_groups.<group>.except` names the group.
     "except",
+    // Lists of `- name:` elements under a declaration (see `NAMED_LISTS`): `entity <E>.relations.<r>`
+    // names entity `<E>`, not one called `<E>.relations.<r>`.
+    "relations",
+    "attributes",
+    "response",
 ];
 
 /// Needles for a document path, most specific first.
@@ -1022,10 +1047,13 @@ const STRUCTURAL: &[&str] = &[
 /// and never `<x>:`, so the first needle tried can never match its own target and any match it
 /// does find is wrong by construction. Two guards now
 /// (`story:a-wrong-trailing-key-guess-is-reported-as-a-line`,
-/// `tests/trailing_key_guess_citations.rs`, `tests/trailing_key_guess_adversary.rs`):
+/// `tests/trailing_key_guess_citations.rs`, `tests/trailing_key_guess_adversary.rs`,
+/// `tests/trailing_key_guess_adversary_pass2.rs`, `tests/trailing_key_guess_named_lists.rs`):
 ///
 /// * no guess is built for the element of a [`NAMED_LISTS`] list — `outcomes`, `input`,
-///   `fields`, `params` — so such a refusal is searched for by its declaration only;
+///   `fields`, `params`, `response`, `attributes`, `relations` — so such a refusal is searched
+///   for by its declaration only. The key alone does not decide it: a precondition's `input` is a
+///   map whose keys *are* written `<x>:` ([`MAPS_UNDER`]), and keeps its guess;
 /// * any other guess, once a declaration is located, is reported only inside that declaration's
 ///   list item ([`Locator::span`]). With no declaration located it is first unique, as before,
 ///   because some paths (`topology.workloads.<component>`) have nothing else to be cited by.
@@ -1052,7 +1080,12 @@ fn needles_from_tokens(tokens: &[&str]) -> Vec<String> {
             .chars()
             .next()
             .is_some_and(|first| first.is_ascii_lowercase());
-        let names_a_list_element = before.last().is_some_and(|key| NAMED_LISTS.contains(key));
+        let names_a_list_element = before.split_last().is_some_and(|(key, above)| {
+            NAMED_LISTS.contains(key)
+                && !MAPS_UNDER
+                    .iter()
+                    .any(|(map, ancestor)| map == key && above.contains(ancestor))
+        });
         if key_like && !STRUCTURAL.contains(last) && !names_a_list_element {
             needles.push(format!("{last}:"));
         }

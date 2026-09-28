@@ -11,12 +11,12 @@
 //! which belongs to a command in another file that is not refused at all.
 //!
 //! `story:a-wrong-trailing-key-guess-is-reported-as-a-line` closes it twice over:
-//! `needles_from_tokens` builds no `<name>:` guess for an element of `outcomes`, `input`, `fields`
-//! or `params`, which is always written `- name: <name>`; and `Locator::span`, once a declaration is
-//! located, reports any other guess only inside that declaration's list item. The cases below are
-//! the adversary's own assertion, unchanged; the same wrong guess with both commands in one file;
-//! and a right guess, which must still be cited at its key (driven through `Locator` directly, so
-//! the list-item guard is what decides it).
+//! `needles_from_tokens` builds no `<name>:` guess for an element of a `NAMED_LISTS` list
+//! (`outcomes` among them), which is always written `- name: <name>`; and `Locator::span`, once a
+//! declaration is located, reports any other guess only inside that declaration's list item. The
+//! cases below are the adversary's own assertion, unchanged; the same wrong guess with both
+//! commands in one file; and a right guess, which must still be cited at its key (driven through
+//! `Locator` directly, so the list-item guard is what decides it).
 
 use ess_compiler::resolve::{diagnose_locating, Locator};
 use ess_compiler::source::{Location, SourceMap};
