@@ -149,6 +149,25 @@
 //! says stop, and what an honest source produces before being refused its first row differs between
 //! two implementations that are both right.
 //!
+//! # An external answer
+//!
+//! No input decides a branch the specification declares `external:` (§12): whether a provider
+//! accepts the mail is the provider's answer. So an act that names one under `outcome:` states that
+//! answer for its call, and compiles to a
+//! [`ConfigureExternalOutcome`](ScenarioStep::ConfigureExternalOutcome) for that branch immediately
+//! before its [`ExecuteCommand`](ScenarioStep::ExecuteCommand) — the step synthesis writes for the
+//! same branch — so a target is told what to answer rather than left to happen upon it. An act
+//! naming a branch the input decides compiles to no such step.
+//!
+//! A claim that holds only on an external answer the act does not state expects that answer anyway,
+//! and is refused ([`ExternalAnswerUnstated`](Cause::ExternalAnswerUnstated)), naming every branch
+//! it could mean, whether or not `outcome:` is written. The claims read are the act's error and
+//! direct response, each event it claims published and each it claims absent. The answers reached
+//! are its own command's and those of every command a binding invokes from what it publishes,
+//! transitively; a binding's escalation needs its invoked command to fail. Only the act's own
+//! external branch written under `outcome:` is stated — an authored act has no key for the answer
+//! a binding's call gives — and a command the act never reaches exempts nothing.
+//!
 //! # Three decisions the format makes, and why
 //!
 //! **The timeline carries an explicit instant, and it has to ascend.** A list is ordered by where
@@ -198,8 +217,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_compiler::diagnostic::Code;
-use ess_compiler::ir::{EssIr, ResolvedField, ResolvedTypeRef};
-use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName};
+use ess_compiler::ir::{
+    EssIr, ResolvedBinding, ResolvedCommand, ResolvedField, ResolvedOutcome, ResolvedTypeRef,
+};
+use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName, TestStrategy};
 use ess_domain::name::QualifiedName;
 use ess_domain::view::{AssertionStyle, Ranking};
 use ess_primitives::error::ParseError;
@@ -1097,6 +1118,78 @@ pub enum Cause {
         /// Which view.
         view: ViewRef,
     },
+    /// An act claims what only an external answer it does not state satisfies.
+    ///
+    /// No input decides an external branch (§12), so the claim holds only if the target is told
+    /// which answer to give. An act states one answer — its own command's external branch, named
+    /// under `outcome:` — and the claim needs another: a sibling of that command, or a branch of a
+    /// command a binding invokes from what the act publishes. Refused whether or not `outcome:` is
+    /// written.
+    ExternalAnswerUnstated {
+        /// The command the act invokes.
+        command: CommandRef,
+        /// What it claims, written as a reader sees it: an error, a direct response, an event
+        /// published or an event absent.
+        claim: String,
+        /// Every external branch, as `command/branch`, whose answer the claim could mean, in the
+        /// order the act reaches them.
+        branches: Vec<String>,
+    },
+}
+
+/// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
+/// numbers but `ESS-AUTHOR-036`, which refuses the model before any file is read and so names no
+/// source. Coverage admission reads this; the Go, TypeScript and browser readers restate it.
+pub(crate) fn names_file_refusal(code: &str) -> bool {
+    (1..=37)
+        .filter(|number| *number != 36)
+        .any(|number| code == Code::new(Cause::FAMILY, number).to_string())
+}
+
+/// Whether no input decides `outcome` (§12): the test strategy an `external:` branch carries.
+fn is_external(outcome: &ResolvedOutcome) -> bool {
+    outcome.test_strategy == TestStrategy::InjectFault
+}
+
+/// `command/branch`, as an [`OutcomeRef`] is written.
+fn branch(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> String {
+    OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()).to_string()
+}
+
+/// The external branches of the act's own command that alone make `produces` true of its answer.
+///
+/// Empty when the written branch produces it, or when a branch the input decides can.
+fn own_only_external(
+    command: &ResolvedCommand,
+    written: Option<&ResolvedOutcome>,
+    produces: impl Fn(&ResolvedOutcome) -> bool,
+) -> Vec<String> {
+    if written.is_some_and(&produces) {
+        return Vec::new();
+    }
+    let producing: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| produces(outcome))
+        .collect();
+    if producing.iter().any(|outcome| !is_external(outcome)) {
+        return Vec::new();
+    }
+    producing
+        .into_iter()
+        .map(|outcome| branch(command, outcome))
+        .collect()
+}
+
+/// `names` once each, in the order first met.
+fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let mut once: Vec<String> = Vec::new();
+    for name in names {
+        if !once.contains(name) {
+            once.push(name.clone());
+        }
+    }
+    once
 }
 
 impl Cause {
@@ -1147,6 +1240,7 @@ impl Cause {
                 Self::HaltsAtNothing { .. } => 34,
                 Self::InvalidPredicate { .. } => 35,
                 Self::UnsupportedBinary64 { .. } => 36,
+                Self::ExternalAnswerUnstated { .. } => 37,
             },
         )
     }
@@ -1273,6 +1367,12 @@ impl Cause {
                 "say how many rows the reader takes before it stops; a reader that takes none never \
                  sees a row and so never says stop, and what a source produced before being refused \
                  its first row is a different answer in two implementations that are both right"
+            }
+            Self::ExternalAnswerUnstated { .. } => {
+                "no input the act sends decides an external branch, so name the act's own one \
+                 under `outcome:` and the suite configures that answer for its call; an answer a \
+                 command invoked through a binding must give cannot be stated in an authored act, \
+                 so drop the claim there and leave it to synthesis"
             }
         }
     }
@@ -1483,6 +1583,25 @@ impl fmt::Display for Cause {
             Self::HaltsAtNothing { view } => write!(
                 f,
                 "the read of `{view}` is claimed to stop after no rows at all"
+            ),
+            Self::ExternalAnswerUnstated {
+                command,
+                claim,
+                branches,
+            } => write!(
+                f,
+                "the act on `{command}` claims {claim}, which holds only if {} {} answers, and \
+                 the act states no such answer",
+                if branches.len() == 1 {
+                    "the external branch"
+                } else {
+                    "one of the external branches"
+                },
+                branches
+                    .iter()
+                    .map(|branch| format!("`{branch}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
@@ -1850,6 +1969,7 @@ impl Compiler<'_> {
             &Surface::Input(command_ref.clone()),
             Completeness::Total,
         );
+        self.external_answer(&command_ref, command, act);
         self.steps.push(ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
@@ -1879,6 +1999,7 @@ impl Compiler<'_> {
         if let Some(claim) = &act.error {
             self.error(claim);
         }
+        self.unstated_external(&command_ref, command, act);
         let returning = match &act.outcome {
             Some(name) => command
                 .outcomes
@@ -1921,6 +2042,270 @@ impl Compiler<'_> {
             self.capture(capture);
         }
         self.mark(act);
+    }
+
+    /// Arms the answer an act naming an external branch states, immediately before its call.
+    ///
+    /// §12: no input decides an external branch, so naming one under `outcome:` is the answer the
+    /// target must give for this call. Armed after the act's windows and before its
+    /// `ExecuteCommand`, as synthesis arms it, so nothing earlier can spend it. A branch the input
+    /// decides arms nothing.
+    fn external_answer(&mut self, command_ref: &CommandRef, command: &ResolvedCommand, act: &Act) {
+        if let Some(external) = act.outcome.as_ref().and_then(|written| {
+            command.outcomes.iter().find(|outcome| {
+                outcome.name.as_str() == written
+                    && outcome.test_strategy == TestStrategy::InjectFault
+            })
+        }) {
+            self.steps.push(ScenarioStep::ConfigureExternalOutcome {
+                force: OutcomeRef::new(command_ref.clone(), external.name.clone()),
+                times: None,
+            });
+        }
+    }
+
+    /// Refuses each claim of an act that only an external answer the act does not state satisfies.
+    ///
+    /// No input decides an external branch (§12), so a claim that holds only on one expects an
+    /// answer the target is never told to give. The act states one answer: an external branch of its
+    /// own command written under `outcome:`, which [`Self::external_answer`] arms. Every other
+    /// external branch the act reaches — a sibling of its own command, or a branch of a command a
+    /// binding invokes from what the act publishes, however many bindings along — is unstated.
+    ///
+    /// Read whether or not `outcome:` is written, for every claim the act makes of its own call:
+    /// its error and its direct response (of its own command's branches), each event it claims
+    /// published (a branch's `emits:` or a binding's escalation, anywhere downstream), and each
+    /// event it claims absent. Every such claim is refused on its own, naming every branch it could
+    /// mean. What an act never reaches exempts nothing.
+    fn unstated_external(
+        &mut self,
+        command_ref: &CommandRef,
+        command: &ResolvedCommand,
+        act: &Act,
+    ) {
+        let written = act.outcome.as_ref().map(|name| {
+            command
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.name.as_str() == name)
+        });
+        // A misspelt branch is refused as `ESS-AUTHOR-011`; which answer it meant is not guessed.
+        let written = match written {
+            Some(None) => return,
+            Some(Some(outcome)) => Some(outcome),
+            None => None,
+        };
+        let mut unstated: Vec<(String, Vec<String>)> = Vec::new();
+
+        // The error and the response are the act's own call's answer.
+        if let Some(error) = act
+            .error
+            .as_ref()
+            .and_then(|claim| QualifiedName::new(&claim.name).ok())
+        {
+            let branches = own_only_external(command, written, |outcome| {
+                outcome.error.as_ref().is_some_and(|it| it.name() == &error)
+            });
+            unstated.push((format!("error `{error}`"), branches));
+        }
+        if act.response.is_some() {
+            let branches = own_only_external(command, written, |outcome| outcome.returns);
+            unstated.push(("a direct response".to_owned(), branches));
+        }
+
+        let published = self.published(command, written);
+        for event in act
+            .events
+            .iter()
+            .filter_map(|claim| QualifiedName::new(&claim.event).ok())
+        {
+            let needs = published.get(&event).map(Vec::as_slice).unwrap_or_default();
+            let branches = if needs.iter().any(BTreeSet::is_empty) {
+                Vec::new()
+            } else {
+                in_order(needs.iter().flatten())
+            };
+            unstated.push((format!("event `{event}`"), branches));
+        }
+        for event in act
+            .no_events
+            .iter()
+            .filter_map(|written| QualifiedName::new(written).ok())
+        {
+            let branches = self.avoiding(command, written, &event);
+            unstated.push((format!("no event `{event}`"), branches));
+        }
+
+        for (claim, branches) in unstated {
+            if !branches.is_empty() {
+                self.refuse(Cause::ExternalAnswerUnstated {
+                    command: command_ref.clone(),
+                    claim,
+                    branches,
+                });
+            }
+        }
+    }
+
+    /// Every event the act can set off, each with the external answers each way to it needs.
+    ///
+    /// Walks from the act's own branches through every binding an emitted event triggers, into
+    /// every branch of the command it invokes, transitively. A branch the input decides needs no
+    /// answer; the written `outcome:` needs none either, since it is stated. A binding's escalation
+    /// is published when its invoked command fails — an external branch, or a branch reporting an
+    /// error. An event with an empty need set is reached without an unstated answer.
+    fn published(
+        &self,
+        command: &ResolvedCommand,
+        written: Option<&ResolvedOutcome>,
+    ) -> BTreeMap<QualifiedName, Vec<BTreeSet<String>>> {
+        let mut published: BTreeMap<QualifiedName, Vec<BTreeSet<String>>> = BTreeMap::new();
+        let mut seen: BTreeSet<(String, BTreeSet<String>)> = BTreeSet::new();
+        let mut pending: Vec<(&ResolvedCommand, &ResolvedOutcome, BTreeSet<String>)> = command
+            .outcomes
+            .iter()
+            .map(|outcome| {
+                let stated = written.is_some_and(|it| it.name == outcome.name);
+                let needs = if stated || !is_external(outcome) {
+                    BTreeSet::new()
+                } else {
+                    [branch(command, outcome)].into_iter().collect()
+                };
+                (command, outcome, needs)
+            })
+            .collect();
+        pending.reverse();
+        while let Some((at, outcome, needs)) = pending.pop() {
+            if !seen.insert((branch(at, outcome), needs.clone())) {
+                continue;
+            }
+            for emitted in &outcome.emits {
+                published
+                    .entry(emitted.name().clone())
+                    .or_default()
+                    .push(needs.clone());
+                for (invoked, binding) in self.triggered(emitted.name()) {
+                    let mut next = Vec::new();
+                    for downstream in &invoked.outcomes {
+                        let mut further = needs.clone();
+                        if is_external(downstream) {
+                            further.insert(branch(invoked, downstream));
+                        }
+                        if let Some(escalation) = &binding.escalation {
+                            if is_external(downstream) || downstream.error.is_some() {
+                                published
+                                    .entry(escalation.name().clone())
+                                    .or_default()
+                                    .push(further.clone());
+                            }
+                        }
+                        next.push((invoked, downstream, further));
+                    }
+                    pending.extend(next.into_iter().rev());
+                }
+            }
+        }
+        published
+    }
+
+    /// The external branches whose answer alone keeps `event` unpublished, when every answer the
+    /// input decides publishes it.
+    ///
+    /// Empty when some decided answer leaves it out (the claim can hold without an unstated answer)
+    /// or when no answer at all does (the claim is false, which is not this refusal's to say).
+    fn avoiding(
+        &self,
+        command: &ResolvedCommand,
+        written: Option<&ResolvedOutcome>,
+        event: &QualifiedName,
+    ) -> Vec<String> {
+        let decided: Vec<&ResolvedOutcome> = match written {
+            Some(outcome) => vec![outcome],
+            None => command
+                .outcomes
+                .iter()
+                .filter(|outcome| !is_external(outcome))
+                .collect(),
+        };
+        let mut chain = Vec::new();
+        let mut visiting = BTreeSet::new();
+        if decided.is_empty()
+            || !decided
+                .iter()
+                .all(|outcome| self.must_publish(outcome, event, &mut visiting, &mut chain))
+        {
+            return Vec::new();
+        }
+        let mut names = Vec::new();
+        let mut consider = |at: &ResolvedCommand, skip: Option<&ResolvedOutcome>| {
+            for outcome in &at.outcomes {
+                if is_external(outcome)
+                    && skip.is_none_or(|it| it.name != outcome.name)
+                    && !self.must_publish(outcome, event, &mut BTreeSet::new(), &mut Vec::new())
+                {
+                    names.push(branch(at, outcome));
+                }
+            }
+        };
+        consider(command, written);
+        for at in chain {
+            consider(at, None);
+        }
+        in_order(names.iter())
+    }
+
+    /// Whether taking `outcome` publishes `event` whatever each command a binding invokes after it
+    /// answers, among the answers the input decides; `chain` gains each such command.
+    fn must_publish<'ir>(
+        &'ir self,
+        outcome: &ResolvedOutcome,
+        event: &QualifiedName,
+        visiting: &mut BTreeSet<QualifiedName>,
+        chain: &mut Vec<&'ir ResolvedCommand>,
+    ) -> bool {
+        if outcome.emits.iter().any(|it| it.name() == event) {
+            return true;
+        }
+        for emitted in &outcome.emits {
+            for (invoked, _) in self.triggered(emitted.name()) {
+                if !visiting.insert(invoked.name.clone()) {
+                    continue;
+                }
+                let decided: Vec<&ResolvedOutcome> = invoked
+                    .outcomes
+                    .iter()
+                    .filter(|it| !is_external(it))
+                    .collect();
+                let mut found = Vec::new();
+                let must = !decided.is_empty()
+                    && decided
+                        .iter()
+                        .all(|it| self.must_publish(it, event, visiting, &mut found));
+                visiting.remove(&invoked.name);
+                if must {
+                    chain.push(invoked);
+                    chain.extend(found);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Each binding `event` triggers, with the command it invokes.
+    fn triggered(&self, event: &QualifiedName) -> Vec<(&ResolvedCommand, &ResolvedBinding)> {
+        self.ir
+            .bindings()
+            .values()
+            .filter_map(|binding| {
+                binding
+                    .cause
+                    .event()
+                    .filter(|it| it.name() == event)
+                    .and_then(|_| self.ir.commands().get(binding.command.name()))
+                    .map(|invoked| (invoked, binding))
+            })
+            .collect()
     }
 
     /// Names this act's instant, so a later window can open at it.

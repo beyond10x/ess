@@ -1102,7 +1102,10 @@ export function checkedRefusal(
     case 'authored': {
       sourceIdentity(refusal.source);
       let valid = false;
-      for (let n = 1; n <= 35; n += 1) {
+      for (let n = 1; n <= 37; n += 1) {
+        if (n === 36) {
+          continue;
+        }
         if (code === `ESS-AUTHOR-${String(n).padStart(3, '0')}`) {
           valid = true;
         }

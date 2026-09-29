@@ -74,6 +74,26 @@
   inside a quantifier, as a list element does. A model that quantifies over no map and compares no
   quantified element with its input keeps its suite bytes.
 
+- An authored act that names an `external:` branch under `outcome:` now compiles into a
+  `configure_external_outcome` for that branch immediately before its `execute_command`, as a
+  synthesized scenario does, so a target is told which answer to give for that one call
+  (beyond10x/ess#243). Before, the act compiled into a plain `execute_command` + `expect_outcome`
+  that no target could satisfy deterministically. The branch name is the stated answer, so no new
+  key and no new `ess-scenario` version are needed; acts naming a branch the input decides compile
+  byte for byte as before.
+- `ess verify conform author` (and `ess specify validate` with a `scenarios:` list) refuses an act
+  with `ESS-AUTHOR-037` when one of its claims holds only on an `external:` answer it does not state,
+  whether or not `outcome:` is written. Checked: its error, its direct response, each event it claims
+  published and each it claims absent. Answers reached: those of the act's own command and of every
+  command a binding invokes from what it publishes, transitively; a binding's escalation needs its
+  invoked command to fail. The refusal names every such branch as `command/branch`. The one answer an
+  act states is its own command's external branch under `outcome:`; there is no key for a binding's
+  call, so a claim of an escalation such as `billing.email.DeliveryEscalated` on a `CreateInvoice` act
+  is refused naming `billing.email.SendEmail/failed` and left to synthesis. An event another command
+  publishes on an input-decided branch exempts a claim only when the act reaches that command.
+  Coverage inventories (Rust, Go, TypeScript and the browser admission) accept `ESS-AUTHOR-037` as an
+  authored refusal.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed

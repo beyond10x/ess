@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T10:13:30Z",
+  "actor": "human:timo",
+  "artifact": "story:authored-external-steps-state-their-answer",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction-1 gates: ess-conformance 1780, ess-xtask 334, ess-cli 20 passed; schema/generate/docs/clippy/fmt clean",
+    "reference": "impl/authored-external-steps@9ed40cf4a"
+  }
+}

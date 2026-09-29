@@ -458,7 +458,8 @@ fn authored_refusal(
         | Cause::WindowContradictsTimeline { .. }
         | Cause::AmbiguousWindow { .. }
         | Cause::HaltsAtNothing { .. }
-        | Cause::InvalidPredicate { .. } => Effect::CandidateNotEmitted,
+        | Cause::InvalidPredicate { .. }
+        | Cause::ExternalAnswerUnstated { .. } => Effect::CandidateNotEmitted,
     };
     Ok(Refusal {
         origin: Origin::Authored,

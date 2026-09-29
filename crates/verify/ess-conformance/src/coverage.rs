@@ -586,7 +586,7 @@ impl Inventory {
             }
             Origin::Authored => {
                 require(
-                    (1..=35).any(|n| r.code == format!("ESS-AUTHOR-{n:03}"))
+                    crate::authored::names_file_refusal(&r.code)
                         && r.effect == Effect::CandidateNotEmitted,
                     "unknown authored code/effect",
                 )?;

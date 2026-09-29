@@ -68,6 +68,38 @@ scenarios, not every scenario file below the directory.
 
 `ess verify conform run --suite FILE` runs the committed suite as it is and selects nothing.
 
+## Expect an external branch in an authored scenario
+
+No input decides a branch declared `external:`, so an authored act that expects one names it under
+`outcome:`:
+
+```yaml
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: billing.email.SendEmail
+    input: {recipient: nobody@example.test, template: welcome}
+    outcome: failed
+    error: {name: billing.email.Undeliverable}
+```
+
+The act compiles into a `configure_external_outcome` for `failed` immediately before its
+`execute_command`, as a generated scenario does, so the target is told which answer to give for
+that call.
+
+That is the only external answer an act can state. An act is refused with `ESS-AUTHOR-037`
+when one of its claims holds only on an external answer it does not state, whether or not
+`outcome:` is written. The check covers the act's error, its direct response, each event it
+claims published and each event it claims absent. The answers it considers are those of the act's
+own command and of every command a binding invokes from what the act publishes, however many
+bindings along. A binding's escalation event needs its invoked command to fail. The refusal names
+every such branch as `command/branch`.
+
+For example, an act on `billing.invoice.CreateInvoice` that claims
+`billing.email.DeliveryEscalated` is refused naming `billing.email.SendEmail/failed`. The binding's
+`SendEmail` call fails only on that external branch, and an authored act has no key for the
+answer a binding's call gives. Generated scenarios cover the escalation. An event that some
+command's input-decided branch publishes exempts a claim only when the act reaches that command.
+
 ## Establish backend state in an authored scenario
 
 `ess-scenario/2`, introduced in 0.23.0, supports typed setup for entities whose rows arrive
