@@ -107,8 +107,9 @@ format refusal.
 
 The gate is offline and runs formatting, strict Clippy, all workspace tests, rustdoc, command smoke
 tests, and the dependency boundary test. Land nothing on `main` until the `Gate` job is green.
-`ESS_TUTORIAL_NETWORK=1` (set on CI's workspace test shards) additionally runs the getting-started
-page's `npm` steps in `tutorial_page.rs`, which need the npm registry; unset, they print a skip.
+`ESS_TUTORIAL_NETWORK=1` (set on CI's workspace test shards) additionally runs the Start-here
+pages' `npm` steps in `tutorial_page.rs`, which need the npm registry; unset, they print a skip. Its
+`go` steps need no network and run wherever `go` is on `PATH`.
 
 For a pull request, CI owns the full gate. Before pushing, run only the crates the change touches
 — `cargo fmt --all --check`, `cargo clippy -p <crate> --all-targets --locked -- -D warnings`,

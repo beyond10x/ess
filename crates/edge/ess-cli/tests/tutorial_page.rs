@@ -1,30 +1,42 @@
-//! The getting-started walkthrough runs, and prints what the page says it prints.
+//! The Start-here pages run, and print what they say they print.
 //!
-//! `website/docs/getting-started.md` takes an adopter from an empty directory to a green
-//! conformance run. Every file it has the reader write and every `ess` command it has the reader
-//! run is a fenced block carrying the bare attribute `ess-tutorial` on its fence. This test writes
-//! those files into a temporary home directory, runs those commands in page order against the
-//! `ess` this package builds, and compares every output line the page records.
+//! The pages in [`PAGES`] take an adopter from an installed `ess` and an empty directory to a green
+//! conformance run, and then through each runner. Every file they have the reader write and every
+//! `ess` command they have the reader run is a fenced block carrying the bare attribute
+//! `ess-tutorial` on its fence. This test writes those files into one temporary home directory,
+//! runs those commands in page order, one page after the other in the order [`PAGES`] lists them,
+//! against the `ess` this package builds, and compares every output line the pages record. A page
+//! continues where the page before it left off: the same home directory, the same current
+//! directory.
 //!
 //! | fence | meaning |
 //! |---|---|
 //! | `` ```yaml ess-tutorial file=tasks/ess-inputs.yaml `` | write the body to that path, relative to the home directory |
 //! | `` ```yaml ess-tutorial expect=tasks/ess-inputs.yaml `` | the file at that path now holds exactly the body |
+//! | `` ```text ess-tutorial files=tasks/go/essconform `` | the body lists every file below that directory, one relative path per line, sorted |
+//! | `` ```go ess-tutorial interface=tasks/go/essconform/runtime.go `` | the body is a declaration in that file, compared with comments and blank lines dropped and each line trimmed |
 //! | `` ```shell-session ess-tutorial `` (or `console`) | commands, each `$ ` line followed by the output it prints |
 //! | `… requires=node` | run only with `ESS_TUTORIAL_NETWORK=1` set and `node` and `npm` on `PATH`; otherwise print the skip and its reason |
+//! | `… requires=go` | run only with `go` on `PATH`; otherwise print the skip and its reason |
 //! | `… checkout` | run in a copy of the repository's `examples/`, apart from the walkthrough's directory |
 //!
 //! Any other fence attribute, such as Docusaurus's `title="…"`, is ignored.
 //!
+//! An `interface=` block's first line is the line that opens the declaration (`type Target
+//! interface {`, `export interface Target {`); the declaration runs to the first line after it that
+//! is exactly `}`. Comments are `//` lines and the lines of a `/** … */` block, so a page may
+//! annotate a declaration without the comparison seeing it.
+//!
 //! A command block runs line by line from the directory the previous block left, starting in the
-//! home directory. `cd <dir>` and `mkdir -p <dir>` are carried out by the test itself; `ess` runs
-//! the built binary; `npm` runs only in a `requires=node` block. Leading `NAME=value` words set
-//! the environment for that one command. Nothing else is a command here, and no word may hold a
-//! quote or a `$`, because the test does not interpret them as a shell would.
+//! home directory. `cd <dir>` (where `~` and `~/…` name the home directory) and `mkdir -p <dir>` are
+//! carried out by the test itself; `ess` runs the built binary; `npm` runs only in a
+//! `requires=node` block and `go` only in a `requires=go` block. Leading `NAME=value` words set the
+//! environment for that one command. Nothing else is a command here, and no word may hold a quote
+//! or a `$`, because the test does not interpret them as a shell would.
 //!
 //! Every command must exit 0. Its output is its stdout followed by its stderr (stdout alone for
-//! `npm`, whose own notices go to stderr), with trailing blank lines dropped. Each recorded line is
-//! compared exactly, with two documented allowances and no others:
+//! `npm` and `go`, whose own notices go to stderr), with trailing blank lines dropped. Each recorded
+//! line is compared exactly, with two documented allowances and no others:
 //!
 //! - a line holding only `…` stands for any number of lines, including none, so a long or
 //!   timing-dependent output (a test reporter's durations, `npm install`'s summary) is shown in part;
@@ -38,13 +50,19 @@
 //!
 //! `ESS_TUTORIAL_NETWORK=1` is the one switch this test reads. The `requires=node` blocks run
 //! `npm install`, which fetches from the npm registry, so the offline gate skips them by default;
-//! CI's workspace test shards set the variable, and they install Node.js.
+//! CI's workspace test shards set the variable, and they install Node.js. The `requires=go` blocks
+//! need no network: the generated Go package imports the standard library only, and `go` runs with
+//! `GOPROXY=off` and `GOTOOLCHAIN=local`, keeping the build and module caches it would have used
+//! under the real home directory.
 //!
-//! A shell block on the page that shows `$ ess` and is not an `ess-tutorial` block is refused, so a
-//! command cannot be added to the walkthrough without being run.
+//! A shell block on a page that shows `$ ess` and is not an `ess-tutorial` block is refused, so a
+//! command cannot be added to the walkthrough without being run; and a published page carrying an
+//! `ess-tutorial` block that [`PAGES`] does not list is refused, so a page cannot look tested
+//! without being run.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -53,7 +71,20 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-const PAGE: &str = "website/docs/getting-started.md";
+/// The walkthrough, in the order it runs.
+const PAGES: &[&str] = &[
+    "website/docs/start/install.md",
+    "website/docs/start/first-specification.md",
+    "website/docs/start/first-conformance-run.md",
+    "website/docs/start/runners/typescript.md",
+    "website/docs/start/runners/go.md",
+    "website/docs/start/runners/rust.md",
+    "website/docs/start/explore-the-example.md",
+];
+/// The page old links reach. It points at [`PAGES`] and must not grow a command of its own.
+const LANDING: &str = "website/docs/getting-started.md";
+/// The published document tree, searched for `ess-tutorial` blocks outside [`PAGES`].
+const DOCS: &str = "website/docs";
 const MARK: &str = "ess-tutorial";
 const ELISION: &str = "…";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -69,8 +100,9 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("read {relative}: {error}"))
 }
 
-/// One fenced block of the page: its language, its attributes and its lines.
+/// One fenced block of a page: where it is, its language, its attributes and its lines.
 struct Block {
+    page: String,
     line: usize,
     language: String,
     flags: BTreeSet<String>,
@@ -80,7 +112,7 @@ struct Block {
 
 impl Block {
     fn at(&self) -> String {
-        format!("{PAGE}:{}", self.line)
+        format!("{}:{}", self.page, self.line)
     }
 
     fn tutorial(&self) -> bool {
@@ -131,8 +163,8 @@ fn attributes(meta: &str) -> (BTreeSet<String>, BTreeMap<String, String>) {
     (flags, values)
 }
 
-/// Every fenced block of `page`, read as `predicate_reference_page.rs` reads its page.
-fn blocks(page: &str) -> Vec<Block> {
+/// Every fenced block of the page at `path`, read as `predicate_reference_page.rs` reads its page.
+fn blocks_of(path: &str, page: &str) -> Vec<Block> {
     let mut found = Vec::new();
     let mut open: Option<Block> = None;
     for (index, line) in page.lines().enumerate() {
@@ -144,12 +176,13 @@ fn blocks(page: &str) -> Vec<Block> {
                     // backtick, so the site would pair every later fence with the wrong partner.
                     assert!(
                         !info.contains('`'),
-                        "{PAGE}:{}: a fence's info string holds a backtick",
+                        "{path}:{}: a fence's info string holds a backtick",
                         index + 1
                     );
                     let language = info.split_whitespace().next().unwrap_or_default();
                     let (flags, values) = attributes(info[language.len()..].trim());
                     open = Some(Block {
+                        page: path.to_owned(),
                         line: index + 1,
                         language: language.to_owned(),
                         flags,
@@ -168,13 +201,23 @@ fn blocks(page: &str) -> Vec<Block> {
             }
         }
     }
-    assert!(open.is_none(), "{PAGE} ends inside a code fence");
+    assert!(open.is_none(), "{path} ends inside a code fence");
     found
+}
+
+/// Every fenced block of the page at `path`, relative to the repository root.
+fn blocks(path: &str) -> Vec<Block> {
+    blocks_of(path, &read(path))
+}
+
+/// Every fenced block of every walkthrough page, in walkthrough order.
+fn walkthrough_blocks() -> Vec<Block> {
+    PAGES.iter().flat_map(|page| blocks(page)).collect()
 }
 
 /// One `$ ` line of a command block and the output lines the page records under it.
 struct Step {
-    line: usize,
+    at: String,
     words: Vec<String>,
     expected: Vec<String>,
 }
@@ -182,17 +225,17 @@ struct Step {
 fn steps(block: &Block) -> Result<Vec<Step>, String> {
     let mut steps: Vec<Step> = Vec::new();
     for (offset, text) in block.body.iter().enumerate() {
-        let line = block.line + 1 + offset;
+        let at = format!("{}:{}", block.page, block.line + 1 + offset);
         if let Some(command) = text.strip_prefix("$ ") {
             let words: Vec<String> = command.split_whitespace().map(str::to_owned).collect();
             if let Some(word) = words.iter().find(|w| w.contains(['"', '\'', '$', '`'])) {
                 return Err(format!(
-                    "{PAGE}:{line}: `{word}` holds a quote or `$`, which this test does not \
-                     interpret as a shell would"
+                    "{at}: `{word}` holds a quote or `$`, which this test does not interpret as \
+                     a shell would"
                 ));
             }
             steps.push(Step {
-                line,
+                at,
                 words,
                 expected: Vec::new(),
             });
@@ -200,7 +243,7 @@ fn steps(block: &Block) -> Result<Vec<Step>, String> {
             step.expected.push(text.clone());
         } else if !text.trim().is_empty() {
             return Err(format!(
-                "{PAGE}:{line}: output before the block's first `$ ` command"
+                "{at}: output before the block's first `$ ` command"
             ));
         }
     }
@@ -249,9 +292,62 @@ fn trailing_blank_lines_dropped(text: &str) -> Vec<String> {
     lines
 }
 
-fn on_path(program: &str) -> bool {
+/// The lines of a declaration as an `interface=` block compares them: trimmed, with blank lines
+/// and comment lines dropped.
+fn declaration_lines<'a>(lines: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    lines
+        .into_iter()
+        .map(str::trim)
+        .filter(|line| {
+            !(line.is_empty()
+                || line.starts_with("//")
+                || line.starts_with("/*")
+                || line.starts_with('*'))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The declaration in `source` that opens with the line `opening`, trimmed, through the first
+/// later line that is exactly `}`.
+fn declaration<'a>(source: &'a str, opening: &str) -> Option<Vec<&'a str>> {
+    let mut lines = source.lines();
+    let first = lines.by_ref().find(|line| line.trim() == opening)?;
+    let mut found = vec![first];
+    for line in lines {
+        found.push(line);
+        if line == "}" {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Every file below `directory`, as sorted paths relative to it.
+fn files_below(directory: &Path) -> Result<Vec<String>, String> {
+    let mut found = Vec::new();
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        let entries =
+            fs::read_dir(&next).map_err(|error| format!("read {}: {error}", next.display()))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|error| format!("read {}: {error}", next.display()))?
+                .path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if let Ok(relative) = path.strip_prefix(directory) {
+                found.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+fn on_path(program: &str, version: &str) -> bool {
     Command::new(program)
-        .arg("--version")
+        .arg(version)
         .output()
         .is_ok_and(|output| output.status.success())
 }
@@ -261,11 +357,28 @@ fn on_path(program: &str) -> bool {
 fn node_skipped() -> Option<&'static str> {
     if std::env::var_os(NETWORK).is_none_or(|value| value != "1") {
         Some("ESS_TUTORIAL_NETWORK=1 is not set, and `npm install` needs the npm registry")
-    } else if !(on_path("node") && on_path("npm")) {
+    } else if !(on_path("node", "--version") && on_path("npm", "--version")) {
         Some("node or npm is not on PATH")
     } else {
         None
     }
+}
+
+/// Why the `requires=go` blocks cannot run here, or `None` when they can.
+fn go_skipped() -> Option<&'static str> {
+    if on_path("go", "version") {
+        None
+    } else {
+        Some("go is not on PATH")
+    }
+}
+
+/// What `go env <name>` prints under the real home directory, so the walkthrough's `go` reuses the
+/// caches it would have used rather than filling a fresh one below the temporary home.
+fn go_env(name: &str) -> Option<OsString> {
+    let output = Command::new("go").args(["env", name]).output().ok()?;
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    (output.status.success() && !value.is_empty()).then(|| value.into())
 }
 
 /// The release target this platform's archives are named for, as `toolchain.rs` names it.
@@ -332,6 +445,14 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
+/// The toolchain a `requires=` block names.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Requires {
+    Nothing,
+    Node,
+    Go,
+}
+
 /// The walkthrough's state as it runs: where it is, and what it may reach.
 struct Walkthrough {
     home: PathBuf,
@@ -340,7 +461,11 @@ struct Walkthrough {
     checkout_here: PathBuf,
     /// Why the `requires=node` blocks are skipped, or `None` when they run.
     node_skipped: Option<&'static str>,
-    npm_cache: Option<std::ffi::OsString>,
+    /// Why the `requires=go` blocks are skipped, or `None` when they run.
+    go_skipped: Option<&'static str>,
+    npm_cache: Option<OsString>,
+    go_cache: Option<OsString>,
+    go_mod_cache: Option<OsString>,
 }
 
 impl Walkthrough {
@@ -355,13 +480,30 @@ impl Walkthrough {
         let npm_cache = std::env::var_os("npm_config_cache").or_else(|| {
             std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".npm").into_os_string())
         });
+        let go_skipped = go_skipped();
+        let (go_cache, go_mod_cache) = if go_skipped.is_none() {
+            (go_env("GOCACHE"), go_env("GOMODCACHE"))
+        } else {
+            (None, None)
+        };
         Walkthrough {
             here: home.clone(),
             checkout_here: checkout,
             home,
             releases,
             node_skipped: node_skipped(),
+            go_skipped,
             npm_cache,
+            go_cache,
+            go_mod_cache,
+        }
+    }
+
+    fn skipped(&self, requires: Requires) -> Option<&'static str> {
+        match requires {
+            Requires::Nothing => None,
+            Requires::Node => self.node_skipped,
+            Requires::Go => self.go_skipped,
         }
     }
 
@@ -403,39 +545,91 @@ impl Walkthrough {
                 ))
             };
         }
+        if let Some(path) = block.value("files") {
+            let actual =
+                files_below(&self.home.join(path)).map_err(|e| format!("{}: {e}", block.at()))?;
+            let expected = trailing_blank_lines_dropped(&block.body.join("\n"));
+            return if actual == expected {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{}: the page lists the files below {path} as\n{}\nthey are\n{}",
+                    block.at(),
+                    expected.join("\n"),
+                    actual.join("\n")
+                ))
+            };
+        }
+        if let Some(path) = block.value("interface") {
+            return self.interface(block, path);
+        }
         if !block.shell() {
             return Err(format!(
-                "{}: an `{MARK}` block is a shell block, or names `file=` or `expect=`",
+                "{}: an `{MARK}` block is a shell block, or names `file=`, `expect=`, `files=` or \
+                 `interface=`",
                 block.at()
             ));
         }
         let checkout = block.flags.contains("checkout");
-        let requires = block.value("requires");
-        let skip = match requires {
-            None => false,
-            Some("node") => self.node_skipped.is_some(),
+        let requires = match block.value("requires") {
+            None => Requires::Nothing,
+            Some("node") => Requires::Node,
+            Some("go") => Requires::Go,
             Some(other) => {
                 return Err(format!(
-                    "{}: unknown `requires={other}`; only `node`",
+                    "{}: unknown `requires={other}`; only `node` and `go`",
                     block.at()
                 ))
             }
         };
-        if skip {
-            println!(
-                "skipped {}: {}",
-                block.at(),
-                self.node_skipped.unwrap_or_default()
-            );
+        let skip = self.skipped(requires);
+        if let Some(reason) = skip {
+            println!("skipped {}: {reason}", block.at());
         }
         for step in steps(block)? {
-            self.step(&step, checkout, requires == Some("node"), skip)?;
+            self.step(&step, checkout, requires, skip.is_some())?;
         }
         Ok(())
     }
 
-    fn step(&mut self, step: &Step, checkout: bool, node: bool, skip: bool) -> Result<(), String> {
-        let at = format!("{PAGE}:{}", step.line);
+    fn interface(&self, block: &Block, path: &str) -> Result<(), String> {
+        let source = fs::read_to_string(self.home.join(path))
+            .map_err(|e| format!("{}: read {path}: {e}", block.at()))?;
+        let opening = block
+            .body
+            .iter()
+            .map(|line| line.trim())
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| format!("{}: an empty `interface=` block", block.at()))?;
+        let written = declaration(&source, opening).ok_or_else(|| {
+            format!(
+                "{}: {path} has no declaration opening with `{opening}`",
+                block.at()
+            )
+        })?;
+        let expected = declaration_lines(block.body.iter().map(String::as_str));
+        let actual = declaration_lines(written);
+        if expected == actual {
+            Ok(())
+        } else {
+            Err(format!(
+                "{}: the page shows `{opening}` in {path} as\n{}\nit is\n{}",
+                block.at(),
+                expected.join("\n"),
+                actual.join("\n")
+            ))
+        }
+    }
+
+    fn step(
+        &mut self,
+        step: &Step,
+        checkout: bool,
+        requires: Requires,
+        skip: bool,
+    ) -> Result<(), String> {
+        let at = &step.at;
+        let home = self.home.clone();
         let here = if checkout {
             &mut self.checkout_here
         } else {
@@ -455,7 +649,13 @@ impl Walkthrough {
         // page says they do.
         match (program, arguments.as_slice()) {
             ("cd", [directory]) => {
-                let next = here.join(directory);
+                let next = match *directory {
+                    "~" => home,
+                    other => match other.strip_prefix("~/") {
+                        Some(below) => home.join(below),
+                        None => here.join(other),
+                    },
+                };
                 if !skip && !next.is_dir() {
                     return Err(format!("{at}: cd {directory}: no such directory"));
                 }
@@ -476,37 +676,11 @@ impl Walkthrough {
         if skip {
             return Ok(());
         }
-        let mut command = match program {
-            "ess" => {
-                let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
-                command
-                    .env_remove("XDG_CACHE_HOME")
-                    .env_remove("ESS_TOOLCHAIN")
-                    .env_remove("ESS_TOOLCHAIN_DIR")
-                    .env_remove("ESS_TOOLCHAIN_DELEGATED")
-                    .env("ESS_TOOLCHAIN_BASE_URL", &self.releases);
-                command
-            }
-            "npm" if node => {
-                let mut command = Command::new("npm");
-                command
-                    .env("npm_config_update_notifier", "false")
-                    .env("npm_config_fund", "false");
-                if let Some(cache) = &self.npm_cache {
-                    command.env("npm_config_cache", cache);
-                }
-                command
-            }
-            other => {
-                return Err(format!(
-                    "{at}: `{other}` is not run here; `ess`, `cd`, `mkdir -p`, and `npm` in a \
-                     `requires=node` block"
-                ))
-            }
-        };
+        let here = here.clone();
+        let mut command = self.command(at, program, requires)?;
         let output = command
             .args(&arguments)
-            .current_dir(&*here)
+            .current_dir(&here)
             .env("HOME", &self.home)
             .envs(environment)
             .output()
@@ -535,15 +709,69 @@ impl Walkthrough {
         }
         Ok(())
     }
+
+    /// The command that runs `program`, with the environment this walkthrough gives it, or the
+    /// refusal of a program the block may not run.
+    fn command(&self, at: &str, program: &str, requires: Requires) -> Result<Command, String> {
+        Ok(match (program, requires) {
+            ("ess", _) => {
+                let mut command = Command::new(env!("CARGO_BIN_EXE_ess"));
+                command
+                    .env_remove("XDG_CACHE_HOME")
+                    .env_remove("ESS_TOOLCHAIN")
+                    .env_remove("ESS_TOOLCHAIN_DIR")
+                    .env_remove("ESS_TOOLCHAIN_DELEGATED")
+                    .env("ESS_TOOLCHAIN_BASE_URL", &self.releases);
+                command
+            }
+            ("npm", Requires::Node) => {
+                let mut command = Command::new("npm");
+                command
+                    .env("npm_config_update_notifier", "false")
+                    .env("npm_config_fund", "false");
+                if let Some(cache) = &self.npm_cache {
+                    command.env("npm_config_cache", cache);
+                }
+                command
+            }
+            ("go", Requires::Go) => {
+                let mut command = Command::new("go");
+                command
+                    .env("GOTOOLCHAIN", "local")
+                    .env("GOPROXY", "off")
+                    .env("GOFLAGS", "")
+                    .env("GOTELEMETRY", "off");
+                if let Some(cache) = &self.go_cache {
+                    command.env("GOCACHE", cache);
+                }
+                if let Some(cache) = &self.go_mod_cache {
+                    command.env("GOMODCACHE", cache);
+                }
+                command
+            }
+            (other, _) => {
+                return Err(format!(
+                    "{at}: `{other}` is not run here; `ess`, `cd`, `mkdir -p`, `npm` in a \
+                     `requires=node` block and `go` in a `requires=go` block"
+                ))
+            }
+        })
+    }
 }
 
 #[test]
-fn the_walkthrough_runs_and_prints_what_the_page_records() {
-    let blocks = blocks(&read(PAGE));
+fn the_walkthrough_runs_and_prints_what_the_pages_record() {
+    let blocks = walkthrough_blocks();
     let tutorial: Vec<&Block> = blocks.iter().filter(|b| b.tutorial()).collect();
+    for page in PAGES {
+        assert!(
+            tutorial.iter().any(|b| b.page == *page),
+            "{page} is a walkthrough page with no `{MARK}` block"
+        );
+    }
     assert!(
         tutorial.iter().any(|b| b.value("file").is_some()) && tutorial.iter().any(|b| b.shell()),
-        "{PAGE} has no `{MARK}` file block or no `{MARK}` command block"
+        "the walkthrough has no `{MARK}` file block or no `{MARK}` command block"
     );
     let scratch = tempfile::tempdir().expect("a temporary directory");
     let mut walkthrough = Walkthrough::new(scratch.path());
@@ -556,29 +784,73 @@ fn the_walkthrough_runs_and_prints_what_the_page_records() {
             panic!("{failure}");
         }
     }
+    let skipped: Vec<&str> = [
+        walkthrough.node_skipped.map(|_| "requires=node"),
+        walkthrough.go_skipped.map(|_| "requires=go"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     println!(
-        "{PAGE}: {} block(s), {commands} command line(s) run{}",
+        "{} page(s): {} block(s), {commands} command line(s) run{}",
+        PAGES.len(),
         tutorial.len(),
-        if walkthrough.node_skipped.is_none() {
-            ""
+        if skipped.is_empty() {
+            String::new()
         } else {
-            ", the requires=node blocks skipped"
+            format!(", the {} blocks skipped", skipped.join(" and "))
         }
     );
     std::io::stdout().flush().ok();
 }
 
 #[test]
-fn every_ess_command_the_page_shows_is_run_by_the_walkthrough() {
-    let unrun: Vec<String> = blocks(&read(PAGE))
+fn every_ess_command_the_pages_show_is_run_by_the_walkthrough() {
+    let unrun: Vec<String> = PAGES
         .iter()
+        .chain([&LANDING])
+        .flat_map(|page| blocks(page))
         .filter(|b| b.shell() && !b.tutorial())
         .filter(|b| b.body.iter().any(|line| line.starts_with("$ ess ")))
-        .map(Block::at)
+        .map(|b| b.at())
         .collect();
     assert!(
         unrun.is_empty(),
         "these shell blocks show `$ ess` and carry no `{MARK}`, so nothing runs them: {unrun:?}"
+    );
+}
+
+#[test]
+fn every_page_with_a_walkthrough_block_is_run() {
+    let mut pending = vec![root().join(DOCS)];
+    let mut unrun = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).expect("read the docs tree") {
+            let path = entry.expect("a directory entry").path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if path.extension().is_none_or(|extension| extension != "md") {
+                continue;
+            }
+            let relative = path
+                .strip_prefix(root())
+                .expect("below the repository")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let text = fs::read_to_string(&path).expect("read a page");
+            if !PAGES.contains(&relative.as_str())
+                && blocks_of(&relative, &text).iter().any(Block::tutorial)
+            {
+                unrun.push(relative);
+            }
+        }
+    }
+    unrun.sort();
+    assert!(
+        unrun.is_empty(),
+        "these pages carry `{MARK}` blocks and are not in PAGES, so nothing runs them: {unrun:?}"
     );
 }
 
@@ -588,19 +860,22 @@ fn the_walkthrough_writes_the_newest_format_and_pins_its_toolchain() {
         .iter()
         .max()
         .expect("a supported format");
-    let blocks = blocks(&read(PAGE));
+    let blocks = walkthrough_blocks();
     let tutorial: Vec<&Block> = blocks.iter().filter(|b| b.tutorial()).collect();
     let format = format!("format: ess/{newest}");
     assert!(
         tutorial
             .iter()
             .any(|b| b.value("file").is_some() && b.body.contains(&format)),
-        "no `{MARK}` file block on {PAGE} writes `{format}`"
+        "no `{MARK}` file block in the walkthrough writes `{format}`"
     );
     let pin = format!("$ ess specify toolchain install --pin {VERSION}");
     assert!(
-        tutorial.iter().any(|b| b.shell() && b.body.contains(&pin)),
-        "no `{MARK}` command block on {PAGE} runs `{pin}`"
+        tutorial
+            .iter()
+            .any(|b| b.page == PAGES[0] && b.shell() && b.body.contains(&pin)),
+        "no `{MARK}` command block on {} runs `{pin}`",
+        PAGES[0]
     );
     let requires = format!("requires: ess {VERSION}");
     assert!(
@@ -608,11 +883,46 @@ fn the_walkthrough_writes_the_newest_format_and_pins_its_toolchain() {
             .value("expect")
             .is_some_and(|path| path.ends_with("ess-inputs.yaml"))
             && b.body.contains(&requires)),
-        "no `{MARK}` block on {PAGE} shows the manifest holding `{requires}`"
+        "no `{MARK}` block in the walkthrough shows the manifest holding `{requires}`"
     );
+}
+
+#[test]
+fn each_runner_page_is_checked_against_what_ess_writes() {
+    let page = |name: &str| {
+        PAGES
+            .iter()
+            .find(|page| page.ends_with(&format!("runners/{name}.md")))
+            .unwrap_or_else(|| panic!("no runners/{name}.md in PAGES"))
+    };
+    for (name, requires) in [("typescript", "node"), ("go", "go")] {
+        let path = page(name);
+        let blocks: Vec<Block> = blocks(path).into_iter().filter(Block::tutorial).collect();
+        for (what, present) in [
+            (
+                "a `files=` block",
+                blocks.iter().any(|b| b.value("files").is_some()),
+            ),
+            (
+                "an `interface=` block",
+                blocks.iter().any(|b| b.value("interface").is_some()),
+            ),
+            (
+                "a `requires=` block for its toolchain",
+                blocks.iter().any(|b| b.value("requires") == Some(requires)),
+            ),
+        ] {
+            assert!(present, "{path} has no {what}, so it is not checked");
+        }
+    }
+    let rust: Vec<Block> = blocks(page("rust"))
+        .into_iter()
+        .filter(Block::tutorial)
+        .collect();
     assert!(
-        tutorial.iter().any(|b| b.value("requires") == Some("node")),
-        "{PAGE} has no `requires=node` block, so the TypeScript run is never checked"
+        rust.iter().any(Block::shell),
+        "{} runs no `ess` command",
+        page("rust")
     );
 }
 
@@ -649,4 +959,35 @@ fn fence_attributes_read_flags_values_and_quoted_titles() {
         values.get("title").map(String::as_str),
         Some("spec/system.yaml")
     );
+}
+
+#[test]
+fn a_declaration_compares_without_comments_and_a_changed_method_does_not_match() {
+    let source = "package p\n\n// Target is it.\ntype Target interface {\n\t// Identity names it.\n\tIdentity() (Identity, error)\n\n\tQueryView(request ViewRequest) (ViewResult, error)\n}\n\ntype Other interface {\n}\n";
+    let written = declaration(source, "type Target interface {").expect("the declaration");
+    assert_eq!(
+        declaration_lines(written.clone()),
+        lines(&[
+            "type Target interface {",
+            "Identity() (Identity, error)",
+            "QueryView(request ViewRequest) (ViewResult, error)",
+            "}",
+        ])
+    );
+    let page = [
+        "type Target interface {",
+        "    Identity() (Identity, error)  ",
+        "    // a note the page adds",
+        "    QueryView(request ViewRequest) (ViewResult, error)",
+        "}",
+    ];
+    assert_eq!(declaration_lines(page), declaration_lines(written.clone()));
+    let renamed = [
+        "type Target interface {",
+        "    Identity() (Identity, error)",
+        "    ReadView(request ViewRequest) (ViewResult, error)",
+        "}",
+    ];
+    assert_ne!(declaration_lines(renamed), declaration_lines(written));
+    assert!(declaration(source, "type Missing interface {").is_none());
 }
