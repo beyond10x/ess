@@ -431,7 +431,7 @@ impl Resolved {
 }
 
 /// Every scenario value `step` carries, in the places [`in_step`] reads.
-fn visit(step: &ScenarioStep, each: &mut dyn FnMut(&ScenarioValue)) {
+pub(crate) fn visit(step: &ScenarioStep, each: &mut dyn FnMut(&ScenarioValue)) {
     let mut map = |values: &BTreeMap<String, ScenarioValue>| values.values().for_each(&mut *each);
     match step {
         ScenarioStep::ExecuteCommand { input, .. }
@@ -439,6 +439,12 @@ fn visit(step: &ScenarioStep, each: &mut dyn FnMut(&ScenarioValue)) {
             map(input);
         }
         ScenarioStep::ExpectEventValues { payload, .. } => map(payload),
+        ScenarioStep::ExpectEveryInvocation {
+            selecting, input, ..
+        } => {
+            map(selecting);
+            map(input);
+        }
         ScenarioStep::SnapshotCompleteSubject { subject, .. }
         | ScenarioStep::SnapshotSubject { subject, .. }
         | ScenarioStep::ExpectSubjectAbsent { subject, .. } => map(subject),

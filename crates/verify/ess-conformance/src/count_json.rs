@@ -101,6 +101,8 @@ impl Json {
                         | "ess-conformance/29"
                         | "ess-conformance/30"
                         | "ess-conformance/31"
+                        | "ess-conformance/32"
+                        | "ess-conformance/33"
                 )
             });
         let scope = if direct_profile {

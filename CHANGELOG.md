@@ -136,6 +136,25 @@
     is not taken either. An `Optional` field whose only later writer generates it is arrangeable
     from the row its creator leaves it absent on. Before, every branch of the command was refused.
 
+- **`{$instance: …}` inside a list, a map value or a struct member of an authored step**
+  (beyond10x/ess#242). `ring_sequence: [{$instance: a}, {$instance: b}]` for a
+  `List<ReleaseRingId>` input was refused as ESS-AUTHOR-015 "expected Uuid, found a mapping", so a
+  command taking several identities could not be authored; inside a map value the reference was
+  not checked at all and reached the target as the mapping `{"$instance": "a"}`. A reference is now
+  admitted wherever the declared type at its position is the instance's identity type, at any
+  depth, a union payload typed by the variant its tag names included, and resolves to the identity the run bound, as a whole-field one does. At a position of
+  any other type it is refused as ESS-AUTHOR-022 naming the position (`labels[1]`, `pair.note`,
+  `tags[owner]`, `target.value`); one that nothing can place, at an undeclared member or inside a
+  value of the wrong shape, is refused naming it in every container, inside map values and unions
+  too, where the shape check reads no member. Inside an event payload or an error it is refused
+  as ESS-AUTHOR-021, as a whole-field one is. Such a value is written as the new scenario value kinds `list` (`items`) and `members`
+  (`members`), whose elements are literals, instances or those kinds again, in suite
+  `ess-conformance/32` (`/33` with coverage); each implies every major below it, older readers
+  refuse the envelope, and a structured value holding no reference stays a `literal`, so every
+  other suite keeps its format and bytes. The Rust runner and the model interpreter resolve it;
+  Go and TypeScript generation refuse such a suite, naming the Rust runner; the browser player
+  describes it element by element.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed

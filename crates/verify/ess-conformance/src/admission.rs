@@ -185,20 +185,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=31) {
+    if !matches!(version.major(), 1..=33) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–31",
+            "execution readers admit suite majors 1–33",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /31",
+            "coverage is required exactly for odd suite majors from /5 through /33",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -244,6 +244,9 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
             }
             "instance" => {
                 v.closed(&["kind", "instance"], &[])?;
+            }
+            "list" | "members" if major >= crate::structured_values::ORDINARY => {
+                structured_value(v, 1)?;
             }
             "observed_selection" => {
                 if major < 6 || !accessors {
@@ -304,6 +307,51 @@ fn values(value: &Json, major: u32, accessors: bool) -> Result<(), AdmissionErro
         }
     }
     Ok(())
+}
+/// A `list` or `members` value (suite/32, beyond10x/ess#242): elements that are literals,
+/// instances or structured values again, no deeper than
+/// [`MAX_DEPTH`](crate::structured_values::MAX_DEPTH).
+fn structured_value(value: &Json, depth: usize) -> Result<(), AdmissionError> {
+    if depth > crate::structured_values::MAX_DEPTH {
+        return Err(value.error(
+            "InvalidStructuredValue",
+            format!(
+                "a structured value nests deeper than {}",
+                crate::structured_values::MAX_DEPTH
+            ),
+        ));
+    }
+    let tag = value
+        .object()?
+        .get("kind")
+        .ok_or_else(|| value.error("MissingField", "kind"))?
+        .text()?;
+    let element = |element: &Json| -> Result<(), AdmissionError> {
+        let tag = element
+            .object()?
+            .get("kind")
+            .ok_or_else(|| element.error("MissingField", "kind"))?
+            .text()?;
+        match tag {
+            "literal" => element.closed(&["kind", "value"], &[])?["value"].payload(),
+            "instance" => element.closed(&["kind", "instance"], &[]).map(drop),
+            "list" | "members" => structured_value(element, depth + 1),
+            _ => Err(element.error(
+                "InvalidStructuredValue",
+                "a structured value holds only literals, instances and structured values",
+            )),
+        }
+    };
+    match tag {
+        "list" => value.closed(&["kind", "items"], &[])?["items"]
+            .array()?
+            .iter()
+            .try_for_each(element),
+        _ => value.closed(&["kind", "members"], &[])?["members"]
+            .object()?
+            .values()
+            .try_for_each(element),
+    }
 }
 fn shape(value: &Json, major: u32) -> Result<(), AdmissionError> {
     for v in value.object()?.values() {
@@ -564,6 +612,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::direct_response::admit(suite)?;
     crate::delivery_context::admit(suite)?;
+    crate::structured_values::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;

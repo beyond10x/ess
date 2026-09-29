@@ -1325,6 +1325,28 @@ impl ShapeErrors {
         self.0.iter()
     }
 
+    /// The mismatches whose position `answered` does not claim, or `None` when it claims them
+    /// all: for a caller that has already answered what sits at some positions itself — an
+    /// authored `{$instance: …}` inside a list (beyond10x/ess#242).
+    pub(crate) fn without(self, answered: impl Fn(&str) -> bool) -> Option<Self> {
+        let kept: Vec<ShapeError> = self
+            .0
+            .into_iter()
+            .filter(|error| {
+                let at = match error {
+                    ShapeError::MissingField { at, .. }
+                    | ShapeError::UndeclaredField { at, .. }
+                    | ShapeError::WrongShape { at, .. }
+                    | ShapeError::UndeclaredVariant { at, .. }
+                    | ShapeError::TooDeep { at, .. } => Some(at.as_str()),
+                    ShapeError::UnnameableField { .. } => None,
+                };
+                !at.is_some_and(&answered)
+            })
+            .collect();
+        (!kept.is_empty()).then_some(Self(kept))
+    }
+
     /// How many.
     pub fn len(&self) -> usize {
         self.0.len()

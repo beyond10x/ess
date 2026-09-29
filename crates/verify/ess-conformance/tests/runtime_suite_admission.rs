@@ -7,8 +7,9 @@
 //! new major the synthesizer learns to write turns this red until both runtimes read it.
 //!
 //! The only majors left out are the ones a generated package cannot hold: the direct-response pair
-//! ([`direct_response::ORDINARY`], [`direct_response::COVERAGE`]) and the delivery-context pair
-//! ([`delivery_context::ORDINARY`], [`delivery_context::COVERAGE`]), which the Go and TypeScript
+//! ([`direct_response::ORDINARY`], [`direct_response::COVERAGE`]), the delivery-context pair
+//! ([`delivery_context::ORDINARY`], [`delivery_context::COVERAGE`]) and the structured-value pair
+//! ([`structured_values::ORDINARY`], [`structured_values::COVERAGE`]), which the Go and TypeScript
 //! emitters refuse at generation. `only_the_direct_response_pair_is_left_out` keeps that
 //! exclusion honest.
 
@@ -19,7 +20,7 @@ use std::collections::BTreeSet;
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_conformance::scenario::SUPPORTED_SUITE_FORMATS;
 use ess_conformance::ConformanceSuite;
-use ess_conformance::{delivery_context, direct_response};
+use ess_conformance::{delivery_context, direct_response, structured_values};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
 /// A small specification, for a real suite and a real coverage inventory.
@@ -88,6 +89,8 @@ fn emittable_majors() -> BTreeSet<u32> {
                 direct_response::COVERAGE,
                 delivery_context::ORDINARY,
                 delivery_context::COVERAGE,
+                structured_values::ORDINARY,
+                structured_values::COVERAGE,
             ]
             .contains(major)
         })
@@ -242,9 +245,12 @@ fn only_the_direct_response_pair_is_left_out() {
             direct_response::COVERAGE,
             delivery_context::ORDINARY,
             delivery_context::COVERAGE,
+            structured_values::ORDINARY,
+            structured_values::COVERAGE,
         ],
-        "only the direct-response and delivery-context pairs are left out; \
-         `tests/direct_returns.rs` (`pure_return_generators_refuse_unsupported_execution`) and \
-         `tests/delivery_context.rs` hold both emitters to refusing them"
+        "only the direct-response, delivery-context and structured-value pairs are left out; \
+         `tests/direct_returns.rs` (`pure_return_generators_refuse_unsupported_execution`), \
+         `tests/delivery_context.rs` and `tests/authored_structured_instances.rs` hold both \
+         emitters to refusing them"
     );
 }
