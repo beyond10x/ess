@@ -10,7 +10,13 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+ess-compiler.workspace = true
+ess-composition.workspace = true
+ess-conformance.workspace = true
+ess-deployment.workspace = true
 ess-domain.workspace = true
+ess-primitives.workspace = true
+ess-realization.workspace = true
 ess-gen.workspace = true
 schemars.workspace = true
 serde_json.workspace = true

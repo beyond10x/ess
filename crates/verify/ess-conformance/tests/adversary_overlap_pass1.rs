@@ -2,7 +2,7 @@
 //!
 //! The unit's own documents say an input-guarded refusal "is taken before any accepting branch
 //! whose guard it overlaps, whatever order they are written in", and that "each such refusal is sent
-//! again at every overlap point" (`website/docs/guides/write-a-specification.md`,
+//! again at every overlap point" (`website/docs/guides/specify/fields-and-invariants.md`,
 //! `website/docs/reference/predicates.md`). These cases drive synthesis from those sentences.
 use std::collections::BTreeMap;
 

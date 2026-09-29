@@ -1,4 +1,4 @@
-//! `WHATS-CHANGED.md`, rendered from the `changes/` fragments.
+//! `WHATS-CHANGED.md` and the site's What-changed page, rendered from the `changes/` fragments.
 //!
 //! `CHANGELOG.md` records every change at the level the change was made. That is the right record
 //! for somebody reading a diff and the wrong one for somebody deciding whether a release is worth
@@ -9,10 +9,12 @@
 //! them, and the one thing that did check them was a validator in another repository that refuses
 //! a summary over 360 characters after the bundle has already been built.
 //!
-//! So this renders them into one file at the root, and checks them on the way past.
+//! So this renders them into one file at the root and one page of the documentation site, which
+//! also links each release's post from `website/blog/`, and checks them on the way past.
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
@@ -22,6 +24,9 @@ const FRAGMENTS: &str = "changes";
 
 /// The rendered file.
 pub const RENDERED: &str = "WHATS-CHANGED.md";
+
+/// The same record as a page of the documentation site.
+pub const SITE_PAGE: &str = "website/docs/releases/what-changed.md";
 
 /// The schema every fragment declares.
 const SCHEMA: &str = "b10x-change/v1";
@@ -171,14 +176,19 @@ pub fn unrecorded_minors(root: &Path, tags: &[String]) -> Result<Vec<String>> {
     Ok(missing)
 }
 
-fn render(fragments: &[Fragment]) -> String {
+/// Newest release first; inside one release, the order the fragments are named in.
+fn newest_first(fragments: &[Fragment]) -> Vec<&Fragment> {
     let mut grouped: Vec<&Fragment> = fragments.iter().collect();
-    // Newest release first; inside one release, the order the fragments are named in.
     grouped.sort_by(|left, right| {
         ordinal(&right.source.version)
             .cmp(&ordinal(&left.source.version))
             .then_with(|| left.id.cmp(&right.id))
     });
+    grouped
+}
+
+fn render(fragments: &[Fragment]) -> String {
+    let grouped = newest_first(fragments);
 
     let mut out = String::new();
     out.push_str("# What changed\n\n");
@@ -242,26 +252,151 @@ fn anchor(title: &str) -> String {
     out
 }
 
+/// Where the release posts live, and where the site publishes them.
+const BLOG: &str = "website/blog";
+const POST_BASE: &str = "https://beyond10x.github.io/ess/releases";
+
+/// The release post for each version, by the `release_tag` and `slug` its front matter declares.
+///
+/// Older posts carry a historical tag spelling (`0.3.0-ess-wave-1`) that names no fragment's
+/// version, so only an exact version match links; a post without a `slug` is not linked, since
+/// its address would have to be guessed.
+fn release_posts(root: &Path) -> Result<BTreeMap<String, String>> {
+    let directory = root.join(BLOG);
+    let mut posts = BTreeMap::new();
+    if !directory.is_dir() {
+        return Ok(posts);
+    }
+    for entry in fs::read_dir(&directory).with_context(|| format!("read {BLOG}"))? {
+        let path = entry?.path();
+        if path.extension().is_none_or(|extension| extension != "md") {
+            continue;
+        }
+        let text = fs::read_to_string(&path)?;
+        let front: Vec<&str> = text
+            .lines()
+            .skip(1)
+            .take_while(|line| line.trim_end() != "---")
+            .collect();
+        let field = |key: &str| {
+            front
+                .iter()
+                .find_map(|line| line.trim().strip_prefix(key))
+                .map(|value| value.trim().trim_matches('"').to_owned())
+        };
+        if let (Some(tag), Some(slug)) = (field("release_tag:"), field("slug:")) {
+            posts.insert(tag, slug);
+        }
+    }
+    Ok(posts)
+}
+
+/// Text made safe for a page the site parses as MDX, where `{` opens an expression and `<` a tag.
+///
+/// A backslash escape is plain Markdown, so the same text reads the same in a renderer that
+/// is not MDX. Code spans are left alone: nothing inside one is parsed.
+fn site_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_code = false;
+    for character in text.chars() {
+        if character == '`' {
+            in_code = !in_code;
+        } else if !in_code && matches!(character, '{' | '}' | '<') {
+            out.push('\\');
+        }
+        out.push(character);
+    }
+    out
+}
+
+fn render_site(fragments: &[Fragment], posts: &BTreeMap<String, String>) -> String {
+    let mut out = String::new();
+    out.push_str(
+        "---\ntitle: What changed\ndescription: What each ESS release changed for somebody using \
+         it, newest release first.\n---\n\n",
+    );
+    out.push_str(
+        "[ess-what-changed-begin]: # (generated from changes/*.yaml by cargo xtask whats-changed; \
+         edit a change record, not this page)\n\n",
+    );
+    out.push_str(
+        "What each ESS release is worth to somebody using it: what became possible, how much it \
+         matters, and where to read the rest, newest release first. The \
+         [changelog](https://github.com/beyond10x/ess/blob/main/CHANGELOG.md) is the complete \
+         record at the level each change was made; this page is the short one.\n\n",
+    );
+    out.push_str(
+        "This page is generated from the change records kept in the repository. A release with no \
+         entry here added nothing somebody using ESS would act on.\n",
+    );
+    let mut current = String::new();
+    for fragment in newest_first(fragments) {
+        let version = &fragment.source.version;
+        if *version != current {
+            current.clone_from(version);
+            let _ = write!(
+                out,
+                "\n## {version} — {date}\n",
+                date = &fragment.published_at[..10],
+            );
+        }
+        let _ = write!(out, "\n### {}\n\n", site_text(&fragment.title));
+        let _ = write!(
+            out,
+            "{kind} · {impact} impact · ",
+            kind = fragment.kind,
+            impact = fragment.impact,
+        );
+        if let Some(slug) = posts.get(version) {
+            let _ = write!(out, "[release post]({POST_BASE}/{slug}) · ");
+        }
+        let _ = write!(out, "[release notes]({url})\n\n", url = fragment.source.url);
+        out.push_str(&site_text(fragment.summary.trim()));
+        out.push('\n');
+    }
+    out.push_str("\n[ess-what-changed-end]: #\n");
+    out
+}
+
 pub fn run(root: &Path, check: bool) -> Result<String> {
     let fragments = read_all(root)?;
-    let rendered = render(&fragments);
-    let path = root.join(RENDERED);
+    let posts = release_posts(root)?;
+    let outputs = [
+        (RENDERED, render(&fragments)),
+        (SITE_PAGE, render_site(&fragments, &posts)),
+    ];
     if !check {
-        fs::write(&path, &rendered)?;
+        for (relative, rendered) in &outputs {
+            let path = root.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, rendered).with_context(|| format!("write {relative}"))?;
+        }
         return Ok(format!(
-            "{RENDERED}: {} entries from {FRAGMENTS}/\n",
+            "{RENDERED} and {SITE_PAGE}: {} entries from {FRAGMENTS}/\n",
             fragments.len()
         ));
     }
-    let committed = fs::read_to_string(&path).unwrap_or_default();
-    if committed != rendered {
+    let stale: Vec<&str> = outputs
+        .iter()
+        .filter(|(relative, rendered)| {
+            fs::read_to_string(root.join(relative)).unwrap_or_default() != *rendered
+        })
+        .map(|(relative, _)| *relative)
+        .collect();
+    if !stale.is_empty() {
         bail!(
-            "{RENDERED} is not what {FRAGMENTS}/ renders to; run `cargo xtask whats-changed`. A \
-             fragment was added or edited and the rendered file was left behind."
+            "{} not what {FRAGMENTS}/ renders to; run `cargo xtask whats-changed`. A fragment or a \
+             release post was added or edited and the rendered output was left behind.",
+            match stale.as_slice() {
+                [one] => format!("{one} is"),
+                many => format!("{} are", many.join(" and ")),
+            }
         );
     }
     Ok(format!(
-        "{RENDERED}: {} entries, byte-identical to {FRAGMENTS}/\n",
+        "{RENDERED} and {SITE_PAGE}: {} entries, byte-identical to {FRAGMENTS}/\n",
         fragments.len()
     ))
 }
@@ -310,6 +445,92 @@ mod tests {
             assert!(ordinal(version).is_some(), "{version} is not a version");
             assert!(!reason.trim().is_empty(), "{version} has no stated reason");
         }
+    }
+
+    /// A throwaway repository root holding two fragments and a release post for one of them.
+    fn fixture(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "ess-xtask-whats-changed-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(FRAGMENTS)).expect("fragments directory");
+        fs::create_dir_all(root.join("website/blog")).expect("blog directory");
+        for (stem, version, title, summary) in [
+            (
+                "older-0.1.0",
+                "0.1.0",
+                "The older change",
+                "Nothing links this one to a post.",
+            ),
+            (
+                "newer-0.2.0",
+                "0.2.0",
+                "The newer change",
+                "A value {like this} or a <tag> is text, and `{$instance}` stays code.",
+            ),
+        ] {
+            let text = format!(
+                "schema: {SCHEMA}\nid: ess/{stem}\nrepository: ess\n\
+                 publishedAt: 2026-09-29T20:00:00Z\ntitle: {title}\nsummary: >-\n  {summary}\n\
+                 kind: capability\nimpact: significant\nsource:\n  \
+                 url: https://github.com/beyond10x/ess/releases/tag/{version}\n  \
+                 version: {version}\njourneys: [specify]\naffectedSurfaces: [ess/docs]\n"
+            );
+            fs::write(root.join(FRAGMENTS).join(format!("{stem}.yaml")), text).expect("fragment");
+        }
+        fs::write(
+            root.join("website/blog/2026-09-29-2000-newer.md"),
+            "---\ntitle: \"0.2 — newer\"\nslug: the-newer-post\ntags: [release, ess]\n\
+             release_tag: \"0.2.0\"\n---\n\nBody.\n",
+        )
+        .expect("post");
+        root
+    }
+
+    #[test]
+    fn the_site_page_is_written_with_links_to_the_release_posts() {
+        let root = fixture("write");
+        run(&root, false).expect("renders");
+        let page = fs::read_to_string(root.join(SITE_PAGE)).expect("the site page is written");
+        assert!(page.starts_with("---\ntitle: What changed\n"), "{page}");
+        assert!(page.contains("generated"), "the page says it is generated");
+        let newer = page.find("### The newer change").expect("newer section");
+        let older = page.find("### The older change").expect("older section");
+        assert!(newer < older, "newest first");
+        assert!(
+            page.contains(
+                "[release post](https://beyond10x.github.io/ess/releases/the-newer-post)"
+            ),
+            "{page}"
+        );
+        assert_eq!(
+            page.matches("[release post]").count(),
+            1,
+            "0.1.0 has no post"
+        );
+        assert!(
+            page.contains(
+                r"A value \{like this\} or a \<tag> is text, and `{$instance}` stays code."
+            ),
+            "{page}"
+        );
+        run(&root, true).expect("fresh outputs pass the check");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_check_fails_when_the_site_page_is_stale() {
+        let root = fixture("stale");
+        run(&root, false).expect("renders");
+        let page = root.join(SITE_PAGE);
+        fs::create_dir_all(page.parent().expect("parent")).expect("page directory");
+        fs::write(&page, "---\ntitle: What changed\n---\n").expect("stale page");
+        let error = run(&root, true).expect_err("a stale site page fails the check");
+        assert!(format!("{error:#}").contains(SITE_PAGE), "{error:#}");
+        fs::remove_file(&page).expect("remove page");
+        run(&root, true).expect_err("a missing site page fails the check");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

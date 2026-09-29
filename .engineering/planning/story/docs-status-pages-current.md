@@ -2,10 +2,11 @@
 format: aep.planning-md/3
 id: story:docs-status-pages-current
 kind: story
-status: draft
+status: implemented
 title: The status pages report 0.38.0 and the commands that exist
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/status/outlook.md
@@ -13,21 +14,24 @@ scope:
   path: website/docs/status/roadmap.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:31:38Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-09-29T14:31:39Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-09-29T16:21:02Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
-## What
+## Outcome
 
-The status pages report 0.38.0 as the latest release, stop listing the removed `ess skill`, and drop
-internal planning vocabulary. The generated support matrix block is left to `cargo xtask support`.
+The status pages report the latest release, the commands that exist and the limits that hold today,
+without wave or release-train vocabulary.
 
 ## Acceptance
 
-- `where-this-stands.md` names 0.38.0 as the latest release and does not mention `skill`.
+- `where-this-stands.md` names the latest release and no removed command.
+- `limitations.md` is reviewed against 0.43.0 and changed where it is wrong.
 - `roadmap.md` and `outlook.md` carry no wave or release-train vocabulary.
 - `cargo xtask support --check` and `cargo xtask docs` pass.
 
 ## Scope
 
-- website/docs/status/where-this-stands.md
-- website/docs/status/roadmap.md
-- website/docs/status/outlook.md
+- website/docs/status/*

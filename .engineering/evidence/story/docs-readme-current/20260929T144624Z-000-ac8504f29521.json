@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:46:24Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-readme-current",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-xtask 351 passed; xtask docs refuses a README pinned to 0.42.0 then passes; clippy; fmt-check",
+    "reference": "docs/readme@9aaa81de9"
+  }
+}

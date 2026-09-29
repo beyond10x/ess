@@ -620,6 +620,82 @@ pub enum RealizationCode {
     SecretValue,
 }
 
+impl RealizationCode {
+    /// Every category, in declaration order, with what it means and how to repair it.
+    ///
+    /// `tests/diagnostic_catalogue.rs` fails when a variant is missing here, and
+    /// `website/docs/reference/diagnostics.md` is rendered from it by `cargo xtask diagnostics`.
+    pub const CATALOGUE: &'static [ess_compiler::diagnostic::CatalogueEntry<Self>] = &[
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnsupportedFormat,
+            meaning: "The document's `type` is not a realization format this build reads.",
+            repair: "Write a realization format this build reads; the message names the ones it \
+                     accepts.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::SpecificationMismatch,
+            meaning: "The realization names a different ESS system, version or digest than the \
+                      specification it is compiled against.",
+            repair: "Compile it against the specification it names, or update `specification:` to \
+                     the system, version and digest of this one.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::DuplicateIdentity,
+            meaning: "A list declares the same identity more than once.",
+            repair: "Remove or rename the repeated entry.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnresolvedReference,
+            meaning: "A component, actor, semantic surface or implementation it names is not \
+                      declared.",
+            repair: "Correct the name, or declare what it names in the specification or the \
+                     realization.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::ReferenceOutsideRealization,
+            meaning: "A component or actor lies outside the part of the system this realization \
+                      declares.",
+            repair: "Add it to the realization's components or actors, or stop referring to it.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::ImplementationCoverage,
+            meaning: "A component has no implementation, or more than one.",
+            repair: "Give every component exactly one implementation.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::EmptyDeclaration,
+            meaning: "No component, implementation, entrypoint or surface was declared where one \
+                      is required.",
+            repair: "Declare at least one of what the message names.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::PrimaryEntrypoint,
+            meaning: "No entrypoint, or more than one, is marked primary.",
+            repair: "Mark exactly one entrypoint primary.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::InvalidValue,
+            meaning: "An invocation, artifact locator, synthesis identity, title or summary is \
+                      malformed.",
+            repair: "Write the value in the form the message describes.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::SecretValue,
+            meaning: "Invocation text looks like a credential rather than a reference to one.",
+            repair: "Name an environment or credential source that supplies the value, instead of \
+                     writing the value in the invocation.",
+        },
+    ];
+
+    /// This category's entry in [`Self::CATALOGUE`].
+    pub fn catalogue_entry(self) -> &'static ess_compiler::diagnostic::CatalogueEntry<Self> {
+        Self::CATALOGUE
+            .iter()
+            .find(|entry| entry.key == self)
+            .expect("every category is catalogued")
+    }
+}
+
 /// One location-aware realization refusal.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RealizationDiagnostic {

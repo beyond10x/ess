@@ -35,36 +35,44 @@ header newer than it implements, and refuses each construct under a header older
 introduced it with `unsupported_format_version`. A specification that uses none of a version's
 constructs keeps its bytes and its compiled digest under the older header.
 
-| Version | Released in | What it admits |
+| Version | Introduced in | What changed |
 |---|---|---|
-| `ess/1` | [0.1.0][r1] | types, entities, commands, events, errors, views, actors, components, bindings, topology |
-| `ess/2` | [0.20.0][r20] | `Binary64` |
-| `ess/3` | [0.23.0][r23] | `when_subject_state`; binding accessors into an event envelope |
-| `ess/4` | [0.23.0][r23] | error wire names; command response fields mapped into event payloads |
-| `ess/5` | [0.27.0][r27] | an enum variant's own `wire`, `display`, `summary` and `code` |
-| `ess/6` | [0.28.0][r28] | an input guard beside an external cause; `when_subject` over an enum field; `preserves` |
-| `ess/7` | [0.29.0][r29] | `replays`; an effect-free named error as the default of subject-state branches |
-| `ess/8` | [0.34.0][r34] | `starts_with`, `ends_with`, `contains` |
-| `ess/9` | [0.34.0][r34] | `when_subject: {predicate: …}` over stored fields |
-| `ess/10` | [0.34.0][r34] | aggregate views: `aggregate:` and `group_by:` |
-| `ess/11` | [0.34.0][r34] | `alphabet:`, input `example:`, `.count` on a `String` |
-| `ess/12` | [0.34.0][r34] | `outcome_groups:` |
-| `ess/13` | [0.35.0][r35] | `fixture_inputs:` |
-| `ess/14` | [0.36.0][r36] | value expressions in `payload:` and `sets:` |
-| `ess/15` | [0.37.0][r37] | `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing`, `preconditions:`; `input.` in subject guards; `equals_ignore_case`, `in_ignore_case`; `prefix:`, `Json`, `presence:`; aggregates over `Optional` fields |
-| `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`, `{related: …}`, literal `else:` |
-| `ess/17` | [0.39.0][r39] | `returns: true` |
-| `ess/18` | [0.41.0][r41] | a list in `when_subject_state:`, and `when_subject_state:` on a refusal naming no subject; `state` in a `when_subject` predicate; `when_related:`; `when.context_fields`, `when.context_authority` and `context.<field>` on a binding |
+| `ess/1` | [0.1.0][r1] | The first format: types, entities, commands, events, errors, views, actors, components, bindings and topology. |
+| `ess/2` | [0.20.0][r20] | Finite `Binary64` fields, distinct from integer and decimal values. |
+| `ess/3` | [0.23.0][r23] | `when_subject_state`; binding accessors into an event envelope. |
+| `ess/4` | [0.23.0][r23] | Error wire names; command response fields mapped into event payloads. |
+| `ess/5` | [0.27.0][r27] | An enum variant's own `wire`, `display`, `summary` and `code`. |
+| `ess/6` | [0.28.0][r28] | An input guard beside an external cause; `when_subject` over an enum field; `preserves`. |
+| `ess/7` | [0.29.0][r29] | `replays`; an effect-free named error as the default of subject-state branches. |
+| `ess/8` | [0.34.0][r34] | The string operators `starts_with`, `ends_with` and `contains`. |
+| `ess/9` | [0.34.0][r34] | `when_subject: {predicate: …}` over the subject's stored fields. |
+| `ess/10` | [0.34.0][r34] | Aggregate views: `aggregate:` and `group_by:`. |
+| `ess/11` | [0.34.0][r34] | `alphabet:`, input `example:`, and `.count` on a `String`. |
+| `ess/12` | [0.34.0][r34] | `outcome_groups:`, one refusal declared once for many commands. |
+| `ess/13` | [0.35.0][r35] | `fixture_inputs:` on a command. |
+| `ess/14` | [0.36.0][r36] | Value expressions in `payload:` and `sets:`. |
+| `ess/15` | [0.37.0][r37] | Outcome shapes, `input.` in subject guards, case-insensitive comparison, `prefix:`, `Json`, `presence:`, and aggregates over `Optional` fields. |
+| `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`. |
+| `ess/17` | [0.39.0][r39] | `returns: true` on an outcome. |
+| `ess/18` | [0.41.0][r41] | Several states in `when_subject_state:`, `state` in `when_subject`, `when_related:`, and a binding's delivery context. |
 
-The sections below give each version's rules. The first five are a table:
+The paragraphs below give each version's rules.
 
-| Version | Released in | What changed | An older reader |
-|---|---|---|---|
-| `ess/1` | [0.1.0][r1] | The first format: types, commands, events, errors, views, entities. | — |
-| `ess/2` | [0.20.0][r20] | Finite `Binary64` fields, distinct from integer and decimal values. Signed zero, subnormals and nearest-even rounding are preserved end to end. | Refuses `Binary64` at every declared type position, including as a map key. |
-| `ess/3` | [0.23.0][r23] | `when_subject_state`, which combines a declared held lifecycle state with input guards. Opt-in binding accessors read two or three declared field segments from an event envelope. | Refuses the document. |
-| `ess/4` | [0.23.0][r23] | Error wire names declared without merging semantic error identities. Typed command response fields fill emitted event payloads through explicit response mappings, with complete payload ownership. | Refuses the document. |
-| `ess/5` | [0.27.0][r27] | An enum variant carries its own `wire`, `display`, `summary` and `code`. A variant is authored as a bare name or as a mapping. | Refuses with `unsupported_format_version` at `types.<type>.variants.<variant>`. |
+`ess/2`, introduced in [0.20.0][r20], admits finite `Binary64` fields, distinct from integer and
+decimal values. Signed zero, subnormals and nearest-even rounding are preserved end to end. An
+older reader refuses `Binary64` at every declared type position, including as a map key.
+
+`ess/3`, introduced in [0.23.0][r23], admits `when_subject_state`, which combines a declared held
+lifecycle state with input guards, and opt-in binding accessors that read two or three declared
+field segments from an event envelope. An older reader refuses the document.
+
+`ess/4`, introduced in [0.23.0][r23], admits error wire names declared without merging semantic
+error identities, and typed command response fields that fill emitted event payloads through
+explicit response mappings, with complete payload ownership. An older reader refuses the document.
+
+`ess/5`, introduced in [0.27.0][r27], lets an enum variant carry its own `wire`, `display`,
+`summary` and `code`; a variant is authored as a bare name or as a mapping. An older reader refuses
+with `unsupported_format_version` at `types.<type>.variants.<variant>`.
 
 `ess/6`, introduced in [0.28.0][r28], admits an input eligibility predicate beside an external
 cause. The fault remains independently arranged; the guard does not select the observed outcome.
@@ -107,7 +115,7 @@ declares its result type exactly: `Integer` for the counts and for `sum` of an `
 for `min` and `max`, and `Optional<Decimal>` for `avg`, rounded to 6 places half-even. An older build
 refuses the header, and this build refuses the construct under an earlier header with
 `unsupported_format_version`. A model without it keeps its bytes and its compiled digest. See
-[aggregate views](../guides/write-a-specification.md#aggregate-views).
+[aggregate views](../guides/specify/values-and-views.md#aggregate-views).
 
 `ess/11`, introduced in [0.34.0][r34], admits three things. A newtype of `String` may declare `alphabet:`, the
 characters every value is drawn from. A command input may declare `example:`, the value synthesis
@@ -126,7 +134,7 @@ copied by hand compile to the same IR and synthesize the same suite. An outcome 
 name, and two groups giving one command outcomes of the same name, are refused rather than
 overridden. An older build refuses the header, and this build refuses a group under an earlier
 header with `unsupported_format_version`. A model without groups keeps its bytes and its compiled
-digest. See [one outcome for many commands](../guides/write-a-specification.md#one-outcome-for-many-commands).
+digest. See [one outcome for many commands](../guides/specify/guards-and-predicates.md#one-outcome-for-many-commands).
 
 `ess/13`, introduced in [0.35.0][r35], admits `fixture_inputs:` on a command: a map from a declared input
 field to a lower-kebab fixture name, typed by that input. A deployed resource's identity or
@@ -138,23 +146,23 @@ different type is refused. An older build refuses the header, and this build ref
 under an earlier header with `unsupported_format_version`. A model without it keeps its bytes and
 its compiled digest.
 
-`ess/14`, introduced in [0.36.0][r36], adds value expressions to `payload:` and `sets:`: `{subject: <field>}` reads the addressed entity as it was before the outcome, `{increment: <number>}` adds to a stored `Integer` or `Decimal`, `{input: <field>, else: {generated: true}}` takes an optional input or a minted value, a nested mapping gives each field of a struct-typed target its own source, and `{generated: true}` is admitted in `sets:`. Synthesis asserts each value where the arrangement determined what it reads, and makes no claim otherwise. An older build refuses the header, and this build refuses each construct under an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its compiled digest. See [value expressions](../guides/write-a-specification.md#value-expressions).
+`ess/14`, introduced in [0.36.0][r36], adds value expressions to `payload:` and `sets:`: `{subject: <field>}` reads the addressed entity as it was before the outcome, `{increment: <number>}` adds to a stored `Integer` or `Decimal`, `{input: <field>, else: {generated: true}}` takes an optional input or a minted value, a nested mapping gives each field of a struct-typed target its own source, and `{generated: true}` is admitted in `sets:`. Synthesis asserts each value where the arrangement determined what it reads, and makes no claim otherwise. An older build refuses the header, and this build refuses each construct under an earlier header with `unsupported_format_version`. A model without them keeps its bytes and its compiled digest. See [value expressions](../guides/specify/values-and-views.md#value-expressions).
 
-`ess/15`, introduced in [0.37.0][r37], admits these constructs: outcome shapes (`docs/design/outcome-shapes.md`), `input.` operands in subject guards and case-insensitive text comparison (`docs/design/value-expressions.md` E6, E7), new value types, and aggregates over optional fields. This build admits the header; each construct states its own refusal under an earlier header.
+`ess/15`, introduced in [0.37.0][r37], admits the outcome shapes `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing` and `preconditions:`; `input.` operands in subject guards; the case-insensitive comparisons `equals_ignore_case` and `in_ignore_case`; the value types `prefix:`, `Json` and `presence:`; and aggregates over `Optional` fields. This build admits the header; each construct states its own refusal under an earlier header.
 
-`ess/16`, introduced in [0.38.0][r38], admits the constructs described in the paragraphs below. This build admits the header; each construct states its own refusal under an earlier header.
+`ess/16`, introduced in [0.38.0][r38], admits the constructs described in the paragraphs below, together with `{related: …}` and a literal `else:`. This build admits the header; each construct states its own refusal under an earlier header.
 
 Under `ess/16` a command may declare `input_absent: true` with an `error:`: the answer for a request that carries no input at all (beyond10x/ess#170). It is refused below `ess/16` with `unsupported_format_version`. Under `ess/16`, a guard that cannot hold because every way it could hold needs an input `f` that is not `Optional` to be absent (`not defined(f)`, `missing(f)`) is refused as a type mismatch; below `ess/16` it validates as before.
 
-Under `ess/16` an outcome may be selected by whether the addressed record exists (beyond10x/ess#164): a `creates:` branch marked `unknown_instance: true` beside the branch that updates the record the same input names (create or update), or an `existing_instance: true` branch with an `error:` beside a creation whose identity the caller supplies (create or refuse). Each is refused below `ess/16` with `unsupported_format_version`. See [selection by existence](../guides/write-a-specification.md#an-outcome-can-be-selected-by-whether-the-record-exists).
+Under `ess/16` an outcome may be selected by whether the addressed record exists (beyond10x/ess#164): a `creates:` branch marked `unknown_instance: true` beside the branch that updates the record the same input names (create or update), or an `existing_instance: true` branch with an `error:` beside a creation whose identity the caller supplies (create or refuse). Each is refused below `ess/16` with `unsupported_format_version`. See [selection by existence](../guides/specify/commands-and-outcomes.md#an-outcome-can-be-selected-by-whether-the-record-exists).
 
 Under `ess/16` an actor may declare `attributes:` its credential carries, which a command reads as `{caller: <attribute>}` in `payload:` and `sets:` and as `caller.<attribute>` in a `when:` or `when_subject:` comparison (beyond10x/ess#168). Below `ess/16` the attributes and a `caller.` operand are refused with `unsupported_format_version`, and `{caller: …}` stays a nested mapping.
 
-Under `ess/16` a view with `order_by:` may declare `paging: {page: <param>, size: <param>, first_page: 0|1, total: true|false}` (beyond10x/ess#174): two declared `Integer` parameters that slice the declared order, `size` rows starting at `(page - first_page) * size`, with the number of rows the filter admits beside them where `total: true`; a read that sends neither answers every row. The parameters `paging:` names are exempt from the refusal of a parameter no filter reads. `paging:` is refused below `ess/16` with `unsupported_format_version`. A caller-supplied filter expression is not part of it. See [paging a view](../guides/write-a-specification.md#a-view-can-be-paged).
+Under `ess/16` a view with `order_by:` may declare `paging: {page: <param>, size: <param>, first_page: 0|1, total: true|false}` (beyond10x/ess#174): two declared `Integer` parameters that slice the declared order, `size` rows starting at `(page - first_page) * size`, with the number of rows the filter admits beside them where `total: true`; a read that sends neither answers every row. The parameters `paging:` names are exempt from the refusal of a parameter no filter reads. `paging:` is refused below `ess/16` with `unsupported_format_version`. A caller-supplied filter expression is not part of it. See [paging a view](../guides/specify/values-and-views.md#a-view-can-be-paged).
 
 Under `ess/16` a binding may bound its retry: `on_failure: {retry: {attempts: 3, final: [<refusal>]}}` (beyond10x/ess#165). `attempts` counts invocations including the first and is at least 2; `final` names refusals of the invoked command, by outcome or by error, that end the retry at once. The block is refused below `ess/16` with `unsupported_format_version`; `on_failure: retry` written bare keeps its meaning.
 
-Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: <predicate>}` instead of `instance:`, changing every stored record the predicate selects over the entity's fields and `input.<field>` (beyond10x/ess#167), with `{count: changed}` as the number it changed; and an outcome with one existing subject may declare `affects:`, a list of `{entity, where, sets}` changing the records each filter selects, which may also read `subject.<field>` (beyond10x/ess#175). Each is refused below `ess/16` with `unsupported_format_version`, and `{count: changed}` stays a nested mapping there. See [set effects](../guides/write-a-specification.md#an-outcome-can-change-every-record-a-filter-selects).
+Under `ess/16` a `moves:` or `updates:` outcome may declare `instances: {where: <predicate>}` instead of `instance:`, changing every stored record the predicate selects over the entity's fields and `input.<field>` (beyond10x/ess#167), with `{count: changed}` as the number it changed; and an outcome with one existing subject may declare `affects:`, a list of `{entity, where, sets}` changing the records each filter selects, which may also read `subject.<field>` (beyond10x/ess#175). Each is refused below `ess/16` with `unsupported_format_version`, and `{count: changed}` stays a nested mapping there. See [set effects](../guides/specify/commands-and-outcomes.md#an-outcome-can-change-every-record-a-filter-selects).
 
 `ess/3` and `ess/4` both arrived in 0.23.0. There was never a release that implemented `3` and not
 `4`, and there is no missing release between them.
@@ -183,6 +191,9 @@ move must be able to take it in every state its predicate may select it in. An o
 `when_related: {via: input.<field>, exists: false}` or `when_related: {via: input.<field>,
 predicate: …}`, a guard over the row of another entity whose identity the input carries
 (beyond10x/ess#211). A missing row is answered by the `exists: false` branch before any other.
+An event binding may declare `when.context_fields`, a typed record separate from the payload, and
+`when.context_authority`, the external channel whose authority binds it, and read a field as
+`context.<field>` in `mapping:` (beyond10x/ess#195).
 
 ## `ess-diff/` — what moved between two revisions
 
@@ -374,15 +385,15 @@ Generated maps for the earlier formats stay byte-identical at the same generator
 |---|---|---|
 | `ess-conformance-report/` | [0.19.0][r19] | `/2` separates passed, failed, error, unsupported and skipped counts, bound to the exact executed suite bytes. |
 | `ess-schema-bundle/` | [0.19.0][r19] | `/2` is a document-root import with explicit, replay-checked root identity. Component-bundle `/1` bytes are unchanged. |
-| `ess-impact/` | [0.19.0][r19] | `/3` versions the corrected dependency vocabulary and the embedded delta. |
+| `ess-impact/` | [0.19.0][r19] | `ess-impact/2` is the version [0.1.0][r1] shipped. `/3` versions the corrected dependency vocabulary and the embedded delta. |
 | `ess-conformance-run/` | [0.20.0][r20] | `/2` is the checked detailed run output. |
 | `ess-target-failure/` | [0.20.0][r20], [0.23.0][r23] | `/2`, then `/3` with the `accessor-resource` cause. |
 | `ess-scenario/` | [0.23.0][r23], [0.35.0][r35], [0.39.0][r39] | `/2` authored setup establishes typed, isolated backend entity rows. `/3`, added in [0.35.0][r35], adds typed `fixtures:` and `{$fixture: name}` references resolved before the scenario starts. `/4`, added in [0.39.0][r39], adds literal `response:` assertions on an act. |
 | `infra-observation/` | [0.1.0][r1], [0.33.0][r33] | `/2` is a reduced, deliberately partial recovery profile, not a superset of `/1`. `/3` is the full scan with each Secret value recorded as `{"present": true}`: the key name, no digest, no length. `/1` wrote each value's unsalted SHA-256 and byte length, which confirm a guessed low-entropy secret to anyone holding the file. Same fields, new meaning, so a `/1` reader must reject `/3`; this build still reads `/1` and discards its digests. |
 | `infra-ir/` | [0.33.0][r33] | `/3` records each Secret key as present and nothing derived from its value, and is what every full observation with a Secret key compiles to, `/1` included. An IR without a Secret key keeps `/1` and its bytes. A persisted `/1` still reads, returned as `/3` with its Secret digests dropped and a different model digest, so nothing derived from it chains to the `/1` file's own digest; so drift reports a Secret's added and removed keys and never a changed value. An older reader refuses `/3`. |
 | `infra-drift/` | [0.33.0][r33] | `/2` is the namespace topology profile. `/3` is the full-scan comparison with one meaning changed: a Secret's `changed_keys` is always empty, so an empty list means the value is unknown, where under `/1` it meant not rotated. Serialize-only; `/1` documents already written keep their meaning. |
-| `ess-observed-bindings-report/` | [0.32.0][r32], [0.33.0][r33] | `/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. `/3` adds each binding's `acknowledged` list, so a satisfied `OBS-BIND-008` no longer means every entry is bound; a `/2` reader must reject `/3`. |
-| `ess-observed-bindings/` | [0.33.0][r33] | `/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
+| `ess-observed-bindings-report/` | [0.32.0][r32], [0.33.0][r33] | `ess-observed-bindings-report/1` and `ess-observed-bindings/1` were introduced in [0.21.0][r21]. `ess-observed-bindings-report/2` adds `OBS-BIND-008`: a container or native sidecar in a bound workload that no binding names is a violation. Same fields, new semantics; a document satisfied under `/1` can be violated under `/2`, so a `/1` reader must reject `/2`. The authored `ess-observed-bindings/1` input keeps its version and fields; it now claims the bound workload runs nothing else. `/3` adds each binding's `acknowledged` list, so a satisfied `OBS-BIND-008` no longer means every entry is bound; a `/2` reader must reject `/3`. |
+| `ess-observed-bindings/` | [0.33.0][r33] | `ess-observed-bindings/2` adds optional `foreign_containers`: per bound workload, containers this realization does not build, each with a `name` and a nonempty `reason`. `OBS-BIND-008` accounts for them without a binding; one running a declared image or artifact locator, or its `@sha256:` digest under another name, violates it, one naming no observed container or native sidecar leaves it unknown (plain init containers are not recorded), and one naming a bound container is refused. `/1` is read unchanged, acknowledges nothing and keeps its binding digest; a `/1` document carrying the key, even empty, is refused. An older reader refuses `/2`. The report moves to `ess-observed-bindings-report/3`, which adds each binding's `acknowledged` list; a satisfied `OBS-BIND-008` there no longer means every entry is bound, so a `/2` reader must reject `/3`. |
 | `ess-composition/` | [0.38.0][r38], [0.40.0][r40] | `/2` lets a reference name any type the selected component's owned domains declare, and adds `conformances`: an assertion that a consumer's local type has an imported component type's shape, checked field by field, where the consumer may treat a required value as optional and nothing else may differ (`type_conformance_drift`). The client plan is unchanged. The earlier format keeps its meaning and bytes and refuses the key, even empty; an older reader refuses `/2`. `/3`, added in [0.40.0][r40], adds `reader: true` on a `conformances` entry. |
 
 `ess-composition/3`, introduced in [0.40.0][r40]. A `conformances` entry may carry `reader: true`: the consumer's
@@ -428,16 +439,40 @@ transition only such outcomes perform, is `unwitnessed` rather than `survived`. 
 each mutant's `unsatisfiable_guard`. `--collect` still reads `/2` and `/1` manifests, and refuses
 either when it carries `unsatisfiable_guard`.
 
-## Still at version 1
+## Every other family
 
-Never revised, and a document that claims a higher number is refused:
-`ess-realization/1`, `ess-realization-ir/1`, `ess-client-plan/1`,
-`ess-docs/1`, `ess-build/1`, `ess-build-ir/1`, `ess-component/1`, `ess-component-ir/1`,
-`ess-release/1`, `ess-release-bundle/1`, `ess-release-catalog/1`, `ess-runtime/1`,
-`ess-runtime-ir/1`, `ess-stack/1`, `ess-stack-lock/1`, `ess-environment/1`, `ess-deployment/1`,
-`ess-service-interface/1`, `ess-openapi-import/1`, `ess-browser-catalog/1`,
-`ess-conformance-input/1`, `ess-conformance-replay/1`, `infra-spec/1`,
-`infra-graph/1`, `infra-simulation/1`, `infra-projection/1`.
+Each family below is read by a build that admits only the versions listed, and refuses a document
+claiming a higher number. [Formats and digests](./formats.md) says what each document holds.
+
+| Version | Introduced in | What it is |
+|---|---|---|
+| `ess-service-interface/1` | [0.1.0][r1] | A retained OpenAPI service interface. |
+| `infra-spec/1` | [0.1.0][r1] | Declared desired infrastructure state. |
+| `infra-graph/1` | [0.1.0][r1] | A cluster's typed graph. `infra-graph/2`, introduced in [0.21.0][r21], is the namespace topology profile. |
+| `infra-simulation/1` | [0.1.0][r1] | Desired state evaluated against a snapshot. `infra-simulation/2`, introduced in [0.21.0][r21], is the namespace topology profile. |
+| `infra-projection/1` | [0.1.0][r1] | A gap turned into patches a person can review. |
+| `ess-browser-catalog/1` | [0.4.0][r4] | The versioned catalog the browser target and documentation hosts read. |
+| `ess-client-plan/1` | [0.4.0][r4] | The selected surfaces a composition generates clients from. |
+| `ess-docs/1` | [0.4.0][r4] | The document representation between a model and its pages. |
+| `ess-realization/1` | [0.8.0][r8] | An authored realization: one exact ESS system bound to its implementations. `ess-realization/2`, introduced in [0.21.0][r21], admits implementation-only selections. |
+| `ess-realization-ir/1` | [0.8.0][r8] | A compiled realization. `ess-realization-ir/2`, introduced in [0.21.0][r21], compiles `ess-realization/2`. |
+| `ess-build/1`, `ess-build-ir/1` | [0.9.0][r9] | An authored build and its compiled form. |
+| `ess-runtime/1`, `ess-runtime-ir/1` | [0.9.0][r9] | An authored runtime mapping and its compiled form. |
+| `ess-release/1`, `ess-release-catalog/1` | [0.9.0][r9] | A release manifest, and the catalog of candidate releases. |
+| `ess-stack/1`, `ess-stack-lock/1` | [0.9.0][r9] | Stack constraints, and the exact releases a resolution selected. |
+| `ess-environment/1`, `ess-deployment/1`, `ess-deployment-diff/1` | [0.9.0][r9] | An environment, the deployment compiled for it, and the difference between two deployments. |
+| `ess-component/1`, `ess-component-ir/1` | [0.13.0][r13] | A deliverable component and its compiled form. |
+| `ess-release-bundle/1` | [0.13.0][r13] | Independently released runtime and chart releases, bundled. |
+| `ess-types-report/3` | [0.19.0][r19] | Structural target accounting for a generated type library. The family's first published version is `/3`. |
+| `ess-normalization-target/1` | [0.19.0][r19] | A normalization library report. `ess-normalization-target/2` and `ess-normalization-target/3`, introduced in [0.20.0][r20], report format-3 recipes and format-4, 5 and 6 recipes respectively. |
+| `ess-openapi-import/1`, `ess-openapi-service-subset/1` | [0.20.0][r20] | An OpenAPI import envelope, and the fixed import profile it names. |
+| `ess-conformance-input/1`, `ess-conformance-replay/1` | [0.21.0][r21] | A retained original suite and its parents, and a paired browser replay. |
+| `ess-inputs/1` | [0.21.0][r21] | A directory's input manifest, `ess-inputs.yaml`. `ess-inputs/2`, introduced in [0.34.0][r34], adds `requires:`. |
+| `ess-output-state/1` | [0.21.0][r21] | The generated-output checkpoint. `ess-output-state/2`, introduced in [0.34.0][r34], records the producing release. |
+| `ess-cli/1`, `ess-cli-plan/1` | [0.21.0][r21] | A CLI presentation binding, and the plan it resolves to. |
+| `ess-cli-artifacts/1`, `ess-cli-generation/1` | [0.21.0][r21] | The generated CLI package's manifest, and the report `ess generate cli` prints. |
+| `ess-execution-registry/1`, `ess-execution-authority/1` | [0.21.0][r21] | The deployment recovery registry, and one authority inside it. |
+| `ess-execution-store/1`, `ess-execution-lock/1`, `ess-execution-evidence/1` | [0.21.0][r21] | A recovery store's header, its per-cluster claim, and one journal entry. |
 
 ## Release numbers this page cites
 
@@ -451,16 +486,21 @@ Five versions appear in the [CHANGELOG][changelog] with no GitHub Release behind
 | 0.21.0 | tag pushed; the tree does not pass the current gate, so no release can be cut from it | the tag itself |
 | 0.26.1 | never tagged | 0.27.0 |
 
-`ess-conformance/5` is the one format version introduced by any of them, and the 0.21.0 tag
-carries it. Everything else in the tables above sits on a version with a published release.
+Every format version first carried by the 0.21.0 tag is listed under 0.21.0, the tag itself.
 
 The tag `v0.3.0` is a fifth artifact of the same period, under the naming convention that
 preceded bare versions. The release workflow triggers on bare versions only, so it never asked
-for a release and promises none.
+for a release and promises none. `ess-composition/1`, `ess-client-plan/1` and
+`ess-browser-catalog/1` first appear in its source; they are listed under 0.4.0, the first
+published release that carries them.
 
 [changelog]: https://github.com/beyond10x/ess/blob/main/CHANGELOG.md
 [r1]: https://github.com/beyond10x/ess/releases/tag/0.1.0
+[r4]: https://github.com/beyond10x/ess/releases/tag/0.4.0
 [r7]: https://github.com/beyond10x/ess/releases/tag/0.7.0
+[r8]: https://github.com/beyond10x/ess/releases/tag/0.8.0
+[r9]: https://github.com/beyond10x/ess/releases/tag/0.9.0
+[r13]: https://github.com/beyond10x/ess/releases/tag/0.13.0
 [r16]: https://github.com/beyond10x/ess/releases/tag/0.16.0
 [r18]: https://github.com/beyond10x/ess/releases/tag/0.18.0
 [r19]: https://github.com/beyond10x/ess/releases/tag/0.19.0

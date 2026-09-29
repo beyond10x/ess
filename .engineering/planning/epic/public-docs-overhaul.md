@@ -2,31 +2,44 @@
 format: aep.planning-md/3
 id: epic:public-docs-overhaul
 kind: epic
-status: draft
+status: implemented
 title: Public documentation takes a first-time adopter from zero to a green conformance run
 summary: 'Audit and overhaul of the website docs and README against 0.38.0: stale claims, missing adopter path, navigation, jargon.'
-revision: 1
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:10:56Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-29T14:10:56Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-29T16:21:06Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
 A first-time adopter can go from nothing to a validated specification of their own, a generated
 artifact and a green conformance run against their own implementation, using only the published
-documentation. Every version, command and format the public pages name matches ESS 0.38.0 and the
-current `main`.
+documentation. Every reference page is generated from the code or checked against it, and the
+tutorials run in CI, so the site cannot fall behind the release it documents again.
 
-## Audit (2026-09-28, against 0.38.0 and `ess --help` of this tree)
+## Audit (2026-09-29, against 0.43.0 at `origin/main` 24974b10c)
 
-| Category | Count | Examples |
-|---|---|---|
-| Stale release or version claim | 6 | `README.md:62` installs 0.9.1; `website/docs/status/where-this-stands.md:11` reports 0.27.0 as the latest release; `website/docs/reference/cli.md:130` calls the CLI bindings unreleased (shipped 0.21.0) |
-| Removed command still described | 1 | `website/docs/status/where-this-stands.md:82` lists `ess skill`, removed in 0.31.0 |
-| Behaviour described wrongly | 5 | `site` emits HTML, while `website/docs/index.md:42`, `website/docs/getting-started.md:89-107`, `README.md:133-135` and `website/docs/examples/specification-to-contracts.md:263-293` say Markdown plus `sidebar.json` and "not HTML"; the example page cites files that do not exist |
-| Broken or circular navigation | 4 | `guides/record-realization.md` is in no sidebar; three links to the example page render on the unified site as a GitHub source link because the page is not published there; `guides/synthesize.md:135` points at a roadmap section that does not exist; `concepts/ess.md:208` says "reused twice more" and names one |
-| Missing documentation for a shipped feature | 3 | no page shows `ess verify conform synthesize --target go\|typescript` and the `Target` an adopter implements; the walkthrough never leaves the repository example; the `ess/` version table stops at `ess/5` |
-| Internal jargon on a public page | 4 | `guides/synthesize.md:131-136` (W7.4, wave 7, `docs/plan/…`); `status/roadmap.md:28` (wave records); `reference/spec-versions.md` and `reference/formats.md` ("round-3 pair", "retrofit issues") |
-| Hard to follow | 3 | `guides/write-a-specification.md:120-148` puts a Binary64 digression under "Validate early"; `reference/cli.md:48-72` and `guides/verify-conformance.md:43-75` explain input selection in suite-version shorthand |
+| Problem | Evidence |
+|---|---|
+| Stale content | `concepts/overview.md`, `concepts/component-delivery.md`, `status/limitations.md` last changed 2026-09-20; the tutorial pins `format: ess/1` (current ess/18) with no `ess-inputs.yaml`; no 0.43.0 release post |
+| Structure | `guides/write-a-specification.md` 1636 lines, `guides/verify-conformance.md` 755; one sidebar, six categories all expanded; the example page is excluded from the unified bundle while other pages link to it |
+| Onboarding | install is macOS-only (`shasum`); the agent path (SETUP.md, `/ess:init`) is only in `README.md`; no test executes the tutorial (`cargo xtask docs` checks only its versions) |
+| Reference gaps | no diagnostics page (ESS-AUTHOR 3 of 37, ESS-SYNTH 7 of 18, no compiler class table, 0 of 15 dotted refusals documented); `reference/cli.md` hand-written and missing `project buildkit/helm`, `conform author/select` and flags such as `--catalog`, `--chart`, `--stack-lock`, `--timeout`, `--retry-of`; about 33 format families named but not tracked by `FORMAT_RELEASES` |
+
+The 2026-09-28 audit against 0.38.0 (stale versions, removed `ess skill`, `site` described as
+Markdown, internal wave vocabulary) is carried by the stories below where it still holds.
+
+## Plan
+
+Wave A builds generators and checks in `ess-xtask` and `ess-cli` tests (Rust): CLI reference from
+clap, diagnostics reference from the code catalogues, every format family tracked, an executable
+tutorial. Wave B restructures and rewrites on top of them: information architecture with
+redirects, onboarding, guides and status, releases, the example page in both renderings. Units
+merge into `integrate/ess-docs`; one PR to `main`.
 
 ## Out of scope
 
-Pages or sections describing conformance exploration and concurrent history, which another line
-of work is changing. Rust behaviour. The blog, which is a dated record.
+The beyond10x organization website, Atlas and docs-system changes, an ESS version release. Docs
+publish from `main` through `pages.yml` and the `b10x-docs-*` workflows and are reported pending
+until publication is verified.

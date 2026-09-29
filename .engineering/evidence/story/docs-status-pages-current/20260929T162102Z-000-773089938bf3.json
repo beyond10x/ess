@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T16:21:02Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-status-pages-current",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on integrate/ess-docs at 2076c491a: 9359 passed, 0 failed (site_navigation 8/8, support --check, docs, cli-reference/diagnostics/whats-changed --check); offline docusaurus build exit 0, 0 broken links",
+    "reference": "integrate/ess-docs@2076c491a"
+  }
+}

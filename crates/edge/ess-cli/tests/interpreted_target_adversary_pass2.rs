@@ -8,10 +8,10 @@
 //! ask for".
 //!
 //! The correction to the *other* round-1 finding wrote the unqualified version of the same claim
-//! into the published adopter guide. `website/docs/guides/verify-conformance.md:149-151` now says of
+//! into the published adopter guide. `website/docs/guides/verify/runners.md:21-25` now says of
 //! this target: "it executes nothing, so every scenario comes back as an unsatisfied obligation and
 //! the run fails." There is no qualification, and the same guide documents the `[]` selection at
-//! line 238 — the exact input for which the run does not fail. The claim the round-1 case removed
+//! line 206 — the exact input for which the run does not fail. The claim the round-1 case removed
 //! from a doc comment is now in a public page, where it is worth more.
 //!
 //! This case is about the document, because the behaviour is settled: the empty-suite verdict is
@@ -72,12 +72,12 @@ fn empty_suite_outcome(target: &str) -> (String, Option<i32>) {
 ///
 /// The rule is the one `interpret.rs:24-35` already follows — a sentence that states how a run comes
 /// out has to name the suites it is true of, because there is one it is not true of and the same
-/// guide documents how to build it (`verify-conformance.md:238-240`, `[]` explicitly selects none).
+/// guide documents how to build it (`runners.md:206-207`, `[]` explicitly selects none).
 /// Qualifying the sentence turns this green; so does dropping the run-level promise and keeping only
 /// the per-scenario one, which is unconditionally true.
 #[test]
 fn the_guide_qualifies_the_run_outcome_it_promises_for_the_interpreted_target() {
-    let guide = fs::read_to_string(root().join("website/docs/guides/verify-conformance.md"))
+    let guide = fs::read_to_string(root().join("website/docs/guides/verify/runners.md"))
         .expect("the conformance guide is committed");
     let guide = unwrapped(&guide);
 
@@ -126,9 +126,9 @@ fn the_guide_qualifies_the_run_outcome_it_promises_for_the_interpreted_target() 
 
     assert!(
         qualified,
-        "website/docs/guides/verify-conformance.md promises `{promise}` for `--target interpreted` \
+        "website/docs/guides/verify/runners.md promises `{promise}` for `--target interpreted` \
          and does not say for which suites. For a suite holding no scenarios — the selection the \
-         same guide documents at verify-conformance.md:238 as `[]` — that run reports `{status}` \
+         same guide documents at runners.md:206 as `[]` — that run reports `{status}` \
          and exits {code:?}. interpret.rs:24-35 states the same claim with the scope attached; this \
          sentence is the unqualified form the round-1 case removed from that module. The guide \
          says:\n  {description}"

@@ -2,10 +2,11 @@
 format: aep.planning-md/3
 id: story:docs-navigation-whole
 kind: story
-status: draft
+status: implemented
 title: Every page is reachable and every link lands on a rendered page
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/concepts/ess.md
@@ -17,24 +18,30 @@ scope:
   path: website/docs/guides/record-realization.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 2
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:12:10Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-09-29T14:12:10Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-09-29T16:21:01Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
-## What
+## Outcome
 
-Every guide is reachable from the sidebar, links to the worked example resolve to a rendered page
-on both sites, the concept page's "same pattern" section says what it shows, and the worked example
-describes the HTML `site` output and the files that exist.
+The site is organized for a first-time adopter: Start here (install, two tutorials, use with an
+agent), Concepts, Guides split by task, Reference (CLI, diagnostics, formats, format history,
+predicates, glossary), Examples, Releases and Status, collapsed by default. Every moved URL still
+lands on a rendered page on both `/ess/` and `/docs/ess/`.
 
 ## Acceptance
 
-- `guides/record-realization.md` appears in `sidebars.ts`.
-- The example page cites no file absent from `generated/`.
-- `task site-build` passes with no broken-link warning.
+- `website/sidebars.ts` has the categories above; `guides/write-a-specification.md` and
+  `guides/verify-conformance.md` are split into task pages of at most 400 lines each.
+- Every moved URL has a client redirect and a matching `b10x.docs.yaml` entry; `task site-build`
+  passes with `onBrokenLinks: throw`.
+- `atlas docs reconcile --workspace . --check` passes from a clean Atlas checkout at remote `main`.
 
 ## Scope
 
 - website/sidebars.ts
-- website/docs/concepts/ess.md
-- website/docs/guides/generate-artifacts.md
-- website/docs/guides/record-realization.md
-- website/docs/examples/specification-to-contracts.md
+- website/docusaurus.config.ts
+- b10x.docs.yaml
+- website/docs/guides/* (split)

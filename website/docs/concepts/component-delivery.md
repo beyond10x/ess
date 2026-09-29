@@ -41,6 +41,11 @@ flowchart LR
   end
 ```
 
+Three guides walk through the chain with commands you can run:
+[project a build and a Helm chart](../guides/deliver/build-and-chart.md),
+[resolve a stack](../guides/deliver/resolve-a-stack.md) and
+[deploy an environment](../guides/deliver/deploy-an-environment.md).
+
 The OCI bundle is the cache and transport boundary. It contains canonical component, build,
 runtime, and executor-produced release manifests; it contains neither credentials nor deployment
 configuration. Consumers fetch it by manifest digest and verify the SHA-256 of the original
@@ -133,10 +138,15 @@ distinct from **Evidence.digest**, which remains the OCI attachment manifest dig
 publication. ESS checks that returned digest's syntax; it does not reconstruct a remote attachment
 proof or authenticate the external tool.
 
-## Migrate the release-component action
+## Release a component with the action
 
-The action input contract is breaking. Update both the action revision and the pinned ESS revision
-to revisions containing these interfaces, then supply:
+<a id="migrate-the-release-component-action"></a>
+
+This repository ships a composite GitHub Action, `.github/actions/release-component`, that runs
+the whole release of one component: it installs the exact ESS revision you pin, qualifies your
+conformance report, builds or adopts the image, and publishes the chart, evidence and bundle.
+Besides the service, version, ESS revision and registry inputs, it requires the conformance
+inputs:
 
 ```yaml
 with:
@@ -156,12 +166,10 @@ rechecks before any evidence upload, uploads conformance through the typed same-
 and supplies qualification inputs again for final bundle publication. A later refusal stops later
 uploads; earlier image, chart or evidence uploads may remain. No rollback guarantee is implied.
 
+Pin the action and `ess-revision` to revisions that agree:
+
 | Action / ESS pairing | Behavior |
 |---|---|
-| New action / ESS with these commands | Required local report qualification and conservative attachment claims. |
-| New action / older ESS | Missing command fails before generic check or release work; no downgrade. |
-| Older action / newer ESS | Old declared check logs remain possible; the action does not acquire the new qualification guarantee. |
-
-The adoption review found no callers in its bounded local and organization searches. That is a
-no-known-caller result, not proof that private, wrapped or future callers do not exist. No future
-release tag is assumed by this migration.
+| Current action / ESS with `release check-conformance` and `publish-conformance` | Required local report qualification and conservative attachment claims. |
+| Current action / older ESS | The missing command fails before the generic check or any release work; there is no downgrade. |
+| Older action / newer ESS | The older action may still upload a check log as evidence; it does not gain report qualification. |

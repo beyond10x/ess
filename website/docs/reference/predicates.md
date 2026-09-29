@@ -29,7 +29,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
 | a view's `filter` | the source entity's fields and its lifecycle `state` | Selects the rows the view returns. |
-| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/write-a-specification.md#select-ordered-records-in-a-binding). |
+| a binding selection's `where` | one list item's fields | A bounded fragment: presence, typed equality and inequality, and `all`/`any`/`not`. See [select ordered records in a binding](../guides/specify/bindings-and-components.md#select-ordered-records-in-a-binding). |
 
 Two outcome keys that look like guards are **not** predicates:
 
@@ -190,7 +190,7 @@ The right-hand side of a comparison is read in this order:
 
 A right-hand side without a dot is therefore never a field. To compare two fields, put them in one
 struct and compare its members, for example `window.ends_at > window.starts_at`. See
-[order two instants](../guides/write-a-specification.md#order-two-instants).
+[order two instants](../guides/specify/fields-and-invariants.md#order-two-instants).
 
 An equality whose text literal is the name of a declared field is refused rather than read as
 text. The refusal says the literal is the text and not the field. Quoting the word does not change
@@ -543,7 +543,7 @@ when: tags.length > 0
 
 - **numbers** by value;
 - **`Timestamp`** by the instant it names, so `+01:00` and `Z` spellings compare correctly. See
-  [order two instants](../guides/write-a-specification.md#order-two-instants);
+  [order two instants](../guides/specify/fields-and-invariants.md#order-two-instants);
 - **text**, including newtypes of `String`, byte-wise and lexicographically. `"B" < "a"`, because
   `B` is byte 66 and `a` is byte 97. No locale and no case folding apply.
 

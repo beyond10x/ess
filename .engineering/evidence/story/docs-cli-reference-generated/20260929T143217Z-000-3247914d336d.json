@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:32:17Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-cli-reference-generated",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-xtask bin 212, ess bin 47 passed; cli-reference --check green, red on a removed --retry-of row; docs/generate/schema --check; clippy; fmt-check",
+    "reference": "docs/cli@a8a333118"
+  }
+}
