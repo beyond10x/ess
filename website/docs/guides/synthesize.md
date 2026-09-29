@@ -36,7 +36,7 @@ carry each disposition and its reason:
 
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust | head -2
-48 capabilities: 39 generated, 5 obligation(s), 4 refused
+48 capabilities: 40 generated, 4 obligation(s), 4 refused
 16 artifact(s), nothing written
 ```
 
@@ -45,7 +45,7 @@ A refusal reads the same way and says what it cannot state: *"actor grants
 carry"*.
 
 The plan is rendered as `PLAN.md` and `plan.json` in every emitted tree, and it is
-**language-neutral**. The existing Rust, Go and Web billing example produces the same 48/39/5/4
+**language-neutral**. The existing Rust, Go and Web billing example produces the same 48/40/4/4
 summary and `plan.json` digest. Clap also carries the plan and reports its grammar-specific
 weakenings separately; command behavior remains a handler obligation.
 
@@ -188,6 +188,21 @@ empty `Optional`, a list position past the end, or `state`, which the data type 
 decides nothing, as the conformance interpreter reads it. An invariant the target cannot evaluate
 is refused at synthesis by name. See the
 [invariant check tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/invariant_check.rs).
+
+## View queries are generated where the rows are determined
+
+A view whose rows the specification fully determines gets a generated query in the Rust target's
+`behaviour` module, on the same `Generated` bundle: a projection of the source entity's own fields
+and `state`, a `filter:`, an `order_by:`, and an aggregation with `group_by`, `count`,
+`count_distinct`, `sum`, `min`, `max` and `avg`. It reads through one more method on the entity's
+storage port, `list`, which answers every stored row in the order the store keeps them; that is
+the order an unordered view answers in. A filter keeps a row where it holds and drops it where it
+is false or unknown. An aggregation follows the conformance suite: an absent group key is one
+group, a `skip_absent` aggregate skips absent values, and `avg` is rounded half-even to six
+fractional digits. A view that reads a parameter, pages, or orders by an optional field stays an
+obligation, and the plan names that construct as the reason. The Go target keeps each generated
+query as an owed seam and lists this as a weakening. See the
+[view query tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/generated_view_queries.rs).
 
 ## Honest limits
 

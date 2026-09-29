@@ -252,8 +252,9 @@ pub enum ObligationReason {
     /// Keeping a projection current at its declared consistency is a storage decision the
     /// specification deliberately does not take.
     ProjectionMaintenance,
-    /// A command whose outcomes the specification does not fully determine: the construct named
-    /// is the first one generated behaviour cannot express, and it keeps the whole command owed.
+    /// A command whose outcomes, or a view whose rows, the specification does not fully determine:
+    /// the construct named is the first one generated code cannot express, and it keeps the whole
+    /// behaviour or query owed.
     Undetermined {
         /// The construct, and the branch it sits on.
         construct: String,
@@ -794,7 +795,9 @@ fn plan_errors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     }
 }
 
-/// A view's row type is generated; serving it is owed.
+/// A view's row type is generated. Its query is generated where the specification fully
+/// determines every row it answers ([`crate::view_query`]); otherwise serving it is owed, naming the
+/// construct that kept it an obligation.
 fn plan_views(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     for view in ir.views().values() {
         capabilities.push(PlannedCapability {
@@ -809,16 +812,19 @@ fn plan_views(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 kind: CapabilityKind::ViewQuery,
                 source: view.name.to_string(),
             },
-            disposition: SynthesisDisposition::Obligation(ImplementationObligation {
-                reason: ObligationReason::ProjectionMaintenance,
-                contract: view_contract(view),
-            }),
+            disposition: match crate::view_query::view(ir, view) {
+                Ok(()) => SynthesisDisposition::Generated,
+                Err(construct) => SynthesisDisposition::Obligation(ImplementationObligation {
+                    reason: ObligationReason::Undetermined { construct },
+                    contract: view_contract(view),
+                }),
+            },
         });
     }
 }
 
 /// The query's contract: what rows, of what, how fresh.
-fn view_contract(view: &ResolvedView) -> String {
+pub(crate) fn view_contract(view: &ResolvedView) -> String {
     let mut contract = format!(
         "a query answering `{}` with rows projected from `{}` at `{}` consistency",
         view.name,

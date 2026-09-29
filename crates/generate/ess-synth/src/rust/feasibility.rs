@@ -545,10 +545,15 @@ fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &
             .filter(|(capability, _)| in_domain(capability))
             .map(|(capability, _)| capability)
             .collect::<Vec<_>>();
-        // A generated behaviour keeps its seam in the same module, with no stub.
+        // A generated behaviour or query keeps its seam in the same module, with no stub.
         let generated = plan
             .generated()
-            .filter(|capability| capability.kind == CapabilityKind::CommandBehavior)
+            .filter(|capability| {
+                matches!(
+                    capability.kind,
+                    CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
+                )
+            })
             .filter(|capability| in_domain(capability))
             .collect::<Vec<_>>();
         if owed.is_empty() && generated.is_empty() {

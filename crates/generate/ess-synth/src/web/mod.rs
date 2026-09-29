@@ -339,6 +339,10 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
     for command in ir.commands().keys() {
         bridge.present(CapabilityKind::CommandBehavior, &command.to_string());
     }
+    // So does a generated view query.
+    for view in ir.views().keys() {
+        bridge.present(CapabilityKind::ViewQuery, &view.to_string());
+    }
     let refused: BTreeSet<Capability> = refusals
         .iter()
         .map(|(capability, _)| capability.clone())

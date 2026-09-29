@@ -146,9 +146,10 @@ fn the_billing_plan_counts_are_pinned() {
     let counts = plan.counts();
     assert_eq!(plan.capabilities.len(), 48, "capabilities in total");
     // 0.46: `IssueInvoice`, `CancelInvoice` and `SendEmail` are fully declared, so their behaviours
-    // moved from obligation to generated (`story:generated-behaviour-for-declared-commands`).
-    assert_eq!(counts.generated, 39, "generated capabilities");
-    assert_eq!(counts.obligations, 5, "obligations");
+    // moved from obligation to generated (`story:generated-behaviour-for-declared-commands`), and
+    // the query of the fully declared view `InvoiceById` (`story:generated-view-queries`).
+    assert_eq!(counts.generated, 40, "generated capabilities");
+    assert_eq!(counts.obligations, 4, "obligations");
     assert_eq!(counts.refused, 4, "refusals");
 }
 
@@ -723,8 +724,9 @@ fn the_plans_obligations_and_the_workspaces_stubs_are_the_same_list() {
         })
         .collect();
     owed.sort();
-    // Five since 0.46: three of the eight were command behaviours the specification determines.
-    assert_eq!(owed.len(), 5, "the billing plan owes five capabilities");
+    // Four since 0.46: three of the eight were command behaviours the specification determines, and
+    // one the query of a view it determines.
+    assert_eq!(owed.len(), 4, "the billing plan owes four capabilities");
     assert_eq!(
         stubs, owed,
         "the generated stubs are not exactly the plan's obligations"

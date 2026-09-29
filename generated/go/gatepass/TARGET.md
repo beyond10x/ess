@@ -8,7 +8,7 @@
 
 For gatepass v1. The `PLAN.md` beside this file is language-neutral and **byte-identical in every target's tree**; this document is what *this* target could not carry across it. Regenerate with `ess synthesize --target go`.
 
-7 weakening(s), 0 target refusal(s). A weakening is emitted code that holds less than the first target's; a target refusal is a capability the plan marks generated and this language cannot represent — a fact about the language, never about the specification.
+8 weakening(s), 0 target refusal(s). A weakening is emitted code that holds less than the first target's; a target refusal is a capability the plan marks generated and this language cannot represent — a fact about the language, never about the specification.
 
 ## Weakened — emitted, with less than the first target holds
 
@@ -21,6 +21,7 @@ For gatepass v1. The `PLAN.md` beside this file is language-neutral and **byte-i
 | a JSON object leaves this system with its members in the order the specification declares them | the served bodies are built as `map[string]any` and written by `encoding/json`, which sorts a map's keys — so a body's members come out alphabetical here and in declaration order in the first target. The two are the same *value*, no published contract states an order, and every consumer that parses rather than greps is unaffected; what is lost is the ability to compare two applications' bodies byte for byte, which is why the gate compares them as values. Emitting a writer that kept the order would mean emitting a second JSON writer beside the standard library's | component transport |
 | an actor's declared grants are available as generated data: every declared actor and the qualified commands it may invoke | this target emits no grant table, so a Go caller enforcing a grant copies the `may` lists from the plan's `actor grants` rows. Enforcement itself is refused in every target, the first included; what is weaker here is only where the data a caller enforces comes from | actor grants |
 | a command behaviour the specification fully determines is generated, over storage and context ports | this target does not generate command behaviour yet: each one the plan marks generated keeps its behaviour seam here, owed, with the same contract and a stub refusing it, exactly as an obligation | command behaviour |
+| a view query the specification fully determines is generated, over a storage port that lists an entity's rows | this target does not generate view queries yet: each one the plan marks generated keeps its query seam here, owed, with the same contract and a stub refusing it, exactly as an obligation | view query |
 
 ## Refused by this target — planned, not emitted
 

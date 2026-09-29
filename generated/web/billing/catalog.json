@@ -791,8 +791,8 @@
   ],
   "format": "ess-browser-catalog/1",
   "plan": {
-    "generated": 39,
-    "obligations": 5,
+    "generated": 40,
+    "obligations": 4,
     "refused": 4
   },
   "provenance": {
@@ -1031,9 +1031,7 @@
       "filter": null,
       "name": "billing.invoice.InvoiceById",
       "served": {
-        "contract": "a query answering `billing.invoice.InvoiceById` with rows projected from `billing.invoice.Invoice` at `eventual` consistency",
-        "disposition": "obligation",
-        "why": "how the projection is kept current is a storage decision"
+        "disposition": "generated"
       },
       "summary": null
     },
@@ -1082,7 +1080,7 @@
       "served": {
         "contract": "a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued`",
         "disposition": "obligation",
-        "why": "how the projection is kept current is a storage decision"
+        "why": "kept an obligation by an order over the optional field `issued_at`, which has no order against a present value"
       },
       "summary": null
     }

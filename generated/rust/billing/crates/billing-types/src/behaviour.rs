@@ -32,6 +32,10 @@ pub trait InvoiceStorage {
 
     /// Removes the instance with this identity.
     fn delete(&mut self, identity: &crate::invoice::InvoiceId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::invoice::InvoiceSnapshot>;
 }
 
 /// What the specification leaves to the implementor's context — a port the implementor provides.
@@ -151,9 +155,21 @@ impl<P: crate::invoice::obligations::PayInvoiceBehavior> crate::invoice::obligat
     }
 }
 
-impl<P: crate::invoice::obligations::InvoiceByIdQuery> crate::invoice::obligations::InvoiceByIdQuery for Generated<P> {
+/// `billing.invoice.InvoiceById`, generated: every row is one the specification fully determines from the stored `billing.invoice.Invoice`s.
+impl<P> crate::invoice::obligations::InvoiceByIdQuery for Generated<P>
+where
+    P: InvoiceStorage,
+{
     fn invoice_by_id(&self) -> Result<Vec<crate::invoice::InvoiceById>, UnmetObligation> {
-        crate::invoice::obligations::InvoiceByIdQuery::invoice_by_id(&self.ports)
+        let admitted = InvoiceStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::invoice::InvoiceById {
+                invoice_id: held.data.invoice_id,
+                total: held.data.total,
+                reminder_count: held.data.reminder_count,
+            })
+            .collect())
     }
 }
 

@@ -8,7 +8,7 @@
 
 For billing v3. The `PLAN.md` beside this file is language-neutral and **byte-identical in every target's tree**; this document is what *this* target could not carry across it. Regenerate with `ess synthesize --target go`.
 
-6 weakening(s), 0 target refusal(s). A weakening is emitted code that holds less than the first target's; a target refusal is a capability the plan marks generated and this language cannot represent — a fact about the language, never about the specification.
+7 weakening(s), 0 target refusal(s). A weakening is emitted code that holds less than the first target's; a target refusal is a capability the plan marks generated and this language cannot represent — a fact about the language, never about the specification.
 
 ## Weakened — emitted, with less than the first target holds
 
@@ -20,6 +20,7 @@ For billing v3. The `PLAN.md` beside this file is language-neutral and **byte-id
 | every generated type compares by value | Go defines `==` only for comparable types, so a generated type carrying a list, a map or bytes cannot be compared at all — and no deep comparison is emitted in its place, because a hand-written equality is behaviour, and behaviour is not synthesised | domain type, entity lifecycle, command contract, event type, error type, view type |
 | an actor's declared grants are available as generated data: every declared actor and the qualified commands it may invoke | this target emits no grant table, so a Go caller enforcing a grant copies the `may` lists from the plan's `actor grants` rows. Enforcement itself is refused in every target, the first included; what is weaker here is only where the data a caller enforces comes from | actor grants |
 | a command behaviour the specification fully determines is generated, over storage and context ports | this target does not generate command behaviour yet: each one the plan marks generated keeps its behaviour seam here, owed, with the same contract and a stub refusing it, exactly as an obligation | command behaviour |
+| a view query the specification fully determines is generated, over a storage port that lists an entity's rows | this target does not generate view queries yet: each one the plan marks generated keeps its query seam here, owed, with the same contract and a stub refusing it, exactly as an obligation | view query |
 
 ## Refused by this target — planned, not emitted
 

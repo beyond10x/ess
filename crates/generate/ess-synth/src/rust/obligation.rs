@@ -228,15 +228,20 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
             continue;
         }
         let source = view.name.to_string();
-        let Some(obligation) = plan.obligation_of(CapabilityKind::ViewQuery, &source) else {
+        let obligation = plan.obligation_of(CapabilityKind::ViewQuery, &source);
+        if obligation.is_none() && !plan.is_generated(CapabilityKind::ViewQuery, &source) {
             continue;
-        };
+        }
         let type_name = emit.layout.type_name(&view.name);
         traits.push(TraitStub {
             kind: CapabilityKind::ViewQuery,
             source: source.clone(),
-            heading: format!("The query `{source}` — an implementation obligation."),
-            obligation: Some(obligation.clone()),
+            heading: if obligation.is_some() {
+                format!("The query `{source}` — an implementation obligation.")
+            } else {
+                format!("The query `{source}` — generated.")
+            },
+            obligation: obligation.cloned(),
             trait_name: format!("{type_name}Query"),
             method_doc: format!("Serves `{source}` rows at the view's declared consistency."),
             method: name::value_ident(&type_name),
@@ -266,6 +271,13 @@ fn render_traits(out: &mut String, traits: &[TraitStub]) {
                 ),
                 "`Err` is the typed refusal of an obligation nothing has satisfied; a \
                  satisfying\n        /// implementation never returns it.",
+            ),
+            None if spec.kind == CapabilityKind::ViewQuery => (
+                "The specification fully determines it: [`crate::behaviour::Generated`] \
+                 implements it\n    /// over the storage port. Implement it yourself to replace \
+                 that query."
+                    .to_owned(),
+                "`Err` is the typed refusal of a row whose declared type cannot hold its value.",
             ),
             None => (
                 "The specification fully determines it: [`crate::behaviour::Generated`] \

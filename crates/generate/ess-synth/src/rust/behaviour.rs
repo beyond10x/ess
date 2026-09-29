@@ -47,9 +47,12 @@ use super::name;
 use crate::determined::{self, Env, HeldField, Kind, Resolved, Root, Step};
 use crate::plan::{Capability, CapabilityKind, SynthesisPlan, REGENERATE};
 
-/// `true` where the workspace carries a `behaviour` module: some command is generated.
+mod query;
+
+/// `true` where the workspace carries a `behaviour` module: some command's behaviour or some view's
+/// query is generated.
 pub(crate) fn used(ir: &EssIr) -> bool {
-    determined::any_generated(ir)
+    determined::any_generated(ir) || crate::view_query::any_generated(ir)
 }
 
 /// The types crate's `behaviour` module, or `None` where no command's behaviour is generated.
@@ -90,8 +93,17 @@ pub(super) fn module(
         }
     }
     for view in ir.views().values() {
-        if plan
-            .obligation_of(CapabilityKind::ViewQuery, &view.name.to_string())
+        let source = view.name.to_string();
+        if plan.is_generated(CapabilityKind::ViewQuery, &source) {
+            covered.insert(Capability {
+                kind: CapabilityKind::ViewQuery,
+                source,
+            });
+            impls.push_str(&query::implementation(
+                ir, layout, view, &storages, &mut uses,
+            ));
+        } else if plan
+            .obligation_of(CapabilityKind::ViewQuery, &source)
             .is_some()
         {
             forward_query(&mut impls, layout, &view.name);
@@ -101,7 +113,14 @@ pub(super) fn module(
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(HEADER);
     for entity in &uses.storages {
-        storage_trait(&mut out, ir, layout, &storages, entity);
+        storage_trait(
+            &mut out,
+            ir,
+            layout,
+            &storages,
+            entity,
+            uses.listed.contains(entity),
+        );
     }
     context_trait(&mut out, &uses);
     out.push_str(GENERATED);
@@ -156,8 +175,10 @@ impl<P> Generated<P> {
 /// What the generated impls asked of the ports and of the helpers, collected while rendering.
 #[derive(Default)]
 struct Uses {
-    /// Entities whose storage trait some behaviour uses.
+    /// Entities whose storage trait some behaviour or query uses.
     storages: BTreeSet<QualifiedName>,
+    /// Entities whose rows some generated query lists: their storage trait carries `list`.
+    listed: BTreeSet<QualifiedName>,
     /// Caller attribute methods: name → returned type.
     callers: BTreeMap<String, (String, String)>,
     /// Assigned-value methods: name → returned type.
@@ -211,10 +232,20 @@ fn storage_trait(
     layout: &Layout,
     storages: &BTreeMap<QualifiedName, String>,
     entity: &QualifiedName,
+    listed: bool,
 ) {
     let declared = &ir.entities()[entity];
     let snapshot = snapshot_path(layout, entity);
     let identity = layout.absolute_type(&declared.identity.type_ref);
+    let list = if listed {
+        format!(
+            "\n\n    /// Every stored instance, in the order the store keeps them: the order a \
+             generated query\n    /// answers an unordered view in.\n    fn list(&self) -> \
+             Vec<{snapshot}>;"
+        )
+    } else {
+        String::new()
+    };
     let _ = writeln!(
         out,
         "\n/// Where `{entity}` is stored — a port the implementor provides.\n///\n/// Keyed by the \
@@ -223,7 +254,7 @@ fn storage_trait(
          fn get(&self, identity: &{identity}) -> Option<{snapshot}>;\n\n    /// Stores this \
          instance under its identity, replacing what was held.\n    fn put(&mut self, snapshot: \
          {snapshot});\n\n    /// Removes the instance with this identity.\n    fn delete(&mut \
-         self, identity: &{identity});\n}}",
+         self, identity: &{identity});{list}\n}}",
         declared.identity.name, storages[entity]
     );
 }
@@ -364,14 +395,33 @@ fn helpers(out: &mut String, uses: &Uses) {
              right?)\n}\n",
         );
     }
+    let parts = [
+        "compare_numbers",
+        "number_key",
+        "number_order",
+        "sum_values",
+    ]
+    .iter()
+    .any(|helper| uses.helpers.contains(helper));
+    if parts {
+        out.push_str(NUMBER_PARTS);
+    }
     if uses.helpers.contains("compare_numbers") {
-        out.push_str(NUMBERS);
+        out.push_str(COMPARE_NUMBERS);
+    }
+    for (helper, text) in QUERY_HELPERS {
+        if uses.helpers.contains(helper) {
+            out.push_str(text);
+        }
     }
 }
 
-/// Exact comparison of two decimal renderings — an `Integer` is rendered the same way — without a
-/// float, which would round the values a `Decimal` exists not to round.
-const NUMBERS: &str = "
+// Exact comparison of two decimal renderings — an `Integer` is rendered the same way — without a
+// float, which would round the values a `Decimal` exists not to round. The two halves are one text
+// where a guard compares numbers; a query that only keys, orders or sums them needs the first.
+
+/// A decimal rendering's sign and digits.
+const NUMBER_PARTS: &str = "
 /// A decimal rendering as its sign, its whole digits and its fraction digits, without the zeros
 /// that do not change its value; `None` where it is not a plain decimal.
 fn number_parts(text: &str) -> Option<(bool, String, String)> {
@@ -391,7 +441,10 @@ fn number_parts(text: &str) -> Option<(bool, String, String)> {
     let zero = whole.is_empty() && fraction.is_empty();
     Some((negative && !zero, whole, fraction))
 }
+";
 
+/// A guard's exact numeric comparison.
+const COMPARE_NUMBERS: &str = "
 /// Compares two decimal renderings exactly; an unread or unparsable one is Unknown.
 fn compare_numbers(
     left: Option<String>,
@@ -414,6 +467,296 @@ fn compare_numbers(
     Some(accepts(ordering))
 }
 ";
+
+/// What a generated query computes with, by name, in the order they are written; only the ones some
+/// query uses are. Each follows `ess_conformance::aggregate` (`docs/design/aggregate-views.md`).
+const QUERY_HELPERS: [(&str, &str); 13] = [
+    (
+        "unrepresentable",
+        "
+/// The typed refusal of a row a declared type cannot hold — a sum past the `Integer` range, about
+/// which the specification makes no claim.
+fn unrepresentable(source: &'static str) -> UnmetObligation {
+    let capability = \"view query\";
+    UnmetObligation { capability, source }
+}
+",
+    ),
+    (
+        "count",
+        "
+/// A number of rows, as the `Integer` it is reported as.
+fn count(rows: usize) -> i64 {
+    i64::try_from(rows).unwrap_or(i64::MAX)
+}
+",
+    ),
+    (
+        "distinct",
+        "
+/// How many different values `values` holds, each already in the form its equality compares.
+fn distinct(values: impl Iterator<Item = String>) -> i64 {
+    let mut seen: Vec<String> = Vec::new();
+    for value in values {
+        if !seen.contains(&value) {
+            seen.push(value);
+        }
+    }
+    count(seen.len())
+}
+",
+    ),
+    (
+        "number_key",
+        "
+/// A decimal rendering in the one spelling every rendering of its value shares, so `1.0` and `1`
+/// are one value; text that is no number stays as it is.
+fn number_key(text: &str) -> String {
+    match number_parts(text) {
+        Some((negative, whole, fraction)) => {
+            format!(\"{}{whole}.{fraction}\", if negative { \"-\" } else { \"\" })
+        }
+        None => text.to_owned(),
+    }
+}
+",
+    ),
+    (
+        "number_order",
+        "
+/// Two decimal renderings by their exact value; text that is no number by its bytes.
+fn number_order(left: &str, right: &str) -> core::cmp::Ordering {
+    let (Some(left), Some(right)) = (number_parts(left), number_parts(right)) else {
+        return left.as_bytes().cmp(right.as_bytes());
+    };
+    let magnitude = left
+        .1
+        .len()
+        .cmp(&right.1.len())
+        .then_with(|| left.1.cmp(&right.1))
+        .then_with(|| left.2.cmp(&right.2));
+    match (left.0, right.0) {
+        (false, false) => magnitude,
+        (true, true) => magnitude.reverse(),
+        (true, false) => core::cmp::Ordering::Less,
+        (false, true) => core::cmp::Ordering::Greater,
+    }
+}
+",
+    ),
+    (
+        "text_order",
+        "
+/// Two texts by their UTF-8 bytes.
+fn text_order(left: &str, right: &str) -> core::cmp::Ordering {
+    left.as_bytes().cmp(right.as_bytes())
+}
+",
+    ),
+    (
+        "instant",
+        "
+/// The instant an RFC 3339 `date-time` names, as seconds from the epoch and nanoseconds.
+fn instant(text: &str) -> Option<(i64, u32)> {
+    let bytes = text.as_bytes();
+    let digits = |from: usize, to: usize| -> Option<u32> {
+        let slice = bytes.get(from..to)?;
+        if slice.is_empty() || !slice.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        slice
+            .iter()
+            .try_fold(0u32, |total, digit| Some(total * 10 + u32::from(digit - b'0')))
+    };
+    let at = |index: usize, expected: &[u8]| bytes.get(index).is_some_and(|b| expected.contains(b));
+    if !(at(4, b\"-\") && at(7, b\"-\") && at(10, b\"Tt\") && at(13, b\":\") && at(16, b\":\")) {
+        return None;
+    }
+    let (year, month, day) = (i64::from(digits(0, 4)?), digits(5, 7)?, digits(8, 10)?);
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let length = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if day < 1 || day > length {
+        return None;
+    }
+    let (hour, minute, second) = (digits(11, 13)?, digits(14, 16)?, digits(17, 19)?);
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    let mut position = 19;
+    let mut nanos = 0u32;
+    if at(position, b\".\") {
+        let start = position + 1;
+        let mut end = start;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        let width = end - start;
+        if width == 0 || width > 9 {
+            return None;
+        }
+        nanos = digits(start, end)? * 10u32.pow(u32::try_from(9 - width).ok()?);
+        position = end;
+    }
+    let offset = match bytes.get(position..)? {
+        b\"Z\" | b\"z\" => 0i64,
+        [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+            let (hours, minutes) = (digits(position + 1, position + 3)?, digits(position + 4, position + 6)?);
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let magnitude = i64::from(hours * 3600 + minutes * 60);
+            if *sign == b'-' {
+                -magnitude
+            } else {
+                magnitude
+            }
+        }
+        _ => return None,
+    };
+    let shifted = year - i64::from(month <= 2);
+    let era = if shifted >= 0 { shifted } else { shifted - 399 } / 400;
+    let year_of_era = shifted - era * 400;
+    let month = i64::from(month);
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some((
+        days * 86_400 + i64::from(hour * 3600 + minute * 60 + second) - offset,
+        nanos,
+    ))
+}
+",
+    ),
+    (
+        "instant_key",
+        "
+/// An RFC 3339 rendering as the instant it names, so one instant spelled with two offsets is one
+/// value; text that names no instant stays as it is.
+fn instant_key(text: &str) -> String {
+    match instant(text) {
+        Some((seconds, nanos)) => format!(\"{seconds}.{nanos:09}\"),
+        None => text.to_owned(),
+    }
+}
+",
+    ),
+    (
+        "instant_order",
+        "
+/// Two RFC 3339 renderings by the instant each names; text that names none by its bytes.
+fn instant_order(left: &str, right: &str) -> core::cmp::Ordering {
+    match (instant(left), instant(right)) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        _ => left.as_bytes().cmp(right.as_bytes()),
+    }
+}
+",
+    ),
+    (
+        "sum_values",
+        "
+/// The exact sum of decimal renderings: how many there were, and the sum as `units × 10^-scale`;
+/// `None` where one is not a plain decimal or the sum leaves `i128`.
+fn sum_values(values: impl Iterator<Item = String>) -> Option<(usize, i128, u32)> {
+    let (mut present, mut units, mut scale) = (0usize, 0i128, 0u32);
+    for value in values {
+        let (negative, whole, fraction) = number_parts(&value)?;
+        let digits: i128 = if whole.is_empty() && fraction.is_empty() {
+            0
+        } else {
+            format!(\"{whole}{fraction}\").parse().ok()?
+        };
+        let digits = if negative { -digits } else { digits };
+        let places = u32::try_from(fraction.len()).ok()?;
+        let common = scale.max(places);
+        let widen = |units: i128, from: u32| units.checked_mul(10i128.checked_pow(common - from)?);
+        units = widen(units, scale)?.checked_add(widen(digits, places)?)?;
+        scale = common;
+        present += 1;
+    }
+    Some((present, units, scale))
+}
+",
+    ),
+    (
+        "spell",
+        "
+/// `units × 10^-scale`, spelled without trailing zeros.
+fn spell(units: i128, scale: u32) -> String {
+    let digits = units.unsigned_abs().to_string();
+    let width = usize::try_from(scale).unwrap_or(0);
+    let padded = format!(\"{digits:0>width$}\", width = width + 1);
+    let (whole, fraction) = padded.split_at(padded.len() - width);
+    let fraction = fraction.trim_end_matches('0');
+    let mut text = String::new();
+    if units < 0 {
+        text.push('-');
+    }
+    text.push_str(whole);
+    if !fraction.is_empty() {
+        text.push('.');
+        text.push_str(fraction);
+    }
+    text
+}
+",
+    ),
+    (
+        "average",
+        "
+/// The mean of `present` values summing to `units × 10^-scale`, rounded to six fractional digits,
+/// ties to even; `Some(None)` over no value, `None` where it leaves `i128`.
+fn average(present: usize, units: i128, scale: u32) -> Option<Option<String>> {
+    if present == 0 {
+        return Some(None);
+    }
+    let count = i128::try_from(present).ok()?;
+    let (numerator, denominator) = if scale <= 6 {
+        (units.checked_mul(10i128.checked_pow(6 - scale)?)?, count)
+    } else {
+        (units, count.checked_mul(10i128.checked_pow(scale - 6)?)?)
+    };
+    let magnitude = numerator.checked_abs()?;
+    let (mut quotient, remainder) = (magnitude / denominator, magnitude % denominator);
+    let twice = remainder.checked_mul(2)?;
+    if twice > denominator || (twice == denominator && quotient % 2 == 1) {
+        quotient += 1;
+    }
+    Some(Some(spell(if numerator < 0 { -quotient } else { quotient }, 6)))
+}
+",
+    ),
+    (
+        "extreme",
+        "
+/// The value whose reading `order` ranks `wins` against every other (`Less` for a minimum,
+/// `Greater` for a maximum), the first of equal ones; `None` over no value.
+fn extreme<T>(
+    values: impl Iterator<Item = (String, T)>,
+    wins: core::cmp::Ordering,
+    order: fn(&str, &str) -> core::cmp::Ordering,
+) -> Option<T> {
+    let mut best: Option<(String, T)> = None;
+    for (read, value) in values {
+        let replaces = match &best {
+            Some((held, _)) => order(&read, held) == wins,
+            None => true,
+        };
+        if replaces {
+            best = Some((read, value));
+        }
+    }
+    best.map(|(_, value)| value)
+}
+",
+    ),
+];
 
 // ---- one command -------------------------------------------------------------------------------
 
@@ -481,7 +824,7 @@ impl Writer<'_> {
             if let (ResolvedCondition::When { predicate }, Some(_), None) =
                 (&outcome.condition, &outcome.error, &outcome.subject)
             {
-                let truth = self.predicate(&Env::Input(command), predicate);
+                let truth = self.guards().predicate(&Env::Input(command), predicate);
                 let guard = self.decided(&truth);
                 let answer = self.variant(outcome, Held::None, None);
                 let _ = writeln!(
@@ -525,7 +868,7 @@ impl Writer<'_> {
         for outcome in &command.outcomes {
             match &outcome.condition {
                 ResolvedCondition::When { predicate } if outcome.error.is_none() => {
-                    let truth = self.predicate(&Env::Input(command), predicate);
+                    let truth = self.guards().predicate(&Env::Input(command), predicate);
                     let guard = self.decided(&truth);
                     let taken = self.take(outcome, held);
                     let _ = writeln!(
@@ -547,7 +890,7 @@ impl Writer<'_> {
                 }
                 ResolvedCondition::ExternalWhen { predicate, .. } => {
                     let ask = self.external(outcome);
-                    let truth = self.predicate(&Env::Input(command), predicate);
+                    let truth = self.guards().predicate(&Env::Input(command), predicate);
                     let guard = self.decided(&truth);
                     let taken = self.take(outcome, held);
                     let _ = writeln!(
@@ -638,12 +981,14 @@ impl Writer<'_> {
                     right: Operand::Literal(FactValue::Text(equals.clone())),
                 };
                 (
-                    self.predicate(&Env::Subject(command, entity), &compare),
+                    self.guards()
+                        .predicate(&Env::Subject(command, entity), &compare),
                     predicate.as_ref(),
                 )
             }
             ResolvedCondition::SubjectPredicate { predicate, input } => (
-                self.predicate(&Env::Subject(command, entity), predicate),
+                self.guards()
+                    .predicate(&Env::Subject(command, entity), predicate),
                 input.as_ref(),
             ),
             ResolvedCondition::SubjectState { state, predicate } => {
@@ -661,7 +1006,7 @@ impl Writer<'_> {
                 self.uses.helpers.insert("all");
                 format!(
                     "all(&[{row}, {}])",
-                    self.predicate(&Env::Input(command), input)
+                    self.guards().predicate(&Env::Input(command), input)
                 )
             }
             None => row,
@@ -1055,17 +1400,6 @@ impl Writer<'_> {
         format!("self.ports.{method}()")
     }
 
-    /// `self.ports.caller_<attribute>()`, recorded on the context: an `Option` of the attribute.
-    fn caller(&mut self, attribute: &str, type_ref: &ResolvedTypeRef) -> String {
-        let method = name::value_ident(&format!("caller_{attribute}"));
-        self.uses.callers.insert(
-            method.clone(),
-            (self.layout.absolute_type(type_ref), attribute.to_owned()),
-        );
-        self.bounds.context = true;
-        format!("self.ports.{method}()")
-    }
-
     /// The value one source fills its field with. `before` names the held data before the
     /// outcome, where the branch holds a row.
     // One arm per value source the model declares, each rendering its own expression.
@@ -1102,7 +1436,7 @@ impl Writer<'_> {
                 attribute,
                 type_ref,
             } => {
-                let read = self.caller(attribute, type_ref);
+                let read = self.guards().caller(attribute, type_ref);
                 if type_ref == target {
                     self.uses.helpers.insert("undeclared");
                     format!(
@@ -1186,7 +1520,42 @@ impl Writer<'_> {
         }
     }
 
-    // ---- guards ----------------------------------------------------------------------------------
+    /// The guard renderer over this impl's uses and bounds, reading the held row as `held`.
+    fn guards(&mut self) -> Guards<'_> {
+        Guards {
+            ir: self.ir,
+            layout: self.layout,
+            uses: &mut *self.uses,
+            bounds: &mut self.bounds,
+            row: "held",
+        }
+    }
+}
+
+// ---- guards --------------------------------------------------------------------------------------
+
+/// Renders a guard — a command's, or a view's `filter:` — as an `Option<bool>` expression, recording
+/// what it asks of the ports and the helpers.
+struct Guards<'a> {
+    ir: &'a EssIr,
+    layout: &'a Layout,
+    uses: &'a mut Uses,
+    bounds: &'a mut Bounds,
+    /// The variable a stored field or `state` is read from: a snapshot, or a reference to one.
+    row: &'a str,
+}
+
+impl Guards<'_> {
+    /// `self.ports.caller_<attribute>()`, recorded on the context: an `Option` of the attribute.
+    fn caller(&mut self, attribute: &str, type_ref: &ResolvedTypeRef) -> String {
+        let method = name::value_ident(&format!("caller_{attribute}"));
+        self.uses.callers.insert(
+            method.clone(),
+            (self.layout.absolute_type(type_ref), attribute.to_owned()),
+        );
+        self.bounds.context = true;
+        format!("self.ports.{method}()")
+    }
 
     /// A predicate as an `Option<bool>` expression: `None` is Unknown.
     fn predicate(&mut self, env: &Env<'_>, predicate: &Predicate) -> String {
@@ -1305,8 +1674,8 @@ impl Writer<'_> {
     fn reference(&mut self, resolved: &Resolved) -> String {
         let mut out = match &resolved.root {
             Root::Input(field) => format!("Some(&input.{})", name::value_ident(field)),
-            Root::Stored(field) => format!("Some(&held.data.{})", name::value_ident(field)),
-            Root::State => "Some(&held.state)".to_owned(),
+            Root::Stored(field) => format!("Some(&{}.data.{})", self.row, name::value_ident(field)),
+            Root::State => format!("Some(&{}.state)", self.row),
             Root::Caller(attribute) => {
                 format!("{}.as_ref()", self.caller(attribute, &resolved.root_type))
             }
@@ -1322,6 +1691,16 @@ impl Writer<'_> {
             }
         }
         out
+    }
+
+    /// A path as the `Option<String>` an aggregate reads: [`Self::read`], with a `Timestamp` as its
+    /// rendering and a `bool` as `true` or `false`.
+    fn text(&mut self, resolved: &Resolved) -> String {
+        match &resolved.kind {
+            Kind::Opaque => format!("{}.map(|value| value.0.clone())", self.reference(resolved)),
+            Kind::Bool => format!("{}.map(|value| value.to_string())", self.read(resolved)),
+            _ => self.read(resolved),
+        }
     }
 
     /// A path as the `Option` of what its kind compares: a decimal rendering for a number, the text

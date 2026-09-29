@@ -429,11 +429,16 @@ fn assert_bijection(
         .iter()
         .map(|(capability, _)| capability.clone())
         .collect();
-    // A command behaviour the plan marks generated is one this target owes as a seam: it is
-    // stubbed rather than covered, and `TARGET.md` names the weakening.
+    // A command behaviour or view query the plan marks generated is one this target owes as a
+    // seam: it is stubbed rather than covered, and `TARGET.md` names the weakening.
     let weakened: BTreeSet<Capability> = plan
         .generated()
-        .filter(|capability| capability.kind == CapabilityKind::CommandBehavior)
+        .filter(|capability| {
+            matches!(
+                capability.kind,
+                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
+            )
+        })
         .filter(|capability| !refused.contains(capability))
         .cloned()
         .collect();
@@ -469,6 +474,7 @@ fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
         || !ir.components().is_empty()
         || !ir.bindings().is_empty()
         || crate::determined::any_generated(ir)
+        || crate::view_query::any_generated(ir)
 }
 
 /// What this target emits with a weaker guarantee than the first target's, stated once per rule.
@@ -586,6 +592,18 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
                       and a stub refusing it, exactly as an obligation"
                 .to_owned(),
             affects: vec![CapabilityKind::CommandBehavior],
+        });
+    }
+    if crate::view_query::any_generated(ir) {
+        out.push(TargetWeakening {
+            guarantee: "a view query the specification fully determines is generated, over a \
+                        storage port that lists an entity's rows"
+                .to_owned(),
+            instead: "this target does not generate view queries yet: each one the plan marks \
+                      generated keeps its query seam here, owed, with the same contract and a \
+                      stub refusing it, exactly as an obligation"
+                .to_owned(),
+            affects: vec![CapabilityKind::ViewQuery],
         });
     }
     out

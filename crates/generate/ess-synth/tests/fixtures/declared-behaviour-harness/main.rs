@@ -4,7 +4,7 @@
 //! No command behaviour is written here. Every command reaches `desk_types::behaviour::Generated`,
 //! which the generator wrote; this file supplies what the specification leaves to the implementor
 //! and says so: where a ticket is stored, who the caller is, which identities are minted, which
-//! external branch the provider takes, and the one view query that stays an obligation.
+//! external branch the provider takes. The one view query is generated too, over `list`.
 //!
 //! The protocol is one JSON object per line each way:
 //!
@@ -22,10 +22,8 @@ use std::rc::Rc;
 
 use desk_server::{json, wire};
 use desk_types::behaviour::{Context, Generated, TicketStorage};
-use desk_types::obligation::UnmetObligation;
 use desk_types::primitives::Uuid;
 use desk_types::ticket;
-use desk_types::ticket::obligations::TicketsQuery;
 
 /// One scenario's state.
 #[derive(Default)]
@@ -61,6 +59,10 @@ impl TicketStorage for Ports {
     fn delete(&mut self, identity: &ticket::TicketId) {
         self.0.borrow_mut().tickets.remove(&identity.0 .0);
     }
+
+    fn list(&self) -> Vec<ticket::TicketSnapshot> {
+        self.0.borrow().tickets.values().cloned().collect()
+    }
 }
 
 impl Context for Ports {
@@ -88,28 +90,6 @@ impl Context for Ports {
             .is_some_and(|(forced_command, forced_outcome)| {
                 forced_command == command && forced_outcome == outcome
             })
-    }
-}
-
-impl TicketsQuery for Ports {
-    fn tickets(&self) -> Result<Vec<ticket::Tickets>, UnmetObligation> {
-        Ok(self
-            .0
-            .borrow()
-            .tickets
-            .values()
-            .map(|held| ticket::Tickets {
-                ticket_id: held.data.ticket_id.clone(),
-                state: held.state,
-                title: held.data.title.clone(),
-                priority: held.data.priority,
-                estimate: held.data.estimate,
-                opened_by: held.data.opened_by.clone(),
-                reopen_count: held.data.reopen_count,
-                ticket_ref: held.data.ticket_ref.clone(),
-                note: held.data.note.clone(),
-            })
-            .collect())
     }
 }
 

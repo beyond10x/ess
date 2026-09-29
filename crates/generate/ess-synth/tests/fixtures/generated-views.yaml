@@ -1,0 +1,174 @@
+format: ess/18
+system: ledger
+version: v1
+domain: ledger.work
+
+summary: >-
+  A work ledger whose every view is fully declared — a projection, filtered projections and
+  aggregations — so synthesis generates each query over a storage port that lists the rows.
+
+types:
+  - {name: ledger.work.TaskId, kind: newtype, of: Uuid}
+  - {name: ledger.work.Team, kind: newtype, of: String}
+  - {name: ledger.work.Kind, kind: enum, variants: [Build, Fix]}
+
+errors:
+  - name: ledger.work.NoSuchTask
+    summary: No task carries the identity.
+  - name: ledger.work.AlreadyDone
+    summary: The task is already done.
+
+events:
+  - name: ledger.work.TaskCreated
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+  - name: ledger.work.TaskDone
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+
+entities:
+  - name: ledger.work.Task
+    identity: {name: task_id, type: ledger.work.TaskId}
+    fields:
+      - {name: owner, type: String}
+      - {name: kind, type: ledger.work.Kind}
+      - {name: hours, type: Optional<Integer>}
+      - {name: cost, type: Optional<Decimal>}
+      - {name: team, type: Optional<ledger.work.Team>}
+      - {name: due, type: Optional<Timestamp>}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: [Done]
+      transitions:
+        - {name: finish, from: [Open], to: Done}
+
+commands:
+  - name: ledger.work.CreateTask
+    input:
+      - {name: owner, type: String}
+      - {name: kind, type: ledger.work.Kind}
+      - {name: hours, type: Optional<Integer>}
+      - {name: cost, type: Optional<Decimal>}
+      - {name: team, type: Optional<ledger.work.Team>}
+      - {name: due, type: Optional<Timestamp>}
+    outcomes:
+      - name: created
+        creates: ledger.work.Task
+        instance: task_id
+        sets:
+          owner: input.owner
+          kind: input.kind
+          hours: input.hours
+          cost: input.cost
+          team: input.team
+          due: input.due
+        emits: [ledger.work.TaskCreated]
+        payload:
+          ledger.work.TaskCreated:
+            task_id: {generated: true}
+
+  - name: ledger.work.FinishTask
+    input:
+      - {name: task_id, type: ledger.work.TaskId}
+    outcomes:
+      - name: finished
+        moves: ledger.work.Task.finish
+        instance: task_id
+        emits: [ledger.work.TaskDone]
+        payload:
+          ledger.work.TaskDone:
+            task_id: input.task_id
+      - {name: no-such-task, unknown_instance: true, error: ledger.work.NoSuchTask}
+      - {name: already-done, wrong_state: true, error: ledger.work.AlreadyDone}
+
+views:
+  - name: ledger.work.Tasks
+    source: ledger.work.Task
+    consistency: read_your_writes
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+      - {name: state, type: ledger.work.Task.State}
+      - {name: owner, type: String}
+      - {name: kind, type: ledger.work.Kind}
+      - {name: hours, type: Optional<Integer>}
+      - {name: cost, type: Optional<Decimal>}
+      - {name: team, type: Optional<ledger.work.Team>}
+
+  - name: ledger.work.DoneTasks
+    source: ledger.work.Task
+    consistency: read_your_writes
+    filter: state == Done
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+      - {name: owner, type: String}
+
+  - name: ledger.work.LongTasks
+    source: ledger.work.Task
+    consistency: read_your_writes
+    filter: hours >= 5
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+      - {name: hours, type: Optional<Integer>}
+
+  - name: ledger.work.TasksByOwner
+    source: ledger.work.Task
+    consistency: read_your_writes
+    order_by: [owner desc, kind]
+    fields:
+      - {name: task_id, type: ledger.work.TaskId}
+      - {name: owner, type: String}
+      - {name: kind, type: ledger.work.Kind}
+
+  - name: ledger.work.HoursByTeam
+    source: ledger.work.Task
+    consistency: read_your_writes
+    group_by: [team]
+    fields:
+      - {name: team, type: Optional<ledger.work.Team>}
+      - {name: tasks, type: Integer, aggregate: {count: {}}}
+      - {name: total, type: Optional<Integer>, aggregate: {sum: hours, skip_absent: true}}
+      - {name: mean, type: Optional<Decimal>, aggregate: {avg: hours, skip_absent: true}}
+      - {name: shortest, type: Optional<Integer>, aggregate: {min: hours, skip_absent: true}}
+      - {name: longest, type: Optional<Integer>, aggregate: {max: hours, skip_absent: true}}
+      - {name: distinct_hours, type: Integer, aggregate: {count_distinct: hours, skip_absent: true}}
+
+  - name: ledger.work.DueByOwner
+    source: ledger.work.Task
+    consistency: read_your_writes
+    group_by: [owner]
+    fields:
+      - {name: owner, type: String}
+      - {name: earliest, type: Optional<Timestamp>, aggregate: {min: due, skip_absent: true}}
+      - {name: latest, type: Optional<Timestamp>, aggregate: {max: due, skip_absent: true}}
+      - {name: due_dates, type: Integer, aggregate: {count_distinct: due, skip_absent: true}}
+
+  - name: ledger.work.CostByOwner
+    source: ledger.work.Task
+    consistency: read_your_writes
+    filter: state == Done
+    group_by: [owner, kind]
+    fields:
+      - {name: owner, type: String}
+      - {name: kind, type: ledger.work.Kind}
+      - {name: tasks, type: Integer, aggregate: {count: {}}}
+      - {name: spent, type: Optional<Decimal>, aggregate: {sum: cost, skip_absent: true}}
+      - {name: dearest, type: Optional<Decimal>, aggregate: {max: cost, skip_absent: true}}
+      - {name: kinds, type: Integer, aggregate: {count_distinct: kind}}
+      - {name: first_owner, type: Optional<String>, aggregate: {min: owner}}
+
+  - name: ledger.work.Totals
+    source: ledger.work.Task
+    consistency: read_your_writes
+    fields:
+      - {name: tasks, type: Integer, aggregate: {count: {}}}
+      - {name: hours, type: Optional<Integer>, aggregate: {sum: hours, skip_absent: true}}
+      - {name: states, type: Integer, aggregate: {count_distinct: state}}
+
+components:
+  - component: ledger-service
+    summary: Holds every task of one ledger.
+    owns: {domains: [ledger.work]}
+    accepts: {commands: [ledger.work.CreateTask, ledger.work.FinishTask]}
+    publishes: {events: [ledger.work.TaskCreated, ledger.work.TaskDone]}
+    reached_by: network

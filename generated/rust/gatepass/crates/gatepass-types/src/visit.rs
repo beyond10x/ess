@@ -479,8 +479,8 @@ pub struct VisitStateConflict {
 /// Expected visits — one row of the view `gatepass.visit.ExpectedVisits`.
 ///
 /// Projects `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected`.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpectedVisits {
     /// `visit_id` — `gatepass.visit.VisitId`.
@@ -496,8 +496,8 @@ pub struct ExpectedVisits {
 /// Visit by id — one row of the view `gatepass.visit.VisitById`.
 ///
 /// Projects `gatepass.visit.Visit` at `eventual` consistency.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisitById {
     /// `visit_id` — `gatepass.visit.VisitId`.
@@ -555,29 +555,25 @@ pub mod obligations {
         fn sign_out_visitor(&mut self, input: super::SignOutVisitor) -> Result<super::SignOutVisitorOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `gatepass.visit.ExpectedVisits` — an implementation obligation.
+    /// The query `gatepass.visit.ExpectedVisits` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `gatepass.visit.ExpectedVisits` with rows projected from `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected`.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait ExpectedVisitsQuery {
         /// Serves `gatepass.visit.ExpectedVisits` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn expected_visits(&self) -> Result<Vec<super::ExpectedVisits>, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `gatepass.visit.VisitById` — an implementation obligation.
+    /// The query `gatepass.visit.VisitById` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `gatepass.visit.VisitById` with rows projected from `gatepass.visit.Visit` at `eventual` consistency.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait VisitByIdQuery {
         /// Serves `gatepass.visit.VisitById` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn visit_by_id(&self) -> Result<Vec<super::VisitById>, crate::obligation::UnmetObligation>;
     }
 
@@ -590,18 +586,6 @@ pub mod obligations {
     impl RegisterVisitBehavior for Unimplemented {
         fn register_visit(&mut self, _input: super::RegisterVisit) -> Result<super::RegisterVisitOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.RegisterVisit" })
-        }
-    }
-
-    impl ExpectedVisitsQuery for Unimplemented {
-        fn expected_visits(&self) -> Result<Vec<super::ExpectedVisits>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "gatepass.visit.ExpectedVisits" })
-        }
-    }
-
-    impl VisitByIdQuery for Unimplemented {
-        fn visit_by_id(&self) -> Result<Vec<super::VisitById>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "gatepass.visit.VisitById" })
         }
     }
 }

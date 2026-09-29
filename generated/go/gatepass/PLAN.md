@@ -8,7 +8,7 @@
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-29 capabilities: **24 generated**, **3 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+29 capabilities: **26 generated**, **1 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -35,7 +35,9 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `gatepass.visit.InvalidVisitLength` |
 | error type | `gatepass.visit.VisitStateConflict` |
 | view type | `gatepass.visit.ExpectedVisits` |
+| view query | `gatepass.visit.ExpectedVisits` |
 | view type | `gatepass.visit.VisitById` |
+| view query | `gatepass.visit.VisitById` |
 | component port | `pass-service` |
 | component transport | `pass-service` |
 
@@ -44,8 +46,6 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | capability | source | why not generated | contract |
 | --- | --- | --- | --- |
 | command behaviour | `gatepass.visit.RegisterVisit` | kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered` | given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength` |
-| view query | `gatepass.visit.ExpectedVisits` | how the projection is kept current is a storage decision | a query answering `gatepass.visit.ExpectedVisits` with rows projected from `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected` |
-| view query | `gatepass.visit.VisitById` | how the projection is kept current is a storage decision | a query answering `gatepass.visit.VisitById` with rows projected from `gatepass.visit.Visit` at `eventual` consistency |
 
 ## Refused — not represented by this synthesis
 

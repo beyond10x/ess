@@ -383,10 +383,18 @@ pub(super) fn view(out: &mut String, emit: &Emit<'_>, view: &ResolvedView) {
             aggregation.grouping_sentence().trim_end_matches('.')
         );
     }
-    out.push_str(
-        ".\n/// Serving it is an implementation obligation — see the plan — because how a \
-         projection is kept\n/// current is a storage decision the specification does not take.\n",
-    );
+    if crate::view_query::generated(emit.ir, view) {
+        out.push_str(
+            ".\n/// The specification fully determines every row, so its query is generated over \
+             the storage port —\n/// see the plan.\n",
+        );
+    } else {
+        out.push_str(
+            ".\n/// Serving it is an implementation obligation — see the plan — because how a \
+             projection is kept\n/// current is a storage decision the specification does not \
+             take.\n",
+        );
+    }
     let _ = writeln!(
         out,
         "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {} {{",

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T23:34:54Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-view-queries",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-synth 279 passed (generated_view_queries 5, both layouts); realizations; ess-service-contract 7; committed trees identical to a fresh synthesis; a downstream specification: 47 of 47 views generated, workspace checks with -D warnings",
+    "reference": "impl/046-views@a0212c6ac"
+  }
+}
