@@ -52,6 +52,19 @@ that is an explicit `allowExcluded`. Where two guards both hold — which the mo
 infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a view
 filter or invariant over a field no command set is reported in `undetermined`. Neither fails.
 
+The model decides which outcome a step expects in the order Entity Runtime and synthesis use:
+
+1. an input-guarded refusal (an outcome with a `when:` and an `error:`), the first declared whose
+   guard holds, before the record, its state or an external branch is read;
+2. otherwise the one accepting `when:` that holds, or the default when none does;
+3. then `wrong_state`, where the outcome from step 2 moves the subject from a state no move of the
+   command starts from. An outcome that moves nothing answers in every state, an eligible external
+   branch included.
+
+A target that answers `wrong_state` to an input a refusal claims disagrees with the model. Before
+0.43.0 the explorer answered `wrong_state` before any guard, and so reported a target in this order
+as disagreeing.
+
 The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. The explorer refuses
 a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
 editing either file.

@@ -34,6 +34,60 @@ scenarios, not every scenario file below the directory.
 
 `ess verify conform run --suite FILE` runs the committed suite as it is and selects nothing.
 
+## Compile authored scenarios on their own
+
+`ess verify conform synthesize --scenarios` compiles authored scenarios beside the generated ones.
+`ess verify conform author` compiles only the authored ones, and nothing the specification obliges:
+
+```shell-session
+$ ess verify conform author --path examples/billing --scenarios examples/billing-scenarios \
+    --out target/authored.json
+1 authored scenario(s) from 1 file(s), 0 refusal(s), suite ess-conformance/4, written to target/authored.json
+$ ess verify conform author --path examples/billing --scenarios examples/billing-scenarios \
+    --suite-format 5 --out target/authored-coverage.json
+1 selected scenario(s), 1 authored source(s), 0 refusal occurrence(s)
+```
+
+Every command, actor, outcome, event, error, view, entity, field, enum variant and lifecycle state
+a scenario names is resolved against the model here, so a name the model does not declare is
+refused now rather than at the first run that reaches it. The act checks on this page
+(`ESS-AUTHOR-037` and the others) apply the same way. Use it in a pre-commit or CI step that only
+checks scenario files, and run the result like any other suite.
+
+## Run a chosen subset of a coverage suite
+
+`ess verify conform select` narrows a coverage suite (`--suite-format 5`, or the `/7` and `/9`
+versions some constructs select) to scenario IDs you list. `--ids` names a JSON file holding a
+sorted array of distinct IDs; `[]` selects none, explicitly:
+
+```shell-session
+$ ess verify conform synthesize --path examples/billing --suite-format 5 --out target/coverage-suite.json
+32 selected scenario(s), 0 authored source(s), 0 refusal occurrence(s)
+$ cat create-only.json
+["billing.invoice.CreateInvoice/outcome/accepted","billing.invoice.CreateInvoice/outcome/rejected"]
+$ ess verify conform select --suite target/coverage-suite.json --ids create-only.json \
+    --out target/create-only.json
+$ ess verify conform run --target billing --suite-input target/create-only.json --report-format 2
+billing v3 against billing-reference 0.43.0 — passed
+  passed billing.invoice.CreateInvoice/outcome/accepted
+  passed billing.invoice.CreateInvoice/outcome/rejected
+  2 scenarios: 2 passed, 0 failed, 0 error, 0 unsupported
+```
+
+The output is an `ess-conformance-input/1` carrier that keeps the full parent suite, so a report on
+the subset still shows what was left out. Narrow it again with `--suite-input` in place of
+`--suite`. `select` refuses, writing nothing:
+
+| Input | Refusal |
+|---|---|
+| IDs out of order, or repeated | `explicit IDs must be sorted and distinct` |
+| an ID the parent does not hold | `explicit ID absent from parent` |
+| a string that is not a scenario ID | `invalid scenario id identifier`, listing the ID shapes |
+| an ordinary suite (`/4`) | `input/1 requires coverage suite/5, suite/7 or suite/9` |
+
+A subset passing is not the whole suite passing: only a nonempty, complete, all-pass selection
+qualifies as conformance ([Opt into declared coverage](runners.md#opt-into-declared-coverage)).
+
 ## Expect an external branch in an authored scenario
 
 No input decides a branch declared `external:`, so an authored act that expects one names it under

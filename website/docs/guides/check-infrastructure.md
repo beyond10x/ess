@@ -69,7 +69,10 @@ $ ess infra import kubernetes \
 ```
 
 Live access is outside the offline repository gate. Raw Secret `data`, `stringData`, and
-last-applied configuration values are sanitized before serialization. Failed reads stop collection;
+last-applied configuration values are sanitized before serialization. A full scan writes
+`infra-observation/3`, where each Secret `data`/`stringData` entry keeps its key name and
+`{"present": true}` and nothing derived from the value, not even a digest or a length; compiling it
+writes `infra-ir/3` with the same marker. Failed reads stop collection;
 ESS never retries a failed cluster read in the current namespace. Keep the observation output
 for review; do not treat sanitization as authority to publish operational topology.
 

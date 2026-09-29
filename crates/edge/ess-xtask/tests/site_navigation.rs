@@ -501,7 +501,11 @@ fn every_page_has_front_matter_that_parses() {
     let mut refused = Vec::new();
     for page in pages(&root.join("website/docs")) {
         let text = read(&page);
-        let shown = page.strip_prefix(&root).unwrap_or(&page).display().to_string();
+        let shown = page
+            .strip_prefix(&root)
+            .unwrap_or(&page)
+            .display()
+            .to_string();
         let Some(body) = text.strip_prefix("---\n") else {
             refused.push(format!("{shown}: no front matter"));
             continue;

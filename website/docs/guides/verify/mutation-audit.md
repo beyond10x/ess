@@ -74,6 +74,50 @@ projecting the field a `sets` entry writes, or by filing a synthesis gap.
 | 1 | The specification did not load, or at least one mutant survived. |
 | 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive, or every mutant stillborn or equivalent. |
 
+## Audit your own implementation
+
+`--target` runs only the targets built into `ess`, and each of those passes only its own example
+specification. For your implementation, split the audit in two and run the suites yourself:
+
+```shell-session
+$ ess verify conform mutate --path examples/billing --emit target/mutants \
+    --class guard-boundary --class guard-negate
+emitted 4 mutant(s) of billing v3 (0 stillborn, no suite; 2 with synthesis refusals the baseline does not have; 0 with a guard no input satisfies) and the baseline to target/mutants
+run each <dir>/suite.json and write its conformance report to <dir>/report.json, then `ess verify conform mutate --collect target/mutants`
+```
+
+`--emit` runs nothing. It needs a new or empty directory and writes:
+
+- `baseline/suite.json`, the unmutated suite;
+- one directory per mutant, named by its id (`guard-negate/billing.invoice.PayInvoice/settled/`),
+  holding its `suite.json`, the compact model `ir.json` a generated Go or TypeScript package
+  embeds beside the suite, and `mutant.json` describing the change;
+- `manifest.json`, an `ess-mutation-manifest/3` listing all of them. A stillborn mutant has an
+  entry and no suite.
+
+Run your runner over every `suite.json` and write its conformance report to `report.json` in the
+same directory. The generated Go and TypeScript packages write the report named by
+`ESS_REPORT_OUT` (`ESS_REPORT_FORMAT=2` for report/2); either report version is accepted. Then
+score the reports:
+
+```shell-session
+$ ess verify conform mutate --collect target/mutants
+mutation audit of billing v3 against billing-reference 0.43.0: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s))
+inconclusive guard-negate/billing.invoice.CreateInvoice/accepted: `when: amount.amount > 0` becomes `when: not (amount.amount > 0)`
+killed guard-boundary/billing.invoice.CreateInvoice/accepted/0: `amount.amount > 0` becomes `amount.amount >= 0` — by billing.invoice.CreateInvoice/outcome/accepted (1 in total); …
+…
+```
+
+That run used the built-in runner (`ess verify conform run --suite … --target billing
+--report-out …`) as "your runner" and deleted one mutant's report on purpose. A mutant whose
+report is missing, unreadable, written for another suite, or answered by another implementation
+than the baseline's is inconclusive, and the JSON report says why under `unscored`. Each report is
+scored only against the suite beside it. The baseline report must have passed, as with `--target`,
+and the exit statuses are the ones in the table above: this run exits 3, because nothing survived
+and one mutant is inconclusive.
+
+## Read the output
+
 The text output prints one summary line, then the baseline scenarios not scored, then survivors,
 unwitnessed, inconclusive, equivalent, stillborn and killed mutants, one line each. `--report-out` writes an
 [`ess-mutation-report/3`](../../reference/formats.md#change-and-conformance-records) document, and

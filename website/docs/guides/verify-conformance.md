@@ -13,12 +13,12 @@ checked against.
 ## Pages in this guide
 
 1. [Synthesize a suite](verify/synthesize-a-suite.md) — generate the suite a specification requires.
-2. [Author scenarios](verify/author-scenarios.md) — add scenarios a person wrote, and what they can
-   arrange and observe.
+2. [Author scenarios](verify/author-scenarios.md) — add scenarios a person wrote, compile them on
+   their own, run a chosen subset, and what they can arrange and observe.
 3. [Runners and reports](verify/runners.md) — run a suite against a built-in target, a generated Go
    or TypeScript package or a Rust target, and read the report.
 4. [Audit a suite with specification mutants](verify/mutation-audit.md) — measure whether the suite
-   notices a changed specification.
+   notices a changed specification, against a built-in target or your own implementation.
 5. [Explore command sequences and histories](verify/explore.md) — random sequences and concurrent
    histories.
 

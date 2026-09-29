@@ -344,6 +344,34 @@ Writing both spellings on one field is refused. The model keeps the declared nam
 mapping and a predicate still say `order_id`, and JSON Schema, OpenAPI and AsyncAPI key the property
 `orderId`. The field is written back flat, so the two spellings are one model with one digest.
 
+## An error can carry its own wire code
+
+A generated HTTP handler names a refusal in its response body. By default the name is the error's
+qualified name. `naming.wire` on the error (`format: ess/4` or later) replaces it:
+
+```yaml
+errors:
+  - name: gatepass.visit.InvalidVisitLength
+    naming: {wire: invalid_visit_length}
+    summary: The expected length of the visit is not a positive number of minutes.
+```
+
+The Rust and Go servers from `ess generate synthesize` then answer a refused `RegisterVisit` with
+`"error": "invalid_visit_length"` beside `"outcome": "refused"`, where they wrote
+`"error": "gatepass.visit.InvalidVisitLength"` before. Without an override both keep the qualified
+name. An earlier format refuses the key with `ESS-ERROR-009`.
+
+Only that transport code changes. The error's identity in the model, its payload type, the
+outcomes that name it and the conformance assertions on it keep the qualified name. Two errors may
+share one wire code, so a code alone does not say which refusal happened: a client tells them apart
+by the outcome or another declared field, and ESS adds no message text or reverse lookup to do it.
+`ess verify diff` reports a new or changed code, in an `ess-diff/4` document:
+
+```text
+  changes  error gatepass.visit.InvalidVisitLength: wire code `gatepass.visit.InvalidVisitLength` → `invalid_visit_length`
+           error/gatepass.visit.InvalidVisitLength/wire-name-changed
+```
+
 ## Say whether an absent Optional is sent as null
 
 An `Optional<T>` field says how its absent value travels with `presence:` (`format: ess/15`):

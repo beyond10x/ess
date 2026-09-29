@@ -8,19 +8,26 @@ description: Current-source ESS capabilities, a dated release observation, and t
 
 ESS is experimental and standalone.
 
+## Latest release
+
 Latest published release observed on 29 September 2026:
 [0.43.0](https://github.com/beyond10x/ess/releases/tag/0.43.0). Its release record lists archives
-for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated asset-list observation;
-it does not claim that the archives were downloaded, their checksums verified, or the binary
-installed or executed. The release adds suites `ess-conformance/32` and `/33` (instance references
-inside lists, maps, structs and unions), refuses an authored act claiming an external answer it does
-not state (`ESS-AUTHOR-037`), and fixes synthesis and explorer defects (see the changelog); 0.42.0
-added `ess-diff/11` (newtype prefix changes) and mutation report and manifest `/3` (unkillable
-mutants scored apart); 0.41.0 added source format `ess/18` (state-scoped refusals, `state` in a
-`when_subject` predicate, guards over a related row, a binding's delivery context), suites
-`ess-conformance/30` and `/31`, `ess-diff/10`, and mutation report and manifest `/2`; 0.40.0 added reader-side composition (`ess-composition/3`)
-and ran suites `/22` to `/27` in the generated Go and TypeScript runtimes; 0.39.0 added concurrent-history conformance, `ess/17` and suites `/28` and `/29`. [Format version history](../reference/spec-versions.md) says what every format
-version number changed and which release introduced it, and the
+for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset
+list: it does not claim that the archives were downloaded, their checksums verified, or the binary
+installed or run.
+
+The last five releases:
+
+| Release | What it added |
+|---|---|
+| 0.43.0 | suites `ess-conformance/32` and `/33` (instance references inside lists, maps, structs and unions); `ESS-AUTHOR-037`, which refuses an authored act claiming an external answer it does not state; an input-guarded refusal beside held-state branches; synthesis and explorer fixes |
+| 0.42.0 | `ess-diff/11` (newtype prefix changes); mutation report and manifest `/3`, which score unkillable mutants apart |
+| 0.41.0 | source format `ess/18` (state-scoped refusals, `state` in a `when_subject` predicate, guards over a related row, a binding's delivery context); suites `/30` and `/31`; `ess-diff/10`; mutation report and manifest `/2` |
+| 0.40.0 | reader-side composition (`ess-composition/3`); suites `/22` to `/27` run in the generated Go and TypeScript packages |
+| 0.39.0 | concurrent-history conformance; `ess/17`; suites `/28` and `/29` |
+
+[Format version history](../reference/spec-versions.md) says what every format version changed and
+which release introduced it, and the
 [changelog](https://github.com/beyond10x/ess/blob/main/CHANGELOG.md) lists every release.
 
 ## Current source capabilities
@@ -33,8 +40,11 @@ version number changed and which release introduced it, and the
 - repository Markdown documentation, HTML sites, JSON Schema, OpenAPI, and AsyncAPI generation;
 - offline validation and deterministic TypeScript projection for adopter-owned JSON Schema registries;
 - structural Rust, Go, browser, and Clap synthesis with explicit obligations;
-- semantic conformance-suite generation, component-scoped suites, and reference execution;
-- standalone conformance reports from the Rust and generated Go runners;
+- semantic conformance-suite generation, authored scenarios, component-scoped and explicitly
+  selected suites, and reference execution, including the specification itself as a target;
+- standalone conformance reports from the Rust runner and the generated Go and TypeScript packages;
+- specification mutation audits against a built-in target or your own runner, seeded command
+  exploration, and linearizability checks of recorded concurrent histories;
 - component descriptors and deterministic build, runtime, release, stack, and deployment models;
 - canonical build IR that round-trips through release verification, digest-pinned OCI release
   bundles, and affected-only Helm reconciliation behind explicit executor commands;
@@ -84,13 +94,13 @@ The source checkout’s workspace version is `0.43.0` and includes separately do
 [ess-source-support-end]: #
 
 The CLI presents four areas: `specify`, `generate`, `verify`, and `infra`. Earlier flat spellings
-remain hidden aliases with the same accepted-command output and exit status. The agent guidance that
-`ess skill` printed in 0.30.0 is the `ess` plugin in
+remain hidden aliases with the same accepted-command output and exit status. Guidance for an agent
+using ESS in another repository is the `ess` plugin in
 [`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins).
 
 Compilation and projection remain deterministic and offline. Live Kubernetes import and the
-commands named `execute`, `publish`, `fetch`, and `reconcile` are explicit credential edges; they do
-not turn ESS into a continuously running deployment control plane.
+commands named `execute`, `publish`, `publish-conformance`, `fetch`, and `reconcile` are explicit
+credential edges; they do not turn ESS into a continuously running deployment control plane.
 
 The offline repository gate is `task check`. The documentation and browser-lab gate is
 `task site-build` because installing the pinned npm dependency graph requires network access.

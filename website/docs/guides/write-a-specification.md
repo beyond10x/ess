@@ -24,7 +24,7 @@ one.
 5. [Values, credentials and views](specify/values-and-views.md) — value expressions, the caller's
    credential, and view consistency, paging and aggregates.
 6. [Components, bindings and wire names](specify/bindings-and-components.md) — the layers above the
-   domains, bindings between components, conversions and wire spellings.
+   domains, bindings between components, conversions, wire spellings and error wire codes.
 
 ## Where each section went
 

@@ -241,7 +241,7 @@ omits literal assignment values and full view evaluation; digest comparison neit
 the full compiled model nor authenticates its publisher. Existing players do not acquire these
 checks when handed new metadata; regenerate and distribute the paired bundle together.
 
-`ess impact --suite-input` accepts complete admitted coverage and reports its selection separately.
+`ess verify impact --suite-input` accepts complete admitted coverage and reports its selection separately.
 Unknown or incomplete inventory and missing parents refuse. Persisted output remains `ess-impact/3`
 with its existing fields; invalidation within a selection is not whole-system execution evidence.
 
