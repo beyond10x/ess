@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-format-history-at-a-glance
 kind: story
-status: active
+status: implemented
 title: The format history has one table for every ess/ version and no internal round names
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -12,10 +12,11 @@ scope:
   path: website/docs/reference/formats.md
 - confidence: cited
   path: website/docs/reference/spec-versions.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T14:11:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-09-29T14:11:12Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-09-29T14:27:41Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

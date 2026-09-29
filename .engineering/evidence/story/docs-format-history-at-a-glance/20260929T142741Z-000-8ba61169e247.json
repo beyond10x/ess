@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:27:41Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-format-history-at-a-glance",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-xtask 208 passed; cargo xtask docs (156 tracked versions of 61 families), generate/schema --check, clippy, fmt-check",
+    "reference": "docs/formats@52f536be8"
+  }
+}
