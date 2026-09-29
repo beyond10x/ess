@@ -75,7 +75,6 @@ surfaces:
       - docs/adr/**
       - docs/adrs/**
       - docs/decisions/**
-      - docs/examples/specification-to-contracts.md
       - docs/internal/**
       - docs/plans/**
       - docs/stories/**
