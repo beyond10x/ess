@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-09-29
+
+### Added
+
+- `ess generate synthesize --target go` represents `Json` as the generated `primitives.Json`, a
+  wrapper over the document text, at every position the Go target types: newtypes, struct members
+  (bare, `List`, `Map`, `Optional`), union variants, entity fields, command inputs and responses,
+  events, errors, view rows and binding-copied fields. The served surface reads a `Json` value with
+  its object members in the order they arrived and its numbers as spelled, and writes it back
+  through `json.RawMessage`; a model without `Json` synthesizes the same Go bytes as before
+  (beyond10x/ess#224).
+- `ess generate synthesize --target web` represents `Json` at every position the web target types:
+  newtypes, struct members (bare, `List`, `Map`, `Optional`), union variants, entity fields, command
+  inputs, events, errors, view rows and binding-copied fields. The bridge crate re-exports the Rust
+  types crate's `json::Value`, so the module carries a `Json` value unchanged (member order and
+  number spelling kept). The page edits one as JSON text and holds it as `JSON.parse` answers it,
+  typed `JsonValue` for `tsc --checkJs`; `TARGET.md` states the page's limit (numbers are doubles,
+  integer-like member names first). A model without `Json` synthesizes the same web bytes as before
+  (beyond10x/ess#224).
+- `ess generate synthesize --target clap` accepts a model that uses `Json` (beyond10x/ess#224). The
+  generated CLI carries the Rust types crate's `json` module byte for byte, and a `Json` flag (bare,
+  optional, repeated or through a newtype) takes one argument holding a JSON document, read at parse
+  time into `json::Value` with member order and number spelling kept; a malformed document is a
+  usage error naming the byte it stopped at. A handler prints a `Json` response unchanged with
+  `json::push_value`. A struct, union or map input holding `Json` stays one free-text flag, as for
+  any member type. A model without `Json` synthesizes the same bytes.
+- With `rust` representing `Json` since 0.44.0, no code target refuses a model for using `Json` any
+  more.
+
 ## [0.44.0] — 2026-09-29
 
 ### Added

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.45.0 — 2026-09-29
+
+### The Go, web and clap synthesis targets represent Json
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.45.0)
+
+`ess generate synthesize --target go`, `web` and `clap` carry `Json` as `rust` already does: object members keep their order and numbers their spelling, and a clap flag takes one JSON document. No code target refuses a model for using `Json` any more, and a model without it synthesizes the same bytes as before.
+
 ## 0.44.0 — 2026-09-29
 
 ### The Rust synthesis target represents Json, and the public docs are rebuilt

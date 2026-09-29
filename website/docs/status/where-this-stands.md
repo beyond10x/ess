@@ -11,7 +11,7 @@ ESS is experimental and standalone.
 ## Latest release
 
 Latest published release observed on 29 September 2026:
-[0.44.0](https://github.com/beyond10x/ess/releases/tag/0.44.0). Its release record lists archives
+[0.45.0](https://github.com/beyond10x/ess/releases/tag/0.45.0). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset
 list: it does not claim that the archives were downloaded, their checksums verified, or the binary
 installed or run.
@@ -20,11 +20,11 @@ The last five releases:
 
 | Release | What it added |
 |---|---|
+| 0.45.0 | `generate synthesize --target go`, `web` and `clap` represent `Json`, so no code target refuses it any more |
 | 0.44.0 | `generate synthesize --target rust` represents `Json` as the types crate's `json::Value`; generated CLI and diagnostics references, executable Start here tutorials and task-sized guides in the public docs |
 | 0.43.0 | suites `ess-conformance/32` and `/33` (instance references inside lists, maps, structs and unions); `ESS-AUTHOR-037`, which refuses an authored act claiming an external answer it does not state; an input-guarded refusal beside held-state branches; synthesis and explorer fixes |
 | 0.42.0 | `ess-diff/11` (newtype prefix changes); mutation report and manifest `/3`, which score unkillable mutants apart |
 | 0.41.0 | source format `ess/18` (state-scoped refusals, `state` in a `when_subject` predicate, guards over a related row, a binding's delivery context); suites `/30` and `/31`; `ess-diff/10`; mutation report and manifest `/2` |
-| 0.40.0 | reader-side composition (`ess-composition/3`); suites `/22` to `/27` run in the generated Go and TypeScript packages |
 
 [Format version history](../reference/spec-versions.md) says what every format version changed and
 which release introduced it, and the
@@ -64,7 +64,7 @@ this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.44.0` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.45.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|

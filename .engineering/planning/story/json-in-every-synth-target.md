@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:json-in-every-synth-target
 kind: story
-status: active
+status: implemented
 title: Every code target represents Json
 refs:
 - provider: github
   reference: beyond10x/ess#224
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T19:00:14Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T19:00:14Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T19:29:04Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
