@@ -34,6 +34,25 @@
   leave the draw ambiguous, unless every one of them moves from such a state.
   `docs/design/mutation-audit-and-model-runner.md` states the order.
 
+- **Synthesis witnesses a stored-row predicate over an `Optional` field the creating command leaves
+  absent (#239).** A `when_related: {via: …, predicate: {site: {exists: false}}}` branch, where the
+  related row's creating command does not write the `Optional` `site` and a later command sets it,
+  was refused `ESS-SYNTH-003` ("no candidate of the 2 tried … over the rows 2 bounded arrangements
+  left"): the search offered the row as the creator leaves it, but read its unwritten `site` as
+  undetermined, so neither `exists: false` nor `not defined(site)` held on any row. An arranged
+  row now records the `Optional` fields no step since its creation wrote, and a predicate reads
+  each as absent until a later `sets:` writes it. The branch is witnessed on the row the creator
+  left, its sibling on a row the later command wrote, and a target reading the field as present
+  fails. The same holds for `when_subject:` and for a `defined()` guard in either direction. A
+  field some writer outside the row's own steps can reach — an `affects:` or `instances:` outcome
+  on the entity, or an `updates:`/`moves:` of a command a binding invokes — is still read as
+  undetermined, since a decoy's act or the target's own reaction may have written it. The
+  observation before the command names the row's identity and state but does not require the
+  absent field, since a view row may leave an absent field out. An `Optional` member of a struct
+  field, left out through an omitted `Optional` input, is still refused `ESS-SYNTH-003` by name: a
+  struct with an undetermined member is not determined as a whole. Committed suites regenerate
+  byte-identical.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed
