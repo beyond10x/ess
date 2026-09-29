@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:overlapping-accepting-guards-have-declared-precedence
 kind: story
-status: active
+status: implemented
 title: Two overlapping accepting guards leave the answer for the overlap undeclared
 refs:
 - provider: github
   reference: beyond10x/ess#217
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T01:19:59Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T01:19:59Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T06:23:44Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

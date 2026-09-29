@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:caller-sources-keep-the-interpreted-digest
 kind: story
-status: active
+status: implemented
 title: Caller sources make the interpreted target's spec_digest differ from its suite's
 refs:
 - provider: github
   reference: beyond10x/ess#216
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T01:19:57Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T01:19:58Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T06:23:43Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 
