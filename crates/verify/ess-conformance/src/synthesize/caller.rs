@@ -186,6 +186,12 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             whole.suite.scenarios.insert(id, scenario);
         }
     }
+    // Every reading above is synthesized from a rewritten copy of the model, whose digests are not
+    // the model's; the suite names the model it came from, the one a target and an adapter digest
+    // (beyond10x/ess#216).
+    let model = crate::SuiteProvenance::of(ir);
+    whole.suite.provenance.spec_digest = model.spec_digest;
+    whole.suite.provenance.contract_digest = model.contract_digest;
     whole.suite.select_fresh_format();
     whole
 }

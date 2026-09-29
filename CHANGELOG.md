@@ -23,6 +23,15 @@
   ordering, a literal or a text test over either stays refused as before. Where the second owner
   cannot be arranged, the branch is refused as `ESS-SYNTH-004`, naming the owner's entity.
 
+- A suite synthesized from a model whose actors declare `attributes:` records that model's
+  `spec_digest` and `contract_digest` (beyond10x/ess#216). Synthesis reads such a model once per
+  caller assignment, each time over a copy with the caller's values written in, and the suite took
+  its digests from that copy. `ess verify conform run --target interpreted` then refused the very
+  specification it had synthesized the suite from ("its spec_digest … is not the suite's
+  spec_digest …"), and an adapter binding the model's digest would have refused the suite too. A
+  model without actor attributes keeps its suite bytes; a suite synthesized from a different model
+  is still refused.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added
