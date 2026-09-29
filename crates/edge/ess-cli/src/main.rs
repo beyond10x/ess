@@ -1,6 +1,11 @@
 //! The `ess` command: a deterministic shell over the ESS libraries and explicit adapters.
 
 mod cli_binding;
+/// The CLI reference renderer `cargo xtask cli-reference` uses, compiled here because only this
+/// crate can build [`command`]; `tests::cli_reference_block` hands it the real tree.
+#[cfg(test)]
+#[path = "../../ess-xtask/src/cli_reference/render.rs"]
+mod cli_reference;
 mod coverage;
 mod git_checkout;
 mod input_discovery;
@@ -4875,6 +4880,55 @@ mod tests {
             let _ = write!(rendered, "[{name} {below}]");
         }
         rendered
+    }
+
+    /// The CLI reference page's command sections, rendered from the tree `ess` parses with.
+    ///
+    /// `cargo xtask cli-reference` runs this case with `ESS_CLI_REFERENCE_OUT` naming a file and
+    /// splices what it writes into `website/docs/reference/cli.md`. Without the variable it still
+    /// holds the rendering to what `--help` offers: every listed leaf has a section, and no flat
+    /// spelling does.
+    #[test]
+    fn cli_reference_block() {
+        let command = command();
+        let block = cli_reference::render(&command);
+        let mut leaves = Vec::new();
+        let mut pending: Vec<(Vec<String>, &clap::Command)> = command
+            .get_subcommands()
+            .filter(|sub| !sub.is_hide_set())
+            .map(|sub| (vec![sub.get_name().to_owned()], sub))
+            .collect();
+        while let Some((path, node)) = pending.pop() {
+            let children: Vec<_> = node
+                .get_subcommands()
+                .filter(|sub| !sub.is_hide_set())
+                .collect();
+            if children.is_empty() {
+                leaves.push(path.join(" "));
+            }
+            for child in children {
+                let mut below = path.clone();
+                below.push(child.get_name().to_owned());
+                pending.push((below, child));
+            }
+        }
+        assert_eq!(leaves.len(), AREA_LEAVES, "listed leaves");
+        for leaf in &leaves {
+            assert!(
+                block.contains(&format!("#### `ess {leaf}`\n")),
+                "the reference has no section for `ess {leaf}`"
+            );
+        }
+        for flat in command.get_subcommands().filter(|sub| sub.is_hide_set()) {
+            let heading = format!("`ess {}`\n", flat.get_name());
+            assert!(
+                !block.contains(&heading),
+                "the reference lists the flat spelling {heading}"
+            );
+        }
+        if let Some(out) = std::env::var_os("ESS_CLI_REFERENCE_OUT") {
+            fs::write(&out, &block).expect("the reference block is writable");
+        }
     }
 
     /// How many leaves the four areas carry between them.
