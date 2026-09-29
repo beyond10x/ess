@@ -2,12 +2,15 @@
 format: aep.planning-md/3
 id: story:docs-example-page-in-both-renderings
 kind: story
-status: draft
+status: active
 title: The example page renders on both sites and its snippets are checked
 relations:
 - decomposes: epic:public-docs-overhaul
 - serves: vision:O2
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:33:05Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-09-29T14:33:05Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
