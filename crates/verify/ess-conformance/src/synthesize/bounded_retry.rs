@@ -24,8 +24,8 @@ use super::{
     accepting_component, binding_source, clipped, insert, payload_shape, run, ActorRef, BTreeMap,
     BTreeSet, BindingAspect, BindingGap, BindingRef, Built, CommandRef, ConformanceScenario,
     ConformanceSuite, EssIr, EssSemanticRef, EventRef, OutcomeRef, QualifiedName, Refusal,
-    RefusalCause, ResolvedBinding, ResolvedCommand, ResolvedCondition, ResolvedFailure,
-    ResolvedOutcome, Run, ScenarioId, ScenarioStep, TestStrategy,
+    RefusalCause, ResolvedBinding, ResolvedCommand, ResolvedFailure, ResolvedOutcome, Run,
+    ScenarioId, ScenarioStep, TestStrategy,
 };
 
 /// `on-failure` for a bounded retry: a retried refusal forced on every attempt, and exactly
@@ -241,10 +241,8 @@ fn forcible(
     else {
         return Ok(None);
     };
-    if matches!(forced.condition, ResolvedCondition::ExternalWhen { .. }) {
-        return Err(BindingGap::AccessorObservation {
-            reason: "GuardedExternalEligibility: fault eligibility requires an observation of the binding-mapped input".into(),
-        });
+    if let Some(gap) = super::forced_eligibility(invoked, forced) {
+        return Err(gap);
     }
     Ok(Some(forced))
 }

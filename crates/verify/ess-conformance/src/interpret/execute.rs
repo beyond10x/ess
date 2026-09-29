@@ -9,7 +9,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | each branch's `when:` over [`input::flatten`], then the one `Otherwise` branch |
+//! | which outcome the input selects | each branch's `when:` over [`input::flatten`] under the declared precedence (an input-guarded refusal first, then the first accepting branch declared), then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch, or its `unknown_instance:` branch for an identity nobody holds |
@@ -19,9 +19,11 @@
 //!
 //! # Nothing is chosen here
 //!
-//! Where the model leaves more than one outcome open — two `when:` guards that both hold, or an
-//! external branch beside the one the input selects under [`Externals::Open`] — every one of them is
-//! returned. Where it leaves none, the single step carries no outcome, which is the target's
+//! Where the model leaves more than one outcome open — two input-guarded refusals that both hold, or
+//! an external branch declared before the one the input selects, under [`Externals::Open`] — every one
+//! of them is returned. The branches are read in the declared precedence and stop at the first that
+//! answers (`docs/design/input-guard-overlap-precedence.md`), so a guard after it is never read.
+//! Where it leaves none, the single step carries no outcome, which is the target's
 //! [`SemanticCommandResult::undeclared`](crate::target::SemanticCommandResult::undeclared): a
 //! refusal the model does not declare is not available, so it is never answered as a declared one.
 //!
@@ -342,65 +344,7 @@ pub fn execute_generating(
     interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
-    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(&facts) {
-        Truth::True => Ok(true),
-        Truth::False => Ok(false),
-        Truth::Unknown => Err(Undetermined::Undecidable {
-            outcome: branch(spec, outcome),
-            guard: format!("{guard:?}"),
-        }),
-    };
-    let eligible_external = |outcome: &ResolvedOutcome| match &outcome.condition {
-        ResolvedCondition::External { .. } => Ok(true),
-        ResolvedCondition::ExternalWhen { predicate, .. } => holds(outcome, predicate),
-        _ => Ok(false),
-    };
-
-    let mut selected: Vec<&ResolvedOutcome> = Vec::new();
-    for outcome in &spec.outcomes {
-        if let ResolvedCondition::When { predicate } = &outcome.condition {
-            if holds(outcome, predicate)? {
-                selected.push(outcome);
-            }
-        }
-    }
-    if selected.is_empty() {
-        selected.extend(
-            spec.outcomes
-                .iter()
-                .filter(|outcome| matches!(outcome.condition, ResolvedCondition::Otherwise)),
-        );
-    }
-    match externals {
-        Externals::Withheld => {}
-        Externals::Forced(name) => {
-            let forced = spec
-                .outcomes
-                .iter()
-                .find(|outcome| &outcome.name == name)
-                .filter(|outcome| {
-                    matches!(
-                        outcome.condition,
-                        ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
-                    )
-                })
-                .ok_or_else(|| {
-                    Undetermined::Request(format!(
-                        "`{command}/{name}` is not an outcome the model declares external"
-                    ))
-                })?;
-            if eligible_external(forced)? {
-                selected = vec![forced];
-            }
-        }
-        Externals::Open => {
-            for outcome in &spec.outcomes {
-                if eligible_external(outcome)? {
-                    selected.push(outcome);
-                }
-            }
-        }
-    }
+    let selected = select(spec, &facts, command, externals)?;
 
     if selected.is_empty() {
         return Ok(vec![undeclared(store)]);
@@ -421,6 +365,118 @@ pub fn execute_generating(
         )));
     }
     Ok(steps)
+}
+
+/// The branches `facts` select under `externals`, in the declared precedence
+/// (`docs/design/input-guard-overlap-precedence.md`), read in order and stopped at the first that
+/// answers, so a guard after it is never read: an Unknown there leaves the answer as it is, and an
+/// Unknown before it is Undecidable.
+///
+/// 1. Every input-guarded refusal, before any other branch and before the provider is asked
+///    (beyond10x/ess#178). The model orders none before another, so every one that holds up to an
+///    Unknown one stays open.
+/// 2. The accepting `when:` branches and the external branches, in declaration order: the first
+///    whose guard holds answers (beyond10x/ess#217), and an external one holds where its provider
+///    takes it — forced, never while withheld, and either way while open, where it stays one
+///    possible answer beside whatever the declarations after it select.
+/// 3. The default, where no guard and no provider answered.
+fn select<'s>(
+    spec: &'s ResolvedCommand,
+    facts: &input::InputFacts<'_>,
+    command: &QualifiedName,
+    externals: &Externals,
+) -> Result<Vec<&'s ResolvedOutcome>, Undetermined> {
+    let holds = |outcome: &ResolvedOutcome, guard: &Predicate| match guard.evaluate(facts) {
+        Truth::True => Ok(true),
+        Truth::False => Ok(false),
+        Truth::Unknown => Err(Undetermined::Undecidable {
+            outcome: branch(spec, outcome),
+            guard: format!("{guard:?}"),
+        }),
+    };
+    let eligible_external = |outcome: &ResolvedOutcome| match &outcome.condition {
+        ResolvedCondition::External { .. } => Ok(true),
+        ResolvedCondition::ExternalWhen { predicate, .. } => holds(outcome, predicate),
+        _ => Ok(false),
+    };
+
+    let is_external = |outcome: &ResolvedOutcome| {
+        matches!(
+            outcome.condition,
+            ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. }
+        )
+    };
+    let forced = match externals {
+        Externals::Forced(name) => Some(
+            spec.outcomes
+                .iter()
+                .find(|outcome| &outcome.name == name)
+                .filter(|outcome| is_external(outcome))
+                .ok_or_else(|| {
+                    Undetermined::Request(format!(
+                        "`{command}/{name}` is not an outcome the model declares external"
+                    ))
+                })?,
+        ),
+        Externals::Withheld | Externals::Open => None,
+    };
+
+    let mut selected: Vec<&ResolvedOutcome> = Vec::new();
+    for outcome in &spec.outcomes {
+        if let (ResolvedCondition::When { predicate }, Some(_)) =
+            (&outcome.condition, &outcome.error)
+        {
+            if selected.is_empty() {
+                if holds(outcome, predicate)? {
+                    selected.push(outcome);
+                }
+            } else if matches!(predicate.evaluate(facts), Truth::True) {
+                selected.push(outcome);
+            }
+        }
+    }
+    if selected.is_empty() {
+        let mut answered = false;
+        for outcome in &spec.outcomes {
+            match &outcome.condition {
+                ResolvedCondition::When { predicate } if outcome.error.is_none() => {
+                    if holds(outcome, predicate)? {
+                        selected.push(outcome);
+                        answered = true;
+                        break;
+                    }
+                }
+                ResolvedCondition::External { .. } | ResolvedCondition::ExternalWhen { .. } => {
+                    match externals {
+                        Externals::Withheld => {}
+                        Externals::Forced(_) => {
+                            if forced.is_some_and(|forced| forced.name == outcome.name)
+                                && eligible_external(outcome)?
+                            {
+                                selected.push(outcome);
+                                answered = true;
+                                break;
+                            }
+                        }
+                        Externals::Open => {
+                            if eligible_external(outcome)? {
+                                selected.push(outcome);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !answered {
+            selected.extend(
+                spec.outcomes
+                    .iter()
+                    .filter(|outcome| matches!(outcome.condition, ResolvedCondition::Otherwise)),
+            );
+        }
+    }
+    Ok(selected)
 }
 
 /// Refuses a command using any construct this module does not execute, before anything is read.

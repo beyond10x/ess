@@ -32,6 +32,38 @@
   model without actor attributes keeps its suite bytes; a suite synthesized from a different model
   is still refused.
 
+- **Two overlapping accepting guards have a declared answer** (beyond10x/ess#217). `validate`
+  accepted `small: amount < 100` beside `flagged: amount > 50`, and nothing said which branch
+  `amount: 75` takes. Among the accepting guarded branches of one command, the first declared whose
+  guard holds answers; input-guarded refusals are still taken first
+  (`docs/design/input-guard-overlap-precedence.md`). An `external:` branch takes its place in the
+  same declaration order: an accepting branch declared before it answers an input its guard claims,
+  whatever the provider says, which is the order Entity Runtime already applied. No source or suite
+  format change. Synthesis holds a target to it for each pair of accepting `when:` branches: a later
+  branch's witness refutes every accepting branch declared before it, an external branch's witness
+  refutes every accepting branch declared before it, the first-declared branch's scenario also sends
+  an input in each overlap and requires that branch, and a branch whose every tried candidate an
+  earlier one claims is refused with `ESS-SYNTH-003` naming it. In a command whose branches also read
+  the held state, the overlap is sent in the state the scenario arranged. A binding that would force
+  an external branch declared after an accepting one is refused like a guarded one.
+- **An overlap no scenario sends is listed, not dropped.** A `Decimal` compared with two literals less
+  than two apart (`11 < amount < 12`) held no value the witness ladder tried, so the overlap was
+  skipped and a branch there was refused as unreachable. Every witness and overlap search now tries
+  a second pass at the exact midpoint of each two adjacent literals (`11.5`, `0.15` for
+  `amount > 0.1 and amount < 0.2`); a witness the ladder already found is unchanged. An overlap the
+  scenario of the branch taken first still does not send — one no candidate reaches, or one arranged
+  over a stored row, a replay, a preserved subject or a held state another branch also claims — is
+  reported as a note naming both branches, unless the candidates cover every region and none lies
+  in both.
+- **The interpreter answers by the declared precedence.** It selected every branch whose `when:`
+  held and refused the overlap as open, and an Unknown guard anywhere made the call undecidable. It
+  now reads input-guarded refusals first (beyond10x/ess#178), then accepting and external branches
+  in declaration order, and stops at the first that answers: a later guard it cannot decide no
+  longer matters once an earlier branch holds. A forced external branch declared after a holding
+  accepting branch is not taken. Entity Runtime already selected this way; tests now pin the
+  accepting order and an accepting branch declared before an external one. Suites for models
+  without such an overlap keep their bytes.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added
