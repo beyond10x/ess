@@ -81,3 +81,14 @@ fn reading_diff_roundtrips_only_under_the_coordinated_new_vocabulary() {
         std::fs::write(path, text).unwrap();
     }
 }
+/// A reading contract is compared by its own kind; it is not also left to the residual, so no
+/// `unclassified-changed` rides beside it (the #219 class: a typed newtype attribute).
+#[test]
+fn a_reading_change_is_not_also_reported_as_unclassified() {
+    let delta = changed();
+    let ids: Vec<String> = delta.changes().iter().map(|c| c.id().to_string()).collect();
+    assert!(
+        !ids.iter().any(|id| id.contains("unclassified")),
+        "{ids:#?}"
+    );
+}
