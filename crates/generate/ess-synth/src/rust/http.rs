@@ -144,7 +144,12 @@ pub(super) fn server_crate(
             format!(
                 "{}{}",
                 provenance.commented_for("//", REGENERATE),
-                super::json::JSON
+                // A model that uses `Json` keeps one `json::Value`, in the types crate.
+                if super::json::used(ir) {
+                    super::json::reexport(&server.types)
+                } else {
+                    super::json::JSON.to_owned()
+                }
             ),
         ),
         Artifact::new(

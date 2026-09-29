@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T17:01:48Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-224",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-synth 242 passed (json_primitive 4, generated workspace built with -D warnings, six-kind round trip); generate/schema --check; clippy; fmt-check; a downstream specification with Json synthesizes and cargo-checks",
+    "reference": "impl/json-rust-synth@696c8ca1b"
+  }
+}

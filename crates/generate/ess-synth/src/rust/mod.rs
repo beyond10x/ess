@@ -102,7 +102,6 @@ impl Emit<'_> {
 /// the one lie the plan document must never be allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
-    crate::failure::json(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
     crate::existence::refuse(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
@@ -122,6 +121,17 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
         lib_module(ir, &layout, provenance, obligation_module.is_some()),
         primitives_module(ir, &layout, provenance),
     ];
+    // See `json`'s module docs for why the types crate carries it only when `Json` is used.
+    if json::used(ir) {
+        artifacts.push(Artifact::new(
+            format!("crates/{}/src/json.rs", layout.package()),
+            format!(
+                "{}{}",
+                provenance.commented_for("//", REGENERATE),
+                json::types_module()
+            ),
+        ));
+    }
     artifacts.extend(obligation_module);
     let domains: Vec<QualifiedName> = layout.modules().map(|(domain, _)| domain.clone()).collect();
     for domain in &domains {
@@ -289,6 +299,9 @@ fn lib_module(
         .map(|(_, module)| module.to_owned())
         .collect();
     modules.push("primitives".to_owned());
+    if json::used(ir) {
+        modules.push("json".to_owned());
+    }
     if with_obligation_module {
         modules.push("obligation".to_owned());
     }

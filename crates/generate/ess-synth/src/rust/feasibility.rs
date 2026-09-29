@@ -79,10 +79,12 @@ impl Inventory {
         match reference {
             ResolvedTypeRef::Primitive { name } => match name {
                 Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-                Primitive::Json => unreachable!("Json is refused before target rendering"),
                 Primitive::String => self.helper(scope, "String", source),
                 Primitive::Bytes => self.helper(scope, "Vec", source),
-                Primitive::Boolean
+                // `crate::json::Value`: spelled from the crate root, so no declaration in scope
+                // can shadow it — the same as the `crate::primitives` wrappers.
+                Primitive::Json
+                | Primitive::Boolean
                 | Primitive::Integer
                 | Primitive::Decimal
                 | Primitive::Timestamp
@@ -269,6 +271,10 @@ fn paths_and_packages(
         format!("crates/{}/src/primitives.rs", layout.package()),
         &system,
     );
+    if super::json::used(ir) {
+        inventory.symbol("types root", "json", &system, "fixed module");
+        inventory.path(format!("crates/{}/src/json.rs", layout.package()), &system);
+    }
     if plan.obligations().next().is_some()
         || !ir.components().is_empty()
         || !ir.bindings().is_empty()

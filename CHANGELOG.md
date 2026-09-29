@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.44.0] — 2026-09-29
+
+### Added
+
+- `ess generate synthesize --target rust` represents `Json` as the generated types crate's
+  dependency-free `json::Value` (beyond10x/ess#224). It covers newtypes, struct members (also in a
+  list, a map or an `Optional`), union variants, entity fields, command inputs and responses, event
+  and error payloads, view rows and binding mappings. The types crate carries the `json` module only
+  when the model uses `Json`, and the server crate re-exports it. The wire codecs carry an object,
+  array, number, string, boolean or null unchanged: members keep their order and numbers keep their
+  spelling. `--target go`, `web` and `clap` still refuse `Json` and name the target. A model without
+  `Json` synthesizes the same bytes as before.
+
+### Changed
+
+- The public documentation is reorganized for somebody adopting ESS. Start here pages cover
+  install (macOS and Linux), a first specification, a first conformance run, one page per runner
+  (TypeScript, Go, Rust) and use with an agent, and every command they show is run by
+  `crates/edge/ess-cli/tests/tutorial_page.rs`. The two long guides are split into task pages, with
+  the old pages kept as indexes so old links and anchors still land. The CLI reference's command
+  sections are generated from the command definition (`cargo xtask cli-reference`), a new
+  diagnostics page lists every code and refusal name with its repair (`cargo xtask diagnostics`), a
+  what-changed page is generated from `changes/`, and `cargo xtask docs` now fails for any format
+  family a page names that is not tracked, and for a README that installs an older release.
+
 ## [0.43.0] — 2026-09-29
 
 ### Fixed

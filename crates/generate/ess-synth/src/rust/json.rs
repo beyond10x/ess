@@ -16,6 +16,19 @@
 //! base64 with padding, `Decimal`, `Timestamp`, `Duration` and `Uuid` are strings, because the
 //! JSON Schema projection already fixed them and two projections of one model must not disagree
 //! about what a value looks like.
+//!
+//! # Where the module lives when a model uses `Json` (beyond10x/ess#224)
+//!
+//! A `Json` field is a semantic type's member, so the **types crate** has to name its
+//! representation, and the only dependency-free one this emitter has is [`JSON`]'s `Value`. The
+//! types crate therefore carries this module — the same bytes plus [`VALUE`], the `Eq` and the
+//! writer only a `Json` value needs — and the server crate's `json.rs` becomes [`reexport`] of it,
+//! so a `Json` value decoded off the wire *is* the value a semantic type holds: one `Value` type,
+//! not two with a conversion between them.
+//!
+//! Only when the model uses `Json`. A model that does not keeps the server's own copy, byte for
+//! byte, and no `json` module in its types crate: moving the module for every model would rewrite
+//! every committed tree that is served, for a type none of them names.
 
 /// The body of the emitted `json` module.
 pub(crate) const JSON: &str = r#"
@@ -700,3 +713,82 @@ pub fn member_at<'a>(value: &'a Value, at: &str, name: &str) -> Result<&'a Value
         })
 }
 "#;
+
+/// What the types crate's copy of the module adds, appended after [`JSON`] only when the model
+/// uses `Json`: the equality every generated type deriving `Eq` needs from a member, and the
+/// writer the generated `wire` module calls for a `Json` value.
+pub(crate) const VALUE: &str = r#"
+// ---- a `Json` value, as the model carries it -----------------------------------------------------
+
+/// Equality is total: a `Value` holds no float — a number is its spelling — so every generated type
+/// holding one keeps deriving `Eq`. It follows that `1.0` and `1` are different values here, as
+/// `1.5` and `1.50` are different `Decimal`s.
+impl Eq for Value {}
+
+/// The `Json` value at this path, as it arrived.
+///
+/// Every JSON value is a `Json` value, so this never refuses. It takes the path anyway so a
+/// generated decoder reads a `Json` leaf the way it reads every other leaf, and binds no position
+/// it then leaves unused.
+pub fn value_at(value: &Value, _at: &str) -> Value {
+    value.clone()
+}
+
+/// Appends a JSON value exactly as it was read: members in their order, numbers in their spelling,
+/// strings escaped the way [`push_text`] escapes them.
+///
+/// A `Number` is written as it is spelled; the reader only ever produces legal spellings, and a
+/// caller building one by hand owns its spelling.
+pub fn push_value(out: &mut String, value: &Value) {
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(value) => push_bool(out, *value),
+        Value::Number(spelling) => out.push_str(spelling),
+        Value::Text(text) => push_text(out, text),
+        Value::Array(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                push_value(out, item);
+            }
+            out.push(']');
+        }
+        Value::Object(members) => {
+            out.push('{');
+            for (index, (name, item)) in members.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                push_text(out, name);
+                out.push(':');
+                push_value(out, item);
+            }
+            out.push('}');
+        }
+    }
+}
+"#;
+
+/// `true` when the model names `Json` anywhere the Rust target types — and so when the types crate
+/// carries this module and the server crate re-exports it.
+pub(crate) fn used(ir: &ess_compiler::EssIr) -> bool {
+    !ess_compiler::binary64::locations_of(ir, ess_domain::Primitive::Json).is_empty()
+}
+
+/// The types crate's `json` module: the fixed reader and writer, plus [`VALUE`].
+pub(crate) fn types_module() -> String {
+    format!("{JSON}{VALUE}")
+}
+
+/// The server crate's `json` module when the types crate carries one: a re-export, so the value
+/// decoded off the wire is the value a semantic type holds.
+pub(crate) fn reexport(types: &str) -> String {
+    format!(
+        "\n//! JSON at this system's boundary: the types crate's own module, re-exported.\n//!\n//! \
+         This model uses `Json`, so a semantic type holds a `json::Value`, and the value this \
+         crate\n//! decodes off the wire has to be that type rather than a second one beside \
+         it.\n\npub use {types}::json::*;\n"
+    )
+}
