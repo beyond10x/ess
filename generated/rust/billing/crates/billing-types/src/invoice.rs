@@ -226,8 +226,8 @@ impl AnyAccount {
 /// The identity and every declared field. The state is deliberately not one: inside the domain it
 /// is carried by the type parameter of [`Invoice<S>`], and at a boundary by [`InvoiceSnapshot::state`].
 ///
-/// Every value satisfies `total.amount >= 0` — declared here, enforced by whatever behaviour constructs one.
-/// Every value satisfies `reminder_count >= 0` — declared here, enforced by whatever behaviour constructs one.
+/// Every value satisfies `total.amount >= 0` — checked by [`InvoiceData::broken_invariant`].
+/// Every value satisfies `reminder_count >= 0` — checked by [`InvoiceData::broken_invariant`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoiceData {
     /// The identity: `invoice_id` — `billing.invoice.InvoiceId`.
@@ -258,6 +258,25 @@ pub struct InvoiceData {
     pub signature: Vec<u8>,
     /// `reminder_count` — `Integer`.
     pub reminder_count: i64,
+}
+
+impl InvoiceData {
+    /// The first declared invariant of `billing.invoice.Invoice` this value breaks, as the specification declares it,
+    /// or `None` when it breaks none.
+    ///
+    /// An invariant is broken only when it is false of this value. One that reads something
+    /// absent — an empty `Optional`, a list position past the end, or `state`, which this
+    /// type does not hold — decides nothing, as the conformance interpreter reads it.
+    pub fn broken_invariant(&self) -> Option<&'static str> {
+        use crate::primitives::invariant as iv;
+        if iv::broken(iv::compare(iv::Fact::number(&self.total.amount.0), iv::Op::Ge, iv::Fact::number("0"), false, true)) {
+            return Some("total.amount >= 0");
+        }
+        if iv::broken(iv::compare(Some(iv::Fact::integer(self.reminder_count)), iv::Op::Ge, iv::Fact::number("0"), false, true)) {
+            return Some("reminder_count >= 0");
+        }
+        None
+    }
 }
 
 /// The states of `billing.invoice.Invoice`, at the type level.

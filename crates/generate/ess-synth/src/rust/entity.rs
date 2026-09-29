@@ -19,13 +19,14 @@ use std::fmt::Write as _;
 use ess_compiler::ir::ResolvedEntity;
 use ess_domain::entity::StateName;
 
-use super::{items, name, Emit};
+use super::{name, Emit};
 
 /// Everything one entity contributes to its module, in reading order: data, markers, the typed
 /// entity, its transitions, then the runtime boundary.
 pub(super) fn lifecycle(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity) {
     let context = Entity::of(emit, entity);
     data_struct(out, emit, entity, &context);
+    super::invariant::check(out, emit, entity, &context.type_name);
     state_module(out, entity, &context);
     typed_entity(out, entity, &context, &creation_states(emit.ir, entity));
     transitions(out, emit, entity, &context);
@@ -70,7 +71,7 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity, conte
         context.type_name,
         context.snapshot_name
     );
-    items::invariant_doc(out, &entity.invariants);
+    super::invariant::doc(out, entity, &context.type_name);
     let _ = writeln!(
         out,
         "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {}Data {{",
