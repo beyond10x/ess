@@ -524,20 +524,18 @@ tenant", "the configuration does not register this client".
   `Unknown`, so it selects only `exists: false`: never a predicate branch, never the default. A
   command with a predicate branch therefore declares its `exists: false` branch, or is refused
   (`non_exhaustive_branches`); `exists: true` is refused in favour of the default or a predicate.
-- **Precedence** (adversary pass 1, 2026-09-29). A missing related row is answered by the
-  `exists: false` branch before any other branch: a predicate branch, an input-guarded branch, the
-  default. So an `exists: false` branch may not carry `when:` (`conflicting_declaration`) — every
-  missing row has exactly one answer — and an accepting `when:` branch that overlaps it is legal:
-  on a missing row `exists: false` answers, whatever the input. The one answer before it is
-  `existing_instance:`: the command's own identity is checked before the related row is read.
+- **Precedence.** As [the precedence order](#the-precedence-order) states. An `exists: false`
+  branch may not carry `when:` (`conflicting_declaration`), so every missing row has exactly one
+  answer, and an accepting `when:` branch or an input-guarded refusal that overlaps it is legal.
 - **Any branch.** The guard reads a row the command does not address, so it sits beside a
   `creates:`, on a refusal that names no subject, or on a branch that moves or updates one, and
   composes with `when:` — except on the `exists: false` branch, as above.
 - **Authority.** Beside `when_subject`, `when_subject_state`, `when_state_changes`, `external`,
   `wrong_state`, `unknown_instance`, `input_absent`, `existing_instance` or `replays` on one branch
   it is `conflicting_declaration`. In one command it is refused in 0.41 beside `when_subject*`,
-  `wrong_state`, `unknown_instance` and `input_absent`, because which of the two answers first is
-  not stated; `existing_instance:` sits beside it, answering first. One command reads one related
+  `wrong_state`, `unknown_instance` and `input_absent`: no validation, synthesis or runtime
+  arranges that combination yet. `existing_instance:` sits beside it, answering first
+  ([the precedence order](#the-precedence-order)). One command reads one related
   row, and declares at most one `exists: false` branch.
 - **Validation.** The rows that exist are partitioned jointly with the input, as the stored-field
   partition does; where the finite prover declines — a comparison with the input, an open domain —
@@ -573,8 +571,33 @@ tenant", "the configuration does not register this client".
   answers there, as a `when_subject` conjunct is (#155, #204); a boundary no bounded arrangement
   reaches is refused under the branch's scenario id (`ESS-SYNTH-003`). Every other family that would send the command — a boundary,
   an unknown identity, an illegal move — has no row to point it at and refuses with the strategy
-  `arrange_related_row` named: which of a related guard and a wrong state answers first is not
-  stated.
-- **Runtimes.** The interpreted target does not evaluate the guard and reports such a scenario
-  `unsupported`, naming it. Entity Runtime refuses the command with `RelatedGuardUnsupported`: an
-  entity-core operation reads its arguments and the one row its request names.
+  `arrange_related_row` named.
+- **Runtimes.** The interpreted target answers a missing related row by its `exists: false`
+  branch, and on a stored row an input-guarded refusal the input selects
+  ([the precedence order](#the-precedence-order)); it does not evaluate a predicate over the row,
+  and declines a command with `existing_instance:`, reporting such a scenario `unsupported`.
+  Entity Runtime refuses the command with `RelatedGuardUnsupported`: an entity-core operation
+  reads its arguments and the one row its request names.
+
+## The precedence order
+
+One order answers every command, whichever branches it declares (coordinator decision,
+beyond10x/ess#227 correction 1). Every other design note links here rather than stating an order
+of its own:
+
+1. on a command with a `when_related:` branch, `existing_instance` then `exists: false` (#211 revision);
+2. input-guarded refusals, the first declared whose guard holds (#209, #227);
+3. existence of the addressed row (`unknown_instance`, and `existing_instance` on commands without `when_related`);
+4. the held state (`when_subject_state`, `when_subject`, `wrong_state`);
+5. accepting and external branches in declaration order (#217).
+
+There is no cycle: step 1 applies only to `when_related` commands, which Entity Runtime does not
+lower. The kernel half of the order — input refusals decided before any row is loaded, the first
+declared answering — is what Entity Runtime's lowering produces, pinned by
+`crates/generate/ess-entity-runtime/tests/refusal_beside_state.rs`. Entity Runtime's executor
+answering a revision conflict on the addressed row before the input refusals contradicts step 2
+against step 3; that is filed as an Entity Runtime defect, and ESS is not modelled on it.
+
+Validation (`ess_domain::command::subject_state`), synthesis (`synthesize::sibling_refusals`,
+`synthesize/related_guard.rs`) and the model interpreter (`interpret::execute`,
+`related_absent` then `refused_by_input`) follow it.

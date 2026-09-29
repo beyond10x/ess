@@ -2255,7 +2255,10 @@ fn arranged(
         // branch's writes change first, and only then for any row (beyond10x/ess#161).
         return subject_fact::prepare(ir, command, outcome, actors);
     }
-    let (setup, input) = if has_subject_guards(command) && !existence::creates_unknown(outcome) {
+    let (setup, input) = if has_subject_guards(command)
+        && !existence::creates_unknown(outcome)
+        && !is_state_input_refusal(command, outcome)
+    {
         prepare_state_input(ir, command, outcome, actors)?
     } else {
         (
@@ -3799,6 +3802,21 @@ fn admits_held_state(condition: &ResolvedCondition, held: &StateName) -> bool {
     admitted_states(condition).is_none_or(|states| states.contains(held))
 }
 
+/// Whether `outcome` is an input-guarded refusal naming no subject beside branches that read the
+/// held state (beyond10x/ess#227).
+///
+/// It is answered before existence and before the held state (`docs/design/outcome-shapes.md`
+/// "Precedence"), so its own scenario reaches it by input alone, as a plain send; the rows it is
+/// sent for again, one per held state a sibling runs from, are arranged by
+/// `existence::refusals_in_each_held_state`.
+pub(crate) fn is_state_input_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    has_subject_guards(command)
+        && is_input_guarded_refusal(outcome)
+        && !state_default(outcome)
+        && outcome.subject.is_none()
+        && outcome.replays.is_none()
+}
+
 fn state_default(outcome: &ResolvedOutcome) -> bool {
     matches!(&outcome.condition, ResolvedCondition::Otherwise)
         || matches!(&outcome.condition, ResolvedCondition::When { predicate } if predicate.is_trivially_true())
@@ -3860,6 +3878,16 @@ fn selected_in_state(
             }
         }
         selected.push(branch);
+    }
+    // An input refusal these facts select answers before any held-state branch (beyond10x/ess#227),
+    // as the partition in `ess_domain::command::subject_state` counts it; of two, the first
+    // declared answers (`selected` keeps declaration order), as Entity Runtime takes it.
+    if let Some(first) = selected
+        .iter()
+        .copied()
+        .find(|branch| is_state_input_refusal(command, branch))
+    {
+        selected = vec![first];
     }
     if selected.is_empty() {
         selected.extend(
@@ -4076,7 +4104,10 @@ fn reach(
         }
         return Err(first.expect("a held-state guard names at least one state"));
     }
-    if has_subject_guards(command) && !existence::creates_unknown(outcome) {
+    if has_subject_guards(command)
+        && !existence::creates_unknown(outcome)
+        && !is_state_input_refusal(command, outcome)
+    {
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         });
@@ -4162,11 +4193,11 @@ impl Shadow {
             .map(|(name, guard)| format!("{name} ({guard})"))
             .collect();
         if self.refusal {
-            // Two refusals whose guards overlap: the model takes neither first, so an input both
-            // claim selects no one outcome (beyond10x/ess#209, adversary pass 1).
+            // Two refusals whose guards overlap: the first declared answers (beyond10x/ess#227
+            // adversary pass 1), so an input a refusal declared before this one claims is that
+            // refusal's.
             return Some(format!(
-                "{} outside {}, an input-guarded refusal the model orders neither before nor \
-                 after it",
+                "{} outside {}, an input-guarded refusal declared before it, which answers first",
                 rendered(guards, true),
                 refusals.join(", ")
             ));
@@ -4233,13 +4264,24 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
     }
 }
 
-/// Every input-guarded refusal of `command` other than `outcome`.
+/// Every input-guarded refusal of `command` answered before `outcome`: all of them for any other
+/// branch, and for an input-guarded refusal the ones declared before it — of two refusals an input
+/// selects, the first declared answers, as Entity Runtime takes it (beyond10x/ess#227 adversary
+/// pass 1). A refusal's witness refutes these and needs to refute nothing declared after it.
 pub(crate) fn sibling_refusals<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> impl Iterator<Item = &'c ResolvedOutcome> {
-    command
-        .outcomes
+    let before = if is_input_guarded_refusal(outcome) {
+        command
+            .outcomes
+            .iter()
+            .position(|other| other.name == outcome.name)
+            .unwrap_or(command.outcomes.len())
+    } else {
+        command.outcomes.len()
+    };
+    command.outcomes[..before]
         .iter()
         .filter(move |other| other.name != outcome.name && is_input_guarded_refusal(other))
 }
@@ -4275,7 +4317,12 @@ fn selects_branch(
             .expect("a held-state guard names at least one state");
         return selected_in_state(command, outcome, held, &facts);
     }
-    if has_subject_guards(command) && !existence::creates_unknown(outcome) {
+    // An input refusal beside held-state branches (beyond10x/ess#227) is decided by its input alone
+    // where no held state is given: it is answered before the state is read.
+    if has_subject_guards(command)
+        && !existence::creates_unknown(outcome)
+        && !(held.is_none() && is_state_input_refusal(command, outcome))
+    {
         let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         })?;
@@ -4358,16 +4405,22 @@ fn admits_plain(
         .iter()
         .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
     {
+        // A refusal declared after an input-guarded refusal never answers before it, so it is not
+        // refuted (beyond10x/ess#227 adversary pass 1).
+        let later = |other: &ResolvedOutcome| {
+            is_input_guarded_refusal(outcome)
+                && is_input_guarded_refusal(other)
+                && !sibling_refusals(command, outcome).any(|before| before.name == other.name)
+        };
         command
             .outcomes
             .iter()
-            .filter(|other| other.name != outcome.name)
+            .filter(|other| other.name != outcome.name && !later(other))
             .filter_map(when)
             .collect()
     } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
-        // An input-guarded refusal refutes its sibling refusals as well: beside a default the
-        // model orders none of them before another, so an input two of them claim selects no one
-        // outcome, and a scenario requiring either would require a choice the model does not make.
+        // An input-guarded refusal refutes the refusals declared before it: of two an input
+        // selects, the first declared answers ([`sibling_refusals`]).
         sibling_refusals(command, outcome)
             .filter_map(when)
             .collect()
@@ -8635,7 +8688,7 @@ fn boundaries(
     let mut out = (Vec::new(), BTreeSet::new());
     if outcome.replays.is_some()
         || subject_fact::routes(command, outcome)
-        || has_subject_guards(command)
+        || (has_subject_guards(command) && !is_state_input_refusal(command, outcome))
         || outcome
             .subject
             .as_ref()

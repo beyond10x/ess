@@ -225,6 +225,7 @@ pub(super) fn existence(
         }
         refusals_on_a_stored_row(ir, command, actors, suite, refusals);
         refusals_on_an_arranged_row(ir, command, actors, suite, refusals);
+        refusals_in_each_held_state(ir, command, actors, suite, refusals);
     }
 }
 
@@ -391,6 +392,247 @@ fn arranged_refusal(
     source.extend(forbidden.into_iter().map(EssSemanticRef::from));
     steps.extend(preservation.after);
     Ok(Segment { steps, source })
+}
+
+/// Every input-guarded refusal naming no subject beside branches that read the held state, sent
+/// again for a row arranged in each held state (beyond10x/ess#227).
+///
+/// The refusal is answered before existence and before the held state, so its own scenario opens
+/// with the refused input for an identity nothing stored, as [`refusals_on_an_arranged_row`] keeps
+/// for a command without held-state branches. This adds the other half once per state of the
+/// subject's lifecycle, in declaration order, each on a record of its own: a row arranged in that
+/// state and observed there, the refused input sent for it, and the refusal required with its
+/// error, no event and the row unchanged. Every held state is one a sibling answers in — the
+/// joint partition proves some branch is selected for every state — so a target reading the held
+/// state first answers a sibling in each and fails there, and a target that checks the input in
+/// every state but one fails in that one.
+///
+/// Where a sibling that runs in a state also reads the input, the refused input is sent there
+/// again at their overlap, refuting every other input refusal: a target that tries the sibling
+/// first takes it. Where no arrangement reaches a state, the scenario is withdrawn and refused
+/// with the arrangement's cause, never left without that state's witness.
+fn refusals_in_each_held_state(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    for refusal in command.outcomes.iter().filter(|outcome| {
+        super::is_state_input_refusal(command, outcome)
+            && !subject_fact::reads_identity(command, outcome)
+    }) {
+        let id = outcome_id(command, refusal);
+        let Some(filed) = suite.scenarios.get(&id) else {
+            // The plain send was refused under this id already, with its cause.
+            continue;
+        };
+        let taken = super::bound_instances(&filed.steps);
+        match held_state_refusals(ir, command, refusal, actors, taken) {
+            Ok(part) => {
+                let scenario = suite
+                    .scenarios
+                    .get_mut(&id)
+                    .expect("checked to be filed above");
+                scenario.steps.extend(part.steps);
+                scenario.source.extend(part.source);
+            }
+            Err(cause) => {
+                suite.scenarios.remove(&id);
+                refusals.push(Refusal::about(&id, cause));
+            }
+        }
+    }
+}
+
+/// The segments of [`refusals_in_each_held_state`] for one refusal, one per held state and input.
+fn held_state_refusals(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    refusal: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    mut taken: BTreeSet<super::InstanceName>,
+) -> Result<Segment, RefusalCause> {
+    let without = || RefusalCause::StrategyWithoutGuard {
+        strategy: refusal.test_strategy,
+    };
+    let error = refusal.error.as_ref().ok_or_else(without)?;
+    let subject = subject_fact::common(command).ok_or_else(without)?;
+    let command_ref = CommandRef::new(command.name.clone());
+    let branch = OutcomeRef::new(command_ref.clone(), refusal.name.clone());
+    let named = ErrorRef::from(error);
+    let forbidden = not_emitted(ir, &[]);
+    let mut part = Segment {
+        steps: Vec::new(),
+        source: BTreeSet::new(),
+    };
+    part.source.insert(command_ref.clone().into());
+    part.source.insert(branch.clone().into());
+    part.source.insert(named.clone().into());
+    part.source.insert(EntityRef::from(&subject.entity).into());
+    part.source
+        .extend(forbidden.iter().cloned().map(EssSemanticRef::from));
+    if let Some(actor) = actors.get(&command.name) {
+        part.source.insert(actor.clone().into());
+    }
+    let mut nth = 0;
+    for state in &ir.entity(&subject.entity).lifecycle.states {
+        for input in refused_inputs_in(ir, command, refusal, state)? {
+            // Each send on a record of its own, under names nothing earlier in the scenario
+            // bound: the unchanged-row comparison spans one command.
+            let arrangement =
+                arranged_in(ir, subject, state, actors, &mut nth, &mut taken, without)?;
+            let setup = Setup {
+                instance: Some(arrangement.instance.clone()),
+                after: Some(state.clone()),
+                before: Some(state.clone()),
+                settled: arrangement.settled.clone(),
+                ..Setup::none()
+            };
+            part.steps.extend(arrangement.steps);
+            part.source.extend(arrangement.source);
+            // Observed in the state it was arranged in, where a view shows it; the held-state
+            // siblings need that view themselves, so its absence is theirs to refuse.
+            let preservation = match super::observe_selection_subject(
+                ir,
+                subject,
+                &arrangement.instance,
+                state,
+                &refusal.name.to_string(),
+            ) {
+                Ok((observed, view)) => {
+                    part.steps.extend(observed);
+                    part.source.insert(view.into());
+                    subject_fact::preserve_refused_subject(ir, subject, &setup)?
+                }
+                Err(_) => subject_fact::Preservation {
+                    before: Vec::new(),
+                    after: Vec::new(),
+                    source: BTreeSet::new(),
+                    unobserved: Vec::new(),
+                },
+            };
+            part.steps.extend(preservation.before);
+            part.source.extend(preservation.source);
+            part.steps.push(ScenarioStep::ExecuteCommand {
+                command: command_ref.clone(),
+                actor: actors.get(&command.name).cloned(),
+                input: supply(
+                    command,
+                    &input,
+                    Some(subject),
+                    Some(&arrangement.instance),
+                    &BTreeMap::new(),
+                ),
+                caller: BTreeMap::new(),
+            });
+            part.steps.push(ScenarioStep::ExpectOutcome {
+                outcome: branch.clone(),
+            });
+            part.steps.push(ScenarioStep::ExpectError {
+                error: named.clone(),
+                fields: BTreeMap::new(),
+            });
+            for event in &forbidden {
+                part.steps.push(ScenarioStep::ExpectNoEvent {
+                    event: event.clone(),
+                });
+            }
+            part.steps.extend(preservation.after);
+        }
+    }
+    Ok(part)
+}
+
+/// The inputs `refusal` is sent in held state `state`: the one [`super::reach_in_state`] decides
+/// there, then, for each sibling that runs in `state` and reads the input, one both guards admit
+/// that refutes every other input refusal — the send a target trying that sibling first answers
+/// wrongly.
+fn refused_inputs_in(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    refusal: &ResolvedOutcome,
+    state: &ess_domain::entity::StateName,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    let mut inputs = vec![super::reach_in_state(
+        ir,
+        command,
+        refusal,
+        state,
+        Distinction::PLAIN,
+    )?];
+    let Some(own) = super::when(refusal) else {
+        return Ok(inputs);
+    };
+    let others: Vec<_> = super::sibling_refusals(command, refusal)
+        .filter_map(super::when)
+        .collect();
+    for sibling in command.outcomes.iter().filter(|sibling| {
+        sibling.name != refusal.name
+            && !super::is_state_input_refusal(command, sibling)
+            && super::admits_held_state(&sibling.condition, state)
+    }) {
+        let Some(guard) = super::when(sibling) else {
+            continue;
+        };
+        let mut searched = vec![own, guard];
+        searched.extend(others.iter().copied());
+        let Ok(candidates) = candidates(ir, command, &searched, Distinction::PLAIN) else {
+            continue;
+        };
+        let found = candidates.into_iter().find(|input| {
+            super::flatten(ir, command, input).is_ok_and(|facts| {
+                super::decides(&facts, &[own, guard], true).unwrap_or(false)
+                    && super::decides(&facts, &others, false).unwrap_or(false)
+            })
+        });
+        if let Some(input) = found.filter(|input| !inputs.contains(input)) {
+            inputs.push(input);
+        }
+    }
+    Ok(inputs)
+}
+
+/// A record of `subject`'s entity arranged in `state` under names outside `taken`, which it then
+/// joins; `nth` is the last distinction tried, so every call draws further ones.
+fn arranged_in(
+    ir: &EssIr,
+    subject: &ResolvedSubject,
+    state: &ess_domain::entity::StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    nth: &mut usize,
+    taken: &mut BTreeSet<super::InstanceName>,
+    without: impl Fn() -> RefusalCause,
+) -> Result<super::Arrangement, RefusalCause> {
+    let mut last = None;
+    while *nth <= MAX_CANDIDATES {
+        *nth += 1;
+        match super::arrange_first(
+            ir,
+            &subject.entity,
+            std::slice::from_ref(state),
+            actors,
+            Distinction::further(*nth),
+            &[],
+        ) {
+            Ok(found) if super::bound_instances(&found.steps).is_disjoint(taken) => {
+                taken.extend(super::bound_instances(&found.steps));
+                return Ok(found);
+            }
+            Ok(_) => {}
+            Err(reason) => last = Some(reason),
+        }
+    }
+    Err(match last {
+        Some(reason) => RefusalCause::InstanceRequired {
+            entity: EntityRef::from(&subject.entity),
+            need: InstanceNeed::InState {
+                state: state.clone(),
+            },
+            reason,
+        },
+        None => without(),
+    })
 }
 
 /// The scenario id of one outcome.

@@ -231,11 +231,14 @@ fn selects<'c>(
         }
         selected.push(branch);
     }
-    if selected
+    // Of the input refusals these facts select, the first declared answers (the precedence order,
+    // `docs/design/cross-record-and-stored-field-guards.md`); `selected` keeps declaration order.
+    if let Some(first) = selected
         .iter()
-        .any(|branch| super::is_input_guarded_refusal(branch))
+        .copied()
+        .find(|branch| super::is_input_guarded_refusal(branch))
     {
-        selected.retain(|branch| super::is_input_guarded_refusal(branch));
+        selected = vec![first];
     }
     Ok(match selected.as_slice() {
         [] => command.outcomes.iter().find(|branch| state_default(branch)),
@@ -511,7 +514,8 @@ pub(super) fn prepare_at(
     }
     let mut steps = Vec::new();
     let input = if is_absent(outcome) {
-        let input = without_row(ir, command, entity, field, distinction)?;
+        let mut each = without_row_each(ir, command, entity, field, distinction)?.into_iter();
+        let input = each.next().ok_or_else(unarranged)?;
         // Rows of the entity exist, each carrying an identity other than the one sent.
         let first = block_start(OWN, distinction);
         for at in [first - 1, first + 1] {
@@ -520,6 +524,11 @@ pub(super) fn prepare_at(
                 setup.source.extend(decoy.source);
             }
         }
+        // Every other input guard's input is sent for the missing row too, before the scenario's
+        // own send: each is answered by this refusal, so a target answering that guard's branch
+        // before reading the row fails. Only for a refusal, which changes nothing, so the sends
+        // leave the row missing for the next.
+        send_each_without_row(command, outcome, actors, &setup.bound, each, &mut steps);
         input
     } else {
         let (row, first, input) = with_row(
@@ -594,8 +603,10 @@ fn decoy(
 }
 
 /// The input that reaches the `exists: false` branch: a fresh identity for `field`, and — where the
-/// command declares an accepting branch guarded by its input — an input that branch's guard takes,
-/// so the witness holds the precedence: on a missing row, `exists: false` answers whatever the input.
+/// command declares an input-guarded refusal, else an accepting branch guarded by its input — an
+/// input that guard takes, so the witness holds the precedence order: on a missing row,
+/// `exists: false` answers before an input refusal and before any accepting branch, whatever the
+/// input. A refusal is preferred because it is the nearest step after `exists: false`.
 fn without_row(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -603,38 +614,106 @@ fn without_row(
     field: &str,
     distinction: Distinction,
 ) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    without_row_each(ir, command, entity, field, distinction)?
+        .into_iter()
+        .next()
+        .ok_or_else(unarranged)
+}
+
+/// Sends each of `others` for the missing row, each answered by the `exists: false` refusal
+/// `outcome` (beyond10x/ess#227). Only for a refusal, which changes nothing, so every send leaves
+/// the row missing for the next.
+fn send_each_without_row(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    others: impl Iterator<Item = BTreeMap<String, Node>>,
+    steps: &mut Vec<super::ScenarioStep>,
+) {
+    let Some(error) = &outcome.error else {
+        return;
+    };
+    let command_ref = super::CommandRef::new(command.name.clone());
+    for other in others {
+        steps.push(super::ScenarioStep::ExecuteCommand {
+            command: command_ref.clone(),
+            actor: actors.get(&command.name).cloned(),
+            input: super::supply(command, &other, None, None, bound),
+            caller: BTreeMap::new(),
+        });
+        steps.push(super::ScenarioStep::ExpectOutcome {
+            outcome: super::OutcomeRef::new(command_ref.clone(), outcome.name.clone()),
+        });
+        steps.push(super::ScenarioStep::ExpectError {
+            error: super::ErrorRef::from(error),
+            fields: BTreeMap::new(),
+        });
+    }
+}
+
+/// [`without_row`] for every input guard of the command: one input per input-guarded refusal and
+/// per accepting branch guarded by its input, each taken by that guard, in that order, without
+/// repeats — so the `exists: false` scenario sends the missing row with each of them, and a target
+/// answering any one of those branches before reading the row fails (beyond10x/ess#227). Where no
+/// guard is satisfied, the plain witness.
+fn without_row_each(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    field: &str,
+    distinction: Distinction,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
     let fresh = fresh_identity(ir, command, field)?;
-    let accepting: Vec<&Predicate> = command
+    let refusals = command
         .outcomes
         .iter()
-        .filter(|outcome| outcome.error.is_none())
-        .filter_map(input_guard)
+        .filter(|outcome| super::is_input_guarded_refusal(outcome))
+        .filter_map(input_guard);
+    let accepting: Vec<&Predicate> = refusals
+        .chain(
+            command
+                .outcomes
+                .iter()
+                .filter(|outcome| outcome.error.is_none())
+                .filter_map(input_guard),
+        )
         .collect();
-    let mut inputs = Vec::new();
+    let mut inputs: Vec<BTreeMap<String, Node>> = Vec::new();
     for guard in &accepting {
         let found =
             candidates(ir, command, &[*guard], distinction).map_err(RefusalCause::NoWitness)?;
         for input in found {
             let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
             if decides(&facts, &[*guard], true)? {
-                inputs.push(input);
+                if !inputs.contains(&input) {
+                    inputs.push(input);
+                }
                 break;
             }
         }
     }
-    inputs.extend(candidates(ir, command, &[], distinction).map_err(RefusalCause::NoWitness)?);
-    let tried = inputs.len();
-    inputs
+    if inputs.is_empty() {
+        inputs.extend(
+            candidates(ir, command, &[], distinction)
+                .map_err(RefusalCause::NoWitness)?
+                .into_iter()
+                .take(1),
+        );
+    }
+    if inputs.is_empty() {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: format!("no row of `{}` for `input.{field}`", entity.name()),
+            tried: 0,
+        });
+    }
+    Ok(inputs
         .into_iter()
-        .next()
         .map(|mut input| {
-            input.insert(field.to_owned(), fresh);
+            input.insert(field.to_owned(), fresh.clone());
             input
         })
-        .ok_or(RefusalCause::GuardUnsatisfiable {
-            predicate: format!("no row of `{}` for `input.{field}`", entity.name()),
-            tried,
-        })
+        .collect())
 }
 
 /// A row of the related entity and an input that together select `outcome`, and the distinction

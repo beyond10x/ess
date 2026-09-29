@@ -114,6 +114,23 @@ pub fn is_subjectless_refusal(outcome: &Outcome) -> bool {
         && matches!(outcome.condition, OutcomeCondition::SubjectState { .. })
 }
 
+/// Whether this branch is an input-guarded refusal naming no subject: a `when:` over the input
+/// and an `error:`, which a held-state command admits beside its state-selected branches
+/// (beyond10x/ess#227).
+///
+/// It is answered before existence and before the held state
+/// (`docs/design/cross-record-and-stored-field-guards.md` "The precedence order",
+/// beyond10x/ess#209): a request it claims is refused whatever the record holds, and whether or
+/// not a record carries the identity. So it reads no subject, and the joint partition counts an
+/// input it claims as its own in every held state.
+pub fn is_input_refusal(outcome: &Outcome) -> bool {
+    outcome.subject.is_none()
+        && outcome.replays.is_none()
+        && outcome.error.is_some()
+        && matches!(outcome.condition, OutcomeCondition::When(_))
+        && !outcome.is_unconditional()
+}
+
 /// Local declaration checks, also used before a registry or entity map exists.
 pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -142,6 +159,9 @@ pub fn validate_shape(command: &CommandSpec) -> ValidationErrors {
             continue;
         }
         if outcome.is_unconditional() && outcome.error.is_some() && outcome.subject.is_none() {
+            continue;
+        }
+        if is_input_refusal(outcome) {
             continue;
         }
         let Some(subject) = selection(command, outcome)
@@ -235,6 +255,43 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
     errors
 }
 
+/// The joint held-state × input cases of `guarded`, with the branches their indices name.
+///
+/// An input refusal answered first (beyond10x/ess#227) takes part where the prover can decide its
+/// guard. Where it cannot — `secret.count < 12` — that refusal alone leaves the proof, and the
+/// rest of the command, every decidable refusal included, is proved over every input: a request
+/// the dropped refusal claims never reaches it, so that proof is sufficient, only stronger than
+/// needed. A decidable refusal is never dropped with it, so the inputs it claims stay its own.
+fn analyze_partition<'a>(
+    command: &CommandSpec,
+    entity: &EntitySpec,
+    types: &TypeRegistry,
+    guarded: Vec<&'a Outcome>,
+) -> Option<(Vec<finite::StateCase>, Vec<&'a Outcome>)> {
+    let environment = DomainEnvironment::new(types, &command.input);
+    let analyze = |guarded: &[&Outcome]| {
+        let guards: Vec<_> = guarded
+            .iter()
+            .map(|outcome| finite::StateGuard {
+                states: admitted(outcome, entity),
+                predicate: outcome.condition.predicate(),
+            })
+            .collect();
+        finite::analyze_with_states(&environment, &guards, &entity.states.states)
+    };
+    if let Some(cases) = analyze(&guarded) {
+        return Some((cases, guarded));
+    }
+    if !guarded.iter().any(|outcome| is_input_refusal(outcome)) {
+        return None;
+    }
+    let rest: Vec<&Outcome> = guarded
+        .into_iter()
+        .filter(|outcome| !is_input_refusal(outcome) || analyze(&[*outcome]).is_some())
+        .collect();
+    analyze(&rest).map(|cases| (cases, rest))
+}
+
 fn validate_partition(
     command: &CommandSpec,
     entity: &EntitySpec,
@@ -257,19 +314,8 @@ fn validate_partition(
                 )
         })
         .collect();
-    let guards: Vec<_> = guarded
-        .iter()
-        .map(|outcome| finite::StateGuard {
-            states: admitted(outcome, entity),
-            predicate: outcome.condition.predicate(),
-        })
-        .collect();
     let default = command.default_outcome();
-    let Some(cases) = finite::analyze_with_states(
-        &DomainEnvironment::new(types, &command.input),
-        &guards,
-        &entity.states.states,
-    ) else {
+    let Some((cases, guarded)) = analyze_partition(command, entity, types, guarded) else {
         if default.is_none() || command.has_state_refusal() {
             errors.push(ValidationError::at(command.site().key("outcomes"), ValidationCode::NonExhaustiveBranches,
                     "subject-state/input coverage is open, unsupported, or exceeds 64 joint assignments; declare a genuine default"));
@@ -295,7 +341,7 @@ fn validate_partition(
         return errors;
     };
     for case in cases {
-        let selected: Vec<_> = if case.input.selected.is_empty() {
+        let mut selected: Vec<_> = if case.input.selected.is_empty() {
             default.into_iter().collect()
         } else {
             case.input
@@ -304,6 +350,19 @@ fn validate_partition(
                 .map(|index| guarded[*index])
                 .collect()
         };
+        // The input refusals an assignment selects answer it before any state-selected branch,
+        // and of two that select it the first declared answers, as Entity Runtime takes it
+        // (beyond10x/ess#227 adversary pass 1). `guarded` keeps declaration order.
+        if let Some(first) = case
+            .input
+            .selected
+            .iter()
+            .copied()
+            .filter(|index| is_input_refusal(guarded[*index]))
+            .min()
+        {
+            selected = vec![guarded[first]];
+        }
         let assignment = case
             .input
             .values

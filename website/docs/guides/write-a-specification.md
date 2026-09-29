@@ -385,6 +385,33 @@ Every state no guard claims falls to the default, whose move must start there. T
 suite arranges an order in `Delivered` and one in `Cancelled`, each refused with `Gone` and left
 unchanged.
 
+An input-guarded refusal — `when:` with an `error:`, naming no subject — may sit beside the
+state-guarded branches, at every format that has `when_subject_state`. It is answered before the
+record is looked up and before its state is read, so "the new value is refused whatever the record's
+state" is written once:
+
+```yaml
+- name: too-short
+  when: secret.count < 12
+  error: demo.secrets.SecretTooShort
+- name: rotated
+  when_subject_state: Configured
+  updates: demo.secrets.Configuration
+  instance: tenant_id
+  sets: {secret: input.secret}
+- name: not-configured
+  error: demo.secrets.NotConfigured
+```
+
+Of two refusals one input selects, the first declared answers.
+
+The refusal still names no subject: with `updates:` or `preserves:` it is refused as
+`refusal_mutated_state`. The synthesized suite sends the refused input for an identity nothing
+stores, then for a record arranged in each state of the lifecycle, and requires the error, no event
+and the record unchanged each time. Where a state-guarded branch also reads the input, the record in
+its state is sent an input both guards admit. A target that reads the held state or looks the record
+up before it checks the input fails the refusal's scenario.
+
 ### Guard an outcome by the subject's stored fields
 
 "Express parcels over 20 kg are refused at dispatch" depends on two fields stored when the parcel
