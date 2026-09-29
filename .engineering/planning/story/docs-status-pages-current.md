@@ -13,21 +13,20 @@ scope:
   path: website/docs/status/roadmap.md
 - confidence: cited
   path: website/docs/status/where-this-stands.md
-revision: 2
+revision: 3
 ---
-## What
+## Outcome
 
-The status pages report 0.38.0 as the latest release, stop listing the removed `ess skill`, and drop
-internal planning vocabulary. The generated support matrix block is left to `cargo xtask support`.
+The status pages report the latest release, the commands that exist and the limits that hold today,
+without wave or release-train vocabulary.
 
 ## Acceptance
 
-- `where-this-stands.md` names 0.38.0 as the latest release and does not mention `skill`.
+- `where-this-stands.md` names the latest release and no removed command.
+- `limitations.md` is reviewed against 0.43.0 and changed where it is wrong.
 - `roadmap.md` and `outlook.md` carry no wave or release-train vocabulary.
 - `cargo xtask support --check` and `cargo xtask docs` pass.
 
 ## Scope
 
-- website/docs/status/where-this-stands.md
-- website/docs/status/roadmap.md
-- website/docs/status/outlook.md
+- website/docs/status/*

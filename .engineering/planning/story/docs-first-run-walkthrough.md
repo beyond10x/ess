@@ -11,23 +11,25 @@ scope:
   path: website/docs/getting-started.md
 - confidence: cited
   path: website/docs/index.md
-revision: 2
+revision: 3
 ---
-## What
+## Outcome
 
-The walkthrough takes a reader from an installed `ess` to a one-file specification they wrote, an
-OpenAPI document generated from it, and a green conformance run of a generated TypeScript package
-against a small in-memory implementation. The repository example stays as the second half. The
-introduction page stops claiming that `site` stops before HTML.
+The site's tutorials take an adopter from an empty directory to a green conformance run, on the
+current format with an `ess-inputs.yaml` toolchain pin, and CI runs every command they show and
+compares the output they print.
 
 ## Acceptance
 
-- Every command in the new walkthrough section was run against `ess` 0.38.0 and its printed output
-  is copied from that run; the TypeScript run ends `report: passed, 6 scenario(s)`.
-- `cargo xtask docs` passes (the install section names 0.38.0 and nothing older).
+- Tutorial blocks are fenced with an `ess-tutorial` attribute; `cargo test -p ess-cli --test
+  tutorial_page` writes them to a temporary directory, runs each command against the built binary,
+  and compares every recorded output line. Changing one expected line makes the test fail.
+- The TypeScript step runs where `node` is on PATH and ends `report: passed, <n> scenario(s)`.
+- The tutorial uses the current `ess/` format and pins the toolchain with `ess specify toolchain
+  install --pin`.
 - `index.md` describes `site` as HTML.
 
 ## Scope
 
-- website/docs/getting-started.md
-- website/docs/index.md
+- crates/edge/ess-cli/tests/tutorial_page.rs (new)
+- website/docs/getting-started.md, and the Start here pages Wave B creates

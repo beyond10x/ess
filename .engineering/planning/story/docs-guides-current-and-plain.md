@@ -15,23 +15,24 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 2
+revision: 3
 ---
-## What
+## Outcome
 
-The guides and the CLI reference stop naming 0.27.0 as current, stop calling shipped CLI bindings
-unreleased, drop the internal deferral note in the synthesis guide, move the Binary64 digression out
-of "Validate early", and state directory input selection without suite-version shorthand.
+Every guide and concept page describes 0.43.0 in plain words: no stale release, no removed
+command, no internal wave or round vocabulary, and a page for each shipped command family.
 
 ## Acceptance
 
-- `grep -rn '0\.27\.0' website/docs/guides website/docs/reference/cli.md` prints nothing.
-- `guides/synthesize.md` names no wave, W-number or `docs/plan` path.
+- `concepts/overview.md` and `concepts/component-delivery.md` are reviewed against 0.43.0 and
+  changed where they are wrong.
+- Guides exist for `generate project buildkit|helm`, `stack validate`, `deployment
+  diff|reconcile` and `verify conform author|select`.
+- Adopter guidance from `docs/design/running-a-suite.md` (the test pyramid),
+  `error-wire-codes.md` and `mutation-audit-and-model-runner.md` is on the site.
+- `grep -rniE 'wave [0-9]|W[0-9]+\.[0-9]|docs/plan/|release train' website/docs` prints nothing.
 - `cargo xtask docs` and `task site-build` pass.
 
 ## Scope
 
-- website/docs/guides/write-a-specification.md
-- website/docs/guides/synthesize.md
-- website/docs/guides/track-change.md
-- website/docs/reference/cli.md
+- website/docs/concepts/*, website/docs/guides/*

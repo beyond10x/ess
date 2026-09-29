@@ -9,18 +9,22 @@ relations:
 scope:
 - confidence: cited
   path: README.md
-revision: 2
+revision: 3
 ---
-## What
+## Outcome
 
-The repository README installs the current release, describes `site` as HTML, uses area spellings
-throughout, and points readers at the published getting-started page.
+`README.md` installs the current release, describes `site` as HTML, and links the site's Start
+here pages instead of repeating them.
 
 ## Acceptance
 
-- `README.md` names no release older than 0.38.0 as the one to install.
+- `README.md` names no release older than the newest dated `CHANGELOG.md` heading as the one to
+  install, and `cargo xtask docs` checks that.
 - No sentence in `README.md` says the `site` projection does not emit HTML.
+- The command examples `README.md` carries that the site lacks (`project buildkit`, `project
+  helm`, `stack resolve`, `deployment compile`, `runtime compile`) are on the site and linked.
 
 ## Scope
 
 - README.md
+- crates/edge/ess-xtask/src/docs.rs
