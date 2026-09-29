@@ -2846,7 +2846,7 @@ fn prepare_in(
     distinction: Distinction,
 ) -> Result<Setup, RefusalCause> {
     let setup = prepare_subject(ir, outcome, actors, held, distinction)?;
-    Ok(related::arrange(ir, outcome, actors, distinction, setup))
+    related::arrange(ir, outcome, actors, distinction, setup)
 }
 
 /// [`prepare`], with the existing subject arranged under `distinction`: a further witness for every

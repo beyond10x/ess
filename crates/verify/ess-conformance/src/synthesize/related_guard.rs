@@ -499,7 +499,7 @@ pub(super) fn prepare_at(
                     after: Some(born.clone()),
                     ..Setup::none()
                 },
-            )
+            )?
         }
         _ => prepare_in(ir, outcome, actors, None, distinction)?,
     };

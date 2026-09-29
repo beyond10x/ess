@@ -144,6 +144,25 @@ fn relation_carrier_is_compared_with_both_fields_already_declared() {
     );
 }
 
+#[test]
+fn a_relation_moved_onto_the_identity_is_compared_as_a_carrier_change() {
+    // beyond10x/ess#230: a one-to-one `references` may be carried by the source's own identity,
+    // and moving it there is one relation change, not a missing field.
+    assert_relation(
+        &one_change(
+            concat!(
+                "kind: owns\n        target: coverage.model.First\n",
+                "        cardinality: one\n        via: link_id"
+            ),
+            concat!(
+                "kind: references\n        target: coverage.model.First\n",
+                "        cardinality: one\n        via: id"
+            ),
+        ),
+        relation("references", "coverage.model.First", "id"),
+    );
+}
+
 fn parameter(name: &str, ty: &str) -> ParameterContract {
     ParameterContract {
         name: name.into(),

@@ -1,0 +1,5 @@
+format: ess/18
+system: demo
+version: v1
+summary: An identity keyed by a user's id names that user, and outlives it.
+domains: [demo.provisioning, demo.binding]

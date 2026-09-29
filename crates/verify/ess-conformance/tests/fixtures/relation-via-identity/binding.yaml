@@ -1,0 +1,56 @@
+domain: demo.binding
+summary: An external subject bound to a user, keyed by that user's id.
+types:
+  - {name: demo.binding.Subject, kind: newtype, of: String}
+entities:
+  - name: demo.binding.Identity
+    identity: {name: user_id, type: demo.provisioning.UserId}
+    fields:
+      - {name: subject, type: demo.binding.Subject}
+    relations:
+      - {name: user, kind: references, target: demo.provisioning.User, cardinality: one, via: user_id}
+    lifecycle: {initial: Bound, states: [Bound], terminal: [Bound]}
+events:
+  - name: demo.binding.IdentityBound
+    fields:
+      - {name: user_id, type: demo.provisioning.UserId}
+      - {name: subject, type: demo.binding.Subject}
+  - name: demo.binding.IdentityRebound
+    fields:
+      - {name: user_id, type: demo.provisioning.UserId}
+      - {name: subject, type: demo.binding.Subject}
+commands:
+  - name: demo.binding.BindIdentity
+    input:
+      - {name: user_id, type: demo.provisioning.UserId}
+      - {name: subject, type: demo.binding.Subject}
+    outcomes:
+      - name: bound
+        creates: demo.binding.Identity
+        instance: user_id
+        emits: [demo.binding.IdentityBound]
+        payload:
+          demo.binding.IdentityBound: {user_id: input.user_id, subject: input.subject}
+        sets:
+          subject: input.subject
+  - name: demo.binding.RebindIdentity
+    input:
+      - {name: user_id, type: demo.provisioning.UserId}
+      - {name: subject, type: demo.binding.Subject}
+    outcomes:
+      - name: rebound
+        updates: demo.binding.Identity
+        instance: user_id
+        emits: [demo.binding.IdentityRebound]
+        payload:
+          demo.binding.IdentityRebound: {user_id: input.user_id, subject: input.subject}
+        sets:
+          subject: input.subject
+views:
+  - name: demo.binding.Identities
+    source: demo.binding.Identity
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: demo.provisioning.UserId}
+      - {name: subject, type: demo.binding.Subject}
+      - {name: state, type: demo.binding.Identity.State}
