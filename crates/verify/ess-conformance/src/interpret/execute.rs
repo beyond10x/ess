@@ -9,7 +9,7 @@
 //!
 //! | fact | read from |
 //! |---|---|
-//! | which outcome the input selects | each branch's `when:` over [`input::flatten`] under the declared precedence (an input-guarded refusal first, then the first accepting branch declared), then the one `Otherwise` branch |
+//! | which outcome the input selects | the precedence order: a missing related row's `exists: false` branch (`related_absent`), then the first declared input-guarded refusal whose `when:` holds, before anything else is read (`refused_by_input`); else the first accepting or external branch declared whose guard holds, over [`input::flatten`], then the one `Otherwise` branch |
 //! | whether an external branch is taken | [`Externals`] — never the input, never this module |
 //! | whether the subject may move | the transition's own `from` set against the state held in the [`Store`] |
 //! | what a refused move answers | the command's `wrong_state:` branch, or its `unknown_instance:` branch for an identity nobody holds |
@@ -50,7 +50,8 @@ use std::fmt;
 
 use ess_compiler::ir::{
     EssIr, ResolvedBody, ResolvedCommand, ResolvedCondition, ResolvedEffect, ResolvedInstance,
-    ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedSubject, ResolvedTypeRef,
+    ResolvedOutcome, ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest,
+    ResolvedRelatedVia, ResolvedSubject, ResolvedTypeRef,
 };
 use ess_domain::command::OutcomeName;
 use ess_domain::entity::StateName;
@@ -341,6 +342,12 @@ pub fn execute_generating(
         .commands()
         .get(command)
         .ok_or_else(|| Undetermined::UnknownCommand(command.to_string()))?;
+    if let Some(steps) = related_absent(ir, spec, store, input, generated)? {
+        return Ok(steps);
+    }
+    if let Some(steps) = refused_by_input(ir, spec, store, input)? {
+        return Ok(steps);
+    }
     interpretable(spec, matches!(generated, Generated::Recorded(_)))?;
     let facts = input::flatten(ir, spec, input)
         .map_err(|errors| Undetermined::Request(errors.to_string()))?;
@@ -372,9 +379,9 @@ pub fn execute_generating(
 /// answers, so a guard after it is never read: an Unknown there leaves the answer as it is, and an
 /// Unknown before it is Undecidable.
 ///
-/// 1. Every input-guarded refusal, before any other branch and before the provider is asked
-///    (beyond10x/ess#178). The model orders none before another, so every one that holds up to an
-///    Unknown one stays open.
+/// 1. The input-guarded refusals, before any other branch and before the provider is asked
+///    (beyond10x/ess#178): the first declared whose guard holds answers (beyond10x/ess#227). Most
+///    requests are answered earlier by [`refused_by_input`]; this step reads the refusals it leaves.
 /// 2. The accepting `when:` branches and the external branches, in declaration order: the first
 ///    whose guard holds answers (beyond10x/ess#217), and an external one holds where its provider
 ///    takes it — forced, never while withheld, and either way while open, where it stays one
@@ -426,12 +433,9 @@ fn select<'s>(
         if let (ResolvedCondition::When { predicate }, Some(_)) =
             (&outcome.condition, &outcome.error)
         {
-            if selected.is_empty() {
-                if holds(outcome, predicate)? {
-                    selected.push(outcome);
-                }
-            } else if matches!(predicate.evaluate(facts), Truth::True) {
+            if holds(outcome, predicate)? {
                 selected.push(outcome);
+                break;
             }
         }
     }
@@ -477,6 +481,142 @@ fn select<'s>(
         }
     }
     Ok(selected)
+}
+
+/// The answer of a command guarded by a related row (`when_related:`, ess/18) whose related row is
+/// missing: its `exists: false` branch, before any input-guarded refusal — step 1 of the
+/// precedence order (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence
+/// order"). `None` on a command with no related guard, or where the row is stored.
+///
+/// `existing_instance:` answers before it on such a command, and this module does not decide the
+/// command's own existence, so a command declaring one is declined here. A related row named
+/// through a stored field of the subject, or through an input the request does not carry as text,
+/// is declined too: nothing here reads it.
+fn related_absent(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &Store,
+    input: &BTreeMap<String, Node>,
+    generated: &Generated,
+) -> Result<Option<Vec<Step>>, Undetermined> {
+    let related: Vec<&ResolvedOutcome> = spec
+        .outcomes
+        .iter()
+        .filter(|outcome| matches!(outcome.condition, ResolvedCondition::Related { .. }))
+        .collect();
+    let Some(first) = related.first() else {
+        return Ok(None);
+    };
+    let gap = |construct: String| Err(Undetermined::NotInterpreted { construct });
+    if let Some(existing) = spec
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
+    {
+        return gap(format!(
+            "the existing-instance branch of `{}`, which answers before its related row is read",
+            branch(spec, existing)
+        ));
+    }
+    let ResolvedCondition::Related { via, entity, .. } = &first.condition else {
+        unreachable!("filtered to related guards above")
+    };
+    let ResolvedRelatedVia::Input { field, .. } = via else {
+        return gap(format!(
+            "the guard over a row named by a stored field of `{}`",
+            branch(spec, first)
+        ));
+    };
+    let Some(identity) = input.get(field).and_then(Node::as_text) else {
+        return gap(format!(
+            "the guard over a related row of `{}` with no text identity in `{field}`",
+            branch(spec, first)
+        ));
+    };
+    let entity = &ir.entity(entity).name;
+    if store.instance(entity, identity).is_some() {
+        return Ok(None);
+    }
+    let Some(absent) = related.iter().find(|outcome| {
+        matches!(
+            &outcome.condition,
+            ResolvedCondition::Related {
+                test: ResolvedRelatedTest::Absent,
+                ..
+            }
+        )
+    }) else {
+        return Ok(None);
+    };
+    if absent.subject.is_none() && absent.error.is_some() {
+        return Ok(Some(vec![refusal(spec, absent, store)]));
+    }
+    match take(ir, spec, absent, store, input, generated)? {
+        Ok(step) => Ok(Some(vec![step])),
+        Err(why) => Err(Undetermined::Request(format!(
+            "no branch the model allows is described by the given values — `{}`: {why}",
+            branch(spec, absent)
+        ))),
+    }
+}
+
+/// The input-guarded refusals (`when:` with an `error:`, naming no subject) the input selects,
+/// answered before anything else is read, or `None` where it selects none.
+///
+/// Such a refusal is taken before existence, the held state, the stored row, a provider and every
+/// accepting branch it overlaps (`docs/design/input-guard-overlap-precedence.md`,
+/// `docs/design/outcome-shapes.md` "Precedence", beyond10x/ess#178, #209, #227). So a request it
+/// claims is answered here even on a command whose other branches read what this module does not
+/// execute — a held state, a stored field — since none of them is consulted; a request it does not
+/// claim goes on to [`interpretable`] as before. Of two refusals the input selects together, the
+/// first declared answers, as Entity Runtime orders them (`ess-entity-runtime` sorts input-guarded
+/// refusals first, then by declaration, and takes the first whose guard holds).
+///
+/// On a command guarded by a related row (`when_related:`) it runs after [`related_absent`]: a
+/// missing related row is answered by its `exists: false` branch first
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order").
+///
+/// Where a refusal's guard reads the current time, nothing is answered early and [`interpretable`]
+/// names that guard. A request that does not decode is left to the ordinary path, which reports it
+/// in the order it always has.
+fn refused_by_input(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &Store,
+    input: &BTreeMap<String, Node>,
+) -> Result<Option<Vec<Step>>, Undetermined> {
+    let refusals: Vec<(&ResolvedOutcome, &Predicate)> = spec
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            outcome.error.is_some() && outcome.subject.is_none() && outcome.replays.is_none()
+        })
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::When { predicate } if !predicate.is_trivially_true() => {
+                Some((outcome, predicate))
+            }
+            _ => None,
+        })
+        .collect();
+    if refusals.is_empty() || refusals.iter().any(|(_, guard)| reads_now(guard)) {
+        return Ok(None);
+    }
+    let Ok(facts) = input::flatten(ir, spec, input) else {
+        return Ok(None);
+    };
+    for (outcome, guard) in refusals {
+        match guard.evaluate(&facts) {
+            Truth::True => return Ok(Some(vec![refusal(spec, outcome, store)])),
+            Truth::False => {}
+            Truth::Unknown => {
+                return Err(Undetermined::Undecidable {
+                    outcome: branch(spec, outcome),
+                    guard: format!("{guard:?}"),
+                })
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Refuses a command using any construct this module does not execute, before anything is read.

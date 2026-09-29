@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T09:29:59Z",
+  "actor": "human:timo",
+  "artifact": "story:an-input-refusal-sits-beside-a-subject-state-branch",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction 2 (coordinator): ess-domain 1045/0, ess-conformance 1670/0, ess-entity-runtime 84/0, ess-xtask 334/0; clippy after a function split, schema, generate, docs, fmt clean",
+    "reference": "~/.cache/ess-wave-n2/refstate/c2.log"
+  }
+}

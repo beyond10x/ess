@@ -265,12 +265,11 @@ to read beside `unknown_instance:`. The creating half of create-or-update is not
 because it is the ess/15 marker with a creation. In each form the other branch is unconditional,
 so the pair counts as exhaustive and ESS-COMMAND-004 has nothing to refuse.
 
-**Precedence (coordinator decision, correction round 1).** An input-guarded refusal (`when:` with
-an `error:`) is answered **before** selection by existence, in both forms: the precedence #178
-fixed for a refusal overlapping an accepting branch (`input-guard-overlap-precedence.md`). A
-request a declared refusal claims by its input is refused whether or not a record carries the
-identity; only a request no such refusal claims is answered by the creation, the update or
-`existing_instance:`. The creating half is therefore not "the first answer" the ess/15 marker is;
+**Precedence.** As
+[the precedence order](cross-record-and-stored-field-guards.md#the-precedence-order) states: an
+input-guarded refusal (`when:` with an `error:`) comes before existence, in both forms, except
+that on a command with a `when_related:` branch `existing_instance:` comes first. The creating
+half is therefore not "the first answer" the ess/15 marker is;
 the generated page says so.
 
 The same precedence holds on a command that only addresses an existing record (`moves:`,
@@ -285,8 +284,30 @@ checks the input only for unknown records fails the second. If no arrangement re
 record, synthesis withdraws the scenario and refuses it with the arrangement's cause. It is not
 filed to be skipped at run time. Three cases keep their own families: a refusal whose guard reads
 the identity field stays a plain send (#178), a command reading stored fields already sends its
-refusals for an arranged row, and a command whose branches read the held state gets no arranged
-half.
+refusals for an arranged row, and a command whose branches read the held state gets one arranged
+row per held state, below.
+
+**Beside held-state branches (beyond10x/ess#227).** An input-guarded refusal naming no subject is
+admitted beside `when_subject_state:` and `when_state_changes:` branches. Before, ESS-COMMAND-003
+(`unobservable_fact`) refused it for naming no `moves` or `updates` subject, and naming one was
+`refusal_mutated_state`, so "the new value is refused whatever the record's state" had no form on
+a command acting on an existing record. No key is added, so no format gates it: it validates at
+every format that has `when_subject_state:`. It is ordered by
+[the precedence order](cross-record-and-stored-field-guards.md#the-precedence-order), so the
+joint state × input partition (`ess_domain::command::subject_state`) counts an input it claims as
+its alone in every held state, the first declared of two answering. Where the prover cannot
+decide a refusal's guard
+(`secret.count < 12`), that refusal alone leaves the proof and the other branches, decidable
+refusals included, are proved over every input, which is sufficient because a request it claims
+never reaches them. Its scenario sends the refused input for an identity nothing stores, then, for each state of
+the lifecycle in declaration order, on a record of its own arranged and observed in that state, the
+refused input as decided there, and again at the overlap with each sibling that runs in that state
+and reads the input; each send requires the refusal, its error, no event and the row unchanged
+(`existence::refusals_in_each_held_state`). A state no arrangement reaches withdraws the scenario
+with the arrangement's cause. The model interpreter answers such a refusal before it reads
+anything else, so it decides a request the refusal claims even on a command whose held-state
+branches it does not yet interpret; Entity Runtime already orders every input-guarded refusal
+first and decides it before the row is loaded.
 
 | Code | Refused |
 |---|---|

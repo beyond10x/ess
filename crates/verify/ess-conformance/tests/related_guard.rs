@@ -528,7 +528,16 @@ fn issue_211_the_interpreted_target_names_the_related_guard_it_does_not_evaluate
     let report = Runner::for_suite(admitted.suite())
         .run_admitted(&admitted, &target)
         .into_report();
-    for id in [NO_CONFIGURATION, NO_REDIRECT, INITIATED] {
+    // Superseded by the precedence order (#227 correction 1): the interpreter answers a missing
+    // related row by its `exists: false` branch, so `no-configuration` passes rather than being
+    // unsupported. The branches that read a stored related row are still not evaluated.
+    let absent = report
+        .scenarios
+        .iter()
+        .find(|run| run.scenario.to_string() == NO_CONFIGURATION)
+        .unwrap_or_else(|| panic!("{NO_CONFIGURATION} is run"));
+    assert_eq!(absent.status, Status::Passed, "{:?}", absent.checks);
+    for id in [NO_REDIRECT, INITIATED] {
         let run = report
             .scenarios
             .iter()

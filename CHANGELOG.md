@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **An input-guarded refusal beside held-state branches** (beyond10x/ess#227, first filed as
+  #213). A `when:` + `error:` branch naming no subject may now sit beside `when_subject_state:` and
+  `when_state_changes:` branches, so "the new value is refused whatever the record's state" has a
+  form on a command acting on an existing record. It was refused as ESS-COMMAND-003
+  (`unobservable_fact`), and naming a subject on it is still `refusal_mutated_state`. No key is
+  added, so no format gates it: it validates at every format that has `when_subject_state:`. It is
+  answered before existence and before the held state (the #209 precedence): the joint state × input
+  partition counts an input it claims as its alone in every state, and where the prover cannot
+  decide its guard (`secret.count < 12`) the other branches are proved over every input on their
+  own. Synthesis sends the refused input for an identity nothing stores, then on a record of its own
+  arranged and observed in each lifecycle state, and at the overlap with each sibling that runs in
+  that state and reads the input; each send requires the error, no event and the row unchanged. A
+  target reading the held state, the record, or a state-guarded sibling before the input fails. The
+  model interpreter answers an input-guarded refusal before anything else is read, so it decides a
+  request such a refusal claims on a command whose other branches it does not interpret yet; Entity
+  Runtime already decides it before the row is loaded. Of two input-guarded refusals one request selects, the first declared answers, as Entity Runtime orders them: validation admits the overlap (it was `conflicting_declaration` on a held-state command), the interpreter returns that one refusal, and synthesis has a refusal's witness refute only the refusals declared before it, so a refusal nested inside an earlier one keeps its scenario rather than being withdrawn. Where the prover cannot decide one refusal's guard, only that refusal leaves the joint proof; a decidable one beside it still counts. One precedence order now answers every command, written once in the cross-record guards design note and linked from the others: on a `when_related:` command `existing_instance:` then `exists: false`; then input-guarded refusals, first declared; then existence of the addressed row; then the held state; then accepting and external branches in declaration order. The interpreter answers a missing related row by its `exists: false` branch before an input refusal, and synthesis sends that branch an input a refusal claims, so a target checking the input first fails it. Committed suites are byte-identical.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed
