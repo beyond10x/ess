@@ -2,16 +2,20 @@
 format: aep.planning-md/3
 id: story:docs-first-run-walkthrough
 kind: story
-status: draft
+status: active
 title: The walkthrough goes from an empty directory to a green conformance run
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/getting-started.md
 - confidence: cited
   path: website/docs/index.md
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:11:13Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-09-29T14:11:13Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 

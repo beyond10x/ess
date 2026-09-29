@@ -2,11 +2,15 @@
 format: aep.planning-md/3
 id: story:docs-cli-reference-generated
 kind: story
-status: draft
+status: active
 title: The CLI reference is generated from the command definition
 relations:
 - decomposes: epic:public-docs-overhaul
-revision: 1
+- serves: vision:O2
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:11:12Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-09-29T14:11:12Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 

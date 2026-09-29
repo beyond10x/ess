@@ -6,6 +6,7 @@ status: draft
 title: The README installs the current release and describes site as HTML
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: README.md

@@ -6,6 +6,7 @@ status: draft
 title: The guides and CLI reference name current releases and read without internal shorthand
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/guides/synthesize.md

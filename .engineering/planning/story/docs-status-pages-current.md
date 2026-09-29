@@ -6,6 +6,7 @@ status: draft
 title: The status pages report 0.38.0 and the commands that exist
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/status/outlook.md

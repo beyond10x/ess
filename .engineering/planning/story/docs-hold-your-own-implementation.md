@@ -6,6 +6,7 @@ status: draft
 title: The conformance guide shows how to hold your own implementation to the suite
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/guides/verify-conformance.md

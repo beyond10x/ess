@@ -6,6 +6,7 @@ status: draft
 title: The example page renders on both sites and its snippets are checked
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 revision: 1
 ---
 ## Outcome

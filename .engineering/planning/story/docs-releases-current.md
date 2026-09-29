@@ -6,6 +6,7 @@ status: draft
 title: Every release has a post and a generated what-changed page
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 revision: 1
 ---
 ## Outcome

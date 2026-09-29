@@ -6,6 +6,7 @@ status: draft
 title: Every page is reachable and every link lands on a rendered page
 relations:
 - decomposes: epic:public-docs-overhaul
+- serves: vision:O2
 scope:
 - confidence: cited
   path: website/docs/concepts/ess.md
