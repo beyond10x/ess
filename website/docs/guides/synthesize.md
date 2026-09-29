@@ -102,6 +102,34 @@ availability independently of the dated release observation.
 component whose own words say its callers are not deployed with it, and a surface reached over a
 network is one a page would *call* rather than contain.
 
+## One crate instead of a workspace
+
+The `rust` target's default layout, `--layout workspace`, is a workspace of crates: one for the
+types, one per component, one for the system and one for the HTTP server, so one component can be
+taken alone. An adopter that never deploys a component alone can ask for one crate instead:
+
+```shell-session
+$ ess generate synthesize --path examples/gatepass --target rust --layout crate --out out/
+```
+
+`Cargo.toml` and `src/lib.rs` land at `--out`, and nothing sits deeper than `src/<module>/<file>`:
+
+| Module | Holds |
+|---|---|
+| `src/<context>.rs` | one per bounded context, as in the workspace's types crate, beside `primitives` and the `json`, `obligation`, `actor` and `behaviour` modules the model needs |
+| `src/ports.rs`, `src/ports/<component>.rs` | each component's port |
+| `src/system.rs` | the bindings and the transport |
+| `src/server.rs`, `src/server/` | the HTTP surface: `http`, `wire`, `json`, `entry` and one route module per served component |
+
+The HTTP surface is the `server` Cargo feature, off by default. Without it the crate has no
+`std::net` in it; with `--features server` it is the same server the workspace builds, and passes
+the same conformance suite. A bounded context named `ports`, `system` or `server` becomes
+`ports_domain`, `system_domain` or `server_domain` in this layout only. `plan.json` records the
+layout in its `scope`, and `PLAN.md` and every file header name `ess synthesize --layout crate` as
+the command that rewrites the tree. The `go`, `web` and `clap` targets refuse `--layout crate`
+with exit status 2 and write nothing. The workspace layout's bytes are unchanged. See the
+[layout tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/single_crate_layout.rs).
+
 ## Realizations: the human's half
 
 An **obligation** is implemented in a separate, hand-written crate or module — a *realization* —

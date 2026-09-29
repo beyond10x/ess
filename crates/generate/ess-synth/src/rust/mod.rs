@@ -43,6 +43,7 @@ mod obligation;
 pub(crate) mod port;
 mod reading;
 mod selection;
+pub(crate) mod single;
 pub(crate) mod system;
 pub(crate) mod wire;
 
@@ -104,13 +105,40 @@ impl Emit<'_> {
 /// If what was emitted is not exactly what the plan marks generated — a defect in this crate, and
 /// the one lie the plan document must never be allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    Ok(emitted(ir, plan, false)?.1)
+}
+
+/// The same code as [`workspace`], laid out as one crate at the generated root
+/// (`--layout crate`): see [`single`].
+///
+/// # Errors
+///
+/// As [`workspace`].
+///
+/// # Panics
+///
+/// As [`workspace`], and if a workspace file has no place in the single crate.
+pub fn single_crate(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    let (layout, artifacts) = emitted(ir, plan, true)?;
+    Ok(single::relayout(ir, plan, &layout, artifacts))
+}
+
+/// The workspace's artifacts, from the allocation for the layout they will land in.
+fn emitted(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    single_crate: bool,
+) -> Result<(Layout, Vec<Artifact>), crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
     crate::existence::refuse(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Rust)?;
-    let layout = feasibility::checked(ir, plan, crate::Target::Rust)?;
+    let layout = feasibility::checked_shaped(ir, plan, crate::Target::Rust, single_crate)?;
     accessor::preflight(ir, plan, &layout)?;
     invariant::preflight(ir, plan, &layout)?;
     let provenance = &plan.provenance;
@@ -190,7 +218,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
          ess-synth, and shipping it would break the promise that every owed capability is visible \
          twice — in the plan, and as a typed refusal in the workspace"
     );
-    Ok(artifacts)
+    Ok((layout, artifacts))
 }
 
 /// One enum variant name per event of a set, collision-free by rule rather than by luck.

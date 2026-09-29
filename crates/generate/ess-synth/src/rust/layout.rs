@@ -47,15 +47,21 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// Derives the layout of a resolved specification.
+    /// Derives the workspace layout of a resolved specification.
     pub fn of(ir: &EssIr) -> Self {
+        Self::shaped(ir, false)
+    }
+
+    /// Derives the layout of a resolved specification, for the workspace or for the single crate
+    /// (`--layout crate`). The two differ only in which bounded-context module names are reserved.
+    pub fn shaped(ir: &EssIr, single_crate: bool) -> Self {
         let package = format!("{}-types", ir.system().segments().join("-"));
         let system_package = format!("{}-system", ir.system().segments().join("-"));
         let server_package = format!("{}-server", ir.system().segments().join("-"));
         let component_packages =
             component_packages(ir, &[&package, &system_package, &server_package]);
 
-        let modules = module_idents(ir);
+        let modules = module_idents(ir, single_crate);
         let mut owners = BTreeMap::new();
         for domain in ir.domains().values() {
             for declared in &domain.types {
@@ -256,8 +262,10 @@ impl Layout {
 ///    that have no such module. `actor` joins them, on the same reasoning, only in a model that
 ///    declares an actor, whose types crate carries the `actor` grant table; `behaviour` joins them
 ///    the same way, only in a model where some command's behaviour is generated and the types
-///    crate carries the `behaviour` module.
-fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
+///    crate carries the `behaviour` module. `ports`, `system` and `server` join them only in the
+///    single-crate layout (`--layout crate`), whose root holds those three modules beside the
+///    bounded contexts; the workspace layout keeps its names.
+fn module_idents(ir: &EssIr, single_crate: bool) -> BTreeMap<QualifiedName, String> {
     let mut candidates: BTreeMap<QualifiedName, String> = ir
         .domains()
         .keys()
@@ -296,6 +304,7 @@ fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
             || (json && module == "json")
             || (actor && module == super::actor::MODULE)
             || (behaviour && module == "behaviour")
+            || (single_crate && super::single::ROOT_MODULES.contains(&module.as_str()))
         {
             module.push_str("_domain");
         }

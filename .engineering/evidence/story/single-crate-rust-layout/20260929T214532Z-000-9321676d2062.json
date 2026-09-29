@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T21:45:32Z",
+  "actor": "human:timo",
+  "artifact": "story:single-crate-rust-layout",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-synth 274 passed (single_crate_layout 6; declared_behaviour 23/23 in both layouts); ess-cli synthesize_layout 3; generate/schema/cli-reference --check; docs; clippy; fmt-check",
+    "reference": "impl/046-layout@9c8e89d82"
+  }
+}

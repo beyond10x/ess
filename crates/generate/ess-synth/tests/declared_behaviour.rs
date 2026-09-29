@@ -33,7 +33,10 @@ use ess_domain::spec::{RawSpecFile, Specification};
 use ess_domain::system::Source;
 use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
-use ess_synth::{synthesize_for, CapabilityKind, SynthesisDisposition, SynthesisPlan, Target};
+use ess_synth::{
+    synthesize_for, synthesize_laid_out, CapabilityKind, OutputLayout, SynthesisDisposition,
+    SynthesisPlan, Target,
+};
 
 /// The fixture directory.
 fn fixture_root() -> PathBuf {
@@ -515,7 +518,7 @@ fn cargo(directory: &Path, target: &Path, arguments: &[&str]) -> (bool, String) 
     )
 }
 
-/// The harness crate's manifest, pointing into the generated workspace beside it.
+/// The harness crate's manifest, without its dependencies: those depend on the layout.
 const HARNESS_MANIFEST: &str = "[package]
 name = \"declared-behaviour-harness\"
 version = \"0.0.0\"
@@ -529,38 +532,94 @@ name = \"harness\"
 path = \"src/main.rs\"
 
 [dependencies]
-desk-types = { path = \"../desk/crates/desk-types\" }
+";
+
+/// The workspace layout's dependencies: three of its crates, by path.
+const WORKSPACE_DEPENDENCIES: &str = "desk-types = { path = \"../desk/crates/desk-types\" }
 desk-server = { path = \"../desk/crates/desk-server\" }
 desk-service = { path = \"../desk/crates/desk-service\" }
 ";
+
+/// The single-crate layout's one dependency, with its HTTP surface switched on.
+const CRATE_DEPENDENCIES: &str = "desk = { path = \"../desk\", features = [\"server\"] }\n";
+
+/// The harness source, as committed.
+fn harness_source() -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/declared-behaviour-harness/main.rs"),
+    )
+    .expect("the harness is readable")
+}
 
 #[test]
 fn the_generated_behaviours_build_with_warnings_denied_and_pass_their_own_suite() {
     let ir = compile_directory(&fixture_root());
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
+    run_suite(
+        &ir,
+        &synthesis,
+        "workspace",
+        WORKSPACE_DEPENDENCIES,
+        &harness_source(),
+        &["check", "--workspace", "--all-targets"],
+    );
+}
 
+/// `story:single-crate-rust-layout`: the same fixture, laid out as one crate, passes the same
+/// suite through the same harness once its `server` feature is on. Only the harness's paths into
+/// the generated code differ: `desk_types::` is the crate root, the component's port is under
+/// `ports::`, and the HTTP surface under `server::`.
+#[test]
+fn the_single_crate_layout_passes_the_same_suite_with_its_server_feature() {
+    let ir = compile_directory(&fixture_root());
+    let synthesis = synthesize_laid_out(&ir, Target::Rust, OutputLayout::Crate)
+        .expect("the fixture synthesizes as one crate");
+    let harness = harness_source()
+        .replace("desk_server::", "desk::server::")
+        .replace("desk_service::", "desk::ports::desk_service::")
+        .replace("desk_types::", "desk::");
+    run_suite(
+        &ir,
+        &synthesis,
+        "crate",
+        CRATE_DEPENDENCIES,
+        &harness,
+        &["check", "--all-targets", "--features", "server"],
+    );
+}
+
+/// Writes the synthesis and the harness beside it, builds both with warnings denied, and runs
+/// the suite the specification synthesizes against the harness.
+fn run_suite(
+    ir: &EssIr,
+    synthesis: &ess_synth::Synthesis,
+    label: &str,
+    dependencies: &str,
+    harness_source: &str,
+    check: &[&str],
+) {
     let scratch = Scratch(
         Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("declared-behaviour-{}", std::process::id())),
+            .join(format!("declared-behaviour-{label}-{}", std::process::id())),
     );
     let _ = std::fs::remove_dir_all(&scratch.0);
     let tree = scratch.0.join("desk");
-    write_tree(&tree, &synthesis);
+    write_tree(&tree, synthesis);
     let harness = scratch.0.join("harness");
     std::fs::create_dir_all(harness.join("src")).expect("mkdir");
-    std::fs::write(harness.join("Cargo.toml"), HARNESS_MANIFEST).expect("write");
-    std::fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/declared-behaviour-harness/main.rs"),
-        harness.join("src/main.rs"),
+    std::fs::write(
+        harness.join("Cargo.toml"),
+        format!("{HARNESS_MANIFEST}{dependencies}"),
     )
-    .expect("copy the harness");
+    .expect("write");
+    std::fs::write(harness.join("src/main.rs"), harness_source).expect("write the harness");
     let target = scratch.0.join("target");
 
-    let (built, log) = cargo(&tree, &target, &["check", "--workspace", "--all-targets"]);
+    let (built, log) = cargo(&tree, &target, check);
     assert!(
         built,
-        "the generated workspace builds with -D warnings:\n{log}"
+        "the generated {label} builds with -D warnings:\n{log}"
     );
     let (built, log) = cargo(&harness, &target, &["build"]);
     assert!(
@@ -568,9 +627,9 @@ fn the_generated_behaviours_build_with_warnings_denied_and_pass_their_own_suite(
         "the harness builds against the generated ports:\n{log}"
     );
 
-    let suite = ess_conformance::synthesize(&ir).suite;
+    let suite = ess_conformance::synthesize(ir).suite;
     let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
-    let target = Harnessed::start(&target.join("debug/harness"), &ir);
+    let target = Harnessed::start(&target.join("debug/harness"), ir);
     let report = Runner::for_suite(&suite)
         .run_admitted(&admitted, &target)
         .into_report();

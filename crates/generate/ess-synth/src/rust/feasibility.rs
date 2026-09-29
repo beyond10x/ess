@@ -185,7 +185,18 @@ pub(crate) fn checked(
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<Layout, TargetFailure> {
-    let layout = Layout::of(ir);
+    checked_shaped(ir, plan, target, false)
+}
+
+/// [`checked`], for the workspace or for the single crate: the allocation the single crate is
+/// emitted from reserves its three root modules, and every check below runs against it.
+pub(crate) fn checked_shaped(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    target: Target,
+    single_crate: bool,
+) -> Result<Layout, TargetFailure> {
+    let layout = Layout::shaped(ir, single_crate);
     let mut inventory = Inventory::default();
     for declared in ir.types().keys() {
         if !layout.has_owner(declared) {

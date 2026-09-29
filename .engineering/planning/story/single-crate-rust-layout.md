@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:single-crate-rust-layout
 kind: story
-status: active
+status: implemented
 title: The rust target can emit one crate instead of a workspace
 relations:
 - serves: vision:O2
 - decomposes: epic:generated-determined-behaviour
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T20:42:52Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T20:42:52Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T21:45:33Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
