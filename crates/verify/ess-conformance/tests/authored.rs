@@ -1837,6 +1837,7 @@ fn every_cause_is_reachable_from_a_document() {
         .map(|refusal| refusal.code().to_string())
         .collect();
     let declared: BTreeSet<String> = (1..=CAUSES)
+        .filter(|number| *number != MODEL_LEVEL)
         .map(|number| Code::new("AUTHOR", number).to_string())
         .collect();
     assert_eq!(
@@ -1849,7 +1850,11 @@ fn every_cause_is_reachable_from_a_document() {
 ///
 /// Written down rather than counted, because the point of the case above is that the numbering and
 /// the documents agree: a count taken from the enum would agree with itself whatever happened.
-const CAUSES: u16 = 35;
+const CAUSES: u16 = 37;
+
+/// The one cause no document reaches: `ESS-AUTHOR-036` refuses the model before any file is read
+/// (`sparse_models_cannot_publish_an_empty_success_for_binary64` in `tests/suite.rs`).
+const MODEL_LEVEL: u16 = 36;
 
 /// One entry per refusal, each the documents that reach it compiled together.
 ///
@@ -1963,6 +1968,13 @@ fn refusable() -> Vec<(&'static str, Vec<String>)> {
         billing(format!("{CREATED}{HALTS_AT_NOTHING}")),
         // 35 semantically incompatible scalar operands
         billing(format!("{CREATED}assert:\n  - view: billing.invoice.OutstandingInvoices\n    satisfies: total.amount == text\n")),
+        // 36 refuses the model, not a document; 37 an external-only claim with no branch named
+        billing(
+            "timeline:\n  - at: 2026-01-05T09:00:00Z\n    command: billing.email.SendEmail\n    \
+             input:\n      recipient: nobody@example.test\n      template: welcome\n    \
+             error:\n      name: billing.email.Undeliverable\n"
+                .to_owned(),
+        ),
     ]
 }
 

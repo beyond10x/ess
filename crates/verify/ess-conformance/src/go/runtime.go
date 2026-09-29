@@ -344,7 +344,10 @@ func checkedRefusal(value any, selection map[string]any, sources map[string]any,
 			return nil, err
 		}
 		valid := false
-		for n := 1; n <= 35; n++ {
+		for n := 1; n <= 37; n++ {
+			if n == 36 {
+				continue
+			}
 			if code == fmt.Sprintf("ESS-AUTHOR-%03d", n) {
 				valid = true
 			}
