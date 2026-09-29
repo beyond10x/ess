@@ -175,20 +175,21 @@ pub(crate) fn binary64(
     }
 }
 
-/// A model that uses `Json` (beyond10x/ess#138) is refused by every code target except Rust, as
-/// `Binary64` is.
+/// A model that uses `Json` (beyond10x/ess#138) is refused by every code target except Rust and
+/// clap, as `Binary64` is.
 ///
 /// The Rust target represents it as the types crate's dependency-free `json::Value`
 /// (beyond10x/ess#224): the fixed `json` module moves into the types crate for such a model, and
 /// the server crate re-exports it, so no template byte a model without `Json` emits changes (see
-/// `rust::json`). Go, web and the command-line target have no representation of their own yet, so
-/// each position is named rather than emitted with a representation nobody chose.
+/// `rust::json`). The command-line target carries that same module and parses a `Json` flag with
+/// it (see `clap::tree`). Go and web have no representation of their own yet, so each position is
+/// named rather than emitted with a representation nobody chose.
 pub(crate) fn json(
     ir: &ess_compiler::EssIr,
     plan: &SynthesisPlan,
     target: Target,
 ) -> Result<(), TargetFailure> {
-    if target == Target::Rust {
+    if matches!(target, Target::Rust | Target::Clap) {
         return Ok(());
     }
     let causes = ess_compiler::binary64::locations_of(ir, ess_domain::Primitive::Json)

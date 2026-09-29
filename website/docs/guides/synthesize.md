@@ -77,9 +77,14 @@ All four full synthesis targets refuse unsupported modeled Binary64, as covered 
 [feasibility tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/feasibility.rs).
 The `rust` target represents `Json` as `json::Value`, a module its types crate carries only when
 the model uses `Json`. The generated server re-exports that module, so the wire codecs carry the
-value unchanged: members keep their order and numbers keep their spelling. `go`, `web` and `clap`
+value unchanged: members keep their order and numbers keep their spelling. `go` and `web`
 refuse `Json` and name the target and each position, as covered by the
 [Json tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/json_primitive.rs).
+The `clap` target carries the same `json` module when the model uses `Json`: a `Json` flag
+(bare, optional, repeated or through a newtype) takes one argument holding a JSON document, a
+malformed one is a usage error, and a handler receives the `json::Value` and prints a `Json`
+response unchanged with `json::push_value`, as covered by the
+[clap Json tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/json_clap.rs).
 This boundary is separate from the [structural data libraries](../reference/cli.md#adopter-owned-schema-contracts).
 The [support matrix](../status/where-this-stands.md#support-boundaries) records current-source target
 availability independently of the dated release observation.
