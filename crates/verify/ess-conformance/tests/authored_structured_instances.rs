@@ -692,8 +692,9 @@ fn a_reference_nothing_can_place_is_refused_in_every_container() {
             None,
             "fallbak",
         ),
-        // map value, wrong shape
-        ("      by_pair: {canary: [{$instance: a}]}\n", None, "by_pair[canary]"),
+        // map value, wrong shape: the shape check reads a map's values by ordinal in key order
+        // (beyond10x/ess#240), so it names the value there
+        ("      by_pair: {canary: [{$instance: a}]}\n", None, "by_pair.0"),
         // map value of a map of identities, wrong shape
         (
             "",

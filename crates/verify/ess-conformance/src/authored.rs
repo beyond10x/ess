@@ -2861,7 +2861,8 @@ impl Compiler<'_> {
     ///
     /// A reference that nothing can place — at a member the model does not declare, or inside a
     /// value of the wrong shape — is refused where the shape check does not look, which is
-    /// `unchecked`: inside a map's values and inside a union, the shape check reads no member.
+    /// `unchecked`: inside a union, the shape check reads no member (it reads a map's values since
+    /// beyond10x/ess#240).
     /// Elsewhere the shape check names the member or the shape, and this walk says nothing more,
     /// so one mistake is one refusal. Either way no reference reaches a target as the mapping it
     /// is written as.
@@ -3000,8 +3001,16 @@ impl Compiler<'_> {
                 place.member(key),
                 unchecked,
             ),
-            // A map's values are not facts: the shape check reads none of them.
-            Container::Map(value) => (Slot::Typed(value.clone()), place.key(key), true),
+            // The shape check reads a map's values at their ordinal in key order (beyond10x/ess#240),
+            // so a value is checked there as a list element is.
+            Container::Map(value) => {
+                let ordinal = entries.keys().position(|at| at == key).unwrap_or_default();
+                (
+                    Slot::Typed(value.clone()),
+                    place.key(key, ordinal),
+                    unchecked,
+                )
+            }
             Container::Union {
                 name,
                 tag,
@@ -3419,11 +3428,11 @@ impl Place {
         }
     }
 
-    /// The value at `key` of a map, which the shape check does not walk into.
-    fn key(&self, key: &str) -> Self {
+    /// The value at `key` of a map, which the shape check names by its `ordinal` in key order.
+    fn key(&self, key: &str, ordinal: usize) -> Self {
         Self {
             written: format!("{}[{key}]", self.written),
-            fact: format!("{}[{key}]", self.fact),
+            fact: format!("{}.{ordinal}", self.fact),
         }
     }
 }
