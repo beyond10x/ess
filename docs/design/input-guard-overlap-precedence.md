@@ -1,6 +1,7 @@
 # Input-guarded refusals take precedence over the accepting branches they overlap
 
-beyond10x/ess#178. No source or suite format change.
+beyond10x/ess#178, and beyond10x/ess#217 for two accepting branches. No source or suite format
+change.
 
 ## The gap
 
@@ -26,14 +27,16 @@ command cannot act on at all; an accepting guard names which of the things it ca
 Checking the first before the second is what every implementation that refuses an empty id before
 reading `open` already does.
 
-The rule orders refusals ahead of accepting branches and nothing else:
+The rule orders refusals ahead of accepting branches, and accepting guarded branches by the order
+they are declared in:
 
 | pair | order |
 |---|---|
 | input-guarded refusal, accepting branch with an input guard: a plain `when:`, the `when:` beside a `when_subject:`, or an external branch's `when:` | the refusal, before any stored row is read or any provider asked |
 | input-guarded refusal, default | not an overlap: the default is what no other guard selects |
 | two input-guarded refusals | unordered: a witness of one refutes the other with or without a default, so it selects exactly one outcome; where no input does, synthesis refuses the scenario naming both guards (beyond10x/ess#209) |
-| two accepting guarded branches | unchanged |
+| two accepting guarded branches | the first declared whose guard holds (beyond10x/ess#217, below) |
+| an accepting guarded branch and an external branch | the same declaration order: the first declared whose guard holds, an external one where its provider takes it (beyond10x/ess#217, below) |
 | a refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
 
 Without a default, validation's finite coverage proof already refuses every overlap it can decide,
@@ -66,13 +69,14 @@ only spelling that removes the overlap is the one ESS-COMMAND-003 refuses.
    that is `{ticket_id: "", open: false}` requiring `id-required`. A refusal that overlaps no
    accepting branch gains nothing, and an overlap point equal to the refusal's own witness is not
    sent twice.
-3. **A branch every input of which a refusal claims is refused naming it.** Beside a default,
+3. **A branch every candidate of which a refusal claims is refused naming it.** Beside a default,
    `zero: count == 0` next to `too-few: count <= 0` has no input that reaches it. Its refusal
    (`ESS-SYNTH-003`) says `count == 0 outside too-few (count <= 0), the input-guarded refusal taken
    first` rather than that a satisfiable guard has no witness. The same record (`Shadow`) is kept
    by the input search (`reach`), the external search (`reach_external`) and the stored-row search
    (`subject_fact::prepare`, over every row it arranged), and each renders it only where every
-   input its own guards admitted was claimed by a refusal.
+   candidate its own guards admitted was claimed by a refusal. The search is bounded, so this is a
+   statement about the candidates tried, not about every input.
 
 The same rule reaches the other accepting shapes:
 
@@ -90,12 +94,110 @@ without a row: no row is named by an empty identity.
 No scenario id is added, so no suite format changes. The committed suites under
 `suites/generated/` are byte-identical: none of their models declares such an overlap.
 
+## Two accepting guarded branches (beyond10x/ess#217)
+
+```yaml
+outcomes:
+  - {name: small, when: amount < 100, creates: demo.Order}
+  - {name: flagged, when: amount > 50, creates: demo.Order}
+  - {name: refused, error: demo.NotPlaced}
+```
+
+`amount: 75` satisfies both, and `validate` accepts the command. Among the accepting guarded
+branches of one command, **the first declared whose guard holds answers**: `75` takes `small`.
+Every input-guarded refusal still comes first. The rule is the one Entity Runtime already applied,
+since its lowering keeps accepting guarded branches in source order. It is stated rather than
+refused because a refusal would break specifications that validate today.
+
+Synthesis holds a target to it for each pair of accepting `when:` branches, in the same two ways
+as for a refusal:
+
+1. **A later branch's witness refutes every accepting `when:` branch declared before it**, beside a
+   default (`admits_plain`, `earlier_accepting`). `flagged` is witnessed at an amount `small`
+   does not claim, so a target honouring the precedence is never asked to take `flagged` at `75`.
+   The search runs over the branch's own guards first, then with the refusals' guards, and only
+   then with the earlier branches' guards (`searched_guards`), so a witness an earlier search found
+   is unchanged. Boundary witnesses are decided by the same rule.
+2. **The first-declared branch is sent again in each overlap** (`overlap_inputs`, through
+   `boundary_inputs`): for each later accepting `when:` sibling, the first candidate that satisfies
+   both guards and refutes every input-guarded refusal and every accepting branch declared earlier.
+   The invocation is appended to the branch's own `…/outcome/<branch>` scenario and requires it,
+   so a target answering `flagged` there fails. An overlap point equal to a witness already sent is
+   not sent twice.
+3. **A branch is refused naming an earlier one when every candidate tried for it is claimed**
+   (`Shadow`): `tiny: amount < 10` after `small` reads `amount < 10 outside small (amount < 100),
+   the accepting branch declared first` under `ESS-SYNTH-003`. The search is bounded, so the
+   refusal says what the candidates showed, not that no input reaches the branch.
+
+Without a default, validation's coverage proof refuses every overlap it can decide and a number or
+text guard requires a default, so these witnesses change nothing there.
+
+**External branches take the same order.** An `external:` branch, with or without a `when:`, sits
+among the accepting guarded branches in declaration order: an accepting `when:` branch declared
+before it answers an input its guard claims, whatever the provider says, and the provider decides
+only an input no earlier accepting guard claims. That is Entity Runtime's order, which keeps both in
+one category by source position (below). So the external branch's witness (`reach_external`)
+refutes every accepting `when:` branch declared before it, searched after the refusals, and a
+binding that would force such a branch without observing the input it maps is refused
+(`PrecededExternalEligibility`), as a guarded one already was. An external branch declared first is
+taken first wherever its provider takes it.
+
+### Overlaps no ladder value reaches
+
+Both overlap searches, and every witness search (`reach`, `reach_in_state`, `reach_external`), run a
+second pass where the first finds nothing: each `Decimal` leaf is also tried at the exact midpoint
+of every two adjacent literals the guards compare it with (`witness::candidates_between`). The
+ladder tries each literal and one either side, so `amount > 11` beside `amount < 12` held nothing it
+tried; `11.5` lies in every interval two literals bound. A witness the first pass finds is the one
+it always was, so no committed suite changes.
+
+### Nothing unsent is silent
+
+After the suite is built, `unwitnessed_overlaps` reads it back: for each overlap, the scenario of the
+branch taken first must send an input in it and require that branch. Where it does not, the
+synthesis carries a `Note::UnwitnessedOverlap` naming the scenario and both branches, with why:
+
+| gap | when |
+|---|---|
+| `Unreached` | no candidate lies in the overlap, and the candidates do not cover every region the literals divide the input into |
+| `Unsent` | a candidate lies in it, and the scenario is arranged by a search that does not send it: a stored row (`when_subject:`), a replay, a preserved subject, or a held state another branch also claims |
+
+An overlap is not noted where the candidates are exhaustive (`witness::exhausts`: every guard is
+built from `all`, `any`, `not` and comparisons of one input leaf with a literal, over numbers, text
+equality, Booleans and enums, and the regions fit within the candidate bound) and none lies in both:
+the overlap is then shown empty. The check reads the finished suite rather than the generators, so a
+path that forgets to send an overlap is noted whichever path it is.
+
+### A command whose branches read the held state
+
+In a command with a `SubjectState` or `StateChange` sibling, a plain accepting branch is witnessed in
+a held state by `reach_in_state`, which requires it to be the only branch selected. It is now also
+sent each overlap in the state its scenario arranged (`overlap_inputs_in_state`, through
+`boundaries`), at an input that refutes every state-guarded branch admitting that state. Where a
+state-guarded branch with no guard beyond the state admits it, no such input exists and the overlap
+is noted `Unsent`. Boundary witnesses are still not sent there.
+
+The interpreter (`crates/verify/ess-conformance/src/interpret/execute.rs`) returned every branch
+whose `when:` held, so it refused the overlap as open. It now reads the branches in the declared
+order and stops at the first that answers: every input-guarded refusal first, where every one that
+holds stays open since the model orders none of them; then the accepting `when:` branches and the
+external branches in declaration order, the first whose guard holds answering — an external one
+where the provider takes it (`Forced`), never while it is withheld, and while it is `Open` as one
+possible answer beside whatever the declarations after it select; then the default. A guard read
+after the answer is never evaluated, so an optional it reads may be absent; a guard read before it
+that the input cannot decide is `Undecidable`.
+
 ## Entity Runtime
 
 Entity Runtime selects the first branch whose guard holds. The lowering in
 `crates/generate/ess-entity-runtime/src/lib.rs` ordered guarded branches by source position, so
 `closed` written before `id-required` won the overlap. It now orders every input-guarded refusal
-first, then the other guarded branches, the default, and the wrong-state branch.
+first, then the other guarded branches, the default, and the wrong-state branch. The sort is stable
+on source position, so among accepting guarded branches the first declared answers, which
+`the_first_declared_accepting_branch_answers_the_overlap` in the test below pins. An external branch
+is lowered as a guard over the provider's verdict in the same category, so an accepting branch
+declared before it answers first whatever the verdict says, which
+`an_accepting_branch_declared_before_an_external_one_answers_first` pins.
 
 The ordering is exercised by `crates/generate/ess-entity-runtime/tests/input_guard_overlap.rs`
 with a refusal over an ordinary input. Whether an empty identity, #178's own case, reaches branch

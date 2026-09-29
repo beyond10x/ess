@@ -795,7 +795,7 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
-| `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. A value none of the literals leads to, such as `amount > 0.1 and amount < 0.2`, is refused too. |
+| `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. Where none of those fits either, a `Decimal` is also tried at the exact midpoint of every two adjacent literals it is compared with, so `amount > 0.1 and amount < 0.2` is met by `0.15`. |
 
 A refusal with a `when:` over the input is taken before any accepting branch whose guard it
 overlaps. Synthesis holds a target to that twice. An accepting branch's witness refutes every such
@@ -804,8 +804,27 @@ the refusal is required there. For `closed: open == false` and `id-required: tic
 the `id-required` scenario also sends `{ticket_id: "", open: false}`. This holds for the `when:`
 beside a `when_subject:`, sent for a ticket the stored guard admits (or for no ticket, where the
 refusal reads the identity itself), and for an external branch's
-`when:`, sent without asking the provider. A branch every input of which such a refusal claims is
-refused with `ESS-SYNTH-003`, naming that refusal.
+`when:`, sent without asking the provider. A branch is refused with `ESS-SYNTH-003`, naming that
+refusal, when every candidate the search tries for it is claimed by the refusal. The search is
+bounded, so an input it does not try may still reach the branch.
+
+Two accepting branches with a `when:` over the input may overlap too. The first declared whose guard
+holds answers. For `small: amount < 100` written before `flagged: amount > 50`, the input
+`{amount: 75}` takes `small`. Synthesis holds a target to that the same two ways. A later branch's
+witness refutes every accepting branch declared before it, beside a default. And the first
+branch's scenario also sends an input in each overlap and requires that branch there, so a target
+answering `flagged` for `75` fails. An external branch takes the same place in that order: an
+accepting branch declared before it answers an input its guard claims, whatever the provider says,
+so its scenario is sent an input outside that guard. A branch is refused with `ESS-SYNTH-003`,
+naming the earlier branch, when every candidate the search tries for it is claimed by an earlier
+one.
+
+An overlap is searched over the guards' own literals, and for a `Decimal` also at the midpoint of
+every two adjacent ones, so `11 < amount < 12` is sent `11.5`. An overlap the scenario of the branch
+taken first does not send is listed as a note naming both branches, unless the candidates cover
+every region the literals divide the input into and none lies in both guards. That happens where
+no candidate reaches it, or where the branch is arranged over a stored row, a replay or a preserved
+subject, or in a held state another branch also claims.
 
 ```yaml ess-check="when" ess-expect="unwitnessed:ESS-SYNTH-003"
 when: sku

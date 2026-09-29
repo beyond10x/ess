@@ -176,6 +176,12 @@ false` and `id-required: ticket_id == ""`, the input `{ticket_id: "", open: fals
 `id-required`, and the generated suite sends it and requires that. An accepting branch cannot read
 the identity to step aside, so this precedence is how such a command is written.
 
+Two accepting branches may overlap as well. The first declared whose guard holds answers: with
+`small: amount < 100` written before `flagged: amount > 50`, the input `{amount: 75}` takes
+`small`, and the generated suite sends an input in that overlap and requires `small`. Write the
+narrower branch first when it should win. An `external:` branch takes its place in the same order: written after
+`small`, it is asked only for an input `small` does not claim.
+
 ### An invariant reads only what every creation sets
 
 An entity invariant that reads a required field needs every `creates:` branch of that entity to set

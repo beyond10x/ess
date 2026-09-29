@@ -87,7 +87,10 @@ fn legacy_formats_do_not_admit_guarded_external_semantics() {
 fn a_finite_partition_does_not_hide_external_witness_fields() {
     let model = MODEL.replace("events:\n", "types:\n  - name: delivery.mail.Mode\n    kind: enum\n    variants: [A, B]\nevents:\n")
         .replace("      - {name: retry,", "      - {name: mode, type: delivery.mail.Mode}\n      - {name: retry,")
-        .replace("      - name: sent\n        emits:", "      - name: sent-b\n        when: mode == B\n        emits: [delivery.mail.Sent]\n      - name: sent\n        when: mode == A\n        emits:");
+        .replace("      - name: sent\n        emits: [delivery.mail.Sent]\n", "")
+        // Declared after the external branch: an accepting branch declared before it answers first
+        // (beyond10x/ess#217), and this partition covers every input.
+        .replace("        error: delivery.mail.Rejected\n", "        error: delivery.mail.Rejected\n      - name: sent-b\n        when: mode == B\n        emits: [delivery.mail.Sent]\n      - name: sent\n        when: mode == A\n        emits: [delivery.mail.Sent]\n");
     let result = ess_conformance::synthesize::synthesize(&ir(&model));
     assert!(result.refusals.is_empty(), "{:?}", result.refusals);
 }

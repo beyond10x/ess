@@ -250,6 +250,232 @@ pub fn candidates(
     guards: &[&Predicate],
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    search(ir, command, guards, distinction, false).map(|(inputs, _)| inputs)
+}
+
+/// [`candidates`] with each `Decimal` leaf also tried between every two adjacent literals the
+/// guards compare it with, or `None` where no such leaf has two distinct literals to go between.
+///
+/// Rule 3 tries each literal and one either side, so an interval between two literals less than two
+/// apart holds no value it tries: `amount > 11` and `amount < 12` over a `Decimal` are satisfied
+/// together by nothing on that ladder (beyond10x/ess#217). The midpoint of each such pair, at the
+/// exact decimal precision the value is written in, is a value inside every interval the literals
+/// bound, so over guards comparing one `Decimal` leaf with literals the search is exhaustive. It is
+/// a second search a caller runs only where the first found nothing, so a witness the ladder finds
+/// is the one it always was.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub fn candidates_between(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    distinction: Distinction,
+) -> Result<Option<Vec<BTreeMap<String, Node>>>, WitnessGap> {
+    search(ir, command, guards, distinction, true)
+        .map(|(inputs, between)| between.then_some(inputs))
+}
+
+/// Whether the candidates for `guards` try a value in every region the guards' literals divide each
+/// leaf into, in every combination: then no candidate deciding two guards together means no input
+/// does, and an overlap nothing reached is shown empty rather than merely unreached.
+///
+/// Holds where every guard is built from `all`, `any`, `not` and comparisons of one input leaf with
+/// a literal — an order over a number, an equality over a number, a text, a Boolean or an enum —
+/// and the ladders, with the midpoints [`candidates_between`] adds, fit inside [`MAX_CANDIDATES`]
+/// together. Anything else — two facts compared, a text ordered or matched, a count, a list, a
+/// leaf whose type carries an invariant, an optional left out — answers `false`, which a caller
+/// reads as "not shown".
+pub fn exhausts(ir: &EssIr, command: &ResolvedCommand, guards: &[&Predicate]) -> bool {
+    fn plain(predicate: &Predicate) -> bool {
+        match predicate {
+            Predicate::Always
+            | Predicate::Never
+            | Predicate::Truthy(_)
+            | Predicate::AnyOf { .. }
+            | Predicate::NoneOf { .. } => true,
+            Predicate::All(children) | Predicate::Any(children) => children.iter().all(plain),
+            Predicate::Not(inner) => plain(inner),
+            Predicate::Compare { left, right, .. } => matches!(
+                (left, right),
+                (Operand::Fact(_), Operand::Literal(_)) | (Operand::Literal(_), Operand::Fact(_))
+            ),
+            _ => false,
+        }
+    }
+    if !guards.iter().all(|guard| plain(guard)) {
+        return false;
+    }
+    let mut builder = Builder::new(
+        ir,
+        Distinction::PLAIN,
+        list_reads(guards),
+        positional_reads(guards),
+    );
+    if builder.input(command, &BTreeMap::new()).is_err() {
+        return false;
+    }
+    let mut regions: usize = 1;
+    for path in read_paths(guards) {
+        let Some((leaf, at_base)) = builder.leaves.get(&path) else {
+            return false;
+        };
+        if builder.optionals.contains(&path) {
+            return false;
+        }
+        // A newtype invariant drops candidates the ladder counted, so a region it removes was not
+        // tried and an overlap there would read as empty.
+        if builder
+            .invariants
+            .get(&path)
+            .is_some_and(|invariants| !invariants.is_empty())
+        {
+            return false;
+        }
+        let literals = literals_at(guards, &path);
+        let tried = match leaf {
+            Leaf::Number { integral } => {
+                if *integral
+                    && literals
+                        .iter()
+                        .any(|literal| literal.as_number().is_some_and(|n| !n.is_integral()))
+                {
+                    return false;
+                }
+                let mut values = alternatives(leaf, at_base, &literals, true);
+                if !*integral {
+                    values.extend(midpoints(&literals));
+                }
+                values.len() + 1
+            }
+            Leaf::Bool => 2,
+            Leaf::Enum { variants } => variants.len(),
+            Leaf::Text => {
+                if ordered_at(guards, &path)
+                    || literals
+                        .iter()
+                        .any(|literal| matches!((literal.as_text(), at_base), (Some(text), Node::Text(base)) if text == base))
+                {
+                    return false;
+                }
+                literals.len() + 1
+            }
+            Leaf::Timestamp | Leaf::Json => return false,
+        };
+        regions = regions.saturating_mul(tried.max(1));
+    }
+    regions <= MAX_CANDIDATES
+}
+
+/// The exact midpoint of every two adjacent distinct numeric literals, lowest first.
+fn midpoints(literals: &[FactValue]) -> Vec<Node> {
+    let mut numbers: Vec<Number> = literals.iter().filter_map(FactValue::as_number).collect();
+    numbers.sort_by(|a, b| a.get().total_cmp(&b.get()));
+    numbers.dedup();
+    numbers
+        .windows(2)
+        .filter_map(|pair| midpoint(pair[0], pair[1]))
+        .map(Node::Number)
+        .collect()
+}
+
+/// `(a + b) / 2`, exactly where both are exact decimals and the result survives its own write;
+/// otherwise the binary64 midpoint. `None` only where that is not finite.
+fn midpoint(a: Number, b: Number) -> Option<Number> {
+    fn parts(number: Number) -> Option<(i128, u32)> {
+        let text = number.exact_text();
+        let (negative, body) = match text.strip_prefix('-') {
+            Some(body) => (true, body),
+            None => (false, text.as_str()),
+        };
+        let (integer, fraction) = body.split_once('.').unwrap_or((body, ""));
+        let units: i128 = format!("{integer}{fraction}").parse().ok()?;
+        Some((
+            if negative { -units } else { units },
+            u32::try_from(fraction.len()).ok()?,
+        ))
+    }
+    let exact = parts(a).zip(parts(b)).and_then(|((a, sa), (b, sb))| {
+        let scale = sa.max(sb);
+        let widen = |units: i128, from: u32| units.checked_mul(10_i128.checked_pow(scale - from)?);
+        // (a + b) / 2 at one more place: (a + b) * 5 at scale + 1.
+        let units = widen(a, sa)?.checked_add(widen(b, sb)?)?.checked_mul(5)?;
+        let scale = scale + 1;
+        let digits = units.unsigned_abs().to_string();
+        let width = usize::try_from(scale).ok()?;
+        let padded = format!("{digits:0>width$}", width = width + 1);
+        let (integer, fraction) = padded.split_at(padded.len() - width);
+        let fraction = fraction.trim_end_matches('0');
+        let sign = if units < 0 { "-" } else { "" };
+        let text = if fraction.is_empty() {
+            format!("{sign}{integer}")
+        } else {
+            format!("{sign}{integer}.{fraction}")
+        };
+        Number::decimal_literal(&text)
+    });
+    exact.or_else(|| Number::new(a.get() / 2.0 + b.get() / 2.0).ok())
+}
+
+/// The candidates of a no-default command whose guards validation proved a finite partition of,
+/// or `None` where that does not apply.
+///
+/// A newly admitted no-default partition uses exactly the domain that validation proved. Commands
+/// with real defaults keep the existing candidate order.
+fn finite_partition(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    builder: &mut Builder<'_>,
+    presence_omits: &BTreeMap<FactPath, Choice>,
+) -> Result<Option<Vec<BTreeMap<String, Node>>>, WitnessGap> {
+    let partition =
+        command.outcomes.iter().all(|outcome| {
+            outcome.test_strategy != ess_domain::command::TestStrategy::DefaultBranch
+        }) && guards.iter().all(|guard| {
+            command
+                .outcomes
+                .iter()
+                .filter_map(crate::when)
+                .any(|ordinary| ordinary == *guard)
+        });
+    if !partition {
+        return Ok(None);
+    }
+    let all_guards: Vec<_> = command.outcomes.iter().filter_map(crate::when).collect();
+    let Some(cases) = ess_domain::command::finite::analyze(
+        &ess_compiler::expression::Environment::new(ir, &command.input),
+        &all_guards,
+    ) else {
+        return Ok(None);
+    };
+    let mut inputs = Vec::new();
+    for case in cases {
+        let overrides: BTreeMap<FactPath, Choice> = case
+            .values
+            .into_iter()
+            .map(|(path, value)| (path, Choice::Value(Node::Text(value))))
+            .collect();
+        for input in paired(builder, command, &overrides, presence_omits)? {
+            if !inputs.contains(&input) {
+                inputs.push(input);
+            }
+        }
+    }
+    Ok(Some(admitted_inputs(ir, command, inputs)))
+}
+
+/// [`candidates`], and with `between` the midpoints [`candidates_between`] adds; the flag says
+/// whether any was added.
+fn search(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    guards: &[&Predicate],
+    distinction: Distinction,
+    between: bool,
+) -> Result<(Vec<BTreeMap<String, Node>>, bool), WitnessGap> {
+    let mut added = false;
     // A quantifier's body reads its element through a binder. Rebound onto the element a one-
     // element list carries — `t == vip` over `tags` becomes `tags.0 == vip` — it is an ordinary
     // guard over an ordinary leaf, and rule 3 finds its literal like any other.
@@ -281,39 +507,10 @@ pub fn candidates(
     // changes the branch.
     let presence_omits = presence_inputs(ir, command, &read_paths(&expanded), &builder.optionals);
 
-    // A newly admitted no-default partition uses exactly the domain that validation proved.
-    // Preserve the existing candidate order for commands with real defaults.
-    if command
-        .outcomes
-        .iter()
-        .all(|outcome| outcome.test_strategy != ess_domain::command::TestStrategy::DefaultBranch)
-        && guards.iter().all(|guard| {
-            command
-                .outcomes
-                .iter()
-                .filter_map(crate::when)
-                .any(|ordinary| ordinary == *guard)
-        })
-    {
-        let all_guards: Vec<_> = command.outcomes.iter().filter_map(crate::when).collect();
-        if let Some(cases) = ess_domain::command::finite::analyze(
-            &ess_compiler::expression::Environment::new(ir, &command.input),
-            &all_guards,
-        ) {
-            let mut inputs = Vec::new();
-            for case in cases {
-                let overrides: BTreeMap<FactPath, Choice> = case
-                    .values
-                    .into_iter()
-                    .map(|(path, value)| (path, Choice::Value(Node::Text(value))))
-                    .collect();
-                for input in paired(&mut builder, command, &overrides, &presence_omits)? {
-                    if !inputs.contains(&input) {
-                        inputs.push(input);
-                    }
-                }
-            }
-            return Ok(admitted_inputs(ir, command, inputs));
+    if !between {
+        if let Some(inputs) = finite_partition(ir, command, guards, &mut builder, &presence_omits)?
+        {
+            return Ok((inputs, false));
         }
     }
 
@@ -332,6 +529,16 @@ pub fn candidates(
             &literals_at(&expanded, &path),
             ordered_at(&expanded, &path),
         );
+        if between && matches!(leaf, Leaf::Number { integral: false }) {
+            // Tried first: they are what this second search adds.
+            let mut inside: Vec<Node> = midpoints(&literals_at(&expanded, &path))
+                .into_iter()
+                .filter(|value| value != at_base && !alternatives.contains(value))
+                .collect();
+            added |= !inside.is_empty();
+            inside.append(&mut alternatives);
+            alternatives = inside;
+        }
         if let (Leaf::Text, Node::Text(base)) = (leaf, at_base) {
             let invariants = builder.invariants.get(&path).map_or(&[][..], Vec::as_slice);
             for text in text_alternatives(&expanded, invariants, &path, base) {
@@ -392,7 +599,7 @@ pub fn candidates(
         let solved = Directed::new(&mut builder, command, guards, &ladders).solve()?;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
-    Ok(admitted_inputs(ir, command, inputs))
+    Ok((admitted_inputs(ir, command, inputs), added))
 }
 
 /// The optional inputs, and optional members of inputs, that a branch copies into an emitted event
@@ -627,9 +834,9 @@ fn extend_paired(
 /// The limits are the ladders' and the bound's: a group is searched over at most
 /// [`MAX_CANDIDATES`] × [`MAX_ENUMERATED_PER_CANDIDATE`] combinations, a goal gives up after
 /// [`MAX_CANDIDATES`] breakdowns, and at most [`MAX_CANDIDATES`] candidates are solved. A value no
-/// ladder holds (`amount > 0.1 and amount < 0.2`) is still not found. A field compared only with other
-/// fields writes no literal, so its ladder is 0 and -1 beside its base: a strict chain over four such
-/// fields has no solution here.
+/// ladder holds (`amount > 0.1 and amount < 0.2`) is not found here; [`candidates_between`] finds
+/// it. A field compared only with other fields writes no literal, so its ladder is 0 and -1 beside
+/// its base: a strict chain over four such fields has no solution here.
 struct Directed<'a, 'ir> {
     builder: &'a mut Builder<'ir>,
     command: &'a ResolvedCommand,
