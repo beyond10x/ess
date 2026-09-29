@@ -2737,6 +2737,7 @@ fn replay_eligibility(
         steps: Vec::new(),
         source: BTreeSet::new(),
         settled: origin.settled.clone(),
+        unwritten: BTreeSet::new(),
     };
     for field in observed {
         let (observation, view) = subject_fact::observe(ir, &subject.entity, &field, &arrangement)?;
@@ -2803,7 +2804,14 @@ fn replay_condition(
             }
             ResolvedCondition::SubjectPredicate { predicate, input } => {
                 observed.extend(subject_fact::read_by(ir, &subject.entity, predicate));
-                match subject_fact::row_truth(ir, &subject.entity, settled, Some(held), predicate) {
+                match subject_fact::row_truth(
+                    ir,
+                    &subject.entity,
+                    settled,
+                    &BTreeSet::new(),
+                    Some(held),
+                    predicate,
+                ) {
                     Truth::True => {}
                     Truth::False => return Ok(false),
                     Truth::Unknown => return Err(RefusalCause::NoWitness(WitnessGap {
@@ -3012,9 +3020,92 @@ struct Arrangement {
     /// later value — which is what the implementation will hold, and so what a declared order
     /// ranks this row by.
     settled: BTreeMap<String, Determined>,
+    /// The `Optional` fields no step of the arrangement wrote, known from its creation onward: the
+    /// row holds nothing there, so a predicate asking whether one is present reads it as absent
+    /// (beyond10x/ess#239). Empty wherever the arrangement's history is not known from its
+    /// creation, which leaves such a predicate `Unknown`, as before.
+    unwritten: BTreeSet<String>,
+}
+
+/// The `Optional` fields of `entity` the creating branch `creator` does not write, and nothing but
+/// a later act on the row itself can: absent on the row as it leaves it (beyond10x/ess#239).
+///
+/// A stored field has five writers in the model, and each is either folded in by
+/// [`Arrangement::absorb`] or kept out of the set here, where it reads undetermined as before:
+///
+/// | writer | here |
+/// |---|---|
+/// | the creator's own `sets:` | not unwritten |
+/// | a later `updates:`/`moves:` `sets:` on this row, sent by the scenario | folded in by `absorb` |
+/// | an `instances:` outcome's `sets:`, on every row its filter selects | [`written_elsewhere`] |
+/// | an `affects:` entry's `sets:`, on every row its filter selects | [`written_elsewhere`] |
+/// | the `sets:` of a command a binding invokes, which the target runs unasked | [`written_elsewhere`] |
+///
+/// The last three reach a row no step of its own arrangement names — a decoy's act, or the target
+/// reacting to an event — so no arrangement knows whether one ran on it.
+fn unwritten_by(ir: &EssIr, entity: &EntityHandle, creator: &ResolvedOutcome) -> BTreeSet<String> {
+    let elsewhere = written_elsewhere(ir, entity);
+    ir.entity(entity)
+        .fields
+        .iter()
+        .filter(|field| field.type_ref.is_optional())
+        .filter(|field| !creator.sets.iter().any(|set| set.target == field.name))
+        .filter(|field| !elsewhere.contains(&field.name))
+        .map(|field| field.name.clone())
+        .collect()
+}
+
+/// The fields of `entity` some writer other than an act the arrangement sends to the row itself
+/// can write: every `instances:` and `affects:` `sets:` on the entity, and every `sets:` of a
+/// command a binding invokes that updates or moves a row of it. A binding-invoked `creates:` makes
+/// a row of its own and writes no other.
+fn written_elsewhere(ir: &EssIr, entity: &EntityHandle) -> BTreeSet<String> {
+    let bound: BTreeSet<&QualifiedName> = ir
+        .bindings()
+        .values()
+        .map(|binding| &ir.command(&binding.command).name)
+        .collect();
+    let mut written = BTreeSet::new();
+    for command in ir.commands().values() {
+        let invoked = bound.contains(&command.name);
+        for outcome in &command.outcomes {
+            if outcome
+                .instances
+                .as_ref()
+                .is_some_and(|set| &set.entity == entity)
+                || (invoked
+                    && outcome.subject.as_ref().is_some_and(|subject| {
+                        &subject.entity == entity
+                            && !matches!(subject.effect, ResolvedEffect::Creates)
+                    }))
+            {
+                written.extend(outcome.sets.iter().map(|set| set.target.clone()));
+            }
+            for affect in outcome.affects.iter().filter(|a| &a.entity == entity) {
+                written.extend(affect.sets.iter().map(|set| set.target.clone()));
+            }
+        }
+    }
+    written
+}
+
+/// `unwritten` less every field `outcome`'s `sets:` writes: what stays unwritten after it runs.
+fn still_unwritten(unwritten: &BTreeSet<String>, outcome: &ResolvedOutcome) -> BTreeSet<String> {
+    unwritten
+        .iter()
+        .filter(|field| !outcome.sets.iter().any(|set| &set.target == *field))
+        .cloned()
+        .collect()
 }
 
 impl Arrangement {
+    /// Folds one further act on this row, `outcome`, with what it determined: [`absorb`], and every
+    /// field it writes no longer unwritten.
+    fn absorb(&mut self, outcome: &ResolvedOutcome, determined: BTreeMap<String, Determined>) {
+        absorb(&mut self.settled, outcome, determined);
+        self.unwritten = still_unwritten(&self.unwritten, outcome);
+    }
+
     /// The identity this instance is known by for the rest of the scenario.
     fn identity(&self) -> ScenarioValue {
         ScenarioValue::instance(self.instance.clone())
@@ -3207,7 +3298,7 @@ fn advance(
             let mut next = arrangement.clone();
             next.steps.extend(invoked.steps);
             next.source.extend(invoked.source);
-            absorb(&mut next.settled, driver.outcome, invoked.settled);
+            next.absorb(driver.outcome, invoked.settled);
             if let Some(transition) = driver.effect.transition() {
                 next.state = transition.to.clone();
             }
@@ -3290,6 +3381,7 @@ fn under_owner(
             steps: Vec::new(),
             source: BTreeSet::new(),
             settled: BTreeMap::new(),
+            unwritten: BTreeSet::new(),
         },
     ))
 }
@@ -3397,6 +3489,7 @@ fn created_owned(
         steps,
         source,
         settled,
+        unwritten: unwritten_by(ir, entity, creator.outcome),
     })
 }
 

@@ -228,7 +228,9 @@ fn missing(entity: &EntityHandle, field: &str, reason: &'static str) -> RefusalC
 /// Only the values the arrangement determined as literals are bound, and bound against the
 /// entity's declared fields, so each is read at its declared type. A predicate reading a field the
 /// arrangement did not determine is `Unknown` — never decided against an absent binding, because
-/// the row does hold *something* there and the specification does not say what.
+/// the row does hold *something* there and the specification does not say what — except an
+/// `Optional` field `unwritten` names, which no step since the row's creation wrote: that one holds
+/// nothing, and is bound as absent (beyond10x/ess#239).
 ///
 /// `held` is the lifecycle state the row rests in, which a predicate reading `state` decides over
 /// (ess/18, beyond10x/ess#204); without it such a predicate is `Unknown`, for the same reason.
@@ -236,10 +238,11 @@ pub(super) fn row_truth(
     ir: &EssIr,
     entity: &EntityHandle,
     settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
     held: Option<&super::StateName>,
     predicate: &Predicate,
 ) -> Truth {
-    row_truth_with(ir, entity, settled, held, predicate, None)
+    row_truth_with(ir, entity, settled, unwritten, held, predicate, None)
 }
 
 /// Whether a stored-field predicate reads the held lifecycle state as `state` (ess/18,
@@ -354,6 +357,7 @@ pub(super) fn row_truth_with(
     ir: &EssIr,
     entity: &EntityHandle,
     settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
     held: Option<&super::StateName>,
     predicate: &Predicate,
     input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
@@ -369,6 +373,13 @@ pub(super) fn row_truth_with(
                 .map(|value| (name.clone(), value.clone()))
         })
         .collect();
+    // An `Optional` field no step of the arrangement wrote holds nothing (beyond10x/ess#239): the
+    // row as its creator left it, which `{exists: false}` and `not defined()` select.
+    for field in unwritten {
+        if !settled.contains_key(field) {
+            values.insert(field.clone(), Node::Null);
+        }
+    }
     // A link to the owner compared with an input naming an arranged owner is bound as that
     // owner's token, which the input carries too (beyond10x/ess#193).
     if let Some((command, sent)) = input {
@@ -1020,6 +1031,7 @@ fn row_under(
                     steps: Vec::new(),
                     source: BTreeSet::new(),
                     settled: BTreeMap::new(),
+                    unwritten: BTreeSet::new(),
                 },
             );
             super::created_owned(
@@ -1071,6 +1083,7 @@ fn selects<'a>(
                 ir,
                 entity,
                 &arrangement.settled,
+                &arrangement.unwritten,
                 Some(&arrangement.state),
                 &predicate,
                 Some((command, input)),
@@ -1277,6 +1290,7 @@ fn refusal_input(
                     ir,
                     entity,
                     &arrangement.settled,
+                    &arrangement.unwritten,
                     Some(&arrangement.state),
                     predicate,
                     Some((command, input)),
@@ -1520,6 +1534,7 @@ fn profile(
             ir,
             entity,
             &arrangement.settled,
+            &arrangement.unwritten,
             Some(&arrangement.state),
             predicate,
         )
@@ -1613,7 +1628,7 @@ fn advanced(
         next.steps.push(ScenarioStep::ExpectNoError);
     }
     next.source.extend(invoked.source);
-    absorb(&mut next.settled, driver.outcome, invoked.settled);
+    next.absorb(driver.outcome, invoked.settled);
     if let Some(transition) = driver.effect.transition() {
         next.state = transition.to.clone();
     }
@@ -1679,7 +1694,7 @@ fn successors(
         let mut next = arrangement.clone();
         next.steps.extend(invoked.steps);
         next.source.extend(invoked.source);
-        absorb(&mut next.settled, driver.outcome, invoked.settled);
+        next.absorb(driver.outcome, invoked.settled);
         if let Some(transition) = driver.effect.transition() {
             next.state = transition.to.clone();
         }
@@ -1990,6 +2005,7 @@ fn shadowed_at(
                 ir,
                 entity,
                 &arrangement.settled,
+                &arrangement.unwritten,
                 Some(&arrangement.state),
                 predicate,
                 Some((command, &input)),
@@ -2335,6 +2351,12 @@ fn expected_row(
         ),
     ]);
     for field in fields {
+        // An `Optional` field no writer can have reached holds nothing (beyond10x/ess#239). A row
+        // may leave an absent field out or carry it as `null`, and the runner compares a top-level
+        // field exactly, so neither form can be required here: the command's answer witnesses it.
+        if !arrangement.settled.contains_key(field) && arrangement.unwritten.contains(field) {
+            continue;
+        }
         let Some(value) = arrangement.settled.get(field) else {
             return Err(missing(
                 entity,
@@ -2549,6 +2571,7 @@ fn around_row(
         steps: Vec::new(),
         source: BTreeSet::new(),
         settled: left,
+        unwritten: BTreeSet::new(),
     };
     // A refusal left the row where it was, and only an immediate read can say so.
     let observation = if changes
@@ -2669,8 +2692,14 @@ fn isolating(
     let mut goals = Vec::new();
     for index in 0..children.len() {
         if children.iter().enumerate().all(|(other, child)| {
-            row_truth(ir, entity, witnessed, witnessed_state, child)
-                == wanted((other == index) == alone)
+            row_truth(
+                ir,
+                entity,
+                witnessed,
+                &BTreeSet::new(),
+                witnessed_state,
+                child,
+            ) == wanted((other == index) == alone)
         }) {
             continue;
         }
@@ -2766,7 +2795,14 @@ pub(super) fn boundaries(
             |node| {
                 if !decided_with_input {
                     let truth = |predicate: &Predicate| {
-                        row_truth(ir, entity, &node.settled, Some(&node.state), predicate)
+                        row_truth(
+                            ir,
+                            entity,
+                            &node.settled,
+                            &node.unwritten,
+                            Some(&node.state),
+                            predicate,
+                        )
                     };
                     if refuted.iter().any(|child| truth(child) != Truth::False)
                         || held.iter().any(|child| truth(child) != Truth::True)
@@ -2845,6 +2881,7 @@ fn goal_input(
                 ir,
                 entity,
                 &node.settled,
+                &node.unwritten,
                 Some(&node.state),
                 predicate,
                 Some((command, &input)),
@@ -2981,6 +3018,7 @@ fn send_for_row(
         arrangement.state = transition.to.clone();
     }
     arrangement.settled = left;
+    arrangement.unwritten = super::still_unwritten(&arrangement.unwritten, outcome);
     let kept = fields
         .iter()
         .filter(|field| arrangement.settled.contains_key(*field))
