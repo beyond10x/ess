@@ -754,39 +754,14 @@ pub(crate) fn unsatisfied(guards: &[&Predicate], predicate: String, tried: usize
 
 impl RefusalCause {
     /// The family every refusal here belongs to.
-    const FAMILY: &'static str = "SYNTH";
+    pub const FAMILY: &'static str = "SYNTH";
 
     /// Its stable code.
     ///
     /// Derived from the variant rather than stored beside it, so a code cannot come to name a body
-    /// other than its own.
+    /// other than its own: the number is the variant's entry in [`RefusalCause::CATALOGUE`].
     pub fn code(&self) -> Code {
-        Code::new(
-            Self::FAMILY,
-            match self {
-                Self::NoWitness(_) => 1,
-                Self::GuardUnevaluable(_) => 2,
-                Self::GuardUnsatisfiable { .. } => 3,
-                Self::InstanceRequired { .. } => 4,
-                Self::ViewUndecidable { .. } => 5,
-                Self::NotSynthesisedYet { .. } => 6,
-                Self::DuplicateScenario => 7,
-                Self::StrategyWithoutGuard { .. } => 8,
-                Self::WitnessRejected(_) => 9,
-                Self::BindingUnobservable {
-                    gap: BindingGap::AccessorObservation { .. },
-                    ..
-                } => 15,
-                Self::BindingUnobservable { .. } => 10,
-                Self::InvariantUnobservable { .. } => 11,
-                Self::RefusalUndeclared { .. } => 12,
-                Self::ValueInvariantUnwitnessed { .. } => 13,
-                Self::OrderUnwitnessed { .. } => 14,
-                Self::AggregateUnscoped { .. } => crate::aggregate::UNSCOPED,
-                Self::AggregateUnwitnessed { .. } => crate::aggregate::UNWITNESSED,
-                Self::CountUnwitnessed { .. } => COUNT_UNWITNESSED,
-            },
-        )
+        Code::new(Self::FAMILY, self.catalogue_entry().key)
     }
 
     /// What would have to change for the construct to be testable.
@@ -898,6 +873,115 @@ impl RefusalCause {
                 "the witness walk and the flattener disagree about this type; they read one table"
             }
         }
+    }
+}
+
+// The code, the meaning and the repair of every synthesis refusal, from one list. A `help:` line
+// may be more specific than the repair here, because some causes carry the reason that decides
+// it; the repair here is what holds for every refusal under the code. Code 10 names every binding
+// gap but one, so a new gap is a compile error until somebody decides which code it carries.
+crate::authored::diagnostic_catalogue! {
+    impl RefusalCause => u16 {
+        Self::NoWitness(_) => 1,
+            "No value of the command's declared input type could be constructed at all.",
+            "give the field a type that has a finite value, or drop it from the command's input; \
+             where the reason names a view, declare the view of the entity it asks for, \
+             projecting its identity, its state and the fields named";
+        Self::GuardUnevaluable(_) => 2,
+            "The guard could not be decided against a candidate, and no other candidate would \
+             change it.",
+            "the guard reads something no input can supply; correct the path or the type it \
+             walks into";
+        Self::GuardUnsatisfiable { .. } => 3,
+            "Every candidate this synthesizer knows how to try was refuted.",
+            "write the branch's condition over values a candidate can carry, or supply a \
+             fixture for it";
+        Self::InstanceRequired { .. } => 4,
+            "The scenario needed an instance of an entity, and the specification cannot arrange \
+             one.",
+            "give some outcome `creates:` for the entity, or declare a transition and an outcome \
+             that reach the state; where the route runs through a branch no input reaches, \
+             repair that branch's own refusal";
+        Self::ViewUndecidable { .. } => 5,
+            "A view's filter could not be decided against the state the scenario reaches.",
+            "filter the view on the entity's state, which is what a generated scenario knows \
+             after the command it ran";
+        Self::NotSynthesisedYet { .. } => 6,
+            "A construct this build does not synthesise yet.",
+            "nothing to change in the specification; cover the construct with an authored \
+             scenario until a later release synthesises it";
+        Self::DuplicateScenario => 7,
+            "Two declarations produced one scenario id.",
+            "two declarations produced one scenario id; rename one of them";
+        Self::StrategyWithoutGuard { .. } => 8,
+            "The branch is selected in a way this scenario family cannot arrange: by the \
+             subject's stored fields, or by a row of another entity (`when_related:`).",
+            "cover the branch with an authored scenario (ess-scenario/1); where the `help:` line \
+             says two parts of ess have drifted apart, that is a defect in ess to report";
+        Self::WitnessRejected(_) => 9,
+            "A value synthesis built is not a value of the input's declared type.",
+            "nothing to change in the specification; this is a defect in ess to report, with the \
+             specification that produced it";
+        Self::BindingUnobservable {
+            gap:
+                BindingGap::NothingPublishes { .. }
+                | BindingGap::BranchUndecided { .. }
+                | BindingGap::NothingPublished { .. }
+                | BindingGap::NothingMapped { .. }
+                | BindingGap::NoForcibleFailure { .. }
+                | BindingGap::PolicySilent
+                | BindingGap::DeliverySingleAttempt
+                | BindingGap::RetriedUnforcible { .. }
+                | BindingGap::FinalUnforcible { .. }
+                | BindingGap::ArrangementSetsOff { .. },
+            ..
+        } => 10,
+            "A binding clause has nothing a scenario could observe.",
+            "follow the `help:` line, which names the gap: an event nothing emits, a flow with \
+             no consequence, an invocation that maps nothing, a failure no scenario can force, \
+             or a `drop` or `at_most_once` policy that is unobservable by design";
+        Self::InvariantUnobservable { .. } => 11,
+            "An entity invariant nothing observable reads.",
+            "publish the fields the invariant reads in a view of this entity, or state the \
+             invariant over what one already publishes";
+        Self::RefusalUndeclared { .. } => 12,
+            "A command attempted in a state none of its transitions run from declares no outcome \
+             for that refusal.",
+            "give the command a `wrong_state:` outcome naming the error it reports; the states \
+             it answers in are already declared, as the states its transitions do not run from";
+        Self::ValueInvariantUnwitnessed { .. } => 13,
+            "A value object's declared invariants, with nowhere observable to read them.",
+            "publish a field that holds a value of this type in some view, outside a list, a \
+             map, a union and an `Optional`; or declare an outcome that leaves an instance in a \
+             state the view's filter holds";
+        Self::OrderUnwitnessed { .. } => 14,
+            "A view declares an order and the scenario cannot put two rows in it.",
+            "declare an outcome that can leave a second instance where this view shows one, or \
+             drop `order_by:`; an order over one row is a claim no implementation can fail";
+        Self::BindingUnobservable {
+            gap: BindingGap::AccessorObservation { .. },
+            ..
+        } => 15,
+            "A binding's mapping uses a native accessor whose expected result cannot be \
+             reconstructed from what a scenario observes.",
+            "provide a separately executable host conversion or an unambiguous observable \
+             assignment";
+        Self::AggregateUnscoped { .. } => crate::aggregate::UNSCOPED,
+            "An aggregate view whose rows this scenario cannot keep apart from every other \
+             scenario's.",
+            "group by, or filter by a parameter over, a `String` or `Uuid` field the creating \
+             command sets from its input";
+        Self::AggregateUnwitnessed { .. } => crate::aggregate::UNWITNESSED,
+            "An aggregate view the arrangement cannot produce rows for as the page's pattern \
+             requires.",
+            "let the creating command set every field the view groups by or aggregates from \
+             its input, and read a parameter only as `field == param.name` at the top of the \
+             filter";
+        Self::CountUnwitnessed { .. } => COUNT_UNWITNESSED,
+            "A guard compares a `.count` with a number whose boundary lies past what this \
+             synthesizer builds.",
+            "the guard compares `.count` with a value above the 1024 this synthesizer builds; \
+             cover the branch with an authored scenario (ess-scenario/1), or lower the bound";
     }
 }
 

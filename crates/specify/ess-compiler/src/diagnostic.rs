@@ -63,6 +63,24 @@ impl From<Code> for String {
     }
 }
 
+/// One diagnostic as a reader looks it up: the key it is printed under, what it means, and how to
+/// repair it.
+///
+/// Every crate that emits a diagnostic outside this one exports a `CATALOGUE` of these beside the
+/// type the diagnostic is carried by, and `website/docs/reference/diagnostics.md` is rendered from
+/// them by `cargo xtask diagnostics`. This crate's own codes are catalogued by class and family
+/// instead, in [`crate::resolve::codes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CatalogueEntry<K: 'static> {
+    /// What the diagnostic is printed under: a code number within its family, a dotted name, or
+    /// the category itself.
+    pub key: K,
+    /// One line on what it means.
+    pub meaning: &'static str,
+    /// One line on how to repair it.
+    pub repair: &'static str,
+}
+
 /// One fact a diagnostic reports, as a field rather than a sentence.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]

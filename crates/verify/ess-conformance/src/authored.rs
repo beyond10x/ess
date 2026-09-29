@@ -244,6 +244,72 @@ use crate::scenario::{
 };
 use crate::synthesize::{payload_shape, reachable_types};
 
+// ---- the diagnostic catalogue ------------------------------------------------------------------
+
+/// Declares a refusal type's diagnostic catalogue and the exhaustive match that maps a value to its
+/// entry, from one list.
+///
+/// ```ignore
+/// diagnostic_catalogue! {
+///     impl Refusal => u16 {
+///         Self::Unreadable { .. } => 1, "the file is not a document", "write YAML";
+///         Self::NothingHappens => 2, "the scenario runs nothing", "give it a timeline";
+///     }
+/// }
+/// ```
+///
+/// Generates `Refusal::CATALOGUE`, every entry in the order written, and
+/// `Refusal::catalogue_entry(&self)`, which matches `self` against the patterns in the same order.
+/// A variant no pattern covers does not compile, so a code cannot be emitted without an entry; and
+/// because both are expanded from the same arm, an entry cannot say one thing in the catalogue and
+/// another at the site. Two patterns may share a variant when a field decides the code. An empty
+/// meaning or repair is refused at compile time. `website/docs/reference/diagnostics.md` is
+/// rendered from the catalogues by `cargo xtask diagnostics`.
+macro_rules! diagnostic_catalogue {
+    (
+        impl $type:ty => $key:ty {
+            $( $pattern:pat => $value:expr, $meaning:expr, $repair:expr; )*
+        }
+    ) => {
+        impl $type {
+            /// Every diagnostic this type can carry, with what it means and how to repair it.
+            pub const CATALOGUE: &'static [ess_compiler::diagnostic::CatalogueEntry<$key>] = &[
+                $(
+                    ess_compiler::diagnostic::CatalogueEntry {
+                        key: $value,
+                        meaning: $meaning,
+                        repair: $repair,
+                    },
+                )*
+            ];
+
+            /// This value's entry in [`Self::CATALOGUE`].
+            pub fn catalogue_entry(&self) -> &'static ess_compiler::diagnostic::CatalogueEntry<$key> {
+                match self {
+                    $(
+                        $pattern => &ess_compiler::diagnostic::CatalogueEntry {
+                            key: $value,
+                            meaning: $meaning,
+                            repair: $repair,
+                        },
+                    )*
+                }
+            }
+        }
+
+        const _: () = {
+            $(
+                assert!(
+                    !$meaning.is_empty() && !$repair.is_empty(),
+                    "a catalogued diagnostic has an empty meaning or repair"
+                );
+            )*
+        };
+    };
+}
+
+pub(crate) use diagnostic_catalogue;
+
 // ---- the document ------------------------------------------------------------------------------
 
 /// The format this module reads.
@@ -1148,9 +1214,10 @@ pub enum Cause {
 /// numbers but `ESS-AUTHOR-036`, which refuses the model before any file is read and so names no
 /// source. Coverage admission reads this; the Go, TypeScript and browser readers restate it.
 pub(crate) fn names_file_refusal(code: &str) -> bool {
-    (1..=37)
-        .filter(|number| *number != 36)
-        .any(|number| code == Code::new(Cause::FAMILY, number).to_string())
+    Cause::CATALOGUE
+        .iter()
+        .filter(|entry| entry.key != 36)
+        .any(|entry| code == Code::new(Cause::FAMILY, entry.key).to_string())
 }
 
 /// Whether no input decides `outcome` (§12): the test strategy an `external:` branch carries.
@@ -1201,187 +1268,167 @@ fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
 
 impl Cause {
     /// The family every refusal here belongs to.
-    const FAMILY: &'static str = "AUTHOR";
+    pub const FAMILY: &'static str = "AUTHOR";
 
     /// Its stable code.
     ///
     /// Derived from the variant rather than stored beside it, so a code cannot come to name a body
-    /// other than its own.
+    /// other than its own: the number is the variant's entry in [`Cause::CATALOGUE`].
     pub fn code(&self) -> Code {
-        Code::new(
-            Self::FAMILY,
-            match self {
-                Self::Unreadable { .. } => 1,
-                Self::UnsupportedFormat { .. } => 2,
-                Self::Duplicate { .. } => 3,
-                Self::UndeclaredDomain { .. } => 4,
-                Self::UndeclaredEntity { .. } => 5,
-                Self::UndeclaredCommand { .. } => 6,
-                Self::UndeclaredOutcome { .. } => 7,
-                Self::UndeclaredActor { .. } => 8,
-                Self::ActorMayNot { .. } => 9,
-                Self::UndeclaredEvent { .. } => 10,
-                Self::UndeclaredError { .. } => 11,
-                Self::UndeclaredView { .. } => 12,
-                Self::UndeclaredField { .. } => 13,
-                Self::MissingField { .. } => 14,
-                Self::ValueRejected { .. } => 15,
-                Self::UndeclaredVariant { .. } => 16,
-                Self::UndeclaredState { .. } => 17,
-                Self::UnarrangedInstance { .. } => 18,
-                Self::UnboundInstance { .. } => 19,
-                Self::Unobserved { .. } => 20,
-                Self::NotComparable { .. } => 21,
-                Self::InstanceMistyped { .. } => 22,
-                Self::UnorderedTimeline { .. } => 23,
-                Self::Unordered { .. } => 24,
-                Self::AmbiguousClaim { .. } => 25,
-                Self::UnreadablePredicate { .. } => 26,
-                Self::NothingHappens => 27,
-                Self::UnmarkedInstant { .. } => 28,
-                Self::DuplicateInstant { .. } => 29,
-                Self::VacuousWindow { .. } => 30,
-                Self::QuietAboutNothing { .. } => 31,
-                Self::WindowContradictsTimeline { .. } => 32,
-                Self::AmbiguousWindow { .. } => 33,
-                Self::HaltsAtNothing { .. } => 34,
-                Self::InvalidPredicate { .. } => 35,
-                Self::UnsupportedBinary64 { .. } => 36,
-                Self::ExternalAnswerUnstated { .. } => 37,
-            },
-        )
+        Code::new(Self::FAMILY, self.catalogue_entry().key)
     }
 
     /// What would have to change for the scenario to compile.
     ///
-    /// One arm per cause, and long because there are thirty-four of them — the same argument
-    /// [`Display`](fmt::Display) makes below. A reader comparing two repairs reads them side by
-    /// side or not at all, and splitting the list would put half of it somewhere else.
-    #[allow(clippy::too_many_lines)]
+    /// The repair in the variant's [`Cause::CATALOGUE`] entry, so the `help:` line and the published
+    /// reference say the same thing.
     pub fn hint(&self) -> &'static str {
-        match self {
-            Self::UnsupportedBinary64 { .. } => "use checked format-5 normalization; finite Binary64 conformance codecs are not implemented",
-            Self::Unreadable { .. } => {
-                "the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
-                 key it does not know is refused rather than ignored"
-            }
-            Self::UnsupportedFormat { .. } => "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for fixture values, or `ess-scenario/4` for direct responses",
-            Self::Duplicate { .. } => {
-                "two files name one scenario in one domain; rename one of them"
-            }
-            Self::UndeclaredDomain { .. } => {
-                "name a bounded context the specification declares, or add it to the model"
-            }
-            Self::UndeclaredEntity { .. } => {
-                "name an entity the specification declares; an authored scenario acts on the model's \
-                 own instances and invents none"
-            }
-            Self::UndeclaredCommand { .. } => {
-                "name a command the specification declares; a scenario that invokes anything else is \
-                 checking a system this model does not describe"
-            }
-            Self::UndeclaredOutcome { .. } => {
-                "name one of the branches the command declares, or declare the branch you meant"
-            }
-            Self::UndeclaredActor { .. } => "name an actor the specification declares, or drop `actor:`",
-            Self::ActorMayNot { .. } => {
-                "grant the command to this actor with `may:`, or act as one that already has it"
-            }
-            Self::UndeclaredEvent { .. } => "name an event the specification declares",
-            Self::UndeclaredError { .. } => "name a declared error the specification declares",
-            Self::UndeclaredView { .. } => "name a view the specification declares",
-            Self::UndeclaredField { .. } => {
-                "name a field the construct declares; the scenario and the model disagree about \
-                 what it has"
-            }
-            Self::MissingField { .. } => {
-                "supply the field; a command is invoked with all of its input, and one left out is a \
-                 call that could not be made"
-            }
-            Self::ValueRejected { .. } => "write a value of the type the model declares there",
-            Self::UndeclaredVariant { .. } => {
-                "write one of the variants the enum declares; the set is closed"
-            }
-            Self::UndeclaredState { .. } => {
-                "write one of the states the entity's lifecycle declares"
-            }
-            Self::UnarrangedInstance { .. } => {
-                "declare the instance under `arrange:`, so the scenario says whose it is"
-            }
-            Self::UnboundInstance { .. } => {
-                "capture the instance from an event before the step that names it; a suite carries \
-                 no identity of its own"
-            }
-            Self::Unobserved { .. } => {
-                "require the event in an earlier act; a value is read off an occurrence the run \
-                 produced, and this scenario has not required one"
-            }
-            Self::NotComparable { .. } => {
-                "write the value the field must hold; an event's payload and an error's fields are \
-                 compared against values the suite carries"
-            }
-            Self::InstanceMistyped { .. } => {
-                "bind the instance to a field typed as the entity's identity, or arrange the entity \
-                 whose identity this field carries"
-            }
-            Self::UnorderedTimeline { .. } => {
-                "give each act an instant later than the one before it; the file's order is the \
-                 scenario's order and `at:` is what states it"
-            }
-            Self::Unordered { .. } => {
-                "declare `order_by:` on the view, or assert `contains:` instead; a position in an \
-                 unordered view names a different row on every read"
-            }
-            Self::AmbiguousClaim { .. } => {
-                "state exactly one of `contains`, `excludes`, `counts`, `ranked`, `at`, \
-                 `satisfies` or `halts_after` per assertion"
-            }
-            Self::UnreadablePredicate { .. } => {
-                "read only fields the view projects, or project the field the predicate reads"
-            }
-            Self::InvalidPredicate { .. } => {
-                "use compatible scalar operands and quantify only over a declared List or Map"
-            }
-            Self::NothingHappens => {
-                "give the scenario a timeline; a scenario that runs nothing is a check that cannot \
-                 fail"
-            }
-            Self::UnmarkedInstant { .. } => {
-                "write `mark:` on the earlier act the window opens at; a duration is measured from \
-                 an instant somebody named, never from wherever the step before it happened to end"
-            }
-            Self::DuplicateInstant { .. } => {
-                "give the two acts different names; one name for two instants is a window whose \
-                 length depends on which one a reader had in mind"
-            }
-            Self::VacuousWindow { .. } => {
-                "give the window a length; a window of no seconds is a claim about no time, and \
-                 there is no target it can fail against"
-            }
-            Self::QuietAboutNothing { .. } => {
-                "name the events the window must stay clear of; a bounded negative that forbids \
-                 nothing is satisfied by every implementation there is"
-            }
-            Self::WindowContradictsTimeline { .. } => {
-                "move the act's `at:` so the file's own instants agree with the claim, or state \
-                 the length the file already shows; the timeline is what a reader believes"
-            }
-            Self::AmbiguousWindow { .. } => {
-                "state exactly one of `not_before`, `within` or `quiet` per window, and write a \
-                 second window for a second claim"
-            }
-            Self::HaltsAtNothing { .. } => {
-                "say how many rows the reader takes before it stops; a reader that takes none never \
-                 sees a row and so never says stop, and what a source produced before being refused \
-                 its first row is a different answer in two implementations that are both right"
-            }
-            Self::ExternalAnswerUnstated { .. } => {
-                "no input the act sends decides an external branch, so name the act's own one \
-                 under `outcome:` and the suite configures that answer for its call; an answer a \
-                 command invoked through a binding must give cannot be stated in an authored act, \
-                 so drop the claim there and leave it to synthesis"
-            }
-        }
+        self.catalogue_entry().repair
+    }
+}
+
+// One arm per cause, and long because there are thirty-seven of them. A reader comparing two
+// repairs reads them side by side or not at all, and splitting the list would put half of it
+// somewhere else. The meaning is the variant's own first line of documentation.
+diagnostic_catalogue! {
+    impl Cause => u16 {
+        Self::Unreadable { .. } => 1,
+            "The file is not a document this format can read.",
+            "the document is YAML with the keys `type`, `domain`, `scenario` and `summary`; a \
+             key it does not know is refused rather than ignored";
+        Self::UnsupportedFormat { .. } => 2,
+            "The document claims a format this build does not implement.",
+            "write `type: ess-scenario/1`, `ess-scenario/2` for entity setup, `ess-scenario/3` for \
+             fixture values, or `ess-scenario/4` for direct responses";
+        Self::Duplicate { .. } => 3,
+            "Two files produce the same scenario id.",
+            "two files name one scenario in one domain; rename one of them";
+        Self::UndeclaredDomain { .. } => 4,
+            "The model declares no such bounded context.",
+            "name a bounded context the specification declares, or add it to the model";
+        Self::UndeclaredEntity { .. } => 5,
+            "The model declares no such entity.",
+            "name an entity the specification declares; an authored scenario acts on the model's \
+             own instances and invents none";
+        Self::UndeclaredCommand { .. } => 6,
+            "The model declares no such command.",
+            "name a command the specification declares; a scenario that invokes anything else is \
+             checking a system this model does not describe";
+        Self::UndeclaredOutcome { .. } => 7,
+            "That command declares no such branch.",
+            "name one of the branches the command declares, or declare the branch you meant";
+        Self::UndeclaredActor { .. } => 8,
+            "The model declares no such actor.",
+            "name an actor the specification declares, or drop `actor:`";
+        Self::ActorMayNot { .. } => 9,
+            "The actor is declared, and the specification does not grant it this command.",
+            "grant the command to this actor with `may:`, or act as one that already has it";
+        Self::UndeclaredEvent { .. } => 10,
+            "The model declares no such event.",
+            "name an event the specification declares";
+        Self::UndeclaredError { .. } => 11,
+            "The model declares no such error.",
+            "name a declared error the specification declares";
+        Self::UndeclaredView { .. } => 12,
+            "The model declares no such view.",
+            "name a view the specification declares";
+        Self::UndeclaredField { .. } => 13,
+            "A value is supplied under a name the surface does not declare.",
+            "name a field the construct declares; the scenario and the model disagree about \
+             what it has";
+        Self::MissingField { .. } => 14,
+            "A declared field that has to be supplied is not.",
+            "supply the field; a command is invoked with all of its input, and one left out is a \
+             call that could not be made";
+        Self::ValueRejected { .. } => 15,
+            "A value is not of the shape its declared type calls for.",
+            "write a value of the type the model declares there";
+        Self::UndeclaredVariant { .. } => 16,
+            "A value names something a declared enum does not have as a variant.",
+            "write one of the variants the enum declares; the set is closed";
+        Self::UndeclaredState { .. } => 17,
+            "A value names a lifecycle state the entity does not declare.",
+            "write one of the states the entity's lifecycle declares";
+        Self::UnarrangedInstance { .. } => 18,
+            "A reference names an instance the arrangement does not declare.",
+            "declare the instance under `arrange:`, so the scenario says whose it is";
+        Self::UnboundInstance { .. } => 19,
+            "A reference names an instance nothing has bound yet.",
+            "capture the instance from an event before the step that names it; a suite carries \
+             no identity of its own";
+        Self::Unobserved { .. } => 20,
+            "A reference reads an event no earlier act required.",
+            "require the event in an earlier act; a value is read off an occurrence the run \
+             produced, and this scenario has not required one";
+        Self::NotComparable { .. } => 21,
+            "A reference sits where the suite compares values it carries itself.",
+            "write the value the field must hold; an event's payload and an error's fields are \
+             compared against values the suite carries";
+        Self::InstanceMistyped { .. } => 22,
+            "An instance is bound to a field of a type that is not its entity's identity.",
+            "bind the instance to a field typed as the entity's identity, or arrange the entity \
+             whose identity this field carries";
+        Self::UnorderedTimeline { .. } => 23,
+            "The timeline's instants do not strictly ascend.",
+            "give each act an instant later than the one before it; the file's order is the \
+             scenario's order and `at:` is what states it";
+        Self::Unordered { .. } => 24,
+            "A position or an order is asserted of a view that declares no order.",
+            "declare `order_by:` on the view, or assert `contains:` instead; a position in an \
+             unordered view names a different row on every read";
+        Self::AmbiguousClaim { .. } => 25,
+            "An assertion states other than exactly one claim.",
+            "state exactly one of `contains`, `excludes`, `counts`, `ranked`, `at`, \
+             `satisfies` or `halts_after` per assertion";
+        Self::UnreadablePredicate { .. } => 26,
+            "A predicate reads something the view does not publish.",
+            "read only fields the view projects, or project the field the predicate reads";
+        Self::NothingHappens => 27,
+            "The scenario runs no command and asserts nothing.",
+            "give the scenario a timeline; a scenario that runs nothing is a check that cannot \
+             fail";
+        Self::UnmarkedInstant { .. } => 28,
+            "A window is measured from an instant nothing marked before it.",
+            "write `mark:` on the earlier act the window opens at; a duration is measured from \
+             an instant somebody named, never from wherever the step before it happened to end";
+        Self::DuplicateInstant { .. } => 29,
+            "Two acts mark the same instant.",
+            "give the two acts different names; one name for two instants is a window whose \
+             length depends on which one a reader had in mind";
+        Self::VacuousWindow { .. } => 30,
+            "A window has no width.",
+            "give the window a length; a window of no seconds is a claim about no time, and \
+             there is no target it can fail against";
+        Self::QuietAboutNothing { .. } => 31,
+            "A bounded negative forbids no occurrence.",
+            "name the events the window must stay clear of; a bounded negative that forbids \
+             nothing is satisfied by every implementation there is";
+        Self::WindowContradictsTimeline { .. } => 32,
+            "The timeline's own instants say something the window contradicts.",
+            "move the act's `at:` so the file's own instants agree with the claim, or state \
+             the length the file already shows; the timeline is what a reader believes";
+        Self::AmbiguousWindow { .. } => 33,
+            "A window states other than exactly one bound.",
+            "state exactly one of `not_before`, `within` or `quiet` per window, and write a \
+             second window for a second claim";
+        Self::HaltsAtNothing { .. } => 34,
+            "An early stop is claimed after no rows at all.",
+            "say how many rows the reader takes before it stops; a reader that takes none never \
+             sees a row and so never says stop, and what a source produced before being refused \
+             its first row is a different answer in two implementations that are both right";
+        Self::InvalidPredicate { .. } => 35,
+            "An assertion's paths resolve, but its operands or quantified target are ill-typed.",
+            "use compatible scalar operands and quantify only over a declared List or Map";
+        Self::UnsupportedBinary64 { .. } => 36,
+            "The model needs a finite codec outside the current conformance contract.",
+            "use checked format-5 normalization; finite Binary64 conformance codecs are not \
+             implemented";
+        Self::ExternalAnswerUnstated { .. } => 37,
+            "An act claims what only an external answer it does not state satisfies.",
+            "no input the act sends decides an external branch, so name the act's own one \
+             under `outcome:` and the suite configures that answer for its call; an answer a \
+             command invoked through a binding must give cannot be stated in an authored act, \
+             so drop the claim there and leave it to synthesis";
     }
 }
 
