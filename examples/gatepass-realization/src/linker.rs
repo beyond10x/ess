@@ -27,7 +27,9 @@ use gatepass_types::visit::{
 
 use crate::visit::{SharedVisits, VisitRealization};
 
-/// Every obligation the gatepass plan owes, as `(capability, source)` in the stubs' own spelling.
+/// Every obligation the gatepass plan owes, as `(capability, source)` in the stubs' own spelling,
+/// and every command behaviour the plan generates that this realization supplies by hand in place
+/// of the generated `behaviour::Generated` — its `…Behavior` seam is still one slot to fill.
 ///
 /// Held equal to `generated/rust/gatepass/plan.json` by
 /// `the_linkers_obligation_list_is_exactly_the_plans`, so a specification change that moves an
@@ -276,7 +278,13 @@ mod tests {
             .as_array()
             .expect("the plan lists capabilities")
             .iter()
-            .filter(|planned| planned["disposition"]["disposition"] == "obligation")
+            .filter(|planned| {
+                // A generated command behaviour keeps its `…Behavior` seam, which this
+                // realization fills by hand; every other generated capability has no seam.
+                planned["disposition"]["disposition"] == "obligation"
+                    || (planned["kind"] == "command_behavior"
+                        && planned["disposition"]["disposition"] == "generated")
+            })
             .map(|planned| {
                 (
                     planned["kind"]

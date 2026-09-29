@@ -18,6 +18,7 @@
 #![deny(missing_docs)]
 
 pub mod actor;
+pub mod behaviour;
 pub mod obligation;
 pub mod primitives;
 pub mod visit;

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T21:24:45Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-behaviour-for-declared-commands",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "merged on integrate/ess-0.46: ess-synth 266 passed (declared_behaviour 5: fixture suite 23/23 against generated behaviours); realizations with -D warnings; ess-service-contract 7; committed trees identical to a fresh synthesis; a downstream specification: 97 of 118 commands generated, workspace checks with -D warnings",
+    "reference": "integrate/ess-0.46 merge of impl/046-behaviour@2066a0649"
+  }
+}

@@ -19,5 +19,10 @@ ess-gen.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+# Only `tests/declared_behaviour.rs`: the suite a specification synthesizes, run against the
+# behaviours this crate generates for it.
+ess-conformance.workspace = true
+
 [lints]
 workspace = true

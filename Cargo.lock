@@ -606,6 +606,7 @@ name = "ess-synth"
 version = "0.45.0"
 dependencies = [
  "ess-compiler",
+ "ess-conformance",
  "ess-domain",
  "ess-gen",
  "ess-primitives",

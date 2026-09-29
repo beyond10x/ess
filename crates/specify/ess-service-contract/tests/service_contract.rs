@@ -499,8 +499,11 @@ fn expected_obligations() -> Vec<(Capability, ImplementationObligation)> {
                 source: "contract.local.Run".to_owned(),
             },
             ImplementationObligation {
-                reason: ObligationReason::External {
-                    cause: "an upstream authority rejects the request".to_owned(),
+                // Since 0.46 the plan names the construct that keeps a behaviour owed; an
+                // external branch alone no longer does
+                // (`story:generated-behaviour-for-declared-commands`).
+                reason: ObligationReason::Undetermined {
+                    construct: "a typed response (`response:`)".to_owned(),
                 },
                 contract: "given `contract.local.Run` input, decide and enact exactly one outcome — `completed` otherwise, creates `contract.local.Child`, emits `contract.local.PrivateEmission`, emits `contract.local.First`, emits `contract.local.Second`; `rejected` externally decided (an upstream authority rejects the request), error `contract.local.Rejected`".to_owned(),
             },

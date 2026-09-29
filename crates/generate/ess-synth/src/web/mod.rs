@@ -334,6 +334,11 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         Artifact::new("README.md", readme(&bridge)),
     ];
 
+    // A generated command behaviour lives in the Rust target's types crate, which this bridge links
+    // as it is: dispatching the command runs it wherever the linked bundle does.
+    for command in ir.commands().keys() {
+        bridge.present(CapabilityKind::CommandBehavior, &command.to_string());
+    }
     let refused: BTreeSet<Capability> = refusals
         .iter()
         .map(|(capability, _)| capability.clone())

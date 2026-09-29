@@ -30,6 +30,7 @@
 
 mod accessor;
 mod actor;
+pub(crate) mod behaviour;
 mod entity;
 pub(crate) mod feasibility;
 pub(crate) mod http;
@@ -137,6 +138,13 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
     }
     artifacts.extend(obligation_module);
     artifacts.extend(actor::module(ir, &layout, provenance));
+    artifacts.extend(behaviour::module(
+        ir,
+        plan,
+        &layout,
+        provenance,
+        &mut covered,
+    ));
     let domains: Vec<QualifiedName> = layout.modules().map(|(domain, _)| domain.clone()).collect();
     for domain in &domains {
         artifacts.push(domain_module(
@@ -311,6 +319,9 @@ fn lib_module(
     }
     if actor::used(ir) {
         modules.push(actor::MODULE.to_owned());
+    }
+    if behaviour::used(ir) {
+        modules.push("behaviour".to_owned());
     }
     modules.sort();
     for module in modules {

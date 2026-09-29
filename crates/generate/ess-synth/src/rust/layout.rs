@@ -254,7 +254,9 @@ impl Layout {
 ///    `json` joins them only in a model that uses `Json`, whose types crate carries the `json`
 ///    module (beyond10x/ess#224); reserving it everywhere would rename a `….json` domain in trees
 ///    that have no such module. `actor` joins them, on the same reasoning, only in a model that
-///    declares an actor, whose types crate carries the `actor` grant table.
+///    declares an actor, whose types crate carries the `actor` grant table; `behaviour` joins them
+///    the same way, only in a model where some command's behaviour is generated and the types
+///    crate carries the `behaviour` module.
 fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
     let mut candidates: BTreeMap<QualifiedName, String> = ir
         .domains()
@@ -287,11 +289,13 @@ fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
 
     let json = super::json::used(ir);
     let actor = super::actor::used(ir);
+    let behaviour = super::behaviour::used(ir);
     for module in candidates.values_mut() {
         if module == "primitives"
             || module == "obligation"
             || (json && module == "json")
             || (actor && module == super::actor::MODULE)
+            || (behaviour && module == "behaviour")
         {
             module.push_str("_domain");
         }
