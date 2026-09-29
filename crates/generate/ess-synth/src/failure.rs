@@ -175,41 +175,8 @@ pub(crate) fn binary64(
     }
 }
 
-/// A model that uses `Json` (beyond10x/ess#138) is refused by every code target except Rust, as
-/// `Binary64` is.
-///
-/// The Rust target represents it as the types crate's dependency-free `json::Value`
-/// (beyond10x/ess#224): the fixed `json` module moves into the types crate for such a model, and
-/// the server crate re-exports it, so no template byte a model without `Json` emits changes (see
-/// `rust::json`). Go, web and the command-line target have no representation of their own yet, so
-/// each position is named rather than emitted with a representation nobody chose.
-pub(crate) fn json(
-    ir: &ess_compiler::EssIr,
-    plan: &SynthesisPlan,
-    target: Target,
-) -> Result<(), TargetFailure> {
-    if target == Target::Rust {
-        return Ok(());
-    }
-    let causes = ess_compiler::binary64::locations_of(ir, ess_domain::Primitive::Json)
-        .into_iter()
-        .map(|at| {
-            TargetFailureCause::new(
-                TargetFailureCode::MissingRepresentation,
-                vec![at],
-                "this target has no representation for a Json value yet".to_owned(),
-            )
-        })
-        .collect::<Vec<_>>();
-    if causes.is_empty() {
-        Ok(())
-    } else {
-        Err(TargetFailure::new(ir, target, plan, causes))
-    }
-}
-
 /// A model that declares an `input_absent:` branch (ess/16, beyond10x/ess#170) is refused by every
-/// code target, as `Json` is.
+/// code target.
 ///
 /// The generated seams decode a request into the command's input before any branch is selected,
 /// so a request with no body never reaches a branch the generated code could select, and a seam

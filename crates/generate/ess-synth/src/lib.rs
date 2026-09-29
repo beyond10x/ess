@@ -290,7 +290,6 @@ pub fn synthesize(ir: &EssIr) -> Result<Synthesis, TargetFailure> {
 pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFailure> {
     let plan = SynthesisPlan::of(ir);
     failure::binary64(ir, &plan, target)?;
-    failure::json(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
     existence::refuse(ir, &plan, target)?;
     set_effects::refuse(ir, &plan, target)?;

@@ -3,8 +3,8 @@
 //! The Rust target represents it as the generated types crate's own dependency-free `json::Value`
 //! (beyond10x/ess#224), at every position the target types: a newtype, a struct member (bare, in a
 //! list, in a map, optional), a union variant, an entity field, a command input and response, an
-//! event payload, an error payload and a view row. Go, web and the command-line target keep
-//! refusing it by name, at the positions it is used, until each gets a representation of its own.
+//! event payload, an error payload and a view row. Go, web and the command-line target represent it
+//! too (`json_go.rs`, `json_web.rs`, `json_clap.rs`), so no code target refuses a model for using it.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -242,28 +242,12 @@ fn cargo(directory: &Path, arguments: &[&str]) -> Output {
 }
 
 #[test]
-fn issue_138_go_web_and_clap_refuse_json_by_name() {
+fn issue_224_every_code_target_synthesizes_a_json_model() {
     for source in [MODEL, EVERY_POSITION] {
         let ir = ir(source);
-        for target in [Target::Go, Target::Web, Target::Clap] {
-            let Err(failure) = synthesize_for(&ir, target) else {
-                panic!("{target:?} emitted a workspace for a Json model");
-            };
-            let rendered = failure.to_string();
-            assert!(
-                rendered.starts_with(&format!("{} target cannot emit", target.name())),
-                "{target:?}: {rendered}"
-            );
-            assert!(rendered.contains("Json"), "{target:?}: {rendered}");
-            if source == MODEL {
-                assert!(
-                    rendered.contains("types.demo.msgs.Body.of"),
-                    "{target:?}: {rendered}"
-                );
-                assert!(
-                    rendered.contains("event.demo.msgs.Sent.fields.headers.value"),
-                    "{target:?}: {rendered}"
-                );
+        for target in [Target::Rust, Target::Go, Target::Web, Target::Clap] {
+            if let Err(failure) = synthesize_for(&ir, target) {
+                panic!("{target:?} refused a Json model: {failure}");
             }
         }
     }

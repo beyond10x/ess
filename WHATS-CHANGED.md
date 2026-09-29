@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.45.0](#the-go-web-and-clap-synthesis-targets-represent-json) | The Go, web and clap synthesis targets represent Json | capability | significant |
 | [0.44.0](#the-rust-synthesis-target-represents-json-and-the-public-docs-are-rebuilt) | The Rust synthesis target represents Json, and the public docs are rebuilt | capability | significant |
 | [0.43.0](#instance-references-inside-structured-values-one-refusal-precedence-and-unstated-external-answers-refused) | Instance references inside structured values, one refusal precedence and unstated external answers refused | capability | significant |
 | [0.42.0](#link-field-guards-overlap-precedence-counter-limits-and-unkillable-mutants-scored-apart) | Link-field guards, overlap precedence, counter limits and unkillable mutants scored apart | capability | significant |
@@ -38,6 +39,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.45.0 — 2026-09-29
+
+### The Go, web and clap synthesis targets represent Json
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.45.0)
+
+`ess generate synthesize --target go`, `web` and `clap` carry `Json` as `rust` already does: object members keep their order and numbers their spelling, and a clap flag takes one JSON document. No code target refuses a model for using `Json` any more, and a model without it synthesizes the same bytes as before.
 
 ## 0.44.0 — 2026-09-29
 

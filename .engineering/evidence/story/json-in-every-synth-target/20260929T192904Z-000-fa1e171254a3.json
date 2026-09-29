@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T19:29:04Z",
+  "actor": "human:timo",
+  "artifact": "story:json-in-every-synth-target",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ess-synth 254 passed on the merged tree (json_go, json_web, json_clap, json_primitive incl. every target synthesizing a Json model); generated Go/web/clap builds offline with warnings as errors; clippy; fmt-check; generate --check",
+    "reference": "impl/json-go-web-clap@1b2239238"
+  }
+}
