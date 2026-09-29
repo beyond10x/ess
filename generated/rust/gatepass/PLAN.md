@@ -51,5 +51,5 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 
 | capability | source | stage | why |
 | --- | --- | --- | --- |
-| actor grants | `gatepass.visit.Receptionist` | planning | may invoke `gatepass.visit.AdmitVisitor`, `gatepass.visit.RegisterVisit`, `gatepass.visit.SignOutVisitor`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling |
-| actor grants | `gatepass.visit.SecurityAuditor` | planning | observes only; it may invoke no command; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling |
+| actor grants | `gatepass.visit.Receptionist` | planning | may invoke `gatepass.visit.AdmitVisitor`, `gatepass.visit.RegisterVisit`, `gatepass.visit.SignOutVisitor`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
+| actor grants | `gatepass.visit.SecurityAuditor` | planning | observes only; it may invoke no command; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |

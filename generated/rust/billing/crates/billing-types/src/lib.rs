@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod actor;
 pub mod email;
 pub mod invoice;
 pub mod obligation;

@@ -292,9 +292,11 @@ pub enum RefusalStage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RefusalReason {
-    /// The capability is about who may call, and types carry no caller identity. Deliberately not
-    /// an obligation: deriving anything grant-shaped from a plan is the second grant path
-    /// invariant 6 exists to forbid.
+    /// The capability is about who may call, and types carry no caller identity. What is refused
+    /// is *enforcement*: the declared grants themselves are generated as data (0.46,
+    /// `story:actor-grants-as-data`), so the caller that knows who is calling enforces a generated
+    /// table rather than a hand-copied one. Deliberately not an obligation: a stub the implementor
+    /// fills with grant checks would be a second grant path beside that table.
     NeedsCallerIdentity,
     /// Delivery lands on the component that accepts the command, and the specification does not
     /// declare exactly one. Deliberately not an obligation and never a choice: picking an acceptor
@@ -871,8 +873,13 @@ pub(crate) fn mechanical_conversion<'a>(
     (from_inner == to_inner).then_some((from, to))
 }
 
-/// Grants are refused, not owed: deriving anything grant-shaped from this plan would be a second
-/// grant path (review H8, and the wave's own decision on design §28).
+/// Enforcing a grant is refused, not owed; the grant itself is generated as data.
+///
+/// One capability with one disposition, because the half a reader must not miss is the refused
+/// one: no generated code checks who is calling. The row says in the same breath that the grant is
+/// available as data — the declared actors and the qualified commands each may invoke — so the
+/// caller enforces a generated table. A separate "generated" row would split one fact across two
+/// tables and give every target a capability to cover that only restates the refusal's detail.
 fn plan_actors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     for actor in ir.actors().values() {
         let grants = if actor.may.is_empty() {
@@ -897,7 +904,9 @@ fn plan_actors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 reason: RefusalReason::NeedsCallerIdentity,
                 stage: RefusalStage::Planning,
                 detail: format!(
-                    "{grants}; {}, and enforcement belongs to the layer that knows who is calling",
+                    "{grants}; generated as data, not enforced: the grant is available as the \
+                     declared actors and the qualified commands each may invoke, and enforcement \
+                     stays with the caller, because {}",
                     RefusalReason::NeedsCallerIdentity.describes()
                 ),
             }),
