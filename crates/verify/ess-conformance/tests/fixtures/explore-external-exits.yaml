@@ -3,9 +3,11 @@
 #
 # `Close` moves an open ticket to `Closed` and declares no `wrong_state` outcome, so from `Closed`
 # no ordinary branch applies (the no-move-state exit); `bounced` is external and moves nothing, so
-# it is eligible there. `Rate` has two refusal guards that overlap for 1..3 (the overlapping-guards
+# it is eligible there. `Rate` has two accepting guards that overlap for 1..3 (the overlapping-guards
 # exit); `throttled` is external and eligible for every input. `rated` is the `otherwise` the
-# validator demands; the two guards cover every integer, so it is never selected.
+# validator demands; the two guards cover every integer, so it is never selected. The two guards
+# accept rather than refuse: two overlapping input-guarded refusals are decided, the first declared
+# answering before any external branch (beyond10x/ess#235), so they are no exit at all.
 
 format: ess/6
 system: exploreexit
@@ -97,10 +99,18 @@ commands:
     outcomes:
       - name: low
         when: score <= 3
-        error: exploreexit.desk.Low
+        emits:
+          - exploreexit.desk.RatedLow
+        payload:
+          exploreexit.desk.RatedLow:
+            score: input.score
       - name: high
         when: score >= 1
-        error: exploreexit.desk.High
+        emits:
+          - exploreexit.desk.RatedHigh
+        payload:
+          exploreexit.desk.RatedHigh:
+            score: input.score
       - name: throttled
         external: the rating service throttles
         error: exploreexit.desk.Throttled
@@ -116,3 +126,11 @@ events:
     fields:
       - name: ticket_id
         type: exploreexit.desk.TicketId
+  - name: exploreexit.desk.RatedLow
+    fields:
+      - name: score
+        type: Integer
+  - name: exploreexit.desk.RatedHigh
+    fields:
+      - name: score
+        type: Integer

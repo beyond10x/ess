@@ -1,0 +1,129 @@
+# Adversary pass 1 on beyond10x/ess#235: the explorer's order beside external branches.
+#
+# `Close` moves an open ticket to `Closed`: `closed` is the default and moves; `bounced` is external
+# and moves nothing; `wrong-state` answers where no move starts (`Closed`). Entity Runtime lowers
+# `bounced` as a guard over the provider's verdict, sorted before the default, so an arranged
+# `bounced` answers in every state, `Closed` included; `wrong-state` answers only where the default
+# is selected and cannot move.
+#
+# `Rate` has an input-guarded refusal `too-high` (above 50), the external `throttled` and the default
+# `rated`. Entity Runtime answers `too-high` before the provider's verdict, so an arranged
+# `throttled` never answers an input above 50.
+
+format: ess/6
+system: exploreadv
+version: v1
+domains:
+  - exploreadv.desk
+
+domain: exploreadv.desk
+
+summary: Tickets that are opened, closed and rated.
+
+types:
+  - name: exploreadv.desk.TicketId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: exploreadv.desk.Ticket
+    identity:
+      name: ticket_id
+      type: exploreadv.desk.TicketId
+    fields:
+      - name: size
+        type: Integer
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Open]
+          to: Closed
+
+actors:
+  - name: exploreadv.desk.Agent
+    may:
+      - exploreadv.desk.Open
+      - exploreadv.desk.Close
+      - exploreadv.desk.Rate
+
+errors:
+  - name: exploreadv.desk.Bounced
+    summary: The mail gateway bounced the closing notice.
+  - name: exploreadv.desk.StateConflict
+    summary: The ticket is not open.
+  - name: exploreadv.desk.TooHigh
+    summary: The score is above 50.
+  - name: exploreadv.desk.Throttled
+    summary: The rating service throttled the request.
+
+commands:
+  - name: exploreadv.desk.Open
+    input:
+      - name: size
+        type: Integer
+    outcomes:
+      - name: opened
+        creates: exploreadv.desk.Ticket
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Opened
+        payload:
+          exploreadv.desk.Opened:
+            ticket_id: {generated: true}
+        sets:
+          size: input.size
+
+  - name: exploreadv.desk.Close
+    input:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+    outcomes:
+      - name: closed
+        moves: exploreadv.desk.Ticket.close
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Closed
+        payload:
+          exploreadv.desk.Closed:
+            ticket_id: input.ticket_id
+      - name: bounced
+        external: the mail gateway bounces the closing notice
+        error: exploreadv.desk.Bounced
+      - name: wrong-state
+        wrong_state: true
+        error: exploreadv.desk.StateConflict
+
+  - name: exploreadv.desk.Rate
+    input:
+      - name: score
+        type: Integer
+    outcomes:
+      - name: too-high
+        when: score > 50
+        error: exploreadv.desk.TooHigh
+      - name: throttled
+        external: the rating service throttles
+        error: exploreadv.desk.Throttled
+      - name: rated
+        emits:
+          - exploreadv.desk.Rated
+        payload:
+          exploreadv.desk.Rated:
+            score: input.score
+
+events:
+  - name: exploreadv.desk.Opened
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Closed
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Rated
+    fields:
+      - name: score
+        type: Integer
