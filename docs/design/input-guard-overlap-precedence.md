@@ -27,14 +27,16 @@ command cannot act on at all; an accepting guard names which of the things it ca
 Checking the first before the second is what every implementation that refuses an empty id before
 reading `open` already does.
 
-The rule orders refusals ahead of accepting branches, and accepting guarded branches by the order
-they are declared in:
+Where this rule sits among existence, the held state and related rows is
+[the precedence order](cross-record-and-stored-field-guards.md#the-precedence-order). The rule
+orders refusals ahead of accepting branches, refusals among themselves and accepting guarded
+branches by the order they are declared in:
 
 | pair | order |
 |---|---|
 | input-guarded refusal, accepting branch with an input guard: a plain `when:`, the `when:` beside a `when_subject:`, or an external branch's `when:` | the refusal, before any stored row is read or any provider asked |
 | input-guarded refusal, default | not an overlap: the default is what no other guard selects |
-| two input-guarded refusals | unordered: a witness of one refutes the other with or without a default, so it selects exactly one outcome; where no input does, synthesis refuses the scenario naming both guards (beyond10x/ess#209) |
+| two input-guarded refusals | the first declared whose guard holds; a witness of one refutes the refusals declared before it, and where no input does, synthesis refuses the scenario naming them (beyond10x/ess#227 correction 1, superseding the unordered rule of #209) |
 | two accepting guarded branches | the first declared whose guard holds (beyond10x/ess#217, below) |
 | an accepting guarded branch and an external branch | the same declaration order: the first declared whose guard holds, an external one where its provider takes it (beyond10x/ess#217, below) |
 | a refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
@@ -204,8 +206,24 @@ with a refusal over an ordinary input. Whether an empty identity, #178's own cas
 selection at all depends on how a host addresses the subject (`decide_before_load` refuses a blank
 storage id before selecting), and is not measured here.
 
+## The model interpreter
+
+`crates/verify/ess-conformance/src/interpret/execute.rs` returned every branch whose guard held,
+so an overlap point was "open" and the interpreted target refused it. It now answers an
+input-guarded refusal naming no subject before it reads anything else (`refused_by_input`): the
+first declared refusal the input selects is the answer, as Entity Runtime takes it; synthesis
+likewise has a refusal's witness refute only the refusals declared before it
+(`synthesize::sibling_refusals`). On a command guarded by a related row, a missing row is answered
+by its `exists: false` branch first (`related_absent`), as
+[the precedence order](cross-record-and-stored-field-guards.md#the-precedence-order) puts it. That
+is also how
+it decides a refused request on a command whose other branches read a held state or a stored row,
+which it does not interpret yet (beyond10x/ess#227).
+
 ## What is not changed
 
-`validate`, ESS-COMMAND-003, the finite coverage proof, the source format and the suite format.
+`validate`, the finite coverage proof, the source format and the suite format. ESS-COMMAND-003 is
+not changed for this rule; beyond10x/ess#227 later admitted a refusal naming no subject beside
+held-state branches (`outcome-shapes.md`, "Beside held-state branches").
 Generated Rust and Go targets leave the command decision to an owed method, so they carry no branch
 order to change.

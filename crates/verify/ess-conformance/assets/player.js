@@ -28,6 +28,9 @@ const UNKNOWN_ID = 'Unknown: the generated identity was not observed.'
 function valueText(value) {
   if (value.kind === 'literal') return `literal ${JSON.stringify(value.value)}`
   if (value.kind === 'instance') return `instance reference ${JSON.stringify(value.instance)} (scenario-local alias)`
+  // A list or mapping holding instance references (suite/32, beyond10x/ess#242), element by element.
+  if (value.kind === 'list') return `[${value.items.map(valueText).join(', ')}]`
+  if (value.kind === 'members') return `{${Object.entries(value.members).map(([key, member]) => `${key}: ${valueText(member)}`).join(', ')}}`
   return `observed ${value.event}.${value.field} — Unknown: no implementation observation was made.`
 }
 const grants = new Map()

@@ -2225,6 +2225,16 @@ fn run_as(
         }
         return Err(first.expect("nonempty finite lifecycle"));
     }
+    // A branch copying its input into an entity whose invariants over it no bounded input meets
+    // is refused naming them, never sent an input its own entity refuses (beyond10x/ess#234).
+    if let Some((named, tried)) = crate::witness::unmet_invariants(ir, command, outcome, false)
+        .map_err(RefusalCause::NoWitness)?
+    {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: named,
+            tried,
+        });
+    }
     let routed = subject_fact::routes(command, outcome);
     // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,
     // for every branch it decides; further witnesses are the boundaries of its predicates alone.
@@ -2248,8 +2258,31 @@ fn run_as(
             }
         }
     } else {
-        arranged_as(ir, command, outcome, actors, routed, witness)?
+        // A guard no input meets beside the invariants of the entity it copies the input into is
+        // refused naming them, where the guard alone is met (beyond10x/ess#234).
+        arranged_as(ir, command, outcome, actors, routed, witness).map_err(|cause| {
+            match (
+                &cause,
+                crate::witness::unmet_invariants(ir, command, outcome, true),
+            ) {
+                (RefusalCause::GuardUnsatisfiable { .. }, Ok(Some((named, tried)))) => {
+                    RefusalCause::GuardUnsatisfiable {
+                        predicate: named,
+                        tried,
+                    }
+                }
+                _ => cause,
+            }
+        })?
     };
+    // The input as it is sent, after every arrangement moved it: still within the invariants of
+    // the entity the branch copies it into (beyond10x/ess#234).
+    if let Some(named) = crate::witness::invariant_broken_by(ir, command, outcome, &input) {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: named,
+            tried: 1,
+        });
+    }
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -2380,7 +2413,10 @@ fn arranged(
         // branch's writes change first, and only then for any row (beyond10x/ess#161).
         return subject_fact::prepare(ir, command, outcome, actors);
     }
-    let (setup, input) = if has_subject_guards(command) && !existence::creates_unknown(outcome) {
+    let (setup, input) = if has_subject_guards(command)
+        && !existence::creates_unknown(outcome)
+        && !is_state_input_refusal(command, outcome)
+    {
         prepare_state_input(ir, command, outcome, actors)?
     } else {
         (
@@ -2817,6 +2853,7 @@ fn replay_eligibility(
         steps: Vec::new(),
         source: BTreeSet::new(),
         settled: origin.settled.clone(),
+        unwritten: BTreeSet::new(),
     };
     for field in observed {
         let (observation, view) = subject_fact::observe(ir, &subject.entity, &field, &arrangement)?;
@@ -2883,7 +2920,15 @@ fn replay_condition(
             }
             ResolvedCondition::SubjectPredicate { predicate, input } => {
                 observed.extend(subject_fact::read_by(ir, &subject.entity, predicate));
-                match subject_fact::row_truth(ir, &subject.entity, settled, Some(held), predicate) {
+                match subject_fact::guard_truth_with(
+                    ir,
+                    &subject.entity,
+                    settled,
+                    &BTreeSet::new(),
+                    Some(held),
+                    predicate,
+                    None,
+                ) {
                     Truth::True => {}
                     Truth::False => return Ok(false),
                     Truth::Unknown => return Err(RefusalCause::NoWitness(WitnessGap {
@@ -3092,9 +3137,92 @@ struct Arrangement {
     /// later value — which is what the implementation will hold, and so what a declared order
     /// ranks this row by.
     settled: BTreeMap<String, Determined>,
+    /// The `Optional` fields no step of the arrangement wrote, known from its creation onward: the
+    /// row holds nothing there, so a predicate asking whether one is present reads it as absent
+    /// (beyond10x/ess#239). Empty wherever the arrangement's history is not known from its
+    /// creation, which leaves such a predicate `Unknown`, as before.
+    unwritten: BTreeSet<String>,
+}
+
+/// The `Optional` fields of `entity` the creating branch `creator` does not write, and nothing but
+/// a later act on the row itself can: absent on the row as it leaves it (beyond10x/ess#239).
+///
+/// A stored field has five writers in the model, and each is either folded in by
+/// [`Arrangement::absorb`] or kept out of the set here, where it reads undetermined as before:
+///
+/// | writer | here |
+/// |---|---|
+/// | the creator's own `sets:` | not unwritten |
+/// | a later `updates:`/`moves:` `sets:` on this row, sent by the scenario | folded in by `absorb` |
+/// | an `instances:` outcome's `sets:`, on every row its filter selects | [`written_elsewhere`] |
+/// | an `affects:` entry's `sets:`, on every row its filter selects | [`written_elsewhere`] |
+/// | the `sets:` of a command a binding invokes, which the target runs unasked | [`written_elsewhere`] |
+///
+/// The last three reach a row no step of its own arrangement names — a decoy's act, or the target
+/// reacting to an event — so no arrangement knows whether one ran on it.
+fn unwritten_by(ir: &EssIr, entity: &EntityHandle, creator: &ResolvedOutcome) -> BTreeSet<String> {
+    let elsewhere = written_elsewhere(ir, entity);
+    ir.entity(entity)
+        .fields
+        .iter()
+        .filter(|field| field.type_ref.is_optional())
+        .filter(|field| !creator.sets.iter().any(|set| set.target == field.name))
+        .filter(|field| !elsewhere.contains(&field.name))
+        .map(|field| field.name.clone())
+        .collect()
+}
+
+/// The fields of `entity` some writer other than an act the arrangement sends to the row itself
+/// can write: every `instances:` and `affects:` `sets:` on the entity, and every `sets:` of a
+/// command a binding invokes that updates or moves a row of it. A binding-invoked `creates:` makes
+/// a row of its own and writes no other.
+fn written_elsewhere(ir: &EssIr, entity: &EntityHandle) -> BTreeSet<String> {
+    let bound: BTreeSet<&QualifiedName> = ir
+        .bindings()
+        .values()
+        .map(|binding| &ir.command(&binding.command).name)
+        .collect();
+    let mut written = BTreeSet::new();
+    for command in ir.commands().values() {
+        let invoked = bound.contains(&command.name);
+        for outcome in &command.outcomes {
+            if outcome
+                .instances
+                .as_ref()
+                .is_some_and(|set| &set.entity == entity)
+                || (invoked
+                    && outcome.subject.as_ref().is_some_and(|subject| {
+                        &subject.entity == entity
+                            && !matches!(subject.effect, ResolvedEffect::Creates)
+                    }))
+            {
+                written.extend(outcome.sets.iter().map(|set| set.target.clone()));
+            }
+            for affect in outcome.affects.iter().filter(|a| &a.entity == entity) {
+                written.extend(affect.sets.iter().map(|set| set.target.clone()));
+            }
+        }
+    }
+    written
+}
+
+/// `unwritten` less every field `outcome`'s `sets:` writes: what stays unwritten after it runs.
+fn still_unwritten(unwritten: &BTreeSet<String>, outcome: &ResolvedOutcome) -> BTreeSet<String> {
+    unwritten
+        .iter()
+        .filter(|field| !outcome.sets.iter().any(|set| &set.target == *field))
+        .cloned()
+        .collect()
 }
 
 impl Arrangement {
+    /// Folds one further act on this row, `outcome`, with what it determined: [`absorb`], and every
+    /// field it writes no longer unwritten.
+    fn absorb(&mut self, outcome: &ResolvedOutcome, determined: BTreeMap<String, Determined>) {
+        absorb(&mut self.settled, outcome, determined);
+        self.unwritten = still_unwritten(&self.unwritten, outcome);
+    }
+
     /// The identity this instance is known by for the rest of the scenario.
     fn identity(&self) -> ScenarioValue {
         ScenarioValue::instance(self.instance.clone())
@@ -3287,7 +3415,7 @@ fn advance(
             let mut next = arrangement.clone();
             next.steps.extend(invoked.steps);
             next.source.extend(invoked.source);
-            absorb(&mut next.settled, driver.outcome, invoked.settled);
+            next.absorb(driver.outcome, invoked.settled);
             if let Some(transition) = driver.effect.transition() {
                 next.state = transition.to.clone();
             }
@@ -3370,6 +3498,7 @@ fn under_owner(
             steps: Vec::new(),
             source: BTreeSet::new(),
             settled: BTreeMap::new(),
+            unwritten: BTreeSet::new(),
         },
     ))
 }
@@ -3477,6 +3606,7 @@ fn created_owned(
         steps,
         source,
         settled,
+        unwritten: unwritten_by(ir, entity, creator.outcome),
     })
 }
 
@@ -3932,6 +4062,21 @@ fn admits_held_state(condition: &ResolvedCondition, held: &StateName) -> bool {
     admitted_states(condition).is_none_or(|states| states.contains(held))
 }
 
+/// Whether `outcome` is an input-guarded refusal naming no subject beside branches that read the
+/// held state (beyond10x/ess#227).
+///
+/// It is answered before existence and before the held state (`docs/design/outcome-shapes.md`
+/// "Precedence"), so its own scenario reaches it by input alone, as a plain send; the rows it is
+/// sent for again, one per held state a sibling runs from, are arranged by
+/// `existence::refusals_in_each_held_state`.
+pub(crate) fn is_state_input_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
+    has_subject_guards(command)
+        && is_input_guarded_refusal(outcome)
+        && !state_default(outcome)
+        && outcome.subject.is_none()
+        && outcome.replays.is_none()
+}
+
 fn state_default(outcome: &ResolvedOutcome) -> bool {
     matches!(&outcome.condition, ResolvedCondition::Otherwise)
         || matches!(&outcome.condition, ResolvedCondition::When { predicate } if predicate.is_trivially_true())
@@ -3997,6 +4142,16 @@ fn selected_in_state(
             }
         }
         selected.push(branch);
+    }
+    // An input refusal these facts select answers before any held-state branch (beyond10x/ess#227),
+    // as the partition in `ess_domain::command::subject_state` counts it; of two, the first
+    // declared answers (`selected` keeps declaration order), as Entity Runtime takes it.
+    if let Some(first) = selected
+        .iter()
+        .copied()
+        .find(|branch| is_state_input_refusal(command, branch))
+    {
+        selected = vec![first];
     }
     if selected.is_empty() {
         selected.extend(
@@ -4219,7 +4374,10 @@ fn reach(
         }
         return Err(first.expect("a held-state guard names at least one state"));
     }
-    if has_subject_guards(command) && !existence::creates_unknown(outcome) {
+    if has_subject_guards(command)
+        && !existence::creates_unknown(outcome)
+        && !is_state_input_refusal(command, outcome)
+    {
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         });
@@ -4344,11 +4502,11 @@ impl Shadow {
             .map(|(name, guard)| format!("{name} ({guard})"))
             .collect();
         if self.refusal {
-            // Two refusals whose guards overlap: the model takes neither first, so an input both
-            // claim selects no one outcome (beyond10x/ess#209, adversary pass 1).
+            // Two refusals whose guards overlap: the first declared answers (beyond10x/ess#227
+            // adversary pass 1), so an input a refusal declared before this one claims is that
+            // refusal's.
             return Some(format!(
-                "{} outside {}, an input-guarded refusal the model orders neither before nor \
-                 after it",
+                "{} outside {}, an input-guarded refusal declared before it, which answers first",
                 rendered(guards, true),
                 refusals.join(", ")
             ));
@@ -4430,13 +4588,24 @@ pub(crate) fn accepting_input_half(outcome: &ResolvedOutcome) -> Option<&Predica
     }
 }
 
-/// Every input-guarded refusal of `command` other than `outcome`.
+/// Every input-guarded refusal of `command` answered before `outcome`: all of them for any other
+/// branch, and for an input-guarded refusal the ones declared before it — of two refusals an input
+/// selects, the first declared answers, as Entity Runtime takes it (beyond10x/ess#227 adversary
+/// pass 1). A refusal's witness refutes these and needs to refute nothing declared after it.
 pub(crate) fn sibling_refusals<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
 ) -> impl Iterator<Item = &'c ResolvedOutcome> {
-    command
-        .outcomes
+    let before = if is_input_guarded_refusal(outcome) {
+        command
+            .outcomes
+            .iter()
+            .position(|other| other.name == outcome.name)
+            .unwrap_or(command.outcomes.len())
+    } else {
+        command.outcomes.len()
+    };
+    command.outcomes[..before]
         .iter()
         .filter(move |other| other.name != outcome.name && is_input_guarded_refusal(other))
 }
@@ -4591,7 +4760,12 @@ fn selects_branch(
             .expect("a held-state guard names at least one state");
         return selected_in_state(command, outcome, held, &facts);
     }
-    if has_subject_guards(command) && !existence::creates_unknown(outcome) {
+    // An input refusal beside held-state branches (beyond10x/ess#227) is decided by its input alone
+    // where no held state is given: it is answered before the state is read.
+    if has_subject_guards(command)
+        && !existence::creates_unknown(outcome)
+        && !(held.is_none() && is_state_input_refusal(command, outcome))
+    {
         let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         })?;
@@ -4674,18 +4848,24 @@ fn admits_plain(
         .iter()
         .all(|other| other.test_strategy != TestStrategy::DefaultBranch)
     {
+        // A refusal declared after an input-guarded refusal never answers before it, so it is not
+        // refuted (beyond10x/ess#227 adversary pass 1).
+        let later = |other: &ResolvedOutcome| {
+            is_input_guarded_refusal(outcome)
+                && is_input_guarded_refusal(other)
+                && !sibling_refusals(command, outcome).any(|before| before.name == other.name)
+        };
         command
             .outcomes
             .iter()
-            .filter(|other| other.name != outcome.name)
+            .filter(|other| other.name != outcome.name && !later(other))
             .filter_map(when)
             .collect()
     } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
-        // An input-guarded refusal refutes its sibling refusals as well: beside a default the
-        // model orders none of them before another, so an input two of them claim selects no one
-        // outcome, and a scenario requiring either would require a choice the model does not make.
-        // An accepting `when:` branch is not reached by an input an accepting branch declared
-        // before it claims (beyond10x/ess#217).
+        // An input-guarded refusal refutes the refusals declared before it: of two an input
+        // selects, the first declared answers ([`sibling_refusals`]). An accepting `when:` branch
+        // is not reached by an input an accepting branch declared before it claims
+        // (beyond10x/ess#217).
         if claimed_by(facts, &earlier_accepting(command, outcome)) {
             return Ok(false);
         }

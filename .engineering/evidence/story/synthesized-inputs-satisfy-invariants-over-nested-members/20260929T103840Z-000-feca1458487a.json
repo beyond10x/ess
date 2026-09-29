@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T10:38:40Z",
+  "actor": "human:timo",
+  "artifact": "story:synthesized-inputs-satisfy-invariants-over-nested-members",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction-2 gates on the merge onto integrate/ess-0.43: ess-conformance 1850, ess-entity-runtime 88, ess-xtask 334 passed; schema/generate/docs/clippy/fmt clean",
+    "reference": "impl/nested-input-invariants-on-043@deb5ec435"
+  }
+}

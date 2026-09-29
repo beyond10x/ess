@@ -4,7 +4,10 @@
 
 package essconform
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type exploreExitUnsupported struct{ reason string }
 
@@ -75,10 +78,16 @@ func (t *exploreExitTarget) ExecuteCommand(request CommandRequest) (CommandResul
 		if t.forced[request.Command] == "throttled" {
 			return exploreExitRefused("throttled", "exploreexit.desk.Throttled"), nil
 		}
+		rated := "High"
 		if exploreExitScore(input["score"]) <= 3 {
-			return exploreExitRefused("low", "exploreexit.desk.Low"), nil
+			rated = "Low"
 		}
-		return exploreExitRefused("high", "exploreexit.desk.High"), nil
+		t.version++
+		return CommandResult{
+			Outcome:      strings.ToLower(rated),
+			Consistency:  fmt.Sprintf("v%d", t.version),
+			DirectEvents: []ObservedEvent{{Event: "exploreexit.desk.Rated" + rated, Payload: map[string]Node{"score": input["score"]}}},
+		}, nil
 	default:
 		return CommandResult{}, exploreExitUnsupported{request.Command + " is not a command of explore-external-exits.yaml"}
 	}

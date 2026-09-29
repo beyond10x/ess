@@ -68,6 +68,38 @@ scenarios, not every scenario file below the directory.
 
 `ess verify conform run --suite FILE` runs the committed suite as it is and selects nothing.
 
+## Expect an external branch in an authored scenario
+
+No input decides a branch declared `external:`, so an authored act that expects one names it under
+`outcome:`:
+
+```yaml
+timeline:
+  - at: 2026-01-05T09:00:00Z
+    command: billing.email.SendEmail
+    input: {recipient: nobody@example.test, template: welcome}
+    outcome: failed
+    error: {name: billing.email.Undeliverable}
+```
+
+The act compiles into a `configure_external_outcome` for `failed` immediately before its
+`execute_command`, as a generated scenario does, so the target is told which answer to give for
+that call.
+
+That is the only external answer an act can state. An act is refused with `ESS-AUTHOR-037`
+when one of its claims holds only on an external answer it does not state, whether or not
+`outcome:` is written. The check covers the act's error, its direct response, each event it
+claims published and each event it claims absent. The answers it considers are those of the act's
+own command and of every command a binding invokes from what the act publishes, however many
+bindings along. A binding's escalation event needs its invoked command to fail. The refusal names
+every such branch as `command/branch`.
+
+For example, an act on `billing.invoice.CreateInvoice` that claims
+`billing.email.DeliveryEscalated` is refused naming `billing.email.SendEmail/failed`. The binding's
+`SendEmail` call fails only on that external branch, and an authored act has no key for the
+answer a binding's call gives. Generated scenarios cover the escalation. An event that some
+command's input-decided branch publishes exempts a claim only when the act reaches that command.
+
 ## Establish backend state in an authored scenario
 
 `ess-scenario/2`, introduced in 0.23.0, supports typed setup for entities whose rows arrive
@@ -100,6 +132,27 @@ before acknowledging setup. Setup emits no command or event and claims no
 lifecycle path. Rust and generated Go expose an optional setup capability;
 unsupported adapters produce a non-passing result. These steps use suite/6 or
 coverage suite/7 and require explicit report/2. Source scenario/1 refuses setup.
+
+## Name several instances in one input
+
+`{$instance: name}` stands wherever the declared type at that position is the instance's
+identity type: a whole input field, a list element, a map value, a struct member or the
+payload of a union variant whose type is the identity, at any depth. A rollout over three release rings names them in order:
+
+```yaml
+    input:
+      ring_sequence: [{$instance: a}, {$instance: b}]
+      by_stage: {canary: {$instance: b}, general: {$instance: c}}
+      pair: {primary: {$instance: c}, note: first}
+```
+
+Each reference resolves to the identity the run bound for that instance, and the command
+receives the list or mapping with those identities in place. A reference at a position of
+any other type is refused as `ESS-AUTHOR-022`, naming the position (`labels[1]`,
+`pair.note`, `tags[owner]`, `target.value`); one at a member the model does not declare, or
+inside a value of the wrong shape, is refused naming the member or the position. One inside an event payload or an error is refused as
+`ESS-AUTHOR-021`, as a whole-field one is. A suite carrying such a value is suite/32 (/33
+with coverage); the Rust runner resolves it, and Go and TypeScript generation refuse it.
 
 ## Observe outcomes selected by held state
 

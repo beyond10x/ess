@@ -70,6 +70,7 @@ pub const PACKAGE: &str = "essconform";
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<TsArtifact>, crate::admission::AdmissionError> {
     crate::direct_response::refuse_generation(suite, "TypeScript")?;
     crate::delivery_context::refuse_generation(suite, "TypeScript")?;
+    crate::structured_values::refuse_generation(suite, "TypeScript")?;
     crate::go::refuse_unadmitted(suite, "TypeScript")?;
     let json = suite.to_canonical_json()?;
     let mut files = sources(RUNTIME_TS.to_owned());
@@ -230,6 +231,7 @@ pub fn emit_input(
     let suite = input.selected();
     crate::direct_response::refuse_generation(suite.suite(), "TypeScript")?;
     crate::delivery_context::refuse_generation(suite.suite(), "TypeScript")?;
+    crate::structured_values::refuse_generation(suite.suite(), "TypeScript")?;
     crate::go::refuse_unadmitted(suite.suite(), "TypeScript")?;
     let mut files = sources(RUNTIME_TS.replace(SUITE_DOCUMENT, INPUT_DOCUMENT));
     files.push(file("suite.json", suite.original_json().into()));

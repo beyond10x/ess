@@ -1,0 +1,136 @@
+# Adversary pass 1 on beyond10x/ess#235: two accepting guards that both hold and both move, on a
+# subject resting where no move starts.
+#
+# `Resolve` has `quick` (`level >= 0`) and `slow` (`level > -1`), the same integers, both moving
+# `Open` to `Closed`; `unrated` is the default refusal, taken below 0. In `Closed` Entity Runtime
+# selects `quick` (first declared), whose move cannot start there, and answers `wrong-state`. That
+# is the only way `wrong-state` is reached: below 0 the default answers in every state. In `Open`
+# the overlap is ambiguous to the explorer, so `quick` and `slow` stay unreached by design; `Shut`
+# moves a ticket to `Closed` by another transition.
+
+format: ess/6
+system: exploreadv
+version: v1
+domains:
+  - exploreadv.desk
+
+domain: exploreadv.desk
+
+summary: Tickets that are opened and resolved.
+
+types:
+  - name: exploreadv.desk.TicketId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: exploreadv.desk.Ticket
+    identity:
+      name: ticket_id
+      type: exploreadv.desk.TicketId
+    fields:
+      - name: size
+        type: Integer
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - name: resolve
+          from: [Open]
+          to: Closed
+        - name: shut
+          from: [Open]
+          to: Closed
+
+actors:
+  - name: exploreadv.desk.Agent
+    may:
+      - exploreadv.desk.Open
+      - exploreadv.desk.Resolve
+      - exploreadv.desk.Shut
+
+errors:
+  - name: exploreadv.desk.StateConflict
+    summary: The ticket is not open.
+  - name: exploreadv.desk.Unrated
+    summary: The level is below 0.
+
+commands:
+  - name: exploreadv.desk.Open
+    input:
+      - name: size
+        type: Integer
+    outcomes:
+      - name: opened
+        creates: exploreadv.desk.Ticket
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Opened
+        payload:
+          exploreadv.desk.Opened:
+            ticket_id: {generated: true}
+        sets:
+          size: input.size
+
+  - name: exploreadv.desk.Shut
+    input:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+    outcomes:
+      - name: shut
+        moves: exploreadv.desk.Ticket.shut
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.ShutDown
+        payload:
+          exploreadv.desk.ShutDown:
+            ticket_id: input.ticket_id
+      - name: wrong-state
+        wrong_state: true
+        error: exploreadv.desk.StateConflict
+
+  - name: exploreadv.desk.Resolve
+    input:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+      - name: level
+        type: Integer
+    outcomes:
+      - name: quick
+        when: level >= 0
+        moves: exploreadv.desk.Ticket.resolve
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Resolved
+        payload:
+          exploreadv.desk.Resolved:
+            ticket_id: input.ticket_id
+      - name: slow
+        when: level > -1
+        moves: exploreadv.desk.Ticket.resolve
+        instance: ticket_id
+        emits:
+          - exploreadv.desk.Resolved
+        payload:
+          exploreadv.desk.Resolved:
+            ticket_id: input.ticket_id
+      - name: unrated
+        error: exploreadv.desk.Unrated
+      - name: wrong-state
+        wrong_state: true
+        error: exploreadv.desk.StateConflict
+
+events:
+  - name: exploreadv.desk.ShutDown
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Opened
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId
+  - name: exploreadv.desk.Resolved
+    fields:
+      - name: ticket_id
+        type: exploreadv.desk.TicketId

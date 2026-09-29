@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.43.0](#instance-references-inside-structured-values-one-refusal-precedence-and-unstated-external-answers-refused) | Instance references inside structured values, one refusal precedence and unstated external answers refused | capability | significant |
 | [0.42.0](#link-field-guards-overlap-precedence-counter-limits-and-unkillable-mutants-scored-apart) | Link-field guards, overlap precedence, counter limits and unkillable mutants scored apart | capability | significant |
 | [0.41.0](#state-scoped-refusals-guards-over-a-related-row-delivery-context-and-a-synthesis-and-mutation-defect-batch) | State-scoped refusals, guards over a related row, delivery context, and a synthesis and mutation defect batch | capability | significant |
 | [0.40.0](#generated-go-and-typescript-runtimes-run-every-suite-and-reader-side-composition-checks) | Generated Go and TypeScript runtimes run every suite, and reader-side composition checks | capability | significant |
@@ -36,6 +37,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.43.0 — 2026-09-29
+
+### Instance references inside structured values, one refusal precedence and unstated external answers refused
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.43.0)
+
+`{$instance}` works inside lists, maps, structs and unions (suites `ess-conformance/32` and `/33`); acts claiming an unstated external answer are refused `ESS-AUTHOR-037`. An input refusal may sit beside held-state branches under one precedence order the explorer follows; synthesis meets nested input invariants and witnesses absent fields and stored maps.
 
 ## 0.42.0 — 2026-09-29
 

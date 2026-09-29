@@ -55,8 +55,13 @@ export function newTarget(mode = '') {
           if (forced.get(command) === 'throttled') {
             return refused('throttled', 'exploreexit.desk.Throttled');
           }
-          if (input.score <= 3) return refused('low', 'exploreexit.desk.Low');
-          return refused('high', 'exploreexit.desk.High');
+          const rated = input.score <= 3 ? 'Low' : 'High';
+          version += 1;
+          return {
+            outcome: rated.toLowerCase(),
+            consistency: `v${version}`,
+            directEvents: [{ event: `exploreexit.desk.Rated${rated}`, payload: { score: input.score } }],
+          };
         }
         default:
           throw unsupported(`${command} is not a command of explore-external-exits.yaml`);

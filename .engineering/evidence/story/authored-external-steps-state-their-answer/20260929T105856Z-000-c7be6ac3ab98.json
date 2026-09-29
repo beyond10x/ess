@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T10:58:56Z",
+  "actor": "human:timo",
+  "artifact": "story:authored-external-steps-state-their-answer",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "merged check on integrate/ess-0.43 (clippy; ess-conformance 1873, ess-entity-runtime 88, ess-xtask 334, ess-cli 831 passed; generate --check, docs, fmt-check)",
+    "reference": "integrate/ess-0.43@f6aa1357b"
+  }
+}

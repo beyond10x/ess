@@ -304,6 +304,7 @@ impl Selection<'_> {
             self.ir,
             self.entity,
             &row.settled,
+            &row.unwritten,
             Some(&row.state),
             predicate,
             Some((self.command, self.input)),
@@ -900,6 +901,7 @@ fn left_by(
     let changed = rows.changed.iter().map(|row| Arrangement {
         state: to.unwrap_or(&row.state).clone(),
         settled: after(ir, outcome, supplied, &row.settled),
+        unwritten: super::still_unwritten(&row.unwritten, outcome),
         ..row.clone()
     });
     changed.chain(rows.kept.iter().cloned()).collect()
@@ -923,6 +925,7 @@ fn matching_none(
                     ir,
                     entity,
                     &row.settled,
+                    &row.unwritten,
                     Some(&row.state),
                     filter,
                     Some((command, input)),

@@ -1,0 +1,177 @@
+# The explorer decides a step in Entity Runtime's order (beyond10x/ess#235): an input-guarded
+# refusal, the first declared whose guard holds, before the held state, and an accepting branch that
+# moves nothing before the wrong-state answer.
+#
+# `Hold` moves an open ticket to `Held`; from `Held` no move of it starts, so its `wrong-state`
+# answers there. Its three input-guarded refusals answer in every state: `tiny` (below -5) is
+# declared before `negative` (below 0), which it overlaps; `capped` (above 100) is declared after
+# the accepting `held` (1 and above), which it overlaps. `unrated` is the default, taken at 0.
+#
+# `Release` moves a held ticket back to `Open`; from `Open` no move of it starts. Its `noted` branch
+# (a note of 7) updates the ticket and moves nothing, so it answers in `Open` too; every other note
+# selects the default `released`, whose move from `Open` is the wrong-state answer.
+#
+# The targets beside it are `explore-guards-first-target.mjs` and `explore_guards_first_target.go`.
+
+format: ess/6
+system: exploreorder
+version: v1
+domains:
+  - exploreorder.desk
+
+domain: exploreorder.desk
+
+summary: Tickets that are opened, held with a priority and released with a note.
+
+types:
+  - name: exploreorder.desk.TicketId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: exploreorder.desk.Ticket
+    identity:
+      name: ticket_id
+      type: exploreorder.desk.TicketId
+    fields:
+      - name: priority
+        type: Integer
+    lifecycle:
+      initial: Open
+      states: [Open, Held]
+      transitions:
+        - name: hold
+          from: [Open]
+          to: Held
+        - name: release
+          from: [Held]
+          to: Open
+
+actors:
+  - name: exploreorder.desk.Agent
+    may:
+      - exploreorder.desk.Open
+      - exploreorder.desk.Hold
+      - exploreorder.desk.Release
+
+errors:
+  - name: exploreorder.desk.PriorityTiny
+    summary: The priority is below -5.
+  - name: exploreorder.desk.PriorityNegative
+    summary: The priority is below 0.
+  - name: exploreorder.desk.PriorityCapped
+    summary: The priority is above 100.
+  - name: exploreorder.desk.Unrated
+    summary: The priority is 0.
+  - name: exploreorder.desk.TicketStateConflict
+    summary: The ticket is not in a state this command acts from.
+
+commands:
+  - name: exploreorder.desk.Open
+    input:
+      - name: priority
+        type: Integer
+    outcomes:
+      - name: opened
+        creates: exploreorder.desk.Ticket
+        instance: ticket_id
+        emits:
+          - exploreorder.desk.Opened
+        payload:
+          exploreorder.desk.Opened:
+            ticket_id: {generated: true}
+        sets:
+          priority: "0"
+
+  - name: exploreorder.desk.Hold
+    input:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+      - name: priority
+        type: Integer
+    outcomes:
+      - name: held
+        when: priority >= 1
+        moves: exploreorder.desk.Ticket.hold
+        instance: ticket_id
+        emits:
+          - exploreorder.desk.Held
+        payload:
+          exploreorder.desk.Held:
+            ticket_id: input.ticket_id
+        sets:
+          priority: input.priority
+      - name: tiny
+        when: priority < -5
+        error: exploreorder.desk.PriorityTiny
+      - name: negative
+        when: priority < 0
+        error: exploreorder.desk.PriorityNegative
+      - name: capped
+        when: priority > 100
+        error: exploreorder.desk.PriorityCapped
+      - name: unrated
+        error: exploreorder.desk.Unrated
+      - name: wrong-state
+        wrong_state: true
+        error: exploreorder.desk.TicketStateConflict
+
+  - name: exploreorder.desk.Release
+    input:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+      - name: note
+        type: Integer
+    outcomes:
+      - name: noted
+        when: note == 7
+        updates: exploreorder.desk.Ticket
+        instance: ticket_id
+        emits:
+          - exploreorder.desk.Noted
+        payload:
+          exploreorder.desk.Noted:
+            ticket_id: input.ticket_id
+        sets:
+          priority: input.note
+      - name: released
+        moves: exploreorder.desk.Ticket.release
+        instance: ticket_id
+        emits:
+          - exploreorder.desk.Released
+        payload:
+          exploreorder.desk.Released:
+            ticket_id: input.ticket_id
+      - name: wrong-state
+        wrong_state: true
+        error: exploreorder.desk.TicketStateConflict
+
+events:
+  - name: exploreorder.desk.Opened
+    fields:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+  - name: exploreorder.desk.Held
+    fields:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+  - name: exploreorder.desk.Noted
+    fields:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+  - name: exploreorder.desk.Released
+    fields:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+
+views:
+  - name: exploreorder.desk.Tickets
+    source: exploreorder.desk.Ticket
+    consistency: read_your_writes
+    fields:
+      - name: ticket_id
+        type: exploreorder.desk.TicketId
+      - name: priority
+        type: Integer
+      - name: state
+        type: exploreorder.desk.Ticket.State

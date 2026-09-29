@@ -12,7 +12,7 @@
 //! deterministic order, without a constraint solver — which §11 names as a later extension and not a
 //! requirement of the first closed loop.
 //!
-//! # The strategy, in five rules
+//! # The strategy, in six rules
 //!
 //! 1. **One base witness per command**, built from the declared input types alone. Every field is
 //!    filled, optionals included, so a guard reading one is decided rather than
@@ -69,6 +69,17 @@
 //!    keeps two *instances* apart, by moving every leaf the walk records as far as its declared
 //!    type allows. Without it, a scenario that runs one creating command twice submits one input
 //!    twice.
+//! 6. **The base satisfies the invariants over the input** (beyond10x/ess#234): those of every
+//!    struct the input holds, read under the path the struct is built at, and those of every
+//!    entity a branch copies the input into, read through the copy (`sets: {fingerprint:
+//!    input.fingerprint}` beside `fingerprint.version == "v1"` reads the input's
+//!    `fingerprint.version`). Where rule 2's base refuses one, the leaves it reads are tried at its
+//!    literals and, for a comparison of two leaves, at each other's base, and the first value the
+//!    invariants admit is the base every candidate starts from. A base that already satisfies them
+//!    moves nowhere. An equality a guard writes between two leaves (`owner == ticket.owner`) tries
+//!    each side at the other's base as well. Every candidate is then held to the entity
+//!    invariants of the branches it can reach: one that breaks one is solved again with the leaves
+//!    it moved kept where they are, or dropped, and never sent.
 //!
 //! # What has no witness
 //!
@@ -82,7 +93,9 @@
 //! fails its assertion. The key is the key primitive's own witness at the map's path — `"tags"`,
 //! `1`, `true` — in the spelling a setup key is read by, and it moves with the instance as every
 //! leaf does (rule 5). The value is built at `<map>.0`, as a list's element is, and recorded there.
-//! A guard over `<map>.count`, which the flattener publishes, is tried at the empty map and at the
+//! A quantifier over a map binds its values, and the flattener publishes them at their ordinals in
+//! key order (beyond10x/ess#240), so a quantifier's body is rebound onto `<map>.0` as rule 3 rebinds
+//! a list's, and the value is tried at the guard's own literal. A guard over `<map>.count`, which the flattener publishes, is tried at the empty map and at the
 //! lengths rule 3 names, each further entry a copy of the first under the next instance's key. A map
 //! whose key is a `Decimal`, which has no setup spelling, or whose value has no finite witness, is
 //! `{}`. A value that reaches a type already being built — a type that refers to itself through a
@@ -115,8 +128,10 @@ use ess_compiler::ir::{EssIr, ResolvedBody, ResolvedCommand, ResolvedTypeRef};
 use ess_domain::types::{Primitive, MAX_TYPE_DEPTH};
 use ess_primitives::facts::{FactPath, FactValue, Number};
 use ess_primitives::node::Node;
-use ess_primitives::predicate::{Operand, Predicate, TextOp};
+use ess_primitives::predicate::{CompareOp, Operand, Predicate, TextOp};
 use ess_primitives::time::{CurrentTime, Rfc3339Instant};
+
+use crate::decision::Decision;
 
 /// How many candidate inputs one outcome is tried against before synthesis refuses.
 ///
@@ -316,6 +331,14 @@ pub fn exhausts(ir: &EssIr, command: &ResolvedCommand, guards: &[&Predicate]) ->
     if builder.input(command, &BTreeMap::new()).is_err() {
         return false;
     }
+    // A candidate breaking an entity invariant of a branch it reaches is solved again or dropped
+    // (beyond10x/ess#234), so a region it stood for may go untried.
+    if outcome_constraints(ir, command)
+        .iter()
+        .any(|held| !held.is_empty())
+    {
+        return false;
+    }
     let mut regions: usize = 1;
     for path in read_paths(guards) {
         let Some((leaf, at_base)) = builder.leaves.get(&path) else {
@@ -496,6 +519,10 @@ fn search(
     // The base witness records every leaf the ladders below are built from; `enumerate` builds it
     // again as its first candidate.
     builder.input(command, &BTreeMap::new())?;
+    // The base satisfies the invariants over the input, of its structs and of the entities a
+    // branch copies it into (beyond10x/ess#234), before any ladder is drawn from it.
+    let constrained = outcome_constraints(ir, command);
+    repair(&mut builder, command, &constrained)?;
     // A presence policy (beyond10x/ess#139) is observable only on an absent value, so an optional
     // input, or an optional member of one, copied into a field that declares one and read by no
     // guard is sent absent in every candidate first: each candidate is tried with those members
@@ -510,7 +537,10 @@ fn search(
     if !between {
         if let Some(inputs) = finite_partition(ir, command, guards, &mut builder, &presence_omits)?
         {
-            return Ok((inputs, false));
+            return Ok((
+                within_invariants(&mut builder, command, &constrained, inputs)?,
+                false,
+            ));
         }
     }
 
@@ -548,10 +578,18 @@ fn search(
                 }
             }
         }
+        // A base the repair moved onto the guard's own literal is tried at its own witness too,
+        // so the guard is still refuted by some candidate (beyond10x/ess#234).
+        if let Some(original) = builder.unrepaired.get(&path) {
+            if original != at_base && !alternatives.contains(original) {
+                alternatives.push(original.clone());
+            }
+        }
         if !alternatives.is_empty() {
             ladders.insert(path, alternatives.into_iter().map(Choice::Value).collect());
         }
     }
+    equality_copies(&builder, &expanded, false, &mut ladders);
     count_ladders(&builder, &expanded, &mut ladders);
     let mut ladders: Vec<(FactPath, Vec<Choice>)> = ladders.into_iter().collect();
 
@@ -599,7 +637,11 @@ fn search(
         let solved = Directed::new(&mut builder, command, guards, &ladders).solve()?;
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
-    Ok((admitted_inputs(ir, command, inputs), added))
+    let inputs = admitted_inputs(ir, command, inputs);
+    Ok((
+        within_invariants(&mut builder, command, &constrained, inputs)?,
+        added,
+    ))
 }
 
 /// One base witness for a table of declared fields that is not a command's input — an event's
@@ -1377,15 +1419,34 @@ fn element_bodies(predicate: &Predicate, found: &mut Vec<Predicate>) {
 
 /// `predicate` with every read rooted at `bind` moved under `prefix`.
 fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
-    let path = |path: &FactPath| {
-        if path.namespace() == bind {
-            let mut moved = prefix.clone();
-            for segment in &path.segments()[1..] {
-                moved = moved.child(segment);
-            }
-            moved
+    remapped(
+        predicate,
+        &|path: &FactPath| {
+            (path.namespace() == bind).then(|| {
+                let mut moved = prefix.clone();
+                for segment in &path.segments()[1..] {
+                    moved = moved.child(segment);
+                }
+                moved
+            })
+        },
+        &[],
+    )
+}
+
+/// `predicate` with every read `map` answers moved to the path it answers, and every other read
+/// kept. A read rooted at a quantifier's binder is the quantifier's own, so it is never offered to
+/// `map`: `bound` holds the binders in scope.
+fn remapped(
+    predicate: &Predicate,
+    map: &dyn Fn(&FactPath) -> Option<FactPath>,
+    bound: &[&str],
+) -> Predicate {
+    let path = |read: &FactPath| {
+        if bound.contains(&read.namespace()) {
+            read.clone()
         } else {
-            path.clone()
+            map(read).unwrap_or_else(|| read.clone())
         }
     };
     let operand = |operand: &Operand| match operand {
@@ -1398,16 +1459,16 @@ fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
         Predicate::All(children) => Predicate::All(
             children
                 .iter()
-                .map(|child| rebind(child, bind, prefix))
+                .map(|child| remapped(child, map, bound))
                 .collect(),
         ),
         Predicate::Any(children) => Predicate::Any(
             children
                 .iter()
-                .map(|child| rebind(child, bind, prefix))
+                .map(|child| remapped(child, map, bound))
                 .collect(),
         ),
-        Predicate::Not(inner) => Predicate::Not(Box::new(rebind(inner, bind, prefix))),
+        Predicate::Not(inner) => Predicate::Not(Box::new(remapped(inner, map, bound))),
         Predicate::Compare { left, op, right } => Predicate::Compare {
             left: operand(left),
             op: *op,
@@ -1442,14 +1503,12 @@ fn rebind(predicate: &Predicate, bind: &str, prefix: &FactPath) -> Predicate {
             values: values.clone(),
         },
         Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let mut inside = bound.to_vec();
+            inside.push(&quantified.bind);
             let inner = ess_primitives::predicate::Quantified {
                 over: path(&quantified.over),
                 bind: quantified.bind.clone(),
-                body: if quantified.bind == bind {
-                    quantified.body.clone()
-                } else {
-                    rebind(&quantified.body, bind, prefix)
-                },
+                body: remapped(&quantified.body, map, &inside),
             };
             if matches!(predicate, Predicate::Forall(_)) {
                 Predicate::Forall(Box::new(inner))
@@ -2126,6 +2185,655 @@ fn invariant_ladders(builder: &Builder<'_>, ladders: &mut BTreeMap<FactPath, Vec
     }
 }
 
+/// `read` moved under `prefix`: `start` under `window` is `window.start`.
+fn joined(prefix: &FactPath, read: &FactPath) -> FactPath {
+    let mut moved = prefix.clone();
+    for segment in read.segments() {
+        moved = moved.child(segment);
+    }
+    moved
+}
+
+/// Every pair of facts a guard compares with each other, with the operator, in the order the
+/// guards write them.
+fn fact_comparisons(guards: &[&Predicate]) -> Vec<(FactPath, CompareOp, FactPath)> {
+    fn walk(predicate: &Predicate, found: &mut Vec<(FactPath, CompareOp, FactPath)>) {
+        match predicate {
+            Predicate::All(children) | Predicate::Any(children) => {
+                for child in children {
+                    walk(child, found);
+                }
+            }
+            Predicate::Not(inner) => walk(inner, found),
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                op,
+                right: Operand::Fact(right),
+            } => {
+                let triple = (left.clone(), *op, right.clone());
+                if !found.contains(&triple) {
+                    found.push(triple);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for guard in guards {
+        walk(guard, &mut found);
+    }
+    found
+}
+
+/// For each comparison between two leaves of the input — `owner == ticket.owner` — each side tried
+/// at the other's base as well (beyond10x/ess#234); with `ordered`, for an order between two numbers
+/// — `low < high` — also at the other's base plus and minus one.
+///
+/// Rule 2 gives two fields two different texts, so no literal of the guard and no value either
+/// side is otherwise tried at makes them equal. The other side's base does. An order is met by the
+/// neighbours of the other side's base, which move with the instance as that base does (rule 5), so
+/// two instances do not share the value that met it. Every leaf the comparison does not read keeps
+/// its own witness. `ordered` is the invariants' ([`repair`]); a guard's order between two facts
+/// keeps the ladder it had.
+fn equality_copies(
+    builder: &Builder<'_>,
+    guards: &[&Predicate],
+    ordered: bool,
+    ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
+) {
+    for (left, op, right) in fact_comparisons(guards) {
+        let equality = matches!(op, CompareOp::Eq | CompareOp::Ne);
+        if !equality && !ordered {
+            continue;
+        }
+        for (to, from) in [(&left, &right), (&right, &left)] {
+            let (Some((to_leaf, to_base)), Some((from_leaf, from_base))) =
+                (builder.leaves.get(to), builder.leaves.get(from))
+            else {
+                continue;
+            };
+            if std::mem::discriminant(to_leaf) != std::mem::discriminant(from_leaf) {
+                continue;
+            }
+            let mut values = vec![from_base.clone()];
+            if let (false, Leaf::Number { .. }, Node::Number(number)) =
+                (equality, to_leaf, from_base)
+            {
+                values.extend(
+                    [number.get() + 1.0, number.get() - 1.0]
+                        .into_iter()
+                        .filter_map(|value| Number::new(value).ok())
+                        .map(Node::Number),
+                );
+            }
+            let ladder = ladders.entry(to.clone()).or_default();
+            for value in values {
+                let choice = Choice::Value(value);
+                if choice != Choice::Value(to_base.clone()) && !ladder.contains(&choice) {
+                    ladder.push(choice);
+                }
+            }
+            if ladder.is_empty() {
+                ladders.remove(to);
+            }
+        }
+    }
+}
+
+/// One entity invariant a branch holds its input to ([`outcome_constraints`]).
+#[derive(Debug, Clone, PartialEq)]
+struct Held {
+    /// The invariant with every read moved to the input path the branch copies into it.
+    predicate: Predicate,
+    /// The entity that declares it.
+    entity: String,
+    /// The invariant as the author wrote it.
+    statement: String,
+}
+
+impl Held {
+    /// How a refusal names it.
+    fn describe(&self) -> String {
+        format!("`{}` invariant `{}`", self.entity, self.statement)
+    }
+}
+
+/// The entity invariants every branch of `command` holds its input to, by the branch's index, each
+/// read moved from the stored field to the input path the branch copies into it
+/// (beyond10x/ess#234).
+///
+/// `sets: {fingerprint: input.fingerprint}` beside `fingerprint.version == "canonical-v1"` reads
+/// `fingerprint.version == "canonical-v1"` of the input. Only an invariant every read of which lands
+/// on a copied input is one: a read of a field the branch leaves alone, sets from a literal or
+/// generates is not the input's to satisfy, and the invariant is left out rather than half-read.
+fn outcome_constraints(ir: &EssIr, command: &ResolvedCommand) -> Vec<Vec<Held>> {
+    use ess_compiler::ir::{ResolvedPayloadField, ResolvedPayloadValue};
+    fn copies(
+        fields: &[ResolvedPayloadField],
+        at: Option<&FactPath>,
+        found: &mut Vec<(FactPath, FactPath)>,
+    ) {
+        for field in fields {
+            let Ok(target) = FactPath::new(&field.target) else {
+                continue;
+            };
+            let stored = at.map_or_else(|| target.clone(), |at| joined(at, &target));
+            match &field.value {
+                ResolvedPayloadValue::InputField { field, .. }
+                | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+                    if let Ok(input) = FactPath::new(field) {
+                        found.push((stored, input));
+                    }
+                }
+                ResolvedPayloadValue::Struct { fields } => copies(fields, Some(&stored), found),
+                _ => {}
+            }
+        }
+    }
+    let mut constraints = Vec::new();
+    for outcome in &command.outcomes {
+        let mut held: Vec<Held> = Vec::new();
+        let mut written: Vec<(&ess_compiler::ir::EntityHandle, &[ResolvedPayloadField])> =
+            Vec::new();
+        if let Some(subject) = &outcome.subject {
+            written.push((&subject.entity, &outcome.sets));
+        }
+        for affect in &outcome.affects {
+            written.push((&affect.entity, &affect.sets));
+        }
+        for (entity, sets) in written {
+            let mut copied = Vec::new();
+            copies(sets, None, &mut copied);
+            if copied.is_empty() {
+                continue;
+            }
+            let declared = ir.entity(entity);
+            for invariant in &declared.invariants {
+                let unmapped = std::cell::Cell::new(false);
+                let moved = remapped(
+                    &invariant.predicate,
+                    &|read: &FactPath| {
+                        let found = copied.iter().find_map(|(stored, input)| {
+                            read.segments().strip_prefix(stored.segments()).map(|rest| {
+                                if rest.is_empty() {
+                                    input.clone()
+                                } else {
+                                    joined(input, &FactPath::from_segments(rest))
+                                }
+                            })
+                        });
+                        if found.is_none() {
+                            unmapped.set(true);
+                        }
+                        found
+                    },
+                    &[],
+                );
+                if !unmapped.get() && !held.iter().any(|known| known.predicate == moved) {
+                    held.push(Held {
+                        predicate: moved,
+                        entity: declared.name.to_string(),
+                        statement: invariant.statement.clone(),
+                    });
+                }
+            }
+        }
+        constraints.push(held);
+    }
+    constraints
+}
+
+/// Every invariant [`outcome_constraints`] holds any branch to, once, in branch order.
+fn entity_constraints(constrained: &[Vec<Held>]) -> Vec<Predicate> {
+    let mut all: Vec<Predicate> = Vec::new();
+    for held in constrained.iter().flatten() {
+        if !all.contains(&held.predicate) {
+            all.push(held.predicate.clone());
+        }
+    }
+    all
+}
+
+/// The part of `outcome`'s condition that reads the input alone, where it has one.
+fn input_guard(outcome: &ess_compiler::ir::ResolvedOutcome) -> Option<&Predicate> {
+    use ess_compiler::ir::ResolvedCondition;
+    match &outcome.condition {
+        ResolvedCondition::When { predicate }
+        | ResolvedCondition::ExternalWhen { predicate, .. } => Some(predicate),
+        ResolvedCondition::SubjectField { predicate, .. }
+        | ResolvedCondition::SubjectState { predicate, .. }
+        | ResolvedCondition::StateChange { predicate, .. } => predicate.as_ref(),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::Related { input, .. } => input.as_ref(),
+        _ => None,
+    }
+}
+
+/// The branches of `command`, by index, that can answer an input with these facts, whatever row
+/// or provider the scenario arranges: every branch whose input guard the facts do not refute, up
+/// to and including the first accepting `when:` they satisfy, and none where an input-guarded
+/// refusal they satisfy answers first. Over-approximate on purpose: a branch left in costs a
+/// candidate, a branch left out could send an input that branch's entity refuses.
+fn reachable(command: &ResolvedCommand, facts: &crate::InputFacts<'_>) -> Vec<usize> {
+    use ess_compiler::ir::ResolvedCondition;
+    let refused = command.outcomes.iter().any(|outcome| {
+        outcome.error.is_some()
+            && matches!(&outcome.condition, ResolvedCondition::When { predicate }
+                if matches!(facts.decide(predicate), Decision::Satisfied))
+    });
+    if refused {
+        return Vec::new();
+    }
+    let mut reached = Vec::new();
+    for (index, outcome) in command.outcomes.iter().enumerate() {
+        let decided = input_guard(outcome).map(|guard| facts.decide(guard));
+        if matches!(decided, Some(Decision::Refuted(_))) {
+            continue;
+        }
+        reached.push(index);
+        if outcome.error.is_none()
+            && matches!(outcome.condition, ResolvedCondition::When { .. })
+            && matches!(decided, Some(Decision::Satisfied))
+        {
+            break;
+        }
+    }
+    reached
+}
+
+/// The first entity invariant of a branch `input` can reach that `input` refutes, or `None`. An
+/// input that does not flatten is [`admitted_inputs`]'s to refuse.
+fn broken<'h>(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    constrained: &'h [Vec<Held>],
+    input: &BTreeMap<String, Node>,
+) -> Option<&'h Held> {
+    let facts = crate::input::flatten(ir, command, input).ok()?;
+    reachable(command, &facts).into_iter().find_map(|index| {
+        constrained[index]
+            .iter()
+            .find(|held| matches!(facts.decide(&held.predicate), Decision::Refuted(_)))
+    })
+}
+
+/// The value `input` holds at `path`, reading a list's element by its position.
+fn node_at<'n>(input: &'n BTreeMap<String, Node>, path: &FactPath) -> Option<&'n Node> {
+    let (first, rest) = path.segments().split_first()?;
+    let mut node = input.get(first)?;
+    for segment in rest {
+        node = match node {
+            Node::Map(members) => members.get(segment)?,
+            Node::Seq(items) => items.get(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(node)
+}
+
+/// `inputs`, each held to the entity invariants of every branch it can reach ([`reachable`],
+/// beyond10x/ess#234).
+///
+/// A guard's ladder moves one leaf, and an invariant may tie it to another (`origin == route`
+/// beside `origin == "eu"`, `low < high` beside `low > 10`); two branches may copy one input into
+/// two entities whose invariants disagree. A candidate that breaks an invariant of a branch it can
+/// reach is solved again for those invariants with every leaf it moved off the base kept where it
+/// is ([`resolved`]), so the partner follows; where that finds nothing it is dropped, never sent.
+/// A command no branch of which copies its input into an entity with such an invariant keeps its
+/// candidates unchanged.
+fn within_invariants(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    constrained: &[Vec<Held>],
+    inputs: Vec<BTreeMap<String, Node>>,
+) -> Result<Vec<BTreeMap<String, Node>>, WitnessGap> {
+    if constrained.iter().all(Vec::is_empty) {
+        return Ok(inputs);
+    }
+    let ir = builder.ir;
+    let mut kept: Vec<BTreeMap<String, Node>> = Vec::new();
+    for input in inputs {
+        let input = if broken(ir, command, constrained, &input).is_none() {
+            input
+        } else {
+            match resolved(builder, command, constrained, &input)? {
+                Some(solved)
+                    if broken(ir, command, constrained, &solved).is_none()
+                        && !admitted_inputs(ir, command, vec![solved.clone()]).is_empty() =>
+                {
+                    solved
+                }
+                _ => continue,
+            }
+        };
+        if !kept.contains(&input) {
+            kept.push(input);
+        }
+    }
+    Ok(kept)
+}
+
+/// `input` solved again for the invariants of the structs it holds and of every branch it can
+/// reach, with each leaf it holds off the base pinned where it is: `None` where it holds a shape
+/// only a guard's choice builds (a length, an omission), or no bounded candidate satisfies them.
+/// The base itself is solved too: [`repair`] may have met only the struct invariants, where the
+/// branches' entities disagree. The builder's base is left as it was.
+fn resolved(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    constrained: &[Vec<Held>],
+    input: &BTreeMap<String, Node>,
+) -> Result<Option<BTreeMap<String, Node>>, WitnessGap> {
+    let Ok(facts) = crate::input::flatten(builder.ir, command, input) else {
+        return Ok(None);
+    };
+    let mut owed = builder.struct_invariants.clone();
+    for index in reachable(command, &facts) {
+        for held in &constrained[index] {
+            if !owed.contains(&held.predicate) {
+                owed.push(held.predicate.clone());
+            }
+        }
+    }
+    let pins: BTreeMap<FactPath, Choice> = builder
+        .leaves
+        .iter()
+        .filter_map(|(path, (_, base))| {
+            node_at(input, path)
+                .filter(|held| *held != base)
+                .map(|held| (path.clone(), Choice::Value(held.clone())))
+        })
+        .collect();
+    let frozen: BTreeSet<FactPath> = pins.keys().cloned().collect();
+    let saved = builder.fixed.clone();
+    let unrepaired = builder.unrepaired.clone();
+    builder.fixed.extend(pins);
+    let rebuilt = builder.input(command, &BTreeMap::new())?;
+    let found = if rebuilt == *input {
+        match solve(builder, command, &owed.iter().collect::<Vec<_>>(), &frozen)?.0 {
+            Some(overrides) => Some(builder.input(command, &overrides)?),
+            None => None,
+        }
+    } else {
+        None
+    };
+    builder.fixed = saved;
+    builder.unrepaired = unrepaired;
+    builder.input(command, &BTreeMap::new())?;
+    Ok(found)
+}
+
+/// [`solve`], and where it finds nothing and the invariants count a list no guard expanded
+/// (`parts.count == 2`), again on a builder that expands it — which becomes `builder` where it
+/// finds a solution, so the list's length is a choice the base can carry. Also answers how many
+/// candidates were tried.
+fn widened_solve(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    constraints: &[Predicate],
+) -> Result<(Option<BTreeMap<FactPath, Choice>>, usize), WitnessGap> {
+    let refs: Vec<&Predicate> = constraints.iter().collect();
+    let (found, tried) = solve(builder, command, &refs, &BTreeSet::new())?;
+    if found.is_some() {
+        return Ok((found, tried));
+    }
+    let lists = list_reads(&refs);
+    if lists.is_subset(&builder.expand) {
+        return Ok((None, tried));
+    }
+    let mut expand = builder.expand.clone();
+    expand.extend(lists);
+    let mut wider = Builder::new(
+        builder.ir,
+        builder.distinction,
+        expand,
+        builder.positional.clone(),
+    );
+    wider.input(command, &BTreeMap::new())?;
+    let (found, more) = solve(&mut wider, command, &refs, &BTreeSet::new())?;
+    if found.is_some() {
+        *builder = wider;
+    }
+    Ok((found, tried + more))
+}
+
+/// Solves the base witness for the invariants over the input: those of every struct it holds, and
+/// those of every entity a branch copies it into ([`outcome_constraints`]) — beyond10x/ess#234.
+///
+/// Rule 2's base is a value of each leaf's own type, and a struct's or an entity's invariant over
+/// two leaves (`zone == "utc"`, `origin == route`, `low < high`) is refused by it: every candidate
+/// built on it is dropped by [`admitted_inputs`], or creates a row the model's own invariant
+/// refuses. Where the base already satisfies them, or no invariant reads the input, nothing moves
+/// and every suite keeps its bytes. Otherwise the leaves the invariants read are tried at the
+/// invariants' own literals, one either side, and at each other's base for an equality, in the
+/// bounded order rule 4 walks; the first candidate the invariants and the declared types admit
+/// becomes the base of every candidate. A leaf a guard reads is still varied from there.
+///
+/// Where the bounded search satisfies the struct invariants but not every branch's entity
+/// invariants together — two branches may copy one input into entities that disagree — the struct
+/// invariants alone are solved for, and [`within_invariants`] solves each candidate for the
+/// branches it reaches. A candidate reaching a branch whose invariants nothing satisfies is
+/// dropped, and synthesis refuses that branch naming them ([`unmet_invariants`]).
+fn repair(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    constrained: &[Vec<Held>],
+) -> Result<(), WitnessGap> {
+    let structs = builder.struct_invariants.clone();
+    let mut all = structs.clone();
+    for constraint in entity_constraints(constrained) {
+        if !all.contains(&constraint) {
+            all.push(constraint);
+        }
+    }
+    for constraints in [all, structs] {
+        if constraints.is_empty() {
+            return Ok(());
+        }
+        if let (Some(fixed), _) = widened_solve(builder, command, &constraints)? {
+            if !fixed.is_empty() {
+                builder.fixed = fixed;
+                // Recorded again, so every ladder is built from the repaired base.
+                builder.input(command, &BTreeMap::new())?;
+            }
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+/// The entity invariants `outcome` holds the input of `command` to that no bounded candidate
+/// satisfies together with the invariants of the structs the input holds, named, with how many
+/// candidates were tried; `None` where they are met, or `outcome` copies no input into an entity
+/// with an invariant over it (beyond10x/ess#234).
+///
+/// Every candidate reaching such a branch is dropped ([`within_invariants`]), so the branch has
+/// no input to send; this names why, so synthesis refuses it rather than reporting a guard.
+///
+/// With `guarded`, the branch's own input guard is solved for as well, and the invariants are
+/// named only where the guard alone is met and the guard with them is not: a guard that
+/// contradicts the entity it creates (`weight < 0` beside `weight >= 0`) sends nothing either.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when some field of the input has no safe value at all.
+pub(crate) fn unmet_invariants(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+    guarded: bool,
+) -> Result<Option<(String, usize)>, WitnessGap> {
+    let Some(index) = command
+        .outcomes
+        .iter()
+        .position(|branch| branch.name == outcome.name)
+    else {
+        return Ok(None);
+    };
+    let constrained = outcome_constraints(ir, command);
+    let owed = &constrained[index];
+    if owed.is_empty() {
+        return Ok(None);
+    }
+    let solves = |extra: &[Predicate]| -> Result<(bool, usize), WitnessGap> {
+        let mut builder = Builder::new(ir, Distinction::PLAIN, BTreeSet::new(), BTreeMap::new());
+        builder.input(command, &BTreeMap::new())?;
+        let mut constraints = builder.struct_invariants.clone();
+        for predicate in extra {
+            if !constraints.contains(predicate) {
+                constraints.push(predicate.clone());
+            }
+        }
+        let (found, tried) = widened_solve(&mut builder, command, &constraints)?;
+        Ok((found.is_some(), tried))
+    };
+    let mut named: Vec<String> = owed.iter().map(Held::describe).collect();
+    let mut invariants: Vec<Predicate> = owed.iter().map(|held| held.predicate.clone()).collect();
+    if guarded {
+        let Some(guard) = input_guard(outcome) else {
+            return Ok(None);
+        };
+        if !solves(std::slice::from_ref(guard))?.0 {
+            return Ok(None);
+        }
+        invariants.push(guard.clone());
+        named.push(format!("the branch's guard `{guard}`"));
+    }
+    let (found, tried) = solves(&invariants)?;
+    Ok((!found).then(|| (named.join(" and "), tried)))
+}
+
+/// The first entity invariant of `outcome` that `input` refutes, named ([`Held::describe`]), or
+/// `None` (beyond10x/ess#234): the last check before an input is sent for a branch that copies it
+/// into an entity.
+pub(crate) fn invariant_broken_by(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ess_compiler::ir::ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+) -> Option<String> {
+    let index = command
+        .outcomes
+        .iter()
+        .position(|branch| branch.name == outcome.name)?;
+    let constrained = outcome_constraints(ir, command);
+    let owed = &constrained[index];
+    if owed.is_empty() {
+        return None;
+    }
+    let facts = crate::input::flatten(ir, command, input).ok()?;
+    owed.iter()
+        .find(|held| matches!(facts.decide(&held.predicate), Decision::Refuted(_)))
+        .map(Held::describe)
+}
+
+/// The choices that make the base satisfy `constraints` ([`repair`]), with every leaf in `frozen`
+/// kept at its base: empty where the base already does, `None` where no candidate of the bounded
+/// walk does; and how many candidates were tried.
+///
+/// A list's length is a choice here only where an invariant counts the list; an omission never
+/// is. At a further instance each numeric literal is tried moved by the instance's ordinal first,
+/// so an invariant that bounds a leaf without pinning it (`start >= 5`) leaves two instances apart
+/// (rule 5).
+fn solve(
+    builder: &mut Builder<'_>,
+    command: &ResolvedCommand,
+    constraints: &[&Predicate],
+    frozen: &BTreeSet<FactPath>,
+) -> Result<(Option<BTreeMap<FactPath, Choice>>, usize), WitnessGap> {
+    let ir = builder.ir;
+    let holds = |input: &BTreeMap<String, Node>| {
+        !admitted_inputs(ir, command, vec![input.clone()]).is_empty()
+            && crate::input::flatten(ir, command, input).is_ok_and(|facts| {
+                constraints
+                    .iter()
+                    .all(|constraint| !matches!(facts.decide(constraint), Decision::Refuted(_)))
+            })
+    };
+    if holds(&builder.input(command, &BTreeMap::new())?) {
+        return Ok((Some(BTreeMap::new()), 1));
+    }
+    let ordinal = f64::from(u32::try_from(builder.distinction.get()).unwrap_or(u32::MAX));
+    let mut ladders: BTreeMap<FactPath, Vec<Choice>> = BTreeMap::new();
+    for path in read_paths(constraints) {
+        if frozen.contains(&path) {
+            continue;
+        }
+        let Some((leaf, at_base)) = builder.leaves.get(&path) else {
+            continue;
+        };
+        let literals = literals_at(constraints, &path);
+        let mut alternatives =
+            alternatives(leaf, at_base, &literals, ordered_at(constraints, &path));
+        if let (Leaf::Number { integral }, true) = (leaf, ordinal > 0.0) {
+            let moved: Vec<Node> = literals
+                .iter()
+                .filter_map(FactValue::as_number)
+                .filter_map(|literal| Number::new(literal.get() + ordinal).ok())
+                .filter(|moved| !*integral || moved.is_integral())
+                .map(Node::Number)
+                .filter(|moved| moved != at_base)
+                .collect();
+            for value in moved.into_iter().rev() {
+                alternatives.retain(|known| known != &value);
+                alternatives.insert(0, value);
+            }
+        }
+        if let (Leaf::Text, Node::Text(base)) = (leaf, at_base) {
+            let invariants = builder.invariants.get(&path).map_or(&[][..], Vec::as_slice);
+            for text in text_alternatives(constraints, invariants, &path, base) {
+                let node = Node::Text(text);
+                if &node != at_base && !alternatives.contains(&node) {
+                    alternatives.push(node);
+                }
+            }
+        }
+        if !alternatives.is_empty() {
+            ladders.insert(path, alternatives.into_iter().map(Choice::Value).collect());
+        }
+    }
+    equality_copies(builder, constraints, true, &mut ladders);
+    count_ladders(builder, constraints, &mut ladders);
+    // Values, and the length of a list an invariant counts; an omission is a guard's to vary.
+    let counted_lists: BTreeSet<FactPath> =
+        read_paths(constraints).iter().filter_map(counted).collect();
+    let ladders: Vec<(FactPath, Vec<Choice>)> = ladders
+        .into_iter()
+        .filter(|(path, _)| !frozen.contains(path))
+        .map(|(path, ladder)| {
+            let kept: Vec<Choice> = ladder
+                .into_iter()
+                .filter(|choice| match choice {
+                    Choice::Value(_) => true,
+                    Choice::Elements(_) => counted_lists.contains(&path),
+                    Choice::Omit | Choice::Null => false,
+                })
+                .collect();
+            (path, kept)
+        })
+        .filter(|(_, ladder)| !ladder.is_empty())
+        .collect();
+    let total = product(&ladders);
+    let mut index = 1;
+    while index < total && index < MAX_CANDIDATES.saturating_mul(MAX_ENUMERATED_PER_CANDIDATE) {
+        let mut overrides = BTreeMap::new();
+        let mut remaining = index;
+        for (path, alternatives) in &ladders {
+            let radix = alternatives.len() + 1;
+            let chosen = remaining % radix;
+            remaining /= radix;
+            if chosen > 0 {
+                overrides.insert(path.clone(), alternatives[chosen - 1].clone());
+            }
+        }
+        if holds(&builder.input(command, &overrides)?) {
+            return Ok((Some(overrides), index + 1));
+        }
+        index += 1;
+    }
+    Ok((None, index))
+}
+
 /// Whether every newtype invariant recorded at a leaf, and its alphabet, hold for its base
 /// witness, read as `value`.
 ///
@@ -2420,6 +3128,18 @@ struct Builder<'ir> {
     /// The authored `example:` of each command input, used as that input's base at
     /// [`Distinction::PLAIN`] only.
     examples: BTreeMap<FactPath, Node>,
+    /// The invariants of every struct a recorded value is declared as, at any depth, each read
+    /// moved under the path the struct is built at: `start < 5` of a `Window` at `window` reads
+    /// `window.start < 5` (beyond10x/ess#234). What [`repair`] solves the base for.
+    struct_invariants: Vec<Predicate>,
+    /// The choices [`repair`] made so the base satisfies the invariants over the input, by path:
+    /// the value each of those leaves takes in place of its own witness, and the length of each
+    /// list an invariant counts, in every candidate.
+    fixed: BTreeMap<FactPath, Choice>,
+    /// The base each leaf [`repair`] fixed would have taken without it, by path: tried on the
+    /// leaf's ladder as well, so a guard whose literal the repair moved the base onto is still
+    /// refuted by some candidate.
+    unrepaired: BTreeMap<FactPath, Node>,
 }
 
 impl<'ir> Builder<'ir> {
@@ -2447,6 +3167,31 @@ impl<'ir> Builder<'ir> {
             strings: BTreeSet::new(),
             plain_texts: BTreeMap::new(),
             examples: BTreeMap::new(),
+            struct_invariants: Vec::new(),
+            fixed: BTreeMap::new(),
+            unrepaired: BTreeMap::new(),
+        }
+    }
+
+    /// The value [`repair`] fixed the leaf at `path` to, where it fixed one.
+    fn fixed_value(&self, path: &FactPath) -> Option<&Node> {
+        match self.fixed.get(path) {
+            Some(Choice::Value(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// The base of the leaf at `path`: the value [`repair`] fixed there, with `own` kept as its
+    /// unrepaired witness when `record`; otherwise `own`.
+    fn repaired(&mut self, path: &FactPath, own: Node, record: bool) -> Node {
+        match self.fixed_value(path).cloned() {
+            Some(fixed) => {
+                if record {
+                    self.unrepaired.insert(path.clone(), own);
+                }
+                fixed
+            }
+            None => own,
         }
     }
 
@@ -2529,6 +3274,7 @@ impl<'ir> Builder<'ir> {
         if let Some(example) = self.examples.get(path) {
             base = example.clone();
         }
+        let base = self.repaired(path, base, record);
         if record {
             self.leaves
                 .insert(path.clone(), (Leaf::of_primitive(name), base.clone()));
@@ -2607,10 +3353,18 @@ impl<'ir> Builder<'ir> {
         // Built even where the base keeps the list empty, so its leaves are recorded
         // before any ladder is drawn.
         let element = self.value(of, &path.child("0"), overrides, depth + 1, record)?;
-        Ok(match overrides.get(path) {
-            Some(Choice::Elements(held)) => Node::Seq(vec![element; *held]),
-            _ => Node::Seq(Vec::new()),
-        })
+        // A length the repaired base carries (an invariant counts the list) is the base's; a
+        // candidate's own length wins over it.
+        Ok(
+            match overrides
+                .get(path)
+                .filter(|choice| matches!(choice, Choice::Elements(_)))
+                .or_else(|| self.fixed.get(path))
+            {
+                Some(Choice::Elements(held)) => Node::Seq(vec![element; *held]),
+                _ => Node::Seq(Vec::new()),
+            },
+        )
     }
 
     /// One value of `Map<key, of>` at `path`: one entry (beyond10x/ess#196), or as many as a
@@ -2760,11 +3514,12 @@ impl<'ir> Builder<'ir> {
                         .name()
                         .to_owned()
                 };
-                let base = self
+                let own = self
                     .examples
                     .get(path)
                     .cloned()
                     .unwrap_or(Node::Text(variant));
+                let base = self.repaired(path, own, record);
                 if record {
                     self.leaves.insert(
                         path.clone(),
@@ -2791,7 +3546,19 @@ impl<'ir> Builder<'ir> {
                     (UNION_VALUE.to_owned(), inner),
                 ])))
             }
-            ResolvedBody::Struct { fields, .. } => {
+            ResolvedBody::Struct { fields, invariants } => {
+                if record {
+                    for invariant in invariants {
+                        let moved = remapped(
+                            &invariant.predicate,
+                            &|read: &FactPath| Some(joined(path, read)),
+                            &[],
+                        );
+                        if !self.struct_invariants.contains(&moved) {
+                            self.struct_invariants.push(moved);
+                        }
+                    }
+                }
                 let mut value = BTreeMap::new();
                 for field in fields {
                     let child = path.child(&field.name);

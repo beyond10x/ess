@@ -31,6 +31,7 @@ fn is_coverage_version(version: &str) -> bool {
             | "ess-conformance/27"
             | "ess-conformance/29"
             | "ess-conformance/31"
+            | "ess-conformance/33"
     )
 }
 /// Carrier retaining exact selected and parent documents.
@@ -586,7 +587,7 @@ impl Inventory {
             }
             Origin::Authored => {
                 require(
-                    (1..=35).any(|n| r.code == format!("ESS-AUTHOR-{n:03}"))
+                    crate::authored::names_file_refusal(&r.code)
                         && r.effect == Effect::CandidateNotEmitted,
                     "unknown authored code/effect",
                 )?;

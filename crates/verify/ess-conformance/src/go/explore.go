@@ -907,6 +907,26 @@ func exploreContains(items []string, item string) bool {
 	return false
 }
 
+// exploreIsInputRefusal is whether outcome is an input-guarded refusal: a `when:` and an `error:`,
+// which Entity Runtime tries before every other branch.
+func exploreIsInputRefusal(outcome map[string]any) bool {
+	return exploreObject(outcome["condition"])["kind"] == "when" && exploreString(outcome["error"]) != ""
+}
+
+// exploreAllMove is whether every one of outcomes moves its subject.
+func exploreAllMove(outcomes []map[string]any) bool {
+	for _, outcome := range outcomes {
+		if exploreObject(outcome["subject"])["effect"] != "moves" {
+			return false
+		}
+	}
+	return true
+}
+
+// exploreDecide is which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the
+// input-guarded refusals, the first declared whose guard holds; then the accepting guarded branch
+// that holds, or the default; then, where that branch moves from a state no move of the command
+// starts from, the wrong-state branch.
 func exploreDecide(command *exploreCommand, input Row, model *exploreModel) exploreDecision {
 	outcomes := []map[string]any{}
 	for _, outcome := range exploreList(command.node["outcomes"]) {
@@ -934,10 +954,25 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 			wrong = outcome
 		}
 	}
+	source := facts(input)
+	// Entity Runtime's order (beyond10x/ess#235): an input-guarded refusal, the first declared
+	// whose guard holds, answers before anything else is read — the record, its state, a provider,
+	// and every accepting branch it overlaps.
+	for _, outcome := range outcomes {
+		if !exploreIsInputRefusal(outcome) {
+			continue
+		}
+		guard := command.guards[fmt.Sprint(outcome["name"])]
+		switch guard.evaluate(source) {
+		case truthUnknown:
+			return exploreDecision{kind: "unknown", reason: fmt.Sprintf("the guard of `%v` (%s) is unknown over a generated input", outcome["name"], guard)}
+		case truthTrue:
+			return exploreDecision{kind: "take", outcome: outcome}
+		}
+	}
 	if supplied != nil && record == nil {
 		return exploreDecision{kind: "ambiguous", names: []string{"no record for the supplied instance"}}
 	}
-	source := facts(input)
 	// orExternal is what a step may take where no ordinary branch can be: the eligible external
 	// branches alone, or otherwise, when there are none.
 	orExternal := func(otherwise exploreDecision) exploreDecision {
@@ -950,16 +985,27 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 		}
 		return otherwise
 	}
-	if record != nil && moves > 0 && !starts[fmt.Sprint(record.fields["state"])] {
+	// A move from a state no move of this command starts from is the wrong-state answer, whichever
+	// guarded branch or default made it (entity-core `admit_state`); a branch that moves nothing
+	// answers in every state. That includes an eligible external branch: Entity Runtime sorts it
+	// ahead of the default, so an arranged one answers here, and the draw offers it beside the
+	// wrong-state answer. Where the subject is stranded, only externals that move nothing are
+	// eligible (exploreEligible drops a move from a state it does not start from).
+	stranded := record != nil && moves > 0 && !starts[fmt.Sprint(record.fields["state"])]
+	wrongState := func() exploreDecision {
 		if wrong != nil {
-			return exploreDecision{kind: "take", outcome: wrong}
+			externals, unknown := exploreEligible(command, outcomes, source, record)
+			if unknown != "" {
+				return exploreDecision{kind: "unknown", reason: unknown}
+			}
+			return exploreDecision{kind: "take", outcome: wrong, externals: externals}
 		}
 		return orExternal(exploreDecision{kind: "ambiguous", names: []string{fmt.Sprintf("no outcome for state %v", record.fields["state"])}})
 	}
 
 	holding := []map[string]any{}
 	for _, outcome := range outcomes {
-		if exploreObject(outcome["condition"])["kind"] != "when" {
+		if exploreObject(outcome["condition"])["kind"] != "when" || exploreIsInputRefusal(outcome) {
 			continue
 		}
 		guard := command.guards[fmt.Sprint(outcome["name"])]
@@ -980,6 +1026,11 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 	var selected map[string]any
 	switch {
 	case len(holding) > 1:
+		// Where every branch that holds moves and the subject rests where no move starts, each
+		// of them is the wrong-state answer, so the overlap decides nothing.
+		if stranded && exploreAllMove(holding) {
+			return wrongState()
+		}
 		names := []string{}
 		for _, outcome := range holding {
 			names = append(names, fmt.Sprint(outcome["name"]))
@@ -1000,6 +1051,9 @@ func exploreDecide(command *exploreCommand, input Row, model *exploreModel) expl
 	}
 	if exploreObject(selected["subject"])["effect"] == "moves" && record != nil &&
 		!exploreContains(exploreFrom(selected), fmt.Sprint(record.fields["state"])) {
+		if stranded {
+			return wrongState()
+		}
 		names := []string{fmt.Sprint(selected["name"])}
 		if wrong != nil {
 			names = append(names, fmt.Sprint(wrong["name"]))

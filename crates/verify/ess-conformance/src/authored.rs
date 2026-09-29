@@ -149,6 +149,25 @@
 //! says stop, and what an honest source produces before being refused its first row differs between
 //! two implementations that are both right.
 //!
+//! # An external answer
+//!
+//! No input decides a branch the specification declares `external:` (§12): whether a provider
+//! accepts the mail is the provider's answer. So an act that names one under `outcome:` states that
+//! answer for its call, and compiles to a
+//! [`ConfigureExternalOutcome`](ScenarioStep::ConfigureExternalOutcome) for that branch immediately
+//! before its [`ExecuteCommand`](ScenarioStep::ExecuteCommand) — the step synthesis writes for the
+//! same branch — so a target is told what to answer rather than left to happen upon it. An act
+//! naming a branch the input decides compiles to no such step.
+//!
+//! A claim that holds only on an external answer the act does not state expects that answer anyway,
+//! and is refused ([`ExternalAnswerUnstated`](Cause::ExternalAnswerUnstated)), naming every branch
+//! it could mean, whether or not `outcome:` is written. The claims read are the act's error and
+//! direct response, each event it claims published and each it claims absent. The answers reached
+//! are its own command's and those of every command a binding invokes from what it publishes,
+//! transitively; a binding's escalation needs its invoked command to fail. Only the act's own
+//! external branch written under `outcome:` is stated — an authored act has no key for the answer
+//! a binding's call gives — and a command the act never reaches exempts nothing.
+//!
 //! # Three decisions the format makes, and why
 //!
 //! **The timeline carries an explicit instant, and it has to ascend.** A list is ordered by where
@@ -176,6 +195,12 @@
 //! `^_*[A-Za-z][A-Za-z0-9_]*$`), so the two can never be confused, and a plain value is written
 //! exactly as the model's own documents write one.
 //!
+//! **A reference may sit inside a value** (beyond10x/ess#242): `ring_sequence: [{$instance: a},
+//! {$instance: b}]` for a `List<ReleaseRingId>`, a map value, a struct member, at any depth,
+//! wherever the declared type at that position is the instance's identity type. It compiles to a
+//! [`List`](ScenarioValue::List) or [`Members`](ScenarioValue::Members) the runner resolves element
+//! by element, and at a position of any other type it is refused, naming the position.
+//!
 //! # What is deliberately not here
 //!
 //! * **An implementation-specific assertion.** The step vocabulary is closed (see
@@ -198,8 +223,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use ess_compiler::diagnostic::Code;
-use ess_compiler::ir::{EssIr, ResolvedField, ResolvedTypeRef};
-use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName};
+use ess_compiler::ir::{
+    EssIr, ResolvedBinding, ResolvedBody, ResolvedCommand, ResolvedField, ResolvedOutcome,
+    ResolvedTypeRef,
+};
+use ess_domain::command::{fixture_inputs::FixtureName, OutcomeName, TestStrategy};
 use ess_domain::name::QualifiedName;
 use ess_domain::view::{AssertionStyle, Ranking};
 use ess_primitives::error::ParseError;
@@ -1097,6 +1125,78 @@ pub enum Cause {
         /// Which view.
         view: ViewRef,
     },
+    /// An act claims what only an external answer it does not state satisfies.
+    ///
+    /// No input decides an external branch (§12), so the claim holds only if the target is told
+    /// which answer to give. An act states one answer — its own command's external branch, named
+    /// under `outcome:` — and the claim needs another: a sibling of that command, or a branch of a
+    /// command a binding invokes from what the act publishes. Refused whether or not `outcome:` is
+    /// written.
+    ExternalAnswerUnstated {
+        /// The command the act invokes.
+        command: CommandRef,
+        /// What it claims, written as a reader sees it: an error, a direct response, an event
+        /// published or an event absent.
+        claim: String,
+        /// Every external branch, as `command/branch`, whose answer the claim could mean, in the
+        /// order the act reaches them.
+        branches: Vec<String>,
+    },
+}
+
+/// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
+/// numbers but `ESS-AUTHOR-036`, which refuses the model before any file is read and so names no
+/// source. Coverage admission reads this; the Go, TypeScript and browser readers restate it.
+pub(crate) fn names_file_refusal(code: &str) -> bool {
+    (1..=37)
+        .filter(|number| *number != 36)
+        .any(|number| code == Code::new(Cause::FAMILY, number).to_string())
+}
+
+/// Whether no input decides `outcome` (§12): the test strategy an `external:` branch carries.
+fn is_external(outcome: &ResolvedOutcome) -> bool {
+    outcome.test_strategy == TestStrategy::InjectFault
+}
+
+/// `command/branch`, as an [`OutcomeRef`] is written.
+fn branch(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> String {
+    OutcomeRef::new(CommandRef::new(command.name.clone()), outcome.name.clone()).to_string()
+}
+
+/// The external branches of the act's own command that alone make `produces` true of its answer.
+///
+/// Empty when the written branch produces it, or when a branch the input decides can.
+fn own_only_external(
+    command: &ResolvedCommand,
+    written: Option<&ResolvedOutcome>,
+    produces: impl Fn(&ResolvedOutcome) -> bool,
+) -> Vec<String> {
+    if written.is_some_and(&produces) {
+        return Vec::new();
+    }
+    let producing: Vec<&ResolvedOutcome> = command
+        .outcomes
+        .iter()
+        .filter(|outcome| produces(outcome))
+        .collect();
+    if producing.iter().any(|outcome| !is_external(outcome)) {
+        return Vec::new();
+    }
+    producing
+        .into_iter()
+        .map(|outcome| branch(command, outcome))
+        .collect()
+}
+
+/// `names` once each, in the order first met.
+fn in_order<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let mut once: Vec<String> = Vec::new();
+    for name in names {
+        if !once.contains(name) {
+            once.push(name.clone());
+        }
+    }
+    once
 }
 
 impl Cause {
@@ -1147,6 +1247,7 @@ impl Cause {
                 Self::HaltsAtNothing { .. } => 34,
                 Self::InvalidPredicate { .. } => 35,
                 Self::UnsupportedBinary64 { .. } => 36,
+                Self::ExternalAnswerUnstated { .. } => 37,
             },
         )
     }
@@ -1273,6 +1374,12 @@ impl Cause {
                 "say how many rows the reader takes before it stops; a reader that takes none never \
                  sees a row and so never says stop, and what a source produced before being refused \
                  its first row is a different answer in two implementations that are both right"
+            }
+            Self::ExternalAnswerUnstated { .. } => {
+                "no input the act sends decides an external branch, so name the act's own one \
+                 under `outcome:` and the suite configures that answer for its call; an answer a \
+                 command invoked through a binding must give cannot be stated in an authored act, \
+                 so drop the claim there and leave it to synthesis"
             }
         }
     }
@@ -1483,6 +1590,25 @@ impl fmt::Display for Cause {
             Self::HaltsAtNothing { view } => write!(
                 f,
                 "the read of `{view}` is claimed to stop after no rows at all"
+            ),
+            Self::ExternalAnswerUnstated {
+                command,
+                claim,
+                branches,
+            } => write!(
+                f,
+                "the act on `{command}` claims {claim}, which holds only if {} {} answers, and \
+                 the act states no such answer",
+                if branches.len() == 1 {
+                    "the external branch"
+                } else {
+                    "one of the external branches"
+                },
+                branches
+                    .iter()
+                    .map(|branch| format!("`{branch}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
@@ -1850,6 +1976,7 @@ impl Compiler<'_> {
             &Surface::Input(command_ref.clone()),
             Completeness::Total,
         );
+        self.external_answer(&command_ref, command, act);
         self.steps.push(ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
@@ -1879,6 +2006,7 @@ impl Compiler<'_> {
         if let Some(claim) = &act.error {
             self.error(claim);
         }
+        self.unstated_external(&command_ref, command, act);
         let returning = match &act.outcome {
             Some(name) => command
                 .outcomes
@@ -1921,6 +2049,270 @@ impl Compiler<'_> {
             self.capture(capture);
         }
         self.mark(act);
+    }
+
+    /// Arms the answer an act naming an external branch states, immediately before its call.
+    ///
+    /// §12: no input decides an external branch, so naming one under `outcome:` is the answer the
+    /// target must give for this call. Armed after the act's windows and before its
+    /// `ExecuteCommand`, as synthesis arms it, so nothing earlier can spend it. A branch the input
+    /// decides arms nothing.
+    fn external_answer(&mut self, command_ref: &CommandRef, command: &ResolvedCommand, act: &Act) {
+        if let Some(external) = act.outcome.as_ref().and_then(|written| {
+            command.outcomes.iter().find(|outcome| {
+                outcome.name.as_str() == written
+                    && outcome.test_strategy == TestStrategy::InjectFault
+            })
+        }) {
+            self.steps.push(ScenarioStep::ConfigureExternalOutcome {
+                force: OutcomeRef::new(command_ref.clone(), external.name.clone()),
+                times: None,
+            });
+        }
+    }
+
+    /// Refuses each claim of an act that only an external answer the act does not state satisfies.
+    ///
+    /// No input decides an external branch (§12), so a claim that holds only on one expects an
+    /// answer the target is never told to give. The act states one answer: an external branch of its
+    /// own command written under `outcome:`, which [`Self::external_answer`] arms. Every other
+    /// external branch the act reaches — a sibling of its own command, or a branch of a command a
+    /// binding invokes from what the act publishes, however many bindings along — is unstated.
+    ///
+    /// Read whether or not `outcome:` is written, for every claim the act makes of its own call:
+    /// its error and its direct response (of its own command's branches), each event it claims
+    /// published (a branch's `emits:` or a binding's escalation, anywhere downstream), and each
+    /// event it claims absent. Every such claim is refused on its own, naming every branch it could
+    /// mean. What an act never reaches exempts nothing.
+    fn unstated_external(
+        &mut self,
+        command_ref: &CommandRef,
+        command: &ResolvedCommand,
+        act: &Act,
+    ) {
+        let written = act.outcome.as_ref().map(|name| {
+            command
+                .outcomes
+                .iter()
+                .find(|outcome| outcome.name.as_str() == name)
+        });
+        // A misspelt branch is refused as `ESS-AUTHOR-011`; which answer it meant is not guessed.
+        let written = match written {
+            Some(None) => return,
+            Some(Some(outcome)) => Some(outcome),
+            None => None,
+        };
+        let mut unstated: Vec<(String, Vec<String>)> = Vec::new();
+
+        // The error and the response are the act's own call's answer.
+        if let Some(error) = act
+            .error
+            .as_ref()
+            .and_then(|claim| QualifiedName::new(&claim.name).ok())
+        {
+            let branches = own_only_external(command, written, |outcome| {
+                outcome.error.as_ref().is_some_and(|it| it.name() == &error)
+            });
+            unstated.push((format!("error `{error}`"), branches));
+        }
+        if act.response.is_some() {
+            let branches = own_only_external(command, written, |outcome| outcome.returns);
+            unstated.push(("a direct response".to_owned(), branches));
+        }
+
+        let published = self.published(command, written);
+        for event in act
+            .events
+            .iter()
+            .filter_map(|claim| QualifiedName::new(&claim.event).ok())
+        {
+            let needs = published.get(&event).map(Vec::as_slice).unwrap_or_default();
+            let branches = if needs.iter().any(BTreeSet::is_empty) {
+                Vec::new()
+            } else {
+                in_order(needs.iter().flatten())
+            };
+            unstated.push((format!("event `{event}`"), branches));
+        }
+        for event in act
+            .no_events
+            .iter()
+            .filter_map(|written| QualifiedName::new(written).ok())
+        {
+            let branches = self.avoiding(command, written, &event);
+            unstated.push((format!("no event `{event}`"), branches));
+        }
+
+        for (claim, branches) in unstated {
+            if !branches.is_empty() {
+                self.refuse(Cause::ExternalAnswerUnstated {
+                    command: command_ref.clone(),
+                    claim,
+                    branches,
+                });
+            }
+        }
+    }
+
+    /// Every event the act can set off, each with the external answers each way to it needs.
+    ///
+    /// Walks from the act's own branches through every binding an emitted event triggers, into
+    /// every branch of the command it invokes, transitively. A branch the input decides needs no
+    /// answer; the written `outcome:` needs none either, since it is stated. A binding's escalation
+    /// is published when its invoked command fails — an external branch, or a branch reporting an
+    /// error. An event with an empty need set is reached without an unstated answer.
+    fn published(
+        &self,
+        command: &ResolvedCommand,
+        written: Option<&ResolvedOutcome>,
+    ) -> BTreeMap<QualifiedName, Vec<BTreeSet<String>>> {
+        let mut published: BTreeMap<QualifiedName, Vec<BTreeSet<String>>> = BTreeMap::new();
+        let mut seen: BTreeSet<(String, BTreeSet<String>)> = BTreeSet::new();
+        let mut pending: Vec<(&ResolvedCommand, &ResolvedOutcome, BTreeSet<String>)> = command
+            .outcomes
+            .iter()
+            .map(|outcome| {
+                let stated = written.is_some_and(|it| it.name == outcome.name);
+                let needs = if stated || !is_external(outcome) {
+                    BTreeSet::new()
+                } else {
+                    [branch(command, outcome)].into_iter().collect()
+                };
+                (command, outcome, needs)
+            })
+            .collect();
+        pending.reverse();
+        while let Some((at, outcome, needs)) = pending.pop() {
+            if !seen.insert((branch(at, outcome), needs.clone())) {
+                continue;
+            }
+            for emitted in &outcome.emits {
+                published
+                    .entry(emitted.name().clone())
+                    .or_default()
+                    .push(needs.clone());
+                for (invoked, binding) in self.triggered(emitted.name()) {
+                    let mut next = Vec::new();
+                    for downstream in &invoked.outcomes {
+                        let mut further = needs.clone();
+                        if is_external(downstream) {
+                            further.insert(branch(invoked, downstream));
+                        }
+                        if let Some(escalation) = &binding.escalation {
+                            if is_external(downstream) || downstream.error.is_some() {
+                                published
+                                    .entry(escalation.name().clone())
+                                    .or_default()
+                                    .push(further.clone());
+                            }
+                        }
+                        next.push((invoked, downstream, further));
+                    }
+                    pending.extend(next.into_iter().rev());
+                }
+            }
+        }
+        published
+    }
+
+    /// The external branches whose answer alone keeps `event` unpublished, when every answer the
+    /// input decides publishes it.
+    ///
+    /// Empty when some decided answer leaves it out (the claim can hold without an unstated answer)
+    /// or when no answer at all does (the claim is false, which is not this refusal's to say).
+    fn avoiding(
+        &self,
+        command: &ResolvedCommand,
+        written: Option<&ResolvedOutcome>,
+        event: &QualifiedName,
+    ) -> Vec<String> {
+        let decided: Vec<&ResolvedOutcome> = match written {
+            Some(outcome) => vec![outcome],
+            None => command
+                .outcomes
+                .iter()
+                .filter(|outcome| !is_external(outcome))
+                .collect(),
+        };
+        let mut chain = Vec::new();
+        let mut visiting = BTreeSet::new();
+        if decided.is_empty()
+            || !decided
+                .iter()
+                .all(|outcome| self.must_publish(outcome, event, &mut visiting, &mut chain))
+        {
+            return Vec::new();
+        }
+        let mut names = Vec::new();
+        let mut consider = |at: &ResolvedCommand, skip: Option<&ResolvedOutcome>| {
+            for outcome in &at.outcomes {
+                if is_external(outcome)
+                    && skip.is_none_or(|it| it.name != outcome.name)
+                    && !self.must_publish(outcome, event, &mut BTreeSet::new(), &mut Vec::new())
+                {
+                    names.push(branch(at, outcome));
+                }
+            }
+        };
+        consider(command, written);
+        for at in chain {
+            consider(at, None);
+        }
+        in_order(names.iter())
+    }
+
+    /// Whether taking `outcome` publishes `event` whatever each command a binding invokes after it
+    /// answers, among the answers the input decides; `chain` gains each such command.
+    fn must_publish<'ir>(
+        &'ir self,
+        outcome: &ResolvedOutcome,
+        event: &QualifiedName,
+        visiting: &mut BTreeSet<QualifiedName>,
+        chain: &mut Vec<&'ir ResolvedCommand>,
+    ) -> bool {
+        if outcome.emits.iter().any(|it| it.name() == event) {
+            return true;
+        }
+        for emitted in &outcome.emits {
+            for (invoked, _) in self.triggered(emitted.name()) {
+                if !visiting.insert(invoked.name.clone()) {
+                    continue;
+                }
+                let decided: Vec<&ResolvedOutcome> = invoked
+                    .outcomes
+                    .iter()
+                    .filter(|it| !is_external(it))
+                    .collect();
+                let mut found = Vec::new();
+                let must = !decided.is_empty()
+                    && decided
+                        .iter()
+                        .all(|it| self.must_publish(it, event, visiting, &mut found));
+                visiting.remove(&invoked.name);
+                if must {
+                    chain.push(invoked);
+                    chain.extend(found);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Each binding `event` triggers, with the command it invokes.
+    fn triggered(&self, event: &QualifiedName) -> Vec<(&ResolvedCommand, &ResolvedBinding)> {
+        self.ir
+            .bindings()
+            .values()
+            .filter_map(|binding| {
+                binding
+                    .cause
+                    .event()
+                    .filter(|it| it.name() == event)
+                    .and_then(|_| self.ir.commands().get(binding.command.name()))
+                    .map(|invoked| (invoked, binding))
+            })
+            .collect()
     }
 
     /// Names this act's instant, so a later window can open at it.
@@ -2353,9 +2745,25 @@ impl Compiler<'_> {
         let mut resolved = BTreeMap::new();
         let mut literals = BTreeMap::new();
         let mut referenced = BTreeSet::new();
+        // A structured literal holding a reference is shape-checked whole; its references, here.
+        let mut structured = BTreeMap::new();
+        let mut positions = Vec::new();
 
         for (field, value) in written {
             match value {
+                Written::Literal(node) if holds_reference(node) => {
+                    let value = self.structured(
+                        node,
+                        Slot::of_field(fields, field),
+                        surface,
+                        &Place::field(field),
+                        0,
+                        false,
+                        &mut positions,
+                    );
+                    structured.insert(field.clone(), value);
+                    literals.insert(field.clone(), node.clone());
+                }
                 Written::Fixture(fixture) => {
                     referenced.insert(field.clone());
                     let target = fields.iter().find(|declared| declared.name == *field);
@@ -2415,12 +2823,245 @@ impl Compiler<'_> {
             }
         }
         if let Err(errors) = bind(self.ir, &remaining, &literals, completeness) {
-            self.shape(&errors, surface);
+            let errors = errors.without(|at| {
+                positions.iter().any(|position: &String| {
+                    at == position
+                        || at
+                            .strip_prefix(position.as_str())
+                            .is_some_and(|rest| rest.starts_with('.'))
+                })
+            });
+            if let Some(errors) = errors {
+                self.shape(&errors, surface);
+            }
         }
         for (field, node) in literals {
-            resolved.insert(field, ScenarioValue::literal(node));
+            let value = structured
+                .remove(&field)
+                .unwrap_or_else(|| ScenarioValue::literal(node));
+            resolved.insert(field, value);
         }
         resolved
+    }
+
+    /// A literal that holds `{$instance: …}` below its top, checked position by position against
+    /// the declared type there (beyond10x/ess#242).
+    ///
+    /// A reference is admitted where the declared type is the instance's identity type, exactly
+    /// as a whole instance-valued field is, and refused anywhere else as
+    /// [`InstanceMistyped`](Cause::InstanceMistyped), naming the position — `ring_sequence[1]`,
+    /// `pair.primary`, `by_stage[canary]`, `target.value`. A union's payload is typed by the
+    /// variant its tag names. A part that holds no reference stays a literal, so only what has to
+    /// be resolved at run time is written as a [`List`](ScenarioValue::List) or
+    /// [`Members`](ScenarioValue::Members).
+    ///
+    /// Every reference's position is pushed to `positions` as the shape check spells it, so what
+    /// that check says about the mapping the reference is written as is not reported a second
+    /// time: the reference is answered here, admitted or refused.
+    ///
+    /// A reference that nothing can place — at a member the model does not declare, or inside a
+    /// value of the wrong shape — is refused where the shape check does not look, which is
+    /// `unchecked`: inside a union, the shape check reads no member (it reads a map's values since
+    /// beyond10x/ess#240).
+    /// Elsewhere the shape check names the member or the shape, and this walk says nothing more,
+    /// so one mistake is one refusal. Either way no reference reaches a target as the mapping it
+    /// is written as.
+    #[allow(clippy::too_many_arguments)]
+    fn structured(
+        &mut self,
+        node: &Node,
+        declared: Slot,
+        surface: &Surface,
+        place: &Place,
+        depth: usize,
+        unchecked: bool,
+        positions: &mut Vec<String>,
+    ) -> ScenarioValue {
+        if depth > ess_domain::types::MAX_TYPE_DEPTH {
+            return ScenarioValue::literal(node.clone());
+        }
+        if let Some(written) = reference(node) {
+            let check = match &declared {
+                Slot::Typed(type_ref) => (Some(type_ref), type_ref.to_string()),
+                Slot::Inside(container) => (None, container.clone()),
+                // Refused where the member or the shape is: by the shape check, or by the walk
+                // over the value that holds it when the shape check does not look there.
+                Slot::Undeclared => return ScenarioValue::literal(node.clone()),
+            };
+            positions.push(place.fact.clone());
+            let instance = match InstanceName::new(written) {
+                Ok(instance) => instance,
+                Err(error) => {
+                    self.refuse(Cause::Unreadable {
+                        detail: format!(
+                            "{}: `{}` names an instance: {error}",
+                            place.written,
+                            Written::INSTANCE
+                        ),
+                    });
+                    return ScenarioValue::literal(node.clone());
+                }
+            };
+            return self
+                .instance_at(&instance, Some(check), surface, &place.written)
+                .unwrap_or_else(|| ScenarioValue::literal(node.clone()));
+        }
+        if !holds_reference(node) {
+            return ScenarioValue::literal(node.clone());
+        }
+        let (container, expected) = match declared {
+            Slot::Typed(type_ref) => (
+                Container::of(self.ir, &type_ref, 0),
+                Some(type_ref.to_string()),
+            ),
+            Slot::Inside(container) => (Container::Opaque(container), None),
+            Slot::Undeclared => (Container::Undeclared, None),
+        };
+        // A union is a mapping of its tag and its payload, and the shape check reads neither.
+        let unchecked = unchecked || matches!(container, Container::Union { .. });
+        if unchecked && !container.fits(node) {
+            self.refuse(Cause::ValueRejected {
+                surface: surface.clone(),
+                detail: format!(
+                    "{}: expected {}, found {}",
+                    place.written,
+                    expected.as_deref().unwrap_or("a declared value"),
+                    node.type_name()
+                ),
+            });
+        }
+        match node {
+            Node::Seq(items) => ScenarioValue::List {
+                items: items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        let position = match &container {
+                            Container::List(of) => Slot::Typed(of.clone()),
+                            other => other.inside(),
+                        };
+                        self.structured(
+                            item,
+                            position,
+                            surface,
+                            &place.index(index),
+                            depth + 1,
+                            unchecked,
+                            positions,
+                        )
+                    })
+                    .collect(),
+            },
+            Node::Map(entries) => ScenarioValue::Members {
+                members: entries
+                    .iter()
+                    .map(|(key, member)| {
+                        let (position, child, inner) = self
+                            .member(&container, entries, key, member, surface, place, unchecked);
+                        let value = self.structured(
+                            member,
+                            position,
+                            surface,
+                            &child,
+                            depth + 1,
+                            inner,
+                            positions,
+                        );
+                        (key.clone(), value)
+                    })
+                    .collect(),
+            },
+            // Only a sequence or a mapping can hold a reference below its top.
+            _ => ScenarioValue::literal(node.clone()),
+        }
+    }
+
+    /// Where member `key` of a mapping sits in `container`, how it is written, and whether the
+    /// shape check leaves it unread. A member holding a reference that nothing declares is refused
+    /// here when the shape check does not read it, naming the member.
+    #[allow(clippy::too_many_arguments)]
+    fn member(
+        &mut self,
+        container: &Container,
+        entries: &BTreeMap<String, Node>,
+        key: &str,
+        member: &Node,
+        surface: &Surface,
+        place: &Place,
+        unchecked: bool,
+    ) -> (Slot, Place, bool) {
+        let (slot, child, inner) = match container {
+            Container::Struct(fields) => (
+                fields
+                    .iter()
+                    .find(|field| field.name == key)
+                    .map_or(Slot::Undeclared, |field| {
+                        Slot::Typed(field.type_ref.clone())
+                    }),
+                place.member(key),
+                unchecked,
+            ),
+            // The shape check reads a map's values at their ordinal in key order (beyond10x/ess#240),
+            // so a value is checked there as a list element is.
+            Container::Map(value) => {
+                let ordinal = entries.keys().position(|at| at == key).unwrap_or_default();
+                (
+                    Slot::Typed(value.clone()),
+                    place.key(key, ordinal),
+                    unchecked,
+                )
+            }
+            Container::Union {
+                name,
+                tag,
+                variants,
+            } => {
+                let payload = if tag == "value" { "content" } else { "value" };
+                let slot = if key == tag {
+                    Slot::Inside(name.clone())
+                } else if key == payload {
+                    let variant = entries.get(tag).and_then(Node::as_text);
+                    if let Some(type_ref) = variant.and_then(|variant| variants.get(variant)) {
+                        Slot::Typed(type_ref.clone())
+                    } else {
+                        if holds_reference(member) {
+                            self.refuse(Cause::ValueRejected {
+                                surface: surface.clone(),
+                                detail: format!(
+                                    "{}: `{}` names no variant of `{name}`; it declares {}",
+                                    place.written,
+                                    variant.unwrap_or("nothing"),
+                                    variants.keys().cloned().collect::<Vec<_>>().join(", ")
+                                ),
+                            });
+                        }
+                        Slot::Undeclared
+                    }
+                } else {
+                    Slot::Undeclared
+                };
+                (slot, place.member(key), true)
+            }
+            other => (other.inside(), place.member(key), unchecked),
+        };
+        let undeclared = matches!(slot, Slot::Undeclared)
+            && unchecked
+            && holds_reference(member)
+            && match container {
+                Container::Struct(_) => true,
+                Container::Union { tag, .. } => {
+                    key != tag && key != if tag == "value" { "content" } else { "value" }
+                }
+                _ => false,
+            };
+        if undeclared {
+            self.refuse(Cause::UndeclaredField {
+                surface: surface.clone(),
+                at: place.written.clone(),
+                field: key.to_owned(),
+            });
+        }
+        (slot, child, inner)
     }
 
     /// The literal half only, for a step that compares values the suite carries.
@@ -2433,6 +3074,19 @@ impl Compiler<'_> {
         let mut literals = BTreeMap::new();
         for (field, value) in written {
             match value.literal() {
+                // A reference inside a compared value is the same claim the format cannot make as
+                // a whole-field one, refused by where it sits (beyond10x/ess#242) rather than read
+                // as a mapping the value was supposed to equal.
+                Some(node) if holds_reference(node) => {
+                    let mut places = Vec::new();
+                    references(node, &Place::field(field), &mut places);
+                    for place in places {
+                        self.refuse(Cause::NotComparable {
+                            surface: surface.clone(),
+                            field: place,
+                        });
+                    }
+                }
                 Some(node) => {
                     literals.insert(field.clone(), node.clone());
                 }
@@ -2456,6 +3110,23 @@ impl Compiler<'_> {
         surface: &Surface,
         field: &str,
     ) -> Option<ScenarioValue> {
+        let declared = fields
+            .iter()
+            .find(|it| it.name == field)
+            .map(|it| (Some(&it.type_ref), it.type_ref.to_string()));
+        self.instance_at(instance, declared, surface, field)
+    }
+
+    /// An instance reference at `position`, checked against the arrangement and, where `declared`
+    /// says what the position holds, against its type: the type there, if the model declares one
+    /// the position has, and how the position's type is written.
+    fn instance_at(
+        &mut self,
+        instance: &InstanceName,
+        declared: Option<(Option<&ResolvedTypeRef>, String)>,
+        surface: &Surface,
+        field: &str,
+    ) -> Option<ScenarioValue> {
         let Some(entity) = self.arranged.get(instance).cloned() else {
             let declared = self.arranged.keys().map(ToString::to_string).collect();
             self.refuse(Cause::UnarrangedInstance {
@@ -2473,16 +3144,16 @@ impl Compiler<'_> {
         // The identity has a declared type, so a field that cannot hold one is a mistake the model
         // can see: `PayInvoice` takes an invoice id and an amount, and binding the invoice to the
         // amount is a scenario nothing would ever have executed.
-        if let Some(declared) = fields.iter().find(|it| it.name == field) {
+        if let Some((type_ref, written)) = declared {
             let identity = self.ir.entity_identity(&entity);
             if let Some(identity) = identity {
-                if declared.type_ref.required() != identity.required() {
+                if type_ref.is_none_or(|type_ref| type_ref.required() != identity.required()) {
                     self.refuse(Cause::InstanceMistyped {
                         instance: instance.clone(),
                         entity,
                         surface: surface.clone(),
                         field: field.to_owned(),
-                        declared: declared.type_ref.to_string(),
+                        declared: written,
                         identity: identity.to_string(),
                     });
                     return None;
@@ -2581,6 +3252,187 @@ impl Compiler<'_> {
                 surface: surface.clone(),
                 detail: format!("`{value}` is not a variant of `{declared_by}`"),
             },
+        }
+    }
+}
+
+// ---- references inside a structured literal (beyond10x/ess#242) --------------------------------
+
+/// The instance a node names, where it is written `{$instance: name}`.
+fn reference(node: &Node) -> Option<&str> {
+    match node.as_single_entry() {
+        Some((Written::INSTANCE, name)) => name.as_text(),
+        _ => None,
+    }
+}
+
+/// Whether `{$instance: …}` is written anywhere in `node`, itself included.
+fn holds_reference(node: &Node) -> bool {
+    reference(node).is_some()
+        || match node {
+            Node::Seq(items) => items.iter().any(holds_reference),
+            Node::Map(entries) => entries.values().any(holds_reference),
+            _ => false,
+        }
+}
+
+/// Where each `{$instance: …}` in `node` is written, as [`Place::written`] spells it.
+fn references(node: &Node, place: &Place, found: &mut Vec<String>) {
+    if reference(node).is_some() {
+        found.push(place.written.clone());
+        return;
+    }
+    match node {
+        Node::Seq(items) => {
+            for (index, item) in items.iter().enumerate() {
+                references(item, &place.index(index), found);
+            }
+        }
+        Node::Map(entries) => {
+            for (key, entry) in entries {
+                references(entry, &place.member(key), found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Where a part of a structured literal sits in the declared type.
+enum Slot {
+    /// At a member the model declares, of this type.
+    Typed(ResolvedTypeRef),
+    /// Inside a value whose parts the model does not type one by one — a union, `Json` — which
+    /// is named, because no part of it is an identity.
+    Inside(String),
+    /// At a member the model does not declare, which the shape check reports.
+    Undeclared,
+}
+
+impl Slot {
+    /// Where input field `name` sits: at its declared type, or nowhere the model declares.
+    fn of_field(fields: &[ResolvedField], name: &str) -> Self {
+        fields
+            .iter()
+            .find(|declared| declared.name == name)
+            .map_or(Self::Undeclared, |declared| {
+                Self::Typed(declared.type_ref.clone())
+            })
+    }
+}
+
+/// What a declared type is made of, for a structured literal walking into it.
+enum Container {
+    /// A list of this.
+    List(ResolvedTypeRef),
+    /// A map whose values are this.
+    Map(ResolvedTypeRef),
+    /// A struct with these members.
+    Struct(Vec<ResolvedField>),
+    /// A union: its tag field, and each variant's payload type by tag value.
+    Union {
+        /// The union's type, as written.
+        name: String,
+        /// The field carrying the variant's name.
+        tag: String,
+        /// The payload type of each variant.
+        variants: BTreeMap<String, ResolvedTypeRef>,
+    },
+    /// A value whose parts are not typed one by one, by the name of its type.
+    Opaque(String),
+    /// Nothing the model declares.
+    Undeclared,
+}
+
+impl Container {
+    /// Whether `node` has the shape this container is: a sequence for a list, a mapping for a
+    /// map, a struct or a union. An opaque or undeclared container is answered elsewhere.
+    fn fits(&self, node: &Node) -> bool {
+        matches!(
+            (self, node),
+            (Self::List(_), Node::Seq(_))
+                | (
+                    Self::Map(_) | Self::Struct(_) | Self::Union { .. },
+                    Node::Map(_)
+                )
+                | (Self::Opaque(_) | Self::Undeclared, _)
+        )
+    }
+
+    /// What `type_ref` is made of, through every `Optional` and newtype around it.
+    fn of(ir: &EssIr, type_ref: &ResolvedTypeRef, depth: usize) -> Self {
+        if depth > ess_domain::types::MAX_TYPE_DEPTH {
+            return Self::Undeclared;
+        }
+        match type_ref {
+            ResolvedTypeRef::Optional { of } => Self::of(ir, of, depth + 1),
+            ResolvedTypeRef::List { of } => Self::List(of.as_ref().clone()),
+            ResolvedTypeRef::Map { value, .. } => Self::Map(value.as_ref().clone()),
+            ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+                ResolvedBody::Newtype { of, .. } => Self::of(ir, of, depth + 1),
+                ResolvedBody::Struct { fields, .. } => Self::Struct(fields.clone()),
+                ResolvedBody::Union { tag, variants } => Self::Union {
+                    name: type_ref.to_string(),
+                    tag: tag.clone(),
+                    variants: variants.clone(),
+                },
+                ResolvedBody::Enum { .. } => Self::Opaque(type_ref.to_string()),
+            },
+            ResolvedTypeRef::Primitive { .. } => Self::Opaque(type_ref.to_string()),
+        }
+    }
+
+    /// Where a part of a value of this shape sits, when the part is not one the shape has: inside
+    /// an opaque value, or where the shape check reports the mismatch.
+    fn inside(&self) -> Slot {
+        match self {
+            Self::Opaque(name) => Slot::Inside(name.clone()),
+            Self::List(_)
+            | Self::Map(_)
+            | Self::Struct(_)
+            | Self::Union { .. }
+            | Self::Undeclared => Slot::Undeclared,
+        }
+    }
+}
+
+/// A position inside an input field, written for a person and as the shape check spells it.
+struct Place {
+    /// `ring_sequence[1]`, `pair.primary`, `by_stage[canary]`.
+    written: String,
+    /// `ring_sequence.1`, `pair.primary`: the path a shape error names.
+    fact: String,
+}
+
+impl Place {
+    /// The field itself.
+    fn field(name: &str) -> Self {
+        Self {
+            written: name.to_owned(),
+            fact: name.to_owned(),
+        }
+    }
+
+    /// Element `index` of a list.
+    fn index(&self, index: usize) -> Self {
+        Self {
+            written: format!("{}[{index}]", self.written),
+            fact: format!("{}.{index}", self.fact),
+        }
+    }
+
+    /// Member `name` of a struct.
+    fn member(&self, name: &str) -> Self {
+        Self {
+            written: format!("{}.{name}", self.written),
+            fact: format!("{}.{name}", self.fact),
+        }
+    }
+
+    /// The value at `key` of a map, which the shape check names by its `ordinal` in key order.
+    fn key(&self, key: &str, ordinal: usize) -> Self {
+        Self {
+            written: format!("{}[{key}]", self.written),
+            fact: format!("{}.{ordinal}", self.fact),
         }
     }
 }

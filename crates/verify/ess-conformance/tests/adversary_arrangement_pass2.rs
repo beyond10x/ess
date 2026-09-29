@@ -310,10 +310,14 @@ fn refusal_for(result: &Synthesis, name: &str) -> Option<String> {
 #[test]
 fn nested_refusals_keep_every_scenario_an_input_selects_alone() {
     let result = synthesis(&nested());
-    assert_kept(&result, &["too-short", "big", "flagged", "set"]);
-    let far = refusal_for(&result, "far-too-short").expect("far-too-short has no input of its own");
-    assert!(far.contains("too-short (count < 12)"), "{far}");
-    assert_eq!(refusals(&result).len(), 1, "{:#?}", refusals(&result));
+    // Superseded by the precedence order (#227 correction 1): of two refusals an input selects,
+    // the first declared answers, so `far-too-short`, declared first, owns `count < 5` and keeps
+    // its scenario; it was withdrawn as having no input of its own.
+    assert_kept(
+        &result,
+        &["far-too-short", "too-short", "big", "flagged", "set"],
+    );
+    assert!(refusals(&result).is_empty(), "{:#?}", refusals(&result));
 }
 
 #[test]

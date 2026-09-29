@@ -736,11 +736,8 @@ fn the_input_a_scenario_sends_is_re_decided_against_the_guard_it_claims_to_reach
 }
 
 #[test]
-fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
-    // A malformed declared path now fails assembly. A separate legal read of a map's entries keeps
-    // the synthesis Unknown-versus-exhausted-search control: no input projection publishes them.
-    // (It was a text ordering until ess#94 ordered text by its bytes, which decides one, and then
-    // a map's count until ess#196 published that.)
+fn a_guard_over_map_entries_is_decided_and_a_malformed_path_fails_assembly() {
+    // A malformed declared path fails assembly.
     let malformed = UNDECIDED.replace("label == vip", "amount.vat > 0");
     let errors = Specification::assemble([(
         Source::new("malformed.yaml"),
@@ -748,44 +745,34 @@ fn an_undecidable_guard_refuses_and_does_not_spend_the_candidate_budget() {
     )])
     .unwrap_err();
     assert!(errors.to_string().contains("amount.vat"));
-    let synthesis = synthesize(&fixture(UNDECIDED));
 
-    assert!(
-        synthesis.suite.is_empty(),
-        "neither branch is reachable: {:?}",
-        ids(&synthesis)
-    );
+    // This fixture was the synthesis control for a guard nothing decides (ESS-SYNTH-002, never an
+    // exhausted search): a text ordering until ess#94, a map's count until ess#196, and a map's
+    // entries until ess#240, which publishes a map's values at their ordinals. The guard is now
+    // decided and both branches are witnessed; no legal guard over command input is known to stay
+    // undecided, so the control has no fixture left.
+    let synthesis = synthesize(&fixture(UNDECIDED));
     let refusals: Vec<String> = synthesis
         .refusals
         .iter()
         .map(|refusal| format!("{}: {refusal}", refusal.code()))
         .collect();
-    assert_eq!(
-        synthesis.refused(code(2)).count(),
-        2,
-        "both the guarded branch and the default branch refuse, because deciding the default \
-         branch means deciding every other guard: {refusals:?}"
-    );
-    assert_eq!(
-        synthesis.refused(code(3)).count(),
-        0,
-        "and neither is reported as an exhausted search, which is what a retry would have \
-         produced: {refusals:?}"
-    );
-
-    let refusal = synthesis
-        .refused(code(2))
-        .next()
-        .expect("the guarded branch refuses");
-    let rendered = refusal.to_string();
-    assert!(
-        rendered.contains("label == vip"),
-        "a refusal names the valid predicate whose map entries nothing publishes: {rendered}"
-    );
-    assert!(
-        matches!(refusal.cause, RefusalCause::GuardUnevaluable(_)),
-        "and it is the cause an author repairs, not a search that gave up"
-    );
+    assert!(refusals.is_empty(), "{refusals:?}");
+    let vip = Node::Text("vip".to_owned());
+    for (id, holds) in [
+        ("undecided.orders.TaxOrder/outcome/taxed", true),
+        ("undecided.orders.TaxOrder/outcome/untaxed", false),
+    ] {
+        let input = literals(&synthesis, id);
+        let Some(Node::Map(labels)) = input.get("labels") else {
+            panic!("`{id}` sends a map: {input:?}")
+        };
+        assert_eq!(
+            labels.values().any(|value| *value == vip),
+            holds,
+            "{id}: {labels:?}"
+        );
+    }
 }
 
 #[test]

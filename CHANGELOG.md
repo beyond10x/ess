@@ -2,6 +2,161 @@
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-09-29
+
+### Fixed
+
+- **An input-guarded refusal beside held-state branches** (beyond10x/ess#227, first filed as
+  #213). A `when:` + `error:` branch naming no subject may now sit beside `when_subject_state:` and
+  `when_state_changes:` branches, so "the new value is refused whatever the record's state" has a
+  form on a command acting on an existing record. It was refused as ESS-COMMAND-003
+  (`unobservable_fact`), and naming a subject on it is still `refusal_mutated_state`. No key is
+  added, so no format gates it: it validates at every format that has `when_subject_state:`. It is
+  answered before existence and before the held state (the #209 precedence): the joint state × input
+  partition counts an input it claims as its alone in every state, and where the prover cannot
+  decide its guard (`secret.count < 12`) the other branches are proved over every input on their
+  own. Synthesis sends the refused input for an identity nothing stores, then on a record of its own
+  arranged and observed in each lifecycle state, and at the overlap with each sibling that runs in
+  that state and reads the input; each send requires the error, no event and the row unchanged. A
+  target reading the held state, the record, or a state-guarded sibling before the input fails. The
+  model interpreter answers an input-guarded refusal before anything else is read, so it decides a
+  request such a refusal claims on a command whose other branches it does not interpret yet; Entity
+  Runtime already decides it before the row is loaded. Of two input-guarded refusals one request selects, the first declared answers, as Entity Runtime orders them: validation admits the overlap (it was `conflicting_declaration` on a held-state command), the interpreter returns that one refusal, and synthesis has a refusal's witness refute only the refusals declared before it, so a refusal nested inside an earlier one keeps its scenario rather than being withdrawn. Where the prover cannot decide one refusal's guard, only that refusal leaves the joint proof; a decidable one beside it still counts. One precedence order now answers every command, written once in the cross-record guards design note and linked from the others: on a `when_related:` command `existing_instance:` then `exists: false`; then input-guarded refusals, first declared; then existence of the addressed row; then the held state; then accepting and external branches in declaration order. The interpreter answers a missing related row by its `exists: false` branch before an input refusal, and synthesis sends that branch an input a refusal claims, so a target checking the input first fails it. Committed suites are byte-identical.
+
+- **The generated explorer decides a step in Entity Runtime's order (beyond10x/ess#235).** The
+  seeded explorer in the Go and TypeScript conformance packages answered a command's `wrong_state`
+  branch before evaluating any guard, so a target that refuses a bad input whatever state the
+  subject is in — as Entity Runtime and synthesis do — was reported as disagreeing. The explorer now
+  takes an input-guarded refusal (a `when:` with an `error:`) first, the first declared whose guard
+  holds, before it reads the record, its state or an external branch; then the accepting guarded
+  branch or the default; and answers `wrong_state` only where that branch moves from a state no
+  move of the command starts from. A branch that moves nothing answers in every state, an eligible
+  external branch included: on a subject resting where no move starts, the explorer offers it
+  beside `wrong_state` and, once arranged, expects it. Two accepting guards that both hold still
+  leave the draw ambiguous, unless every one of them moves from such a state.
+  `docs/design/mutation-audit-and-model-runner.md` states the order.
+
+- **Synthesis witnesses a stored-row predicate over an `Optional` field the creating command leaves
+  absent (#239).** A `when_related: {via: …, predicate: {site: {exists: false}}}` branch, where the
+  related row's creating command does not write the `Optional` `site` and a later command sets it,
+  was refused `ESS-SYNTH-003` ("no candidate of the 2 tried … over the rows 2 bounded arrangements
+  left"): the search offered the row as the creator leaves it, but read its unwritten `site` as
+  undetermined, so neither `exists: false` nor `not defined(site)` held on any row. An arranged
+  row now records the `Optional` fields no step since its creation wrote, and a predicate reads
+  each as absent until a later `sets:` writes it. The branch is witnessed on the row the creator
+  left, its sibling on a row the later command wrote, and a target reading the field as present
+  fails. The same holds for `when_subject:` and for a `defined()` guard in either direction. A
+  field some writer outside the row's own steps can reach — an `affects:` or `instances:` outcome
+  on the entity, or an `updates:`/`moves:` of a command a binding invokes — is still read as
+  undetermined, since a decoy's act or the target's own reaction may have written it. The
+  observation before the command names the row's identity and state but does not require the
+  absent field, since a view row may leave an absent field out. An `Optional` member of a struct
+  field, left out through an omitted `Optional` input, is still refused `ESS-SYNTH-003` by name: a
+  struct with an undetermined member is not determined as a whole. Committed suites regenerate
+  byte-identical.
+
+- **A guard over a stored `Map`'s entries is witnessed on both sides (#240).** A stored
+  `redirect_uris: Map<String, String>` set from a map input held one entry on every arranged row,
+  but conformance published no fact for a map's entries, so `exists`/`forall` over a map — on a
+  command's input, on its subject (`when_subject`) or on a related row (`when_related`) — was
+  undecided everywhere, and `{not: {exists: {in: redirect_uris, as: r, that: r ==
+  input.application}}}` and its accepting default were both refused as `ESS-SYNTH-003`. A map now
+  publishes its values at their positions in key order, which is what the quantifier binds: the
+  compiler types `r` as the value type and Entity Runtime folds the values in canonical key order,
+  and `predicates.md` now says so. A comparison between the bound element and an `input.` field
+  inside a quantifier over a stored list or map is grounded on each element the arranged row holds,
+  so the input is sent once equal to a value the row holds and once equal to none; a target that
+  ignores the entries, reads the map's keys or reads only whether it is empty fails. The same
+  guards over a stored `List` compared with an `input.` field were refused the same way and are now
+  witnessed. The arranged row holds several entries where the collection is written from an input:
+  where one element decides the quantifier — an `exists` that holds, a `forall` that fails — that
+  element is neither the first nor the last in key order, and where the whole collection decides it
+  the row holds two or more, so a target reading only the first value, only the last, or `forall` for
+  `exists` (and the reverse) fails a scenario too. A `Timestamp` map value orders by its instant
+  inside a quantifier, as a list element does. A model that quantifies over no map and compares no
+  quantified element with its input keeps its suite bytes.
+
+- An authored act that names an `external:` branch under `outcome:` now compiles into a
+  `configure_external_outcome` for that branch immediately before its `execute_command`, as a
+  synthesized scenario does, so a target is told which answer to give for that one call
+  (beyond10x/ess#243). Before, the act compiled into a plain `execute_command` + `expect_outcome`
+  that no target could satisfy deterministically. The branch name is the stated answer, so no new
+  key and no new `ess-scenario` version are needed; acts naming a branch the input decides compile
+  byte for byte as before.
+- `ess verify conform author` (and `ess specify validate` with a `scenarios:` list) refuses an act
+  with `ESS-AUTHOR-037` when one of its claims holds only on an `external:` answer it does not state,
+  whether or not `outcome:` is written. Checked: its error, its direct response, each event it claims
+  published and each it claims absent. Answers reached: those of the act's own command and of every
+  command a binding invokes from what it publishes, transitively; a binding's escalation needs its
+  invoked command to fail. The refusal names every such branch as `command/branch`. The one answer an
+  act states is its own command's external branch under `outcome:`; there is no key for a binding's
+  call, so a claim of an escalation such as `billing.email.DeliveryEscalated` on a `CreateInvoice` act
+  is refused naming `billing.email.SendEmail/failed` and left to synthesis. An event another command
+  publishes on an input-decided branch exempts a claim only when the act reaches that command.
+  Coverage inventories (Rust, Go, TypeScript and the browser admission) accept `ESS-AUTHOR-037` as an
+  authored refusal.
+
+- **Synthesized inputs satisfy the invariants over their nested members, and guards over nested
+  input paths are witnessed (beyond10x/ess#234).**
+  - An entity invariant over the members of a struct input a branch copies into a stored field
+    (`sets: {fingerprint: input.fingerprint}` beside `fingerprint.version == "canonical-v1"` or
+    `fingerprint.origin == fingerprint.route`) is met by every input synthesis sends, so the
+    scenarios creating or updating the entity no longer leave a row its own invariant refuses.
+    Before, the members carried their placeholder witnesses and every such scenario failed
+    against a correct target.
+  - A struct type with invariants used as a command input is synthesizable. Before, every
+    candidate was refused by the type (`ESS-SYNTH-003`, "no candidate of the 0 tried").
+  - The witness solves its base for those invariants once, per instance: the leaves an invariant
+    reads are tried at its literals, one either side, and at each other's value for a comparison
+    of two members, and a list whose `.count` an invariant reads at the lengths it names. A further
+    instance tries each numeric literal moved by its ordinal first, so it still differs from the
+    first wherever an invariant bounds a member rather than pinning it (`start >= 5`). A base that
+    already satisfies them keeps its bytes.
+  - Every input is held to the entity invariants of the branches it can reach, not to all of them
+    at once. Two branches copying one input into entities that disagree (`version == "v2"` and
+    `version == "v1"`) each send an input their own entity accepts. A guard moving a member an
+    invariant ties to another (`origin == "eu"` beside `origin == route`, `low > 10` beside
+    `low < high`) moves the other with it. An input that still breaks one is never sent.
+  - A branch whose entity invariants no bounded input meets (a strict chain over five members) is
+    refused `ESS-SYNTH-003`, naming each invariant. Before, it was sent an input the entity
+    refuses, and its scenarios failed against a correct target.
+  - A `when:` equality between an input and a member of another input (`owner == ticket.owner`)
+    is witnessed on both sides: each side is also tried at the other's value. Before, the
+    accepting branch was refused `ESS-SYNTH-003`.
+  - A wrong-state scenario whose sibling `when_subject` compares a stored field with a nested
+    input path (`fence != input.publication.expected_fence`) sends an input equal to the value the
+    arranged row holds. Before, it was refused `ESS-SYNTH-003` ("a row in this state refuting
+    every one of: …").
+  - An input-guarded refusal declared beside a `when_subject` over a member of a stored optional
+    struct is witnessed on a row whose struct no arranging step determined: the refusal answers
+    before the row is read.
+  - A `when_subject` or `when_related` guard over a member of an `Optional` struct the row holds
+    absent (`meta.tier == Gold` where the creator left `meta` unwritten, as in beyond10x/ess#239)
+    is read as a target reads it: unknown, so not taken. The default and every other branch are
+    witnessed on that row, a wrong-state scenario counts the guard as refuted there, and only the
+    guard no row takes is refused with its `ESS-SYNTH-003`. Negated, the guard stays unknown and
+    is not taken either. An `Optional` field whose only later writer generates it is arrangeable
+    from the row its creator leaves it absent on. Before, every branch of the command was refused.
+
+- **`{$instance: …}` inside a list, a map value or a struct member of an authored step**
+  (beyond10x/ess#242). `ring_sequence: [{$instance: a}, {$instance: b}]` for a
+  `List<ReleaseRingId>` input was refused as ESS-AUTHOR-015 "expected Uuid, found a mapping", so a
+  command taking several identities could not be authored; inside a map value the reference was
+  not checked at all and reached the target as the mapping `{"$instance": "a"}`. A reference is now
+  admitted wherever the declared type at its position is the instance's identity type, at any
+  depth, a union payload typed by the variant its tag names included, and resolves to the identity the run bound, as a whole-field one does. At a position of
+  any other type it is refused as ESS-AUTHOR-022 naming the position (`labels[1]`, `pair.note`,
+  `tags[owner]`, `target.value`); one that nothing can place, at an undeclared member or inside a
+  value of the wrong shape, is refused naming it in every container, inside map values and unions
+  too, where the shape check reads no member. Inside an event payload or an error it is refused
+  as ESS-AUTHOR-021, as a whole-field one is. Such a value is written as the new scenario value kinds `list` (`items`) and `members`
+  (`members`), whose elements are literals, instances or those kinds again, in suite
+  `ess-conformance/32` (`/33` with coverage); each implies every major below it, older readers
+  refuse the envelope, and a structured value holding no reference stays a `literal`, so every
+  other suite keeps its format and bytes. The Rust runner and the model interpreter resolve it;
+  Go and TypeScript generation refuse such a suite, naming the Rust runner; the browser player
+  describes it element by element.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed

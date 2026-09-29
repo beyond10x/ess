@@ -1,0 +1,89 @@
+format: ess/16
+system: demo
+version: v1
+domain: demo.secrets
+summary: A configuration per tenant, rotated while configured; a new secret under 12 characters is refused whatever the record's state.
+types:
+  - {name: demo.secrets.TenantId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.secrets.Configuration
+    identity: {name: tenant_id, type: demo.secrets.TenantId}
+    fields:
+      - {name: secret, type: String}
+    lifecycle:
+      initial: Pending
+      states: [Pending, Configured, Revoked]
+      terminal: [Revoked]
+      transitions:
+        - {name: configure, from: [Pending], to: Configured}
+        - {name: revoke, from: [Configured], to: Revoked}
+actors:
+  - name: demo.secrets.Operator
+    may: [demo.secrets.Register, demo.secrets.Configure, demo.secrets.Revoke, demo.secrets.RotateSecret]
+errors:
+  - {name: demo.secrets.SecretTooShort, fields: []}
+  - {name: demo.secrets.NotConfigured, fields: []}
+  - {name: demo.secrets.NotPending, fields: []}
+  - {name: demo.secrets.NotActive, fields: []}
+events:
+  - name: demo.secrets.Registered
+    fields: [{name: tenant_id, type: demo.secrets.TenantId}]
+  - name: demo.secrets.Configured
+    fields: [{name: tenant_id, type: demo.secrets.TenantId}]
+  - name: demo.secrets.Revoked
+    fields: [{name: tenant_id, type: demo.secrets.TenantId}]
+  - name: demo.secrets.SecretRotated
+    fields: [{name: tenant_id, type: demo.secrets.TenantId}]
+commands:
+  - name: demo.secrets.Register
+    input: []
+    outcomes:
+      - name: registered
+        creates: demo.secrets.Configuration
+        instance: tenant_id
+        sets: {secret: "initial-secret-value"}
+        emits: [demo.secrets.Registered]
+        payload: {demo.secrets.Registered: {tenant_id: {generated: true}}}
+  - name: demo.secrets.Configure
+    input: [{name: tenant_id, type: demo.secrets.TenantId}]
+    outcomes:
+      - name: configured
+        moves: demo.secrets.Configuration.configure
+        instance: tenant_id
+        emits: [demo.secrets.Configured]
+        payload: {demo.secrets.Configured: {tenant_id: input.tenant_id}}
+      - {name: not-pending, wrong_state: true, error: demo.secrets.NotPending}
+  - name: demo.secrets.Revoke
+    input: [{name: tenant_id, type: demo.secrets.TenantId}]
+    outcomes:
+      - name: revoked
+        moves: demo.secrets.Configuration.revoke
+        instance: tenant_id
+        emits: [demo.secrets.Revoked]
+        payload: {demo.secrets.Revoked: {tenant_id: input.tenant_id}}
+      - {name: not-active, wrong_state: true, error: demo.secrets.NotActive}
+  - name: demo.secrets.RotateSecret
+    input:
+      - {name: tenant_id, type: demo.secrets.TenantId}
+      - {name: secret, type: String}
+    outcomes:
+      - name: too-short
+        when: secret.count < 12
+        error: demo.secrets.SecretTooShort
+      - name: rotated
+        when_subject_state: Configured
+        updates: demo.secrets.Configuration
+        instance: tenant_id
+        sets: {secret: input.secret}
+        emits: [demo.secrets.SecretRotated]
+        payload: {demo.secrets.SecretRotated: {tenant_id: input.tenant_id}}
+      - name: not-configured
+        error: demo.secrets.NotConfigured
+views:
+  - name: demo.secrets.Configurations
+    source: demo.secrets.Configuration
+    consistency: read_your_writes
+    fields:
+      - {name: tenant_id, type: demo.secrets.TenantId}
+      - {name: state, type: demo.secrets.Configuration.State}
+      - {name: secret, type: String}

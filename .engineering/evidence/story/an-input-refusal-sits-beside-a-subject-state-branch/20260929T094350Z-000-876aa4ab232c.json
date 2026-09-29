@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T09:43:50Z",
+  "actor": "human:timo",
+  "artifact": "story:an-input-refusal-sits-beside-a-subject-state-branch",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "merged check on integrate/ess-0.43 (clippy; ess-domain 1070, ess-conformance 1786, ess-entity-runtime 87 passed; generate --check, docs, fmt-check)",
+    "reference": "integrate/ess-0.43@cb6cf8493"
+  }
+}
