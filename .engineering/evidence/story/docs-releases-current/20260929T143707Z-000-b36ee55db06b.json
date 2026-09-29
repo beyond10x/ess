@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:37:07Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-releases-current",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-xtask 340 passed; whats-changed --check red on a stale page then green; xtask docs (newest release note trails by 0); clippy; fmt-check",
+    "reference": "docs/releases@b08a053ac"
+  }
+}
