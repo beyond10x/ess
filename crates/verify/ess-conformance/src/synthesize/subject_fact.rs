@@ -36,6 +36,7 @@ use super::{
     ScenarioValue, Setup, Truth, Unreachable, ViewExpectation, ViewRef, WitnessGap,
 };
 use ess_domain::entity::Cardinality;
+use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand};
 
@@ -1480,13 +1481,426 @@ fn on_literal(leaf: &Predicate) -> Option<Predicate> {
     }
 }
 
+/// How far from a literal its guard compares a stored counter with the search follows the
+/// counter's value, in the counter's own units (beyond10x/ess#226).
+const COUNTER_REACH: i64 = 16;
+
+/// What a refusal says where a counter the guards read lay beyond [`COUNTER_REACH`] of every
+/// literal they compare it with on some row the search left.
+fn beyond_reach(fields: &[String]) -> String {
+    format!(
+        "a stored counter ({}) is followed only within {COUNTER_REACH} of each literal its guard \
+         compares it with",
+        fields
+            .iter()
+            .map(|field| format!("`{field}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// Whether a refusal is the search's own past [`COUNTER_REACH`].
+pub(super) fn is_beyond_reach(cause: &RefusalCause) -> bool {
+    matches!(cause, RefusalCause::GuardUnsatisfiable { predicate, .. }
+        if predicate.contains("is followed only within"))
+}
+
+/// One stored counter of an entity (beyond10x/ess#226): the amounts an arranging branch moves it by
+/// with `{increment: n}` (none zero), and the number literals a branch sets it to outright — `None`
+/// where some branch sets it to anything else (an input, a generated value), so where a run of it
+/// starts is not known.
+#[derive(Debug, Clone, Default)]
+pub(super) struct Counter {
+    amounts: Vec<Number>,
+    starts: Option<Vec<Number>>,
+}
+
+/// The stored counters of one entity: every field an arranging branch moves with `{increment: n}`.
+pub(super) fn counters(ir: &EssIr, entity: &EntityHandle) -> BTreeMap<String, Counter> {
+    let all = ir.drivers();
+    let mut out: BTreeMap<String, Counter> = BTreeMap::new();
+    for driver in all.get(entity).map_or(&[][..], Vec::as_slice) {
+        for set in &driver.outcome.sets {
+            let counter = out.entry(set.target.clone()).or_insert_with(|| Counter {
+                amounts: Vec::new(),
+                starts: Some(Vec::new()),
+            });
+            match &set.value {
+                ResolvedPayloadValue::Increment { by } => {
+                    if let Some(by) = Number::decimal_literal(by).filter(|by| by.get() != 0.0) {
+                        if !counter.amounts.contains(&by) {
+                            counter.amounts.push(by);
+                        }
+                    }
+                }
+                ResolvedPayloadValue::Literal { value } => {
+                    match (Number::decimal_literal(value), counter.starts.as_mut()) {
+                        (Some(start), Some(starts)) if !starts.contains(&start) => {
+                            starts.push(start);
+                        }
+                        (Some(_), _) => {}
+                        (None, _) => counter.starts = None,
+                    }
+                }
+                _ => counter.starts = None,
+            }
+        }
+    }
+    out.retain(|_, counter| !counter.amounts.is_empty());
+    out
+}
+
+/// The most values [`reachable`] enumerates before it gives up and the limit's sides are taken one
+/// smallest step either side of it.
+const MAX_REACHABLE: usize = 4096;
+
+/// Every value `counter` holds on some run that lies within [`COUNTER_REACH`] of `literal`, or
+/// between a start and that window, one widest step either side: the starts, and each start moved
+/// by any sequence of its amounts, never leaving that span. `None` where the starts are not known
+/// or the span holds more than [`MAX_REACHABLE`] values.
+fn reachable(counter: &Counter, literal: Number) -> Option<BTreeSet<Number>> {
+    let starts = counter.starts.as_ref()?;
+    if starts.is_empty() {
+        return Some(BTreeSet::new());
+    }
+    let reach = Number::from(COUNTER_REACH);
+    let widest = counter
+        .amounts
+        .iter()
+        .filter_map(|by| Some((*by).max(negated(*by)?)))
+        .max()?;
+    let low = starts
+        .iter()
+        .copied()
+        .chain(literal.checked_add(negated(reach)?))
+        .min()?
+        .checked_add(negated(widest)?)?;
+    let high = starts
+        .iter()
+        .copied()
+        .chain(literal.checked_add(reach))
+        .max()?
+        .checked_add(widest)?;
+    let mut seen = BTreeSet::new();
+    let mut frontier = starts.clone();
+    while let Some(value) = frontier.pop() {
+        if value < low || value > high || !seen.insert(value) {
+            continue;
+        }
+        if seen.len() > MAX_REACHABLE {
+            return None;
+        }
+        frontier.extend(
+            counter
+                .amounts
+                .iter()
+                .filter_map(|by| value.checked_add(*by)),
+        );
+    }
+    Some(seen)
+}
+
+/// How far `value` lies from `literal`, or `None` where the difference overflows.
+fn distance(value: Number, literal: Number) -> Option<Number> {
+    let apart = value.checked_add(negated(literal)?)?;
+    Some(apart.max(negated(apart)?))
+}
+
+/// The side of a counter limit a row is pinned at: the value, how the comparison decides there,
+/// and — where the value lies past [`COUNTER_REACH`] — why no row the search follows holds it.
+type Edge = (Number, bool, Option<String>);
+
+/// One side of a limit: the value pinned there and why it lies past the reach, or `None` where no
+/// run holds a value on that side.
+type Pinned = Option<(Number, Option<String>)>;
+
+/// The counter values on either side of a limit (beyond10x/ess#226), with how the comparison
+/// decides there: on each side the value nearest the limit that a run of the counter holds
+/// ([`reachable`]). `retries >= 3` moved by one from 0: `2` false and `3` true; moved by two: `2`
+/// false and `4` true; `retries == 3` moved by one: `2` and `4` false, `3` true. A side no run holds
+/// a value on (`retries >= 0` from 0, below it) has no edge; a side whose nearest value lies past
+/// [`COUNTER_REACH`] carries a cause naming the step and the limit. Where the starts are unknown the
+/// edges are one smallest step either side of the literal, as any value may be held.
+fn limit_edges(field: &str, op: CompareOp, literal: Number, counter: &Counter) -> Vec<Edge> {
+    let Some(values) = reachable(counter, literal) else {
+        let Some(step) = counter
+            .amounts
+            .iter()
+            .filter_map(|by| Some((*by).max(negated(*by)?)))
+            .min()
+        else {
+            return Vec::new();
+        };
+        return stepped_edges(op, literal, step)
+            .into_iter()
+            .map(|(value, decided)| (value, decided, None))
+            .collect();
+    };
+    let reach = Number::from(COUNTER_REACH);
+    let pin = |found: Option<&Number>, side: &str| -> Pinned {
+        let value = *found?;
+        if distance(value, literal).is_some_and(|apart| apart <= reach) {
+            return Some((value, None));
+        }
+        Some((
+            value,
+            Some(format!(
+                "`{field}` moves by {} from {}, so the nearest value it holds {side} the limit \
+             {literal} is {value}; {}",
+                list(&counter.amounts),
+                list(counter.starts.as_deref().unwrap_or_default()),
+                beyond_reach(&[field.to_owned()]),
+            )),
+        ))
+    };
+    let below = |strict: bool| {
+        pin(
+            values
+                .iter()
+                .rev()
+                .find(|value| **value < literal || (!strict && **value == literal)),
+            if strict { "below" } else { "at or below" },
+        )
+    };
+    let above = |strict: bool| {
+        pin(
+            values
+                .iter()
+                .find(|value| **value > literal || (!strict && **value == literal)),
+            if strict { "above" } else { "at or above" },
+        )
+    };
+    let sides: Vec<(Pinned, bool)> = match op {
+        CompareOp::Ge => vec![(below(true), false), (above(false), true)],
+        CompareOp::Gt => vec![(below(false), false), (above(true), true)],
+        CompareOp::Le => vec![(below(false), true), (above(true), false)],
+        CompareOp::Lt => vec![(below(true), true), (above(false), false)],
+        CompareOp::Eq | CompareOp::Ne if values.contains(&literal) => {
+            let at = op == CompareOp::Eq;
+            vec![
+                (below(true), !at),
+                (Some((literal, None)), at),
+                (above(true), !at),
+            ]
+        }
+        CompareOp::Eq | CompareOp::Ne => Vec::new(),
+    };
+    sides
+        .into_iter()
+        .filter_map(|(pinned, decided)| pinned.map(|(value, past)| (value, decided, past)))
+        .collect()
+}
+
+/// Numbers as a list for a refusal.
+fn list(values: &[Number]) -> String {
+    values
+        .iter()
+        .map(|value| value.exact_text())
+        .collect::<Vec<_>>()
+        .join(" or ")
+}
+
+/// A comparison leaf between a stored counter and a number literal, as `field op literal`.
+fn counter_leaf(
+    leaf: &Predicate,
+    counters: &BTreeMap<String, Counter>,
+) -> Option<(String, CompareOp, Number)> {
+    let Predicate::Compare { left, op, right } = leaf else {
+        return None;
+    };
+    let (path, op, value) = match (left, right) {
+        (Operand::Fact(path), Operand::Literal(value)) => (path, *op, value),
+        (Operand::Literal(value), Operand::Fact(path)) => (
+            path,
+            match op {
+                CompareOp::Lt => CompareOp::Gt,
+                CompareOp::Le => CompareOp::Ge,
+                CompareOp::Gt => CompareOp::Lt,
+                CompareOp::Ge => CompareOp::Le,
+                other => *other,
+            },
+            value,
+        ),
+        _ => return None,
+    };
+    (path.segments().len() == 1 && counters.contains_key(path.namespace()))
+        .then_some(())
+        .and(value.as_number())
+        .map(|number| (path.namespace().to_owned(), op, number))
+}
+
+/// `value` with its sign turned.
+fn negated(value: Number) -> Option<Number> {
+    let text = value.exact_text();
+    Number::decimal_literal(
+        text.strip_prefix('-')
+            .map_or_else(|| format!("-{text}"), str::to_owned)
+            .as_str(),
+    )
+}
+
+/// Whether `value op literal` holds.
+fn compares(value: Number, op: CompareOp, literal: Number) -> bool {
+    match op {
+        CompareOp::Eq => value == literal,
+        CompareOp::Ne => value != literal,
+        CompareOp::Lt => value < literal,
+        CompareOp::Le => value <= literal,
+        CompareOp::Gt => value > literal,
+        CompareOp::Ge => value >= literal,
+    }
+}
+
+/// [`limit_edges`] where any value may be held: of the literal and one step either side of it,
+/// every value whose neighbour decides the comparison the other way, with how it decides there.
+fn stepped_edges(op: CompareOp, literal: Number, step: Number) -> Vec<(Number, bool)> {
+    let values: Vec<Number> = [
+        negated(step).and_then(|down| literal.checked_add(down)),
+        Some(literal),
+        literal.checked_add(step),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let truths: Vec<bool> = values
+        .iter()
+        .map(|value| compares(*value, op, literal))
+        .collect();
+    (0..values.len())
+        .filter(|at| {
+            (*at > 0 && truths[at - 1] != truths[*at])
+                || truths.get(at + 1).is_some_and(|next| *next != truths[*at])
+        })
+        .map(|at| (values[at], truths[at]))
+        .collect()
+}
+
+/// The stored counters the hints compare with number literals, and the literals: the values the
+/// search follows a counter at, where the rows every raise leaves would otherwise decide the guards
+/// alike and be one node (beyond10x/ess#226). Each field carries its literals and the amounts it is
+/// moved by.
+#[derive(Debug, Default)]
+struct Follow {
+    fields: Vec<(String, Vec<Number>, Vec<Number>)>,
+}
+
+impl Follow {
+    fn new(ir: &EssIr, entity: &EntityHandle, hints: &[Predicate]) -> Self {
+        let counters = counters(ir, entity);
+        if counters.is_empty() {
+            return Self::default();
+        }
+        let mut literals: BTreeMap<String, Vec<Number>> = BTreeMap::new();
+        for hint in hints {
+            let mut all = Vec::new();
+            leaves(hint, &mut all);
+            for leaf in &all {
+                if let Some((field, _, literal)) = counter_leaf(leaf, &counters) {
+                    let held = literals.entry(field).or_default();
+                    if !held.contains(&literal) {
+                        held.push(literal);
+                    }
+                }
+            }
+        }
+        Self {
+            fields: literals
+                .into_iter()
+                .map(|(field, literals)| {
+                    let amounts = counters
+                        .get(&field)
+                        .map(|counter| counter.amounts.clone())
+                        .unwrap_or_default();
+                    (field, literals, amounts)
+                })
+                .collect(),
+        }
+    }
+
+    /// Whether no counter is followed.
+    fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// The followed counters, in name order.
+    fn names(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .map(|(field, ..)| field.clone())
+            .collect()
+    }
+
+    /// Each followed counter's value on the row, where it lies within [`COUNTER_REACH`] of a
+    /// literal — and whether some counter did not while a raise could still move it toward one.
+    ///
+    /// Only such a row stands for values the search needed and did not follow: a counter past every
+    /// literal in the direction every amount moves it only moves farther off, so the rows the
+    /// search collapses there hold no value any limit is decided at (beyond10x/ess#226).
+    fn key(&self, settled: &BTreeMap<String, super::Determined>) -> (Vec<Option<String>>, bool) {
+        let reach = Number::from(COUNTER_REACH);
+        let zero = Number::from(0_i64);
+        let mut beyond = false;
+        let key = self
+            .fields
+            .iter()
+            .map(|(field, literals, amounts)| {
+                let ScenarioValue::Literal {
+                    value: Node::Number(value),
+                } = &settled.get(field)?.value
+                else {
+                    return None;
+                };
+                let near = literals
+                    .iter()
+                    .any(|literal| distance(*value, *literal).is_some_and(|apart| apart <= reach));
+                let toward = literals.iter().any(|literal| {
+                    amounts.iter().any(|by| {
+                        (*value < *literal && *by > zero) || (*value > *literal && *by < zero)
+                    })
+                });
+                beyond |= !near && toward;
+                near.then(|| value.exact_text())
+            })
+            .collect();
+        (key, beyond)
+    }
+
+    /// Carries the value every `{increment: n}` of `driver` leaves in a followed counter, read
+    /// against the row before the act: an arranging act otherwise determines nothing there.
+    fn raise(
+        &self,
+        ir: &EssIr,
+        driver: &Driver<'_>,
+        before: &BTreeMap<String, super::Determined>,
+        after: &mut BTreeMap<String, super::Determined>,
+    ) {
+        if self.fields.is_empty() {
+            return;
+        }
+        let raised = super::settled(ir, driver.outcome, &BTreeMap::new(), before);
+        for set in &driver.outcome.sets {
+            if matches!(set.value, ResolvedPayloadValue::Increment { .. })
+                && self.fields.iter().any(|(field, ..)| field == &set.target)
+            {
+                if let Some(value) = raised.get(&set.target) {
+                    after.insert(set.target.clone(), value.clone());
+                }
+            }
+        }
+    }
+}
+
 /// How the row decides every hint and every leaf: the search node, and the ranking of goals.
+///
+/// `counters` is each followed counter's value ([`Follow`]), so the rows a repeated raise leaves on
+/// the way to a limit are nodes of their own.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Profile {
     state: String,
     hints: Vec<Decided>,
     leaves: Vec<Decided>,
     on_literal: Vec<bool>,
+    counters: Vec<Option<String>>,
 }
 
 /// One three-valued answer, ordered so a search node can be keyed on it.
@@ -1510,6 +1924,7 @@ fn profile(
     entity: &EntityHandle,
     arrangement: &Arrangement,
     hints: &[Predicate],
+    follow: &Follow,
 ) -> Profile {
     let mut all = Vec::new();
     for hint in hints {
@@ -1532,6 +1947,7 @@ fn profile(
             .iter()
             .map(|leaf| on_literal(leaf).is_some_and(|eq| truth(&eq) == Truth::True))
             .collect(),
+        counters: follow.key(&arrangement.settled).0,
     }
 }
 
@@ -1588,7 +2004,9 @@ fn creations(
     Ok(out)
 }
 
-/// The row after `driver` runs on `arrangement` with this input.
+/// The row after `driver` runs on `arrangement` with this input, carrying the counters `follow`
+/// names past the raise.
+#[allow(clippy::too_many_arguments)]
 fn advanced(
     ir: &EssIr,
     driver: &Driver<'_>,
@@ -1597,6 +2015,7 @@ fn advanced(
     input: &BTreeMap<String, Node>,
     before: Vec<ScenarioStep>,
     no_error: bool,
+    follow: &Follow,
 ) -> Arrangement {
     let mut next = arrangement.clone();
     next.steps.extend(before);
@@ -1614,6 +2033,7 @@ fn advanced(
     }
     next.source.extend(invoked.source);
     absorb(&mut next.settled, driver.outcome, invoked.settled);
+    follow.raise(ir, driver, &arrangement.settled, &mut next.settled);
     if let Some(transition) = driver.effect.transition() {
         next.state = transition.to.clone();
     }
@@ -1626,6 +2046,7 @@ fn advanced(
 /// selects it for, and the facts it reads are observed first. Any other branch is run with its
 /// plain witness, and — where its `sets:` maps a field the hints read — with each input chosen
 /// toward them that its own guards still select it for.
+#[allow(clippy::too_many_arguments)]
 fn successors(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -1634,6 +2055,7 @@ fn successors(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     hints: &[Predicate],
     arranging: &[&EntityHandle],
+    follow: &Follow,
 ) -> Vec<Arrangement> {
     let mut out = Vec::new();
     if uses(driver.command) {
@@ -1660,6 +2082,7 @@ fn successors(
                     &input,
                     observed.clone(),
                     true,
+                    follow,
                 ));
             }
         }
@@ -1680,6 +2103,7 @@ fn successors(
         next.steps.extend(invoked.steps);
         next.source.extend(invoked.source);
         absorb(&mut next.settled, driver.outcome, invoked.settled);
+        follow.raise(ir, driver, &arrangement.settled, &mut next.settled);
         if let Some(transition) = driver.effect.transition() {
             next.state = transition.to.clone();
         }
@@ -1706,6 +2130,7 @@ fn successors(
                 &input,
                 Vec::new(),
                 false,
+                follow,
             ));
         }
     }
@@ -1809,9 +2234,16 @@ pub(super) fn search_within<T>(
             &mut goal,
         ) {
             Ok(found) => return Ok(found),
-            Err(cause) => {
-                first.get_or_insert(cause);
-            }
+            // The first creator's cause is kept, except that a later search stopped by the counter
+            // bound replaces one that was not: a side of a limit one creation could have reached
+            // past the bound is refused naming it, not read as a value no run holds (#226).
+            Err(cause) => match &first {
+                Some(kept) if !is_beyond_reach(kept) && is_beyond_reach(&cause) => {
+                    first = Some(cause);
+                }
+                Some(_) => {}
+                None => first = Some(cause),
+            },
         }
     }
     Err(first.unwrap_or(RefusalCause::InstanceRequired {
@@ -1839,16 +2271,35 @@ fn search_from<T>(
     arranging: &[&EntityHandle],
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
+    let follow = Follow::new(ir, entity, hints);
+    // Whether some row held a followed counter beyond [`COUNTER_REACH`] of every literal: such rows
+    // are one node, so a limit farther off is not reached, and the refusal names the bound.
+    let mut beyond = false;
     let mut level = creations(ir, entity, creator, actors, hints, distinction, arranging)?;
     let mut seen = BTreeSet::new();
     let mut first: Option<RefusalCause> = None;
     loop {
         let mut fresh = Vec::new();
         for node in level {
-            if seen.insert(profile(ir, entity, &node, hints)) {
+            beyond |= follow.key(&node.settled).1;
+            if seen.insert(profile(ir, entity, &node, hints, &follow)) {
                 fresh.push(node);
             }
             if seen.len() > MAX_NODES {
+                // Rows a followed counter tells apart fill the budget: no field lacks a value, so
+                // this is the counter's bound, `ESS-SYNTH-003`, not a type without a finite value
+                // (beyond10x/ess#226).
+                if !follow.is_empty() {
+                    return Err(RefusalCause::GuardUnsatisfiable {
+                        predicate: format!(
+                            "`{entity}` stored {field} selecting this branch: the rows the \
+                             followed counters leave exceed the search budget of {MAX_NODES} \
+                             rows; {}",
+                            beyond_reach(&follow.names())
+                        ),
+                        tried: seen.len(),
+                    });
+                }
                 return Err(missing(
                     entity,
                     field,
@@ -1863,7 +2314,7 @@ fn search_from<T>(
         for (index, node) in fresh.iter().enumerate() {
             match goal(node) {
                 Ok(Some(found)) => {
-                    let rank = score(&profile(ir, entity, node, hints));
+                    let rank = score(&profile(ir, entity, node, hints, &follow));
                     if best.as_ref().is_none_or(|(held, ..)| rank > *held) {
                         best = Some((rank, index, found));
                     }
@@ -1891,7 +2342,7 @@ fn search_from<T>(
                     continue;
                 }
                 next.extend(successors(
-                    ir, entity, driver, node, actors, hints, arranging,
+                    ir, entity, driver, node, actors, hints, arranging, &follow,
                 ));
             }
         }
@@ -1906,8 +2357,13 @@ fn search_from<T>(
             &hints.iter().collect::<Vec<_>>(),
             format!(
                 "`{entity}` stored {field} selecting this branch, over the rows {} bounded \
-                 arrangements left",
-                seen.len()
+                 arrangements left{}",
+                seen.len(),
+                if beyond {
+                    format!("; {}", beyond_reach(&follow.names()))
+                } else {
+                    String::new()
+                }
             ),
             seen.len(),
         )
@@ -2157,7 +2613,18 @@ pub(super) fn step(
             .ok()
             .flatten()
             .filter(|branch| branch.name == driver.outcome.name)
-            .map(|_| advanced(ir, driver, arrangement, actors, &input, Vec::new(), false))
+            .map(|_| {
+                advanced(
+                    ir,
+                    driver,
+                    arrangement,
+                    actors,
+                    &input,
+                    Vec::new(),
+                    false,
+                    &Follow::default(),
+                )
+            })
     })
 }
 
@@ -2445,7 +2912,8 @@ pub(super) fn absent(
 /// that moves or updates the row it read is observed afterwards in the state it arrives at, with
 /// the stored fields as the branch left them. Returns the steps that belong after the branch's own
 /// assertions; the absent-subject steps are spliced into the arrangement. The [`boundaries`] a
-/// default is further witnessed against come last.
+/// default is further witnessed against come last, with the further rows refused on their own under
+/// the scenario while it stands (a side of a counter limit, beyond10x/ess#226).
 pub(super) fn around(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -2453,7 +2921,7 @@ pub(super) fn around(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
-) -> Result<Vec<ScenarioStep>, RefusalCause> {
+) -> Result<(Vec<ScenarioStep>, Vec<RefusalCause>), RefusalCause> {
     // Whether the scenario already arranged the second owner a link comparison names (#193).
     let mut present = reading(command, outcome)
         .and_then(|subject| other_owner(ir, &subject.entity))
@@ -2461,6 +2929,7 @@ pub(super) fn around(
     // Every instance name the arrangement already binds, which no further row may bind again.
     let mut taken = super::bound_instances(&setup.steps);
     taken.extend(setup.instance.iter().cloned());
+    let mut refused = Vec::new();
     let (further, source) = boundaries(
         ir,
         command,
@@ -2468,6 +2937,7 @@ pub(super) fn around(
         actors,
         (&setup.settled, setup.before.as_ref()),
         (&mut present, &mut taken),
+        &mut refused,
     )?;
     let (overlapping, overlap_source) =
         overlaps(ir, command, outcome, actors, (&mut present, &mut taken))?;
@@ -2476,7 +2946,7 @@ pub(super) fn around(
     steps.extend(overlapping);
     setup.source.extend(source);
     setup.source.extend(overlap_source);
-    Ok(steps)
+    Ok((steps, refused))
 }
 
 /// Whether `outcome` moves or updates the row it names.
@@ -2565,6 +3035,294 @@ fn around_row(
     Ok(observed)
 }
 
+/// What one further row of [`boundaries`] is (beyond10x/ess#226).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Further {
+    /// A row isolating one child of a guard ([`goals_for`]): witnessed as this branch, or adding
+    /// none where no bounded row meets it.
+    Plain,
+    /// One side of a counter limit: witnessed as whichever branch the command answers there.
+    Limit,
+    /// One side of a counter limit whose nearest value a run holds lies past [`COUNTER_REACH`]:
+    /// refused under the scenario with this cause, never searched.
+    Past(String),
+}
+
+/// The comparison that holds exactly where `op` does not.
+fn negated_op(op: CompareOp) -> CompareOp {
+    match op {
+        CompareOp::Eq => CompareOp::Ne,
+        CompareOp::Ne => CompareOp::Eq,
+        CompareOp::Lt => CompareOp::Ge,
+        CompareOp::Ge => CompareOp::Lt,
+        CompareOp::Le => CompareOp::Gt,
+        CompareOp::Gt => CompareOp::Le,
+    }
+}
+
+/// `predicate` with every `not:` pushed down through `all:` and `any:` onto its comparisons of a
+/// stored counter with a number literal, each turned into its opposite comparison: `{not: retries <
+/// 3}` is `retries >= 3`, so its limit has the rows its positive form has. Any other leaf under a
+/// `not:` keeps it. A predicate with no `not:` is returned as it is.
+fn positive(
+    predicate: &Predicate,
+    counters: &BTreeMap<String, Counter>,
+    negate: bool,
+) -> Predicate {
+    match predicate {
+        Predicate::Not(inner) => positive(inner, counters, !negate),
+        Predicate::All(children) => {
+            let children = children
+                .iter()
+                .map(|child| positive(child, counters, negate))
+                .collect();
+            if negate {
+                Predicate::Any(children)
+            } else {
+                Predicate::All(children)
+            }
+        }
+        Predicate::Any(children) => {
+            let children = children
+                .iter()
+                .map(|child| positive(child, counters, negate))
+                .collect();
+            if negate {
+                Predicate::All(children)
+            } else {
+                Predicate::Any(children)
+            }
+        }
+        Predicate::Compare { left, op, right }
+            if negate && counter_leaf(predicate, counters).is_some() =>
+        {
+            Predicate::Compare {
+                left: left.clone(),
+                op: negated_op(*op),
+                right: right.clone(),
+            }
+        }
+        other if negate => Predicate::Not(Box::new(other.clone())),
+        other => other.clone(),
+    }
+}
+
+/// The rows either side of every counter limit in `predicate` (beyond10x/ess#226): for each
+/// comparison of a stored counter with a number literal — a top-level conjunct, or a disjunct of a
+/// top-level `any:`, once every `not:` is pushed onto its comparisons ([`positive`]) — one row per
+/// value at the limit's edge ([`limit_edges`]), the counter pinned at the nearest value a run holds
+/// on that side. A side whose nearest value lies past [`COUNTER_REACH`] is [`Further::Past`].
+///
+/// `holds` picks the side. `true` asks for the rows the comparison decides the predicate on: the
+/// comparison held, every other disjunct beside it refuted and every other conjunct held (the
+/// guarded branch's own). `false` asks for the rows it is refuted on: the conjunct it sits in
+/// refuted — the comparison, or its whole `any:` — and every other conjunct held (the branch
+/// answering beside it). `retries >= 3` gives `retries == 3` with it held, or `retries == 2` with
+/// it refuted.
+pub(super) fn limit_goals(
+    counters: &BTreeMap<String, Counter>,
+    predicate: &Predicate,
+    holds: bool,
+) -> Vec<(Goal, Further)> {
+    let predicate = positive(predicate, counters, false);
+    let mut conjuncts: Vec<&Predicate> = Vec::new();
+    let mut pending = vec![&predicate];
+    while let Some(next) = pending.pop() {
+        match next {
+            Predicate::All(children) => pending.extend(children.iter().rev()),
+            other => conjuncts.push(other),
+        }
+    }
+    let mut goals: Vec<(Goal, Further)> = Vec::new();
+    for (at, conjunct) in conjuncts.iter().enumerate() {
+        let rest: Vec<Predicate> = conjuncts
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != at)
+            .map(|(_, other)| (*other).clone())
+            .collect();
+        // Each comparison this conjunct holds, with the disjuncts beside it.
+        let disjuncts: Vec<&Predicate> = match conjunct {
+            Predicate::Any(children) => children.iter().collect(),
+            other => vec![other],
+        };
+        for (nth, leaf) in disjuncts.iter().enumerate() {
+            let Some((field, op, literal)) = counter_leaf(leaf, counters) else {
+                continue;
+            };
+            let Some(counter) = counters.get(&field) else {
+                continue;
+            };
+            let Ok(path) = FactPath::new(&field) else {
+                continue;
+            };
+            for (value, decided, past) in limit_edges(&field, op, literal, counter) {
+                if decided != holds {
+                    continue;
+                }
+                let pin = Predicate::Compare {
+                    left: Operand::Fact(path.clone()),
+                    op: CompareOp::Eq,
+                    right: Operand::Literal(ess_primitives::facts::FactValue::Number(value)),
+                };
+                let mut held = rest.clone();
+                let goal = if holds {
+                    held.push((*leaf).clone());
+                    held.push(pin);
+                    let others = disjuncts
+                        .iter()
+                        .enumerate()
+                        .filter(|(other, _)| *other != nth)
+                        .map(|(_, other)| (*other).clone())
+                        .collect();
+                    (others, held)
+                } else {
+                    held.push(pin);
+                    (vec![(*conjunct).clone()], held)
+                };
+                if !goals.iter().any(|(known, _)| known == &goal) {
+                    goals.push((goal, past.map_or(Further::Limit, Further::Past)));
+                }
+            }
+        }
+    }
+    goals
+}
+
+/// The rows either side of each counter limit this branch is witnessed on (beyond10x/ess#226): its
+/// own predicate's rows at the limit, and — for the default — each guarded sibling's rows short of
+/// it, skipping a row the ordinary witness already is. Each is witnessed as whichever branch the
+/// command answers there ([`boundaries`]), so a sibling's side row another guarded sibling answers
+/// (`blocked: 3..4` below `over: >= 5`, at `4`) asserts that sibling and never refuses the default.
+fn counter_goals(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    witnessed: &BTreeMap<String, super::Determined>,
+    witnessed_state: Option<&super::StateName>,
+) -> Vec<(Goal, Further)> {
+    let counters = counters(ir, entity);
+    if counters.is_empty() {
+        return Vec::new();
+    }
+    let default = state_default(outcome);
+    let mut goals: Vec<(Goal, Further)> = Vec::new();
+    for branch in guarded(command) {
+        let Some(predicate) = stored(&branch.condition) else {
+            continue;
+        };
+        let own = branch.name == outcome.name;
+        if !own && !default {
+            continue;
+        }
+        for (goal, kind) in limit_goals(&counters, &predicate, own) {
+            let truth =
+                |child: &Predicate| row_truth(ir, entity, witnessed, witnessed_state, child);
+            let met = goal.0.iter().all(|child| truth(child) == Truth::False)
+                && goal.1.iter().all(|child| truth(child) == Truth::True);
+            if !met && !goals.iter().any(|(known, _)| known == &goal) {
+                goals.push((goal, kind));
+            }
+        }
+    }
+    goals
+}
+
+/// Every further row [`boundaries`] witnesses a branch on — [`goals_for`]'s, then each side of a
+/// counter limit ([`counter_goals`]) not already among them — each paired with what it is.
+fn further_goals(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    entity: &EntityHandle,
+    hints: &[Predicate],
+    (witnessed, witnessed_state): (
+        &BTreeMap<String, super::Determined>,
+        Option<&super::StateName>,
+    ),
+) -> Vec<(Goal, Further)> {
+    let mut goals: Vec<(Goal, Further)> =
+        goals_for(ir, outcome, entity, hints, witnessed, witnessed_state)
+            .into_iter()
+            .map(|goal| (goal, Further::Plain))
+            .collect();
+    for (goal, kind) in counter_goals(ir, command, outcome, entity, witnessed, witnessed_state) {
+        if !goals.iter().any(|(known, _)| known == &goal) {
+            goals.push((goal, kind));
+        }
+    }
+    goals
+}
+
+/// The refusal for a further row [`boundaries`] did not witness, or `None` where it adds no row.
+///
+/// `cause` is `None` for a goal past [`MAX_BOUNDARIES`], which was not searched, and otherwise the
+/// search's refusal with whether an input naming an arranged owner left the goal undecided. A goal
+/// isolating a link comparison is refused where it was not searched or was left undecided
+/// (beyond10x/ess#193). A side of a counter limit is refused where it was not searched, where the
+/// search went past [`COUNTER_REACH`], or where it stopped for any cause but having left every row
+/// it could; one no row the model leaves holds — `retries == 4` beside a refusal at 3 — adds none,
+/// as a goal every candidate decided does for every other guard.
+fn left_unwitnessed(
+    (entity, command, outcome): (&EntityHandle, &ResolvedCommand, &ResolvedOutcome),
+    goal: (&[Predicate], &[Predicate]),
+    (linked, limit): (bool, bool),
+    cause: Option<(&RefusalCause, bool)>,
+) -> Option<RefusalCause> {
+    match cause {
+        None if linked => Some(unreached(entity, command, outcome, goal, None)),
+        None if limit => Some(limit_unreached(entity, command, outcome, goal, None)),
+        Some((cause, true)) if linked => {
+            Some(unreached(entity, command, outcome, goal, Some(cause)))
+        }
+        Some((cause, _))
+            if limit
+                && (is_beyond_reach(cause)
+                    || !matches!(cause, RefusalCause::GuardUnsatisfiable { .. })) =>
+        {
+            Some(limit_unreached(entity, command, outcome, goal, Some(cause)))
+        }
+        _ => None,
+    }
+}
+
+/// `ESS-SYNTH-003` for a row either side of a counter limit the bounded search did not reach
+/// (beyond10x/ess#226): the goal, the branch it is for, and why.
+fn limit_unreached(
+    entity: &EntityHandle,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    (refuted, held): (&[Predicate], &[Predicate]),
+    cause: Option<&RefusalCause>,
+) -> RefusalCause {
+    let render = |predicates: &[Predicate]| {
+        predicates
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let (why, tried) = match cause {
+        None => (
+            "past the most further rows one branch is witnessed on".to_owned(),
+            0,
+        ),
+        Some(RefusalCause::GuardUnsatisfiable { predicate, tried }) => (predicate.clone(), *tried),
+        Some(other) => (other.to_string(), 0),
+    };
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{entity}` row for `{}/{}` with [{}] false and [{}] true, one side of a stored \
+             counter's limit: {why}",
+            command.name,
+            outcome.name,
+            render(refuted),
+            render(held),
+        ),
+        tried,
+    }
+}
+
 /// For every conjunctive stored-field guard, one goal per conjunct: that conjunct refuted and every
 /// other one satisfied — skipping a goal the ordinary witness row already meets.
 fn conjunct_goals(
@@ -2613,7 +3371,7 @@ fn goals_for(
 
 /// One row a further witness is arranged on: every predicate of the first list false on it, every
 /// one of the second true.
-type Goal = (Vec<Predicate>, Vec<Predicate>);
+pub(super) type Goal = (Vec<Predicate>, Vec<Predicate>);
 
 /// For a disjunctive stored-field guard of the branch itself — its predicate an `any`, or an `any`
 /// among its top-level conjuncts — one goal per disjunct: that disjunct satisfied and every other one
@@ -2709,6 +3467,12 @@ const MAX_BOUNDARIES: usize = 8;
 /// [`MAX_BOUNDARIES`], or where the bounded search did not reach it and an input naming an arranged
 /// owner left it undecided: the search could not say whether a row meets it. A goal every
 /// candidate decided and no bounded row meets adds no row, as for every other guard.
+///
+/// A side of a counter limit ([`Further::Limit`], beyond10x/ess#226) is sent as whichever branch
+/// the command answers on its row, and one [`left_unwitnessed`] refuses — or whose nearest value
+/// lies past the search's reach ([`Further::Past`]) — is pushed onto `refused`: that row alone is
+/// refused, under the scenario, and the branch's own witness stands.
+#[allow(clippy::too_many_lines)]
 pub(super) fn boundaries(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -2719,6 +3483,7 @@ pub(super) fn boundaries(
         Option<&super::StateName>,
     ),
     (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
+    refused: &mut Vec<RefusalCause>,
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
@@ -2732,26 +3497,60 @@ pub(super) fn boundaries(
     let entity = &read.entity;
     let hints = hints(command);
     let fields = read_fields(ir, entity, &hints);
-    let goals = goals_for(ir, outcome, entity, &hints, witnessed, witnessed_state);
+    let goals = further_goals(
+        ir,
+        (command, outcome),
+        entity,
+        &hints,
+        (witnessed, witnessed_state),
+    );
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     // A command comparing a link with an input decides every guard with the input bound: `selects`
     // reads every branch, so a goal of its own reads the link through a sibling too.
     let decided_with_input = !links(ir, command, entity).is_empty();
     let mut rows = 0;
-    for (refuted, held) in goals {
+    for ((refuted, held), kind) in goals {
+        if let Further::Past(why) = &kind {
+            refused.push(limit_unreached(
+                entity,
+                command,
+                outcome,
+                (&refuted, &held),
+                Some(&RefusalCause::GuardUnsatisfiable {
+                    predicate: why.clone(),
+                    tried: 0,
+                }),
+            ));
+            continue;
+        }
+        let limit = kind == Further::Limit;
         let linked = compares_link(
             ir,
             command,
             entity,
             &refuted.iter().chain(&held).cloned().collect::<Vec<_>>(),
         );
+        // A side of a counter limit is refused on its own; any other goal refuses the branch.
+        let mut left = |cause: Option<(&RefusalCause, bool)>| -> Result<(), RefusalCause> {
+            match left_unwitnessed(
+                (entity, command, outcome),
+                (&refuted, &held),
+                (linked, limit),
+                cause,
+            ) {
+                Some(refusal) if limit => {
+                    refused.push(refusal);
+                    Ok(())
+                }
+                Some(refusal) => Err(refusal),
+                None => Ok(()),
+            }
+        };
         if rows >= MAX_BOUNDARIES {
             // Past the bound a goal adds no row; one isolating a link comparison was not searched,
             // so whether a row meets it is unknown, and it is refused rather than left unwitnessed.
-            if linked {
-                return Err(unreached(entity, command, outcome, (&refuted, &held), None));
-            }
+            left(None)?;
             continue;
         }
         let mut undecided = false;
@@ -2773,38 +3572,39 @@ pub(super) fn boundaries(
                     {
                         return Ok(None);
                     }
-                    return reach_at(ir, command, outcome, entity, node);
+                    if limit {
+                        return answer_at(ir, command, entity, node);
+                    }
+                    return Ok(
+                        reach_at(ir, command, outcome, entity, node)?.map(|input| (input, outcome))
+                    );
                 }
-                goal_input(
+                Ok(goal_input(
                     ir,
                     (command, outcome),
                     (entity, node),
                     (linked_inputs(ir, command, entity, node)?, &|_| Ok(true)),
                     (&refuted, &held),
                     &mut undecided,
-                )
+                )?
+                .map(|input| (input, outcome)))
             },
         )?;
-        let (arrangement, input) = match found {
+        let (arrangement, (input, answering)) = match found {
             Ok(found) => found,
-            // A goal no candidate left undecided is one no row meets, which adds no row as for
-            // every other guard; one some candidate left undecided is refused.
-            Err(cause) if linked && undecided => {
-                return Err(unreached(
-                    entity,
-                    command,
-                    outcome,
-                    (&refuted, &held),
-                    Some(&cause),
-                ));
+            Err(cause) => {
+                left(Some((&cause, undecided)))?;
+                continue;
             }
-            Err(_) => continue,
         };
         rows += 1;
+        if answering.name != outcome.name {
+            source.insert(OutcomeRef::new(command_ref.clone(), answering.name.clone()).into());
+        }
         send_for_row(
             ir,
             command,
-            outcome,
+            answering,
             actors,
             (read, &fields),
             arrangement,
@@ -2817,6 +3617,28 @@ pub(super) fn boundaries(
         source.insert(outcome_ref.into());
     }
     Ok((steps, source))
+}
+
+/// An input and the branch it is answered with.
+type Answer<'a> = (BTreeMap<String, Node>, &'a ResolvedOutcome);
+
+/// The first input and the branch it selects for the row `arrangement` holds, of every branch this
+/// strategy arranges: the branch a further row asserts where it is one side of a counter limit,
+/// whichever answers there (beyond10x/ess#226).
+fn answer_at<'a>(
+    ir: &EssIr,
+    command: &'a ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Option<Answer<'a>>, RefusalCause> {
+    for input in inputs_for(ir, command, entity, arrangement)? {
+        if let Some(branch) = selects(ir, command, entity, arrangement, &input)?
+            .filter(|branch| routes(command, branch))
+        {
+            return Ok(Some((input, branch)));
+        }
+    }
+    Ok(None)
 }
 
 /// Which candidate inputs a further row's search may send at all, before its row is decided.

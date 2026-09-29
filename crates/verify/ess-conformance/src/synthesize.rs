@@ -1798,52 +1798,113 @@ fn outcome_scenario(
             }
         }
     }
-    // ess/18 (#211): a related predicate with two or more connective children is witnessed once
-    // more per child, on a further related row isolating it, with whichever branch the command
-    // answers there asserted — so a target dropping one conjunct, or one disjunct, fails. A boundary
-    // no bounded arrangement reaches is refused under this scenario's id, never dropped.
-    if related_guard::routes(command, outcome) {
-        let of = command
-            .outcomes
-            .iter()
-            .position(|branch| branch.name == outcome.name)
-            .expect("the outcome is the command's");
-        for (goal, (refuted, held)) in related_guard::boundary_goals(outcome).iter().enumerate() {
-            let answering: Vec<&ResolvedOutcome> = command
-                .outcomes
-                .iter()
-                .filter(|branch| related_guard::routes(command, branch))
-                .collect();
-            let found = answering.iter().find_map(|branch| {
-                exercise_as(
-                    ir,
-                    command,
-                    branch,
-                    actors,
-                    &id,
-                    &mut Vec::new(),
-                    Witness::RelatedBoundary { of, goal },
-                )
-            });
-            match found {
-                Some((more, depends, _)) => {
-                    steps.extend(more);
-                    source.extend(depends);
-                }
-                None => refusals.push(Refusal::about(
-                    &id,
-                    RefusalCause::GuardUnsatisfiable {
-                        predicate: related_guard::describe_goal(refuted, held),
-                        tried: answering.len(),
-                    },
-                )),
-            }
-        }
-    }
+    let (more, depends) = related_boundaries(ir, command, outcome, actors, &id, refusals);
+    steps.extend(more);
+    source.extend(depends);
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
     ))
+}
+
+/// Further related rows one branch's scenario is witnessed on (ess/18, beyond10x/ess#211): a
+/// related predicate with two or more connective children is witnessed once more per child, on a
+/// further related row isolating it, with whichever branch the command answers there asserted — so
+/// a target dropping one conjunct, or one disjunct, fails. A boundary no bounded arrangement reaches
+/// is refused under this scenario's id, never dropped.
+///
+/// Each side of a counter limit (beyond10x/ess#226) is one more such row. One whose search left
+/// every row it could without holding it — `open_cards == 4` where nothing raises the counter past
+/// 3 — is a row no run of the model holds, and adds none; one the search went past its bound for, or
+/// stopped short of for another cause, is refused; so is one whose nearest value a run holds lies
+/// past the search's reach ([`subject_fact::Further::Past`]), without a search.
+fn related_boundaries(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+) -> (Vec<ScenarioStep>, BTreeSet<EssSemanticRef>) {
+    let mut steps = Vec::new();
+    let mut source = BTreeSet::new();
+    if !related_guard::routes(command, outcome) {
+        return (steps, source);
+    }
+    let of = command
+        .outcomes
+        .iter()
+        .position(|branch| branch.name == outcome.name)
+        .expect("the outcome is the command's");
+    let goals = related_guard::boundary_goals(ir, command, outcome);
+    for (goal, ((refuted, held), kind)) in goals.iter().enumerate() {
+        if let subject_fact::Further::Past(why) = kind {
+            refusals.push(Refusal::about(
+                id,
+                RefusalCause::GuardUnsatisfiable {
+                    predicate: format!(
+                        "{}, one side of a stored counter's limit: {why}",
+                        related_guard::describe_goal(refuted, held),
+                    ),
+                    tried: 0,
+                },
+            ));
+            continue;
+        }
+        let limit = &(*kind == subject_fact::Further::Limit);
+        let answering: Vec<&ResolvedOutcome> = command
+            .outcomes
+            .iter()
+            .filter(|branch| related_guard::routes(command, branch))
+            .collect();
+        let mut causes = Vec::new();
+        let found = answering.iter().find_map(|branch| {
+            exercise_as(
+                ir,
+                command,
+                branch,
+                actors,
+                id,
+                &mut causes,
+                Witness::RelatedBoundary { of, goal },
+            )
+        });
+        match found {
+            Some((more, depends, _)) => {
+                steps.extend(more);
+                source.extend(depends);
+            }
+            None if *limit
+                && !causes.is_empty()
+                && causes.iter().all(|refusal: &Refusal| {
+                    matches!(refusal.cause, RefusalCause::GuardUnsatisfiable { .. })
+                        && !subject_fact::is_beyond_reach(&refusal.cause)
+                }) => {}
+            None if *limit => refusals.push(Refusal::about(
+                id,
+                RefusalCause::GuardUnsatisfiable {
+                    predicate: format!(
+                        "{}, one side of a stored counter's limit: {}",
+                        related_guard::describe_goal(refuted, held),
+                        causes
+                            .iter()
+                            .map(|refusal| refusal.cause.to_string())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    ),
+                    tried: answering.len(),
+                },
+            )),
+            None => refusals.push(Refusal::about(
+                id,
+                RefusalCause::GuardUnsatisfiable {
+                    predicate: related_guard::describe_goal(refuted, held),
+                    tried: answering.len(),
+                },
+            )),
+        }
+    }
+    (steps, source)
 }
 
 /// Which invocation of a branch a run builds.
@@ -2003,7 +2064,19 @@ fn exercise_as(
     source.extend(removed);
     source.extend(run.source.iter().cloned());
     source.extend(views.source);
+    record_refused(id, &run, refusals);
     Some((steps, source, run))
+}
+
+/// Records each further row `run` refused on its own ([`Run::refused`]) under the scenario's id,
+/// once however many invocations of the branch arranged it.
+fn record_refused(id: &ScenarioId, run: &Run, refusals: &mut Vec<Refusal>) {
+    for cause in &run.refused {
+        let refusal = Refusal::about(id, cause.clone());
+        if !refusals.contains(&refusal) {
+            refusals.push(refusal);
+        }
+    }
 }
 
 /// One branch, arranged and run: everything before the assertions that are particular to a family.
@@ -2053,6 +2126,10 @@ struct Run {
     /// What the subject's fields held before the branch under test ran: the arrangement's. An ess/14
     /// payload source that reads the subject is asserted against this.
     before_settled: BTreeMap<String, Determined>,
+    /// Further rows of the scenario refused on their own while the scenario stands: a side of a
+    /// counter limit no bounded row reaches (beyond10x/ess#226). Each is recorded under the
+    /// scenario's id.
+    refused: Vec<RefusalCause>,
 }
 
 impl Run {
@@ -2113,9 +2190,9 @@ fn run_as(
                 let goals = command
                     .outcomes
                     .get(of)
-                    .map(related_guard::boundary_goals)
+                    .map(|branch| related_guard::boundary_goals(ir, command, branch))
                     .unwrap_or_default();
-                let named = goals.get(goal).ok_or_else(related_guard::unarranged)?;
+                let (named, _) = goals.get(goal).ok_or_else(related_guard::unarranged)?;
                 related_at = Distinction::further(goal + 1);
                 related_guard::prepare_at(ir, command, outcome, actors, related_at, Some(named))?
             }
@@ -2188,10 +2265,10 @@ fn run_as(
     if (subject_fact::uses(command) || related) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
-    let mut after_steps = if routed {
+    let (mut after_steps, refused) = if routed {
         subject_fact::around(ir, command, outcome, actors, &mut setup, &supplied)?
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     accepts_nothing(ir, outcome, &mut setup, &mut invoke, &mut after_steps);
     if outcome
@@ -2235,6 +2312,7 @@ fn run_as(
         input: supplied,
         source,
         before_settled,
+        refused,
         settled,
     })
 }
@@ -2441,6 +2519,7 @@ fn run_state_refusal(
         input,
         source,
         before_settled: arranged.settled.clone(),
+        refused: Vec::new(),
         settled: arranged.settled,
     })
 }
@@ -2617,6 +2696,7 @@ fn run_replay(
         input: origin.input,
         source,
         before_settled: origin.settled.clone(),
+        refused: Vec::new(),
         settled: origin.settled,
     })
 }
