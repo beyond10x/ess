@@ -254,6 +254,9 @@ tasks:
       # twenty-nine sentences called a shipped format unreleased. This reads the `SUPPORTED_*`
       # constants and the changelog and refuses the claims that disagree with them.
       - cargo xtask docs
+      # The CLI reference page's command sections are rendered from the clap tree `ess` parses
+      # with, so a command or flag added without regenerating the page fails here.
+      - cargo xtask cli-reference --check
 
   typescript-check:
     desc: Compile and execute the emitted conformance runtime's own TypeScript cases.
