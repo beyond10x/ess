@@ -11,9 +11,7 @@ import type {Plugin} from '@docusaurus/types';
  * and the unified copy is the one the ecosystem links to, so it is the one named here.
  *
  * A document the unified site does not carry stays canonical to itself. `b10x.docs.yaml` is the
- * only record of which those are, so it is read rather than repeated: it excludes
- * `docs/examples/specification-to-contracts.md`, whose MDX imports the browser lab and which the
- * passive documentation collection refuses.
+ * only record of which those are, so it is read rather than repeated.
  */
 export default function canonicalToUnifiedDocs(): Plugin {
   return {

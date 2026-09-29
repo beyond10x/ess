@@ -37,11 +37,26 @@ const BLOG: &str = "website/blog";
 /// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed.
 const BLOG_LAG: u64 = 3;
 
-/// The page whose version literals must name the newest release.
+/// The pages whose version literals must name the newest release.
 ///
-/// This is the page a newcomer follows, so every version in it is an instruction to download that
-/// version. A historical version number belongs on the history page, not here.
-const INSTALL: &str = "website/docs/getting-started.md";
+/// These are the pages a newcomer follows, so every version in them is an instruction to download
+/// that version. A historical version number belongs on the history page, not here. The list is
+/// the walkthrough `crates/edge/ess-cli/tests/tutorial_page.rs` runs, in the same order.
+const INSTALL: &[&str] = &[
+    "website/docs/start/install.md",
+    "website/docs/start/first-specification.md",
+    "website/docs/start/first-conformance-run.md",
+    "website/docs/start/runners/typescript.md",
+    "website/docs/start/runners/go.md",
+    "website/docs/start/runners/rust.md",
+    "website/docs/start/explore-the-example.md",
+];
+
+/// The repository front page, which a reader lands on before any site page.
+///
+/// Unlike [`INSTALL`], it may name a historical release in prose (`relations shipped in 0.5.0`),
+/// so only its install instructions are held to the newest release: see [`readme_defects`].
+const README: &str = "README.md";
 
 /// The page that records which release introduced each format version.
 const HISTORY: &str = "website/docs/reference/spec-versions.md";
@@ -100,6 +115,22 @@ const SUPPORTED: &[(&str, &str, &str)] = &[
 /// whose non-test Rust source carries the quoted `"family/N"` literal
 /// (`git grep -F '"family/N"' <tag> -- '*.rs' ':!*/tests/*'`, tags in version order). A version
 /// no tag's source names — `ess-impact/1`, `ess-conformance-run/1` — has no row.
+///
+/// The families after `ess-mutation-manifest` are every other family a published page names, plus
+/// the `ess-execution-*` files `ess deployment reconcile --authority` reads and writes
+/// (`crates/edge/ess-cli/src/recovery/model.rs`). Each row is the commit that first added the
+/// quoted literal to non-test Rust source (`git log --reverse -S'"family/N"' -- '*.rs'`) and the
+/// earliest version tag containing it, cross-checked against the earliest tag whose source
+/// carries it; the two agree for every row. Three first appear under the `v0.3.0` tag —
+/// `ess-browser-catalog/1`, `ess-client-plan/1` and `ess-composition/1` — and are recorded as
+/// 0.4.0, the first published release carrying them, as the version history's own table of
+/// unpublished versions says. `ess-types-report` starts at `/3`: no tag's source names `/1` or `/2`.
+///
+/// Not tracked, on purpose: the `ess-consumer-*` records, `ess-feature-preservation/1` and
+/// `ess-infra-acceptance-receipt/1`. `cargo xtask` writes them for this repository's own
+/// consumer-coverage and infrastructure-acceptance lanes; the `ess` binary neither reads nor
+/// writes them, no adopter holds one, and no published page names one. A page that starts naming
+/// one makes it public, and [`untracked_named`] then refuses until it has a row here.
 ///
 /// A version that is supported in this checkout and not yet in any release carries `None`, and is
 /// the one case a document may still call unreleased.
@@ -211,6 +242,55 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-mutation-manifest", 1, Some("0.37.0")),
     ("ess-mutation-manifest", 2, Some("0.41.0")),
     ("ess-mutation-manifest", 3, Some("0.42.0")),
+    ("ess-service-interface", 1, Some("0.1.0")),
+    ("infra-spec", 1, Some("0.1.0")),
+    ("infra-graph", 1, Some("0.1.0")),
+    ("infra-graph", 2, Some("0.21.0")),
+    ("infra-simulation", 1, Some("0.1.0")),
+    ("infra-simulation", 2, Some("0.21.0")),
+    ("infra-projection", 1, Some("0.1.0")),
+    ("ess-browser-catalog", 1, Some("0.4.0")),
+    ("ess-client-plan", 1, Some("0.4.0")),
+    ("ess-docs", 1, Some("0.4.0")),
+    ("ess-realization", 1, Some("0.8.0")),
+    ("ess-realization", 2, Some("0.21.0")),
+    ("ess-realization-ir", 1, Some("0.8.0")),
+    ("ess-realization-ir", 2, Some("0.21.0")),
+    ("ess-build", 1, Some("0.9.0")),
+    ("ess-build-ir", 1, Some("0.9.0")),
+    ("ess-runtime", 1, Some("0.9.0")),
+    ("ess-runtime-ir", 1, Some("0.9.0")),
+    ("ess-release", 1, Some("0.9.0")),
+    ("ess-release-catalog", 1, Some("0.9.0")),
+    ("ess-stack", 1, Some("0.9.0")),
+    ("ess-stack-lock", 1, Some("0.9.0")),
+    ("ess-environment", 1, Some("0.9.0")),
+    ("ess-deployment", 1, Some("0.9.0")),
+    ("ess-deployment-diff", 1, Some("0.9.0")),
+    ("ess-component", 1, Some("0.13.0")),
+    ("ess-component-ir", 1, Some("0.13.0")),
+    ("ess-release-bundle", 1, Some("0.13.0")),
+    ("ess-types-report", 3, Some("0.19.0")),
+    ("ess-normalization-target", 1, Some("0.19.0")),
+    ("ess-normalization-target", 2, Some("0.20.0")),
+    ("ess-normalization-target", 3, Some("0.20.0")),
+    ("ess-openapi-import", 1, Some("0.20.0")),
+    ("ess-openapi-service-subset", 1, Some("0.20.0")),
+    ("ess-conformance-input", 1, Some("0.21.0")),
+    ("ess-conformance-replay", 1, Some("0.21.0")),
+    ("ess-inputs", 1, Some("0.21.0")),
+    ("ess-inputs", 2, Some("0.34.0")),
+    ("ess-output-state", 1, Some("0.21.0")),
+    ("ess-output-state", 2, Some("0.34.0")),
+    ("ess-cli", 1, Some("0.21.0")),
+    ("ess-cli-plan", 1, Some("0.21.0")),
+    ("ess-cli-artifacts", 1, Some("0.21.0")),
+    ("ess-cli-generation", 1, Some("0.21.0")),
+    ("ess-execution-authority", 1, Some("0.21.0")),
+    ("ess-execution-registry", 1, Some("0.21.0")),
+    ("ess-execution-lock", 1, Some("0.21.0")),
+    ("ess-execution-store", 1, Some("0.21.0")),
+    ("ess-execution-evidence", 1, Some("0.21.0")),
 ];
 
 /// Checks the published documents against the source and the changelog.
@@ -223,40 +303,32 @@ pub fn run(root: &Path) -> Result<String, String> {
         .iter()
         .filter_map(|&(family, version, release)| release.map(|value| ((family, version), value)))
         .collect();
-    let declared: BTreeSet<(&str, u32)> = FORMAT_RELEASES
-        .iter()
-        .map(|&(family, version, _)| (family, version))
-        .collect();
-
-    let mut undeclared = Vec::new();
-    let mut undocumented = Vec::new();
     let reference = read_reference(root)?;
-    for (family, versions) in &supported {
-        for &version in versions {
-            let key = (family.as_str(), version);
-            if !declared.contains(&key) {
-                undeclared.push(format!("{family}/{version}"));
-                continue;
-            }
-            if !reference.iter().any(|page| names(page, family, version)) {
-                undocumented.push(format!("{family}/{version}"));
-            }
-        }
-    }
+    let (undeclared, undocumented) = recorded(&supported, &reference);
 
     let untracked = untracked_in(root)?;
 
+    let documents = read_documents(root)?;
+    let tracked: BTreeSet<&str> = FORMAT_RELEASES
+        .iter()
+        .map(|&(family, _, _)| family)
+        .collect();
+    let unnamed = untracked_named(&documents, &tracked);
+
     let mut stale = Vec::new();
-    for (path, text) in read_documents(root)? {
-        stale.extend(stale_claims(&path, &text, &released));
+    for (path, text) in &documents {
+        stale.extend(stale_claims(path, text, &released));
     }
 
     let changelog = fs::read_to_string(root.join("CHANGELOG.md"))
         .map_err(|error| format!("read CHANGELOG.md: {error}"))?;
     let newest = newest_release(&changelog)?;
-    let install = fs::read_to_string(root.join(INSTALL))
-        .map_err(|error| format!("read {INSTALL}: {error}"))?;
-    let pinned = install_defects(INSTALL, &install, &newest);
+    let mut pinned = Vec::new();
+    for page in INSTALL {
+        let install =
+            fs::read_to_string(root.join(page)).map_err(|error| format!("read {page}: {error}"))?;
+        pinned.extend(install_defects(page, &install, &newest));
+    }
 
     let notes = newest_note(root)?;
     let trailing = match (
@@ -292,9 +364,15 @@ pub fn run(root: &Path) -> Result<String, String> {
             untracked.join(", ")
         ));
     }
+    if !unnamed.is_empty() {
+        refusals.push(format!(
+            "format families named under {DOCS} that FORMAT_RELEASES does not track:\n{}",
+            unnamed.join("\n")
+        ));
+    }
     if !undocumented.is_empty() {
         refusals.push(format!(
-            "supported format versions named in no reference page: {}",
+            "tracked or supported format versions named in no reference page: {}",
             undocumented.join(", ")
         ));
     }
@@ -312,15 +390,19 @@ pub fn run(root: &Path) -> Result<String, String> {
             pinned.join("\n")
         ));
     }
+    refusals.extend(readme_refusal(root, &newest)?);
     if !refusals.is_empty() {
         return Err(refusals.join("\n\n"));
     }
 
     let count: usize = supported.values().map(Vec::len).sum();
+    let rows = FORMAT_RELEASES.len();
+    let families = tracked.len();
     Ok(format!(
-        "{count} supported format versions, each with a recorded release, each named in a \
-         reference page, none called unreleased; the install walkthrough names {newest}; the \
-         newest release note trails it by {trailing}\n"
+        "{count} supported format versions, each with a recorded release; {rows} tracked versions \
+         of {families} families, each named in a reference page, every family a page names among \
+         them, none called unreleased; the install walkthrough names {newest} and {README} installs no other; the newest release \
+         note trails it by {trailing}\n"
     ))
 }
 
@@ -362,6 +444,43 @@ fn constant_list(text: &str, path: &str, constant: &str) -> Result<Vec<u32>, Str
                 .parse::<u32>()
                 .map_err(|_| format!("{constant} in {path} holds `{value}`"))
         })
+        .collect()
+}
+
+/// The supported versions with no release recorded, and every version no reference page names.
+fn recorded(
+    supported: &BTreeMap<String, Vec<u32>>,
+    reference: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let declared: BTreeSet<(&str, u32)> = FORMAT_RELEASES
+        .iter()
+        .map(|&(family, version, _)| (family, version))
+        .collect();
+    let mut undeclared = Vec::new();
+    let mut undocumented = unreferenced(reference);
+    for (family, versions) in supported {
+        for &version in versions {
+            if !declared.contains(&(family.as_str(), version)) {
+                undeclared.push(format!("{family}/{version}"));
+            } else if !reference.iter().any(|page| names(page, family, version)) {
+                undocumented.push(format!("{family}/{version}"));
+            }
+        }
+    }
+    undocumented.sort();
+    undocumented.dedup();
+    (undeclared, undocumented)
+}
+
+/// Every [`FORMAT_RELEASES`] version that no reference page names.
+///
+/// A tracked family is one a reader may meet, so each version needs a line saying what it is,
+/// whether or not a `SUPPORTED_*` constant lists it.
+fn unreferenced(reference: &[String]) -> Vec<String> {
+    FORMAT_RELEASES
+        .iter()
+        .filter(|&&(family, version, _)| !reference.iter().any(|page| names(page, family, version)))
+        .map(|&(family, version, _)| format!("{family}/{version}"))
         .collect()
 }
 
@@ -537,6 +656,90 @@ fn untracked_families(page: &str, tracked: &BTreeSet<&str>) -> Vec<String> {
     untracked.into_iter().collect()
 }
 
+/// Families a published page may name without [`FORMAT_RELEASES`] tracking them, each with why.
+///
+/// A family on this list is one no build reads or writes, so there is no release to record.
+const UNVERSIONED: &[(&str, &str)] = &[(
+    "ess-ir",
+    "the compiled IR carries no format header; the roadmap names `ess-ir/2` only as a version \
+     it will not take without a persisted compatibility reason",
+)];
+
+/// Whether a name is one of the format families ESS mints.
+///
+/// Every document format the `ess` binary reads or writes is named `ess`, `ess-…` or `infra-…`.
+/// Digest profiles (`sha256-json-bytes/1`, `slice-sha256/2`) and prose shorthand (`report/2`,
+/// `suite/4`) are not families and are not read.
+fn is_family(name: &str) -> bool {
+    name == "ess" || name.starts_with("ess-") || name.starts_with("infra-")
+}
+
+/// Every format family a published page names that [`FORMAT_RELEASES`] does not track.
+///
+/// A family is any `family/N` token on a page — backticked or not — whose name [`is_family`]
+/// admits. Each untracked family is reported once, at the first page and line naming it, so the
+/// refusal says where to look. A family this lane does not track can be called unreleased for ever,
+/// as `ess-scenario` was; [`untracked_families`] covers only the history page, and this every page.
+fn untracked_named(documents: &[(String, String)], tracked: &BTreeSet<&str>) -> Vec<String> {
+    let mut first: BTreeMap<String, String> = BTreeMap::new();
+    for (path, text) in documents {
+        for (number, line) in text.lines().enumerate() {
+            for family in families_on_line(line) {
+                if tracked.contains(family)
+                    || UNVERSIONED.iter().any(|&(excused, _)| excused == family)
+                {
+                    continue;
+                }
+                first
+                    .entry(family.to_owned())
+                    .or_insert_with(|| format!("{path}:{}", number + 1));
+            }
+        }
+    }
+    first
+        .into_iter()
+        .map(|(family, at)| format!("{family} ({at})"))
+        .collect()
+}
+
+/// Every format family one line names as `family/N`.
+///
+/// A name starts where no token character precedes it, so `crates/generate/ess-deployment/src` and
+/// `tag/0.35.0` are not read, and the version must end there, so `ess/1.2` is not one either.
+fn families_on_line(line: &str) -> BTreeSet<&str> {
+    let bytes = line.as_bytes();
+    let mut found = BTreeSet::new();
+    let mut start = 0;
+    while start < bytes.len() {
+        let is_name = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-';
+        if !bytes[start].is_ascii_lowercase() || (start > 0 && is_token(bytes[start - 1])) {
+            start += 1;
+            continue;
+        }
+        let mut end = start;
+        while end < bytes.len() && is_name(bytes[end]) {
+            end += 1;
+        }
+        let name = &line[start..end];
+        let digits = bytes[end..].strip_prefix(b"/").map_or(0, |rest| {
+            rest.iter().take_while(|byte| byte.is_ascii_digit()).count()
+        });
+        if digits > 0 && is_family(name) {
+            let after = end + 1 + digits;
+            let closes = match bytes.get(after) {
+                None => true,
+                Some(b'.') => !bytes.get(after + 1).is_some_and(u8::is_ascii_digit),
+                Some(&byte) => !is_token(byte),
+            };
+            if closes {
+                found.insert(name);
+            }
+        }
+        start = end.max(start + 1);
+    }
+    found
+}
+
 /// Every line of the install walkthrough that names a version other than the newest release.
 fn install_defects(path: &str, text: &str, newest: &str) -> Vec<String> {
     let mut defects = Vec::new();
@@ -545,6 +748,47 @@ fn install_defects(path: &str, text: &str, newest: &str) -> Vec<String> {
             if version != newest {
                 defects.push(format!(
                     "{path}:{}: names {version}, newest release is {newest}",
+                    number + 1
+                ));
+            }
+        }
+    }
+    defects
+}
+
+/// The refusal for a README that installs anything but the newest release, if it does.
+fn readme_refusal(root: &Path, newest: &str) -> Result<Option<String>, String> {
+    let text =
+        fs::read_to_string(root.join(README)).map_err(|error| format!("read {README}: {error}"))?;
+    let defects = readme_defects(README, &text, newest);
+    Ok((!defects.is_empty()).then(|| {
+        format!(
+            "{README} installs a version that is not the newest release:\n{}",
+            defects.join("\n")
+        )
+    }))
+}
+
+/// Every README install instruction that names a version other than the newest release.
+///
+/// An install instruction is a line that says `install`, assigns `version=`, or downloads from
+/// `releases/download/`. Path segments are read one at a time, so the version inside a download
+/// URL counts, while a historical release in prose and a chart's `--version 1.0.0` do not.
+fn readme_defects(path: &str, text: &str, newest: &str) -> Vec<String> {
+    let mut defects = Vec::new();
+    for (number, line) in text.lines().enumerate() {
+        let lower = line.to_ascii_lowercase();
+        let instructs = lower.contains("install")
+            || lower.contains("version=")
+            || lower.contains("releases/download/");
+        if !instructs {
+            continue;
+        }
+        for version in line.split('/').flat_map(versions_in) {
+            if version != newest {
+                defects.push(format!(
+                    "{path}:{}: names {version} as the release to install, newest release is \
+                     {newest}",
                     number + 1
                 ));
             }
@@ -770,6 +1014,61 @@ mod tests {
     }
 
     #[test]
+    fn a_family_a_page_names_and_this_lane_does_not_track_is_refused() {
+        let tracked = BTreeSet::from(["ess", "ess-diff", "infra-ir"]);
+        let documents = vec![
+            (
+                "website/docs/a.md".to_owned(),
+                "Write `ess/18`; the delta is `ess-diff/11`.\n\
+                 The planted `ess-widget/2` and `infra-gadget/1`, and `format: ess-widget/3`.\n"
+                    .to_owned(),
+            ),
+            (
+                "website/docs/b.md".to_owned(),
+                "A path `crates/generate/ess-deployment/src` and `ess-inputs.yaml` name no version.\n\
+                 A digest profile `sha256-json-bytes/1`, a shorthand report/2 and `tag/0.35.0`.\n\
+                 `infra-ir/3` is tracked; `ess-ir/2` is excused.\n"
+                    .to_owned(),
+            ),
+        ];
+        assert_eq!(
+            untracked_named(&documents, &tracked),
+            vec![
+                "ess-widget (website/docs/a.md:2)".to_owned(),
+                "infra-gadget (website/docs/a.md:2)".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn every_family_a_published_page_names_is_tracked() {
+        let root = crate::workspace_root().expect("workspace root");
+        let documents = read_documents(&root).expect("published documents");
+        let tracked: BTreeSet<&str> = FORMAT_RELEASES
+            .iter()
+            .map(|&(family, _, _)| family)
+            .collect();
+        assert_eq!(untracked_named(&documents, &tracked), Vec::<String>::new());
+    }
+
+    #[test]
+    fn every_tracked_format_version_is_named_in_a_reference_page() {
+        let root = crate::workspace_root().expect("workspace root");
+        let reference = read_reference(&root).expect("reference pages");
+        assert_eq!(unreferenced(&reference), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_tracked_version_no_reference_page_names_is_reported() {
+        let pages = vec!["`ess/1` and `ess-diff/10`".to_owned()];
+        let missing = unreferenced(&pages);
+        assert!(missing.contains(&"ess-diff/1".to_owned()), "{missing:?}");
+        assert!(missing.contains(&"ess-execution-lock/1".to_owned()));
+        assert!(!missing.contains(&"ess/1".to_owned()));
+        assert!(!missing.contains(&"ess-diff/10".to_owned()));
+    }
+
+    #[test]
     fn a_format_version_no_release_ships_may_still_be_called_unreleased() {
         // A fixed release inventory keeps this pre-release example valid when the real
         // format registry gains another published version.
@@ -788,15 +1087,58 @@ mod tests {
     #[test]
     fn an_install_walkthrough_pinned_to_an_older_release_is_refused() {
         let defects = install_defects(
-            INSTALL,
+            INSTALL[0],
             "downloads the latest published release, `0.13.2`,\n$ version=0.27.0\n",
             "0.27.0",
         );
         assert_eq!(
             defects,
             vec![format!(
-                "{INSTALL}:1: names 0.13.2, newest release is 0.27.0"
+                "{}:1: names 0.13.2, newest release is 0.27.0",
+                INSTALL[0]
             )]
+        );
+    }
+
+    #[test]
+    fn a_readme_that_installs_an_older_release_is_refused() {
+        let text = "## Install\n\nInstall the current release, 0.42.0:\n\n```console\n\
+                    version=0.41.0\n\
+                    curl -LO https://github.com/beyond10x/ess/releases/download/0.40.0/SHA256SUMS\n\
+                    ```\n";
+        assert_eq!(
+            readme_defects(README, text, "0.43.0"),
+            vec![
+                format!(
+                    "{README}:3: names 0.42.0 as the release to install, newest release is 0.43.0"
+                ),
+                format!(
+                    "{README}:6: names 0.41.0 as the release to install, newest release is 0.43.0"
+                ),
+                format!(
+                    "{README}:7: names 0.40.0 as the release to install, newest release is 0.43.0"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_readme_may_name_a_historical_release_outside_its_install_instructions() {
+        let text = "Entity relations shipped in `0.5.0`.\n\
+                    ```console\nversion=0.43.0\n\
+                    ess generate project helm --chart example --version 1.0.0\n```\n";
+        assert!(readme_defects(README, text, "0.43.0").is_empty());
+    }
+
+    #[test]
+    fn the_committed_readme_installs_the_newest_release() {
+        let root = crate::workspace_root().expect("workspace root");
+        let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+        let newest = newest_release(&changelog).expect("newest release");
+        let readme = fs::read_to_string(root.join(README)).expect("readme");
+        assert_eq!(
+            readme_defects(README, &readme, &newest),
+            Vec::<String>::new()
         );
     }
 

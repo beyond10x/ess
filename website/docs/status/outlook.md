@@ -14,7 +14,9 @@ generated artifacts and execution evidence.
 This outlook describes **proposed improvement priorities**, based on an architectural assessment
 of the `0.18.0` source tree on 5 September 2026. That assessment has not been re-run on a
 later release, so read the priorities below as standing direction rather than a current reading of the
-source. It is not a release schedule, an accepted format migration, or a claim that the
+source. Several have since shipped in part: count reports and coverage suites separate execution
+from coverage, output ownership refuses unsafe generated paths, and deployment reconciliation now
+records what it can establish and reports the rest as unknown. It is not a release schedule, an accepted format migration, or a claim that the
 capabilities below already exist. For supported behavior, use the
 [status page](./where-this-stands.md) and
 [limitations and trust assumptions](./limitations.md).

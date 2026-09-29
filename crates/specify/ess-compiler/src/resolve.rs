@@ -158,8 +158,32 @@ fn view_handles(names: &std::collections::BTreeSet<QualifiedName>) -> BTreeSet<V
 pub mod codes {
     use crate::diagnostic::Code;
 
+    /// A family as the reference page explains it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FamilyDoc {
+        /// The family, as it is printed in a code.
+        pub name: &'static str,
+        /// Which part of a specification a code in this family is about.
+        pub applies_to: &'static str,
+    }
+
+    /// A class as the reference page explains it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ClassDoc {
+        /// The number, as it is printed in a code.
+        pub number: u16,
+        /// The constant's name in [`class`].
+        pub name: &'static str,
+        /// What a defect of this class is, restating the constant's documentation.
+        pub meaning: &'static str,
+        /// How a defect of this class is usually repaired.
+        pub repair: &'static str,
+    }
+
     /// Which layer a defect is in — the `BINDING` in `ESS-BINDING-002`.
     pub mod family {
+        use super::FamilyDoc;
+
         /// The specification as a whole, or something with no better home.
         pub const SPEC: &str = "SPEC";
         /// A bounded context.
@@ -190,6 +214,66 @@ pub mod codes {
             SPEC, DOMAIN, TYPE, ENTITY, COMMAND, EVENT, ERROR, VIEW, ACTOR, BINDING, COMPONENT,
             TOPOLOGY,
         ];
+
+        /// Every family with where it applies, in the order of [`ALL`], which
+        /// `tests/diagnostic_catalogue.rs` holds it to.
+        pub const CATALOGUE: &[FamilyDoc] = &[
+            FamilyDoc {
+                name: SPEC,
+                applies_to: "The specification as a whole: its header, a document that cannot \
+                             be read, a predicate refused while it is read, and anything with no \
+                             better home.",
+            },
+            FamilyDoc {
+                name: DOMAIN,
+                applies_to: "A bounded context and what it declares as a whole.",
+            },
+            FamilyDoc {
+                name: TYPE,
+                applies_to: "A named type, or a declared conversion between two types.",
+            },
+            FamilyDoc {
+                name: ENTITY,
+                applies_to: "An entity: its identity, its fields, its lifecycle and its \
+                             invariants.",
+            },
+            FamilyDoc {
+                name: COMMAND,
+                applies_to: "A command: its input, its outcomes and their guards, and what an \
+                             outcome `creates:`, `sets:` or fills in a `payload:`.",
+            },
+            FamilyDoc {
+                name: EVENT,
+                applies_to: "An event and its payload.",
+            },
+            FamilyDoc {
+                name: ERROR,
+                applies_to: "A declared error and its fields.",
+            },
+            FamilyDoc {
+                name: VIEW,
+                applies_to: "A view: its source entity, its fields, its filter, its order and \
+                             its parameters.",
+            },
+            FamilyDoc {
+                name: ACTOR,
+                applies_to: "An actor and the commands it `may:` invoke.",
+            },
+            FamilyDoc {
+                name: BINDING,
+                applies_to: "A binding: the event it reacts to, the command it invokes, its \
+                             mapping from the event to the command's input, and its \
+                             `escalate:`.",
+            },
+            FamilyDoc {
+                name: COMPONENT,
+                applies_to: "A component and the constructs it owns.",
+            },
+            FamilyDoc {
+                name: TOPOLOGY,
+                applies_to: "The topology: the workloads components are placed in.",
+            },
+        ];
     }
 
     /// What kind of defect it is — the `002` in `ESS-BINDING-002`.
@@ -197,6 +281,8 @@ pub mod codes {
     /// One number per kind, across every family, so `-002` means the same thing in a binding as in a
     /// view. A reader learns twelve numbers once.
     pub mod class {
+        use super::ClassDoc;
+
         /// It names something nothing declares.
         pub const UNDECLARED: u16 = 1;
         /// Two types that have to agree do not, and no conversion says they may.
@@ -257,6 +343,142 @@ pub mod codes {
             ACCESSOR_RESOURCE,
             NULL_COMPARISON,
             UNSET_AT_CREATION,
+        ];
+
+        /// One catalogue row. Private so every row is written the same way.
+        const fn doc(
+            number: u16,
+            name: &'static str,
+            meaning: &'static str,
+            repair: &'static str,
+        ) -> ClassDoc {
+            ClassDoc {
+                number,
+                name,
+                meaning,
+                repair,
+            }
+        }
+
+        /// Every class with what it means and how it is repaired, in the order of [`ALL`], which
+        /// `tests/diagnostic_catalogue.rs` holds it to. The meaning restates the constant's first
+        /// line of documentation.
+        pub const CATALOGUE: &[ClassDoc] = &[
+            doc(
+                UNDECLARED,
+                "UNDECLARED",
+                "It names something nothing declares.",
+                "Correct the name to one that is declared, or declare what it names; the \
+                 diagnostic lists what is declared.",
+            ),
+            doc(
+                TYPE_MISMATCH,
+                "TYPE_MISMATCH",
+                "Two types that have to agree do not, and no conversion says they may.",
+                "Make the two types agree, or declare a conversion between them.",
+            ),
+            doc(
+                UNREADABLE,
+                "UNREADABLE",
+                "It reads something its subject does not have.",
+                "Read a field the subject declares, or declare the field it reads.",
+            ),
+            doc(
+                CONFLICT,
+                "CONFLICT",
+                "Two declarations contradict each other.",
+                "Change or remove one of the two declarations so they agree.",
+            ),
+            doc(
+                MISSING,
+                "MISSING",
+                "Something required is absent.",
+                "Write the key or the declaration the diagnostic names.",
+            ),
+            doc(
+                DUPLICATE,
+                "DUPLICATE",
+                "The same thing is declared twice.",
+                "Rename or remove one of the two declarations.",
+            ),
+            doc(
+                EMPTY,
+                "EMPTY",
+                "It declares nothing, so it names nothing.",
+                "Declare at least one member, or remove the construct.",
+            ),
+            doc(
+                SELF_REFERENCE,
+                "SELF_REFERENCE",
+                "It requires itself, so no value of it can exist.",
+                "Give the recursion a way to stop: make the reference `Optional<…>`, or add a \
+                 union variant that does not refer back.",
+            ),
+            doc(
+                UNSUPPORTED,
+                "UNSUPPORTED",
+                "A construct or a version this build does not implement.",
+                "Use a construct and a format version this build reads, or run a build that reads \
+                 them.",
+            ),
+            doc(
+                MISSPELLED,
+                "MISSPELLED",
+                "It nearly names something that is declared.",
+                "Use the declared name the diagnostic suggests.",
+            ),
+            doc(
+                LIFECYCLE,
+                "LIFECYCLE",
+                "A lifecycle that cannot run: a dead end, an unreachable state, an unknown one.",
+                "Declare the state, or add the transition that reaches it or leaves it.",
+            ),
+            doc(
+                OTHER,
+                "OTHER",
+                "A rule with no class of its own yet.",
+                "Follow the diagnostic's message and its `help:` line.",
+            ),
+            doc(
+                ACCESSOR_DEPTH,
+                "ACCESSOR_DEPTH",
+                "A bounded accessor has too many authored segments.",
+                "Shorten the path to the number of segments an accessor allows.",
+            ),
+            doc(
+                ACCESSOR_TRAVERSAL,
+                "ACCESSOR_TRAVERSAL",
+                "An accessor reaches a deliberately unsupported traversal.",
+                "Map from a field that holds the value directly, not through a list, a map or a \
+                 type that contains itself.",
+            ),
+            doc(
+                PARTIAL_ACCESSOR,
+                "PARTIAL_ACCESSOR",
+                "A possibly unavailable projection fills a required input.",
+                "Fill the required input from a path that is always present, or declare the input \
+                 `Optional<…>`.",
+            ),
+            doc(
+                ACCESSOR_RESOURCE,
+                "ACCESSOR_RESOURCE",
+                "A plan exceeds its declared construction or output resource budget.",
+                "Simplify the mapping until it fits the stated budget.",
+            ),
+            doc(
+                NULL_COMPARISON,
+                "NULL_COMPARISON",
+                "A predicate compares a fact with an unquoted `null`, which no fact value can be.",
+                "Test for absence with `defined(x)` or `not defined(x)`, or quote `'null'` to \
+                 compare with the text.",
+            ),
+            doc(
+                UNSET_AT_CREATION,
+                "UNSET_AT_CREATION",
+                "An invariant reads a required field that a creating branch leaves with no value.",
+                "Set the field with a `sets:` entry on the creating branch, or declare it \
+                 `Optional<…>`.",
+            ),
         ];
     }
 
@@ -895,7 +1117,10 @@ fn family_of(location: &str) -> &'static str {
 ///
 /// The enum is `#[non_exhaustive]`, so the mapping ends in [`class::OTHER`](codes::class::OTHER)
 /// rather than in a match this crate has to be recompiled to keep total.
-fn class_of(code: ValidationCode) -> u16 {
+///
+/// Public so the diagnostics reference can list, for every bracketed validation name `ess`
+/// prints, the class its `ESS-<FAMILY>-<NNN>` code carries.
+pub fn class_of(code: ValidationCode) -> u16 {
     use ValidationCode as Refused;
 
     match code {

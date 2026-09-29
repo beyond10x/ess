@@ -578,6 +578,97 @@ pub enum CompositionCode {
     TypeConformanceDrift,
 }
 
+impl CompositionCode {
+    /// Every category, in declaration order, with what it means and how to repair it.
+    ///
+    /// `tests/diagnostic_catalogue.rs` fails when a variant is missing here, and
+    /// `website/docs/reference/diagnostics.md` is rendered from it by `cargo xtask diagnostics`.
+    pub const CATALOGUE: &'static [ess_compiler::diagnostic::CatalogueEntry<Self>] = &[
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnsupportedFormat,
+            meaning: "The document's format marker is not one this build reads.",
+            repair: "Write a composition format this build reads.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::DuplicateServiceKey,
+            meaning: "Two imports declare the same service key.",
+            repair: "Give each import its own key.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::DuplicateServiceIdentity,
+            meaning: "Two imports bind the same ESS system, version and component.",
+            repair: "Import each system, version and component once.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::MissingServiceInput,
+            meaning: "No compiled specification was supplied for a declared import.",
+            repair: "Supply the compiled specification for the import, or remove the import.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UndeclaredServiceInput,
+            meaning: "A compiled specification was supplied that the document does not import.",
+            repair: "Import it in the document, or stop supplying it.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::DuplicateServiceInput,
+            meaning: "The same key was supplied more than once.",
+            repair: "Supply each import once.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::SystemMismatch,
+            meaning: "The compiled specification names a different system than the import.",
+            repair: "Supply the specification of the system the import names, or correct the \
+                     import.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::VersionMismatch,
+            meaning: "The compiled specification's version differs from the import's.",
+            repair: "Supply the version the import names, or update the import.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::DigestMismatch,
+            meaning: "The compiled specification's digest differs from the import's.",
+            repair: "Supply the specification the digest names, or update the digest.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnknownReferenceService,
+            meaning: "A reference names a service the document does not import.",
+            repair: "Import the service, or correct the key in the reference.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnresolvedSemanticReference,
+            meaning: "A name does not resolve in the service its key selects.",
+            repair: "Correct the name to one the imported specification declares.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::UnknownComponent,
+            meaning: "The imported specification does not declare the selected component.",
+            repair: "Select a component the imported specification declares.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::ReferenceOutsideComponent,
+            meaning: "A name exists in the imported specification but is outside the selected \
+                      component.",
+            repair: "Refer only to what the selected component exposes, or select the component \
+                     that owns it.",
+        },
+        ess_compiler::diagnostic::CatalogueEntry {
+            key: Self::TypeConformanceDrift,
+            meaning: "A local type said to conform to an imported type differs from it in a \
+                      field's name, presence or type.",
+            repair: "Change the local type to match the imported one field for field.",
+        },
+    ];
+
+    /// This category's entry in [`Self::CATALOGUE`].
+    pub fn catalogue_entry(self) -> &'static ess_compiler::diagnostic::CatalogueEntry<Self> {
+        Self::CATALOGUE
+            .iter()
+            .find(|entry| entry.key == self)
+            .expect("every category is catalogued")
+    }
+}
+
 impl fmt::Display for CompositionCode {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let code = match self {

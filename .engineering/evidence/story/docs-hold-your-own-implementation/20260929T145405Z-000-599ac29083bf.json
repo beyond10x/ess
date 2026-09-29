@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:54:05Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-hold-your-own-implementation",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: tutorial_page 8 passed with and without ESS_TUTORIAL_NETWORK=1 (7 pages, 32 commands; Go block run offline); red on missing pages and a renamed Target method; xtask docs catches 0.42.0 on a Start here page; clippy; fmt-check",
+    "reference": "docs/onboarding@72a37b876"
+  }
+}

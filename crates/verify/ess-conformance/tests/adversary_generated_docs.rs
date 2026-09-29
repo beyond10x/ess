@@ -353,7 +353,7 @@ fn adversary_typescript_readme_never_tells_a_bare_npm_test_the_runner_refuses() 
 fn adversary_verify_conformance_guide_run_step_agrees_with_the_generated_readme() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let guide =
-        std::fs::read_to_string(root.join("website/docs/guides/verify-conformance.md")).unwrap();
+        std::fs::read_to_string(root.join("website/docs/guides/verify/runners.md")).unwrap();
     let start = guide
         .find("Then run the language's own test command.")
         .expect("the guide's run step");

@@ -10,14 +10,13 @@ description: The canonical ESS command, the four areas its first level is made o
 semantics, unsupported projection, or a failed check.
 
 Its first level is the four areas ESS is built out of, one per crate directory, and `ess --help`
-lists exactly those:
-
-| Area | The verbs it holds |
-|---|---|
-| `ess specify` | `cli`, `validate`, `compile`, `compose`, `inspect`, `graph`, `realization`, `runtime`, `toolchain` |
-| `ess generate` | `generate`, `cli`, `types`, `synthesize`, `project`, `schema`, `output`, `build`, `component`, `release`, `stack`, `deployment` |
-| `ess verify` | `bindings`, `conform`, `diff`, `impact` |
-| `ess infra` | `infra`, `import` |
+lists exactly those: [`ess specify`](#ess-specify), [`ess generate`](#ess-generate),
+[`ess verify`](#ess-verify) and [`ess infra`](#ess-infra). The
+[command reference](#command-reference) at the end of this page lists every command under them,
+with every argument, its default and its help text. It is generated from the command definition
+`ess` itself parses with, so it names exactly what the shipped command accepts.
+What each error code and refusal name `ess` prints means, and how to repair it, is in
+[Diagnostics](diagnostics.md).
 
 The agent guidance for these commands is the `ess` plugin in
 [`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins); `ess` itself carries none.
@@ -75,21 +74,14 @@ build and runtime IR, infrastructure observations — are read as given and neve
 
 ## `ess specify` — a system, resolved
 
-| Command | Purpose |
-|---|---|
-| `ess specify cli --path MODEL --binding FILE [--format text\|yaml\|json]` | Resolve a closed `ess-cli/1` presentation binding against the selected ESS model. |
-| `ess specify validate [--path PATH] [--format text\|yaml\|json]` | Load, resolve, and validate one specification, and compile the authored scenarios its `ess-inputs.yaml` lists. |
-| `ess specify compile [--path PATH] [--out FILE] [--format …]` | Produce canonical typed IR. |
-| `ess specify compose --path PATH --service KEY=PATH… [--out FILE] [--client-plan-out FILE] [--client-rust-out DIR]` | Compile selected component surfaces into composition IR, a client plan and a Rust client with byte-buffer transport. |
-| `ess specify inspect --path PATH NAME [--format …]` | Resolve and render one declaration. |
-| `ess specify graph [--path PATH] [--format dot\|mermaid\|json\|yaml]` | Render the interaction graph. |
-| `ess specify realization validate …` | Resolve a physical realization against one exact ESS digest. |
-| `ess specify realization compile …` | Emit deterministic `ess-realization-ir/1` or `/2`, matching the authored format. |
-| `ess specify realization generate …` | Render a run-mode guide from the resolved realization. |
-| `ess specify runtime compile …` | Compile `ess-runtime/1` against exact semantic, realization, and build inputs. |
-| `ess specify toolchain install X.Y.Z [--pin]` | Download a released `ess`, verify it against the release's `SHA256SUMS`, and cache it; `--pin` also writes `requires: ess X.Y.Z` (0.34.0 or later) into the nearest `ess-inputs.yaml`. Only `https://` or a local directory is fetched from; git revisions are not installable. |
-| `ess specify toolchain list` | List the cached releases, oldest first. |
-| `ess specify toolchain which` | Print the release that would run here and why: `ESS_TOOLCHAIN`, the pin, or this `ess`. |
+The `ess specify` commands load, resolve and validate a specification and render what it says:
+`validate` also compiles the authored scenarios its `ess-inputs.yaml` lists, and `compose` compiles
+selected component surfaces into composition IR, a client plan and a Rust client with byte-buffer
+transport. Their arguments are listed under [`ess specify`](#ess-specify) in the command reference.
+
+`ess specify toolchain install X.Y.Z` fetches only from `https://` or a local directory, and its
+`--pin` writes `requires: ess X.Y.Z` (0.34.0 or later). `ess specify toolchain which` names the
+reason for its answer: `ESS_TOOLCHAIN`, the pin, or this `ess`.
 
 ### The release a project runs
 
@@ -217,26 +209,18 @@ forwarding alone do not establish end-to-end typed payload compatibility.
 
 ## `ess generate` — artifacts and explicit delivery executors
 
-| Command | Purpose |
-|---|---|
-| `ess generate --path PATH --kind docs\|site\|docs-ir\|schema\|openapi\|asyncapi --out PATH` | Generate an explicit deterministic projection. `site` writes HTML and local assets at the output root; `docs-ir` writes `docs-ir/document.json` carrying `ess-docs/1`. Omitting `--kind` combines the five default generators, including HTML under `site/`, and excludes `docs-ir`. |
-| `ess generate synthesize …` | Emit supported structural implementation artifacts plus obligations. |
-| `ess generate project <adapter> …` | Project typed IR into concrete artifacts. |
-| `ess generate schema validate …` | Validate adopter-owned JSON Schema contracts. |
-| `ess generate output adopt\|recover …` | Enroll exact legacy output from a generated reference, or recover an interrupted write. Also available as `ess output …`. |
-| `ess generate build compile\|graph\|execute …` | Validate and compile `ess-build/1`, render its DAG, or explicitly execute its BuildKit projection. |
-| `ess generate component compile …` | Validate a repository-owned component descriptor. |
-| `ess generate release verify\|bundle\|verify-bundle\|publish\|fetch\|check-conformance\|publish-conformance …` | Check release consistency, qualify supplied local reports, or explicitly cross the OCI credential edge. |
-| `ess generate stack resolve\|validate …` | Resolve generic product stacks from an offline release catalogue. |
-| `ess generate deployment compile\|diff\|reconcile …` | Bind an exact stack lock, compare deployments, or explicitly reconcile the affected Helm releases under an admitted recovery authority. |
+The `ess generate` commands, with every argument, are listed under
+[`ess generate`](#ess-generate) in the command reference; `--help` on any of them prints the same.
+
+`ess generate --kind` selects one deterministic projection. `site` writes HTML and local assets at
+the output root; `docs-ir` writes `docs-ir/document.json` carrying `ess-docs/1`. The
+`ess generate output` commands are also available as `ess output …`.
 
 The [current-source support matrix](../status/where-this-stands.md#support-boundaries) records
 projection kinds, adapter directions and their limits separately from the dated release observation.
 
-Run `ess generate synthesize --help` and `ess generate <command> --help` for target-specific
-arguments.
-
-Omitting `--kind` generates every projection. Omitting `--out` lists or serializes artifacts
+Omitting `--kind` combines the five default generators, including HTML under `site/`, and excludes
+`docs-ir`. Omitting `--out` lists or serializes artifacts
 without writing them.
 
 `openapi` and `asyncapi` write one document per component, so a domain no component `owns` is in
@@ -253,14 +237,18 @@ for adoption, stale-file retirement, and the filesystem contract. Output-managem
 
 ## Component delivery
 
-| Command | Purpose |
-|---|---|
-| `ess generate component compile --path FILE [--out FILE]` | Validate a repository-owned component descriptor. |
-| `ess generate build execute --path FILE --projection-out DIR …` | Compile and retain the BuildKit projection, then invoke Docker Buildx Bake. |
-| `ess generate release bundle …` | Check runtime/chart consistency and write one canonical OCI payload. |
-| `ess generate release publish --path FILE --to OCI_TAG` | Publish a consistency-checked bundle and print its OCI manifest digest. Optional local report qualification is described below. |
-| `ess generate release fetch --from OCI_REF@sha256:… --cache DIR` | Fetch a digest-pinned bundle, revalidate it, and cache canonical bytes. |
-| `ess generate deployment reconcile --path FILE --current FILE --cache DIR --authority UUID` | Apply only added or changed Helm releases in rollout order. `--current` is an admitted baseline desired deployment, not a record of what was applied. `--authority` names one entry of the protected recovery registry and is **required** for execution: without it the command refuses before any external call, cache write or recovery write. `--dry-run` remains a local unverified preview and needs no authority. |
+A component is delivered by [`ess generate component compile`](#ess-generate-component-compile),
+[`ess generate build execute`](#ess-generate-build-execute), which compiles and retains the
+BuildKit projection and then invokes Docker Buildx Bake, the `ess generate release` commands and
+[`ess generate deployment reconcile`](#ess-generate-deployment-reconcile). `release publish`
+prints the published OCI manifest digest; `release fetch` takes a digest-pinned reference,
+revalidates the bundle and caches its canonical bytes.
+
+`deployment reconcile` applies only added or changed Helm releases, in rollout order. `--current`
+is an admitted baseline desired deployment, not a record of what was applied. `--authority` names
+one entry of the protected recovery registry and is **required** for execution: without it the
+command refuses before any external call, cache write or recovery write. `--dry-run` remains a
+local unverified preview and needs no authority.
 
 The seven release routes also have identical flat `ess release …` aliases. Existing canonical
 JSON/YAML streams and output files keep their bytes. Text success describes consistency; fetch
@@ -293,7 +281,7 @@ qualification failures exit 1 before publication effects.
 
 Success qualifies only the supplied exact declared selection. Attachment binding, producer origin
 and artifact execution remain **unverified**; signature verification remains **unsupported**.
-See [component delivery](../concepts/component-delivery.md#migrate-the-release-component-action)
+See [component delivery](../concepts/component-delivery.md#release-a-component-with-the-action)
 for the breaking action inputs and old/new action/ESS compatibility.
 
 The compiler and projection operations stay offline. The commands that say `execute`, `publish`,
@@ -307,52 +295,59 @@ print the affected set without contacting external systems. See
 These commands are available in the current source. Their presence does not identify which remote
 release contains a particular change; see the [dated release observation](../status/where-this-stands.md).
 
-| Command | Purpose |
-|---|---|
-| `ess generate schema validate PATH… --schemas DIR [--format text\|yaml\|json]` | Validate JSON instances against the offline `*.schema.json` registry they select by stable `schema` identity. |
-| `ess generate schema typescript SCHEMA_ID --root TYPE --schemas DIR [--out FILE] [--check]` | Project deterministic structural TypeScript from one authoritative JSON Schema. |
-| `ess generate schema import-bundle --path FILE --component NAME… --dialect draft-2020-12 [--out FILE]` | Retain and qualify a selected structural component closure without inventing an OpenAPI service. |
-| `ess generate schema import-document --path FILE --root NAME [--definition NAME…] --dialect draft-2020-12 [--out FILE]` | Retain a JSON Schema document root and local definition closure in a replay-checked `/2` bundle. |
-| `ess generate schema project-bundle --bundle FILE --root NAME --schema-id URI [--out FILE]` | Revalidate an import and emit one root's standalone JSON Schema and source qualification. |
-| `ess generate schema validate-bundle --bundle FILE --root NAME INSTANCE…` | Validate unmodified instances against one explicitly selected component. |
-| `ess generate schema types-bundle --bundle FILE --root NAME… --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Emit root-selected data libraries, qualified source and target accounting. Rust/Go require package identity; Go also requires module identity. Not an application decoder. |
-| `ess generate schema normalize-check --recipe FILE [--bundle FILE]… [--model PATH]… [--out FILE]` | Check bundles and compiled model selections, check every normalization branch, and emit the canonical recipe. At least one source is required. Model roots require version 3. |
-| `ess generate schema normalize-generate --recipe FILE [--bundle FILE]… [--model PATH]… --target rust\|go\|typescript --package NAME [--module PATH] --out DIR [--check]` | Emit a source-pinned normalization library or check planned file bytes without writing. At least one source is required. Go requires `--module`; Rust and TypeScript refuse it. Protect model input trees. TypeScript emits a standalone JSON-text runtime with a fixed checked schema profile. |
-| `ess generate schema normalize-run --recipe FILE [--bundle FILE]… [--model PATH]… --branch NAME --input FILE [--out FILE]` | Execute an explicit branch with stage input/output validation; emit only a complete result. At least one source is required. Refuse duplicate input keys, numeric precision loss and input/output aliases. |
-| `ess generate types --path SPEC (--root QUALIFIED_NAME… \| --all-types) --target typescript\|rust\|go [--package NAME] [--module PATH] --out DIR` | Realize checked ESS model types using the shared wire mapping and data targets. Retains model schema selection and typed provenance; output must be outside the specification tree. |
+The `ess generate schema` commands and [`ess generate types`](#ess-generate-types) are listed in
+the command reference. In addition to their help text:
+
+- `import-document` retains the document root and its local definition closure in a
+  replay-checked `/2` bundle; `project-bundle` also emits the root's source qualification.
+- `types-bundle` emits data libraries, not an application decoder.
+- The `normalize-*` commands need at least one `--bundle` or `--model` source, and model roots
+  require version 3. With `normalize-generate`, protect model input trees; its TypeScript target
+  emits a standalone JSON-text runtime with a fixed checked schema profile.
+  `normalize-run` emits only a complete result and refuses duplicate input keys, numeric precision
+  loss and input/output aliases.
+- `ess generate types` realizes checked ESS model types through the shared wire mapping and data
+  targets, retaining model schema selection and typed provenance; its output must be outside the
+  specification tree.
 
 These operations are offline. Schema identity comes from `$id`; filenames only locate documents.
 `--check` compares an existing generated module byte for byte without rewriting it.
 
 ## `ess verify` — held to what was declared
 
-| Command | Purpose |
-|---|---|
-| `ess verify conform synthesize …` | Generate the semantic suite required by a specification. |
-| `ess verify conform run …` | Execute a suite against a supported target and emit a standalone report. |
-| `ess verify conform mutate [--path SPEC] --target billing\|oracle-fixture\|interpreted [--class CLASS]… [--report-out FILE] [--format text\|json\|yaml]` | Audit the synthesized suite with specification mutants run against a reference target; exit 0 every mutant that ran killed or equivalent, 1 a survivor, 3 refused, nothing scored, unwitnessed, inconclusive or nothing ran that is not equivalent. A baseline scenario reported `unsupported` is not scored rather than red. A mutant that leaves its guard satisfied by no input is `equivalent` (`ESS-MUTATE-005`), naming the guard; one on an outcome whose scenario the baseline refuses, or on a transition only such outcomes perform, is `unwitnessed`, naming that refusal. |
-| `ess verify conform mutate [--path SPEC] --emit DIR [--class CLASS]… [--format text\|json\|yaml]` | Write the same audit for your own runner, and run nothing: the baseline suite as `DIR/baseline/suite.json`, each mutant's suite as `DIR/<mutant-id>/suite.json` beside `mutant.json` (its class, site and change) and `ir.json`, and an `ess-mutation-manifest/3` as `DIR/manifest.json`, which names each suite's synthesis refusals and each mutant's `unsatisfiable_guard`. `DIR` must be new or empty. Exit 0; 1 the specification did not load; 3 `ESS-MUTATE-003`. |
-| `ess verify conform mutate --collect DIR [--report-out FILE] [--format text\|json\|yaml]` | Score the `ess-conformance-report/1` or `/2` your runner wrote as `report.json` beside each emitted suite into `ess-mutation-report/3`; an `ess-mutation-manifest/2` or `/1` emission still collects, naming no dead guard, and a `/1` one judges gained refusals by count. A baseline report with a failed or `error` scenario is `ESS-MUTATE-001` (exit 3); its `unsupported` and `skipped` scenarios are listed as not scored and the rest is scored, and one that executed nothing exits 3 with `nothing scored`. A missing report, or one of another suite or implementation, makes its mutant `inconclusive`, with the reason as `unscored`. Exit statuses as with `--target`. |
-| `ess verify conform check-history [--path SPEC] --history FILE [--budget STEPS] [--format text\|json]` | Check an `ess-history/1` document for linearizability against the specification's model; exit 0 linearizable, 1 violation (with the longest partial linearization and a shrunk history), 3 unknown when the budget ran out, 2 refused. |
-| `ess verify conform web [--path SPEC] --history FILE [--out DIR]` | Draw an `ess-history/1` document, checked as `check-history` checks it, as one self-contained `index.html`: a lane per client, each call's invoke–return interval, the linearization points found, and for a violation the failing call, the call it conflicts with and the state each needed. Printed when `--out` is absent; exit 0 once rendered. |
-| `ess verify conform import-history [--path SPEC] --log FILE --adapter FILE [--output FILE]` | Convert a JSON Lines call log into `ess-history/1` through an `ess-history-adapter/1` document that maps each operation field to a JSON pointer or declares it `absent`; coverage gaps on stderr and, with `--output FILE`, in `FILE.gaps.json`; exit 0 written, 2 refused (every refusal names its log line and field; an output naming the log or adapter is refused). |
-| `ess verify diff --from PATH --to PATH [--format text\|json]` | Compare two revisions semantically. |
-| `ess verify impact --from PATH --to PATH [--suite PATH] [--format …]` | Name invalidated scenarios and generated artifacts. |
-| `ess verify bindings --spec PATH --realization FILE --bindings FILE (--infra FILE \| --live --observation-out FILE) [--format text\|json] [--markdown-out FILE]` | Compare an exact implementation selection with scoped workload templates; exit 0 satisfied, 1 violated/refused, 2 unknown. |
+The `ess verify` commands, with every argument and, where they have them, their exit statuses, are
+listed under [`ess verify`](#ess-verify) in the command reference. In addition to their help text:
+
+- [`ess verify conform mutate`](#ess-verify-conform-mutate) `--emit DIR` writes `mutant.json` (the
+  mutant's class, site and change) and `ir.json` beside each mutant's `suite.json`, and its
+  `ess-mutation-manifest/3` names each suite's synthesis refusals and each mutant's
+  `unsatisfiable_guard`. `--collect` scores `ess-conformance-report/1` or `/2` reports into
+  `ess-mutation-report/3`; an `ess-mutation-manifest/2` or `/1` emission still collects, naming no
+  dead guard, and a `/1` one judges gained refusals by count.
+- [`ess verify conform web`](#ess-verify-conform-web) with `--history` exits 0 once the page is
+  rendered.
+- [`ess verify bindings`](#ess-verify-bindings) exits 0 when the bindings are satisfied, 1 when
+  they are violated or refused, and 2 when the result is unknown.
 
 See [observed implementation bindings](../guides/check-infrastructure.md#connect-implementation-selections-to-observed-workloads)
 for the authored contract and evidence limits.
 
-Run `ess verify conform <command> --help` for target-specific arguments.
-
 ## `ess infra` — an observed cluster, and what reads one
 
-| Command | Direction |
-|---|---|
-| `ess infra import openapi --path FILE [--out FILE] …` | OpenAPI 3.0 or 3.1 subset → `ess-openapi-import/1` with retained source, SHA-256 and durable accounting. `--format` selects terminal presentation; `--out` always writes the canonical import envelope. |
-| `ess infra import kubernetes …` | sanitized bundle or explicitly selected live cluster → infrastructure IR. |
-| `ess generate project openapi (--ir FILE \| --path SPEC) …` | Checked import envelope or native ESS specification → OpenAPI. `--ir` refuses semantic gaps, unresolved references or legacy interface-only input before output; reimport original OpenAPI to replace legacy files. |
-| `ess generate project kubernetes …` | infrastructure intent and observation → manifests and obligations. |
+Sources come in through `ess infra import` and leave through
+`ess generate project`:
+
+- `ess infra import openapi` reads an OpenAPI 3.0 or 3.1 subset into `ess-openapi-import/1`, with
+  the retained source, its SHA-256 and durable accounting. `--format` selects the terminal
+  presentation; `--out` always writes the canonical import envelope.
+- `ess infra import kubernetes` turns a sanitized bundle, or an explicitly selected live cluster,
+  into infrastructure IR.
+- [`ess generate project openapi`](#ess-generate-project-openapi) projects a checked import
+  envelope (`--ir`) or a native ESS specification (`--path`) to OpenAPI. `--ir` refuses semantic
+  gaps, unresolved references or legacy interface-only input before output; reimport the original
+  OpenAPI to replace legacy files.
+- [`ess generate project kubernetes`](#ess-generate-project-kubernetes) turns infrastructure intent
+  and observation into manifests and obligations.
 
 The commands under `ess generate project` write artifacts only. They do not call `kubectl`, apply a
 manifest, or mutate a target.
@@ -360,5 +355,1094 @@ manifest, or mutate a target.
 `ess infra infra` contains `diagnose`, `graph`, and `diff` operations over sanitized infrastructure
 IR — the same three as `ess infra diagnose`, `ess infra graph` and `ess infra diff`, which are their
 flat spellings. Live or bundle scanning is under `ess infra import kubernetes`; manifest generation
-is under `ess generate project kubernetes`. Run `ess infra infra --help` for their current
-arguments.
+is under `ess generate project kubernetes`. Their arguments are listed under
+[`ess infra`](#ess-infra) in the command reference.
+
+## Command reference
+
+[ess-cli-begin]: #
+
+This section is generated from the `ess` command definition by `cargo xtask cli-reference`. Change the command's help text and regenerate rather than editing it here.
+
+### Global options
+
+Accepted by every `ess` command, in any position.
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--strict-requires` |  | no |  | Refuse, rather than warn, where `ess-inputs.yaml` `requires` an older `ess` release |
+
+### `ess specify`
+
+Author a system, resolve what it says, and inspect the result
+
+#### `ess specify cli`
+
+Validate a typed CLI presentation binding against its selected ESS model
+
+```text
+ess specify cli [OPTIONS] --binding <BINDING>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--binding` | `<BINDING>` | yes |  | An independently authored ess-cli/1 presentation document |
+
+#### `ess specify validate`
+
+Validate and resolve an ESS specification
+
+```text
+ess specify validate [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify compile`
+
+Compile a specification into canonical typed IR
+
+```text
+ess specify compile [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
+
+#### `ess specify compose`
+
+Compile exact component surfaces into composition IR and generated clients
+
+```text
+ess specify compose [OPTIONS] --path <PATH> --service <KEY=PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | An `ess-composition/1`, `/2` or `/3` JSON or YAML document |
+| `--service` | `<KEY=PATH>`… | yes |  | A compiled ESS source, written `service-key=path`. Repeat for every import |
+| `--out` | `<OUT>` | no |  | Where to write canonical composition IR; its format echoes the input's (`/1`–`/3`) |
+| `--client-plan-out` | `<CLIENT_PLAN_OUT>` | no |  | Where to write canonical `ess-client-plan/1` |
+| `--client-rust-out` | `<CLIENT_RUST_OUT>` | no |  | Root for the generated dependency-free Rust composition client |
+| `--ownership-root` | `<OWNERSHIP_ROOT>` | no |  | One enclosing ownership anchor for every composition output |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify inspect`
+
+Inspect one declaration in resolved IR
+
+```text
+ess specify inspect [OPTIONS] <NAME>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<NAME>` |  | yes |  | Fully qualified declaration name or binding/component identifier |
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify graph`
+
+Render the interaction graph
+
+```text
+ess specify graph [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `mermaid` | One of `dot`, `mermaid`, `json`, `yaml`. |
+
+#### `ess specify realization validate`
+
+Validate and resolve an `ess-realization/1` or `/2` declaration
+
+```text
+ess specify realization validate [OPTIONS] --path <PATH> --spec <SPECIFICATION>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | An `ess-realization/1` or `/2` JSON or YAML document |
+| `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+
+#### `ess specify realization compile`
+
+Compile a declaration into its versioned canonical realization IR
+
+```text
+ess specify realization compile [OPTIONS] --path <PATH> --spec <SPECIFICATION>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | An `ess-realization/1` or `/2` JSON or YAML document |
+| `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+| `--out` | `<OUT>` | no |  | Where to write canonical JSON IR |
+
+#### `ess specify realization generate`
+
+Generate the deterministic public-facing run-mode guide
+
+```text
+ess specify realization generate [OPTIONS] --path <PATH> --spec <SPECIFICATION> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | An `ess-realization/1` or `/2` JSON or YAML document |
+| `--spec` | `<SPECIFICATION>` | yes |  | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output and diagnostic rendering. One of `text`, `yaml`, `json`. |
+| `--out` | `<OUT>` | yes |  | Markdown file to write or compare |
+| `--check` |  | no |  | Compare with `--out` and fail on drift instead of writing |
+
+#### `ess specify runtime compile`
+
+Compile `ess-runtime/1` against exact semantic, realization, and build inputs
+
+```text
+ess specify runtime compile [OPTIONS] --path <PATH> --system <SYSTEM> --realization <REALIZATION> --build-ir <BUILD_IR>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | Authored runtime JSON or YAML |
+| `--system` | `<SYSTEM>` | yes |  | ESS source file or directory |
+| `--realization` | `<REALIZATION>` | yes |  | Authored `ess-realization/1` bound to the same ESS source |
+| `--build-ir` | `<BUILD_IR>` | yes |  | Compiled `ess-build-ir/1` JSON |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess specify toolchain install`
+
+Download a released `ess`, verify it against the release's SHA256SUMS, and cache it.
+
+Only published releases install: building from a git revision or a tag is not supported. A release already cached is left as it is. Never prompts.
+
+```text
+ess specify toolchain install [OPTIONS] <VERSION>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<VERSION>` |  | yes |  | The exact release, `X.Y.Z` |
+| `--pin` |  | no |  | Also write `requires: ess X.Y.Z` into the nearest `ess-inputs.yaml` |
+
+#### `ess specify toolchain list`
+
+List the cached releases, oldest first
+
+```text
+ess specify toolchain list [OPTIONS]
+```
+
+No arguments beyond the global options.
+
+#### `ess specify toolchain which`
+
+Print the release that would run here, and why: the override, the pin, or this `ess`
+
+```text
+ess specify toolchain which [OPTIONS]
+```
+
+No arguments beyond the global options.
+
+### `ess generate`
+
+Turn a resolved system into artifacts and cross explicit delivery executor boundaries.
+
+The options below belong to the `generate` verb, which is spelled either way: `ess generate --path …` is `ess generate generate --path …`. They cannot be written beside one of the other verbs, which would say two things at once.
+
+```text
+ess generate [OPTIONS]
+ess generate <COMMAND>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--kind` | `<KIND>` | no |  | One of `docs`, `site`, `docs-ir`, `schema`, `openapi`, `asyncapi`. |
+| `--include` | `<PAGE=PATH>`… | no |  | An authored Markdown page, written `<page-id>=<path>`. Repeat for multiple pages |
+| `--front-page` | `<PATH>` | no |  | Override the specification-adjacent README without changing its source directory |
+| `--asset` | `<OUTPUT=PATH>`… | no |  | Publish a declared UTF-8 download verbatim, written `<output-path>=<source-path>` |
+| `--strict-links` |  | no |  | Refuse unpublished local link targets before writing any output |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+| `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
+
+#### `ess generate generate`
+
+Generate deterministic documentation, schemas, and interface contracts.
+
+`--kind site` opens on the `README.md` beside the specification, where there is one, and takes any number of `--include` pages beside the generated ones — a plan board another tool rendered, a runbook. Both are markdown somebody wrote, read into the document and styled like every other page.
+
+```text
+ess generate generate [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--kind` | `<KIND>` | no |  | One of `docs`, `site`, `docs-ir`, `schema`, `openapi`, `asyncapi`. |
+| `--include` | `<PAGE=PATH>`… | no |  | An authored Markdown page, written `<page-id>=<path>`. Repeat for multiple pages |
+| `--front-page` | `<PATH>` | no |  | Override the specification-adjacent README without changing its source directory |
+| `--asset` | `<OUTPUT=PATH>`… | no |  | Publish a declared UTF-8 download verbatim, written `<output-path>=<source-path>` |
+| `--strict-links` |  | no |  | Refuse unpublished local link targets before writing any output |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+| `--strict` |  | no |  | Refuse, writing nothing, where `openapi` or `asyncapi` has a domain no component owns.<br /><br />Without it the same condition is a note on stderr and the exit stays 0: an empty projection is legal, and the note is what tells it apart from a clean one. |
+
+#### `ess generate cli`
+
+Generate a parser and process adapter from a typed CLI presentation binding
+
+```text
+ess generate cli [OPTIONS] --binding <BINDING> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--binding` | `<BINDING>` | yes |  | An independently authored ess-cli/1 presentation document |
+| `--out` | `<OUT>` | yes |  | Generated package destination, outside the specification inputs |
+| `--check` |  | no |  | Compare generated bytes without changing output files |
+
+#### `ess generate output adopt`
+
+Enroll only existing bytes matching a settled generated reference
+
+```text
+ess generate output adopt [OPTIONS] --ownership-root <OWNERSHIP_ROOT> --from <REFERENCE> --owner <OWNER>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--ownership-root` | `<OWNERSHIP_ROOT>` | yes |  |  |
+| `--from` | `<REFERENCE>` | yes |  |  |
+| `--owner` | `<OWNER>` | yes |  | Fixed generator family, such as projection:site or typescript-file |
+| `--file` | `<FILE>` | no |  | One native filename; required only for a standalone file family |
+
+#### `ess generate output recover`
+
+Settle the recorded operation without loading specification inputs
+
+```text
+ess generate output recover [OPTIONS] --ownership-root <OWNERSHIP_ROOT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--ownership-root` | `<OWNERSHIP_ROOT>` | yes |  |  |
+
+#### `ess generate types`
+
+Realize selected model types as standalone, accounted data libraries
+
+```text
+ess generate types [OPTIONS] --target <TARGET> --out <OUT> <--root <ROOT>|--all-types>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--root` | `<ROOT>`… | no |  | Qualified model type root. Repeat for a shared transitive closure |
+| `--all-types` |  | no |  | Explicitly select every named type in the resolved model |
+| `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
+| `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
+| `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--out` | `<OUT>` | yes |  | Library destination, outside the specification input tree |
+
+#### `ess generate synthesize`
+
+Synthesize implementation artifacts and explicit obligations
+
+```text
+ess generate synthesize [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--target` | `<TARGET>` | no | `rust` | One of `rust`, `go`, `web`, `clap`. |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate project buildkit`
+
+Project canonical build IR to `BuildKit` Dockerfile and Bake inputs
+
+```text
+ess generate project buildkit [OPTIONS] --ir <IR> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--ir` | `<IR>` | yes |  | Compiled `ess-build-ir/1` JSON |
+| `--out` | `<OUT>` | yes |  | Output directory |
+
+#### `ess generate project helm`
+
+Project runtime IR into one configuration-neutral component Helm chart
+
+```text
+ess generate project helm [OPTIONS] --ir <IR> --chart <CHART> --version <VERSION> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--ir` | `<IR>` | yes |  | Compiled `ess-runtime-ir/1` JSON |
+| `--chart` | `<CHART>` | yes |  | Stable chart name |
+| `--version` | `<VERSION>` | yes |  | Independent chart version |
+| `--out` | `<OUT>` | yes |  | Output directory |
+
+#### `ess generate project kubernetes`
+
+Project infrastructure intent and observed IR into Kubernetes manifests and obligations
+
+```text
+ess generate project kubernetes [OPTIONS] --spec <SPEC> --ir <IR>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--spec` | `<SPEC>` | yes |  |  |
+| `--ir` | `<IR>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate project openapi`
+
+Project supported ESS service/interface structures into `OpenAPI`
+
+```text
+ess generate project openapi [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no |  | ESS specification to compile and project |
+| `--ir` | `<IR>` | no |  | Checked `ess-openapi-import/1` to project; partial, unresolved or legacy input refuses |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+| `--strict` |  | no |  | With `--path`: refuse, writing nothing, where a domain has no owning component |
+
+#### `ess generate schema import-bundle`
+
+Extract a qualified structural component closure without inventing a service
+
+```text
+ess generate schema import-bundle [OPTIONS] --path <PATH> --component <COMPONENT> --dialect <DIALECT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | Original JSON document containing components/schemas. Its exact bytes are retained |
+| `--component` | `<COMPONENT>`… | yes |  | Select a named component root. Repeat to select multiple roots and their closure |
+| `--dialect` | `<DIALECT>` | yes |  | Required structural interpretation; never inferred from the envelope's version claim. One of `draft-2020-12`. |
+| `--out` | `<OUT>` | no |  | Write the qualified import envelope here; omit to print it |
+
+#### `ess generate schema import-document`
+
+Retain a JSON Schema document root and its local definitions without inventing a service
+
+```text
+ess generate schema import-document [OPTIONS] --path <PATH> --root <ROOT> --dialect <DIALECT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | Original JSON Schema 2020-12 document, including its root and local $defs |
+| `--root` | `<ROOT>` | yes |  | Explicit identity for the document root, distinct from every existing definition |
+| `--definition` | `<DEFINITION>`… | no |  | Additional $defs roots to make independently selectable |
+| `--dialect` | `<DIALECT>` | yes |  | Required interpretation; an incompatible declared dialect is refused. One of `draft-2020-12`. |
+| `--out` | `<OUT>` | no |  | Write the replay-checked document bundle here; omit to print it |
+
+#### `ess generate schema project-bundle`
+
+Revalidate a qualified import and project one selected root as standalone JSON Schema
+
+```text
+ess generate schema project-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --schema-id <SCHEMA_ID>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--bundle` | `<BUNDLE>` | yes |  | Persisted component (/1) or document-root (/2) bundle to revalidate |
+| `--root` | `<ROOT>` | yes |  | One root explicitly selected by that import |
+| `--schema-id` | `<SCHEMA_ID>` | yes |  | Absolute identity for the standalone projected schema, without a fragment |
+| `--out` | `<OUT>` | no |  | Write the qualified standalone schema here; omit to print it |
+
+#### `ess generate schema validate-bundle`
+
+Validate unmodified JSON instances against one selected component root
+
+```text
+ess generate schema validate-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> <INSTANCES>...
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<INSTANCES>`… |  | yes |  | JSON instance files. No schema selector field is added to their data |
+| `--bundle` | `<BUNDLE>` | yes |  | Persisted component (/1) or document-root (/2) bundle to revalidate |
+| `--root` | `<ROOT>` | yes |  | One root explicitly selected by that import |
+
+#### `ess generate schema types-bundle`
+
+Realize selected structural roots with source provenance and target accounting
+
+```text
+ess generate schema types-bundle [OPTIONS] --bundle <BUNDLE> --root <ROOT> --target <TARGET> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--bundle` | `<BUNDLE>` | yes |  | Persisted component (/1) or document-root (/2) bundle, revalidated before type planning |
+| `--root` | `<ROOT>`… | yes |  | Root explicitly selected by the import. Repeat to select a shared closure |
+| `--target` | `<TARGET>` | yes |  | Data library target. Unsupported language targets are not silently substituted. One of `typescript`, `rust`, `go`. |
+| `--package` | `<PACKAGE>` | no |  | Native package identity, required for Rust and Go |
+| `--module` | `<MODULE>` | no |  | Go module identity, required only for Go |
+| `--out` | `<OUT>` | yes |  | Directory for declarations, target accounting and the retained source bundle |
+
+#### `ess generate schema normalize-check`
+
+Check every source-pinned normalization branch and emit the canonical recipe
+
+```text
+ess generate schema normalize-check [OPTIONS] --recipe <RECIPE> <--bundle <BUNDLE>|--model <MODEL>>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--recipe` | `<RECIPE>` | yes |  | Authored ess-normalization/1 through /6 recipe; every branch is checked first |
+| `--bundle` | `<BUNDLE>`… | no |  | Replay-checked source bundles referenced by canonical digest. Repeat as needed |
+| `--model` | `<MODEL>`… | no |  | Compile a model specification and recheck its pinned selections. Repeat as needed |
+| `--out` | `<OUT>` | no |  | Write the canonical checked recipe here; omit for JSON on stdout |
+
+#### `ess generate schema normalize-run`
+
+Execute one explicit normalization branch with checked input and output boundaries
+
+```text
+ess generate schema normalize-run [OPTIONS] --recipe <RECIPE> --branch <BRANCH> --input <INPUT> <--bundle <BUNDLE>|--model <MODEL>>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--recipe` | `<RECIPE>` | yes |  | Authored ess-normalization/1 through /6 recipe; every branch is checked first |
+| `--bundle` | `<BUNDLE>`… | no |  | Replay-checked source bundles referenced by canonical digest. Repeat as needed |
+| `--model` | `<MODEL>`… | no |  | Compile a model specification and recheck its pinned selections. Repeat as needed |
+| `--branch` | `<BRANCH>` | yes |  | Exact external discriminator; never inferred from the input object |
+| `--input` | `<INPUT>` | yes |  | Original JSON text; declared capture, numeric and positional input policies apply |
+| `--out` | `<OUT>` | no |  | Write the complete result here; omit for JSON on stdout. Refusals write no result |
+
+#### `ess generate schema normalize-generate`
+
+Emit a source-pinned normalization library, or check its generated file bytes
+
+```text
+ess generate schema normalize-generate [OPTIONS] --recipe <RECIPE> --target <TARGET> --package <PACKAGE> --out <OUT> <--bundle <BUNDLE>|--model <MODEL>>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--recipe` | `<RECIPE>` | yes |  | Authored ess-normalization/1 through /6 recipe; every branch is checked first |
+| `--bundle` | `<BUNDLE>`… | no |  | Replay-checked source bundles referenced by canonical digest. Repeat as needed |
+| `--model` | `<MODEL>`… | no |  | Compile a model specification and recheck its pinned selections. Repeat as needed |
+| `--target` | `<TARGET>` | yes |  | Executable normalization target, not structural type projection. One of `rust`, `go`, `typescript`. |
+| `--package` | `<PACKAGE>` | yes |  | Native library package identity |
+| `--module` | `<MODULE>` | no |  | Go module identity; required for Go and refused for other targets |
+| `--out` | `<OUT>` | yes |  | Directory for generated library, source inputs and provenance report |
+| `--check` |  | no |  | Check planned file bytes without writing; unrelated files are not inspected or removed |
+
+#### `ess generate schema validate`
+
+Validate JSON instances against schemas selected by their `schema` property
+
+```text
+ess generate schema validate [OPTIONS] --schemas <DIR> <PATHS>...
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<PATHS>`… |  | yes |  | JSON files or directories to validate. Directories are searched recursively |
+| `--schemas` | `<DIR>` | yes |  | Directory containing the authoritative `*.schema.json` registry |
+| `--format` | `<FORMAT>` | no | `text` | How to render the validation report. One of `text`, `yaml`, `json`. |
+
+#### `ess generate schema typescript`
+
+Project a schema's structural types into a deterministic TypeScript module
+
+```text
+ess generate schema typescript [OPTIONS] --root <ROOT> --schemas <DIR> <SCHEMA_ID>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<SCHEMA_ID>` |  | yes |  | The schema's exact `$id`, not its filename |
+| `--root` | `<ROOT>` | yes |  | The exported root type name |
+| `--schemas` | `<DIR>` | yes |  | Directory containing the authoritative `*.schema.json` registry |
+| `--out` | `<OUT>` | no |  | Write the generated module here. Omit to print it |
+| `--check` |  | no |  | Refuse when `--out` differs from the generated module, without writing it |
+
+#### `ess generate build compile`
+
+Validate and compile `ess-build/1` to canonical `ess-build-ir/1`
+
+```text
+ess generate build compile [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate build graph`
+
+Render the validated build DAG as deterministic Mermaid source
+
+```text
+ess generate build graph [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+
+#### `ess generate build execute`
+
+Compile, project, and execute a build through Docker Buildx Bake
+
+```text
+ess generate build execute [OPTIONS] --path <PATH> --projection-out <PROJECTION_OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | Authored `ess-build/1` JSON or YAML |
+| `--workdir` | `<WORKDIR>` | no | `.` | Repository root used as the `BuildKit` context |
+| `--projection-out` | `<PROJECTION_OUT>` | yes |  | Directory receiving the reviewable `BuildKit` projection |
+| `--target` | `<TARGETS>`… | no |  | Optional Bake target. Repeat to build a subset; omitted builds the default group |
+| `--set` | `<SETTINGS>`… | no |  | Bake override such as `app.tags=registry.example/app:version`. Repeat as needed |
+| `--push` |  | no |  | Push OCI outputs to their configured registries |
+| `--load` |  | no |  | Load a single-platform OCI output into the local image store |
+
+#### `ess generate component compile`
+
+Validate and compile `ess-component/1` to canonical `ess-component-ir/1`
+
+```text
+ess generate component compile [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate release verify`
+
+Check release metadata consistency against exact build and runtime IR
+
+```text
+ess generate release verify [OPTIONS] --path <PATH> --build-ir <BUILD_IR> --runtime-ir <RUNTIME_IR>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--build-ir` | `<BUILD_IR>` | yes |  |  |
+| `--runtime-ir` | `<RUNTIME_IR>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate release bundle`
+
+Combine a component and consistency-checked runtime/chart releases into an OCI payload
+
+```text
+ess generate release bundle [OPTIONS] --component-ir <COMPONENT_IR> --build-ir <BUILD_IR> --runtime-ir <RUNTIME_IR> --release <RELEASES>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--component-ir` | `<COMPONENT_IR>` | yes |  |  |
+| `--build-ir` | `<BUILD_IR>` | yes |  |  |
+| `--runtime-ir` | `<RUNTIME_IR>` | yes |  |  |
+| `--release` | `<RELEASES>`… | yes |  | Executor-produced `ess-release/1` manifest. Supply once per release unit |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate release verify-bundle`
+
+Revalidate an `ess-release-bundle/1` received from an untrusted boundary
+
+```text
+ess generate release verify-bundle [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate release publish`
+
+Publish a consistency-checked bundle, optionally qualifying a supplied local report
+
+```text
+ess generate release publish [OPTIONS] --path <PATH> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--to` | `<TO>` | yes |  | Tagged OCI destination. Consumers must use the digest printed by this command |
+| `--spec` | `<SPEC>` | no |  | Explicit authored ESS model root, loaded once |
+| `--report` | `<REPORT>` | no |  | Original standalone ess-conformance-report/2 JSON; never a generic check log |
+| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered coverage suite/5 or /7 JSON |
+| `--expected-suite-input` | `<EXPECTED_SUITE_INPUT>` | no |  | Independently supplied original input/1 carrier, including every parent suite |
+| `--report-sha256` | `<REPORT_SHA256>` | no |  | Optional SHA-256 pin of the raw report bytes, distinct from the OCI manifest digest |
+| `--expected-input-sha256` | `<EXPECTED_INPUT_SHA256>` | no |  | Optional SHA-256 pin of the raw selected suite file or complete input carrier file |
+
+#### `ess generate release fetch`
+
+Check bundle content identity and consistency, then cache a digest-pinned OCI payload
+
+```text
+ess generate release fetch [OPTIONS] --from <FROM> --cache <CACHE>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  | OCI source ending in `@sha256:<64 lowercase hex characters>` |
+| `--cache` | `<CACHE>` | yes |  | Content-addressed cache root |
+| `--out` | `<OUT>` | no |  | Optional copy of the verified canonical bundle |
+
+#### `ess generate release check-conformance`
+
+Qualify an original report/2 against an independent selection and explicit model, offline
+
+```text
+ess generate release check-conformance [OPTIONS] --component-ir <COMPONENT_IR> --build-ir <BUILD_IR> --runtime-ir <RUNTIME_IR> <--spec <SPEC>>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--spec` | `<SPEC>` | no |  | Explicit authored ESS model root, loaded once |
+| `--report` | `<REPORT>` | no |  | Original standalone ess-conformance-report/2 JSON; never a generic check log |
+| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered coverage suite/5 or /7 JSON |
+| `--expected-suite-input` | `<EXPECTED_SUITE_INPUT>` | no |  | Independently supplied original input/1 carrier, including every parent suite |
+| `--report-sha256` | `<REPORT_SHA256>` | no |  | Optional SHA-256 pin of the raw report bytes, distinct from the OCI manifest digest |
+| `--expected-input-sha256` | `<EXPECTED_INPUT_SHA256>` | no |  | Optional SHA-256 pin of the raw selected suite file or complete input carrier file |
+| `--component-ir` | `<COMPONENT_IR>` | yes |  |  |
+| `--build-ir` | `<BUILD_IR>` | yes |  |  |
+| `--runtime-ir` | `<RUNTIME_IR>` | yes |  |  |
+
+#### `ess generate release publish-conformance`
+
+Qualify and upload the exact original report bytes in the same process through ORAS
+
+```text
+ess generate release publish-conformance [OPTIONS] --component-ir <COMPONENT_IR> --build-ir <BUILD_IR> --runtime-ir <RUNTIME_IR> --to <TO> <--spec <SPEC>>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--spec` | `<SPEC>` | no |  | Explicit authored ESS model root, loaded once |
+| `--report` | `<REPORT>` | no |  | Original standalone ess-conformance-report/2 JSON; never a generic check log |
+| `--expected-suite` | `<EXPECTED_SUITE>` | no |  | Independently supplied original unfiltered coverage suite/5 or /7 JSON |
+| `--expected-suite-input` | `<EXPECTED_SUITE_INPUT>` | no |  | Independently supplied original input/1 carrier, including every parent suite |
+| `--report-sha256` | `<REPORT_SHA256>` | no |  | Optional SHA-256 pin of the raw report bytes, distinct from the OCI manifest digest |
+| `--expected-input-sha256` | `<EXPECTED_INPUT_SHA256>` | no |  | Optional SHA-256 pin of the raw selected suite file or complete input carrier file |
+| `--component-ir` | `<COMPONENT_IR>` | yes |  |  |
+| `--build-ir` | `<BUILD_IR>` | yes |  |  |
+| `--runtime-ir` | `<RUNTIME_IR>` | yes |  |  |
+| `--to` | `<TO>` | yes |  | Tagged OCI evidence destination; its returned manifest digest is not the report hash |
+
+#### `ess generate stack resolve`
+
+Resolve constraints to an exact `ess-stack-lock/1` using only the supplied catalogue
+
+```text
+ess generate stack resolve [OPTIONS] --path <PATH> --catalog <CATALOG>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--catalog` | `<CATALOG>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate stack validate`
+
+Validate that a generic stack resolves completely
+
+```text
+ess generate stack validate [OPTIONS] --path <PATH> --catalog <CATALOG>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--catalog` | `<CATALOG>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate deployment compile`
+
+Bind an exact stack lock to an environment and emit `ess-deployment/1`
+
+```text
+ess generate deployment compile [OPTIONS] --path <PATH> --stack-lock <STACK_LOCK>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--stack-lock` | `<STACK_LOCK>` | yes |  |  |
+| `--out` | `<OUT>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess generate deployment diff`
+
+Report which independent releases differ between two deployment IR documents
+
+```text
+ess generate deployment diff [OPTIONS] --from <FROM> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  |  |
+| `--to` | `<TO>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+
+#### `ess generate deployment reconcile`
+
+Reconcile changed independent Helm releases under an admitted recovery authority
+
+```text
+ess generate deployment reconcile [OPTIONS] --path <PATH> --cache <CACHE>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | Desired canonical `ess-deployment/1` document |
+| `--current` | `<CURRENT>` | no |  | Admitted baseline desired deployment. Omit for a first deployment |
+| `--cache` | `<CACHE>` | yes |  | Cache root for digest-pinned chart artifacts |
+| `--allow-removals` |  | no |  | Permit uninstalling releases absent from the desired deployment |
+| `--dry-run` |  | no |  | Report a local unverified comparison preview and stop |
+| `--timeout` | `<TIMEOUT>` | no | `5m` | Helm wait timeout |
+| `--authority` | `<AUTHORITY>` | no |  | Select this authority from the protected recovery registry. Required for execution |
+| `--retry-of` | `<RETRY_OF>` | no |  | Reference a predecessor invocation as `<store epoch>:<nonce>`; never a history filter |
+
+### `ess verify`
+
+Hold an implementation, or a later revision, to what a system says
+
+#### `ess verify bindings`
+
+Verify declared implementation bindings against scoped Kubernetes observations
+
+```text
+ess verify bindings [OPTIONS] --spec <SPEC> --realization <REALIZATION> --bindings <BINDINGS>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--spec` | `<SPEC>` | yes |  | Exact semantic ESS source directory or file |
+| `--realization` | `<REALIZATION>` | yes |  | Source-owned ess-realization/1 or /2 document |
+| `--bindings` | `<BINDINGS>` | yes |  | Environment-owned ess-observed-bindings/1 or /2 document |
+| `--infra` | `<INFRA>` | no |  | Existing native infrastructure observation or IR; never implies a fresh live read |
+| `--live` |  | no |  | Collect the document's exact context and namespace before checking |
+| `--observation-out` | `<OBSERVATION_OUT>` | no |  | New observation file outside Git checkouts; its parent must already exist |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+| `--markdown-out` | `<MARKDOWN_OUT>` | no |  | Optional deterministic generated reference; parent must exist and file must be new |
+
+#### `ess verify conform synthesize`
+
+Generate the suite the specification obliges.
+
+`ir` writes the canonical suite document to the file `--out` names. `go` and `typescript` write a test package into the directory `--out` names — the runner, the evaluator and the suite — so an implementation in that language can be held to the specification by `go test` or `npm test` rather than by nothing, which is what a synthesized suite no runner can reach amounts to.
+
+```text
+ess verify conform synthesize [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--target` | `<TARGET>` | no | `ir` | What to write the suite as. One of `ir`, `go`, `typescript`. |
+| `--out` | `<OUT>` | no |  | A file for `--target ir`, a directory for `--target go` or `--target typescript` |
+| `--component` | `<COMPONENT>` | no |  | Hold one component to the specification rather than the whole system.<br /><br />Keeps only the scenarios whose every command, event and view this component accepts, publishes or owns, and lists the rest with what they need — they belong in the suite of the component that realises it. An implementation of one component answers `ErrUnsupported` to the other's scenarios, and a run with skips in it cannot say it passed. |
+| `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to compile beside the generated scenarios.<br /><br />One file or a directory. Immediate `ess-inputs.yaml` selects its exact scenarios list. Otherwise only immediate `.yaml`/`.yml` files are read; subdirectories are not searched. An empty selection is refused. When omitted, no authored scenarios are selected. |
+| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); admitted features select newer required versions. One of `4`, `5`. |
+| `--compact` |  | no |  | Write fresh IR as compact JSON with one trailing newline; requires --target ir |
+
+#### `ess verify conform author`
+
+Compile the scenarios an author wrote, and nothing the specification obliges.
+
+The authoring surface on its own: every command, actor, outcome, event, error, view, entity, field, enum variant and lifecycle state a scenario names is resolved against the model, and a name it does not declare is refused here rather than at the first run that reaches it.
+
+```text
+ess verify conform author [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--scenarios` | `<SCENARIOS>` | no |  | One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection |
+| `--out` | `<OUT>` | no |  | Where to write the compiled ordinary suite |
+| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); retained features select newer required versions. One of `4`, `5`. |
+
+#### `ess verify conform web`
+
+Render the scenarios as a page somebody can press play on.
+
+Emits a specification-neutral player and one generated `model.json`: the entities and their lifecycles, what each command outcome does, what each view selects, who may ask, and what a binding reacts to. Serve the directory and open `index.html`.
+
+It replays rather than executes. A scenario declares which outcome each command took and the page displays declarations and explicit unknowns for unavailable assignment, subject and view semantics. Replay establishes no specification coherence, fills no obligation and produces no implementation execution report or qualifying conformance evidence.
+
+```text
+ess verify conform web [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `yaml`, `json`. |
+| `--scenarios` | `<SCENARIOS>` | no |  | One scenario file, or a directory using `ess-inputs.yaml` or shallow `.yaml`/`.yml` selection |
+| `--out` | `<OUT>` | no |  | Where to write the player |
+| `--suite-format` | `<SUITE_FORMAT>` | no | `4` | Ordinary (4) or declared coverage (5); coverage emits the paired replay document. One of `4`, `5`. |
+| `--history` | `<HISTORY>` | no |  | An `ess-history/1` document: draw it, checked against the specification, as one lane per client in a single self-contained `index.html`, printed when `--out` is absent. `--out` replaces the files `ess` owns in that directory, the player's included, so write history pages and the player to different directories |
+
+#### `ess verify conform select`
+
+Narrow a coverage suite/5, /7 or /9 by explicit IDs, retaining every exact original parent
+
+```text
+ess verify conform select [OPTIONS] --ids <IDS> --out <OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--suite` | `<SUITE>` | no |  |  |
+| `--suite-input` | `<SUITE_INPUT>` | no |  |  |
+| `--ids` | `<IDS>` | yes |  | JSON array of sorted distinct IDs; an empty array is explicit |
+| `--out` | `<OUT>` | yes |  | Destination for the complete ess-conformance-input/1 carrier |
+
+#### `ess verify conform run`
+
+Run a generated or committed suite against a built-in reference implementation
+
+```text
+ess verify conform run [OPTIONS] --target <TARGET>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no |  | The specification: synthesized when no suite is named, and executed by `interpreted`.<br /><br />Defaults to `.` for the other targets. `--target interpreted` requires it, because the interpreter executes this model and refuses one the suite was not synthesized from. |
+| `--suite` | `<SUITE>` | no |  |  |
+| `--suite-input` | `<SUITE_INPUT>` | no |  | Original coverage suite/5, /7 or /9 and its complete original parent chain |
+| `--suite-format` | `<SUITE_FORMAT>` | no |  | Fresh ordinary (4) or declared coverage (5); accessors select 6 or 7. Loaded versions stay unchanged. One of `4`, `5`. |
+| `--scenarios` | `<SCENARIOS>` | no |  | The `ess-scenario/1` documents to run beside the generated scenarios.<br /><br />Read only where the suite is synthesized rather than named by `--suite`: a committed suite already holds whatever was compiled into it. |
+| `--target` | `<TARGET>` | yes |  | One of `billing`, `oracle-fixture`, `interpreted`. |
+| `--report-out` | `<REPORT_OUT>` | no |  | Standalone JSON destination; suites/5-/7 require explicit report/2, even without this option |
+| `--report-format` | `<REPORT_FORMAT>` | no | `1` | Report contract version; JSON/YAML detailed v2 is ess-conformance-run/2. One of `1`, `2`. |
+| `--strict` |  | no |  | Require passed complete conformance (unavailable for legacy unknown coverage) |
+| `--allow-incomplete` |  | no |  | Explicitly retain diagnostic execution exit behavior |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess verify conform mutate`
+
+Audit the suite with specification mutants, each replayed against a reference target.
+
+Derives mutants from the specification — one altering edit each — synthesizes a fresh ordinary suite for the specification and for every mutant, and runs each on a fresh target that implements the unchanged specification. A mutant is killed when its suite fails there; a survivor is a declared rule no synthesized scenario pins down. It is answered by declaring what makes the rule observable, or by filing a synthesis gap — not by authoring a scenario, which runs identically in every mutant's suite and so can never kill one. No authored scenario is run.
+
+A baseline scenario the target reports unsupported or skipped did not execute: it is listed, not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that no scored scenario killed is inconclusive when a scenario it changed was not scored; otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no input, decided only for equality, membership and truth tests of input fields against literals; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals the baseline does not have, when it is on an outcome whose scenario the baseline refused, or when it is a from-drop or transition-to mutant on a transition only such outcomes perform. It survives when every scored scenario passed and each scenario it left unscored is the baseline's own, unchanged.
+
+Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not equivalent, every scored mutant was killed or equivalent, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3: a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at least one was unwitnessed or inconclusive, or none ran that was not equivalent.
+
+For an implementation of your own, split the audit in two. `--emit DIR` writes the baseline suite to `DIR/baseline/suite.json`, every mutant's suite to `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on ESS-MUTATE-003). Run your runner over each suite and write its conformance report to `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above; a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3; `--collect` also reads the /2 and /1 manifests earlier releases wrote.
+
+```text
+ess verify conform mutate [OPTIONS] <--target <TARGET>|--emit <EMIT>|--collect <COLLECT>>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` |  |
+| `--target` | `<TARGET>` | no |  | The reference implementation every suite runs against. One of `billing`, `oracle-fixture`, `interpreted`. |
+| `--class` | `<CLASS>`… | no |  | Only these classes; every class when absent. One of `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`. |
+| `--emit` | `<EMIT>` | no |  | Write the baseline's and every mutant's suite, and a manifest, into this new or empty directory; run nothing |
+| `--collect` | `<COLLECT>` | no |  | Score the `report.json` a runner wrote beside each suite of an emitted directory |
+| `--report-out` | `<REPORT_OUT>` | no |  | Where to write the `ess-mutation-report/3` document |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess verify conform check-history`
+
+Check a recorded concurrent history for linearizability against the specification's model.
+
+Reads an `ess-history/1` document recorded against the specification at `--path`, and searches for an order of its operations the interpreter accepts, answer for answer. The history records no inputs, so an operation is explained by any candidate input synthesis would submit for its command. Reads of views are not judged and are listed. A violation is reported with the longest partial linearization found and a shrunk history that is still a violation.
+
+Exit 0: linearizable. Exit 1: violation. Exit 3: unknown — the search spent `--budget` before it finished, which is never a pass. Exit 2: the specification or the history could not be read, the specification did not load, or the history or one of its operations was refused.
+
+```text
+ess verify conform check-history [OPTIONS] --history <HISTORY>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--history` | `<HISTORY>` | yes |  | The `ess-history/1` document |
+| `--budget` | `<BUDGET>` | no | `1000000` | How many executions of the model the search may spend; the same history and budget always give the same verdict |
+| `--settle` | `<READS>` | no | `4` | How many of a session's reads of an `eventual` view, invoked after the writes stop, may still be behind; every later read is judged converged. A count of reads, not of instants, so the clock a history was written on changes no verdict |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+
+#### `ess verify conform import-history`
+
+Convert a recorded command/response log into an `ess-history/1` document.
+
+`--log` is JSON Lines, one call per line, in the log's own shape. `--adapter` is an `ess-history-adapter/1` document that names, for every operation field, the JSON pointer it sits at in a line, or declares it `absent`, and maps the log's completion words to `Returned` and `Indeterminate`. Nothing is guessed: a field an operation cannot be judged without is refused, named on every line that lacks it, and a field the history does without is reported on stderr as a coverage gap. The document is recorded against the specification at `--path`; judge it with `check-history`.
+
+With `--output FILE`, the coverage gaps are also written as a JSON array to `FILE.gaps.json`, always (the document seed is never carried, so the list is never empty). A history imported with gaps carries seed 0 and generated operation identities by construction; the gaps file is the record of which.
+
+Exit 0: written, to `--output` or standard output. Exit 2: the specification, the adapter or the log was refused, or `--output` (or its gaps file) is the `--log` or `--adapter` file (a hard link included) or a file of the `--path` specification, or a write failed; nothing was written. The two files are written to temporary siblings and renamed into place only when both writes succeeded.
+
+```text
+ess verify conform import-history [OPTIONS] --log <LOG> --adapter <ADAPTER>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
+| `--log` | `<LOG>` | yes |  | The JSON Lines log |
+| `--adapter` | `<ADAPTER>` | yes |  | The `ess-history-adapter/1` document, YAML or JSON |
+| `--output` | `<OUTPUT>` | no |  | Where to write the `ess-history/1` document; standard output when absent |
+
+#### `ess verify diff`
+
+Compare two revisions semantically
+
+```text
+ess verify diff [OPTIONS] --from <FROM> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  |  |
+| `--to` | `<TO>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+
+#### `ess verify impact`
+
+Report conformance and generated artifacts invalidated by a semantic change
+
+```text
+ess verify impact [OPTIONS] --from <FROM> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  |  |
+| `--to` | `<TO>` | yes |  |  |
+| `--suite` | `<SUITE>` | no |  |  |
+| `--suite-input` | `<SUITE_INPUT>` | no |  | Exact coverage input and complete original parent chain |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+
+### `ess infra`
+
+Read an observed cluster, and import a concrete source through a declared adapter
+
+#### `ess infra infra diagnose`
+
+Diagnose an observation or IR
+
+```text
+ess infra infra diagnose [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess infra infra graph`
+
+Render the typed infrastructure dependency graph
+
+```text
+ess infra infra graph [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--namespace` | `<NAMESPACE>` | no |  |  |
+| `--format` | `<FORMAT>` | no | `mermaid` | One of `dot`, `mermaid`, `json`, `yaml`. |
+
+#### `ess infra infra diff`
+
+Compare two infrastructure snapshots
+
+```text
+ess infra infra diff [OPTIONS] --from <FROM> --to <TO>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--from` | `<FROM>` | yes |  |  |
+| `--to` | `<TO>` | yes |  |  |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `json`. |
+
+#### `ess infra import kubernetes`
+
+Import a sanitized observation bundle, or scan one live cluster at the credential edge
+
+```text
+ess infra import kubernetes [OPTIONS]
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | no |  | Existing `infra-observation/1`, `/2` or `/3` bundle |
+| `--context` | `<CONTEXT>` | no |  | Live kubeconfig context. Requires `--observation-out` |
+| `--namespace` | `<NAMESPACE>` | no |  | Safe topology of one namespace and its referenced nodes; emits qualified version 2 |
+| `--observation-out` | `<OBSERVATION_OUT>` | no |  | Where a live scan writes its sanitized source bundle |
+| `--out` | `<OUT>` | no |  | Where to write the compiled `infra-ir` document |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+#### `ess infra import openapi`
+
+Import supported `OpenAPI` service, operation, and interface-type semantics
+
+```text
+ess infra import openapi [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  |  |
+| `--out` | `<OUT>` | no |  | Where to write the replay-checked `ess-openapi-import/1` envelope |
+| `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
+
+[ess-cli-end]: #

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:29:14Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-first-run-walkthrough",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: tutorial_page 5 passed with and without ESS_TUTORIAL_NETWORK=1 (19 commands incl. npm); red on one changed line; ess-xtask ci_lanes 23; clippy, fmt-check",
+    "reference": "docs/tutorial@a02627606"
+  }
+}

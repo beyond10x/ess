@@ -13,8 +13,9 @@ verification work needed to make the existing toolchain dependable. It describes
 criteria rather than a release commitment.
 
 Near-term work extends the existing typed model where a real importer or projector establishes the
-semantics: richer service and interface coverage, then CLI, repository, organization, team, role,
-and ownership structures as their first adapters require them.
+semantics: richer service and interface coverage, then repository, organization, team, role, and
+ownership structures as their first adapters require them. CLI presentation already has its typed
+binding (`ess-cli/1`, `ess specify cli` and `ess generate cli`).
 
 The standing constraints are:
 
@@ -30,6 +31,11 @@ The standing constraints are:
 - **Obligations as trackable records.** A synthesis obligation is an entry in the generated plan
   (`PLAN.md`, `plan.json`), not a record a task can own and evidence can close. Nothing blocks it;
   it has not been scheduled.
+- **A conformance target in another process.** `ess verify conform run` reaches only the targets
+  built into `ess`, and the `ess-conformance` crate is not published. A target speaking a wire
+  protocol, or a published runner crate, would let any implementation be held to a suite without
+  the generated Go or TypeScript package. It has not been scheduled
+  ([A suite at every level of a test pyramid](../concepts/test-pyramid.md#commit-the-generated-runner)).
 
 Accepted designs live in the repository’s `docs/design/` tree. This site documents shipped behavior
 rather than publishing proposed work as product fact.

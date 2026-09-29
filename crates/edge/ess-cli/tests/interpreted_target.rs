@@ -77,7 +77,7 @@ fn the_conformance_guide_names_every_target_the_cli_offers() {
         "--target",
     );
 
-    let guide = std::fs::read_to_string(root().join("website/docs/guides/verify-conformance.md"))
+    let guide = std::fs::read_to_string(root().join("website/docs/guides/verify/runners.md"))
         .expect("the conformance guide is committed");
     let claim = "The built-in choices are ";
     let start = guide
@@ -95,7 +95,7 @@ fn the_conformance_guide_names_every_target_the_cli_offers() {
 
     assert_eq!(
         stated, offered,
-        "`website/docs/guides/verify-conformance.md` names the built-in `--target` choices in prose \
+        "`website/docs/guides/verify/runners.md` names the built-in `--target` choices in prose \
          and nothing generates it; it must list the same values in the same order as the CLI's own \
          help: {sentence}"
     );

@@ -12,7 +12,7 @@
 //!    doing so until interpretation actually decides something." That is a claim about every suite,
 //!    and the runner decides a run's verdict from its scenarios
 //!    (`crates/verify/ess-conformance/src/report.rs:566-578`), of which an admitted suite may hold
-//!    none. `website/docs/guides/verify-conformance.md:238-240` documents `[]` as an explicit
+//!    none. `website/docs/guides/verify/runners.md:206-207` documents `[]` as an explicit
 //!    selection of no scenarios, so a zero-scenario admitted suite is a state the documented
 //!    workflow reaches.
 //!
@@ -126,7 +126,7 @@ fn run_suite(suite: &Path, target: &str) -> (serde_json::Value, Option<i32>) {
 ///
 /// The adversary that wrote this case asserted the sentence's original, unqualified form and found
 /// the hole: an admitted suite may hold **no** scenarios (`admission.rs:103-145` imposes no lower
-/// bound, and `verify-conformance.md:238-240` documents `[]` as a selection somebody can ask for),
+/// bound, and `runners.md:206-207` documents `[]` as a selection somebody can ask for),
 /// and `ConformanceReport::verdict(&[])` is `Passed`. The empty-suite half of this case is kept and
 /// still executed, and the assertion on it is now the true one — pinned **across targets**, because
 /// that is the fact that decides whose defect it is: `billing` reports `passed` and exits 0 for the

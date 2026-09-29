@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess generate synthesize --target rust` represents `Json` as the generated types crate's
+  dependency-free `json::Value` (beyond10x/ess#224). It covers newtypes, struct members (also in a
+  list, a map or an `Optional`), union variants, entity fields, command inputs and responses, event
+  and error payloads, view rows and binding mappings. The types crate carries the `json` module only
+  when the model uses `Json`, and the server crate re-exports it. The wire codecs carry an object,
+  array, number, string, boolean or null unchanged: members keep their order and numbers keep their
+  spelling. `--target go`, `web` and `clap` still refuse `Json` and name the target. A model without
+  `Json` synthesizes the same bytes as before.
+
 ## [0.43.0] — 2026-09-29
 
 ### Fixed
