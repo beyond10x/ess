@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.44.0](#the-rust-synthesis-target-represents-json-and-the-public-docs-are-rebuilt) | The Rust synthesis target represents Json, and the public docs are rebuilt | capability | significant |
 | [0.43.0](#instance-references-inside-structured-values-one-refusal-precedence-and-unstated-external-answers-refused) | Instance references inside structured values, one refusal precedence and unstated external answers refused | capability | significant |
 | [0.42.0](#link-field-guards-overlap-precedence-counter-limits-and-unkillable-mutants-scored-apart) | Link-field guards, overlap precedence, counter limits and unkillable mutants scored apart | capability | significant |
 | [0.41.0](#state-scoped-refusals-guards-over-a-related-row-delivery-context-and-a-synthesis-and-mutation-defect-batch) | State-scoped refusals, guards over a related row, delivery context, and a synthesis and mutation defect batch | capability | significant |
@@ -37,6 +38,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.44.0 — 2026-09-29
+
+### The Rust synthesis target represents Json, and the public docs are rebuilt
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.44.0)
+
+`ess generate synthesize --target rust` carries `Json` as the types crate's `json::Value`, unchanged on the wire. The public docs gain generated CLI and diagnostics references, Start here tutorials a test runs against the built binary, task-sized guides and a what-changed page.
 
 ## 0.43.0 — 2026-09-29
 

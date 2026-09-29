@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.44.0 — 2026-09-29
+
+### The Rust synthesis target represents Json, and the public docs are rebuilt
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.44.0)
+
+`ess generate synthesize --target rust` carries `Json` as the types crate's `json::Value`, unchanged on the wire. The public docs gain generated CLI and diagnostics references, Start here tutorials a test runs against the built binary, task-sized guides and a what-changed page.
+
 ## 0.43.0 — 2026-09-29
 
 ### Instance references inside structured values, one refusal precedence and unstated external answers refused
