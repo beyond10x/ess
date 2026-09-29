@@ -113,6 +113,31 @@
   left to the residual. The delta for such a pair loses that second entry; its format stays
   `ess-diff/3`.
 
+- **Synthesis witnesses a branch selected by a stored counter at its limit (#226).** A branch
+  whose stored guard compares a counter with a number literal (`retries >= 3`, `retries == 3`,
+  `credits <= 0`), where the counter is moved by `{increment: n}`, was refused as `ESS-SYNTH-003`:
+  every row short of the limit decided the guard alike and was one search node, and a row the
+  raising command left no longer held a determined value. The stored-row search now follows such a
+  counter's value within 16 of each literal its guards compare it with, and carries the value each
+  raise leaves, so it repeats the raising command — the guarded command itself, or another one — up
+  to the limit. Each side of the limit is witnessed: the branch at the limit is the first row the
+  search reaches that holds it, and the row beside it is witnessed once more, and past it for `==`,
+  so a target whose limit is off by one either way fails. Each side row sits at the nearest value a
+  run of the counter holds there — from the values it is created or set to, moved by its
+  increments — so `{increment: 2}` from 0 against `retries >= 3` is witnessed at 2 and 4. A side row
+  asserts whichever branch the command answers on it, so a sibling band (`blocked: 3..4` below
+  `over: >= 5`) is asserted there rather than refusing the default. The comparison may be a
+  conjunct of the guard, a disjunct of an `any:` among its conjuncts, or under `not:`
+  (`{not: retries < 3}` is witnessed as `retries >= 3`); at the limit the other disjuncts are
+  refuted. A side the model never holds a value on — past a refusal that stops the raises — adds
+  none. A side whose nearest value lies farther than 16 from the limit, or that the search does not
+  reach within that bound, is refused as `ESS-SYNTH-003` naming the step and the limit, and only
+  that row: the branch's own scenario stands. A limit farther than 16 from where the counter can
+  be followed, or counters whose followed values exceed the search budget, is refused as
+  `ESS-SYNTH-003` naming that bound; a search that left every row a raise moving away from the
+  limit reaches no longer claims it. A counter compared with an input (`retries >= input.max`) is
+  reached through the input as before. Models without such a guard keep their suites.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added
