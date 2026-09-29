@@ -325,8 +325,8 @@ pub fn run(root: &Path) -> Result<String, String> {
     let newest = newest_release(&changelog)?;
     let mut pinned = Vec::new();
     for page in INSTALL {
-        let install = fs::read_to_string(root.join(page))
-            .map_err(|error| format!("read {page}: {error}"))?;
+        let install =
+            fs::read_to_string(root.join(page)).map_err(|error| format!("read {page}: {error}"))?;
         pinned.extend(install_defects(page, &install, &newest));
     }
 
