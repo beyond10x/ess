@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:synthesized-inputs-satisfy-invariants-over-nested-members
 kind: story
-status: active
+status: implemented
 title: Synthesis violates invariants over struct-input members and misses guards over nested input paths
 refs:
 - provider: github
   reference: beyond10x/ess#234
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T05:37:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T05:37:18Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T10:58:56Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 
