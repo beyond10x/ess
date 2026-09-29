@@ -9060,7 +9060,7 @@ fn overlap_inputs_in_state(
     rows
 }
 
-/// Why an [`Overlap`] the suite does not send is recorded rather than refused.
+/// Why an `Overlap` the suite does not send is recorded rather than refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverlapGap {
     /// No candidate tried lies in the overlap, and the candidates do not cover every region the
