@@ -97,19 +97,75 @@ const VIEW_NOTE: &str = r#"`projects ${view.entity} at ${view.consistency} consi
 const AGGREGATE_NOTE: &str = r#"`projects ${view.entity} at ${view.consistency} consistency` + (view.filter ? `, where ${view.filter}` : "") +
       (view.group_by ? (view.group_by.length ? `, grouped by ${view.group_by.join(", ")}` : ", one row") : "") }));"#;
 
-/// The fixed script, with the aggregate note only where the page presents an aggregate view — so
-/// the page of every model without one keeps its bytes.
+/// Where the fixed script builds a control for a primitive.
+const PRIMITIVE: &str = "function primitive(name) {\n  if (name === \"boolean\") {";
+
+/// The same, with a `Json` control ahead of it (beyond10x/ess#224).
+///
+/// # How the page carries a `Json` value
+///
+/// As `JSON.parse` answers it, typed `JsonValue` so `tsc --checkJs` holds the page to it. The glue
+/// is the same bytes for every model and already parses every answer that way, and
+/// `JSON.rawJSON` wraps a primitive only: keeping a number's spelling on the page would mean
+/// reviving every number of every answer, for every model, into an object `String()` cannot
+/// print. The bridge beneath the page carries the value unchanged; what the page loses is stated
+/// in `TARGET.md` beside the `Integer` limit it shares.
+///
+/// Text that is not JSON is not guessed at: the control marks itself invalid and reads as absent,
+/// so the bridge answers with the path of the missing value rather than receiving a string.
+const JSON_PRIMITIVE: &str = r#"/**
+ * Any JSON value, as the page holds one: what `JSON.parse` answers.
+ * @typedef {null | boolean | number | string | JsonArray | JsonObject} JsonValue
+ */
+/** @typedef {JsonValue[]} JsonArray */
+/** @typedef {{ [member: string]: JsonValue }} JsonObject */
+
+/**
+ * A control for a `Json` value: a JSON document, typed as text.
+ * @returns {{ node: HTMLTextAreaElement, read: () => JsonValue | undefined }}
+ */
+function jsonControl() {
+  const node = /** @type {HTMLTextAreaElement} */ (element("textarea", { rows: "3", spellcheck: "false" }));
+  node.value = "null";
+  return {
+    node,
+    read: () => {
+      try {
+        /** @type {JsonValue} */
+        const value = JSON.parse(node.value);
+        node.setCustomValidity("");
+        return value;
+      } catch (error) {
+        node.setCustomValidity(`not JSON: ${error.message}`);
+        node.reportValidity();
+        return undefined;
+      }
+    },
+  };
+}
+
+function primitive(name) {
+  if (name === "json") return jsonControl();
+  if (name === "boolean") {"#;
+
+/// The fixed script, with the aggregate note only where the page presents an aggregate view and
+/// the `Json` control only where the model uses `Json` — so the page of every model without them
+/// keeps its bytes.
 fn script(bridge: &Bridge<'_>) -> String {
     let aggregate = bridge
         .ir
         .views()
         .values()
         .any(|view| view.is_aggregate() && bridge.presents_view(&view.name));
-    if aggregate {
+    let mut script = if aggregate {
         SCRIPT.replacen(VIEW_NOTE, AGGREGATE_NOTE, 1)
     } else {
         SCRIPT.to_owned()
+    };
+    if crate::rust::json::used(bridge.ir) {
+        script = script.replacen(PRIMITIVE, JSON_PRIMITIVE, 1);
     }
+    script
 }
 
 /// The fixed part of the page's script: everything that renders the catalogue.
@@ -642,5 +698,14 @@ mod tests {
         // grouping and every test of a model without one green.
         assert_eq!(SCRIPT.matches(VIEW_NOTE).count(), 1);
         assert!(!SCRIPT.contains("group_by"));
+    }
+
+    #[test]
+    fn the_json_control_replaces_exactly_the_primitive_switch_the_script_writes() {
+        // The same hazard: a replacement that found nothing would leave a `Json` field with a
+        // text box that sends a string.
+        assert_eq!(SCRIPT.matches(PRIMITIVE).count(), 1);
+        assert!(JSON_PRIMITIVE.ends_with(&PRIMITIVE["function primitive(name) {".len()..]));
+        assert!(!SCRIPT.contains("jsonControl"));
     }
 }
