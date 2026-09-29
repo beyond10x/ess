@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod entry;
 pub mod http;
 pub mod json;
 pub mod wire;

@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:transport-free-entry-point
 kind: story
-status: active
+status: implemented
 title: The generated server has a transport-free entry point
 relations:
 - serves: vision:O2
 - decomposes: epic:generated-determined-behaviour
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T20:20:02Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T20:20:02Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T20:36:11Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

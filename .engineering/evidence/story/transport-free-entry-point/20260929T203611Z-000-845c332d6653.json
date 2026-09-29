@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T20:36:11Z",
+  "actor": "human:timo",
+  "artifact": "story:transport-free-entry-point",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-synth 255 passed; gatepass-realization 11 passed with -D warnings; generate/schema --check; docs; clippy; fmt-check",
+    "reference": "impl/046-handle@7568a81b2"
+  }
+}
