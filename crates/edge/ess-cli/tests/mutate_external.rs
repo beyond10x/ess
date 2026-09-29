@@ -3,7 +3,7 @@
 //! `docs/design/mutation-audit-and-model-runner.md`, "Auditing an external target". `--emit` writes
 //! the baseline suite and every mutant's suite and runs nothing; the project runs its own runner
 //! over each and writes an `ess-conformance-report/1` beside it; `--collect` scores those reports
-//! into `ess-mutation-report/2`. Here the project's runner is fabricated: each report is written by
+//! into `ess-mutation-report/3`. Here the project's runner is fabricated: each report is written by
 //! hand from the emitted suite, some red, some green, one missing.
 
 use std::path::{Path, PathBuf};
@@ -124,7 +124,7 @@ fn dirs(manifest: &Value) -> Vec<String> {
 fn emit_writes_every_suite_and_runs_nothing() {
     let emitted = emit("layout");
     let manifest = read_json(&emitted.join("manifest.json"));
-    assert_eq!(manifest["format"], "ess-mutation-manifest/2");
+    assert_eq!(manifest["format"], "ess-mutation-manifest/3");
     assert_eq!(manifest["mutants"].as_array().unwrap().len(), 8);
     assert!(emitted.join("baseline/suite.json").is_file());
     let ran = dirs(&manifest);
@@ -180,11 +180,11 @@ fn collect_scores_red_green_and_missing_reports() {
     );
     assert_eq!(output.stdout, std::fs::read(&out).expect("--report-out"));
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["format"], "ess-mutation-report/2");
+    assert_eq!(report["format"], "ess-mutation-report/3");
     assert_eq!(report["implementation"], "project-runner 1.0.0");
     assert_eq!(
         report["counts"],
-        json!({"inconclusive": 1, "killed": 2, "mutants": 8, "stillborn": 3, "survived": 2, "unwitnessed": 0})
+        json!({"equivalent": 0, "inconclusive": 1, "killed": 2, "mutants": 8, "stillborn": 3, "survived": 2, "unwitnessed": 0})
     );
     let entry = |id: &str| {
         report["mutants"]

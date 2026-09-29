@@ -402,6 +402,14 @@ baseline scenario reported `unsupported` or `skipped` is no longer red, and a mu
 killed with an excluded scenario it changed is `inconclusive`. The manifest adds each
 suite's `refused` list. `--collect` still reads a `/1` manifest and judges gained refusals by count.
 
+`ess-mutation-report/3` and `ess-mutation-manifest/3` are in the current source and in no release
+yet. The report adds the `equivalent` verdict (`ESS-MUTATE-005`) with each mutant's
+`unsatisfiable_guard`, `counts.equivalent`, and each mutant's `baseline_refusals`: a mutant on an
+outcome whose scenario the baseline refused, or a `from-drop` or `transition-to` mutant on a
+transition only such outcomes perform, is `unwitnessed` rather than `survived`. The manifest adds
+each mutant's `unsatisfiable_guard`. `--collect` still reads `/2` and `/1` manifests, and refuses
+either when it carries `unsatisfiable_guard`.
+
 ## Still at version 1
 
 Never revised, and a document that claims a higher number is refused:

@@ -220,6 +220,9 @@ fn rewrite(
     let entry = &mut manifest["mutants"][0];
     entry["refusals"] = mutant.len().into();
     entry["refused"] = mutant.into();
+    // These manifests judge the mutant by its refusal delta alone: the guard its emitter found
+    // dead (#218) would make it `equivalent` whatever the delta, so it is left undecided here.
+    entry.as_object_mut().unwrap().remove("unsatisfiable_guard");
     written.insert(
         MANIFEST_FILE.to_owned(),
         serde_json::to_string_pretty(&manifest).unwrap(),
@@ -290,6 +293,7 @@ fn a_version_one_manifest_is_judged_by_count() {
             .remove("refused");
         for entry in manifest["mutants"].as_array_mut().unwrap() {
             entry.as_object_mut().unwrap().remove("refused");
+            entry.as_object_mut().unwrap().remove("unsatisfiable_guard");
             if entry.get("refusals").is_some() {
                 entry["refusals"] = mutant.into();
             }

@@ -304,6 +304,22 @@ scenario and the mutant's suite is the baseline's minus it. Such a mutant is *un
 passing is not a survivor. Its entry lists each refusal it added, by code and scenario, and so does
 the entry of a killed mutant that added one.
 
+Where a guard mutant leaves its outcome's guard satisfied by no input, the mutant is *equivalent*
+(`ESS-MUTATE-005`) unless a scenario still kills it: turning `any: [status == Paid, status ==
+Shipped]` into `all:` writes a rule that can never be taken, so there is nothing for a scenario to
+catch. Its entry names the guard as `unsatisfiable_guard`. The guard is decided only for
+equality, membership and truth tests of input fields against literals, by trying every
+combination of each field's values that could matter: a boolean's two, an enum's variants, and for
+any other field its literals and one value none of them equals, up to 64 combinations. An
+ordering, a text match, a quantifier, or a guard with more combinations is not decided, and such a
+mutant is scored as before. A mutant with a changed scenario that was not scored stays
+*inconclusive*: that scenario might have killed it.
+
+A mutant on an outcome whose scenario the baseline suite already refuses, such as a branch no
+arrangement reaches (`ESS-SYNTH-003`), cannot be killed by either suite. It is *unwitnessed* as
+well, and its entry names the baseline refusal as `baseline_refusals`. So is a `from-drop` or
+`transition-to` mutant on a transition that only such outcomes perform.
+
 The baseline is red only when a scenario failed or ended `error`. A scenario the target reports
 `unsupported`, or the runner `skipped`, is listed as not scored, and every mutant is scored on the
 scenarios the baseline executed. The scenarios the baseline did not execute are listed, not scored:
@@ -320,13 +336,13 @@ projecting the field a `sets` entry writes, or by filing a synthesis gap.
 
 | Exit | When |
 |---|---|
-| 0 | No baseline scenario failed or ended `error`, at least one mutant ran, every scored mutant was killed, and none is inconclusive or unwitnessed. Baseline scenarios that were not executed are listed, not scored. |
+| 0 | No baseline scenario failed or ended `error`, at least one mutant that is not equivalent ran, every scored mutant was killed or equivalent, and none is inconclusive or unwitnessed. Baseline scenarios that were not executed are listed, not scored. |
 | 1 | The specification did not load, or at least one mutant survived. |
-| 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive, or every mutant stillborn. |
+| 3 | `ESS-MUTATE-001` (a baseline scenario failed or ended `error`), nothing scored (the baseline executed no scenario), `ESS-MUTATE-003` (no site), or no survivor and at least one mutant unwitnessed or inconclusive, or every mutant stillborn or equivalent. |
 
 The text output prints one summary line, then the baseline scenarios not scored, then survivors,
-unwitnessed, inconclusive, stillborn and killed mutants, one line each. `--report-out` writes an
-[`ess-mutation-report/2`](../reference/formats.md#change-and-conformance-records) document, and
+unwitnessed, inconclusive, equivalent, stillborn and killed mutants, one line each. `--report-out` writes an
+[`ess-mutation-report/3`](../reference/formats.md#change-and-conformance-records) document, and
 `--format json` prints the same bytes.
 
 ## Explore random command sequences

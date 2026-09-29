@@ -1,0 +1,72 @@
+format: ess/16
+system: desk
+version: v1
+domain: desk.ticket
+summary: A ticket filed with a priority, one of whose refusals no input reaches.
+naming:
+  wire: ticket
+  display: Ticket
+
+types:
+  - name: desk.ticket.Priority
+    kind: enum
+    variants: [Low, High, Urgent]
+
+entities:
+  - name: desk.ticket.Ticket
+    identity:
+      name: ticket_id
+      type: Uuid
+    fields:
+      - name: urgent
+        type: Boolean
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+errors:
+  - name: desk.ticket.Conflicting
+    summary: The priority contradicts itself.
+  - name: desk.ticket.Refused
+    summary: A low priority is not filed.
+
+commands:
+  - name: desk.ticket.FileTicket
+    naming:
+      wire: file_ticket
+      display: File a ticket
+    input:
+      - name: priority
+        type: desk.ticket.Priority
+    outcomes:
+      - name: contradictory
+        when:
+          all:
+            - priority == High
+            - priority == Urgent
+        error: desk.ticket.Conflicting
+      - name: refused
+        when: priority == Low
+        error: desk.ticket.Refused
+      - name: filed
+        creates: desk.ticket.Ticket
+        instance: ticket_id
+        sets:
+          urgent: false
+        emits: [desk.ticket.TicketFiled]
+        payload:
+          desk.ticket.TicketFiled:
+            ticket_id: {generated: true}
+            priority: input.priority
+
+events:
+  - name: desk.ticket.TicketFiled
+    naming:
+      wire: ticket_filed
+      display: Ticket filed
+    fields:
+      - name: ticket_id
+        type: Uuid
+      - name: priority
+        type: desk.ticket.Priority

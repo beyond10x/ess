@@ -11,6 +11,11 @@
 //! so the `settled` outcome has no witness in the mutant's suite. The stand-in runner of the
 //! issue, which passes whatever is left, is fabricated here by writing a passing report beside
 //! each emitted suite.
+//!
+//! Issue #218 then scores this very mutant `equivalent`: the guard it leaves is satisfied by no
+//! input, which outranks the refusal it gained. The refusal is still named on it. A manifest whose
+//! emitter did not decide the guard (`/1`, or a guard the domain does not decide) keeps the
+//! refusal-delta verdict, `unwitnessed`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -152,20 +157,20 @@ fn entry(report: &MutationReport) -> &mutate::MutantEntry {
 // ---- the issue's shape, collected ---------------------------------------------------------------
 
 #[test]
-fn a_mutant_whose_suite_lost_its_outcomes_scenario_is_unwitnessed_not_survived() {
+fn a_mutant_whose_suite_lost_its_outcomes_scenario_is_not_survived_and_names_the_refusal() {
     let report = collect(&emitted(&lost_first(), true).1);
     let entry = entry(&report);
-    assert_eq!(entry.verdict, Verdict::Unwitnessed, "{entry:?}");
+    assert_eq!(entry.verdict, Verdict::Equivalent, "{entry:?}");
     assert_eq!(entry.added_refusals.as_deref(), Some(&[lost()][..]));
     assert_eq!(entry.killers, None);
-    assert_eq!(report.counts.unwitnessed, 1);
+    assert_eq!(report.counts.equivalent, 1);
     assert_eq!(report.counts.survived, 0);
     assert_eq!(report.baseline.refusals, 0);
     let json: serde_json::Value = serde_json::from_str(&report.to_canonical_json()).unwrap();
-    assert_eq!(json["format"], "ess-mutation-report/2");
-    assert_eq!(json["counts"]["unwitnessed"], 1);
+    assert_eq!(json["format"], "ess-mutation-report/3");
+    assert_eq!(json["counts"]["equivalent"], 1);
     let mutant = &json["mutants"][0];
-    assert_eq!(mutant["verdict"], "unwitnessed");
+    assert_eq!(mutant["verdict"], "equivalent");
     assert_eq!(
         mutant["added_refusals"],
         serde_json::json!([{"code": "ESS-SYNTH-003", "scenario": LOST_SCENARIO, "subject": LOST_SUBJECT}])
@@ -176,7 +181,7 @@ fn a_mutant_whose_suite_lost_its_outcomes_scenario_is_unwitnessed_not_survived()
 fn the_verdict_is_the_same_in_either_enum_order() {
     for spec in [lost_first(), paid_first()] {
         let report = collect(&emitted(&spec, true).1);
-        assert_eq!(entry(&report).verdict, Verdict::Unwitnessed);
+        assert_eq!(entry(&report).verdict, Verdict::Equivalent);
         assert_eq!(
             entry(&report).added_refusals.as_deref(),
             Some(&[lost()][..])
@@ -189,15 +194,15 @@ fn the_text_names_the_added_refusal_beside_the_verdict() {
     let text = collect(&emitted(&lost_first(), true).1).render_text();
     let line = text
         .lines()
-        .find(|line| line.starts_with(&format!("unwitnessed {MUTANT}:")))
-        .unwrap_or_else(|| panic!("no unwitnessed line in:\n{text}"));
-    assert!(line.contains("ESS-MUTATE-004"), "{line}");
+        .find(|line| line.starts_with(&format!("equivalent {MUTANT}:")))
+        .unwrap_or_else(|| panic!("no equivalent line in:\n{text}"));
+    assert!(line.contains("ESS-MUTATE-005"), "{line}");
     assert!(
-        line.contains(&format!("ESS-SYNTH-003 `{LOST_SCENARIO}`")),
+        line.contains(&format!("adds ESS-SYNTH-003 `{LOST_SCENARIO}`")),
         "{line}"
     );
     assert!(
-        text.lines().next().unwrap().contains("1 unwitnessed"),
+        text.lines().next().unwrap().contains("1 equivalent"),
         "{text}"
     );
 }
@@ -288,7 +293,7 @@ fn unwitnessed_has_its_own_code() {
 #[test]
 fn emit_records_each_suites_refusals_by_code_and_scenario() {
     let (emission, _) = emitted(&lost_first(), true);
-    assert_eq!(emission.manifest.format, "ess-mutation-manifest/2");
+    assert_eq!(emission.manifest.format, "ess-mutation-manifest/3");
     assert_eq!(emission.manifest.format, MANIFEST_FORMAT);
     assert_eq!(emission.manifest.baseline.refused.as_deref(), Some(&[][..]));
     let mutant = emission
@@ -319,6 +324,10 @@ fn as_version_1(written: &mut BTreeMap<String, String>) {
         .remove("refused");
     for mutant in manifest["mutants"].as_array_mut().unwrap() {
         mutant.as_object_mut().unwrap().remove("refused");
+        mutant
+            .as_object_mut()
+            .unwrap()
+            .remove("unsatisfiable_guard");
     }
     written.insert(
         MANIFEST_FILE.to_owned(),
