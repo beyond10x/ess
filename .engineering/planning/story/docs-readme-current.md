@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-readme-current
 kind: story
-status: draft
+status: active
 title: The README installs the current release and describes site as HTML
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -10,7 +10,10 @@ relations:
 scope:
 - confidence: cited
   path: README.md
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:37:35Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-09-29T14:37:35Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
