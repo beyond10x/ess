@@ -602,7 +602,8 @@ fn encode_value(
 fn encode_primitive(primitive: Primitive, expr: &str) -> String {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        // Carried unchanged: members in order, numbers in their spelling (beyond10x/ess#224).
+        Primitive::Json => format!("json::push_value(out, &{expr});"),
         Primitive::String => format!("json::push_text(out, &{expr});"),
         Primitive::Boolean => format!("json::push_bool(out, {expr});"),
         Primitive::Integer => format!("json::push_integer(out, {expr});"),
@@ -617,7 +618,7 @@ fn encode_primitive(primitive: Primitive, expr: &str) -> String {
 fn encode_key(primitive: Primitive, expr: &str) -> String {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => unreachable!("ess-domain refuses a Json map key"),
         Primitive::String => format!("json::push_text(out, {expr});"),
         Primitive::Boolean => {
             format!("json::push_text(out, if *{expr} {{ \"true\" }} else {{ \"false\" }});")
@@ -712,7 +713,9 @@ fn decode_primitive(surface: &dyn Surface, primitive: Primitive, value: &str, at
     let primitives = format!("{}::primitives", surface.types());
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        // The decoded value is the types crate's own `json::Value`, which the server re-exports.
+        // Through `value_at` rather than `.clone()`, so the position every decoder binds is used.
+        Primitive::Json => format!("json::value_at({value}, {at})"),
         Primitive::String => format!("json::text_at({value}, {at}, \"a string\")?.to_owned()"),
         Primitive::Boolean => format!("json::bool_at({value}, {at}, \"a boolean\")?"),
         Primitive::Integer => format!("json::integer_at({value}, {at}, \"an integer\")?"),
@@ -741,7 +744,7 @@ fn decode_key(surface: &dyn Surface, primitive: Primitive, key: &str, at: &str) 
     let primitives = format!("{}::primitives", surface.types());
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => unreachable!("ess-domain refuses a Json map key"),
         Primitive::String => format!("{key}.clone()"),
         Primitive::Boolean => format!("json::key_bool({key}, {at})?"),
         Primitive::Integer => format!("json::key_integer({key}, {at})?"),

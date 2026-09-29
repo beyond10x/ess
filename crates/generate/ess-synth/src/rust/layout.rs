@@ -251,6 +251,9 @@ impl Layout {
 /// 2. A module that would be spelled `primitives` or `obligation` gets `_domain` appended,
 ///    because those names are reserved: `primitives` for the representation module every
 ///    generated crate carries, `obligation` for the typed refusal an unmet obligation returns.
+///    `json` joins them only in a model that uses `Json`, whose types crate carries the `json`
+///    module (beyond10x/ess#224); reserving it everywhere would rename a `….json` domain in trees
+///    that have no such module.
 fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
     let mut candidates: BTreeMap<QualifiedName, String> = ir
         .domains()
@@ -281,8 +284,9 @@ fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
             .collect();
     }
 
+    let json = super::json::used(ir);
     for module in candidates.values_mut() {
-        if module == "primitives" || module == "obligation" {
+        if module == "primitives" || module == "obligation" || (json && module == "json") {
             module.push_str("_domain");
         }
     }
@@ -378,10 +382,13 @@ fn component_packages(ir: &EssIr, reserved: &[&str]) -> BTreeMap<ComponentName, 
 /// projection writes `Decimal` as a decimal string, `Timestamp` as `date-time`, `Duration` as an
 /// ISO 8601 duration and `Uuid` as a UUID string, and two projections of one model must not
 /// disagree about what a value looks like.
+///
+/// `Json` is the types crate's own `json::Value` (beyond10x/ess#224), a module that crate carries
+/// only when the model uses `Json`; see `super::json` for why it lives there.
 pub fn primitive(name: Primitive) -> &'static str {
     match name {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => "crate::json::Value",
         Primitive::String => "String",
         Primitive::Boolean => "bool",
         Primitive::Integer => "i64",
