@@ -317,8 +317,7 @@ carries declared coverage. The Rust runner executes both; Go and TypeScript gene
 them, and older readers refuse these envelopes before target callbacks. A suite without them
 keeps its earlier format.
 
-`ess-conformance/32` and `ess-conformance/33` are unreleased: in the current source and no release
-yet. They carry instance references inside a structured value (beyond10x/ess#242): a `list` value's
+`ess-conformance/32` and `ess-conformance/33`, introduced in [0.43.0][r43], carry instance references inside a structured value (beyond10x/ess#242): a `list` value's
 `items` and a `members` value's `members` are values of their own, each a `literal`, an `instance`
 or another `list` or `members`, and the runner resolves each one before it sends the whole. An
 authored `{$instance: …}` inside a list element, a map value or a struct member is written this
@@ -492,3 +491,4 @@ for a release and promises none.
 [r40]: https://github.com/beyond10x/ess/releases/tag/0.40.0
 [r41]: https://github.com/beyond10x/ess/releases/tag/0.41.0
 [r42]: https://github.com/beyond10x/ess/releases/tag/0.42.0
+[r43]: https://github.com/beyond10x/ess/releases/tag/0.43.0

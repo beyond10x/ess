@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/defect-batch-0.43.0
+repository: ess
+publishedAt: 2026-09-29T20:00:00Z
+title: Instance references inside structured values, one refusal precedence and unstated external answers refused
+summary: >-
+  `{$instance}` works inside lists, maps, structs and unions (suites `ess-conformance/32` and `/33`); acts claiming an unstated external answer are refused `ESS-AUTHOR-037`. An input refusal may sit beside held-state branches under one precedence order the explorer follows; synthesis meets nested input invariants and witnesses absent fields and stored maps.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.43.0
+  version: 0.43.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

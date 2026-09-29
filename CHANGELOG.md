@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-09-29
+
 ### Fixed
 
 - **An input-guarded refusal beside held-state branches** (beyond10x/ess#227, first filed as
