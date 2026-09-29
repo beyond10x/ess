@@ -55,6 +55,15 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | component port | `email-service` |
 | component port | `invoice-service` |
 
+## Ports — yours to provide
+
+What the specification fully determines is generated; what it cannot determine is an obligation. A generated command behaviour or view query reads and writes through the ports below, and they are yours to provide: synthesis generates each port's contract and never an implementation of one, so where instances live stays your decision.
+
+| port | what it answers |
+| --- | --- |
+| storage | one per entity a generated behaviour or query reads or writes: the instance stored under an identity; storing, replacing and removing one; and every stored instance, in the order the store keeps them |
+| context | where a generated behaviour asks it: the caller's attributes, every identity and value the specification says the implementation assigns, and whether each `external:` branch is taken |
+
 ## Obligations — yours to implement
 
 | capability | source | why not generated | contract |

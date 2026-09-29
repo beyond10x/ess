@@ -392,7 +392,7 @@ const PRIMITIVES: &str = r"
 ///
 /// Never a float: money does not round the way a float does. Equality and order are over the
 /// rendering, so `1.5` and `1.50` are different values here; arithmetic is deliberately absent,
-/// because what a decimal *does* is behaviour, and behaviour is not synthesised.
+/// because the specification declares no operation on a decimal, so there is none to generate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Decimal(pub String);
 

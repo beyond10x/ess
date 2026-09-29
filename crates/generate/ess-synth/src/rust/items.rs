@@ -447,16 +447,16 @@ pub(super) fn summary_doc(out: &mut String, summary: Option<&str>) {
     }
 }
 
-/// A declared alphabet, documented as an invariant is and for the same reason: checking is
-/// behaviour, and behaviour is an obligation in this scope.
+/// A declared alphabet, documented as an invariant is: the type carries it in its documentation
+/// and does not check it.
 fn alphabet_doc(out: &mut String, alphabet: Option<&str>) {
     if let Some(alphabet) = alphabet {
         let _ = writeln!(out, "///\n/// Every character is one of `{alphabet}`.");
     }
 }
 
-/// The declared invariants, documented rather than silently dropped — and documented rather than
-/// enforced, because checking is behaviour, and behaviour is an obligation in this scope.
+/// The declared invariants, documented rather than silently dropped. The type does not check
+/// them; a behaviour that constructs a value does.
 pub(super) fn invariant_doc(out: &mut String, invariants: &[Invariant]) {
     if invariants.is_empty() {
         return;

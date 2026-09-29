@@ -1,4 +1,7 @@
-//! Structural synthesis: from a resolved specification to a plan, and from the plan to code.
+//! Synthesis: from a resolved specification to a plan, and from the plan to code.
+//!
+//! What the specification fully determines is generated; what it cannot determine is an
+//! obligation. Storage is a port the implementor provides, never a generated store.
 //!
 //! # The hinge, and the seam
 //!

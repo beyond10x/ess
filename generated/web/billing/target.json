@@ -25,7 +25,7 @@
     },
     {
       "guarantee": "the current state of every instance is observable",
-      "instead": "the synthesised system holds no entity store — where instances live is an obligation — so the page shows each declared view's rows beside the entity's declared lifecycle, and shows a per-instance state only where a view projects one. Deriving a state from the event log would be behaviour, and behaviour is not synthesised",
+      "instead": "the synthesised system holds no entity store — storage is a port the implementor provides — so the page shows each declared view's rows beside the entity's declared lifecycle, and shows a per-instance state only where a view projects one. The specification does not say how a state is derived from the event log, so nothing here derives one",
       "affects": [
         "entity_lifecycle",
         "view_type"

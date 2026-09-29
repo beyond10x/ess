@@ -2,14 +2,15 @@
 format: aep.planning-md/3
 id: epic:generated-determined-behaviour
 kind: epic
-status: active
+status: implemented
 title: Synthesis generates what the specification fully determines
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T20:20:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T20:20:01Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T23:51:41Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
