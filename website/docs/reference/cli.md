@@ -15,6 +15,8 @@ lists exactly those: [`ess specify`](#ess-specify), [`ess generate`](#ess-genera
 [command reference](#command-reference) at the end of this page lists every command under them,
 with every argument, its default and its help text. It is generated from the command definition
 `ess` itself parses with, so it names exactly what the shipped command accepts.
+What each error code and refusal name `ess` prints means, and how to repair it, is in
+[Diagnostics](diagnostics.md).
 
 The agent guidance for these commands is the `ess` plugin in
 [`beyond10x/agentplugins`](https://github.com/beyond10x/agentplugins); `ess` itself carries none.

@@ -2,6 +2,7 @@
 
 mod cli_reference;
 mod consumer_coverage;
+mod diagnostics;
 mod docs;
 #[path = "../../ess-cli/src/git_checkout.rs"]
 mod git_checkout;
@@ -106,6 +107,12 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Regenerate or check the diagnostics reference page from the crates' catalogues.
+    Diagnostics {
+        /// Compare byte for byte without writing.
+        #[arg(long)]
+        check: bool,
+    },
     /// Regenerate or check `WHATS-CHANGED.md` from the `changes/` fragments.
     WhatsChanged {
         /// Compare byte for byte without writing.
@@ -172,6 +179,9 @@ fn run(cli: Cli) -> Result<String, String> {
         Command::Docs => docs::run(&root),
         Command::CliReference { check } => {
             cli_reference::run(&root, check).map_err(|error| format!("{error:#}"))
+        }
+        Command::Diagnostics { check } => {
+            diagnostics::run(&root, check).map_err(|error| format!("{error:#}"))
         }
         Command::InfraAcceptance(args) => {
             infra_acceptance::run(&root, &args).map_err(|error| format!("{error:#}"))

@@ -409,27 +409,64 @@ pub enum HistoryRefusal {
 }
 
 impl HistoryRefusal {
-    /// The refusal's stable name.
+    /// The refusal's stable name: its entry in [`HistoryRefusal::CATALOGUE`].
     pub fn code(&self) -> &'static str {
-        match self {
-            Self::Malformed { .. } => "history.malformed",
-            Self::UnsupportedFormat { .. } => "history.unsupported-format",
-            Self::SpecDigestMismatch { .. } => "history.spec-digest-mismatch",
-            Self::NoClients => "history.no-clients",
-            Self::DuplicateOperation { .. } => "history.duplicate-operation",
-            Self::ClientOutOfRange { .. } => "history.client-out-of-range",
-            Self::ReturnedWithoutReturnInstant { .. } => "history.returned-without-return-instant",
-            Self::ReturnBeforeInvoke { .. } => "history.return-before-invoke",
-            Self::IndeterminateWithReturnInstant { .. } => {
-                "history.indeterminate-with-return-instant"
-            }
-            Self::IndeterminateWithOutcome { .. } => "history.indeterminate-with-outcome",
-            Self::IndeterminateWithRows { .. } => "history.indeterminate-with-rows",
-            Self::ReturnedWithoutOutcome { .. } => "history.returned-without-outcome",
-            Self::NonCanonicalUuid { .. } => "history.non-canonical-uuid",
-            Self::IntegerOutOfRange { .. } => "history.integer-out-of-range",
-            Self::RetryOfUnknown { .. } => "history.retry-of-unknown",
-        }
+        self.catalogue_entry().key
+    }
+}
+
+crate::authored::diagnostic_catalogue! {
+    impl HistoryRefusal => &'static str {
+        Self::Malformed { .. } => "history.malformed",
+            "The bytes are not an `ess-history/1` document: not JSON, an unknown or missing \
+             field, or a value outside its declared type.",
+            "Write the document as the `ess-history/1` schema describes; the detail names the \
+             field or the position.";
+        Self::UnsupportedFormat { .. } => "history.unsupported-format",
+            "The `format` is absent, or names a format this build does not read.",
+            "Write `format: ess-history/1`.";
+        Self::SpecDigestMismatch { .. } => "history.spec-digest-mismatch",
+            "The history was recorded against another specification.",
+            "Check the history against the specification it was recorded against, or record it \
+             again against this one.";
+        Self::NoClients => "history.no-clients",
+            "The history counts no clients.",
+            "Set `clients` to the number of clients that sent operations.";
+        Self::DuplicateOperation { .. } => "history.duplicate-operation",
+            "Two operations carry one identity.",
+            "Give every operation its own identity.";
+        Self::ClientOutOfRange { .. } => "history.client-out-of-range",
+            "An operation names a client at or above `clients`.",
+            "Number clients from 0 to `clients` minus 1, or raise `clients`.";
+        Self::ReturnedWithoutReturnInstant { .. } => "history.returned-without-return-instant",
+            "An operation is `Returned` and carries no return instant.",
+            "Record `returned_at` for an operation that returned, or mark it `Indeterminate`.";
+        Self::ReturnBeforeInvoke { .. } => "history.return-before-invoke",
+            "An operation's return instant precedes its invoke instant.",
+            "Record instants from one clock, so an operation returns at or after it was invoked.";
+        Self::IndeterminateWithReturnInstant { .. } => "history.indeterminate-with-return-instant",
+            "An operation is `Indeterminate` and carries a return instant.",
+            "Drop `returned_at`, or mark the operation `Returned` if it did return.";
+        Self::IndeterminateWithOutcome { .. } => "history.indeterminate-with-outcome",
+            "An operation is `Indeterminate` and carries an outcome.",
+            "Drop `outcome`, or mark the operation `Returned` if it did return.";
+        Self::IndeterminateWithRows { .. } => "history.indeterminate-with-rows",
+            "An operation is `Indeterminate` and carries `rows`: a read that never answered \
+             answered no rows.",
+            "Drop `rows`, or mark the operation `Returned` if it did return.";
+        Self::ReturnedWithoutOutcome { .. } => "history.returned-without-outcome",
+            "An operation is `Returned` and carries no outcome.",
+            "Record the outcome the operation returned.";
+        Self::NonCanonicalUuid { .. } => "history.non-canonical-uuid",
+            "A UUID is written with upper-case hexadecimal; its one spelling is lower case.",
+            "Write the UUID in lower case.";
+        Self::IntegerOutOfRange { .. } => "history.integer-out-of-range",
+            "An integer is above the largest integer a history admits.",
+            "Keep the value at or below the bound the message states.";
+        Self::RetryOfUnknown { .. } => "history.retry-of-unknown",
+            "An operation's `retry_of` names no earlier operation of the same client and command.",
+            "Name the earlier operation this one sends again, from the same client and command, \
+             or drop `retry_of`.";
     }
 }
 

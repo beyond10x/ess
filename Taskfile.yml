@@ -257,6 +257,9 @@ tasks:
       # The CLI reference page's command sections are rendered from the clap tree `ess` parses
       # with, so a command or flag added without regenerating the page fails here.
       - cargo xtask cli-reference --check
+      # The diagnostics reference page is rendered from the catalogue each crate exports, so a
+      # code added without a catalogue entry, or without regenerating the page, fails here.
+      - cargo xtask diagnostics --check
 
   typescript-check:
     desc: Compile and execute the emitted conformance runtime's own TypeScript cases.

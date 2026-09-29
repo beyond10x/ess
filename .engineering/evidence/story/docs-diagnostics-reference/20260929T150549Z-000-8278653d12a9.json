@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T15:05:49Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-diagnostics-reference",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-compiler 228, ess-conformance 1897, ess-xtask 337, ess-realization 6, ess-deployment 33, ess-composition 86 passed; diagnostics --check red then green; clippy on six crates; fmt-check",
+    "reference": "docs/diag@3bcbb0e0c"
+  }
+}
