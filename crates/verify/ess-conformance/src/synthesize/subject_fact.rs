@@ -35,6 +35,7 @@ use super::{
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ScenarioStep,
     ScenarioValue, Setup, Truth, Unreachable, ViewExpectation, ViewRef, WitnessGap,
 };
+use ess_domain::entity::Cardinality;
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{CompareOp, Operand};
 
@@ -368,6 +369,11 @@ pub(super) fn row_truth_with(
                 .map(|value| (name.clone(), value.clone()))
         })
         .collect();
+    // A link to the owner compared with an input naming an arranged owner is bound as that
+    // owner's token, which the input carries too (beyond10x/ess#193).
+    if let Some((command, sent)) = input {
+        values.extend(link_facts(ir, command, entity, settled, predicate, sent));
+    }
     for path in predicate.fact_paths() {
         let root = path.namespace();
         if declared.fields.iter().any(|field| field.name == root) && !values.contains_key(root) {
@@ -397,6 +403,255 @@ pub(super) fn row_truth_with(
         _ => None,
     };
     predicate.evaluate(&RowAndInput { row, input })
+}
+
+/// The distinction the second owner a link comparison names is arranged under: past every further
+/// instance an arrangement or a view's companion rows number (those stop at
+/// [`MAX_CANDIDATES`](super::MAX_CANDIDATES)), so its name is never one they capture as well.
+const OTHER_OWNER: Distinction = Distinction::further(super::MAX_CANDIDATES + 1);
+
+/// Every `==` or `!=` a guarded branch's stored predicate writes between the row's link to its
+/// owner and an input field of the owner's identity type (beyond10x/ess#193): the input field, and
+/// the link field it is compared with.
+///
+/// `account_id != input.account_id` asks whether the caller names the owner the row was filed
+/// under. Neither side is a value the specification spells — the owner is the instance the
+/// arrangement created, and the caller names one — so the input is sent as an arranged instance:
+/// the row's own owner, or a second one arranged beside it ([`linked_inputs`]).
+fn links(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+) -> BTreeSet<(String, String)> {
+    let mut out = BTreeSet::new();
+    let Some(owned) = ir.owner_of(entity) else {
+        return out;
+    };
+    let Some(link) = ir
+        .entity(entity)
+        .fields
+        .iter()
+        .find(|field| field.name == owned.via)
+    else {
+        return out;
+    };
+    let mut found = Vec::new();
+    for hint in hints(command) {
+        leaves(&hint, &mut found);
+    }
+    for leaf in found.iter().filter(|leaf| reads_input(ir, entity, leaf)) {
+        let Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq | CompareOp::Ne,
+            right: Operand::Fact(right),
+        } = leaf
+        else {
+            continue;
+        };
+        for (row, other) in [(left, right), (right, left)] {
+            let Some(sent) = input_path(other).filter(|sent| sent.segments().len() == 1) else {
+                continue;
+            };
+            let typed = command
+                .input
+                .iter()
+                .find(|field| field.name == sent.namespace())
+                .is_some_and(|field| field.type_ref.required() == link.type_ref.required());
+            if typed && row.segments().len() == 1 && row.namespace() == link.name {
+                out.insert((sent.namespace().to_owned(), link.name.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// Whether any of `predicates` holds a link comparison of `command` ([`links`]): an `==` or `!=`
+/// between the row's link to its owner and the input naming an owner. Such a predicate is decided
+/// only with the input bound, so every search toward it runs over [`linked_inputs`] (beyond10x/ess
+/// #193). A goal over it past [`MAX_BOUNDARIES`] is refused, and so is one the bounded search did not
+/// reach where an input naming an arranged owner left it undecided ([`goal_input`]); one every
+/// candidate decided and no bounded row meets adds no row, as for every other guard.
+fn compares_link(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+) -> bool {
+    let pairs = links(ir, command, entity);
+    if pairs.is_empty() {
+        return false;
+    }
+    let mut found = Vec::new();
+    for predicate in predicates {
+        leaves(predicate, &mut found);
+    }
+    let pair = |row: &FactPath, other: &FactPath| {
+        pairs.iter().any(|(sent, field)| {
+            row.segments().len() == 1
+                && row.namespace() == field
+                && input_path(other).is_some_and(|rest| rest.segments() == [sent.clone()])
+        })
+    };
+    found.iter().any(|leaf| {
+        matches!(
+            leaf,
+            Predicate::Compare {
+                left: Operand::Fact(left),
+                op: CompareOp::Eq | CompareOp::Ne,
+                right: Operand::Fact(right),
+            } if pair(left, right) || pair(right, left)
+        )
+    })
+}
+
+/// For each of `inputs`, whether an undecided goal on it counts as one the search could not decide:
+/// an input naming an arranged owner ([`linked`]), or any input where none of them names one. A
+/// plain candidate beside inputs that name an owner leaves a link comparison undecided by
+/// construction, and says nothing about whether the goal's row exists.
+fn naming_owner(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    inputs: &[BTreeMap<String, Node>],
+) -> Vec<bool> {
+    let names: Vec<bool> = inputs
+        .iter()
+        .map(|input| !linked(ir, command, entity, &arrangement.settled, input).is_empty())
+        .collect();
+    let any = names.contains(&true);
+    names.into_iter().map(|named| named || !any).collect()
+}
+
+/// The value an input field naming `instance` is chosen at while the search decides a link
+/// comparison: a token of the instance at the field's type, which no two instances share. It is
+/// never sent — [`prepare`] sends the instance itself in its place, through `Setup::bound`.
+fn token(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    field: &str,
+    instance: &super::InstanceName,
+) -> Option<Node> {
+    let path = FactPath::new(field).ok()?;
+    let declared = |primitive| crate::input::declared_as(ir, &command.input, &path, primitive);
+    let text = format!("instance:{instance}");
+    if declared(ess_domain::types::Primitive::Uuid) {
+        Some(Node::Text(crate::witness::uuid_of(&text)))
+    } else if declared(ess_domain::types::Primitive::String) {
+        Some(Node::Text(text))
+    } else {
+        None
+    }
+}
+
+/// The owner a link comparison's other side names, and what it is called: an instance of the
+/// entity that owns `entity`, arranged under [`OTHER_OWNER`].
+fn other_owner(ir: &EssIr, entity: &EntityHandle) -> Option<(EntityHandle, super::InstanceName)> {
+    let owned = ir.owner_of(entity)?;
+    let name = super::instance_name(&ir.entity(&owned.owner).name, OTHER_OWNER);
+    Some((owned.owner, name))
+}
+
+/// The arranged owner each link input of `input` names, by input field: the row's own owner, or
+/// the [`other_owner`], where the input carries its [`token`]. A field carrying anything else — a
+/// literal nobody assigned — names no owner, and the comparison stays undecided.
+fn linked(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    input: &BTreeMap<String, Node>,
+) -> BTreeMap<String, super::InstanceName> {
+    let other = other_owner(ir, entity).map(|(_, name)| name);
+    let mut out = BTreeMap::new();
+    for (sent, field) in links(ir, command, entity) {
+        let Some(ScenarioValue::Instance { instance: own }) =
+            settled.get(&field).map(|held| &held.value)
+        else {
+            continue;
+        };
+        let Some(value) = input.get(&sent) else {
+            continue;
+        };
+        let known: Vec<(&super::InstanceName, Option<Node>)> = std::iter::once(own)
+            .chain(other.iter().filter(|other| *other != own))
+            .map(|name| (name, token(ir, command, &sent, name)))
+            .collect();
+        // Two owners whose tokens coincide cannot be told apart, so neither is named.
+        if let [(_, first), (_, second)] = known.as_slice() {
+            if first == second {
+                continue;
+            }
+        }
+        if let Some((name, _)) = known
+            .iter()
+            .find(|(_, token)| token.as_ref() == Some(value))
+        {
+            out.insert(sent, (*name).clone());
+        }
+    }
+    out
+}
+
+/// The link fields [`row_truth_with`] binds for `predicate` and this input: each link whose input
+/// names an arranged owner, at the row's own owner's [`token`] — where `predicate` reads the link
+/// and that input only in `==` or `!=` between the two, or the link in `defined()`. Anything else
+/// asked of either — an ordering, a literal, a text test — is a question about the identity's
+/// value, which no token answers, and leaves the predicate `Unknown` as before.
+fn link_facts(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    predicate: &Predicate,
+    input: &BTreeMap<String, Node>,
+) -> BTreeMap<String, Node> {
+    let named = linked(ir, command, entity, settled, input);
+    let mut out = BTreeMap::new();
+    for (sent, field) in links(ir, command, entity) {
+        let Some(ScenarioValue::Instance { instance: own }) =
+            settled.get(&field).map(|held| &held.value)
+        else {
+            continue;
+        };
+        if !named.contains_key(&sent) || !only_compared(ir, entity, predicate, &field, &sent) {
+            continue;
+        }
+        if let Some(token) = token(ir, command, &sent, own) {
+            out.insert(field, token);
+        }
+    }
+    out
+}
+
+/// Whether every leaf of `predicate` reading the row's `field` or `input.<sent>` is an `==` or `!=`
+/// between exactly those two, or `defined(field)`.
+fn only_compared(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    predicate: &Predicate,
+    field: &str,
+    sent: &str,
+) -> bool {
+    let mut found = Vec::new();
+    leaves(predicate, &mut found);
+    let row = |path: &FactPath| path.segments().len() == 1 && path.namespace() == field;
+    let input =
+        |path: &FactPath| input_path(path).is_some_and(|rest| rest.segments() == [sent.to_owned()]);
+    let touches = |path: &FactPath| {
+        path.namespace() == field
+            || (reads_input(ir, entity, predicate)
+                && input_path(path).is_some_and(|rest| rest.namespace() == sent))
+    };
+    found.iter().all(|leaf| match leaf {
+        Predicate::Compare {
+            left: Operand::Fact(left),
+            op: CompareOp::Eq | CompareOp::Ne,
+            right: Operand::Fact(right),
+        } if (row(left) && input(right)) || (input(left) && row(right)) => true,
+        Predicate::Defined(path) if row(path) => true,
+        other => !other.fact_paths().into_iter().any(&touches),
+    })
 }
 
 /// Whether a stored-field predicate compares the row with the command's input: a path rooted at
@@ -569,6 +824,216 @@ fn inputs_for(
         }
     }
     Ok(inputs)
+}
+
+/// [`inputs_for`], and each of them once more for every link comparison ([`links`]) on a row whose
+/// link holds an arranged owner (beyond10x/ess#193): sent naming that owner, and — for each link
+/// in turn — naming the [`other_owner`] instead. So an `!=` and an `==` between the link and the
+/// input are each decided both ways, and a branch on either side is reached.
+///
+/// Only [`prepare`] offers these, because only it sends the owner named in their place: every other
+/// arrangement keeps the candidates, and so the suites, it had.
+fn linked_inputs(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    let mut inputs = inputs_for(ir, command, entity, arrangement)?;
+    let owned: Vec<(String, &super::InstanceName)> = links(ir, command, entity)
+        .into_iter()
+        .filter_map(
+            |(sent, field)| match &arrangement.settled.get(&field)?.value {
+                ScenarioValue::Instance { instance } => Some((sent, instance)),
+                _ => None,
+            },
+        )
+        .collect();
+    if owned.is_empty() {
+        return Ok(inputs);
+    }
+    let other = other_owner(ir, entity).map(|(_, name)| name);
+    let mut more = Vec::new();
+    for input in &inputs {
+        let mut same = input.clone();
+        for (sent, own) in &owned {
+            if let Some(token) = token(ir, command, sent, own) {
+                same.insert(sent.clone(), token);
+            }
+        }
+        more.push(same.clone());
+        for (sent, _) in &owned {
+            if let Some(token) = other
+                .as_ref()
+                .and_then(|other| token(ir, command, sent, other))
+            {
+                let mut apart = same.clone();
+                apart.insert(sent.clone(), token);
+                more.push(apart);
+            }
+        }
+    }
+    // A token that is not a value of the field's type (a text newtype narrower than the token) is
+    // not a candidate: the comparison then stays undecided and is refused as it was.
+    inputs.extend(
+        more.into_iter()
+            .filter(|input| flatten(ir, command, input).is_ok()),
+    );
+    Ok(inputs)
+}
+
+/// [`reach_at`] over [`linked_inputs`].
+fn reach_linked(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+    for input in linked_inputs(ir, command, entity, arrangement)? {
+        if selects(ir, command, entity, arrangement, &input)?
+            .is_some_and(|branch| branch.name == outcome.name)
+        {
+            return Ok(Some(input));
+        }
+    }
+    Ok(None)
+}
+
+/// The owners the chosen `input` names through a link comparison, as `Setup::bound` sends them, and
+/// the second owner arranged where it names that one and `present` says this scenario has not
+/// arranged it yet (beyond10x/ess#193). An owner that cannot be arranged refuses the branch, naming
+/// it: its side of the guard would otherwise go unwitnessed.
+///
+/// The second owner is given a row of `entity` of its own ([`row_under`]), so the owner the refused
+/// side names holds rows too, just not this one: a target asking whether the named owner holds
+/// *any* row, rather than this row, fails. Not under a `cardinality: one` owner relation where
+/// `outcome`, the branch sent, writes the link from an input naming the second owner
+/// ([`files_under`]): the branch then files this row under that owner, which would hold two, a
+/// state the relation says no owner reaches.
+#[allow(clippy::too_many_arguments)]
+fn bind_links(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    arrangement: &mut Arrangement,
+    input: &BTreeMap<String, Node>,
+    present: &mut bool,
+) -> Result<BTreeMap<String, super::InstanceName>, RefusalCause> {
+    let bound = linked(ir, command, entity, &arrangement.settled, input);
+    let crowded = ir.owner_of(entity).is_some_and(|owned| {
+        owned.relation.cardinality == Cardinality::One
+            && other_owner(ir, entity)
+                .is_some_and(|(_, other)| files_under(outcome, owned.via, &bound, &other))
+    });
+    if let Some((owner, other)) = other_owner(ir, entity)
+        .filter(|(_, other)| !*present && bound.values().any(|named| named == other))
+    {
+        let initial = ir.entity(&owner).lifecycle.initial.clone();
+        let arranged = super::arrange_first(
+            ir,
+            &owner,
+            std::slice::from_ref(&initial),
+            actors,
+            OTHER_OWNER,
+            &[entity],
+        )
+        .map_err(|reason| RefusalCause::InstanceRequired {
+            entity: EntityRef::from(&owner),
+            need: InstanceNeed::InState { state: initial },
+            reason,
+        })?;
+        assert_eq!(
+            arranged.instance, other,
+            "an owner is named after its entity and distinction"
+        );
+        arrangement.steps.extend(arranged.steps);
+        arrangement.source.extend(arranged.source);
+        if let Some(row) = (!crowded)
+            .then(|| row_under(ir, entity, actors, &arranged.instance, &arranged.state))
+            .flatten()
+        {
+            arrangement.steps.extend(row.steps);
+            arrangement.source.extend(row.source);
+        }
+        *present = true;
+    }
+    Ok(bound)
+}
+
+/// Whether `outcome` writes the link field `via` from an input that `bound` sends as `owner`: the
+/// branch files the row it names under that owner.
+fn files_under(
+    outcome: &ResolvedOutcome,
+    via: &str,
+    bound: &BTreeMap<String, super::InstanceName>,
+    owner: &super::InstanceName,
+) -> bool {
+    outcome.sets.iter().any(|set| {
+        set.target == via
+            && matches!(
+                &set.value,
+                ResolvedPayloadValue::InputField { field, .. }
+                    if bound.get(field) == Some(owner)
+            )
+    })
+}
+
+/// One row of `entity` created under the arranged `owner`, named under [`OTHER_OWNER`], by the
+/// first creating branch that names the owner from its input and can be run — `None` where none
+/// can. The owner holds no row before it, so a `cardinality: one` relation admits this one; the
+/// caller ([`bind_links`]) does not ask for it where the branch it sends would then file a second
+/// row under the same owner.
+fn row_under(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    owner: &super::InstanceName,
+    owner_state: &super::StateName,
+) -> Option<Arrangement> {
+    let via = ir.owner_of(entity)?.via;
+    let all = ir.drivers();
+    let drivers = all.get(entity).map_or(&[][..], Vec::as_slice);
+    drivers
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .find_map(|creator| {
+            let field = creator
+                .outcome
+                .sets
+                .iter()
+                .find_map(|set| match &set.value {
+                    ResolvedPayloadValue::InputField { field, .. }
+                        if set.target == via && set.conversion.is_none() =>
+                    {
+                        Some(field.clone())
+                    }
+                    _ => None,
+                })?;
+            let under = (
+                field,
+                Arrangement {
+                    instance: owner.clone(),
+                    state: owner_state.clone(),
+                    steps: Vec::new(),
+                    source: BTreeSet::new(),
+                    settled: BTreeMap::new(),
+                },
+            );
+            super::created_owned(
+                ir,
+                entity,
+                creator,
+                actors,
+                OTHER_OWNER,
+                &[],
+                Some(&under),
+                None,
+            )
+            .ok()
+        })
 }
 
 /// Which branch this command selects for the row `arrangement` holds and this input, if exactly
@@ -1268,6 +1733,48 @@ fn search<T>(
     search_within(ir, entity, actors, hints, distinction, field, &[], goal)
 }
 
+/// [`search`] for a further row of a scenario, under the first further distinction from `first`
+/// whose arrangement binds no instance name in `taken` — the names the scenario's earlier steps
+/// already bind (beyond10x/ess#193). The row the scenario's own subject was arranged on may already
+/// sit on a further distinction ([`prepare`] asks `1..=FRESH_WITNESSES` for a row leaving fewer
+/// writes unchanged), and a further row captured under that name again would rebind it, so the
+/// closing observation of the scenario's own row would read another one.
+///
+/// The ordinal is searched rather than counted from a known offset, as `arrange_unbound` in the
+/// parent module does, because the numbers taken are chosen by code that does not know about this
+/// search. The inner result is [`search`]'s own, which the caller answers as it answers any search;
+/// the outer error is a row for which every name up to [`MAX_CANDIDATES`](super::MAX_CANDIDATES)
+/// is taken, which is refused whatever the goal, never skipped.
+#[allow(clippy::too_many_arguments)]
+fn search_unbound<T>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    first: usize,
+    field: &str,
+    taken: &BTreeSet<super::InstanceName>,
+    mut goal: impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<Result<(Arrangement, T), RefusalCause>, RefusalCause> {
+    let name = &ir.entity(entity).name;
+    for nth in first..=super::MAX_CANDIDATES {
+        let distinction = Distinction::further(nth);
+        if taken.contains(&super::instance_name(name, distinction)) {
+            continue;
+        }
+        match search(ir, entity, actors, hints, distinction, field, &mut goal) {
+            Ok(found) if !super::bound_instances(&found.0.steps).is_disjoint(taken) => {}
+            found => return Ok(found),
+        }
+    }
+    Err(RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{entity}` {field} row under an instance name no earlier step of the scenario binds"
+        ),
+        tried: 0,
+    })
+}
+
 /// [`search`], inside an arrangement of the entities `arranging` names: a creator or a driver that
 /// would need one of them again (a related row of its own entity, ess/18) stops at the cycle, and
 /// the next creator is tried.
@@ -1547,7 +2054,7 @@ pub(super) fn prepare(
         Distinction::PLAIN,
         &label,
         |node| {
-            let found = reach_at(ir, command, outcome, entity, node)?;
+            let found = reach_linked(ir, command, outcome, entity, node)?;
             if found.is_none() {
                 shadowed_at(ir, command, outcome, entity, node, &mut shadow)?;
             }
@@ -1573,7 +2080,7 @@ pub(super) fn prepare(
             let Ok((row, input)) =
                 search(ir, entity, actors, &hints, distinction, &label, |node| {
                     Ok(
-                        reach_at(ir, command, outcome, entity, node)?.filter(|input| {
+                        reach_linked(ir, command, outcome, entity, node)?.filter(|input| {
                             super::unchanged_writes(ir, outcome, input, &node.settled) < bound
                         }),
                     )
@@ -1596,6 +2103,16 @@ pub(super) fn prepare(
             && super::unchanged_writes(ir, outcome, next, &arrangement.settled) <= unchanged
     };
     let (input, _) = super::sources_apart(ir, command, outcome, input, &keeps);
+    let bound = bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        &mut arrangement,
+        &input,
+        &mut false,
+    )?;
     let (steps, view) = observe_fields(ir, entity, &fields, &arrangement)?;
     arrangement.steps.extend(steps);
     arrangement.source.insert(view.into());
@@ -1611,7 +2128,7 @@ pub(super) fn prepare(
         Setup {
             steps: arrangement.steps,
             instance: Some(arrangement.instance),
-            bound: BTreeMap::new(),
+            bound,
             source: arrangement.source,
             after: Some(after),
             before: Some(arrangement.state),
@@ -1937,15 +2454,23 @@ pub(super) fn around(
     setup: &mut Setup,
     supplied: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Vec<ScenarioStep>, RefusalCause> {
+    // Whether the scenario already arranged the second owner a link comparison names (#193).
+    let mut present = reading(command, outcome)
+        .and_then(|subject| other_owner(ir, &subject.entity))
+        .is_some_and(|(_, other)| setup.bound.values().any(|named| named == &other));
+    // Every instance name the arrangement already binds, which no further row may bind again.
+    let mut taken = super::bound_instances(&setup.steps);
+    taken.extend(setup.instance.iter().cloned());
     let (further, source) = boundaries(
         ir,
         command,
         outcome,
         actors,
-        &setup.settled,
-        setup.before.as_ref(),
+        (&setup.settled, setup.before.as_ref()),
+        (&mut present, &mut taken),
     )?;
-    let (overlapping, overlap_source) = overlaps(ir, command, outcome, actors)?;
+    let (overlapping, overlap_source) =
+        overlaps(ir, command, outcome, actors, (&mut present, &mut taken))?;
     let mut steps = around_row(ir, command, outcome, actors, setup, supplied)?;
     steps.extend(further);
     steps.extend(overlapping);
@@ -2177,13 +2702,23 @@ const MAX_BOUNDARIES: usize = 8;
 ///
 /// The ess/9 predicate form only: an ess/6 `{field, equals}` guard is one leaf, and its suites keep
 /// their bytes.
+///
+/// A goal holding a link comparison ([`compares_link`]) is decided with the input bound, over
+/// [`linked_inputs`], and sent the owners that input names ([`bind_links`]) (beyond10x/ess#193).
+/// The branch is refused with `ESS-SYNTH-003` naming the goal where the goal lies past
+/// [`MAX_BOUNDARIES`], or where the bounded search did not reach it and an input naming an arranged
+/// owner left it undecided: the search could not say whether a row meets it. A goal every
+/// candidate decided and no bounded row meets adds no row, as for every other guard.
 pub(super) fn boundaries(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    witnessed: &BTreeMap<String, super::Determined>,
-    witnessed_state: Option<&super::StateName>,
+    (witnessed, witnessed_state): (
+        &BTreeMap<String, super::Determined>,
+        Option<&super::StateName>,
+    ),
+    (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
@@ -2200,33 +2735,70 @@ pub(super) fn boundaries(
     let goals = goals_for(ir, outcome, entity, &hints, witnessed, witnessed_state);
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
+    // A command comparing a link with an input decides every guard with the input bound: `selects`
+    // reads every branch, so a goal of its own reads the link through a sibling too.
+    let decided_with_input = !links(ir, command, entity).is_empty();
     let mut rows = 0;
     for (refuted, held) in goals {
+        let linked = compares_link(
+            ir,
+            command,
+            entity,
+            &refuted.iter().chain(&held).cloned().collect::<Vec<_>>(),
+        );
         if rows >= MAX_BOUNDARIES {
-            break;
+            // Past the bound a goal adds no row; one isolating a link comparison was not searched,
+            // so whether a row meets it is unknown, and it is refused rather than left unwitnessed.
+            if linked {
+                return Err(unreached(entity, command, outcome, (&refuted, &held), None));
+            }
+            continue;
         }
-        let distinction = Distinction::further(rows + 1);
-        let found = search(
+        let mut undecided = false;
+        let found = search_unbound(
             ir,
             entity,
             actors,
             &hints,
-            distinction,
+            rows + 1,
             "boundary",
+            taken,
             |node| {
-                let truth = |predicate: &Predicate| {
-                    row_truth(ir, entity, &node.settled, Some(&node.state), predicate)
-                };
-                if refuted.iter().any(|child| truth(child) != Truth::False)
-                    || held.iter().any(|child| truth(child) != Truth::True)
-                {
-                    return Ok(None);
+                if !decided_with_input {
+                    let truth = |predicate: &Predicate| {
+                        row_truth(ir, entity, &node.settled, Some(&node.state), predicate)
+                    };
+                    if refuted.iter().any(|child| truth(child) != Truth::False)
+                        || held.iter().any(|child| truth(child) != Truth::True)
+                    {
+                        return Ok(None);
+                    }
+                    return reach_at(ir, command, outcome, entity, node);
                 }
-                reach_at(ir, command, outcome, entity, node)
+                goal_input(
+                    ir,
+                    (command, outcome),
+                    (entity, node),
+                    (linked_inputs(ir, command, entity, node)?, &|_| Ok(true)),
+                    (&refuted, &held),
+                    &mut undecided,
+                )
             },
-        );
-        let Ok((arrangement, input)) = found else {
-            continue;
+        )?;
+        let (arrangement, input) = match found {
+            Ok(found) => found,
+            // A goal no candidate left undecided is one no row meets, which adds no row as for
+            // every other guard; one some candidate left undecided is refused.
+            Err(cause) if linked && undecided => {
+                return Err(unreached(
+                    entity,
+                    command,
+                    outcome,
+                    (&refuted, &held),
+                    Some(&cause),
+                ));
+            }
+            Err(_) => continue,
         };
         rows += 1;
         send_for_row(
@@ -2234,10 +2806,9 @@ pub(super) fn boundaries(
             command,
             outcome,
             actors,
-            read,
-            &fields,
+            (read, &fields),
             arrangement,
-            &input,
+            (&input, (&mut *present, &mut *taken)),
             (&mut steps, &mut source),
         )?;
     }
@@ -2248,21 +2819,123 @@ pub(super) fn boundaries(
     Ok((steps, source))
 }
 
+/// Which candidate inputs a further row's search may send at all, before its row is decided.
+type Admits<'a> = &'a dyn Fn(&BTreeMap<String, Node>) -> Result<bool, RefusalCause>;
+
+/// The first of `inputs` that `admits` and that sends `outcome` on `node`'s row with every predicate
+/// of `refuted` false and every one of `held` true, each decided with that input bound
+/// (beyond10x/ess#193). `undecided` is set where an input naming an arranged owner
+/// ([`naming_owner`]) left a goal predicate `Unknown` and none decided wrong: the row may be the
+/// goal's, and the search could not say.
+fn goal_input(
+    ir: &EssIr,
+    (command, outcome): (&ResolvedCommand, &ResolvedOutcome),
+    (entity, node): (&EntityHandle, &Arrangement),
+    (inputs, admits): (Vec<BTreeMap<String, Node>>, Admits<'_>),
+    (refuted, held): (&[Predicate], &[Predicate]),
+    undecided: &mut bool,
+) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+    let naming = naming_owner(ir, command, entity, node, &inputs);
+    for (input, names) in inputs.into_iter().zip(naming) {
+        if !admits(&input)? {
+            continue;
+        }
+        let truth = |predicate: &Predicate| {
+            row_truth_with(
+                ir,
+                entity,
+                &node.settled,
+                Some(&node.state),
+                predicate,
+                Some((command, &input)),
+            )
+        };
+        let falses: Vec<Truth> = refuted.iter().map(truth).collect();
+        let trues: Vec<Truth> = held.iter().map(truth).collect();
+        if falses.contains(&Truth::True) || trues.contains(&Truth::False) {
+            continue;
+        }
+        if falses.contains(&Truth::Unknown) || trues.contains(&Truth::Unknown) {
+            *undecided |= names;
+            continue;
+        }
+        if selects(ir, command, entity, node, &input)?
+            .is_some_and(|branch| branch.name == outcome.name)
+        {
+            return Ok(Some(input));
+        }
+    }
+    Ok(None)
+}
+
+/// `ESS-SYNTH-003` for a further row a guard comparing a link with an input needs and no bounded
+/// arrangement gives (beyond10x/ess#193): the goal, as the predicates that must be false and true
+/// on it, and the branch it is for. `cause` is the search's own refusal; `None` where the goal lies
+/// past [`MAX_BOUNDARIES`] and was not searched.
+fn unreached(
+    entity: &EntityHandle,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    (refuted, held): (&[Predicate], &[Predicate]),
+    cause: Option<&RefusalCause>,
+) -> RefusalCause {
+    let (why, tried) = match cause {
+        None => ("past the most further rows one branch is witnessed on", 0),
+        Some(RefusalCause::GuardUnsatisfiable { tried, .. }) => {
+            ("over the rows bounded arrangements left", *tried)
+        }
+        Some(_) => ("over the rows bounded arrangements left", 0),
+    };
+    let render = |predicates: &[Predicate]| {
+        predicates
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "`{entity}` row for `{}/{}` with [{}] false and [{}] true, a guard comparing the \
+             owner link with an input, {why}",
+            command.name,
+            outcome.name,
+            render(refuted),
+            render(held),
+        ),
+        tried,
+    }
+}
+
 /// The branch sent once more for a further arranged row, with what it requires, and the row
-/// observed again afterwards: as the branch left it, or unchanged.
+/// observed again afterwards: as the branch left it, or unchanged. The owners a link comparison's
+/// input names are arranged and sent first ([`bind_links`], with `present`), and every instance
+/// name the row binds is added to `taken`, so no later further row of the scenario binds it again.
 #[allow(clippy::too_many_arguments)]
 fn send_for_row(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
-    read: &ResolvedSubject,
-    fields: &BTreeSet<String>,
+    (read, fields): (&ResolvedSubject, &BTreeSet<String>),
     mut arrangement: Arrangement,
-    input: &BTreeMap<String, Node>,
+    (input, (present, taken)): (
+        &BTreeMap<String, Node>,
+        (&mut bool, &mut BTreeSet<super::InstanceName>),
+    ),
     (steps, source): (&mut Vec<ScenarioStep>, &mut BTreeSet<EssSemanticRef>),
 ) -> Result<(), RefusalCause> {
     let entity = &read.entity;
+    let bound = &bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        &mut arrangement,
+        input,
+        present,
+    )?;
+    taken.extend(super::bound_instances(&arrangement.steps));
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
     let (observed, view) = observe_fields(ir, entity, fields, &arrangement)?;
@@ -2275,7 +2948,7 @@ fn send_for_row(
         input,
         Some(read),
         Some(&arrangement.instance),
-        &BTreeMap::new(),
+        bound,
     );
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
@@ -2335,6 +3008,7 @@ fn overlaps(
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    (present, taken): (&mut bool, &mut BTreeSet<super::InstanceName>),
 ) -> Result<(Vec<ScenarioStep>, BTreeSet<EssSemanticRef>), RefusalCause> {
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
@@ -2353,46 +3027,75 @@ fn overlaps(
     let refusals: Vec<&Predicate> = super::sibling_refusals(command, outcome)
         .filter_map(when)
         .collect();
+    // As in `boundaries`: a command comparing a link with an input is decided with the input bound
+    // (beyond10x/ess#193). A row of an accepting guard holding that comparison is refused past the
+    // bound, or where the bounded search missed it with an input naming an arranged owner leaving
+    // it undecided; one every candidate decided and no bounded row meets adds no row.
+    let decided_with_input = !links(ir, command, entity).is_empty();
     let mut rows = 0;
     for accepting in &command.outcomes {
         let Some(guard) = super::accepting_input_half(accepting) else {
             continue;
         };
-        if rows >= MAX_BOUNDARIES {
-            break;
-        }
         let row_guard = stored(&accepting.condition);
-        // Numbered past every row `boundaries` can arrange, so no instance name is bound twice.
-        let distinction = Distinction::further(MAX_BOUNDARIES + rows + 1);
-        let found = search(ir, entity, actors, &hints, distinction, "overlap", |node| {
-            for input in inputs_for(ir, command, entity, node)? {
-                let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
-                if !decides(&facts, &[own, guard], true)? || !decides(&facts, &refusals, false)? {
-                    continue;
-                }
-                if let Some(predicate) = &row_guard {
-                    if row_truth_with(
-                        ir,
-                        entity,
-                        &node.settled,
-                        Some(&node.state),
-                        predicate,
-                        Some((command, &input)),
-                    ) != Truth::True
-                    {
-                        continue;
-                    }
-                }
-                if selects(ir, command, entity, node, &input)?
-                    .is_some_and(|branch| branch.name == outcome.name)
-                {
-                    return Ok(Some(input));
-                }
-            }
-            Ok(None)
+        let linked = row_guard.as_ref().is_some_and(|predicate| {
+            compares_link(ir, command, entity, std::slice::from_ref(predicate))
         });
-        let Ok((arrangement, input)) = found else {
+        if rows >= MAX_BOUNDARIES {
+            if linked {
+                return Err(unreached(
+                    entity,
+                    command,
+                    outcome,
+                    (&[], row_guard.as_slice()),
+                    None,
+                ));
+            }
             continue;
+        }
+        // Numbered from past every row `boundaries` can arrange, and past every name the scenario
+        // already binds, so no instance name is bound twice.
+        let mut undecided = false;
+        let admits = |input: &BTreeMap<String, Node>| {
+            let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+            Ok(decides(&facts, &[own, guard], true)? && decides(&facts, &refusals, false)?)
+        };
+        let found = search_unbound(
+            ir,
+            entity,
+            actors,
+            &hints,
+            MAX_BOUNDARIES + rows + 1,
+            "overlap",
+            taken,
+            |node| {
+                let inputs = if decided_with_input {
+                    linked_inputs(ir, command, entity, node)?
+                } else {
+                    inputs_for(ir, command, entity, node)?
+                };
+                goal_input(
+                    ir,
+                    (command, outcome),
+                    (entity, node),
+                    (inputs, &admits),
+                    (&[], row_guard.as_slice()),
+                    &mut undecided,
+                )
+            },
+        )?;
+        let (arrangement, input) = match found {
+            Ok(found) => found,
+            Err(cause) if linked && undecided => {
+                return Err(unreached(
+                    entity,
+                    command,
+                    outcome,
+                    (&[], row_guard.as_slice()),
+                    Some(&cause),
+                ));
+            }
+            Err(_) => continue,
         };
         rows += 1;
         send_for_row(
@@ -2400,10 +3103,9 @@ fn overlaps(
             command,
             outcome,
             actors,
-            read,
-            &fields,
+            (read, &fields),
             arrangement,
-            &input,
+            (&input, (&mut *present, &mut *taken)),
             (&mut steps, &mut source),
         )?;
     }

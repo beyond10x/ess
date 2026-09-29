@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Synthesis witnesses a `when_subject` guard comparing a link field with an input (#193).**
+  `account_id != input.account_id`, where `account_id` is the link to the row's owner and the
+  input is of the owner's identity type, was refused as `ESS-SYNTH-003`. The branch the input
+  selects when it names the row's own owner is sent that owner; the branch it selects when it
+  names another is sent a second owner arranged beside the row, holding a row of its own, so a
+  target that ignores the guard, compares with the wrong owner, or asks only whether the named owner
+  holds any row, fails. Where the comparison sits in `all:` or `any:` beside another stored
+  field, each conjunct and disjunct is witnessed alone with the input bound. Such a row is refused
+  as `ESS-SYNTH-003`, naming it, where it lies past the bound on further rows or where the bounded
+  search missed it with an input naming an arranged owner leaving it undecided; a row every
+  candidate decided and no bounded arrangement meets adds nothing, as for every other guard.
+  Under a `cardinality: one` owner relation, a branch that files the row under the owner the input
+  names is sent a second owner holding no row, so the owner never holds two. Further rows take
+  instance names no earlier step of the scenario binds.
+  Both sides are decided on the opaque instance tokens the
+  view-filter fix binds: only `==` and `!=` between the link and that input are decided, and an
+  ordering, a literal or a text test over either stays refused as before. Where the second owner
+  cannot be arranged, the branch is refused as `ESS-SYNTH-004`, naming the owner's entity.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added
