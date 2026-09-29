@@ -483,11 +483,13 @@ fn body_changes(before: &ResolvedBody, after: &ResolvedBody, mut push: impl FnMu
             ResolvedBody::Newtype {
                 of: was,
                 alphabet: was_alphabet,
+                prefix: was_prefix,
                 ..
             },
             ResolvedBody::Newtype {
                 of: is,
                 alphabet: is_alphabet,
+                prefix: is_prefix,
                 ..
             },
         ) => {
@@ -503,6 +505,7 @@ fn body_changes(before: &ResolvedBody, after: &ResolvedBody, mut push: impl FnMu
                     after: is_alphabet.clone(),
                 });
             }
+            prefix_changes(was_prefix.as_ref(), is_prefix.as_ref(), &mut push);
         }
         (ResolvedBody::Struct { fields: was, .. }, ResolvedBody::Struct { fields: is, .. }) => {
             field_deltas(was, is, |delta| match delta {
@@ -566,6 +569,27 @@ fn body_changes(before: &ResolvedBody, after: &ResolvedBody, mut push: impl FnMu
             before: was,
             after: is,
         });
+    }
+}
+
+/// A newtype's `prefix:` declared, dropped or replaced (beyond10x/ess#219).
+fn prefix_changes(
+    before: Option<&String>,
+    after: Option<&String>,
+    push: &mut impl FnMut(TypeChange),
+) {
+    match (before, after) {
+        (None, Some(after)) => push(TypeChange::PrefixAdded {
+            after: after.clone(),
+        }),
+        (Some(before), None) => push(TypeChange::PrefixRemoved {
+            before: before.clone(),
+        }),
+        (Some(before), Some(after)) if before != after => push(TypeChange::PrefixChanged {
+            before: before.clone(),
+            after: after.clone(),
+        }),
+        _ => {}
     }
 }
 
@@ -2251,11 +2275,21 @@ fn outcome_state_changes(
 fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
     match family {
         "types" => {
+            // `reading` is `reading-contract-changed`; leaving it here reported one change twice.
+            remove_keys(declaration, &["reading"]);
             if let Some(body) = declaration.get_mut("body") {
                 residual_fields(body, "fields");
                 remove_keys(
                     body,
-                    &["kind", "of", "alphabet", "invariants", "variants", "tag"],
+                    &[
+                        "kind",
+                        "of",
+                        "alphabet",
+                        "prefix",
+                        "invariants",
+                        "variants",
+                        "tag",
+                    ],
                 );
             }
         }

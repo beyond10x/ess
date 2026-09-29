@@ -64,6 +64,22 @@
   accepting order and an accepting branch declared before an external one. Suites for models
   without such an overlap keep their bytes.
 
+- **`ess verify diff` names a newtype's `prefix:` change** (beyond10x/ess#219). A `prefix:`
+  (ess/15) declared on a newtype is `type/<T>/prefix-added`, which narrows; one dropped is
+  `prefix-removed`, which widens; one replaced is `prefix-changed`, which narrows when the new
+  prefix extends the old one, widens when the old one extends the new one, and is `changed`
+  otherwise. Each is `ess-diff/11` vocabulary (unreleased; `ess-diff/10` shipped in 0.41.0
+  without them): an `ess-diff/3`–`/10` writer refuses it, and such a reader refuses it with
+  `unsupported_format_version`. The prefix no longer falls to the residual, so such a change is
+  no longer reported as `system/<name>/unclassified-changed`. A delta without a prefix change
+  keeps its format. The relation compares the declared prefixes: an outer newtype restating its
+  inner layer's prefix is reported as narrowed or expanded although its admitted values do not
+  move.
+- **A type's reading-contract change is reported once.** `reading-contract-changed` was reported
+  with a `system/<name>/unclassified-changed` beside it, because the type's `reading` was also
+  left to the residual. The delta for such a pair loses that second entry; its format stays
+  `ess-diff/3`.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added

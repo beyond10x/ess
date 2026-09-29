@@ -363,6 +363,23 @@ fn alphabet_relation(before: Option<&str>, after: Option<&str>) -> SemanticRelat
     }
 }
 
+/// How two declared prefixes relate (beyond10x/ess#219). Declaring one narrows and dropping one
+/// widens; a replacement that extends the old prefix narrows, one the old prefix extends widens,
+/// and any other replacement is `Changed`.
+fn prefix_relation(before: Option<&String>, after: Option<&String>) -> SemanticRelation {
+    match (before, after) {
+        (None, Some(_)) => SemanticRelation::Narrowed,
+        (Some(_), None) => SemanticRelation::Expanded,
+        (Some(was), Some(is)) if was != is && is.starts_with(was.as_str()) => {
+            SemanticRelation::Narrowed
+        }
+        (Some(was), Some(is)) if was != is && was.starts_with(is.as_str()) => {
+            SemanticRelation::Expanded
+        }
+        _ => SemanticRelation::Changed,
+    }
+}
+
 impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
     ///
@@ -384,6 +401,7 @@ impl SemanticChange {
                     | BindingChange::ContextFieldSummaryChanged { .. },
                 ..
             } => 10,
+            Self::Type { changed, .. } if changed.is_prefix() => 11,
             Self::View {
                 changed: ViewChange::PagingChanged { .. },
                 ..
@@ -689,11 +707,12 @@ impl SystemChange {
 
 /// What moved about a declared type.
 ///
-/// Complete over [`ResolvedType`](ess_compiler::ir::ResolvedType): its `naming`, and its `body` down
-/// to every arm of [`ResolvedBody`](ess_compiler::ir::ResolvedBody) — a newtype's representation and
-/// invariants, a struct's fields and invariants, an enum's variants and their order, a union's tag
-/// and its variants' payloads. There is no `BodyChanged` catch-all: a catch-all carrying two
-/// rendered strings is the untyped change design §10 refuses, wearing a typed name.
+/// Complete over [`ResolvedType`](ess_compiler::ir::ResolvedType): its `naming`, its `reading`, and
+/// its `body` down to every arm of [`ResolvedBody`](ess_compiler::ir::ResolvedBody) — a newtype's
+/// representation, alphabet, prefix and invariants, a struct's fields and invariants, an enum's
+/// variants and their order, a union's tag and its variants' payloads. There is no `BodyChanged`
+/// catch-all: a catch-all carrying two rendered strings is the untyped change design §10 refuses,
+/// wearing a typed name.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TypeChange {
@@ -890,6 +909,27 @@ pub enum TypeChange {
         /// The alphabet it declares, if any.
         after: Option<String>,
     },
+    /// A newtype declares a `prefix:` (ess/15) it did not declare before. Every value now starts
+    /// with it, so it narrows. Only an `ess-diff/11` delta carries it (beyond10x/ess#219).
+    PrefixAdded {
+        /// The prefix it declares.
+        after: String,
+    },
+    /// A newtype no longer declares the `prefix:` it declared, so it widens. `ess-diff/11`.
+    PrefixRemoved {
+        /// The prefix it declared.
+        before: String,
+    },
+    /// A newtype declares a different `prefix:`. `ess-diff/11`.
+    ///
+    /// Related by comparison alone, as an alphabet is: a prefix that extends the old one narrows,
+    /// one the old one extends widens, and any other replacement is `Changed`.
+    PrefixChanged {
+        /// The prefix it declared.
+        before: String,
+        /// The prefix it declares.
+        after: String,
+    },
 }
 
 impl TypeChange {
@@ -921,7 +961,19 @@ impl TypeChange {
             Self::DisplayNameChanged { .. } => "display-name-changed",
             Self::SummaryChanged { .. } => "summary-changed",
             Self::AlphabetChanged { .. } => "alphabet-changed",
+            Self::PrefixAdded { .. } => "prefix-added",
+            Self::PrefixRemoved { .. } => "prefix-removed",
+            Self::PrefixChanged { .. } => "prefix-changed",
         }
+    }
+
+    /// Whether this is a `prefix:` change, which is `ess-diff/11` vocabulary:
+    /// `ess-diff/10` shipped in 0.41.0 without it.
+    const fn is_prefix(&self) -> bool {
+        matches!(
+            self,
+            Self::PrefixAdded { .. } | Self::PrefixRemoved { .. } | Self::PrefixChanged { .. }
+        )
     }
 
     /// The member inside the type that moved, where the change names one.
@@ -957,6 +1009,9 @@ impl TypeChange {
             Self::AlphabetChanged { before, after } => {
                 alphabet_relation(before.as_deref(), after.as_deref())
             }
+            Self::PrefixAdded { after } => prefix_relation(None, Some(after)),
+            Self::PrefixRemoved { before } => prefix_relation(Some(before), None),
+            Self::PrefixChanged { before, after } => prefix_relation(Some(before), Some(after)),
             _ => SemanticRelation::Changed,
         }
     }
@@ -1033,6 +1088,9 @@ impl TypeChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
+            Self::PrefixAdded { after } => format!("prefix (none) → `{after}`"),
+            Self::PrefixRemoved { before } => format!("prefix `{before}` → (none)"),
+            Self::PrefixChanged { before, after } => format!("prefix `{before}` → `{after}`"),
             Self::InvariantsChanged { before, after } => format!(
                 "invariants [{}] → [{}]",
                 before.join("; "),
