@@ -1,0 +1,38 @@
+domain: demo.provisioning
+summary: Users, each keyed by its own id.
+types:
+  - {name: demo.provisioning.UserId, kind: newtype, of: Uuid}
+  - {name: demo.provisioning.Email, kind: newtype, of: String}
+entities:
+  - name: demo.provisioning.User
+    identity: {name: user_id, type: demo.provisioning.UserId}
+    fields:
+      - {name: email, type: demo.provisioning.Email}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+actors:
+  - name: demo.provisioning.Operator
+    may: [demo.provisioning.RegisterUser, demo.binding.BindIdentity, demo.binding.RebindIdentity]
+events:
+  - name: demo.provisioning.UserRegistered
+    fields:
+      - {name: user_id, type: demo.provisioning.UserId}
+commands:
+  - name: demo.provisioning.RegisterUser
+    input:
+      - {name: email, type: demo.provisioning.Email}
+    outcomes:
+      - name: registered
+        creates: demo.provisioning.User
+        instance: user_id
+        emits: [demo.provisioning.UserRegistered]
+        payload:
+          demo.provisioning.UserRegistered: {user_id: {generated: true}}
+        sets:
+          email: input.email
+views:
+  - name: demo.provisioning.Users
+    source: demo.provisioning.User
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: demo.provisioning.UserId}
+      - {name: email, type: demo.provisioning.Email}

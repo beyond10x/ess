@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T06:24:36Z",
+  "actor": "human:timo",
+  "artifact": "story:a-relation-can-be-carried-by-the-identity",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction 2 (coordinator): ess-domain 1042/0, ess-conformance 1620/0, ess-synth 239/0, ess-diff 207/0, ess-entity-runtime 82/0, ess-xtask 334/0; clippy, schema, generate, docs, fmt clean",
+    "reference": "~/.cache/ess-wave-n2/relid/c2.log"
+  }
+}

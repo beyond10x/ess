@@ -138,6 +138,31 @@
   limit reaches no longer claims it. A counter compared with an input (`retries >= input.max`) is
   reached through the input as before. Models without such a guard keep their suites.
 
+- **A relation carried by the entity's own identity** (beyond10x/ess#230). `via:` may name the
+  identity of the entity holding the relation: an entity keyed by `user_id` declares
+  `{name: user, kind: references, target: demo.provisioning.User, cardinality: one, via: user_id}`,
+  a one-to-one link keyed by the same id, and the same relation may be declared from the other
+  side. It was refused as `missing_declaration` ("carried by `user_id`, which … does not declare").
+  The identity is type-checked against the target's identity as a declared field is.
+  `cardinality: many` through an identity, a `references` from an entity to itself through its own
+  identity, and an `owns` through the owned entity's identity are refused as
+  `conflicting_declaration` naming the cause. The `missing_declaration` hint for an unknown `via:`
+  now lists the identity beside the fields.
+- The identity-carried relation reaches every consumer: `x-ess-relation` on the identity property
+  of the entity schema and `x-ess-entities`, the relations sentence of the generated docs, and the
+  identity line of the synthesised Rust `…Data` struct. A `references` is never arranged as an
+  owner.
+- A `{related: …}` read through an identity follows the relation it carries: through the existing
+  subject's identity, through the identity a `creates:` branch fills from its input, and through
+  the input a branch names its instance by (`via: input.<field>`), where the identity type alone
+  names several entities. Synthesis arranges the referenced row between two decoys and keys the
+  subject by it, as for a field-carried reference. A `when_related:` guard on an update or move
+  whose input names both the subject and the related row is refused under `arrange_related_row`.
+  The identity counts as a carrier only where it carries such a relation to another entity: a
+  `creates:` branch cannot read the row it is creating through its own identity, and an earlier
+  branch keyed by the same input does not hide the relation that decides a `when_related:` guard.
+- Models without the construct keep their bytes and validate as before.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added

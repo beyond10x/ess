@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use crate::entity::{Cardinality, EntitySpec, RelationKind};
+use crate::entity::{Cardinality, EntitySpec, RelationKind, RelationSpec};
 use crate::types::TypeRef;
 use crate::Specification;
 
@@ -177,8 +177,70 @@ pub fn written_from_input<'a>(outcome: &'a super::Outcome, field: &str) -> Optio
     }
 }
 
+/// The relation `subject`'s identity carries, where it carries one that makes the identity a
+/// carrier: a `references` of `cardinality: one` to **another** entity — a one-to-one link keyed by
+/// the same id (beyond10x/ess#230).
+///
+/// This is the one gate every place that counts the identity as a relation carrier asks. An
+/// identity that carries no such relation carries nothing, so a model that does not use the
+/// construct reads exactly as before it existed; and an identity never names the row it is on.
+pub fn identity_reference(subject: &EntitySpec) -> Option<&RelationSpec> {
+    subject.relations.iter().find(|relation| {
+        relation.kind == RelationKind::References
+            && relation.cardinality == Cardinality::One
+            && relation.via == subject.identity.name
+            && relation.target != subject.name
+    })
+}
+
+/// [`written_from_input`], and for the subject's identity the input the branch names the instance
+/// by ([`identity_from_input`]) — only where the identity carries a relation to another entity
+/// ([`identity_reference`]).
+///
+/// On a `creates:` branch that identity holds the input it is filled from exactly as a field
+/// `sets:` fills does, so a related read through it reads that input, and the relation says it
+/// names another entity's row. Without the relation the identity names only the row being
+/// created, which does not exist before the outcome, and it is not admitted.
+pub fn subject_field_from_input<'a>(
+    outcome: &'a super::Outcome,
+    subject: &EntitySpec,
+    field: &str,
+) -> Option<&'a str> {
+    written_from_input(outcome, field).or_else(|| {
+        (subject.identity.name == field && identity_reference(subject).is_some())
+            .then(|| identity_from_input(outcome))
+            .flatten()
+    })
+}
+
+/// The input a branch names its subject's instance by, unchanged: the input field `instance:`
+/// names where the caller supplies the instance, or — on `creates:`, where `instance:` names the
+/// event field that publishes the new identity — the input every emitted payload fills that field
+/// from, where they agree on one.
+pub fn identity_from_input(outcome: &super::Outcome) -> Option<&str> {
+    let subject = outcome.subject.as_ref()?;
+    if subject.effect != super::Effect::Creates {
+        return Some(&subject.instance);
+    }
+    let mut filled = outcome
+        .payload
+        .values()
+        .filter_map(|fields| fields.get(&subject.instance))
+        .map(|source| match source {
+            super::PayloadSource::InputField { field } => Some(field.as_str()),
+            _ => None,
+        });
+    let first = filled.next()??;
+    filled.all(|other| other == Some(first)).then_some(first)
+}
+
 /// The subject field a branch's `sets:` fills from the input `input` unchanged, and the subject:
 /// where a relation on that field says which entity the input names.
+///
+/// The input the branch names its instance by is carried by the subject's identity
+/// ([`identity_from_input`]), where no `sets:` field claims it and the identity carries a relation
+/// to another entity ([`identity_reference`], beyond10x/ess#230). An identity that carries none is
+/// no carrier, so a later branch's field relation still decides.
 pub fn input_carrier<'a>(
     outcome: &super::Outcome,
     subject: Option<&'a EntitySpec>,
@@ -193,5 +255,9 @@ pub fn input_carrier<'a>(
                 Some((subject, target.clone()))
             }
             _ => None,
+        })
+        .or_else(|| {
+            (identity_reference(subject).is_some() && identity_from_input(outcome) == Some(input))
+                .then(|| (subject, subject.identity.name.clone()))
         })
 }

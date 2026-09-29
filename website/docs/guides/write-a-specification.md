@@ -908,13 +908,17 @@ From source `ess/16` a value can come from a field of the row the subject refere
 ```
 
 `via` is a field of the subject as it was before the outcome (on `creates:`, a field the
-branch sets from its input), or `input.<field>`, and its type is the identity of the entity it
-names — exactly, not `Optional<…>` or a list. Where several entities share that identity type, the
-relation on the subject field says which one: a `references` relation of cardinality `one` that
-the subject declares on it, or the `owns` relation of the subject's owner; an input is settled by
-the relation on the field the branch sets from it. `field` is a field of that entity, typed as the
-target admits. One hop only. `{related: …}` is written alone and holds exactly `via` and `field`;
-any other mapping under `related` is a nested mapping, and below `ess/16` so is this one.
+branch sets from its input, or the identity it fills from its input), or `input.<field>`, and its
+type is the identity of the entity it names — exactly, not `Optional<…>` or a list. Where several
+entities share that identity type, the relation on the subject field says which one: a
+`references` relation of cardinality `one` that the subject declares on it, or the `owns` relation
+of the subject's owner; an input is settled by the relation on the field the branch sets from it,
+or on the identity the branch names its instance by. The field may be the subject's identity: an
+entity keyed by `user_id` that declares `{name: user, kind: references, target: User,
+cardinality: one, via: user_id}` reads the user with the same id. `field` is a field of that
+entity, typed as the target admits. One hop only. `{related: …}` is written alone and holds
+exactly `via` and `field`; any other mapping under `related` is a nested mapping, and below
+`ess/16` so is this one.
 
 The scenario creates the referenced row between two others of its entity, points the subject at
 it, and asserts that row's value, so an implementation that reads another row, the first or the

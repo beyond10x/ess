@@ -22,10 +22,12 @@ use ess_compiler::ir::{
     ResolvedPayloadValue, ResolvedRelatedVia,
 };
 use ess_domain::command::TestStrategy;
+use ess_domain::entity::{Cardinality, RelationKind};
 use ess_domain::name::QualifiedName;
 
 use super::{
-    arrange_first, arrange_owner, invoke, Arrangement, CommandRef, Determined, Invocation, Setup,
+    arrange_first, arrange_owner, invoke, Arrangement, CommandRef, Determined, Invocation,
+    RefusalCause, Setup,
 };
 use crate::scenario::{ActorRef, InstanceName, ScenarioStep, ScenarioValue};
 use crate::witness::Distinction;
@@ -123,7 +125,7 @@ pub(super) fn arrange(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     mut setup: Setup,
-) -> Setup {
+) -> Result<Setup, RefusalCause> {
     for (nth, read) in reads(outcome).into_iter().enumerate() {
         let first = RELATED_WITNESS * (1 + distinction.get() + 8 * nth);
         let initial = ir.entity(read.entity).lifecycle.initial.clone();
@@ -145,7 +147,13 @@ pub(super) fn arrange(
                 let Some(referenced) = row(first) else {
                     continue;
                 };
-                if !point_at(ir, outcome, &mut setup, read.via, &referenced.instance) {
+                if !point_at(ir, outcome, &mut setup, &read, &referenced.instance) {
+                    // A read through the subject's own identity (beyond10x/ess#230) whose creating
+                    // act generates that identity leaves nothing to point at the row: refused by
+                    // name rather than run without the row it reads.
+                    if through_identity(ir, outcome, &read) {
+                        return Err(super::related_guard::unarranged());
+                    }
                     continue;
                 }
                 (referenced, true)
@@ -215,7 +223,20 @@ pub(super) fn arrange(
         }
         setup.steps = steps;
     }
-    setup
+    Ok(setup)
+}
+
+/// Whether `read` follows the subject's own identity to a row of another entity, through a
+/// relation the identity carries (beyond10x/ess#230).
+fn through_identity(ir: &EssIr, outcome: &ResolvedOutcome, read: &Read<'_>) -> bool {
+    let ResolvedRelatedVia::Subject { field, .. } = read.via else {
+        return false;
+    };
+    outcome.subject.as_ref().is_some_and(|subject| {
+        ir.entity(&subject.entity).identity.name == *field
+            && subject.entity != *read.entity
+            && identity_reference(ir, &subject.entity)
+    })
 }
 
 /// A run, on the referenced row, of the first `updates:` branch of its entity that writes a field
@@ -290,27 +311,71 @@ fn writes<'a>(
 
 /// The input a related source reads: `input.<field>`, or, on a `creates:` branch, the subject
 /// field the branch sets from its input unchanged (there is no row before the outcome, so the
-/// field holds that input).
-fn input_read<'a>(outcome: &'a ResolvedOutcome, via: &'a ResolvedRelatedVia) -> Option<&'a str> {
+/// field holds that input) — or the subject's identity, where the branch fills it from its input
+/// unchanged ([`identity_input`]): an identity may carry the relation (beyond10x/ess#230).
+fn input_read<'a>(
+    ir: &EssIr,
+    outcome: &'a ResolvedOutcome,
+    via: &'a ResolvedRelatedVia,
+) -> Option<&'a str> {
     match via {
         ResolvedRelatedVia::Input { field, .. } => Some(field),
         ResolvedRelatedVia::Subject { field, .. } => {
-            let creates = outcome
+            let subject = outcome
                 .subject
                 .as_ref()
-                .is_some_and(|subject| subject.effect == ResolvedEffect::Creates);
-            if !creates {
-                return None;
-            }
-            outcome.sets.iter().find_map(|set| match &set.value {
-                ResolvedPayloadValue::InputField { field: input, .. }
-                    if set.target == *field && set.conversion.is_none() =>
-                {
-                    Some(input.as_str())
-                }
-                _ => None,
+                .filter(|subject| subject.effect == ResolvedEffect::Creates)?;
+            set_from_input(outcome, field).or_else(|| {
+                (ir.entity(&subject.entity).identity.name == *field
+                    && identity_reference(ir, &subject.entity))
+                .then(|| identity_input(outcome))
+                .flatten()
             })
         }
+    }
+}
+
+/// Whether `entity`'s identity carries a `references`, `cardinality: one` relation to another
+/// entity: the only case in which the identity is a relation carrier (beyond10x/ess#230), as
+/// `ess_domain::command::related_value::identity_reference` admits it.
+fn identity_reference(ir: &EssIr, entity: &EntityHandle) -> bool {
+    let resolved = ir.entity(entity);
+    resolved.relations.iter().any(|relation| {
+        relation.kind == RelationKind::References
+            && relation.cardinality == Cardinality::One
+            && relation.via == resolved.identity.name
+            && relation.target != *entity
+    })
+}
+
+/// The input a branch's `sets:` writes into the subject field `field` unchanged.
+fn set_from_input<'a>(outcome: &'a ResolvedOutcome, field: &str) -> Option<&'a str> {
+    outcome.sets.iter().find_map(|set| match &set.value {
+        ResolvedPayloadValue::InputField { field: input, .. }
+            if set.target == field && set.conversion.is_none() =>
+        {
+            Some(input.as_str())
+        }
+        _ => None,
+    })
+}
+
+/// The input a branch names its subject's instance by, unchanged: the supplied input field, or on
+/// `creates:` the input the event publishing the new identity fills that field from.
+fn identity_input(outcome: &ResolvedOutcome) -> Option<&str> {
+    match &outcome.subject.as_ref()?.instance {
+        ResolvedInstance::Supplied { field } => Some(&field.name),
+        ResolvedInstance::Observed { event, field } => outcome
+            .payload
+            .iter()
+            .find(|payload| payload.event == *event)?
+            .fields
+            .iter()
+            .find(|filled| filled.target == field.name && filled.conversion.is_none())
+            .and_then(|filled| match &filled.value {
+                ResolvedPayloadValue::InputField { field, .. } => Some(field.as_str()),
+                _ => None,
+            }),
     }
 }
 
@@ -325,7 +390,7 @@ fn bound_owner(
     setup: &Setup,
     read: &Read<'_>,
 ) -> Option<Arrangement> {
-    let field = input_read(outcome, read.via)?;
+    let field = input_read(ir, outcome, read.via)?;
     let bound = setup.bound.get(field)?;
     let subject = outcome.subject.as_ref()?;
     if subject.effect != ResolvedEffect::Creates {
@@ -345,27 +410,57 @@ fn bound_owner(
 
 /// Points `via` at `referenced`: the input the branch reads it from, or the field the existing
 /// subject stores.
+///
+/// An input that names the existing subject cannot be rebound — it already names an arranged row,
+/// the subject — but where the subject's identity is what `via` follows to another entity, the
+/// identity the subject was created with is pointed instead (beyond10x/ess#230).
 fn point_at(
     ir: &EssIr,
     outcome: &ResolvedOutcome,
     setup: &mut Setup,
-    via: &ResolvedRelatedVia,
+    read: &Read<'_>,
     referenced: &InstanceName,
 ) -> bool {
-    if let Some(field) = input_read(outcome, via) {
-        // The input that names the subject already names an arranged row: the subject.
-        let names_subject = outcome.subject.as_ref().is_some_and(|subject| {
+    let subject = outcome.subject.as_ref();
+    if let Some(field) = input_read(ir, outcome, read.via) {
+        let names_subject = subject.is_some_and(|subject| {
             matches!(&subject.instance, ResolvedInstance::Supplied { field: named }
                 if named.name == field)
         });
-        if names_subject || setup.bound.contains_key(field) {
+        if names_subject {
+            return subject.is_some_and(|subject| {
+                subject.entity != *read.entity
+                    && identity_reference(ir, &subject.entity)
+                    && stored(
+                        ir,
+                        setup,
+                        &ir.entity(&subject.entity).identity.name,
+                        referenced,
+                    )
+            });
+        }
+        if setup.bound.contains_key(field) {
             return false;
         }
         setup.bound.insert(field.to_owned(), referenced.clone());
         return true;
     }
-    match via {
-        ResolvedRelatedVia::Subject { field, .. } => stored(ir, setup, field, referenced),
+    match read.via {
+        ResolvedRelatedVia::Subject { field, .. } => {
+            let identity =
+                subject.is_some_and(|subject| ir.entity(&subject.entity).identity.name == *field);
+            // An identity pointed at a row of its own entity would be a second row with the same
+            // key, not a link, and an identity that carries no relation to another entity links
+            // nothing: both left to the payload shape.
+            if identity
+                && subject.is_some_and(|subject| {
+                    subject.entity == *read.entity || !identity_reference(ir, &subject.entity)
+                })
+            {
+                return false;
+            }
+            stored(ir, setup, field, referenced)
+        }
         ResolvedRelatedVia::Input { .. } => false,
     }
 }
@@ -373,9 +468,11 @@ fn point_at(
 /// Rewrites the act that created the subject so the field `via` it stores names `referenced`.
 ///
 /// The link is the creating branch's `sets:`, exactly as [`super::arrange_owner`] reads it:
-/// `via: input.<field>` with no conversion. The rewrite is made only where the subject still holds
-/// what that act sent — no later act of the arrangement wrote `via` — so the row the branch under
-/// test reads is the row the scenario arranged.
+/// `via: input.<field>` with no conversion — or, where `via` is the subject's identity, the input
+/// the creating branch fills the new identity from ([`identity_input`]). The rewrite is made only
+/// where the subject still holds what that act sent — no later act of the arrangement wrote `via`
+/// — so the row the branch under test reads is the row the scenario arranged. An identity is never
+/// rewritten by a later act, so it is checked only where the arrangement settled it.
 fn stored(ir: &EssIr, setup: &mut Setup, via: &str, referenced: &InstanceName) -> bool {
     let Some(subject) = setup.instance.clone() else {
         return false;
@@ -400,16 +497,15 @@ fn stored(ir: &EssIr, setup: &mut Setup, via: &str, referenced: &InstanceName) -
         .filter(|command| CommandRef::new(command.name.clone()) == taken.command)
         .flat_map(|command| &command.outcomes)
         .find(|outcome| outcome.name == taken.outcome);
-    let Some(input) = creating.and_then(|outcome| {
-        outcome.sets.iter().find_map(|set| match &set.value {
-            ResolvedPayloadValue::InputField { field, .. }
-                if set.target == via && set.conversion.is_none() =>
-            {
-                Some(field.clone())
-            }
-            _ => None,
-        })
-    }) else {
+    let Some(creating) = creating else {
+        return false;
+    };
+    let identity = creating.subject.as_ref().is_some_and(|subject| {
+        ir.entity(&subject.entity).identity.name == via && identity_reference(ir, &subject.entity)
+    });
+    let input = set_from_input(creating, via)
+        .or_else(|| identity.then(|| identity_input(creating)).flatten());
+    let Some(input) = input.map(str::to_owned) else {
         return false;
     };
     let ScenarioStep::ExecuteCommand { input: sent, .. } = &mut setup.steps[created] else {
@@ -418,14 +514,12 @@ fn stored(ir: &EssIr, setup: &mut Setup, via: &str, referenced: &InstanceName) -
     let Some(before) = sent.get(&input).cloned() else {
         return false;
     };
-    let Some(held) = setup.settled.get_mut(via) else {
-        return false;
-    };
-    if held.value != before {
-        return false;
-    }
     let pointed = ScenarioValue::instance(referenced.clone());
-    held.value = pointed.clone();
+    match setup.settled.get_mut(via) {
+        Some(held) if held.value == before => held.value = pointed.clone(),
+        None if identity => {}
+        _ => return false,
+    }
     sent.insert(input, pointed);
     true
 }

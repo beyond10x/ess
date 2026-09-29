@@ -833,7 +833,8 @@ pub struct RelationSpec {
     ///
     /// For `owns`, a field **on the target**, typed as the source's identity. For `references`, a
     /// field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an
-    /// optional `one`, in `List<…>` for `many`.
+    /// optional `one`, in `List<…>` for `many` — or, for a `one` keyed by the same id, the source's
+    /// own identity.
     #[serde(deserialize_with = "crate::types::deserialize_field_name")]
     #[schemars(regex(pattern = "^_*[A-Za-z][A-Za-z0-9_]*$"))]
     pub via: String,
@@ -1398,7 +1399,18 @@ pub fn validate_relations(entities: &BTreeMap<QualifiedName, EntitySpec>) -> Val
                 RelationKind::Owns => target,
                 RelationKind::References => source,
             };
-            let Some(field) = holder.field(&relation.via) else {
+            // A declared field, or the holder's own identity (beyond10x/ess#230): a one-to-one
+            // `references` keyed by the same id is carried by the identity, and is type-checked
+            // against the target's identity below exactly as a declared field is.
+            let field = if let Some(field) = holder.field(&relation.via) {
+                field
+            } else if holder.identity.name == relation.via {
+                if let Some(refusal) = carried_by_identity(holder, source, relation, &at) {
+                    errors.push(refusal);
+                    continue;
+                }
+                &holder.identity
+            } else {
                 errors.push(no_such_field(holder, source, relation, at));
                 continue;
             };
@@ -1485,8 +1497,74 @@ fn no_such_field(
     .with_hint(format!(
         "fields of `{}`: {}",
         holder.name,
-        names(holder.fields.iter().map(|field| field.name.clone()))
+        names(
+            std::iter::once(&holder.identity)
+                .chain(&holder.fields)
+                .map(|field| field.name.clone())
+        )
     ))
+}
+
+/// Why a relation carried by its holder's identity is refused, or `None` where it is accepted.
+///
+/// Accepted only as a `references` of `cardinality: one` to another entity — a one-to-one link
+/// keyed by the same id (beyond10x/ess#230). A `references` to the entity itself through its
+/// identity is refused: every row names itself, so it states nothing. An identity names exactly one row, so `many` through it is a contradiction
+/// rather than a missing `List<…>`. An `owns` through the owned entity's identity is refused too:
+/// an ownership is what an arrangement brings into being before the owned row, through the field
+/// the owned row's creating command sets, and an identity is not set that way — accepting it
+/// would publish an ownership that synthesis silently could not arrange.
+fn carried_by_identity(
+    holder: &EntitySpec,
+    source: &EntitySpec,
+    relation: &RelationSpec,
+    at: &str,
+) -> Option<ValidationError> {
+    let (message, hint) = match (relation.kind, relation.cardinality) {
+        (RelationKind::References, _) if relation.target == source.name => (
+            format!(
+                "relation `{}` of `{}` references `{}` itself through `{}.{}`, its own identity; \
+                 every row names itself, so the relation states nothing",
+                relation.name, source.name, source.name, holder.name, relation.via
+            ),
+            format!(
+                "remove the relation, or carry a link to another row of `{}` by a declared field \
+                 typed as its identity",
+                source.name
+            ),
+        ),
+        (RelationKind::References, Cardinality::One) => return None,
+        (RelationKind::References, Cardinality::Many) => (
+            format!(
+                "relation `{}` of `{}` is `cardinality: many` and carried by `{}.{}`, the \
+                 identity of `{}`; an identity names one row",
+                relation.name, source.name, holder.name, relation.via, holder.name
+            ),
+            "a relation carried by the identity is `cardinality: one`; carry `many` by a field \
+             typed `List<…>` of the target's identity"
+                .to_owned(),
+        ),
+        (RelationKind::Owns, _) => (
+            format!(
+                "relation `{}` of `{}` owns `{}` through `{}.{}`, the identity of `{}`; an \
+                 ownership is carried by a declared field of the owned entity, not by its identity",
+                relation.name, source.name, holder.name, holder.name, relation.via, holder.name
+            ),
+            format!(
+                "declare the link on `{}` as `kind: references, cardinality: one, via: {}`, or \
+                 carry the owner by a declared field of `{}`",
+                holder.name, relation.via, holder.name
+            ),
+        ),
+    };
+    Some(
+        ValidationError::new(
+            ValidationCode::ConflictingDeclaration,
+            at.to_owned(),
+            message,
+        )
+        .with_hint(hint),
+    )
 }
 
 /// A second relation carried by a field that already carries one.
@@ -3275,5 +3353,244 @@ lifecycle:
     fn a_well_formed_ownership_is_accepted() {
         let errors = validate_relations(&population(&[ACCOUNT, OWNED_INVOICE]));
         assert!(errors.is_empty(), "{errors}");
+    }
+
+    /// The referenced half of the identity-carried fixtures: a user, keyed by `user_id`.
+    const USER: &str = "\
+name: demo.provisioning.User
+identity:
+  name: user_id
+  type: demo.provisioning.UserId
+fields:
+  - name: email
+    type: demo.provisioning.Email
+lifecycle:
+  states: [Active]
+  initial: Active
+  terminal: [Active]
+";
+
+    /// The referring half (beyond10x/ess#230): an entity keyed by the same `user_id`, naming the
+    /// user through its own identity rather than through a declared field.
+    const BOUND_IDENTITY: &str = "\
+name: demo.binding.Identity
+identity:
+  name: user_id
+  type: demo.provisioning.UserId
+fields:
+  - name: subject
+    type: demo.binding.Subject
+relations:
+  - name: user
+    kind: references
+    target: demo.provisioning.User
+    cardinality: one
+    via: user_id
+lifecycle:
+  states: [Bound]
+  initial: Bound
+  terminal: [Bound]
+";
+
+    #[test]
+    fn a_reference_carried_by_the_entitys_own_identity_is_accepted() {
+        // The issue as filed: `user_id` is the identity and no declared field, and the relation is
+        // one-to-one keyed by the same id.
+        let errors = validate_relations(&population(&[USER, BOUND_IDENTITY]));
+        assert!(errors.is_empty(), "{errors}");
+    }
+
+    #[test]
+    fn the_same_reference_declared_from_the_other_side_is_accepted() {
+        // "The same relation declared on the other side is refused the same way": the user names
+        // the identity row keyed by its own id.
+        let user = format!(
+            "{USER}relations:
+  - name: identity
+    kind: references
+    target: demo.binding.Identity
+    cardinality: one
+    via: user_id
+"
+        );
+        let unrelated = BOUND_IDENTITY.replace(
+            "relations:
+  - name: user
+    kind: references
+    target: demo.provisioning.User
+    cardinality: one
+    via: user_id
+",
+            "",
+        );
+        assert_ne!(
+            unrelated, BOUND_IDENTITY,
+            "the fixture's relation was removed"
+        );
+        let errors = validate_relations(&population(&[&user, &unrelated]));
+        assert!(errors.is_empty(), "{errors}");
+    }
+
+    #[test]
+    fn an_identity_typed_as_something_else_is_refused_as_a_type_mismatch() {
+        // The identity is checked against the target's identity exactly as a declared field is.
+        let errors = validate_relations(&population(&[
+            USER,
+            &BOUND_IDENTITY.replace(
+                "  name: user_id\n  type: demo.provisioning.UserId\n",
+                "  name: user_id\n  type: demo.binding.IdentityId\n",
+            ),
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::TypeMismatch);
+        assert!(
+            error.message.contains("demo.binding.Identity.user_id")
+                && error.message.contains("demo.binding.IdentityId"),
+            "the message names the identity and its type: {error}"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("demo.provisioning.UserId")),
+            "the hint says what the identity has to be typed: {error}"
+        );
+    }
+
+    #[test]
+    fn a_reference_to_many_carried_by_the_identity_is_refused_with_its_cause() {
+        // An identity names one row. `many` through it is not a wrapper the author forgot, and the
+        // refusal says so instead of asking for a `List<…>` identity.
+        let errors = validate_relations(&population(&[
+            USER,
+            &BOUND_IDENTITY.replace("cardinality: one", "cardinality: many"),
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::ConflictingDeclaration);
+        assert_eq!(
+            error.location,
+            "entity demo.binding.Identity.relations.user"
+        );
+        assert!(
+            error.message.contains("identity") && error.message.contains("cardinality: many"),
+            "the message names the cause — many through an identity: {error}"
+        );
+    }
+
+    #[test]
+    fn an_ownership_carried_by_the_targets_identity_is_refused_with_its_cause() {
+        // `owns` through the owned row's own identity is not a `references` and is not accepted by
+        // this change; it is refused naming why, rather than as a field nobody declared.
+        let user = format!(
+            "{USER}relations:
+  - name: identity
+    kind: owns
+    target: demo.binding.Identity
+    cardinality: one
+    via: user_id
+"
+        );
+        let unrelated = BOUND_IDENTITY.replace(
+            "relations:
+  - name: user
+    kind: references
+    target: demo.provisioning.User
+    cardinality: one
+    via: user_id
+",
+            "",
+        );
+        let errors = validate_relations(&population(&[&user, &unrelated]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::ConflictingDeclaration);
+        assert!(
+            error.message.contains("identity") && error.message.contains("owns"),
+            "the message names the cause — ownership through an identity: {error}"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("references")),
+            "the hint offers the form that is accepted: {error}"
+        );
+    }
+
+    #[test]
+    fn two_relations_carried_by_one_identity_are_refused_as_a_duplicate_declaration() {
+        // The identity is a carrying field like any other: a second claim on it is the same
+        // mistake as a second claim on a declared field, and is reported for the second relation.
+        let twice = BOUND_IDENTITY.replace(
+            "    via: user_id\n",
+            "    via: user_id\n  - name: account\n    kind: references\n    target: \
+             demo.provisioning.User\n    cardinality: one\n    via: user_id\n",
+        );
+        assert_ne!(twice, BOUND_IDENTITY, "the second relation was added");
+        let errors = validate_relations(&population(&[USER, &twice]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::DuplicateDeclaration);
+        assert_eq!(
+            error.location,
+            "entity demo.binding.Identity.relations.account"
+        );
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("`user`")),
+            "the hint names the relation that claimed the identity first: {error}"
+        );
+    }
+
+    #[test]
+    fn a_reference_to_the_entity_itself_through_its_identity_is_refused_with_its_cause() {
+        // Every row names itself through its own identity: the relation states nothing, and a
+        // related read through it would read the row it is on (adversary pass 1, #230).
+        let myself = format!(
+            "{USER}relations:
+  - name: me
+    kind: references
+    target: demo.provisioning.User
+    cardinality: one
+    via: user_id
+"
+        );
+        let errors = validate_relations(&population(&[&myself]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::ConflictingDeclaration);
+        assert_eq!(error.location, "entity demo.provisioning.User.relations.me");
+        assert!(
+            error.message.contains("identity") && error.message.contains("itself"),
+            "the message names the cause — a reference to itself through its identity: {error}"
+        );
+    }
+
+    #[test]
+    fn a_missing_via_field_lists_the_identity_among_what_the_carrier_has() {
+        let errors = validate_relations(&population(&[
+            USER,
+            &BOUND_IDENTITY.replace("via: user_id", "via: usr_id"),
+        ]));
+        let [error] = errors.as_slice() else {
+            panic!("one refusal, not {}: {errors}", errors.len());
+        };
+        assert_eq!(error.code, ValidationCode::MissingDeclaration);
+        assert!(
+            error
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("user_id") && hint.contains("subject")),
+            "the hint lists the identity as well as the declared fields: {error}"
+        );
     }
 }
