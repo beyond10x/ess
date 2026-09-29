@@ -100,6 +100,15 @@ pub struct SynthesisScope {
     /// release tag, which rewrites every synthesised tree whenever the tag moves and the trees do
     /// not.
     pub profile: String,
+    /// The output layout, when it is not the default workspace: `crate` for the Rust target's
+    /// single crate (`--layout crate`).
+    ///
+    /// Absent for the default, so a tree laid out as a workspace keeps the bytes it always had. It
+    /// says nothing about any disposition — every layout carries the same capabilities — and is
+    /// here so the plan's regenerate command rewrites the tree it sits in, not a differently
+    /// shaped one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
 }
 
 impl SynthesisScope {
@@ -108,6 +117,7 @@ impl SynthesisScope {
     fn component_skeletons() -> Self {
         Self {
             profile: "component-skeletons".to_owned(),
+            layout: None,
         }
     }
 }
@@ -466,17 +476,33 @@ impl SynthesisPlan {
         json
     }
 
+    /// The command that rewrites the tree this plan sits in: [`REGENERATE`], plus the layout when
+    /// it is not the default.
+    pub fn regenerate(&self) -> String {
+        match &self.scope.layout {
+            Some(layout) => format!("{REGENERATE} --layout {layout}"),
+            None => REGENERATE.to_owned(),
+        }
+    }
+
     /// The plan as Markdown, for the person deciding whether to trust the generated half.
     ///
     /// Language-neutral, like everything else in the plan: which files a target writes and how it
     /// spells an identifier are that target's facts, recorded in that target's output.
     pub fn to_markdown(&self) -> String {
-        let mut out = self.provenance.html_comment_for(REGENERATE);
+        let regenerate = self.regenerate();
+        let mut out = self.provenance.html_comment_for(&regenerate);
         let counts = self.counts();
+        let layout = self
+            .scope
+            .layout
+            .as_ref()
+            .map(|layout| format!(", laid out as `{layout}`"))
+            .unwrap_or_default();
         let _ = write!(
             out,
-            "# Synthesis plan — {} {}\n\nScope: `{}`, planned by `ess-synth`. Regenerate with \
-             `{REGENERATE}`.\n\n{} capabilities: **{} generated**, **{} obligations**, **{} \
+            "# Synthesis plan — {} {}\n\nScope: `{}`{layout}, planned by `ess-synth`. Regenerate \
+             with `{regenerate}`.\n\n{} capabilities: **{} generated**, **{} obligations**, **{} \
              refused**. An obligation is yours to implement against its contract; a refusal is a \
              fact about this synthesis scope, not about the specification.\n",
             self.provenance.system,

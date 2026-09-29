@@ -233,6 +233,11 @@ enum GenerateCommand {
         input: SpecLocation,
         #[arg(long, value_enum, default_value_t = SynthesisTarget::Rust)]
         target: SynthesisTarget,
+        /// How the `rust` target lays its output out: a workspace of crates, or one crate at
+        /// `--out` with its HTTP surface behind a `server` Cargo feature. Other targets refuse
+        /// `crate`.
+        #[arg(long, value_enum, default_value_t = SynthesisLayout::Workspace)]
+        layout: SynthesisLayout,
         #[arg(long)]
         out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -425,6 +430,21 @@ impl Projection {
             Self::Schema => "schema",
             Self::OpenApi => "openapi",
             Self::AsyncApi => "asyncapi",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SynthesisLayout {
+    Workspace,
+    Crate,
+}
+
+impl SynthesisLayout {
+    fn layout(self) -> ess_synth::OutputLayout {
+        match self {
+            Self::Workspace => ess_synth::OutputLayout::Workspace,
+            Self::Crate => ess_synth::OutputLayout::Crate,
         }
     }
 }
@@ -1321,9 +1341,10 @@ fn generate_area(command: GenerateCommand) -> Result<ExitCode> {
         GenerateCommand::Synthesize {
             input,
             target,
+            layout,
             out,
             format,
-        } => synthesize(&input.path, target, out.as_deref(), format),
+        } => synthesize(&input.path, target, layout, out.as_deref(), format),
         GenerateCommand::Project { adapter } => project(adapter),
         GenerateCommand::Schema { command } => schema::run(command),
         GenerateCommand::Build { command } => build(command),
@@ -3001,15 +3022,22 @@ fn generate(
 fn synthesize(
     path: &Path,
     target: SynthesisTarget,
+    layout: SynthesisLayout,
     out: Option<&Path>,
     format: Format,
 ) -> Result<ExitCode> {
     let Ok((ir, _)) = resolved(path, format)? else {
         return Ok(ExitCode::from(1));
     };
-    let synthesis = match ess_synth::synthesize_for(&ir, target.target()) {
+    let synthesis = match ess_synth::synthesize_laid_out(&ir, target.target(), layout.layout()) {
         Ok(synthesis) => synthesis,
-        Err(failure) => {
+        Err(ess_synth::SynthesisFailure::Layout(refusal)) => {
+            // A usage error, decided before anything is planned: no plan to render, nothing
+            // written, and the exit status clap gives any other flag it refuses.
+            eprintln!("error: {refusal}");
+            return Ok(ExitCode::from(2));
+        }
+        Err(ess_synth::SynthesisFailure::Target(failure)) => {
             if matches!(format, Format::Text) {
                 println!("{failure}");
             } else {
