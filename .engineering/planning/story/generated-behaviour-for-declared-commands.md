@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:generated-behaviour-for-declared-commands
 kind: story
-status: active
+status: implemented
 title: A fully declared command's behaviour is generated over storage and context ports
 relations:
 - serves: vision:O2
 - decomposes: epic:generated-determined-behaviour
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T20:20:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T20:20:01Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T21:25:27Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
