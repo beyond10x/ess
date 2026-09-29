@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T14:45:49Z",
+  "actor": "human:timo",
+  "artifact": "story:docs-example-page-in-both-renderings",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: example_page 3 passed (red on 3 drifted blocks first); ess-xtask 346; docs/generate/schema --check; clippy; fmt-check; offline docusaurus build exit 0 with cli markers masked",
+    "reference": "docs/example@4f89e92a9"
+  }
+}

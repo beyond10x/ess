@@ -4,8 +4,6 @@ sidebar_position: 1
 description: One command from the billing specification and the contracts, repository documentation, and static-site source actually generated from it.
 ---
 
-import LabLaunch from '@site/src/components/LabLaunch';
-
 # A specification and its contracts
 
 This page shows the central claim on real files: the specification is not a document *beside* the
@@ -13,12 +11,15 @@ contracts — it is what the contracts are derived from. Everything below is cop
 repository: the source from `examples/billing/`, the output from `generated/`, kept in step by
 `cargo xtask generate --check` in CI.
 
-The excerpts are the files on `main`. Entity relations and the account field visible in the billing
-example shipped in `0.5.0`.
+The excerpts are the files on `main`. Each code block names the file it was copied from, and a test
+compares every block with that file, so a regenerated artifact this page was not updated for fails
+the build. Entity relations and the account field visible in the billing example shipped in
+`0.5.0`.
 
 ## The source
 
-<LabLaunch />
+**[Open this specification in the lab](https://beyond10x.github.io/ess/lab)** — the file, the
+model it compiles to and a real run of it in WebAssembly, stepped side by side.
 
 What the lab runs is this specification, executing in your browser. It fetches
 `billing_web_realized.wasm` — the module `ess generate synthesize --target web` emits from
@@ -27,7 +28,7 @@ built for `wasm32-unknown-unknown` — and sends five commands over its boundary
 declared moves, one move the lifecycle does not have, and one refusal a guard decides. That is every
 way this model can answer. The outcomes, the log, the binding invocations and the view rows are what
 came back; the middle panel is the compiler's own model, asked for out of the same module. Nothing
-on the page is a recording of an earlier run.
+in the lab is a recording of an earlier run.
 
 Four values are chosen rather than derived: an account id, an email address, and two amounts. A
 specification declares types and not instances, so somebody has to pick an input. Everything the run
@@ -37,7 +38,7 @@ stream of steps on every load, and `website/src/pages/lab/_run.test.mjs` holds i
 
 One command, from `examples/billing/domains/invoice.yaml`:
 
-```yaml
+```yaml file=examples/billing/domains/invoice.yaml lines=191-259
 commands:
   - name: billing.invoice.CreateInvoice
 
@@ -46,9 +47,6 @@ commands:
       display: Create invoice
 
     input:
-      # The account the invoice will belong to. The caller names it, because
-      # `billing.invoice.Account` declares that it `owns` invoices `via account_id`
-      # and an owner is not something an implementation may mint.
       - name: account_id
         type: billing.invoice.AccountId
       - name: customer_email
@@ -56,28 +54,55 @@ commands:
       - name: amount
         type: billing.invoice.Money
 
-    # Two outcomes, because this command can be refused. A specification that
-    # recorded only the first would generate a suite that never checks what
-    # happens when the amount is wrong.
+    # Two outcomes, because this command can be refused. A specification that recorded only the
+    # first would generate a suite that never checks what happens when the amount is wrong.
+    #
+    # The subject hangs off the *outcome*, not off the command: `accepted` brings an invoice into
+    # existence and `rejected` brings nothing into existence, and a subject on the command would have
+    # attached a state change to the refusal. `creates:` is not a transition — a new instance has no
+    # state to move out of — so it starts at the lifecycle's `initial`.
     outcomes:
       - name: accepted
         when: amount.amount > 0
         creates: billing.invoice.Invoice
-        # `creates:` is the one verb whose instance the caller cannot name —
-        # the id is the implementation's to assign — so `instance:` names the
-        # emitted-event field the new identity is published in.
+        # Which invoice. `creates:` is the one verb whose instance the caller cannot name — the
+        # invoice does not exist when the command is issued and its id is the implementation's to
+        # assign — so `instance:` names the field of an *emitted* event the new identity is
+        # published in. That is what lets the next scenario say "the invoice the previous step
+        # created" instead of inventing one.
         instance: invoice_id
         emits:
           - billing.invoice.InvoiceCreated
-        # Where the announced fact's values come from. Without this block the event's
-        # *types* are declared and its *values* are not, so an implementation
-        # announcing an amount nobody submitted contradicts nothing. `invoice_id` has
-        # no line on purpose: the identity is the implementation's to assign.
+        # Where the announced fact's fields come from. Without this block the event's *types* are
+        # declared and its *values* are not, so an implementation announcing an amount nobody
+        # submitted contradicts nothing — the one fault the conformance matrix recorded as caught
+        # by nothing. `invoice_id` has no line here on purpose: the identity is the
+        # implementation's to assign, so it stays undetermined and a suite asserts its presence
+        # and type, never its value.
         payload:
           billing.invoice.InvoiceCreated:
             account_id: input.account_id
             customer_email: input.customer_email
             amount: input.amount
+        # The same relation, pointed at the invoice instead of the announcement. `payload:` says
+        # what the event carries; this says what the *invoice* holds, which is what every view of
+        # it later shows. Without it a generated scenario can find the row it created and say
+        # nothing about what is in it, so an implementation that stored somebody else's amount
+        # passes — the ordering half of the same gap is why `OutstandingInvoices` could be asserted
+        # to be in order and never to be in the right order.
+        #
+        # `invoice_id` has no line here for the reason it has none above: the identity is the
+        # implementation's to assign. `issued_at` has none because `CreateInvoice` is not what
+        # sets it and `IssueInvoice` does not take it — a clock is not an input, and the model says
+        # so by staying quiet rather than by naming a source that does not exist.
+        #
+        # `reminder_count` starts at zero, and says so, because the invariant `reminder_count >= 0`
+        # reads it: a required field no creating branch sets holds whatever the implementation
+        # picked, and the invariant would then hold or fail on that choice (ess#112).
+        sets:
+          account_id: input.account_id
+          total: input.amount
+          reminder_count: "0"
         summary: The invoice is created in Draft.
 
       - name: rejected
@@ -92,7 +117,7 @@ commands:
 
 `generated/schema/commands/billing.invoice.CreateInvoice.schema.json`, in full:
 
-```json
+```json file=generated/schema/commands/billing.invoice.CreateInvoice.schema.json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Create invoice input",
@@ -119,8 +144,8 @@ commands:
   "x-ess-provenance": {
     "system": "billing",
     "specification_version": "v3",
-    "source_digest": "aacdc2fe065d462cc4f9ba51e6740f88809b6b17ce006ef846b488f957005da3",
-    "contract_digest": "b98537005aa5deabace3dbf4169af1c27d39520baa61adebf46ed19271af9ba0",
+    "source_digest": "1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c",
+    "contract_digest": "slice-sha256/2:79a52ac939c2e51d1a43759c926d7366c3f4cbae003a2993d8f93a23b103f004",
     "regenerate": "ess generate"
   },
   "$defs": {
@@ -181,7 +206,7 @@ Without it, every change owes the whole generated tree.
 
 `generated/openapi/invoice-service.yaml`, the path for the same command:
 
-```yaml
+```yaml file=generated/openapi/invoice-service.yaml lines=49-76
   /invoices/commands/create-invoice:
     post:
       operationId: billing.invoice.CreateInvoice
@@ -221,10 +246,8 @@ the provenance and the regeneration command.
 `generated/asyncapi/invoice-service.yaml` describes what the component publishes, and says plainly
 what the model does not know:
 
-```text
-The specification declares no transport, so each address below is a name and not a topic on a named
-broker. Servers, protocol bindings, security schemes, message keys, partitioning, retention and
-ordering are absent because the model does not state them.
+```text file=generated/asyncapi/invoice-service.yaml lines=16-16
+    The specification declares no transport, so each address below is a name and not a topic on a named broker. Servers, protocol bindings, security schemes, message keys, partitioning, retention and ordering are absent because the model does not state them.
 ```
 
 A generator that invented a broker here would be inventing a decision nobody made.
@@ -234,7 +257,7 @@ A generator that invented a broker here would be inventing a decision nobody mad
 `generated/docs/domains/billing-invoice.md` renders the entity lifecycle from the declared
 transitions:
 
-```mermaid
+```mermaid file=generated/docs/domains/billing-invoice.md lines=126-133
 stateDiagram-v2
     [*] --> Draft
     Draft --> Issued: issue (IssueInvoice)
@@ -249,10 +272,16 @@ Then it does something a diagram cannot: it lists the absences. Illegal transiti
 because no arrow exists — there is no second, forbidding rule to fall out of date — and since a
 diagram cannot show an absence, the unconnected pairs are listed, derived from the same transitions:
 
-> * `Cancelled` may not become `Draft`
-> * `Draft` may not become `Paid`
-> * `Paid` may not become `Cancelled`
-> * … (all eight pairs)
+```markdown file=generated/docs/domains/billing-invoice.md lines=146-153
+- `Cancelled` may not become `Draft`
+- `Cancelled` may not become `Issued`
+- `Cancelled` may not become `Paid`
+- `Draft` may not become `Paid`
+- `Issued` may not become `Draft`
+- `Paid` may not become `Cancelled`
+- `Paid` may not become `Draft`
+- `Paid` may not become `Issued`
+```
 
 The same page renders the cross-context binding as a flowchart — the event, the command it invokes,
 its outcomes, and the escalation event that makes the failure path observable at all.
@@ -263,7 +292,7 @@ its outcomes, and the escalation event that makes the failure path observable at
 per domain, the interaction and topology pages, and a local stylesheet and diagram renderer. Every
 page opens with the same provenance as the Markdown:
 
-```html
+```html file=generated/site/index.html lines=2-7
 <!--
   generated from billing v3
   model digest 1e7906786567af32118eb2d0a8c3fcafa16c32c9649a80b60487fd2eeebc4c9c
