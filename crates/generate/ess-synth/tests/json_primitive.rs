@@ -245,7 +245,7 @@ fn cargo(directory: &Path, arguments: &[&str]) -> Output {
 fn issue_138_go_web_and_clap_refuse_json_by_name() {
     for source in [MODEL, EVERY_POSITION] {
         let ir = ir(source);
-        for target in [Target::Web, Target::Clap] {
+        for target in [Target::Clap] {
             let Err(failure) = synthesize_for(&ir, target) else {
                 panic!("{target:?} emitted a workspace for a Json model");
             };

@@ -323,7 +323,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         workspace_manifest(&layout, provenance),
         crate_manifest(ir, &layout, provenance),
         Artifact::new(layout.source("lib"), library),
-        Artifact::new(layout.source("json"), json_module(provenance)),
+        Artifact::new(layout.source("json"), json_module(ir, &bridge, provenance)),
         Artifact::new(
             layout.source("wire"),
             format!("{}\n{wire}", provenance.commented_for("//", &regenerate())),
@@ -357,7 +357,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
         report: TargetReport {
             provenance: provenance.clone(),
             target: TARGET,
-            weakenings: weakenings(),
+            weakenings: weakenings(ir),
             refusals: refusals
                 .iter()
                 .map(|(capability, detail)| TargetRefusal {
@@ -418,7 +418,49 @@ fn regenerate() -> String {
 /// boundary that carries JSON and no types, a page that can only observe what the model publishes,
 /// a number format narrower than the model's, and an export mechanism the compiler classes as
 /// unsafe.
-fn weakenings() -> Vec<TargetWeakening> {
+///
+/// A model that uses `Json` gets a seventh, stated only there so every other model's `TARGET.md`
+/// keeps its bytes: [`json_weakening`].
+fn weakenings(ir: &EssIr) -> Vec<TargetWeakening> {
+    let mut out = fixed_weakenings();
+    if crate::rust::json::used(ir) {
+        out.push(json_weakening());
+    }
+    out
+}
+
+/// What the page does to a `Json` value, which the bridge does not.
+///
+/// The bridge carries a `Json` value as the Rust types crate's `json::Value`, unchanged. The page
+/// holds it as `JSON.parse` answers it, because the page's glue is the same bytes for every model
+/// and parses every answer that way: `JSON.rawJSON` wraps a primitive only, so keeping a spelling
+/// on the page would mean reviving every number of every answer, for every model, into an object
+/// the page's own rendering cannot print. The loss is the one the `Integer` weakening already
+/// states, plus the one ECMAScript's own member order makes.
+fn json_weakening() -> TargetWeakening {
+    TargetWeakening {
+        guarantee: "a `Json` value crosses unchanged: members in the order they arrived, numbers \
+                    in the spelling they arrived in"
+            .to_owned(),
+        instead: "the bridge carries it unchanged, as the Rust types crate's `json::Value`; the \
+                  page holds it as `JSON.parse` answers it (`JsonValue` in the page's script). So \
+                  on the page a number is a double — `1.50` shows as `1.5`, and a magnitude past \
+                  2^53 is rounded — and an object lists its integer-like member names first, in \
+                  ascending order, as every ECMAScript object does. A value typed into a `Json` \
+                  control is sent as the page reads it, with those same two losses"
+            .to_owned(),
+        affects: vec![
+            CapabilityKind::DomainType,
+            CapabilityKind::CommandContract,
+            CapabilityKind::EventType,
+            CapabilityKind::ErrorType,
+            CapabilityKind::ViewType,
+        ],
+    }
+}
+
+/// The six rules every model's browser realization carries.
+fn fixed_weakenings() -> Vec<TargetWeakening> {
     vec![
         TargetWeakening {
             guarantee: "the generated crate forbids `unsafe`, so the compiler closes the question \
@@ -565,11 +607,20 @@ fn crate_manifest(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Artif
 }
 
 /// The fixed JSON module, stamped with the provenance of the tree it is committed in.
-fn json_module(provenance: &Provenance) -> String {
+///
+/// A model that uses `Json` gets the types crate's module re-exported instead, as the Rust
+/// target's server crate does (beyond10x/ess#224): a `Json` value the bridge decodes is the
+/// `json::Value` a semantic type holds, carried with its members in order and its numbers in their
+/// spelling. A model without `Json` keeps the fixed module, byte for byte.
+fn json_module(ir: &EssIr, bridge: &Bridge<'_>, provenance: &Provenance) -> String {
     format!(
         "{}{}",
         provenance.commented_for("//", &regenerate()),
-        crate::rust::json::JSON
+        if crate::rust::json::used(ir) {
+            crate::rust::json::reexport(&bridge.types)
+        } else {
+            crate::rust::json::JSON.to_owned()
+        }
     )
 }
 

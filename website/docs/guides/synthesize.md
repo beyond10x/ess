@@ -82,7 +82,12 @@ represents `Json` as `primitives.Json`, a wrapper over the document text that it
 carries only when the model uses `Json`; the served surface reads it with its members in order and
 its numbers as spelled, as covered by the
 [Go Json tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/json_go.rs).
-`web` and `clap` refuse `Json` and name the target and each position, as covered by the
+The `web` target's
+bridge crate re-exports the same module and carries a `Json` value unchanged; its page holds one
+as `JSON.parse` answers it, typed `JsonValue`, so on the page a number is a double and
+integer-like member names come first. `TARGET.md` states that limit, as covered by the
+[web Json tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/json_web.rs).
+`clap` refuses `Json` and names the target and each position, as covered by the
 [Json tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/json_primitive.rs).
 This boundary is separate from the [structural data libraries](../reference/cli.md#adopter-owned-schema-contracts).
 The [support matrix](../status/where-this-stands.md#support-boundaries) records current-source target
