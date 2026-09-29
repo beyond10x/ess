@@ -50,26 +50,28 @@ Integration branch: `integrate/ess-0.41`, cut from `main` after PR #208 merges (
 
 ## Scope extension (2026-09-29)
 
-Defects filed after the batch was scoped join it: #213 (filed 2026-09-28), #216 and #217 (filed 2026-09-29 from a consumer hardening run). #212, #214 and #215 ask for new capability (mutation classes, a scoped multi-field key, cross-entity guards on non-creating commands and effects on related records) and stay out, as #194, #197 and #200 do.
+Defects filed after the batch was scoped join it: #227 (filed 2026-09-28), #216 and #217 (filed 2026-09-29 from a consumer hardening run). #212, #228 and #229 ask for new capability (mutation classes, a scoped multi-field key, cross-entity guards on non-creating commands and effects on related records) and stay out, as #194, #197 and #200 do.
 
 | issue | decision |
 |---|---|
-| #213 input-guarded refusal beside a subject-state branch | admit a `when:` + `error:` refusal naming no subject beside `when_subject_state:`/`when_subject` branches that act on an existing record; precedence as #209 documents: an input refusal is answered before existence and before the held state; synthesis witnesses it with a plain send and on an arranged row in each state a sibling runs from; no format bump if the key set is unchanged (validation relaxation), otherwise gate on `ess/18` |
+| #227 input-guarded refusal beside a subject-state branch | admit a `when:` + `error:` refusal naming no subject beside `when_subject_state:`/`when_subject` branches that act on an existing record; precedence as #209 documents: an input refusal is answered before existence and before the held state; synthesis witnesses it with a plain send and on an arranged row in each state a sibling runs from; no format bump if the key set is unchanged (validation relaxation), otherwise gate on `ess/18` |
 | #216 caller sources change the interpreted spec_digest | find which of the two digest paths (suite synthesis, interpreted target) hashes the model differently when actor `attributes:` and `{caller: …}` sources are present; both must digest the same compiled model; a regression test over a model with caller sources |
 | #217 overlapping accepting guards | declared precedence, not a refusal (a refusal would break specifications that validate today): among accepting guarded branches, the first declared whose guard holds answers; documented in `input-guard-overlap-precedence.md`; synthesis witnesses each decidable overlap with an input in it asserting the first-declared branch, so a target answering the later one fails; interpreter and Entity Runtime checked to agree, and made to agree where they do not |
 
 | wave | units |
 |---|---|
-| D | refusal-beside-state (#213), caller-digest (#216), overlap-precedence (#217); dispatched after binding-context and linkguard merge |
+| D | refusal-beside-state (#227), caller-digest (#216), overlap-precedence (#217); dispatched after binding-context and linkguard merge |
 
-- Scope extension, second batch (2026-09-29, two consumer hardening runs): #218 (mutate scores an unsatisfiable-guard mutant survived) and #219 (verify diff leaves a newtype prefix change unclassified) are defects and join wave D. #218: a mutant whose guard no input satisfies (decided over the finite witness domain, as `boundaries` decides) is scored `equivalent` with the unsatisfiable guard named, in `ess-mutation-report/2`, never `survived`. #219: `type/<T>/prefix-added` (narrowed), `prefix-removed` (widened), `prefix-changed` (both), in `ess-diff/10` beside the binding-context cause. #220–#225 are feature requests and stay out; #215 received a comment with the second consumer's rules.
+- Scope extension, second batch (2026-09-29, two consumer hardening runs): #218 (mutate scores an unsatisfiable-guard mutant survived) and #219 (verify diff leaves a newtype prefix change unclassified) are defects and join wave D. #218: a mutant whose guard no input satisfies (decided over the finite witness domain, as `boundaries` decides) is scored `equivalent` with the unsatisfiable guard named, in `ess-mutation-report/2`, never `survived`. #219: `type/<T>/prefix-added` (narrowed), `prefix-removed` (widened), `prefix-changed` (both), in `ess-diff/10` beside the binding-context cause. #220–#225 are feature requests and stay out; #229 received a comment with the second consumer's rules.
 
 | wave | units |
 |---|---|
-| D (revised) | refusal-beside-state (#213), caller-digest (#216), overlap-precedence (#217), mutate-dead-guard (#218), diff-prefix (#219) |
+| D (revised) | refusal-beside-state (#227), caller-digest (#216), overlap-precedence (#217), mutate-dead-guard (#218), diff-prefix (#219) |
 
 - Scope extension, third batch (2026-09-29): #202 is reopened in scope for list inputs: two same-typed `List<…>` inputs a `sets:` entry reads are witnessed `[]` both, so a retarget survives; unit distinguish-lists gives each such input a distinct non-empty witness (checked first on the merged tree; if the merged distinguish rule already separates them, no unit). #218 widens: a mutant on an outcome the baseline suite does not witness (refused at synthesis) is scored `unwitnessed` naming the baseline refusal, not `survived`. #226 (a branch selected by a stored counter at its limit, ESS-SYNTH-003) is a defect in the #198/#199 class and joins wave D as unit counter-limit: the stored-row search repeats the raising command up to the guard literal; beyond the search bound the refusal names the bound.
 
 | wave | units |
 |---|---|
-| D (revised 2) | refusal-beside-state (#213), caller-digest (#216), overlap-precedence (#217), mutate-dead-guard (#218), diff-prefix (#219), distinguish-lists (#202), counter-limit (#226) |
+| D (revised 2) | refusal-beside-state (#227), caller-digest (#216), overlap-precedence (#217), mutate-dead-guard (#218), diff-prefix (#219), distinguish-lists (#202), counter-limit (#226) |
+
+- 2026-09-29: #213, #214 and #215 were filed under a personal account; recreated by the App as #227, #228 and #229 and the originals closed. References above use the new numbers.

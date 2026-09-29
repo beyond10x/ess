@@ -7,9 +7,11 @@ title: An input-guarded refusal beside a subject-state branch is refused as unob
 refs:
 - provider: github
   reference: beyond10x/ess#213
+- provider: github
+  reference: beyond10x/ess#227
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T01:19:56Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T01:19:57Z", actor: "human:timo", revision: 3}
