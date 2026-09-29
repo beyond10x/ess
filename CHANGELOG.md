@@ -2,6 +2,126 @@
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-09-30
+
+### Added
+
+- `ess generate synthesize --target rust` generates the behaviour of every command whose outcomes
+  the specification fully determines, instead of owing it as a `…Behavior` obligation. The types
+  crate gains a `behaviour` module: one storage trait per entity the generated behaviours read or
+  write (get, put and delete a snapshot by identity; ess generates the trait, never a store), a
+  `Context` trait (the caller's attributes, the identities and values the model says the
+  implementation assigns, and the answer to each `external:` branch, forced or decided), and
+  `Generated<P>`, which implements every generated `…Behavior` trait over those ports and forwards
+  every behaviour and query still owed to `P`, so it is a complete bundle for every component port.
+  Evaluation follows the conformance interpreter and the precedence order of
+  `docs/design/cross-record-and-stored-field-guards.md`; moves go through the generated typestate,
+  and a write to an entity declaring `invariants:` is refused when `broken_invariant` names one.
+- Generated: `when:`, `when_subject:` (both shapes), `when_subject_state:`, `unknown_instance:`,
+  `wrong_state:`, defaults, `external:` with and without an input guard; `creates:`, `moves:`,
+  `updates:`, `deletes:`; `sets:` from input, literals, `{increment:}`, `{cleared}`, the caller,
+  `{subject:}` and `{generated: true}`; payloads from input, subject fields, the caller and
+  generated values; a declared error's fields where the held row determines them (its state, or a
+  stored field of the same name and type).
+- The Rust target also generates the query of every view whose rows the specification fully
+  determines: projections of the source entity's own fields and `state`, `filter:` views,
+  `order_by:` views, and `aggregation:` views with `group_by`, `count`, `count_distinct`, `sum`,
+  `min`, `max` and `avg`, including `skip_absent`. The plan marks each such `view_query` capability
+  generated. The query sits on `behaviour::Generated` and reads through `list`, a new method on the
+  entity's storage port, emitted only where a generated query reads that entity. A filter keeps a
+  row only where it holds; a false or unknown filter drops it. Aggregations follow the conformance
+  suite's semantics: an absent group key forms one group, a number is keyed by its value, `avg` is
+  rounded half-even to six digits, and an ungrouped aggregation is one row even when empty.
+- The plan names, for each command behaviour or view query still owed, the construct that keeps it
+  an obligation (`ObligationReason::Undetermined`, "kept an obligation by …"). For a command:
+  `when_related:`, `{related:}`, `when_subject_state:` beside `external:`, a subject predicate
+  choosing between a move and an update, an unknown identity no branch answers, `instances:`,
+  `affects:`, a typed response, a retained result, error fields no source determines, a creation
+  leaving a required field undetermined. For a view: a parameter (`params:`), paging (`paging:`),
+  ordering by an optional field or by a `Timestamp`, or a filter with a guard the generator does
+  not decide.
+- The Go target keeps a seam, owed and stubbed, for each command behaviour and view query the plan
+  marks generated, and names that in `TARGET.md` as a weakening. The unlinked web bundle refuses a
+  generated query as `query ports`.
+- The Rust synthesis target generates each entity's invariant check. An entity that declares
+  `invariants:` gets `impl <Entity>Data { pub fn broken_invariant(&self) -> Option<&'static str> }`,
+  returning the first declared invariant the value breaks (its declared text) or `None`. Every
+  predicate form an entity invariant admits is evaluated: comparisons (numbers by exact decimal
+  value, `Timestamp` by instant, other text by bytes), `any_of`/`none_of`, the string and
+  case-insensitive operators, text and collection `.count`, list positions, `defined`, truthiness,
+  `all`/`any`/`not`, and `forall`/`exists` over lists and maps. Reads of something absent — an
+  empty `Optional`, a list position past the end, or `state`, which the data type does not hold —
+  are unknown and break nothing, as the conformance interpreter reads them. An invariant the target
+  cannot evaluate is refused at synthesis naming it. The shared evaluator is appended to the types
+  crate's `primitives` module only in models that declare an entity invariant; other models keep
+  their bytes.
+- `ess generate synthesize --target rust` puts the declared actor grants into the types crate as
+  data. The new `actor` module has an `Actor` enum with one variant per declared actor,
+  `Actor::ALL`, `Actor::name()` (the qualified name) and `may(actor) -> &'static [&'static str]`,
+  which lists the qualified names of the commands the actor may invoke. Generated code still
+  enforces no grant. Each plan's `actor grants` row now says the grant is generated as data and
+  that the caller enforces it. The Go target's `TARGET.md` names the missing grant table as a
+  weakening. A model without actors produces identical bytes.
+- **The generated Rust server has a transport-free entry point.** Each served component's module
+  now has `pub fn handle(system, name, input: json::Value) -> Result<json::Value, entry::Refused>`,
+  which runs any command or view of that surface by its qualified name with no socket. It calls the
+  same decode, port and render function as the HTTP route, so the outcome is the one the route's
+  body renders, and the refusals are the route's own: input the declared schema refuses
+  (`Refused::Input`, the route's `400`) and an unmet obligation (`Refused::Unmet`, the route's
+  `501`). A name the surface does not declare is `Refused::Unknown`, which names it. The dispatcher
+  behind `serve` is now public too, so a caller can pass it a request value it built itself.
+- `ess generate synthesize --target rust --layout crate` writes one crate at `--out` instead of a
+  workspace: `Cargo.toml` and `src/lib.rs` at the root, one module per bounded context, the
+  component ports under `src/ports/`, the bindings in `src/system.rs`, and the HTTP surface (`http`,
+  `wire`, `json`, `entry`, route modules) under `src/server/` behind a `server` Cargo feature that
+  is off by default. Without the feature the crate has no `std::net`; with it, the crate passes the
+  same synthesized conformance suite as the workspace layout. `plan.json` records the layout in its
+  `scope`, and `PLAN.md` and every file header name `ess synthesize --layout crate`. A bounded
+  context named `ports`, `system` or `server` becomes `<name>_domain` in this layout only. The
+  default `--layout workspace` output is byte-identical to before; `--target go`, `web` and `clap`
+  refuse `--layout crate` with exit status 2 and write nothing. The library exposes it as
+  `ess_synth::synthesize_laid_out` with `OutputLayout`, `LayoutRefusal` and `SynthesisFailure`.
+- Specification format `ess/19`: an outcome that reports an error may say where the error's fields
+  come from, with a `payload:` block keyed by the error —
+  `payload: {orders.TooMany: {requested: input.quantity, limit: 10}}`. Each field takes the sources
+  an event payload takes (an input, a literal, `{subject: …}`, `{caller: …}`, `{generated: true}`)
+  and is checked the same way: a field the error does not declare is refused as
+  `undeclared_reference` and a source of another type as `type_mismatch`. `{subject: …}` reads the
+  row the refusal is answered for (`wrong_state:`, a held-state or stored-field guard) and is
+  refused on an input-guarded refusal and on `unknown_instance:`. An earlier header refuses the
+  block by name with `unsupported_format_version`; a model without it keeps its bytes and compiled
+  digest. The compiled model carries the resolved sources as `error_payload` on the outcome.
+- The conformance interpreter carries the declared fields on the error it reports, and a
+  synthesized suite's `expect_error` compares every declared field whose value the scenario
+  determines. An error field with no declared source is carried as none, as before.
+- `ess generate synthesize --target rust` generates the behaviour of a command whose every error
+  field has a declared source (or is read from the held row, as before), filling each field from its
+  source.
+- The generated `PLAN.md` has a **Ports — yours to provide** section wherever the plan generates a
+  command behaviour or a view query: one storage port per entity a generated behaviour or query
+  reads or writes, and a context port for the caller's attributes, the values the implementation
+  assigns and the `external:` branches. Synthesis generates each port's contract and never an
+  implementation of one. A plan that generates neither keeps its bytes.
+- The synthesis guide states the rule — what the specification fully determines is generated; what
+  it cannot determine is an obligation — and lists the ports, the constructs that keep a command or
+  a view query an obligation, and actor grants as generated data. The commands-and-outcomes guide
+  documents `ess/19` `payload:` sources for an error's fields.
+
+### Changed
+
+- The committed billing plan is 48 capabilities: 40 generated, 4 obligations, 4 refused
+  (`IssueInvoice`, `CancelInvoice` and `SendEmail` are generated); gatepass's is 29: 26 generated,
+  1 obligation, 2 refused (`AdmitVisitor` and `SignOutVisitor` are generated). The committed trees
+  under `generated/rust/billing` and `generated/rust/gatepass` are regenerated, including the new
+  `entry.rs` in `generated/rust/gatepass/crates/gatepass-server/src/`.
+- The generated Rust `Decimal` and the web target's notes no longer state that behaviour is never
+  synthesised.
+
+### Fixed
+
+- A served command outcome whose declared error has no fields no longer gives the generated server
+  crate an unused `error` binding, which failed a consumer's `-D warnings` build.
+
 ## [0.45.0] — 2026-09-29
 
 ### Added
