@@ -35,9 +35,9 @@ use super::{
     instance_name, lifecycle_state, not_emitted, prepare_in, reach, reach_in_state, require,
     settled, shown, subject_fact, supply, ActorRef, Arrangement, AssertionStyle, BTreeMap,
     BTreeSet, CommandRef, ConformanceScenario, ConformanceSuite, Determined, EntityHandle,
-    EntityRef, ErrorRef, EssIr, EssSemanticRef, EventRef, InstanceName, Node, OutcomeRef,
-    QualifiedName, Refusal, RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome,
-    ResolvedView, ScenarioId, ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
+    EntityRef, EssIr, EssSemanticRef, EventRef, InstanceName, Node, OutcomeRef, QualifiedName,
+    Refusal, RefusalCause, ResolvedCommand, ResolvedEffect, ResolvedOutcome, ResolvedView,
+    ScenarioId, ScenarioStep, ScenarioValue, StateName, ViewExpectation, ViewRef,
 };
 
 /// How many rows the filter must select, so a target that changes one of them is caught.
@@ -555,10 +555,13 @@ fn answer(
     source: &mut BTreeSet<EssSemanticRef>,
 ) -> Result<(), RefusalCause> {
     if let Some(error) = &outcome.error {
-        steps.push(ScenarioStep::ExpectError {
-            error: ErrorRef::from(error),
-            fields: BTreeMap::new(),
-        });
+        steps.push(super::expect_error(
+            ir,
+            outcome,
+            error,
+            supplied,
+            &BTreeMap::new(),
+        ));
     }
     let emitted: Vec<EventRef> = outcome.emits.iter().map(EventRef::from).collect();
     let changed = i64::try_from(changed).unwrap_or(i64::MAX);

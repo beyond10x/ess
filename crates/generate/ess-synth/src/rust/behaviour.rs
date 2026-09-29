@@ -861,6 +861,15 @@ impl Writer<'_> {
         };
         let mut reads = (false, false);
         for field in &self.ir.error(error).fields {
+            // A declared source (ess/19) reads the row's data where it reads the subject.
+            if let Some(source) = declared
+                .error_payload
+                .iter()
+                .find(|source| source.target == field.name)
+            {
+                reads.1 |= reads_subject(&source.value);
+                continue;
+            }
             match determined::held_field(entity, field) {
                 Some(HeldField::State) => reads.0 = true,
                 Some(HeldField::Field(_)) => reads.1 = true,
@@ -936,10 +945,28 @@ impl Writer<'_> {
                         .map(|subject| self.ir.entity(&subject.entity)),
                     Held::WrongState => determined::wrong_state_entity(self.ir, command),
                     Held::None => None,
-                }
-                .expect("an error with fields is answered where the held row is in scope");
+                };
+                // Where `{subject: …}` reads the row the refusal is answered for.
+                let row = match held {
+                    Held::Selected => Some("held.data"),
+                    Held::WrongState => Some("before"),
+                    Held::None => None,
+                };
                 let mut fields = Vec::new();
                 for field in &declared.fields {
+                    // A declared source first (ess/19, `story:error-payload-sources`), else the
+                    // held row, as the plan admitted.
+                    if let Some(source) = outcome
+                        .error_payload
+                        .iter()
+                        .find(|source| source.target == field.name)
+                    {
+                        let value = self.value(source, row);
+                        fields.push(format!("{}: {value}", name::value_ident(&field.name)));
+                        continue;
+                    }
+                    let entity =
+                        entity.expect("an error field with no source is answered from a held row");
                     let value = match (
                         determined::held_field(entity, field)
                             .expect("the plan admitted only held error fields"),
@@ -1394,23 +1421,23 @@ fn fact_literal(value: &FactValue, kind: &Kind) -> String {
 
 /// `true` where the branch reads the held row as it was before the outcome.
 fn outcome_reads_before(outcome: &ResolvedOutcome) -> bool {
-    fn reads(value: &ResolvedPayloadValue) -> bool {
-        match value {
-            ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::Increment { .. } => {
-                true
-            }
-            ResolvedPayloadValue::Struct { fields } => {
-                fields.iter().any(|field| reads(&field.value))
-            }
-            _ => false,
-        }
-    }
-    outcome.sets.iter().any(|set| reads(&set.value))
+    outcome.sets.iter().any(|set| reads_subject(&set.value))
         || outcome
             .payload
             .iter()
             .flat_map(|payload| &payload.fields)
-            .any(|field| reads(&field.value))
+            .any(|field| reads_subject(&field.value))
+}
+
+/// Whether one value source reads the row as it was before the outcome.
+fn reads_subject(value: &ResolvedPayloadValue) -> bool {
+    match value {
+        ResolvedPayloadValue::SubjectField { .. } | ResolvedPayloadValue::Increment { .. } => true,
+        ResolvedPayloadValue::Struct { fields } => {
+            fields.iter().any(|field| reads_subject(&field.value))
+        }
+        _ => false,
+    }
 }
 
 /// A literal the model writes, as a value of `target`.

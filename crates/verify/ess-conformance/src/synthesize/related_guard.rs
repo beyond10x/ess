@@ -552,7 +552,7 @@ pub(super) fn prepare_at(
         // own send: each is answered by this refusal, so a target answering that guard's branch
         // before reading the row fails. Only for a refusal, which changes nothing, so the sends
         // leave the row missing for the next.
-        send_each_without_row(command, outcome, actors, &setup.bound, each, &mut steps);
+        send_each_without_row(ir, command, outcome, actors, &setup.bound, each, &mut steps);
         input
     } else {
         let (row, first, input) = with_row(
@@ -648,6 +648,7 @@ fn without_row(
 /// `outcome` (beyond10x/ess#227). Only for a refusal, which changes nothing, so every send leaves
 /// the row missing for the next.
 fn send_each_without_row(
+    ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -660,19 +661,18 @@ fn send_each_without_row(
     };
     let command_ref = super::CommandRef::new(command.name.clone());
     for other in others {
+        let supplied = super::supply(command, &other, None, None, bound);
+        let expected = super::expect_error(ir, outcome, error, &supplied, &BTreeMap::new());
         steps.push(super::ScenarioStep::ExecuteCommand {
             command: command_ref.clone(),
             actor: actors.get(&command.name).cloned(),
-            input: super::supply(command, &other, None, None, bound),
+            input: supplied,
             caller: BTreeMap::new(),
         });
         steps.push(super::ScenarioStep::ExpectOutcome {
             outcome: super::OutcomeRef::new(command_ref.clone(), outcome.name.clone()),
         });
-        steps.push(super::ScenarioStep::ExpectError {
-            error: super::ErrorRef::from(error),
-            fields: BTreeMap::new(),
-        });
+        steps.push(expected);
     }
 }
 

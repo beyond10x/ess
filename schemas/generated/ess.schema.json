@@ -2479,7 +2479,7 @@
           ]
         },
         "payload": {
-          "description": "Where the emitted events' payload fields come from, for the fields the author determines.\n\nKeyed by emitted event, then by that event's field, and sparse on both levels — see [`PayloadSource`] for why an absent field is a statement rather than an omission.",
+          "description": "Where the emitted events' payload fields come from, for the fields the author determines.\n\nKeyed by emitted event, then by that event's field, and sparse on both levels — see [`PayloadSource`] for why an absent field is a statement rather than an omission. From `ess/19` a block keyed by the error the outcome reports says where that error's fields come from ([`Outcome::error_payload`]).",
           "type": "object",
           "additionalProperties": {
             "type": "object",

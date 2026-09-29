@@ -462,6 +462,90 @@ const UNDETERMINED_FIELD: &str = concat!(
 "
 );
 
+/// `story:error-payload-sources`: [`UNDETERMINED_ERROR`] with a source for its one error field is
+/// fully determined, and its behaviour is generated.
+#[test]
+fn an_error_whose_every_field_has_a_declared_source_is_determined() {
+    let model = UNDETERMINED_ERROR
+        .replace("format: ess/18\n", "format: ess/19\n")
+        .replace(
+            "        error: kept.shop.TooMany\n",
+            "        error: kept.shop.TooMany\n        payload:\n          kept.shop.TooMany: {limit: 10}\n",
+        );
+    assert_ne!(model, UNDETERMINED_ERROR);
+    let plan = SynthesisPlan::of(&compile_text(&model));
+    assert_eq!(
+        plan.disposition_of(CapabilityKind::CommandBehavior, "kept.shop.PlaceOrder"),
+        Some(&SynthesisDisposition::Generated),
+        "{}",
+        plan.to_markdown()
+    );
+}
+
+/// Each refusal of the fixture fills its error from its declared sources: the input, a literal,
+/// the caller, the row it is answered for and a generated value; `TicketStateConflict.state` is
+/// still read from the held row, beside its declared `ticket_id`.
+#[test]
+fn a_generated_refusal_fills_its_error_from_the_declared_sources() {
+    let ir = compile_directory(&fixture_root());
+    let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
+    let behaviour = &synthesis.artifacts["crates/desk-types/src/behaviour.rs"].contents;
+    for filled in [
+        "NegativeEstimate { estimate: input.estimate.clone(), minimum: 0 }",
+        "TicketNotFound { ticket_id: input.ticket_id.clone() }",
+        "TicketStateConflict { state: held_state, ticket_id: input.ticket_id.clone() }",
+        "NotYours { caller: self.ports.caller_agent_id()",
+        "opened_by: held.data.opened_by.clone() }",
+        "TicketIsClosed { title: held.data.title.clone(), priority: held.data.priority.clone() }",
+        "PagerRefused { reason: input.reason.clone() }",
+        "Throttled { page_id: self.ports.generate_desk_ticket_escalation_id() }",
+    ] {
+        assert!(
+            behaviour.contains(filled),
+            "`{filled}` missing:\n{behaviour}"
+        );
+    }
+}
+
+/// The suite the generated behaviours pass compares those fields, so passing it says they are
+/// filled as declared: every field whose value a scenario determines, by error. A generated
+/// value is the implementation's and is not compared; an identity the suite binds is known only
+/// as a reference.
+#[test]
+fn the_fixture_suite_compares_the_declared_error_fields() {
+    use ess_conformance::scenario::ScenarioStep;
+    let ir = compile_directory(&fixture_root());
+    let suite = ess_conformance::synthesize(&ir).suite;
+    let mut compared: BTreeMap<String, std::collections::BTreeSet<String>> = BTreeMap::new();
+    for step in suite
+        .scenarios
+        .values()
+        .flat_map(|scenario| &scenario.steps)
+    {
+        if let ScenarioStep::ExpectError { error, fields } = step {
+            compared
+                .entry(error.to_string())
+                .or_default()
+                .extend(fields.keys().cloned());
+        }
+    }
+    let keys = |error: &str| -> Vec<String> {
+        compared
+            .get(error)
+            .map(|keys| keys.iter().cloned().collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        keys("desk.ticket.NegativeEstimate"),
+        ["estimate", "minimum"]
+    );
+    assert_eq!(keys("desk.ticket.NotYours"), ["caller", "opened_by"]);
+    assert_eq!(keys("desk.ticket.TicketIsClosed"), ["priority", "title"]);
+    assert_eq!(keys("desk.ticket.PagerRefused"), ["reason"]);
+    assert_eq!(keys("desk.ticket.TicketNotFound"), ["ticket_id"]);
+    assert!(keys("desk.ticket.Throttled").is_empty(), "{compared:#?}");
+}
+
 #[test]
 fn the_go_target_emits_a_generated_behaviour_as_a_seam_and_says_so() {
     let ir = compile_directory(&fixture_root());

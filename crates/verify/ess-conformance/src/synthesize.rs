@@ -2103,10 +2103,8 @@ fn exercise_as(
 
     let mut steps = run.steps();
     if let Some(error) = &outcome.error {
-        steps.push(ScenarioStep::ExpectError {
-            error: ErrorRef::from(error),
-            fields: BTreeMap::new(),
-        });
+        let (input, before) = (&run.input, &run.before_settled);
+        steps.push(expect_error(ir, outcome, error, input, before));
     }
     for event in &emitted {
         let literals = determined_payload(ir, outcome, event, &run.input, &run.before_settled);
@@ -2737,10 +2735,13 @@ fn state_refusals(
                     Ok(run) => {
                         witnessed += 1;
                         steps.extend(run.steps());
-                        steps.push(ScenarioStep::ExpectError {
-                            error: ErrorRef::from(outcome.error.as_ref().expect("named refusal")),
-                            fields: BTreeMap::new(),
-                        });
+                        steps.push(expect_error(
+                            ir,
+                            outcome,
+                            outcome.error.as_ref().expect("named refusal"),
+                            &run.input,
+                            &run.before_settled,
+                        ));
                         source.extend(run.source);
                     }
                     // No input reaches this refusal in this state: not a refusal of its own, as
@@ -5058,15 +5059,45 @@ fn determined_payload(
     supplied: &BTreeMap<String, ScenarioValue>,
     before: &BTreeMap<String, Determined>,
 ) -> BTreeMap<String, Node> {
-    let mut values = BTreeMap::new();
-    let Some(determined) = outcome
+    outcome
         .payload
         .iter()
         .find(|payload| EventRef::from(&payload.event) == *event)
-    else {
-        return values;
-    };
-    for field in &determined.fields {
+        .map(|determined| determined_fields(ir, &determined.fields, supplied, before))
+        .unwrap_or_default()
+}
+
+/// The `expect_error` step for the error `outcome` reports, comparing each field the
+/// specification gives a source (ess/19, `story:error-payload-sources`) whose value this scenario
+/// determines, by the rules [`determined_payload`] reads an event's by.
+///
+/// `supplied` is what the command under test was sent and `before` what the arrangement left in
+/// the row the refusal is answered for. A field with no source, a `{generated: true}` one, and an
+/// input carrying a bound instance are not compared — the partial comparison `expect_error`
+/// states. An error with no declared source is compared by name alone, as before `ess/19`.
+fn expect_error(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    error: &ess_compiler::ir::ErrorHandle,
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+) -> ScenarioStep {
+    ScenarioStep::ExpectError {
+        error: ErrorRef::from(error),
+        fields: determined_fields(ir, &outcome.error_payload, supplied, before),
+    }
+}
+
+/// The values of `fields` a scenario determines: [`determined_payload`]'s reading of one record's
+/// sources, whichever record — an event or an error — they fill.
+fn determined_fields(
+    ir: &EssIr,
+    fields: &[ess_compiler::ir::ResolvedPayloadField],
+    supplied: &BTreeMap<String, ScenarioValue>,
+    before: &BTreeMap<String, Determined>,
+) -> BTreeMap<String, Node> {
+    let mut values = BTreeMap::new();
+    for field in fields {
         match &field.value {
             // `Cleared` is refused on an event payload by `ess-domain`, so it cannot reach here;
             // matched with the other two that determine nothing rather than by a wildcard, so a
@@ -7805,19 +7836,20 @@ fn refused_here(
     if let Some(preservation) = &preservation {
         steps.extend(preservation.before.iter().cloned());
     }
+    let supplied = supply(
+        attempt.command,
+        &input,
+        attempt.outcome.subject.as_ref(),
+        Some(&arrangement.instance),
+        // The command under test moves the row the arrangement already created, so its input
+        // names that row; an owner, where there was one, was arranged inside `arrange`.
+        &BTreeMap::new(),
+    );
     steps.push(ScenarioStep::ExecuteCommand {
         caller: std::collections::BTreeMap::new(),
         command: command_ref.clone(),
         actor: actors.get(command).cloned(),
-        input: supply(
-            attempt.command,
-            &input,
-            attempt.outcome.subject.as_ref(),
-            Some(&arrangement.instance),
-            // The command under test moves the row the arrangement already created, so its input
-            // names that row; an owner, where there was one, was arranged inside `arrange`.
-            &BTreeMap::new(),
-        ),
+        input: supplied.clone(),
     });
 
     let mut source = arrangement.source;
@@ -7849,13 +7881,11 @@ fn refused_here(
         source.insert(branch.into());
         // The declared error, by name and with no invented payload — the same line `exercise` draws
         // for every other refusal, and the reason this family stopped being a "something went
-        // wrong" check.
+        // wrong" check. The fields its `payload:` determines are compared (ess/19).
         refusal.error.as_ref().map(|error| {
             let named = ErrorRef::from(error);
-            steps.push(ScenarioStep::ExpectError {
-                error: named.clone(),
-                fields: BTreeMap::new(),
-            });
+            let expected = expect_error(ir, refusal, error, &supplied, &arrangement.settled);
+            steps.push(expected);
             source.insert(named.clone().into());
             named
         })
@@ -8091,12 +8121,13 @@ fn unknown_instance(
 
     let command_ref = CommandRef::new(command.name.clone());
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
+    let supplied = supply(command, &input, None, None, &BTreeMap::new());
     let mut steps = vec![
         ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor: actors.get(&command.name).cloned(),
-            input: supply(command, &input, None, None, &BTreeMap::new()),
+            input: supplied.clone(),
         },
         ScenarioStep::ExpectOutcome {
             outcome: branch.clone(),
@@ -8117,10 +8148,14 @@ fn unknown_instance(
         .filter(|_| declared.refuses)
         .map(|error| {
             let named = ErrorRef::from(error);
-            steps.push(ScenarioStep::ExpectError {
-                error: named.clone(),
-                fields: BTreeMap::new(),
-            });
+            // No row carries the identity, so nothing is read from one.
+            steps.push(expect_error(
+                ir,
+                declared,
+                error,
+                &supplied,
+                &BTreeMap::new(),
+            ));
             source.insert(named.clone().into());
             named
         });
@@ -8228,10 +8263,14 @@ fn deletion_witness(
         });
         source.insert(branch.into());
         if let Some(error) = answer.error.as_ref().filter(|_| answer.refuses) {
-            steps.push(ScenarioStep::ExpectError {
-                error: ErrorRef::from(error),
-                fields: BTreeMap::new(),
-            });
+            // The row is gone, so nothing is read from one.
+            steps.push(expect_error(
+                ir,
+                answer,
+                error,
+                &run.input,
+                &BTreeMap::new(),
+            ));
             source.insert(ErrorRef::from(error).into());
         }
         // The answer publishes nothing it does not declare, so a deleted identity answered with
@@ -9506,6 +9545,7 @@ fn boundaries(
     let mut taken = bound_instances(steps);
     for row in rows {
         let mut supplied = run.input.clone();
+        let mut settled = BTreeMap::new();
         for (field, value) in &row {
             if primary.get(field) != Some(value) {
                 supplied.insert(field.clone(), ScenarioValue::literal(value.clone()));
@@ -9527,11 +9567,16 @@ fn boundaries(
             };
             out.0.extend(arrangement.steps);
             out.1.extend(arrangement.source);
+            settled = arrangement.settled;
             supplied.insert(
                 field.name.clone(),
                 ScenarioValue::instance(arrangement.instance),
             );
         }
+        let expected = outcome
+            .error
+            .as_ref()
+            .map(|error| expect_error(ir, outcome, error, &supplied, &settled));
         out.0.push(ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
@@ -9541,12 +9586,7 @@ fn boundaries(
         out.0.push(ScenarioStep::ExpectOutcome {
             outcome: outcome_ref.clone(),
         });
-        if let Some(error) = &outcome.error {
-            out.0.push(ScenarioStep::ExpectError {
-                error: ErrorRef::from(error),
-                fields: BTreeMap::new(),
-            });
-        }
+        out.0.extend(expected);
     }
     out.1.insert(command_ref.into());
     out.1.insert(outcome_ref.into());

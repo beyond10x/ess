@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:error-payload-sources
 kind: story
-status: active
+status: implemented
 title: An error outcome declares the sources of its error's fields
 relations:
 - serves: vision:O2
 - decomposes: epic:generated-determined-behaviour
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T21:25:27Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T21:25:27Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T22:38:56Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

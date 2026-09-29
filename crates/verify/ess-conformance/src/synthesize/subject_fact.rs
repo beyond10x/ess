@@ -321,27 +321,31 @@ pub(super) fn state_answered_rows(
         source.extend(arrangement.source);
         source.insert(view.into());
         let outcome_ref = OutcomeRef::new(command_ref.clone(), branch.name.clone());
+        let supplied = supply(
+            command,
+            &input,
+            reading(command, branch),
+            Some(&arrangement.instance),
+            &BTreeMap::new(),
+        );
         steps.push(ScenarioStep::ExecuteCommand {
             caller: std::collections::BTreeMap::new(),
             command: command_ref.clone(),
             actor: actors.get(&command.name).cloned(),
-            input: supply(
-                command,
-                &input,
-                reading(command, branch),
-                Some(&arrangement.instance),
-                &BTreeMap::new(),
-            ),
+            input: supplied.clone(),
         });
         steps.push(ScenarioStep::ExpectOutcome {
             outcome: outcome_ref.clone(),
         });
         match &branch.error {
             Some(error) => {
-                steps.push(ScenarioStep::ExpectError {
-                    error: super::ErrorRef::from(error),
-                    fields: BTreeMap::new(),
-                });
+                steps.push(super::expect_error(
+                    ir,
+                    branch,
+                    error,
+                    &supplied,
+                    &arrangement.settled,
+                ));
                 steps.push(ScenarioStep::ExpectNoEvents);
             }
             None => steps.push(ScenarioStep::ExpectNoError),
@@ -4448,10 +4452,13 @@ fn send_for_row(
         outcome: outcome_ref,
     });
     match &outcome.error {
-        Some(error) => steps.push(ScenarioStep::ExpectError {
-            error: super::ErrorRef::from(error),
-            fields: BTreeMap::new(),
-        }),
+        Some(error) => steps.push(super::expect_error(
+            ir,
+            outcome,
+            error,
+            &supplied,
+            &arrangement.settled,
+        )),
         None => steps.push(ScenarioStep::ExpectNoError),
     }
     let held = (arrangement.state.clone(), arrangement.settled.clone());

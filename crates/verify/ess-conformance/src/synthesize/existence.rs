@@ -354,16 +354,18 @@ fn arranged_refusal(
     let branch = OutcomeRef::new(command_ref.clone(), refusal.name.clone());
     let mut steps = setup.steps.clone();
     steps.extend(preservation.before);
+    let supplied = supply(
+        command,
+        &refused,
+        Some(subject),
+        setup.instance.as_ref(),
+        &setup.bound,
+    );
+    let expected = super::expect_error(ir, refusal, error, &supplied, &setup.settled);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
-        input: supply(
-            command,
-            &refused,
-            Some(subject),
-            setup.instance.as_ref(),
-            &setup.bound,
-        ),
+        input: supplied,
         caller: BTreeMap::new(),
     });
     steps.push(ScenarioStep::ExpectOutcome {
@@ -378,10 +380,7 @@ fn arranged_refusal(
         source.insert(actor.clone().into());
     }
     let named = ErrorRef::from(error);
-    steps.push(ScenarioStep::ExpectError {
-        error: named.clone(),
-        fields: BTreeMap::new(),
-    });
+    steps.push(expected);
     source.insert(named.into());
     let forbidden = not_emitted(ir, &[]);
     for event in &forbidden {
@@ -514,25 +513,24 @@ fn held_state_refusals(
             };
             part.steps.extend(preservation.before);
             part.source.extend(preservation.source);
+            let supplied = supply(
+                command,
+                &input,
+                Some(subject),
+                Some(&arrangement.instance),
+                &BTreeMap::new(),
+            );
+            let expected = super::expect_error(ir, refusal, error, &supplied, &setup.settled);
             part.steps.push(ScenarioStep::ExecuteCommand {
                 command: command_ref.clone(),
                 actor: actors.get(&command.name).cloned(),
-                input: supply(
-                    command,
-                    &input,
-                    Some(subject),
-                    Some(&arrangement.instance),
-                    &BTreeMap::new(),
-                ),
+                input: supplied,
                 caller: BTreeMap::new(),
             });
             part.steps.push(ScenarioStep::ExpectOutcome {
                 outcome: branch.clone(),
             });
-            part.steps.push(ScenarioStep::ExpectError {
-                error: named.clone(),
-                fields: BTreeMap::new(),
-            });
+            part.steps.push(expected);
             for event in &forbidden {
                 part.steps.push(ScenarioStep::ExpectNoEvent {
                     event: event.clone(),
@@ -841,10 +839,12 @@ fn segment(
     let branch = OutcomeRef::new(command_ref.clone(), declared.name.clone());
     let mut steps = setup.steps.clone();
     steps.extend(preservation.before);
+    let supplied = supply(command, &second, None, None, &BTreeMap::new());
+    let expected = super::expect_error(ir, declared, error, &supplied, &setup.settled);
     steps.push(ScenarioStep::ExecuteCommand {
         command: command_ref.clone(),
         actor: actors.get(&command.name).cloned(),
-        input: supply(command, &second, None, None, &BTreeMap::new()),
+        input: supplied,
         caller: BTreeMap::new(),
     });
     steps.push(ScenarioStep::ExpectOutcome {
@@ -859,10 +859,7 @@ fn segment(
         source.insert(actor.clone().into());
     }
     let named = ErrorRef::from(error);
-    steps.push(ScenarioStep::ExpectError {
-        error: named.clone(),
-        fields: BTreeMap::new(),
-    });
+    steps.push(expected);
     source.insert(named.into());
     let forbidden = not_emitted(ir, &[]);
     for event in &forbidden {

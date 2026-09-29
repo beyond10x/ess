@@ -54,6 +54,27 @@ pub fn reading_subject<'a>(command: &'a CommandSpec, outcome: &'a Outcome) -> Op
         .or_else(|| common_subject(command))
 }
 
+/// The existing row a refusal's `payload:` reads `{subject: …}` from (ess/19,
+/// `story:error-payload-sources`), where the refusal is answered after that row is read: its own
+/// existing subject, else for `wrong_state:` and a held-state or stored-field guard the subject its
+/// siblings name. An input-guarded refusal answers before any row is read
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order") and an unknown
+/// identity has none, so both are `None`.
+pub fn error_subject<'a>(command: &'a CommandSpec, outcome: &'a Outcome) -> Option<&'a Subject> {
+    if let Some(subject) = &outcome.subject {
+        return (!matches!(subject.effect, Effect::Creates)).then_some(subject);
+    }
+    let reads_row = matches!(
+        outcome.condition,
+        OutcomeCondition::WrongState
+            | OutcomeCondition::SubjectState { .. }
+            | OutcomeCondition::StateChange { .. }
+            | OutcomeCondition::SubjectField { .. }
+            | OutcomeCondition::SubjectPredicate { .. }
+    );
+    reads_row.then(|| common_subject(command)).flatten()
+}
+
 /// Local declaration checks, which need no registry and no entity.
 ///
 /// The partition waits for [`validate`], where the entity's field types are known; until then a
