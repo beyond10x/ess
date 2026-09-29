@@ -449,6 +449,35 @@ for omitted content, comparison restrictions and projection refusal.
 | `format: infra-projection/1` JSON, **artifacts list** | Intent name; `provenance.snapshot_digest` names InfraIR model, `provenance.specification_digest` names typed InfraSpec | `ProjectionDocument` contains emitted file contents and both input digests; key-sorted pretty JSON, no reader or whole-output hash. [Source][infra-project] |
 | `format: infra-projection/1` YAML, **patches/objects lists** | Same intent name, snapshot digest and typed-intent `specification_digest` | CLI serializes `Projection` directly, retaining both input digests. This differs from the JSON document despite the shared marker; no persisted reader. [Type][infra-project], [CLI][cli] |
 
+## CLI presentation bindings
+
+All four were introduced in 0.21.0. Each carries its version in a `format` key, and each reader
+admits only its own `/1`.
+
+| Document | Written or read by | What it holds |
+|---|---|---|
+| `format: ess-cli/1` | Authored; read by `ess specify cli` and `ess generate cli` | The binary, its command paths, aliases, argument sources and process context, bound to operations of an ESS model. A binding naming another format is refused. [Source][cli-contract] |
+| `format: ess-cli-plan/1` | Printed by `ess specify cli` | The resolved binding: the binary, its about text and global arguments, the callables, every command sorted by path, and the obligations the generated package leaves to its handlers. [Source][cli-plan] |
+| `format: ess-cli-artifacts/1` | `manifest.json` in the package `ess generate cli` writes | The binary and package names, every generated file, and the plan's obligations. Pretty JSON plus LF. [Source][cli-project] |
+| `format: ess-cli-generation/1` | Printed by `ess generate cli --format json` or `yaml` | The files written, or compared under `--check`, and whether it was a check. [Source][cli-generation] |
+
+## Deployment recovery records
+
+`ess generate deployment reconcile --authority UUID` reads and writes five record formats. The
+registry and its authorities live under the protected root `/etc/ess/recovery`; the store header,
+lock and journal live under the `state_root` the selected authority names. All five were
+introduced in 0.21.0, and each has exactly one admitted version: a record naming any other is
+refused. The bytes are canonical JSON: recursively sorted keys, array order kept, no duplicate
+key, no floating-point number, and exactly one trailing newline. [Source][recovery-model]
+
+| Document | What it is |
+|---|---|
+| `format: ess-execution-registry/1` | The complete active registry snapshot, `registry.json`: its generation and every active authority, sorted by authority UUID. An empty registry authorizes nothing. |
+| `format: ess-execution-authority/1` | One authority revision inside the registry: the pinned cluster, principal, host and store policy, permitted contexts, the environment it owns, the exact desired and baseline digests, one release permit per service, and any quiescence decisions. |
+| `format: ess-execution-store/1` | `store.json`, the header of a provisioned recovery store: its epoch, the host it belongs to and the cluster its lock excludes on. |
+| `format: ess-execution-lock/1` | `target.lock`, the durable claim one invocation holds on one cluster: the invocation, the authority and its revision, the cluster, and the registry generation and digest it was admitted under. |
+| `format: ess-execution-evidence/1` | One immutable journal entry of an invocation, under `invocations/`: its sequence number, the digest of the previous entry's bytes, and one recorded fact. |
+
 ## Compatibility boundaries
 
 Use the owning reader's validation API. The stamp reader accepts complete authoritative envelopes
@@ -506,6 +535,11 @@ A format catalog alone does not establish an installed external consumer upgrade
 [stack]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/stack.rs
 [environment]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/environment.rs
 [cli]: https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/main.rs
+[cli-contract]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-cli-contract/src/lib.rs
+[cli-plan]: https://github.com/beyond10x/ess/blob/main/crates/specify/ess-cli-contract/src/resolve.rs
+[cli-project]: https://github.com/beyond10x/ess/blob/main/crates/generate/ess-cli-project/src/lib.rs
+[cli-generation]: https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/cli_binding.rs
+[recovery-model]: https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/recovery/model.rs
 [delta]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/delta.rs
 [delta-reader]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/raw.rs
 [impact]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-diff/src/impact.rs
