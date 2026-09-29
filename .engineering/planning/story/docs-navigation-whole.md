@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-navigation-whole
 kind: story
-status: draft
+status: active
 title: Every page is reachable and every link lands on a rendered page
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -18,7 +18,10 @@ scope:
   path: website/docs/guides/record-realization.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:12:10Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-09-29T14:12:10Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
