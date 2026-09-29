@@ -53,6 +53,27 @@
   struct with an undetermined member is not determined as a whole. Committed suites regenerate
   byte-identical.
 
+- **A guard over a stored `Map`'s entries is witnessed on both sides (#240).** A stored
+  `redirect_uris: Map<String, String>` set from a map input held one entry on every arranged row,
+  but conformance published no fact for a map's entries, so `exists`/`forall` over a map — on a
+  command's input, on its subject (`when_subject`) or on a related row (`when_related`) — was
+  undecided everywhere, and `{not: {exists: {in: redirect_uris, as: r, that: r ==
+  input.application}}}` and its accepting default were both refused as `ESS-SYNTH-003`. A map now
+  publishes its values at their positions in key order, which is what the quantifier binds: the
+  compiler types `r` as the value type and Entity Runtime folds the values in canonical key order,
+  and `predicates.md` now says so. A comparison between the bound element and an `input.` field
+  inside a quantifier over a stored list or map is grounded on each element the arranged row holds,
+  so the input is sent once equal to a value the row holds and once equal to none; a target that
+  ignores the entries, reads the map's keys or reads only whether it is empty fails. The same
+  guards over a stored `List` compared with an `input.` field were refused the same way and are now
+  witnessed. The arranged row holds several entries where the collection is written from an input:
+  where one element decides the quantifier — an `exists` that holds, a `forall` that fails — that
+  element is neither the first nor the last in key order, and where the whole collection decides it
+  the row holds two or more, so a target reading only the first value, only the last, or `forall` for
+  `exists` (and the reverse) fails a scenario too. A `Timestamp` map value orders by its instant
+  inside a quantifier, as a list element does. A model that quantifies over no map and compares no
+  quantified element with its input keeps its suite bytes.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed

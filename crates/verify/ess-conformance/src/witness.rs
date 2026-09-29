@@ -82,7 +82,9 @@
 //! fails its assertion. The key is the key primitive's own witness at the map's path — `"tags"`,
 //! `1`, `true` — in the spelling a setup key is read by, and it moves with the instance as every
 //! leaf does (rule 5). The value is built at `<map>.0`, as a list's element is, and recorded there.
-//! A guard over `<map>.count`, which the flattener publishes, is tried at the empty map and at the
+//! A quantifier over a map binds its values, and the flattener publishes them at their ordinals in
+//! key order (beyond10x/ess#240), so a quantifier's body is rebound onto `<map>.0` as rule 3 rebinds
+//! a list's, and the value is tried at the guard's own literal. A guard over `<map>.count`, which the flattener publishes, is tried at the empty map and at the
 //! lengths rule 3 names, each further entry a copy of the first under the next instance's key. A map
 //! whose key is a `Decimal`, which has no setup spelling, or whose value has no finite witness, is
 //! `{}`. A value that reaches a type already being built — a type that refers to itself through a
