@@ -23,17 +23,12 @@ cargo run --bin ess -- specify validate --path examples/billing
 cargo run --bin ess -- specify compile --path examples/billing --format json
 cargo run --bin ess -- specify realization validate --path realization.yaml --spec path/to/spec
 cargo run --bin ess -- specify realization generate --path realization.yaml --spec path/to/spec --out running-modes.md
-cargo run --bin ess -- specify runtime compile --path ess/runtime.yaml --system ess/system --realization ess/realization.yaml --build-ir generated/ess/build.json --out generated/ess/runtime.json
 cargo run --bin ess -- generate --path examples/billing --kind docs --out generated
 cargo run --bin ess -- generate --path examples/billing --kind site --out generated
 cargo run --bin ess -- generate --path examples/billing --kind openapi --out generated
 cargo run --bin ess -- generate build compile --path ess/build.yaml --out generated/ess/build.json
 cargo run --bin ess -- generate build graph --path ess/build.yaml --out generated/ess/build.mmd
-cargo run --bin ess -- generate project buildkit --ir generated/ess/build.json --out generated/build
-cargo run --bin ess -- generate project helm --ir generated/ess/runtime.json --chart example --version 1.0.0 --out generated/chart
 cargo run --bin ess -- generate project openapi --ir interface.json --out normalized-api.yaml
-cargo run --bin ess -- generate stack resolve --path ess/stack.yaml --catalog releases.json --out stack.lock.json
-cargo run --bin ess -- generate deployment compile --path environment.yaml --stack-lock stack.lock.json --out deployment.json
 cargo run --bin ess -- generate schema validate instances --schemas schemas
 cargo run --bin ess -- generate schema typescript urn:example:registry:1 --root Registry --schemas schemas
 cargo run --bin ess -- verify conform synthesize --path examples/billing --out suite.json
@@ -41,6 +36,15 @@ cargo run --bin ess -- verify conform run --suite suite.json --target billing --
 cargo run --bin ess -- infra import openapi --path api.yaml --out interface.json
 cargo run --bin ess -- infra infra diagnose --path observation.json
 ```
+
+The build and delivery commands each have a worked example in the
+[guides](https://beyond10x.github.io/ess/docs/guides/):
+
+- `ess specify runtime compile` maps a realization onto processes, containers and workloads.
+- `ess generate project buildkit` turns a build IR into BuildKit inputs.
+- `ess generate project helm` turns a runtime IR into a Helm chart.
+- `ess generate stack resolve` pins stack constraints to an exact lock, offline.
+- `ess generate deployment compile` lowers an environment and a stack lock to a deployment IR.
 
 Every verb is also spelled flat at the top level, exactly as it was before the areas existed:
 `ess validate --path examples/billing`, `ess conform run …`, `ess schema validate …`. A flat
@@ -126,7 +130,7 @@ repository. Runtime and chart manifests are bundled as canonical `ess-release-bu
 and fetched through OCI by digest, then revalidated before entering the local cache. Runtime models
 can expose named Services and persistent volumes, and `ess generate deployment reconcile` applies only the
 release units changed from an optional previous deployment IR. See the
-[independent component delivery concept](website/docs/concepts/component-delivery.md).
+[independent component delivery concept](https://beyond10x.github.io/ess/docs/concepts/component-delivery).
 
 A construct is a design page before it is code. The binding designs live in `docs/design/`; entity
 relations shipped in `0.5.0` and their
@@ -137,7 +141,8 @@ into JSON Schema, OpenAPI and Rust.
 `ess generate --kind docs` emits repository Markdown and Mermaid. `--kind site` renders the same
 pages as a static HTML site with a local stylesheet and diagram renderer, and `--kind docs-ir` writes
 the document model both render. None of them reads prose as a specification, and ESS does not host
-the site.
+the site. [Generate contracts and documentation](https://beyond10x.github.io/ess/docs/guides/generate-artifacts)
+walks through each projection.
 
 ## The crate tree
 

@@ -43,6 +43,12 @@ const BLOG_LAG: u64 = 3;
 /// version. A historical version number belongs on the history page, not here.
 const INSTALL: &str = "website/docs/getting-started.md";
 
+/// The repository front page, which a reader lands on before any site page.
+///
+/// Unlike [`INSTALL`], it may name a historical release in prose (`relations shipped in 0.5.0`),
+/// so only its install instructions are held to the newest release: see [`readme_defects`].
+const README: &str = "README.md";
+
 /// The page that records which release introduced each format version.
 const HISTORY: &str = "website/docs/reference/spec-versions.md";
 
@@ -372,6 +378,7 @@ pub fn run(root: &Path) -> Result<String, String> {
             pinned.join("\n")
         ));
     }
+    refusals.extend(readme_refusal(root, &newest)?);
     if !refusals.is_empty() {
         return Err(refusals.join("\n\n"));
     }
@@ -382,7 +389,7 @@ pub fn run(root: &Path) -> Result<String, String> {
     Ok(format!(
         "{count} supported format versions, each with a recorded release; {rows} tracked versions \
          of {families} families, each named in a reference page, every family a page names among \
-         them, none called unreleased; the install walkthrough names {newest}; the newest release \
+         them, none called unreleased; the install walkthrough names {newest} and {README} installs no other; the newest release \
          note trails it by {trailing}\n"
     ))
 }
@@ -737,6 +744,47 @@ fn install_defects(path: &str, text: &str, newest: &str) -> Vec<String> {
     defects
 }
 
+/// The refusal for a README that installs anything but the newest release, if it does.
+fn readme_refusal(root: &Path, newest: &str) -> Result<Option<String>, String> {
+    let text =
+        fs::read_to_string(root.join(README)).map_err(|error| format!("read {README}: {error}"))?;
+    let defects = readme_defects(README, &text, newest);
+    Ok((!defects.is_empty()).then(|| {
+        format!(
+            "{README} installs a version that is not the newest release:\n{}",
+            defects.join("\n")
+        )
+    }))
+}
+
+/// Every README install instruction that names a version other than the newest release.
+///
+/// An install instruction is a line that says `install`, assigns `version=`, or downloads from
+/// `releases/download/`. Path segments are read one at a time, so the version inside a download
+/// URL counts, while a historical release in prose and a chart's `--version 1.0.0` do not.
+fn readme_defects(path: &str, text: &str, newest: &str) -> Vec<String> {
+    let mut defects = Vec::new();
+    for (number, line) in text.lines().enumerate() {
+        let lower = line.to_ascii_lowercase();
+        let instructs = lower.contains("install")
+            || lower.contains("version=")
+            || lower.contains("releases/download/");
+        if !instructs {
+            continue;
+        }
+        for version in line.split('/').flat_map(versions_in) {
+            if version != newest {
+                defects.push(format!(
+                    "{path}:{}: names {version} as the release to install, newest release is \
+                     {newest}",
+                    number + 1
+                ));
+            }
+        }
+    }
+    defects
+}
+
 /// The newest release note, by the release its front matter declares.
 ///
 /// `release_tag` carries a plain version on a current note and a historical wave spelling on an
@@ -1036,6 +1084,48 @@ mod tests {
             vec![format!(
                 "{INSTALL}:1: names 0.13.2, newest release is 0.27.0"
             )]
+        );
+    }
+
+    #[test]
+    fn a_readme_that_installs_an_older_release_is_refused() {
+        let text = "## Install\n\nInstall the current release, 0.42.0:\n\n```console\n\
+                    version=0.41.0\n\
+                    curl -LO https://github.com/beyond10x/ess/releases/download/0.40.0/SHA256SUMS\n\
+                    ```\n";
+        assert_eq!(
+            readme_defects(README, text, "0.43.0"),
+            vec![
+                format!(
+                    "{README}:3: names 0.42.0 as the release to install, newest release is 0.43.0"
+                ),
+                format!(
+                    "{README}:6: names 0.41.0 as the release to install, newest release is 0.43.0"
+                ),
+                format!(
+                    "{README}:7: names 0.40.0 as the release to install, newest release is 0.43.0"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_readme_may_name_a_historical_release_outside_its_install_instructions() {
+        let text = "Entity relations shipped in `0.5.0`.\n\
+                    ```console\nversion=0.43.0\n\
+                    ess generate project helm --chart example --version 1.0.0\n```\n";
+        assert!(readme_defects(README, text, "0.43.0").is_empty());
+    }
+
+    #[test]
+    fn the_committed_readme_installs_the_newest_release() {
+        let root = crate::workspace_root().expect("workspace root");
+        let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+        let newest = newest_release(&changelog).expect("newest release");
+        let readme = fs::read_to_string(root.join(README)).expect("readme");
+        assert_eq!(
+            readme_defects(README, &readme, &newest),
+            Vec::<String>::new()
         );
     }
 
