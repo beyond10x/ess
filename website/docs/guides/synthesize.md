@@ -143,6 +143,13 @@ because the one contract this project projects for a command surface is an OpenA
 transport is *derived*, which is the [typed projection boundary](../concepts/overview.md) doing its
 job.
 
+The same surface is reachable without a socket. Each served component's module has a public
+`handle(system, name, input)` that runs a command or view by its qualified name and returns the
+declared outcome as a `json::Value`, or an `entry::Refused`: an unknown name, input the declared
+schema refuses (the route's `400`), or an unmet obligation (the route's `501`). The routes and
+`handle` call the same decode-run-render function, so a conformance runner or an in-process caller
+gets what the HTTP surface answers without writing its own dispatch table.
+
 ## Honest limits
 
 * **Generated code is structural, never behavioural.** Every algorithm is an obligation.

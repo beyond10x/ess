@@ -10,7 +10,7 @@
 //! projects for a command surface is the `OpenAPI` document, and an `OpenAPI` document is an
 //! HTTP contract. The document is beside this file, served verbatim at `/openapi.json`.
 
-use crate::{http, json, wire};
+use crate::{entry, http, json, wire};
 
 /// The contract this surface answers, byte for byte as `generated/` commits it.
 ///
@@ -100,7 +100,10 @@ where
 /// path it holds under a different method is a `405` naming the one it answers. Neither is a
 /// status the contract declares, and neither should be: both are facts about a transport rather
 /// than about any command.
-fn dispatch<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, request: &http::Request) -> http::Response
+///
+/// Public so a caller can hand it a request it built itself: [`serve`] is this function behind a
+/// socket, and nothing else.
+pub fn dispatch<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, request: &http::Request) -> http::Response
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -139,19 +142,48 @@ where
             if request.method != "GET" {
                 return http::method_not_allowed("GET");
             }
-            serve_gatepass_visit_visit_by_id(system)
+            http::answer(run_gatepass_visit_visit_by_id(system))
         }
         "/visits/views/expected" => {
             if request.method != "GET" {
                 return http::method_not_allowed("GET");
             }
-            serve_gatepass_visit_expected_visits(system)
+            http::answer(run_gatepass_visit_expected_visits(system))
         }
         other => http::Response::refusal(
             404,
             &format!("`{other}` is not a path this surface declares; `GET /openapi.json` publishes every one that is"),
         ),
     }
+}
+
+/// Runs one command or view of `pass-service` by its qualified name, with no transport.
+///
+/// The same decoding, refusals and rendering the HTTP routes use — each route and this function call
+/// one `run_*` function — so a conformance runner or an in-process caller drives the system
+/// without a socket and without a dispatch table of its own. `Ok` is the declared outcome, as the
+/// route's body renders it; a view ignores `input`, as its `GET` route ignores a body.
+///
+/// # Errors
+///
+/// [`entry::Refused::Unknown`] naming `name` when this surface declares no command or view
+/// by it; [`entry::Refused::Input`] when `input` is not the command's declared input (the
+/// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation (the
+/// route's `501`).
+pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let answered = match name {
+        "gatepass.visit.AdmitVisitor" => run_gatepass_visit_admit_visitor(system, &input),
+        "gatepass.visit.ExpectedVisits" => run_gatepass_visit_expected_visits(system),
+        "gatepass.visit.RegisterVisit" => run_gatepass_visit_register_visit(system, &input),
+        "gatepass.visit.SignOutVisitor" => run_gatepass_visit_sign_out_visitor(system, &input),
+        "gatepass.visit.VisitById" => run_gatepass_visit_visit_by_id(system),
+        other => return Err(entry::Refused::Unknown(other.to_owned())),
+    };
+    let (_, body) = answered?;
+    Ok(entry::read(&body))
 }
 
 /// `POST` `gatepass.visit.AdmitVisitor`: reads the declared input, runs the port, answers the declared outcome.
@@ -171,23 +203,35 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_gatepass_visit_admit_visitor(&value, "body") {
+    http::answer(run_gatepass_visit_admit_visitor(system, &value))
+}
+
+/// `gatepass.visit.AdmitVisitor` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_gatepass_visit_admit_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let input = match wire::decode_command_gatepass_visit_admit_visitor(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
     match system.pass_service.admit_visitor(input) {
-        Ok(outcome) => answer_gatepass_visit_admit_visitor(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Ok(outcome) => Ok(answer_gatepass_visit_admit_visitor(&outcome)),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
 
 /// One declared outcome of `gatepass.visit.AdmitVisitor`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVisitorOutcome) -> http::Response {
+/// the declared error where there is one, and that error's own payload — with the status the
+/// contract declares for that branch.
+fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVisitorOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
         gatepass_types::visit::AdmitVisitorOutcome::Admitted { .. } => {
@@ -213,7 +257,7 @@ fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVis
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `gatepass.visit.RegisterVisit`: reads the declared input, runs the port, answers the declared outcome.
@@ -233,23 +277,35 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_gatepass_visit_register_visit(&value, "body") {
+    http::answer(run_gatepass_visit_register_visit(system, &value))
+}
+
+/// `gatepass.visit.RegisterVisit` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_gatepass_visit_register_visit<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let input = match wire::decode_command_gatepass_visit_register_visit(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
     match system.pass_service.register_visit(input) {
-        Ok(outcome) => answer_gatepass_visit_register_visit(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Ok(outcome) => Ok(answer_gatepass_visit_register_visit(&outcome)),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
 
 /// One declared outcome of `gatepass.visit.RegisterVisit`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_gatepass_visit_register_visit(outcome: &gatepass_types::visit::RegisterVisitOutcome) -> http::Response {
+/// the declared error where there is one, and that error's own payload — with the status the
+/// contract declares for that branch.
+fn answer_gatepass_visit_register_visit(outcome: &gatepass_types::visit::RegisterVisitOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
         gatepass_types::visit::RegisterVisitOutcome::Registered { .. } => {
@@ -268,7 +324,7 @@ fn answer_gatepass_visit_register_visit(outcome: &gatepass_types::visit::Registe
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `gatepass.visit.SignOutVisitor`: reads the declared input, runs the port, answers the declared outcome.
@@ -288,23 +344,35 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_gatepass_visit_sign_out_visitor(&value, "body") {
+    http::answer(run_gatepass_visit_sign_out_visitor(system, &value))
+}
+
+/// `gatepass.visit.SignOutVisitor` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_gatepass_visit_sign_out_visitor<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
+{
+    let input = match wire::decode_command_gatepass_visit_sign_out_visitor(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
     match system.pass_service.sign_out_visitor(input) {
-        Ok(outcome) => answer_gatepass_visit_sign_out_visitor(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Ok(outcome) => Ok(answer_gatepass_visit_sign_out_visitor(&outcome)),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
 
 /// One declared outcome of `gatepass.visit.SignOutVisitor`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_gatepass_visit_sign_out_visitor(outcome: &gatepass_types::visit::SignOutVisitorOutcome) -> http::Response {
+/// the declared error where there is one, and that error's own payload — with the status the
+/// contract declares for that branch.
+fn answer_gatepass_visit_sign_out_visitor(outcome: &gatepass_types::visit::SignOutVisitorOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
         gatepass_types::visit::SignOutVisitorOutcome::SignedOut { .. } => {
@@ -330,11 +398,13 @@ fn answer_gatepass_visit_sign_out_visitor(outcome: &gatepass_types::visit::SignO
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `GET` `gatepass.visit.VisitById` at `eventual` consistency: every row the owed projection holds.
-fn serve_gatepass_visit_visit_by_id<PassServiceBehaviors>(system: &gatepass_system::System<PassServiceBehaviors>) -> http::Response
+///
+/// The one path the `GET` route and [`handle`] share.
+fn run_gatepass_visit_visit_by_id<PassServiceBehaviors>(system: &gatepass_system::System<PassServiceBehaviors>) -> Result<(u16, String), entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -351,14 +421,16 @@ where
             }
             body.push(']');
             body.push('}');
-            http::Response::new(200, http::JSON, body)
+            Ok((200, body))
         }
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
 
 /// `GET` `gatepass.visit.ExpectedVisits` at `read_your_writes` consistency: every row the owed projection holds.
-fn serve_gatepass_visit_expected_visits<PassServiceBehaviors>(system: &gatepass_system::System<PassServiceBehaviors>) -> http::Response
+///
+/// The one path the `GET` route and [`handle`] share.
+fn run_gatepass_visit_expected_visits<PassServiceBehaviors>(system: &gatepass_system::System<PassServiceBehaviors>) -> Result<(u16, String), entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
@@ -375,8 +447,8 @@ where
             }
             body.push(']');
             body.push('}');
-            http::Response::new(200, http::JSON, body)
+            Ok((200, body))
         }
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
