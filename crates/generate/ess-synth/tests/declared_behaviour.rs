@@ -562,6 +562,51 @@ fn the_go_target_emits_a_generated_behaviour_as_a_seam_and_says_so() {
     );
 }
 
+/// A model whose plan generates no command behaviour and no view query: it declares neither.
+const PORTLESS: &str = "format: ess/18
+system: portless
+version: v1
+domain: portless.shop
+types:
+  - {name: portless.shop.ShopId, kind: newtype, of: Uuid}
+";
+
+#[test]
+fn the_plan_names_the_storage_and_context_ports_as_the_implementors_to_provide() {
+    let heading = "\n## Ports — yours to provide\n";
+    for target in [Target::Rust, Target::Go] {
+        let synthesis = synthesize_for(&compile_directory(&fixture_root()), target)
+            .expect("the fixture synthesizes");
+        let markdown = &synthesis.artifacts["PLAN.md"].contents;
+        let section = markdown
+            .split(heading)
+            .nth(1)
+            .and_then(|rest| rest.split("\n## ").next())
+            .unwrap_or_else(|| panic!("PLAN.md has a ports section:\n{markdown}"));
+        for named in [
+            "| storage |",
+            "| context |",
+            "never an implementation of one",
+            "`external:`",
+        ] {
+            assert!(section.contains(named), "`{named}` missing:\n{section}");
+        }
+        let generated = markdown
+            .find("\n## Generated\n")
+            .expect("a generated table");
+        let owed = markdown
+            .find("\n## Obligations")
+            .expect("an obligations table");
+        let ports = markdown.find(heading).expect("the ports section");
+        assert!(generated < ports && ports < owed, "{markdown}");
+    }
+    let portless = SynthesisPlan::of(&compile_text(PORTLESS)).to_markdown();
+    assert!(
+        !portless.contains("## Ports"),
+        "a plan generating nothing that reads a port names none:\n{portless}"
+    );
+}
+
 // ---- the generated workspace, built and run against its own suite ------------------------------
 
 /// A scratch directory under this test binary's target, removed when dropped.

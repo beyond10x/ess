@@ -27,7 +27,7 @@ $ ess infra import openapi --path api.yaml --out interface.json         # read a
 - deterministic compilation, inspection, graphing, semantic diff, and impact analysis;
 - documentation generation, as Markdown (`docs`) or as a browsable HTML site (`site`), and JSON
   Schema, OpenAPI, and AsyncAPI generation;
-- structural synthesis with explicit implementation obligations;
+- synthesis of what the specification determines, with explicit implementation obligations for the rest;
 - conformance-suite generation, runners in Go and TypeScript, and standalone reports;
 - OpenAPI and Kubernetes adapters with declared coverage;
 - sanitized infrastructure observation, analysis, simulation, drift, and projection.

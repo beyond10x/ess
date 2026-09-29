@@ -1,15 +1,17 @@
 ---
 title: Synthesize code from a specification
 sidebar_position: 5
-description: The synthesis plan, the four targets behind it, obligations as the contract with the human, and how the generated code is proven against the generated suite.
+description: What the specification fully determines is generated and what it cannot is an obligation — the synthesis plan, the four targets, the ports you provide, and how the generated code is proven against the generated suite.
 ---
 
 # Synthesize code from a specification
 
-Structural synthesis generates the part of an implementation that was never yours to write — types,
-typestate lifecycles, component ports, one transport — and hands back everything it will not guess
-as a **named obligation**. Behaviour is never generated: every algorithm is an obligation someone
-implements.
+Synthesis follows one rule: **what the specification fully determines is generated; what it cannot
+determine is an obligation.** It generates the part of an implementation that was never yours to
+write — types, typestate lifecycles, component ports, one transport, and the behaviour of every
+command and the query of every view whose outcome the specification spells out — and hands back
+everything it cannot determine as a **named obligation**. Storage is not generated: a generated
+behaviour reads and writes through ports you provide.
 
 ```shell-session
 $ ess generate synthesize --path examples/billing --target rust --out out/
@@ -41,8 +43,8 @@ $ ess generate synthesize --path examples/billing --target rust | head -2
 ```
 
 A refusal reads the same way and says what it cannot state: *"actor grants
-`billing.invoice.Auditor` — a grant is checked against a caller identity, which types do not
-carry"*.
+`billing.invoice.Auditor` — … generated as data, not enforced: … a grant is checked against a
+caller identity, which types do not carry"*.
 
 The plan is rendered as `PLAN.md` and `plan.json` in every emitted tree, and it is
 **language-neutral**. The existing Rust, Go and Web billing example produces the same 48/40/4/4
@@ -62,7 +64,7 @@ would have closed. What is lost is the compiler closing the question, not the pr
 
 | Target | Emits | Dependencies |
 |---|---|---|
-| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, one HTTP transport | none |
+| `rust` | a cargo workspace: semantic types, typestate lifecycles, component ports, generated behaviours and view queries over storage and context ports, one HTTP transport | none |
 | `go` | a Go module with the same system | standard library only |
 | `web` | a WebAssembly bridge over the Rust target plus a page built at load time from an emitted `catalog.json` — no model is typed into its HTML | no build tool, no `wasm-bindgen` |
 | `clap` | a command tree, shell completion support and a dispatcher with `Handler` seams for components declaring command-line reach and a CLI grammar | `clap` and `clap_complete` 4 |
@@ -135,8 +137,10 @@ with exit status 2 and write nothing. The workspace layout's bytes are unchanged
 An **obligation** is implemented in a separate, hand-written crate or module — a *realization* —
 that plugs into the generated seams. Three ship here: `examples/billing-realization/`,
 `examples/gatepass-realization/` and `examples/gatepass-go-realization/`, one implementation per
-obligation in the generated plan, linked into the generated tree. The linker never chooses between
-candidate implementations; ambiguity is an error.
+obligation in the generated plan, linked into the generated tree. A generated behaviour keeps its
+seam, so a realization may still supply one by hand in its place; billing's does, for each
+behaviour and query its plan generates. The linker never chooses between candidate
+implementations; ambiguity is an error.
 
 ## How the output is proven, not assumed
 
@@ -178,6 +182,54 @@ schema refuses (the route's `400`), or an unmet obligation (the route's `501`). 
 `handle` call the same decode-run-render function, so a conformance runner or an in-process caller
 gets what the HTTP surface answers without writing its own dispatch table.
 
+## Generated behaviour, over ports you provide
+
+A command whose every outcome the specification spells out gets a generated behaviour in the Rust
+target's `behaviour` module. It follows the conformance interpreter's semantics and the one
+precedence order in
+[the guard design](https://github.com/beyond10x/ess/blob/main/docs/design/cross-record-and-stored-field-guards.md):
+input-guarded refusals first, then the addressed row and its subject guards, then the accepting and
+`external:` branches in declaration order, then the default. It implements the command's existing
+`…Behavior` trait on one bundle, `Generated<P>`, so the component ports take it unchanged.
+
+Everything the specification leaves open is a port, and the ports are yours to provide:
+
+| Port | What you provide |
+|---|---|
+| storage, one trait per entity a generated behaviour or query reads or writes (`InvoiceStorage`) | `get`, `put` and `delete` of a snapshot by identity, and `list` of every stored snapshot |
+| `Context`, where a generated behaviour asks it anything | the caller's attributes, every identity and value the specification says the implementation assigns (a created identity, `{generated: true}`), and whether each `external:` branch is taken |
+
+ESS generates each port's trait and never an implementation of it: where instances live stays
+yours. `P` also supplies every behaviour and query the plan still owes, and `Generated<P>` forwards
+them, so it is a complete bundle. To replace one generated behaviour, write a bundle that
+implements that trait and delegates the rest to a `Generated`. `PLAN.md` names the same ports in
+its **Ports — yours to provide** section.
+
+An error the specification fully determines is generated too. Its fields come from the `payload:`
+sources the outcome declares for them (see
+[error value sources](./specify/commands-and-outcomes.md#an-errors-fields-can-have-a-declared-source)),
+and a field without one is read from the row the refusal is answered for: its field of the same
+name and type, or, for a field of the entity's state type, the state it rests in. A request no
+declared branch answers, or a guard that is Unknown, is the typed refusal naming the command.
+
+A command stays a **whole** obligation when any one outcome uses a construct the generator cannot
+express, and the plan names the first one it found. They are:
+
+| Where | Constructs that keep the command an obligation |
+|---|---|
+| the command | a typed `response:`; `when_subject_state:` beside `external:`; more than one default branch |
+| subject guards | a subject guard with no supplied subject to read, or beside a branch addressing another subject; a subject predicate choosing between a move and an update |
+| unknown identity | a supplied subject with neither `unknown_instance:` nor `wrong_state:` to answer an identity no record carries; a `wrong_state:` refusal with fields describing the rows of more than one subject |
+| branches | `when_related:`, `input_absent:`, `existing_instance:`, `replays:`, `instances:`, `affects:`; a `wrong_state:` or `unknown_instance:` branch that acts or emits |
+| effects | `creates:` leaving a required field unset; a creation whose identity the caller supplies; a move, update or delete whose identity is observed; `sets:` without a subject |
+| values | a declared conversion; a value of another type; `{subject:}` on a branch that holds no row; `{increment:}` with no previous value or on a field that is not an `Integer`; a struct source leaving a required member unset; `{related:}`; `{count: changed}`; a response field; `{cleared}` on an event or error |
+| errors | an error field with no `payload:` source that the held row does not determine |
+| guards | a path that does not resolve; a read into a union or a collection element (`.count` is read); an ordering over text; a truthiness test of a value that is not a `Boolean`; a comparison of two kinds of value or two literals; the current time |
+
+The Go target keeps each generated behaviour as an owed seam and lists this as a weakening in its
+`TARGET.md`. See the
+[generated behaviour tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/declared_behaviour.rs).
+
 ## Entity invariants are checked
 
 An entity's `invariants:` are fully determined, so the Rust target generates their check. Each
@@ -194,19 +246,37 @@ is refused at synthesis by name. See the
 A view whose rows the specification fully determines gets a generated query in the Rust target's
 `behaviour` module, on the same `Generated` bundle: a projection of the source entity's own fields
 and `state`, a `filter:`, an `order_by:`, and an aggregation with `group_by`, `count`,
-`count_distinct`, `sum`, `min`, `max` and `avg`. It reads through one more method on the entity's
-storage port, `list`, which answers every stored row in the order the store keeps them; that is
-the order an unordered view answers in. A filter keeps a row where it holds and drops it where it
-is false or unknown. An aggregation follows the conformance suite: an absent group key is one
-group, a `skip_absent` aggregate skips absent values, and `avg` is rounded half-even to six
-fractional digits. A view that reads a parameter, pages, or orders by an optional field stays an
-obligation, and the plan names that construct as the reason. The Go target keeps each generated
-query as an owed seam and lists this as a weakening. See the
+`count_distinct`, `sum`, `min`, `max` and `avg`. It reads through the storage port's `list`, which
+answers every stored row in the order the store keeps them; that is the order an unordered view
+answers in. A filter keeps a row where it holds and drops it where it is false or unknown. An
+aggregation follows the conformance suite: an absent group key is one group, a `skip_absent`
+aggregate skips absent values, and `avg` is rounded half-even to six fractional digits.
+
+A view's query stays an obligation, and the plan names the construct as the reason, when the view
+reads a parameter or pages; when its `filter:` uses a guard a command's behaviour could not; when a
+field is not one its source holds at that type; when it orders by an optional field, a `Timestamp`,
+an enum whose wire spellings are not its variant names, or a value with no order; or when a group
+key or an aggregate reads a value the query does not compare, or an aggregate is declared at
+another type than it computes. The Go target keeps each generated query as an owed seam and lists
+this as a weakening. See the
 [view query tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/generated_view_queries.rs).
+
+## Actor grants are generated as data
+
+Which actors exist and which commands each may invoke is fully determined, so the Rust target
+generates it as data: an `actor` module with an `Actor` enum, one variant per declared actor, and
+`may(actor)`, the qualified names of the commands that actor may invoke. Enforcing a grant is not
+generated: it is checked against a caller identity, which the types do not carry, so the plan keeps
+the `actor grants` row refused with that reason and enforcement stays with the caller. The module is
+emitted only for a model that declares an actor. The Go target emits no grant table and lists that
+as a weakening. See the
+[actor grant tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/actor_grants.rs).
 
 ## Honest limits
 
-* **Generated code is structural, never behavioural.** Every algorithm is an obligation.
+* **What the specification cannot determine is not generated.** A decision or an algorithm the
+  specification does not spell out is an obligation, and a command with one such outcome is an
+  obligation as a whole. Storage is a port you provide; ESS never generates a store.
 * **Obligations are plan entries, not records** a task can own and evidence can close. Nothing
   blocks that extension; it is listed on the [roadmap](../status/roadmap.md#not-scheduled) as not
   scheduled.

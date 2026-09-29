@@ -20,12 +20,13 @@
 //!
 //! # It never chooses a realization
 //!
-//! Every command behaviour is an obligation, and this bridge fills none of them. What it emits is
-//! [`install`](self)'s seam: a `Bound` trait with a blanket implementation over the generated
-//! `System`, so a host links its own realization and hands the assembled system over. With nothing
-//! installed the page runs against the generated stubs and every command answers with the typed
-//! refusal naming what is owed — which is the honest empty state, and the one a reader learns the
-//! plan from. Gap register D-2 says the machinery does not choose; a page is machinery.
+//! This bridge fills no command behaviour: an owed one needs a realization, and a generated one
+//! needs the storage and context ports a host provides. What it emits is [`install`](self)'s seam:
+//! a `Bound` trait with a blanket implementation over the generated `System`, so a host links its
+//! own realization and ports and hands the assembled system over. With nothing installed the page
+//! runs against stubs and every command answers with the typed refusal naming what is owed — the
+//! obligation, or the ports a generated behaviour reads through — which is the honest empty state,
+//! and the one a reader learns the plan from. Gap register D-2 says the machinery does not choose; a page is machinery.
 
 mod bridge;
 mod catalog;
@@ -500,11 +501,11 @@ fn fixed_weakenings() -> Vec<TargetWeakening> {
         },
         TargetWeakening {
             guarantee: "the current state of every instance is observable".to_owned(),
-            instead: "the synthesised system holds no entity store — where instances live is an \
-                      obligation — so the page shows each declared view's rows beside the \
-                      entity's declared lifecycle, and shows a per-instance state only where a \
-                      view projects one. Deriving a state from the event log would be behaviour, \
-                      and behaviour is not synthesised"
+            instead: "the synthesised system holds no entity store — storage is a port the \
+                      implementor provides — so the page shows each declared view's rows beside \
+                      the entity's declared lifecycle, and shows a per-instance state only where \
+                      a view projects one. The specification does not say how a state is derived \
+                      from the event log, so nothing here derives one"
                 .to_owned(),
             affects: vec![CapabilityKind::EntityLifecycle, CapabilityKind::ViewType],
         },

@@ -189,16 +189,19 @@ explains it. It narrows what a change owes; it never claims a result still holds
 ### Structural synthesis (`ess generate synthesize`)
 
 A language-neutral **synthesis plan** gives every capability of the specification exactly one
-disposition: *generated*, *obligation* (a named piece of work a human must implement — every
-algorithm is one), or *refused* (with the reason). Four targets render the plan: a Rust workspace,
-a Go module, a WebAssembly browser bridge, and a Clap command grammar with completion support and
-handler seams. The language-neutral plan travels with each tree; target-specific weakenings and
+disposition: *generated* (the specification fully determines it), *obligation* (a named piece of
+work a human must implement, because the specification cannot determine it), or *refused* (with
+the reason). Four targets render the plan: a Rust workspace, a Go module, a WebAssembly browser
+bridge, and a Clap command grammar with completion support and handler seams. The language-neutral plan travels with each tree; target-specific weakenings and
 refusals are recorded separately. Clap handlers receive `clap::ArgMatches`, and its generated crate
 depends on `clap` and `clap_complete` 4. Full synthesis refuses modeled Binary64 across all four
 targets; the separate structural data libraries have their own support boundary.
 
-Behaviour is **never** generated. The generated billing workspace, linked with the hand-written
-realization of its eight obligations, passes the committed 29-scenario suite unchanged — and a
+What the specification fully determines is generated; what it cannot determine is an obligation.
+A command whose every outcome the specification spells out gets a generated behaviour, and a view
+whose rows it determines gets a generated query, both written against storage and context ports the
+implementor provides — ESS never generates a store. The generated billing workspace, linked with
+its hand-written realization, passes the committed 29-scenario suite unchanged — and a
 deliberately corrupted linkage fails exactly the scenario that exists to catch it. See
 [Synthesize code from a specification](../guides/synthesize.md).
 
