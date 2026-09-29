@@ -363,6 +363,58 @@ pub(super) fn row_truth_with(
     predicate: &Predicate,
     input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
 ) -> Truth {
+    evaluate_row(
+        ir, entity, settled, unwritten, held, predicate, input, false,
+    )
+}
+
+/// [`row_truth_with`] for a branch's whole stored guard, read the way the target selects a branch:
+/// only true takes it (beyond10x/ess#234).
+///
+/// A guard that stays `Unknown` only because a fact it reads is absent from a row the arrangement
+/// knows whole — an `Optional` field no step wrote ([`row_truth`], #239), a member of a struct
+/// held there, or an `Optional` input member the witness leaves out — is the specification's own
+/// unknown, which every target reads as not taken: it is `False` here. An `Unknown` the arrangement
+/// caused — a field it did not determine, an ordering no scale decides — stays `Unknown`. Never
+/// for a leaf or conjunct of a guard: under `not` the specification's unknown stays unknown.
+pub(super) fn guard_truth_with(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+    held: Option<&super::StateName>,
+    predicate: &Predicate,
+    input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
+) -> Truth {
+    evaluate_row(ir, entity, settled, unwritten, held, predicate, input, true)
+}
+
+/// Whether every leaf of `predicate` that `facts` leave `Unknown` reads a fact they hold absent:
+/// a `null` or left-out value under a root they bind, never an `input.` path without an input.
+fn unknown_by_absence(predicate: &Predicate, facts: &RowAndInput<'_>) -> bool {
+    let mut found = Vec::new();
+    leaves(predicate, &mut found);
+    let absent = |path: &&FactPath| {
+        (facts.input.is_some() || input_path(path).is_none())
+            && ess_primitives::facts::FactSource::fact(facts, path).is_none()
+            && !ess_primitives::facts::FactSource::present(facts, path)
+    };
+    found
+        .iter()
+        .all(|leaf| leaf.evaluate(facts) != Truth::Unknown || leaf.fact_paths().iter().any(absent))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_row(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    settled: &BTreeMap<String, super::Determined>,
+    unwritten: &BTreeSet<String>,
+    held: Option<&super::StateName>,
+    predicate: &Predicate,
+    input: Option<(&ResolvedCommand, &BTreeMap<String, Node>)>,
+    as_guard: bool,
+) -> Truth {
     let declared = ir.entity(entity);
     let mut fields = declared.fields.clone();
     let mut values: BTreeMap<String, Node> = settled
@@ -414,7 +466,11 @@ pub(super) fn row_truth_with(
         }
         _ => None,
     };
-    predicate.evaluate(&RowAndInput { row, input })
+    let facts = RowAndInput { row, input };
+    match predicate.evaluate(&facts) {
+        Truth::Unknown if as_guard && unknown_by_absence(predicate, &facts) => Truth::False,
+        truth => truth,
+    }
 }
 
 /// The distinction the second owner a link comparison names is arranged under: past every further
@@ -1438,7 +1494,7 @@ fn selects<'a>(
     let mut selected = Vec::new();
     for branch in guarded(command) {
         if let Some(predicate) = stored(&branch.condition) {
-            match row_truth_with(
+            match guard_truth_with(
                 ir,
                 entity,
                 &arrangement.settled,
@@ -1598,11 +1654,6 @@ fn refusal_input(
     outcome: &ResolvedOutcome,
     distinction: Distinction,
 ) -> Result<(BTreeMap<String, Node>, Vec<Predicate>), RefusalCause> {
-    let guards: Vec<&Predicate> = command
-        .outcomes
-        .iter()
-        .filter_map(|branch| input_guard(&branch.condition))
-        .collect();
     let own: Vec<&Predicate> = input_guard(&outcome.condition).into_iter().collect();
     let branches: Vec<&ResolvedOutcome> = command
         .outcomes
@@ -1645,7 +1696,7 @@ fn refusal_input(
     let falsified = |branch: &ResolvedOutcome, input: &BTreeMap<String, Node>| {
         stored(&branch.condition).filter(|predicate| {
             on_row
-                && row_truth_with(
+                && guard_truth_with(
                     ir,
                     entity,
                     &arrangement.settled,
@@ -1656,7 +1707,8 @@ fn refusal_input(
                 ) == Truth::False
         })
     };
-    let inputs = candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)?;
+    let row_guards: &[Predicate] = if on_row { &halves } else { &[] };
+    let inputs = refusal_candidates(ir, entity, arrangement, command, row_guards, distinction)?;
     let mut through_row = None;
     let mut lost_on_row = false;
     'candidates: for input in &inputs {
@@ -1706,6 +1758,29 @@ fn refusal_input(
         lost_on_row.then_some(halves.as_slice()),
         inputs.len().min(super::MAX_CANDIDATES),
     ))
+}
+
+/// The candidates [`refusal_input`] tries: over every branch's input guard, and over every stored
+/// guard in `row_guards` that compares the row with the input, grounded on this row. Such a guard
+/// — `fence != input.publication.expected_fence` — is refuted by an input naming the value the row
+/// holds, which no plain witness does (beyond10x/ess#234); grounded, its literals are the values
+/// that input is tried at, as [`inputs_for`] tries them.
+fn refusal_candidates(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    command: &ResolvedCommand,
+    row_guards: &[Predicate],
+    distinction: Distinction,
+) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
+    let grounded = grounded(ir, entity, &arrangement.settled, row_guards);
+    let guards: Vec<&Predicate> = command
+        .outcomes
+        .iter()
+        .filter_map(|branch| input_guard(&branch.condition))
+        .chain(&grounded)
+        .collect();
+    candidates(ir, command, &guards, distinction).map_err(RefusalCause::NoWitness)
 }
 
 /// ESS-SYNTH-003 for [`refusal_input`]: the input guards no candidate satisfied, and — where some
@@ -2791,10 +2866,50 @@ fn reach_at(
     Ok(None)
 }
 
+/// An input the input-guarded refusal `outcome` is taken for on `arrangement`'s row, decided by the
+/// input alone: the refusal answers before the held state is read, so the row's stored guards —
+/// decided or not — select nothing beside it (beyond10x/ess#234). `None` on a row in a state the
+/// command refuses, which is the wrong-state family's, and where no candidate selects `outcome`
+/// and no other input-guarded refusal.
+fn refusal_first(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+    if ir
+        .wrong_states(command)
+        .get(entity)
+        .is_some_and(|states| states.contains(&arrangement.state))
+    {
+        return Ok(None);
+    }
+    for input in inputs_for(ir, command, entity, arrangement)? {
+        let facts = flatten(ir, command, &input).map_err(RefusalCause::WitnessRejected)?;
+        let mut taken = Vec::new();
+        for branch in command
+            .outcomes
+            .iter()
+            .filter(|branch| super::is_input_guarded_refusal(branch))
+        {
+            if let Some(guard) = input_guard(&branch.condition) {
+                if decides(&facts, &[guard], true)? {
+                    taken.push(&branch.name);
+                }
+            }
+        }
+        if taken == [&outcome.name] {
+            return Ok(Some(input));
+        }
+    }
+    Ok(None)
+}
+
 /// The stored fields the goal reads that the arrangement cannot set, and why — or `None`.
 ///
-/// Refused rather than searched for: a guarded field that no arranging branch writes from an input
-/// and no literal fixes is a field the search has no way to move.
+/// Refused rather than searched for: a guarded field that no arranging branch writes from an input,
+/// no literal fixes and no creator leaves absent is a field the search has no way to move.
 fn unarrangeable(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -2810,7 +2925,13 @@ fn unarrangeable(
                     && !matches!(set.value, ResolvedPayloadValue::Generated)
             })
         });
-        if !written {
+        // A creator that leaves an `Optional` field unwritten arranges it too: absent
+        // (beyond10x/ess#239, #234).
+        let left_absent = drivers.iter().any(|driver| {
+            matches!(driver.effect, ResolvedEffect::Creates)
+                && super::unwritten_by(ir, entity, driver.outcome).contains(field)
+        });
+        if !written && !left_absent {
             return Some(missing(
                 entity,
                 field,
@@ -2888,15 +3009,32 @@ fn shadowed(
     }
 }
 
-/// The row [`prepare`] starts from and the input that selects the branch on it, and whether the
-/// two witness every [`elementwise`] quantifier of `hints` element by element
-/// ([`witnesses_elements`], beyond10x/ess#240).
+/// A row and the input a scenario sends it.
+type Arranged = (Arrangement, BTreeMap<String, Node>);
+
+/// The row [`prepare`] starts from, the input that selects the branch on it, and how it was found.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Found {
+    /// The row and input witness every [`elementwise`] quantifier of the guards element by element
+    /// ([`witnesses_elements`], beyond10x/ess#240); every later refinement keeps that.
+    Elementwise,
+    /// The plain search: the row decides the branch's stored guards and the input selects it.
+    Plain,
+    /// An input-guarded refusal taken before the row is read (beyond10x/ess#234).
+    BeforeRow,
+}
+
+/// The row [`prepare`] arranges for `outcome` and the input that selects it there.
 ///
-/// Where the command has such a quantifier, the search first offers only inputs that do, and the
-/// plain search runs only where no bounded arrangement holds one — a quantifier whose collection no
-/// input writes, or whose values the witnesses cannot spread. Every other command searches once,
-/// as it always did.
-fn first_row(
+/// Where the command has an [`elementwise`] quantifier, the search first offers only inputs that
+/// witness it element by element, and the plain search runs only where no bounded arrangement holds
+/// one — a quantifier whose collection no input writes, or whose values the witnesses cannot spread.
+///
+/// An input-guarded refusal answers before the held state is read, so a row whose stored fields no
+/// arranging step determined — an optional struct left absent — still takes it
+/// (beyond10x/ess#234). That row is searched for only where no row decided every stored guard, so a
+/// witness found there is the one it always was.
+fn arranged_row(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
@@ -2904,12 +3042,12 @@ fn first_row(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     hints: &[Predicate],
     label: &str,
-) -> Result<(Arrangement, BTreeMap<String, Node>, bool), RefusalCause> {
+) -> Result<(Arranged, Found), RefusalCause> {
     if has_elementwise(ir, entity, hints) {
         let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
             witnesses_elements(ir, command, entity, hints, node, input)
         };
-        if let Ok((row, input)) = search(
+        if let Ok(found) = search(
             ir,
             entity,
             actors,
@@ -2918,11 +3056,11 @@ fn first_row(
             label,
             |node| reach_linked(ir, command, outcome, entity, node, &strict),
         ) {
-            return Ok((row, input, true));
+            return Ok((found, Found::Elementwise));
         }
     }
     let mut shadow = super::Shadow::default();
-    let (row, input) = search(
+    let searched = search(
         ir,
         entity,
         actors,
@@ -2937,8 +3075,47 @@ fn first_row(
             Ok(found)
         },
     )
-    .map_err(|cause| shadowed(outcome, &shadow, cause))?;
-    Ok((row, input, false))
+    .map_err(|cause| shadowed(outcome, &shadow, cause));
+    match searched {
+        Err(cause) if super::is_input_guarded_refusal(outcome) => search(
+            ir,
+            entity,
+            actors,
+            hints,
+            Distinction::PLAIN,
+            label,
+            |node| refusal_first(ir, command, outcome, entity, node),
+        )
+        .map(|found| (found, Found::BeforeRow))
+        .map_err(|_| cause),
+        searched => searched.map(|found| (found, Found::Plain)),
+    }
+}
+
+/// Require the arranged row before the command runs ([`prepare`]): every guarded field, or — for a
+/// branch taken before the row is read — only what the arrangement determined of it, and nothing
+/// where it determined none of them.
+fn observe_prepared(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    fields: BTreeSet<String>,
+    before_row: bool,
+    arrangement: &mut Arrangement,
+) -> Result<(), RefusalCause> {
+    let observed: BTreeSet<String> = if before_row {
+        fields
+            .into_iter()
+            .filter(|field| arrangement.settled.contains_key(field))
+            .collect()
+    } else {
+        fields
+    };
+    if !before_row || !observed.is_empty() {
+        let (steps, view) = observe_fields(ir, entity, &observed, arrangement)?;
+        arrangement.steps.extend(steps);
+        arrangement.source.insert(view.into());
+    }
+    Ok(())
 }
 
 /// Arrange the row the branch under test is selected for, and the input that selects it.
@@ -2959,16 +3136,20 @@ pub(super) fn prepare(
         return Err(refusal);
     }
     // Where a quantifier over a stored collection compares its elements with the input, the row
-    // and input witness it element by element wherever some arrangement does ([`first_row`]), and
-    // every refinement below keeps that.
-    let (arrangement, input, elementwise) =
-        first_row(ir, command, outcome, entity, actors, &hints, &label)?;
+    // and input witness it element by element wherever some arrangement does ([`arranged_row`]),
+    // and every refinement below keeps that.
+    let ((arrangement, input), found) =
+        arranged_row(ir, command, outcome, entity, actors, &hints, &label)?;
     let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
         witnesses_elements(ir, command, entity, &hints, node, input)
     };
     let any = |_: &Arrangement, _: &BTreeMap<String, Node>| true;
     let accept: &dyn Fn(&Arrangement, &BTreeMap<String, Node>) -> bool =
-        if elementwise { &strict } else { &any };
+        if found == Found::Elementwise {
+            &strict
+        } else {
+            &any
+        };
     // A row the branch's writes would leave unchanged proves nothing about them (beyond10x/ess#161).
     // So where the plain row leaves some write unchanged, the search is asked again — under the
     // plain witness and then further ones — for a row that leaves fewer unchanged, and keeps the
@@ -3021,9 +3202,13 @@ pub(super) fn prepare(
         &input,
         &mut false,
     )?;
-    let (steps, view) = observe_fields(ir, entity, &fields, &arrangement)?;
-    arrangement.steps.extend(steps);
-    arrangement.source.insert(view.into());
+    observe_prepared(
+        ir,
+        entity,
+        fields,
+        found == Found::BeforeRow,
+        &mut arrangement,
+    )?;
     let after = outcome
         .subject
         .as_ref()

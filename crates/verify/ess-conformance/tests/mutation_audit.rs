@@ -417,10 +417,13 @@ const ORACLE_VERDICTS: &[(&str, Verdict, &str)] = &[
         Verdict::Killed,
         "oracle.order.AmendOrder/outcome/amended",
     ),
+    // The negated guard selects only negative weights, which the `weight_grams >= 0` invariant of
+    // the order it creates refuses: the mutant's own `accepted` is refused ESS-SYNTH-003 and never
+    // sent (beyond10x/ess#234), and its `rejected` kills it.
     (
         "guard-negate/oracle.order.PlaceOrder/accepted",
         Verdict::Killed,
-        "oracle.order.PlaceOrder/outcome/accepted",
+        "oracle.order.PlaceOrder/outcome/rejected",
     ),
     (
         "transition-to/oracle.order.Order.cancel",
