@@ -94,6 +94,48 @@
   Coverage inventories (Rust, Go, TypeScript and the browser admission) accept `ESS-AUTHOR-037` as an
   authored refusal.
 
+- **Synthesized inputs satisfy the invariants over their nested members, and guards over nested
+  input paths are witnessed (beyond10x/ess#234).**
+  - An entity invariant over the members of a struct input a branch copies into a stored field
+    (`sets: {fingerprint: input.fingerprint}` beside `fingerprint.version == "canonical-v1"` or
+    `fingerprint.origin == fingerprint.route`) is met by every input synthesis sends, so the
+    scenarios creating or updating the entity no longer leave a row its own invariant refuses.
+    Before, the members carried their placeholder witnesses and every such scenario failed
+    against a correct target.
+  - A struct type with invariants used as a command input is synthesizable. Before, every
+    candidate was refused by the type (`ESS-SYNTH-003`, "no candidate of the 0 tried").
+  - The witness solves its base for those invariants once, per instance: the leaves an invariant
+    reads are tried at its literals, one either side, and at each other's value for a comparison
+    of two members, and a list whose `.count` an invariant reads at the lengths it names. A further
+    instance tries each numeric literal moved by its ordinal first, so it still differs from the
+    first wherever an invariant bounds a member rather than pinning it (`start >= 5`). A base that
+    already satisfies them keeps its bytes.
+  - Every input is held to the entity invariants of the branches it can reach, not to all of them
+    at once. Two branches copying one input into entities that disagree (`version == "v2"` and
+    `version == "v1"`) each send an input their own entity accepts. A guard moving a member an
+    invariant ties to another (`origin == "eu"` beside `origin == route`, `low > 10` beside
+    `low < high`) moves the other with it. An input that still breaks one is never sent.
+  - A branch whose entity invariants no bounded input meets (a strict chain over five members) is
+    refused `ESS-SYNTH-003`, naming each invariant. Before, it was sent an input the entity
+    refuses, and its scenarios failed against a correct target.
+  - A `when:` equality between an input and a member of another input (`owner == ticket.owner`)
+    is witnessed on both sides: each side is also tried at the other's value. Before, the
+    accepting branch was refused `ESS-SYNTH-003`.
+  - A wrong-state scenario whose sibling `when_subject` compares a stored field with a nested
+    input path (`fence != input.publication.expected_fence`) sends an input equal to the value the
+    arranged row holds. Before, it was refused `ESS-SYNTH-003` ("a row in this state refuting
+    every one of: …").
+  - An input-guarded refusal declared beside a `when_subject` over a member of a stored optional
+    struct is witnessed on a row whose struct no arranging step determined: the refusal answers
+    before the row is read.
+  - A `when_subject` or `when_related` guard over a member of an `Optional` struct the row holds
+    absent (`meta.tier == Gold` where the creator left `meta` unwritten, as in beyond10x/ess#239)
+    is read as a target reads it: unknown, so not taken. The default and every other branch are
+    witnessed on that row, a wrong-state scenario counts the guard as refuted there, and only the
+    guard no row takes is refused with its `ESS-SYNTH-003`. Negated, the guard stays unknown and
+    is not taken either. An `Optional` field whose only later writer generates it is arrangeable
+    from the row its creator leaves it absent on. Before, every branch of the command was refused.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed

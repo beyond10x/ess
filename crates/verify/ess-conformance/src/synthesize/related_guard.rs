@@ -210,7 +210,7 @@ fn selects<'c>(
         if let ResolvedCondition::Related { test, .. } = &branch.condition {
             match test {
                 ResolvedRelatedTest::Absent => continue,
-                ResolvedRelatedTest::Holds { predicate } => match subject_fact::row_truth_with(
+                ResolvedRelatedTest::Holds { predicate } => match subject_fact::guard_truth_with(
                     ir,
                     entity,
                     &row.settled,
