@@ -101,6 +101,27 @@ lifecycle path. Rust and generated Go expose an optional setup capability;
 unsupported adapters produce a non-passing result. These steps use suite/6 or
 coverage suite/7 and require explicit report/2. Source scenario/1 refuses setup.
 
+## Name several instances in one input
+
+`{$instance: name}` stands wherever the declared type at that position is the instance's
+identity type: a whole input field, a list element, a map value, a struct member or the
+payload of a union variant whose type is the identity, at any depth. A rollout over three release rings names them in order:
+
+```yaml
+    input:
+      ring_sequence: [{$instance: a}, {$instance: b}]
+      by_stage: {canary: {$instance: b}, general: {$instance: c}}
+      pair: {primary: {$instance: c}, note: first}
+```
+
+Each reference resolves to the identity the run bound for that instance, and the command
+receives the list or mapping with those identities in place. A reference at a position of
+any other type is refused as `ESS-AUTHOR-022`, naming the position (`labels[1]`,
+`pair.note`, `tags[owner]`, `target.value`); one at a member the model does not declare, or
+inside a value of the wrong shape, is refused naming the member or the position. One inside an event payload or an error is refused as
+`ESS-AUTHOR-021`, as a whole-field one is. A suite carrying such a value is suite/32 (/33
+with coverage); the Rust runner resolves it, and Go and TypeScript generation refuse it.
+
 ## Observe outcomes selected by held state
 
 For a command declaring `when_subject_state`, synthesis establishes a real

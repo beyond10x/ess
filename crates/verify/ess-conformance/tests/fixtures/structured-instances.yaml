@@ -1,0 +1,135 @@
+# A command that takes several identities of one entity inside structured inputs
+# (beyond10x/ess#242): a list of them, a map whose values are them, a struct whose members are
+# them, and a list of those structs. Beside each sits a same-shaped input that is not an identity,
+# so a reference written at the wrong position has a position to be refused at.
+
+format: ess/1
+system: release
+version: v1
+domains:
+  - release.rings
+
+domain: release.rings
+
+summary: Release rings, and rollouts that visit them in order.
+
+types:
+  - name: release.rings.ReleaseRingId
+    kind: newtype
+    of: Uuid
+
+  - name: release.rings.RolloutId
+    kind: newtype
+    of: Uuid
+
+  - name: release.rings.RingPair
+    kind: struct
+    fields:
+      - name: primary
+        type: release.rings.ReleaseRingId
+      - name: fallback
+        type: Optional<release.rings.ReleaseRingId>
+      - name: note
+        type: String
+
+  - name: release.rings.Target
+    kind: union
+    tag: kind
+    variants:
+      ring: release.rings.ReleaseRingId
+      label: String
+
+entities:
+  - name: release.rings.ReleaseRing
+    identity:
+      name: ring_id
+      type: release.rings.ReleaseRingId
+    fields:
+      - name: label
+        type: String
+    lifecycle:
+      initial: Active
+      states: [Active]
+      terminal: [Active]
+
+  - name: release.rings.Rollout
+    identity:
+      name: rollout_id
+      type: release.rings.RolloutId
+    fields:
+      - name: ring_sequence
+        type: List<release.rings.ReleaseRingId>
+    lifecycle:
+      initial: Planned
+      states: [Planned]
+      terminal: [Planned]
+
+commands:
+  - name: release.rings.CreateRing
+    input:
+      - name: label
+        type: String
+    outcomes:
+      - name: created
+        creates: release.rings.ReleaseRing
+        instance: ring_id
+        emits:
+          - release.rings.RingCreated
+        payload:
+          release.rings.RingCreated:
+            label: input.label
+        sets:
+          label: input.label
+
+  - name: release.rings.PlanRollout
+    input:
+      - name: ring_sequence
+        type: List<release.rings.ReleaseRingId>
+      - name: by_stage
+        type: Map<String, release.rings.ReleaseRingId>
+      - name: pair
+        type: release.rings.RingPair
+      - name: pairs
+        type: List<release.rings.RingPair>
+      - name: labels
+        type: List<String>
+      - name: tags
+        type: Map<String, String>
+      - name: target
+        type: Optional<release.rings.Target>
+      - name: by_pair
+        type: Optional<Map<String, release.rings.RingPair>>
+    outcomes:
+      - name: planned
+        creates: release.rings.Rollout
+        instance: rollout_id
+        emits:
+          - release.rings.RolloutPlanned
+        payload:
+          release.rings.RolloutPlanned:
+            ring_sequence: input.ring_sequence
+        sets:
+          ring_sequence: input.ring_sequence
+
+events:
+  - name: release.rings.RingCreated
+    fields:
+      - name: ring_id
+        type: release.rings.ReleaseRingId
+      - name: label
+        type: String
+
+  - name: release.rings.RolloutPlanned
+    fields:
+      - name: rollout_id
+        type: release.rings.RolloutId
+      - name: ring_sequence
+        type: List<release.rings.ReleaseRingId>
+
+views:
+  - name: release.rings.Rollouts
+    source: release.rings.Rollout
+    consistency: read_your_writes
+    fields:
+      - {name: rollout_id, type: release.rings.RolloutId}
+      - {name: ring_sequence, type: 'List<release.rings.ReleaseRingId>'}

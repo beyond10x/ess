@@ -490,7 +490,9 @@ fn coverage_version(
         || crate::view_paging::used_by(suite)
         || crate::bounded_retry::used_by(suite)
         || crate::bounded_retry::refused_in(inventory);
-    crate::scenario::SuiteFormat::parse(if crate::delivery_context::used_by(suite) {
+    crate::scenario::SuiteFormat::parse(if crate::structured_values::used_by(suite) {
+        "ess-conformance/33"
+    } else if crate::delivery_context::used_by(suite) {
         "ess-conformance/31"
     } else if crate::direct_response::used_by(suite) {
         "ess-conformance/29"

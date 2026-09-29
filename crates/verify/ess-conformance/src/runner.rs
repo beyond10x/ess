@@ -2536,6 +2536,11 @@ impl Run {
                 }
             }
             ScenarioValue::Literal { value } => Ok(value.clone()),
+            // Each element as a value of its own: an instance inside a list resolves exactly as a
+            // whole instance-valued field does (beyond10x/ess#242).
+            ScenarioValue::List { .. } | ScenarioValue::Members { .. } => {
+                crate::structured_values::resolve(value, &|element| self.resolve(element))
+            }
             ScenarioValue::NowOffset { seconds } => self.now.get(*seconds),
             ScenarioValue::Instance { instance } => self
                 .instances

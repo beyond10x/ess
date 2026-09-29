@@ -155,7 +155,13 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::delivery_context::used_by(self) {
+        self.provenance.suite_version = if crate::structured_values::used_by(self) {
+            SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::structured_values::ORDINARY
+            ))
+            .expect("constant suite version")
+        } else if crate::delivery_context::used_by(self) {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
                 crate::delivery_context::ORDINARY
@@ -431,7 +437,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31,
+    27, 28, 29, 30, 31, 32, 33,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -1524,6 +1530,27 @@ pub enum ScenarioValue {
         /// Seconds after (before, when negative) the moment of sending.
         seconds: i64,
     },
+    /// A list whose elements are values of their own, because at least one of them is an
+    /// [`Instance`](Self::Instance) (suite/[`ORDINARY`](crate::structured_values::ORDINARY),
+    /// beyond10x/ess#242).
+    ///
+    /// The runner resolves each element and sends the list. An element is a
+    /// [`Literal`](Self::Literal), an [`Instance`](Self::Instance), or another list or
+    /// [`Members`](Self::Members); a list holding no reference is written as the literal it is.
+    List {
+        /// The elements, in order.
+        items: Vec<ScenarioValue>,
+    },
+    /// A struct or a map whose members are values of their own, because at least one of them is
+    /// an [`Instance`](Self::Instance) (suite/[`ORDINARY`](crate::structured_values::ORDINARY),
+    /// beyond10x/ess#242).
+    ///
+    /// The runner resolves each member and sends the mapping; its members are what a
+    /// [`List`](Self::List)'s elements may be.
+    Members {
+        /// The members, by field name or map key.
+        members: BTreeMap<String, ScenarioValue>,
+    },
 }
 
 impl ScenarioValue {
@@ -1554,7 +1581,9 @@ impl ScenarioValue {
             | Self::Observed { .. }
             | Self::ObservedAccessor { .. }
             | Self::ObservedSelection { .. }
-            | Self::NowOffset { .. } => None,
+            | Self::NowOffset { .. }
+            | Self::List { .. }
+            | Self::Members { .. } => None,
         }
     }
 }
@@ -2996,12 +3025,14 @@ mod tests {
             "ess-conformance/29",
             "ess-conformance/30",
             "ess-conformance/31",
+            "ess-conformance/32",
+            "ess-conformance/33",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/32").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/34").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"
