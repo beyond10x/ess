@@ -8,7 +8,7 @@
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-48 capabilities: **39 generated**, **5 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+48 capabilities: **40 generated**, **4 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -47,6 +47,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `billing.invoice.InvalidAmount` |
 | error type | `billing.invoice.InvoiceStateConflict` |
 | view type | `billing.invoice.InvoiceById` |
+| view query | `billing.invoice.InvoiceById` |
 | view type | `billing.invoice.OutstandingInvoices` |
 | conversion | `billing.invoice.Email -> billing.email.EmailAddress` |
 | binding transformation | `notify-on-invoice-created` |
@@ -60,8 +61,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | --- | --- | --- | --- |
 | command behaviour | `billing.invoice.CreateInvoice` | kept an obligation by `creates:` leaving the required field `payee` of `billing.invoice.Invoice` undetermined, in `accepted` | given `billing.invoice.CreateInvoice` input, decide and enact exactly one outcome — `accepted` when `amount.amount > 0`, creates `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCreated`; `rejected` otherwise, error `billing.invoice.InvalidAmount` |
 | command behaviour | `billing.invoice.PayInvoice` | kept an obligation by the fields of error `billing.invoice.InvalidAmount`, which the specification gives no source, in `rejected` | given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields |
-| view query | `billing.invoice.InvoiceById` | how the projection is kept current is a storage decision | a query answering `billing.invoice.InvoiceById` with rows projected from `billing.invoice.Invoice` at `eventual` consistency |
-| view query | `billing.invoice.OutstandingInvoices` | how the projection is kept current is a storage decision | a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued` |
+| view query | `billing.invoice.OutstandingInvoices` | kept an obligation by an order over the optional field `issued_at`, which has no order against a present value | a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued` |
 | binding escalation | `notify-on-invoice-created` | the contract is declared; the algorithm is not | the declared `billing.email.DeliveryEscalated`, recording that delivering `billing.email.SendEmail` for `notify-on-invoice-created` was given up on — the event is declared; how its fields are filled from the failed invocation is not |
 
 ## Refused — not represented by this synthesis

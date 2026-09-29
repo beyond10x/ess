@@ -394,18 +394,19 @@ fn the_plans_obligations_and_the_modules_stubs_are_the_same_list() {
     }
     stubs.sort();
 
-    // A command behaviour the plan marks generated is one this target does not generate yet: it
-    // is owed here, stubbed like an obligation, and `TARGET.md` names the weakening.
+    // A command behaviour or view query the plan marks generated is one this target does not
+    // generate yet: it is owed here, stubbed like an obligation, and `TARGET.md` names the
+    // weakening.
     let mut owed: Vec<(String, String)> = synthesis
         .plan
         .obligations()
         .map(|(capability, _)| capability)
-        .chain(
-            synthesis
-                .plan
-                .generated()
-                .filter(|capability| capability.kind == CapabilityKind::CommandBehavior),
-        )
+        .chain(synthesis.plan.generated().filter(|capability| {
+            matches!(
+                capability.kind,
+                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
+            )
+        }))
         .map(|capability| {
             (
                 capability.kind.describes().to_owned(),

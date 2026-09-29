@@ -701,8 +701,8 @@ pub struct InvoiceStateConflict {
 /// InvoiceById — one row of the view `billing.invoice.InvoiceById`.
 ///
 /// Projects `billing.invoice.Invoice` at `eventual` consistency.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoiceById {
     /// `invoice_id` — `billing.invoice.InvoiceId`.
@@ -782,22 +782,20 @@ pub mod obligations {
         fn pay_invoice(&mut self, input: super::PayInvoice) -> Result<super::PayInvoiceOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `billing.invoice.InvoiceById` — an implementation obligation.
+    /// The query `billing.invoice.InvoiceById` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `billing.invoice.InvoiceById` with rows projected from `billing.invoice.Invoice` at `eventual` consistency.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait InvoiceByIdQuery {
         /// Serves `billing.invoice.InvoiceById` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn invoice_by_id(&self) -> Result<Vec<super::InvoiceById>, crate::obligation::UnmetObligation>;
     }
 
     /// The query `billing.invoice.OutstandingInvoices` — an implementation obligation.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
+    /// Why it is not generated: kept an obligation by an order over the optional field `issued_at`, which has no order against a present value.
     ///
     /// Contract: a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued`.
     pub trait OutstandingInvoicesQuery {
@@ -823,12 +821,6 @@ pub mod obligations {
     impl PayInvoiceBehavior for Unimplemented {
         fn pay_invoice(&mut self, _input: super::PayInvoice) -> Result<super::PayInvoiceOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "billing.invoice.PayInvoice" })
-        }
-    }
-
-    impl InvoiceByIdQuery for Unimplemented {
-        fn invoice_by_id(&self) -> Result<Vec<super::InvoiceById>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "billing.invoice.InvoiceById" })
         }
     }
 

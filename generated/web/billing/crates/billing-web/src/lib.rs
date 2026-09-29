@@ -391,7 +391,7 @@ impl billing_types::invoice::obligations::PayInvoiceBehavior for Unrealized {
 
 impl billing_types::invoice::obligations::InvoiceByIdQuery for Unrealized {
     fn invoice_by_id(&self) -> Result<Vec<billing_types::invoice::InvoiceById>, billing_types::obligation::UnmetObligation> {
-        billing_types::invoice::obligations::Unimplemented.invoice_by_id()
+        Err(billing_types::obligation::UnmetObligation { capability: "query ports", source: "billing.invoice.InvoiceById" })
     }
 }
 

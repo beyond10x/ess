@@ -52,6 +52,7 @@ pub mod plan;
 pub mod rust;
 mod selection;
 pub(crate) mod set_effects;
+pub(crate) mod view_query;
 pub mod web;
 
 pub(crate) use alias::code_aliases;

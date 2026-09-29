@@ -268,11 +268,7 @@
       "kind": "view_query",
       "source": "billing.invoice.InvoiceById",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "projection_maintenance"
-        },
-        "contract": "a query answering `billing.invoice.InvoiceById` with rows projected from `billing.invoice.Invoice` at `eventual` consistency"
+        "disposition": "generated"
       }
     },
     {
@@ -288,7 +284,8 @@
       "disposition": {
         "disposition": "obligation",
         "reason": {
-          "class": "projection_maintenance"
+          "class": "undetermined",
+          "construct": "an order over the optional field `issued_at`, which has no order against a present value"
         },
         "contract": "a query answering `billing.invoice.OutstandingInvoices` with rows projected from `billing.invoice.Invoice` at `read_your_writes` consistency, containing instances where `state == Issued`"
       }

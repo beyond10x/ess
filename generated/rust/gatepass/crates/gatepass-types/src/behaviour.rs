@@ -32,6 +32,10 @@ pub trait VisitStorage {
 
     /// Removes the instance with this identity.
     fn delete(&mut self, identity: &crate::visit::VisitId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::visit::VisitSnapshot>;
 }
 
 /// Every generated behaviour of this workspace, over the ports `P` supplies.
@@ -111,14 +115,49 @@ where
     }
 }
 
-impl<P: crate::visit::obligations::ExpectedVisitsQuery> crate::visit::obligations::ExpectedVisitsQuery for Generated<P> {
+/// `gatepass.visit.ExpectedVisits`, generated: every row is one the specification fully determines from the stored `gatepass.visit.Visit`s.
+impl<P> crate::visit::obligations::ExpectedVisitsQuery for Generated<P>
+where
+    P: VisitStorage,
+{
     fn expected_visits(&self) -> Result<Vec<crate::visit::ExpectedVisits>, UnmetObligation> {
-        crate::visit::obligations::ExpectedVisitsQuery::expected_visits(&self.ports)
+        let mut admitted = VisitStorage::list(&self.ports);
+        // `filter:` shows a row where it holds; false or unknown hides it.
+        admitted.retain(|held| equal(Some(&held.state).map(|value| match value { crate::visit::VisitState::Departed => "Departed", crate::visit::VisitState::Expected => "Expected", crate::visit::VisitState::OnSite => "OnSite" }.to_owned()), Some("Expected".to_owned())) == Some(true));
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::visit::ExpectedVisits {
+                visit_id: held.data.visit_id,
+                visitor: held.data.visitor,
+                building: held.data.building,
+                deposit: held.data.deposit,
+            })
+            .collect())
     }
 }
 
-impl<P: crate::visit::obligations::VisitByIdQuery> crate::visit::obligations::VisitByIdQuery for Generated<P> {
+/// `gatepass.visit.VisitById`, generated: every row is one the specification fully determines from the stored `gatepass.visit.Visit`s.
+impl<P> crate::visit::obligations::VisitByIdQuery for Generated<P>
+where
+    P: VisitStorage,
+{
     fn visit_by_id(&self) -> Result<Vec<crate::visit::VisitById>, UnmetObligation> {
-        crate::visit::obligations::VisitByIdQuery::visit_by_id(&self.ports)
+        let admitted = VisitStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::visit::VisitById {
+                visit_id: held.data.visit_id,
+                visitor: held.data.visitor,
+                host: held.data.host,
+                escorts: held.data.escorts,
+                notes: held.data.notes,
+                badge: held.data.badge,
+            })
+            .collect())
     }
+}
+
+/// Equality of two read values; an unread one is Unknown.
+fn equal<T: PartialEq>(left: Option<T>, right: Option<T>) -> Option<bool> {
+    Some(left? == right?)
 }

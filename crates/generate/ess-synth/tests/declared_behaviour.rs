@@ -90,7 +90,7 @@ fn compile_text(text: &str) -> EssIr {
 }
 
 #[test]
-fn the_plan_generates_every_fully_declared_command_and_keeps_the_view_owed() {
+fn the_plan_generates_every_fully_declared_command_and_the_view_query() {
     let ir = compile_directory(&fixture_root());
     let synthesis = synthesize_for(&ir, Target::Rust).expect("the fixture synthesizes");
     for command in ir.commands().keys() {
@@ -102,12 +102,14 @@ fn the_plan_generates_every_fully_declared_command_and_keeps_the_view_owed() {
             "`{command}` is fully declared, so its behaviour is generated"
         );
     }
-    assert!(matches!(
+    // The view projects the ticket's own fields and `state`, so its query is generated too
+    // (`story:generated-view-queries`).
+    assert_eq!(
         synthesis
             .plan
             .disposition_of(CapabilityKind::ViewQuery, "desk.ticket.Tickets"),
-        Some(SynthesisDisposition::Obligation(_))
-    ));
+        Some(&SynthesisDisposition::Generated)
+    );
     let behaviour = synthesis
         .artifacts
         .get("crates/desk-types/src/behaviour.rs")

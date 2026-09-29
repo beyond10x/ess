@@ -172,11 +172,7 @@
       "kind": "view_query",
       "source": "gatepass.visit.ExpectedVisits",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "projection_maintenance"
-        },
-        "contract": "a query answering `gatepass.visit.ExpectedVisits` with rows projected from `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected`"
+        "disposition": "generated"
       }
     },
     {
@@ -190,11 +186,7 @@
       "kind": "view_query",
       "source": "gatepass.visit.VisitById",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "projection_maintenance"
-        },
-        "contract": "a query answering `gatepass.visit.VisitById` with rows projected from `gatepass.visit.Visit` at `eventual` consistency"
+        "disposition": "generated"
       }
     },
     {

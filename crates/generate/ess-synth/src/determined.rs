@@ -556,6 +556,9 @@ pub(crate) enum Env<'a> {
     /// The addressed row's stored fields and `state`, with the input under `input.` and the caller
     /// under `caller.`.
     Subject(&'a ResolvedCommand, &'a ResolvedEntity),
+    /// One stored row of an entity, as a view's `filter:` reads it: its fields and `state`, and
+    /// nothing else — no input, no caller.
+    Row(&'a ResolvedEntity),
 }
 
 /// Where a resolved path starts.
@@ -636,6 +639,23 @@ pub(crate) fn resolve(ir: &EssIr, env: &Env<'_>, path: &FactPath) -> Result<Reso
             .map(|field| field.type_ref.clone())
     };
     let (root, root_type, rest) = match (env, segments) {
+        (Env::Row(entity), [first, rest @ ..]) => {
+            if first == "state" {
+                (
+                    Root::State,
+                    ResolvedTypeRef::Declared {
+                        name: entity.state_type.clone(),
+                    },
+                    rest,
+                )
+            } else {
+                let stored = std::iter::once(&entity.identity)
+                    .chain(&entity.fields)
+                    .find(|field| &field.name == first)
+                    .ok_or_else(unknown)?;
+                (Root::Stored(first.clone()), stored.type_ref.clone(), rest)
+            }
+        }
         (_, [first, attribute, rest @ ..]) if first == "caller" => (
             Root::Caller(attribute.clone()),
             caller_type(attribute).ok_or_else(unknown)?,
