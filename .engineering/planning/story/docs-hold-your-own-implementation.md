@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-hold-your-own-implementation
 kind: story
-status: draft
+status: active
 title: The conformance guide shows how to hold your own implementation to the suite
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -10,7 +10,10 @@ relations:
 scope:
 - confidence: cited
   path: website/docs/guides/verify-conformance.md
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-29T14:29:42Z", actor: "human:timo", revision: 4}
+- {from: "proposed", to: "active", at: "2026-09-29T14:29:42Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
