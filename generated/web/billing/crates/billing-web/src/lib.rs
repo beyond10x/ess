@@ -360,14 +360,14 @@ where
 pub struct Unrealized;
 
 impl billing_types::email::obligations::SendEmailBehavior for Unrealized {
-    fn send_email(&mut self, input: billing_types::email::SendEmail) -> Result<billing_types::email::SendEmailOutcome, billing_types::obligation::UnmetObligation> {
-        billing_types::email::obligations::Unimplemented.send_email(input)
+    fn send_email(&mut self, _input: billing_types::email::SendEmail) -> Result<billing_types::email::SendEmailOutcome, billing_types::obligation::UnmetObligation> {
+        Err(billing_types::obligation::UnmetObligation { capability: "behaviour ports", source: "billing.email.SendEmail" })
     }
 }
 
 impl billing_types::invoice::obligations::CancelInvoiceBehavior for Unrealized {
-    fn cancel_invoice(&mut self, input: billing_types::invoice::CancelInvoice) -> Result<billing_types::invoice::CancelInvoiceOutcome, billing_types::obligation::UnmetObligation> {
-        billing_types::invoice::obligations::Unimplemented.cancel_invoice(input)
+    fn cancel_invoice(&mut self, _input: billing_types::invoice::CancelInvoice) -> Result<billing_types::invoice::CancelInvoiceOutcome, billing_types::obligation::UnmetObligation> {
+        Err(billing_types::obligation::UnmetObligation { capability: "behaviour ports", source: "billing.invoice.CancelInvoice" })
     }
 }
 
@@ -378,8 +378,8 @@ impl billing_types::invoice::obligations::CreateInvoiceBehavior for Unrealized {
 }
 
 impl billing_types::invoice::obligations::IssueInvoiceBehavior for Unrealized {
-    fn issue_invoice(&mut self, input: billing_types::invoice::IssueInvoice) -> Result<billing_types::invoice::IssueInvoiceOutcome, billing_types::obligation::UnmetObligation> {
-        billing_types::invoice::obligations::Unimplemented.issue_invoice(input)
+    fn issue_invoice(&mut self, _input: billing_types::invoice::IssueInvoice) -> Result<billing_types::invoice::IssueInvoiceOutcome, billing_types::obligation::UnmetObligation> {
+        Err(billing_types::obligation::UnmetObligation { capability: "behaviour ports", source: "billing.invoice.IssueInvoice" })
     }
 }
 

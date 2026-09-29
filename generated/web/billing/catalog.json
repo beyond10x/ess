@@ -18,9 +18,7 @@
   "commands": [
     {
       "behavior": {
-        "contract": "given `billing.email.SendEmail` input, decide and enact exactly one outcome — `sent` otherwise, emits `billing.email.EmailSent`; `failed` externally decided (the provider rejects the recipient address), error `billing.email.Undeliverable`",
-        "disposition": "obligation",
-        "why": "decided outside the system: the provider rejects the recipient address"
+        "disposition": "generated"
       },
       "component": "email-service",
       "dispatchable": true,
@@ -72,9 +70,7 @@
     },
     {
       "behavior": {
-        "contract": "given `billing.invoice.CancelInvoice` input, decide and enact exactly one outcome — `cancelled` otherwise, takes `cancel` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCancelled`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields",
-        "disposition": "obligation",
-        "why": "the contract is declared; the algorithm is not"
+        "disposition": "generated"
       },
       "component": "invoice-service",
       "dispatchable": true,
@@ -129,7 +125,7 @@
       "behavior": {
         "contract": "given `billing.invoice.CreateInvoice` input, decide and enact exactly one outcome — `accepted` when `amount.amount > 0`, creates `billing.invoice.Invoice`, emits `billing.invoice.InvoiceCreated`; `rejected` otherwise, error `billing.invoice.InvalidAmount`",
         "disposition": "obligation",
-        "why": "the contract is declared; the algorithm is not"
+        "why": "kept an obligation by `creates:` leaving the required field `payee` of `billing.invoice.Invoice` undetermined, in `accepted`"
       },
       "component": "invoice-service",
       "dispatchable": true,
@@ -196,9 +192,7 @@
     },
     {
       "behavior": {
-        "contract": "given `billing.invoice.IssueInvoice` input, decide and enact exactly one outcome — `issued` otherwise, takes `issue` of `billing.invoice.Invoice`, emits `billing.invoice.InvoiceIssued`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields",
-        "disposition": "obligation",
-        "why": "the contract is declared; the algorithm is not"
+        "disposition": "generated"
       },
       "component": "invoice-service",
       "dispatchable": true,
@@ -252,7 +246,7 @@
       "behavior": {
         "contract": "given `billing.invoice.PayInvoice` input, decide and enact exactly one outcome — `settled` when `amount.amount > 0`, takes `settle` of `billing.invoice.Invoice`, emits `billing.invoice.InvoicePaid`; `rejected` otherwise, error `billing.invoice.InvalidAmount`; `wrong-state` from a state no declared move starts in, error `billing.invoice.InvoiceStateConflict`, and for an instance no record carries, without the error's fields",
         "disposition": "obligation",
-        "why": "the contract is declared; the algorithm is not"
+        "why": "kept an obligation by the fields of error `billing.invoice.InvalidAmount`, which the specification gives no source, in `rejected`"
       },
       "component": "invoice-service",
       "dispatchable": true,
@@ -797,8 +791,8 @@
   ],
   "format": "ess-browser-catalog/1",
   "plan": {
-    "generated": 36,
-    "obligations": 8,
+    "generated": 39,
+    "obligations": 5,
     "refused": 4
   },
   "provenance": {

@@ -682,6 +682,8 @@ fn handlers(
 }
 
 /// One accepted command: body in, declared outcome out, at the status the contract publishes.
+// One handler per command, emitted in the order the served contract reads.
+#[allow(clippy::too_many_lines)]
 fn command_handler(
     out: &mut String,
     server: &Server<'_>,
@@ -758,8 +760,12 @@ fn command_handler(
     );
     for outcome in &command.outcomes {
         let variant = name::pascal(outcome.name.as_str());
+        // An error declaring no field is written without its payload, so it binds nothing.
         let pattern = match &outcome.error {
-            Some(_) => format!("{outcome_type}::{variant} {{ error, .. }}"),
+            Some(error) if !ir.error(error).fields.is_empty() => {
+                format!("{outcome_type}::{variant} {{ error, .. }}")
+            }
+            Some(_) => format!("{outcome_type}::{variant} {{ .. }}"),
             None if carries(server, outcome) => format!("{outcome_type}::{variant} {{ .. }}"),
             None => format!("{outcome_type}::{variant}"),
         };

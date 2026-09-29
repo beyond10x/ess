@@ -429,9 +429,17 @@ fn assert_bijection(
         .iter()
         .map(|(capability, _)| capability.clone())
         .collect();
+    // A command behaviour the plan marks generated is one this target owes as a seam: it is
+    // stubbed rather than covered, and `TARGET.md` names the weakening.
+    let weakened: BTreeSet<Capability> = plan
+        .generated()
+        .filter(|capability| capability.kind == CapabilityKind::CommandBehavior)
+        .filter(|capability| !refused.contains(capability))
+        .cloned()
+        .collect();
     let planned: BTreeSet<Capability> = plan
         .generated()
-        .filter(|capability| !refused.contains(capability))
+        .filter(|capability| !refused.contains(capability) && !weakened.contains(capability))
         .cloned()
         .collect();
     assert_eq!(
@@ -444,6 +452,7 @@ fn assert_bijection(
         .obligations()
         .map(|(capability, _)| capability.clone())
         .filter(|capability| !refused.contains(capability))
+        .chain(weakened)
         .collect();
     assert_eq!(
         stubbed, &owed,
@@ -456,7 +465,10 @@ fn assert_bijection(
 /// `true` when the module needs the refusal type at all: something is owed, or there is an
 /// interaction layer whose ports return one.
 fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
-    plan.obligations().next().is_some() || !ir.components().is_empty() || !ir.bindings().is_empty()
+    plan.obligations().next().is_some()
+        || !ir.components().is_empty()
+        || !ir.bindings().is_empty()
+        || crate::determined::any_generated(ir)
 }
 
 /// What this target emits with a weaker guarantee than the first target's, stated once per rule.
@@ -470,6 +482,8 @@ fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
 /// weakening naming a capability kind this module has no instance of is a row a reader has to check
 /// and then discard. Everything else here is a fact about Go and holds whatever the specification
 /// says.
+// One row per weakening, stated where a reader compares them.
+#[allow(clippy::too_many_lines)]
 fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
     let serves = !http::served(ir, refusals).is_empty();
     let mut exhaustive_affects = vec![
@@ -559,6 +573,18 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
                       emitting a second JSON writer beside the standard library's"
                 .to_owned(),
             affects: vec![CapabilityKind::ComponentTransport],
+        });
+    }
+    if crate::determined::any_generated(ir) {
+        out.push(TargetWeakening {
+            guarantee: "a command behaviour the specification fully determines is generated, \
+                        over storage and context ports"
+                .to_owned(),
+            instead: "this target does not generate command behaviour yet: each one the plan \
+                      marks generated keeps its behaviour seam here, owed, with the same contract \
+                      and a stub refusing it, exactly as an obligation"
+                .to_owned(),
+            affects: vec![CapabilityKind::CommandBehavior],
         });
     }
     out

@@ -278,10 +278,18 @@ fn paths_and_packages(
     if plan.obligations().next().is_some()
         || !ir.components().is_empty()
         || !ir.bindings().is_empty()
+        || super::behaviour::used(ir)
     {
         inventory.symbol("types root", "obligation", &system, "fixed module");
         inventory.path(
             format!("crates/{}/src/obligation.rs", layout.package()),
+            &system,
+        );
+    }
+    if super::behaviour::used(ir) {
+        inventory.symbol("types root", "behaviour", &system, "fixed module");
+        inventory.path(
+            format!("crates/{}/src/behaviour.rs", layout.package()),
             &system,
         );
     }
@@ -511,6 +519,10 @@ fn records_and_commands(inventory: &mut Inventory, ir: &EssIr, layout: &Layout) 
 
 fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &Layout) {
     for (domain, _) in layout.modules() {
+        let in_domain = |capability: &crate::plan::Capability| {
+            QualifiedName::new(&capability.source)
+                .is_ok_and(|source| layout.owner(&source) == domain)
+        };
         let owed = plan
             .obligations()
             .filter(|(capability, _)| {
@@ -519,12 +531,16 @@ fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &
                     CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
                 )
             })
-            .filter(|(capability, _)| {
-                QualifiedName::new(&capability.source)
-                    .is_ok_and(|source| layout.owner(&source) == domain)
-            })
+            .filter(|(capability, _)| in_domain(capability))
+            .map(|(capability, _)| capability)
             .collect::<Vec<_>>();
-        if owed.is_empty() {
+        // A generated behaviour keeps its seam in the same module, with no stub.
+        let generated = plan
+            .generated()
+            .filter(|capability| capability.kind == CapabilityKind::CommandBehavior)
+            .filter(|capability| in_domain(capability))
+            .collect::<Vec<_>>();
+        if owed.is_empty() && generated.is_empty() {
             continue;
         }
         inventory.symbol(
@@ -534,13 +550,15 @@ fn domain_obligations(inventory: &mut Inventory, plan: &SynthesisPlan, layout: &
             "obligation module",
         );
         let scope = format!("domain obligations:{domain}");
-        inventory.symbol(
-            &scope,
-            "Unimplemented",
-            &domain.to_string(),
-            "obligation stub",
-        );
-        for (capability, _) in owed {
+        if !owed.is_empty() {
+            inventory.symbol(
+                &scope,
+                "Unimplemented",
+                &domain.to_string(),
+                "obligation stub",
+            );
+        }
+        for capability in owed.into_iter().chain(generated) {
             let declared =
                 QualifiedName::new(&capability.source).expect("typed declaration source");
             let suffix = if capability.kind == CapabilityKind::CommandBehavior {

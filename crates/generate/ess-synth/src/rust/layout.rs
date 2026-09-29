@@ -253,7 +253,8 @@ impl Layout {
 ///    generated crate carries, `obligation` for the typed refusal an unmet obligation returns.
 ///    `json` joins them only in a model that uses `Json`, whose types crate carries the `json`
 ///    module (beyond10x/ess#224); reserving it everywhere would rename a `….json` domain in trees
-///    that have no such module.
+///    that have no such module. `behaviour` joins them the same way, only in a model where some
+///    command's behaviour is generated and the types crate carries the `behaviour` module.
 fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
     let mut candidates: BTreeMap<QualifiedName, String> = ir
         .domains()
@@ -285,8 +286,13 @@ fn module_idents(ir: &EssIr) -> BTreeMap<QualifiedName, String> {
     }
 
     let json = super::json::used(ir);
+    let behaviour = super::behaviour::used(ir);
     for module in candidates.values_mut() {
-        if module == "primitives" || module == "obligation" || (json && module == "json") {
+        if module == "primitives"
+            || module == "obligation"
+            || (json && module == "json")
+            || (behaviour && module == "behaviour")
+        {
             module.push_str("_domain");
         }
     }

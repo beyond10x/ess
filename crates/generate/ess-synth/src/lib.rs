@@ -43,6 +43,7 @@
 mod accessor_output;
 mod alias;
 pub mod clap;
+pub(crate) mod determined;
 pub(crate) mod existence;
 mod failure;
 pub mod go;

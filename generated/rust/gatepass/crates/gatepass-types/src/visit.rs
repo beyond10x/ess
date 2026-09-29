@@ -495,28 +495,26 @@ pub struct VisitById {
     pub badge: Option<Badge>,
 }
 
-/// What this bounded context owes its implementor, as typed seams.
+/// What this bounded context owes its implementor, and the seams of what is generated.
 ///
-/// One trait per obligation in the synthesis plan, each carrying the plan's own contract.
-/// [`Unimplemented`](obligations::Unimplemented) satisfies every trait by refusing in the type system, so the workspace builds —
-/// and says exactly what it cannot yet do — before a line is hand-written.
+/// One trait per obligation in the synthesis plan, each carrying the plan's own contract, and one
+/// per generated behaviour, which [`Generated`](crate::behaviour::Generated) implements.
+/// [`Unimplemented`](obligations::Unimplemented) satisfies every owed trait by refusing in the type system.
 pub mod obligations {
-    /// The behaviour `gatepass.visit.AdmitVisitor` — an implementation obligation.
+    /// The behaviour `gatepass.visit.AdmitVisitor` — generated.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
-    ///
-    /// Contract: given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
     pub trait AdmitVisitorBehavior {
         /// Decides and enacts exactly one declared outcome of `gatepass.visit.AdmitVisitor`.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn admit_visitor(&mut self, input: super::AdmitVisitor) -> Result<super::AdmitVisitorOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `gatepass.visit.RegisterVisit` — an implementation obligation.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
+    /// Why it is not generated: kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered`.
     ///
     /// Contract: given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength`.
     pub trait RegisterVisitBehavior {
@@ -527,16 +525,14 @@ pub mod obligations {
         fn register_visit(&mut self, input: super::RegisterVisit) -> Result<super::RegisterVisitOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The behaviour `gatepass.visit.SignOutVisitor` — an implementation obligation.
+    /// The behaviour `gatepass.visit.SignOutVisitor` — generated.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
-    ///
-    /// Contract: given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
     pub trait SignOutVisitorBehavior {
         /// Decides and enacts exactly one declared outcome of `gatepass.visit.SignOutVisitor`.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn sign_out_visitor(&mut self, input: super::SignOutVisitor) -> Result<super::SignOutVisitorOutcome, crate::obligation::UnmetObligation>;
     }
 
@@ -572,21 +568,9 @@ pub mod obligations {
     /// value — so a workspace built on this stub compiles and reports its own gaps.
     pub struct Unimplemented;
 
-    impl AdmitVisitorBehavior for Unimplemented {
-        fn admit_visitor(&mut self, _input: super::AdmitVisitor) -> Result<super::AdmitVisitorOutcome, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.AdmitVisitor" })
-        }
-    }
-
     impl RegisterVisitBehavior for Unimplemented {
         fn register_visit(&mut self, _input: super::RegisterVisit) -> Result<super::RegisterVisitOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.RegisterVisit" })
-        }
-    }
-
-    impl SignOutVisitorBehavior for Unimplemented {
-        fn sign_out_visitor(&mut self, _input: super::SignOutVisitor) -> Result<super::SignOutVisitorOutcome, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.SignOutVisitor" })
         }
     }
 

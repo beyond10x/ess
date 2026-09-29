@@ -242,6 +242,12 @@ pub enum ObligationReason {
     /// Keeping a projection current at its declared consistency is a storage decision the
     /// specification deliberately does not take.
     ProjectionMaintenance,
+    /// A command whose outcomes the specification does not fully determine: the construct named
+    /// is the first one generated behaviour cannot express, and it keeps the whole command owed.
+    Undetermined {
+        /// The construct, and the branch it sits on.
+        construct: String,
+    },
 }
 
 impl ObligationReason {
@@ -255,6 +261,7 @@ impl ObligationReason {
             Self::ProjectionMaintenance => {
                 "how the projection is kept current is a storage decision".to_owned()
             }
+            Self::Undetermined { construct } => format!("kept an obligation by {construct}"),
         }
     }
 }
@@ -571,7 +578,9 @@ fn plan_entities(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     }
 }
 
-/// A command's contract is generated; its behaviour is owed.
+/// A command's contract is generated. Its behaviour is generated where every outcome is one the
+/// specification fully determines ([`crate::determined`]); otherwise the whole behaviour is owed,
+/// naming the construct that kept it an obligation.
 fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     for command in ir.commands().values() {
         capabilities.push(PlannedCapability {
@@ -586,31 +595,20 @@ fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 kind: CapabilityKind::CommandBehavior,
                 source: command.name.to_string(),
             },
-            disposition: SynthesisDisposition::Obligation(ImplementationObligation {
-                reason: behavior_reason(command),
-                contract: behavior_contract(ir, command),
-            }),
+            disposition: match crate::determined::command(ir, command) {
+                Ok(()) => SynthesisDisposition::Generated,
+                Err(construct) => SynthesisDisposition::Obligation(ImplementationObligation {
+                    reason: ObligationReason::Undetermined { construct },
+                    contract: behavior_contract(ir, command),
+                }),
+            },
         });
     }
 }
 
-/// External when any outcome is: the specification itself says the input cannot decide it.
-fn behavior_reason(command: &ResolvedCommand) -> ObligationReason {
-    for outcome in &command.outcomes {
-        if let ResolvedCondition::External { cause }
-        | ResolvedCondition::ExternalWhen { cause, .. } = &outcome.condition
-        {
-            return ObligationReason::External {
-                cause: cause.clone(),
-            };
-        }
-    }
-    ObligationReason::UnspecifiedAlgorithm
-}
-
 /// The behaviour's contract, phrased against the model: the input, and every declared outcome with
 /// what taking it entails.
-fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String {
+pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String {
     let unknown = ess_gen::unknown_instance::unknown_instance_answer(ir, command);
     let mut branches = Vec::new();
     for outcome in &command.outcomes {
