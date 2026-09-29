@@ -205,8 +205,10 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-history-adapter", 1, Some("0.39.0")),
     ("ess-mutation-report", 1, Some("0.34.0")),
     ("ess-mutation-report", 2, Some("0.41.0")),
+    ("ess-mutation-report", 3, None),
     ("ess-mutation-manifest", 1, Some("0.37.0")),
     ("ess-mutation-manifest", 2, Some("0.41.0")),
+    ("ess-mutation-manifest", 3, None),
 ];
 
 /// Checks the published documents against the source and the changelog.

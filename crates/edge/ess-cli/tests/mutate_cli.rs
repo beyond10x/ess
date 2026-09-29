@@ -184,7 +184,7 @@ fn the_json_output_is_the_report_bytes() {
     let written = std::fs::read(&report).expect("--report-out is written");
     assert_eq!(output.stdout, written);
     let value: serde_json::Value = serde_json::from_slice(&written).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/2");
+    assert_eq!(value["format"], "ess-mutation-report/3");
     assert_eq!(value["counts"]["mutants"], 20);
     assert_eq!(value["counts"]["killed"], 12);
     assert_eq!(value["counts"]["stillborn"], 8);
@@ -199,7 +199,7 @@ fn the_json_output_is_the_report_bytes() {
     ]);
     assert_eq!(yaml.status.code(), Some(0));
     assert!(
-        text(&yaml.stdout).contains("format: ess-mutation-report/2"),
+        text(&yaml.stdout).contains("format: ess-mutation-report/3"),
         "{}",
         text(&yaml.stdout)
     );
@@ -249,5 +249,5 @@ fn every_mutate_code_is_named_in_the_formats_reference() {
         let code = code.code().to_string();
         assert!(page.contains(&code), "`{code}` is not named in formats.md");
     }
-    assert!(page.contains("ess-mutation-report/2"));
+    assert!(page.contains("ess-mutation-report/3"));
 }

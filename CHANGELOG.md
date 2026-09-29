@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ess verify conform mutate` no longer scores as `survived` a mutant no scenario could kill
+  (beyond10x/ess#218), on `--target` and `--emit`/`--collect` alike:
+  - A guard mutant that leaves its outcome's guard satisfied by no input — `any: [x == A, x == B]`
+    flipped to `all:` — is `equivalent` (`ESS-MUTATE-005`), and its entry names the guard as
+    `unsatisfiable_guard`. The guard is decided only for equality, membership and truth tests of
+    non-optional scalar input fields (not a `Timestamp`) against literals, with the baseline's
+    guard at the same outcome satisfied, by trying every combination of each field's values that
+    could matter — a boolean's two, an enum's variants, and for any other field its literals and
+    one value none of them equals — where there are at most 64. The combinations are counted
+    before any invariant applies, so a guard is never called dead that an input satisfies; an
+    ordering, a text match, a quantifier, a comparison of two fields, or a guard with more
+    combinations is not decided, and such a mutant is scored as before. A failing scenario still
+    kills it, and a changed scenario nothing scored keeps it `inconclusive`; otherwise
+    `equivalent` outranks `unwitnessed`, so the #203 shape (a flipped connective over two
+    disjoint equalities) is now `equivalent` with its added refusal still named. `counts` gains
+    `equivalent`; an equivalent mutant does not change the exit status, but a run whose every
+    mutant is equivalent or stillborn exits 3.
+  - A mutant on an outcome whose scenario the baseline suite already refused at synthesis (for
+    example `ESS-SYNTH-003` on a branch no arrangement reaches), and that no baseline scenario
+    takes, is `unwitnessed` (`ESS-MUTATE-004`, exit 3) instead of `survived`; its entry names that
+    refusal as `baseline_refusals` (`{code, scenario, subject}`). So is a `from-drop` or
+    `transition-to` mutant on a transition that only such outcomes perform, naming each of their
+    refusals; `--collect` reads the emitted baseline `ir.json` for which outcomes perform a
+    transition. A mutant on a witnessed outcome or transition that no scenario kills is still
+    `survived`.
+  - The audit writes `ess-mutation-report/3`, and `--emit` writes `ess-mutation-manifest/3`,
+    which records `unsatisfiable_guard` on each mutant whose guard the emitter found dead;
+    `--emit` reports how many mutants have one. `--collect` still reads the
+    `ess-mutation-manifest/2` 0.41.0 wrote and the `/1` before it, and scores no mutant of either
+    `equivalent`; a `/1` or `/2` manifest carrying `unsatisfiable_guard` is refused.
+
 ### Fixed
 
 - **Synthesis witnesses a `when_subject` guard comparing a link field with an input (#193).**

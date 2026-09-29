@@ -5,6 +5,10 @@
 //! runner skipped scenarios is scored on the rest; one that executed nothing exits 3 with
 //! "nothing scored". The project's runner is fabricated: each report is written by hand from the
 //! emitted suite.
+//!
+//! Issue #218: that #203 mutant leaves a guard no input satisfies, so it is `equivalent`, naming
+//! the guard; a mutant on an outcome the baseline suite already refuses is `unwitnessed`, naming
+//! the baseline refusal. Both exit 3 when nothing survived.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -149,14 +153,15 @@ fn collect(emitted: &Path, out: &Path) -> Output {
 }
 
 #[test]
-fn an_unwitnessed_mutant_is_reported_with_its_added_refusal_and_exits_three() {
+fn a_dead_guard_mutant_is_reported_equivalent_with_its_added_refusal_and_exits_three() {
     let (emitted, stdout) = emit("unwitnessed", &shop("unwitnessed"), "guard-connective");
     assert!(
-        stdout.contains("1 with synthesis refusals the baseline does not have"),
+        stdout.contains("1 with synthesis refusals the baseline does not have")
+            && stdout.contains("1 with a guard no input satisfies"),
         "{stdout}"
     );
     let manifest = read_json(&emitted.join("manifest.json"));
-    assert_eq!(manifest["format"], "ess-mutation-manifest/2");
+    assert_eq!(manifest["format"], "ess-mutation-manifest/3");
     for dir in suites(&emitted) {
         fabricate(&dir, &[]);
     }
@@ -170,22 +175,27 @@ fn an_unwitnessed_mutant_is_reported_with_its_added_refusal_and_exits_three() {
         text(&output.stderr)
     );
     assert!(
-        stdout.contains("0 survived") && stdout.contains("1 unwitnessed"),
+        stdout.contains("0 survived") && stdout.contains("1 equivalent"),
         "{stdout}"
     );
     let line = stdout
         .lines()
-        .find(|line| line.starts_with("unwitnessed guard-connective/"))
+        .find(|line| line.starts_with("equivalent guard-connective/"))
         .unwrap_or_else(|| panic!("{stdout}"));
     assert!(
-        line.contains("ESS-MUTATE-004")
+        line.contains("ESS-MUTATE-005")
+            && line.contains("no input satisfies `(status == Paid and status == Shipped)`")
             && line.contains("ESS-SYNTH-003 `shop.order.ReportStatus/outcome/settled`"),
         "{line}"
     );
     let report = read_json(&out);
-    assert_eq!(report["format"], "ess-mutation-report/2");
-    assert_eq!(report["counts"]["unwitnessed"], 1);
-    assert_eq!(report["mutants"][0]["verdict"], "unwitnessed");
+    assert_eq!(report["format"], "ess-mutation-report/3");
+    assert_eq!(report["counts"]["equivalent"], 1);
+    assert_eq!(report["mutants"][0]["verdict"], "equivalent");
+    assert_eq!(
+        report["mutants"][0]["unsatisfiable_guard"],
+        "(status == Paid and status == Shipped)"
+    );
     assert_eq!(
         report["mutants"][0]["added_refusals"],
         json!([{
@@ -193,6 +203,115 @@ fn an_unwitnessed_mutant_is_reported_with_its_added_refusal_and_exits_three() {
             "scenario": "shop.order.ReportStatus/outcome/settled",
             "subject": "outcome shop.order.ReportStatus/settled"
         }])
+    );
+}
+
+/// The issue #218 desk: its `contradictory` refusal is reached by no input, so the baseline
+/// refuses that outcome's scenario.
+fn desk(name: &str) -> PathBuf {
+    let spec = scratch(&format!("{name}-spec"));
+    std::fs::copy(
+        root()
+            .join("crates/verify/ess-conformance/tests/fixtures/mutation-unwitnessed-outcome.yaml"),
+        spec.join("system.yaml"),
+    )
+    .expect("the fixture copies");
+    spec
+}
+
+const ON_REFUSED: &str = "error-swap/desk.ticket.FileTicket/contradictory";
+const ON_WITNESSED: &str = "error-swap/desk.ticket.FileTicket/refused";
+
+#[test]
+fn a_mutant_on_an_outcome_the_baseline_refuses_is_unwitnessed_with_the_target() {
+    let spec = desk("target");
+    let out = spec.join("mutation-report.json");
+    let output = mutate(&[
+        "--path",
+        spec.to_str().unwrap(),
+        "--target",
+        "interpreted",
+        "--class",
+        "error-swap",
+        "--report-out",
+        out.to_str().unwrap(),
+    ]);
+    let stdout = text(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{stdout}{}",
+        text(&output.stderr)
+    );
+    assert!(
+        stdout.contains("1 killed, 0 survived") && stdout.contains("1 unwitnessed"),
+        "{stdout}"
+    );
+    let line = stdout
+        .lines()
+        .find(|line| line.starts_with(&format!("unwitnessed {ON_REFUSED}:")))
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(
+        line.contains("ESS-MUTATE-004")
+            && line.contains(
+                "the baseline refuses ESS-SYNTH-003 `desk.ticket.FileTicket/outcome/contradictory`"
+            ),
+        "{line}"
+    );
+    let report = read_json(&out);
+    let entry = report["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|it| it["id"] == ON_REFUSED)
+        .unwrap();
+    assert_eq!(
+        entry["baseline_refusals"],
+        json!([{
+            "code": "ESS-SYNTH-003",
+            "scenario": "desk.ticket.FileTicket/outcome/contradictory",
+            "subject": "outcome desk.ticket.FileTicket/contradictory"
+        }])
+    );
+}
+
+#[test]
+fn a_collected_mutant_on_an_outcome_the_baseline_refuses_is_unwitnessed() {
+    let (emitted, _) = emit("desk", &desk("collect"), "error-swap");
+    for dir in suites(&emitted) {
+        // The witnessed refusal's swap is killed by its own scenario, as a correct target would.
+        let failed: Vec<String> = if dir.ends_with(ON_WITNESSED) {
+            vec!["failed desk.ticket.FileTicket/outcome/refused".to_owned()]
+        } else {
+            Vec::new()
+        };
+        fabricate(&dir, &failed);
+    }
+    let out = emitted.parent().unwrap().join("mutation-report.json");
+    let output = collect(&emitted, &out);
+    let stdout = text(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "{stdout}{}",
+        text(&output.stderr)
+    );
+    assert!(
+        stdout.contains("1 killed, 0 survived") && stdout.contains("1 unwitnessed"),
+        "{stdout}"
+    );
+    let report = read_json(&out);
+    assert_eq!(report["counts"]["unwitnessed"], 1);
+    let entry = report["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|it| it["id"] == ON_REFUSED)
+        .unwrap();
+    assert_eq!(entry["verdict"], "unwitnessed");
+    assert_eq!(
+        entry["baseline_refusals"][0]["scenario"],
+        "desk.ticket.FileTicket/outcome/contradictory"
     );
 }
 
