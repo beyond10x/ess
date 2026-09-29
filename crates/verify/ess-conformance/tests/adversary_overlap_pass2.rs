@@ -2,7 +2,7 @@
 //!
 //! The unit's documents state the rule without a carve-out for the accepting branch's shape: "A
 //! refusal with a `when:` over the input is taken before any accepting branch whose guard it
-//! overlaps, whatever order they are written in" (`website/docs/guides/write-a-specification.md`),
+//! overlaps, whatever order they are written in" (`website/docs/guides/specify/fields-and-invariants.md`),
 //! and "A branch every input of which such a refusal claims is refused with `ESS-SYNTH-003`, naming
 //! that refusal" (`website/docs/reference/predicates.md`, the paragraph that also names the
 //! `when_subject:` and external shapes).

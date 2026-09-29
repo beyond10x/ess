@@ -1,0 +1,157 @@
+---
+title: Explore command sequences and histories
+sidebar_position: 5
+description: Random command sequences, concurrent-history checks, client-lane drawings and imported logs.
+---
+
+# Explore command sequences and histories
+
+## Explore random command sequences
+
+Generated and authored scenarios are short, fixed paths. The TypeScript and Go packages that
+`ess verify conform synthesize --target typescript|go` writes also carry an explorer: seeded random
+walks over the commands, driven through the same `Target` you implement for the suite, and checked
+after every step against a reference model interpreted from the specification. It finds faults
+that only show later in a sequence: a view that drops rows after the fifth, a refusal that still
+writes, an identity reused on the fourth create.
+
+```ts
+import { assertExplored, explore } from './index.js';
+
+const result = await explore(() => newTarget(), { seeds: 200, steps: 60 });
+assertExplored(result);                          // fails on a disagreement or an unreached outcome
+assertExplored(result, { allowExcluded: true }); // also accepts outcomes the explorer left out
+```
+
+```go
+result, err := essconform.Explore(func() essconform.Target { return newTarget() },
+    essconform.ExploreOptions{Seeds: 200, Steps: 60})
+if err != nil { t.Fatal(err) }
+essconform.AssertExplored(t, result, essconform.AssertOptions{})
+```
+
+`seeds` sequences run, seeded 1 to `seeds`, each on a fresh target; `steps` is the number of
+commands in each (defaults 200 and 60). A failure names its seed, and `seed` runs exactly that one
+sequence again. One seed draws the same sequence in both languages.
+
+After every step the explorer compares the outcome, the error, the direct events and every payload
+field the specification determines, then every view without parameters over an entity: its row
+count, identities, determined fields and `order_by`. A `read_your_writes` view is read once with the
+command's consistency token; an `eventual` view is polled until it agrees, up to the eight attempts
+an `eventually` step allows. Last, every invariant is evaluated over the model's records; a record
+that breaks one is reported as a specification defect, because the guards allowed a sequence the
+invariants forbid. A failure is shrunk by removing steps while the shorter trace still fails the
+same way, for at most 1,000 replays.
+
+`assertExplored` (`AssertExplored`) fails on a disagreement, on a declared outcome of an included
+command that no sequence reached, and on the outcomes of an excluded command. The explorer models a
+subset: `when`, `otherwise` and `wrong_state` conditions; `creates` with an observed identity and
+`moves`/`updates` of a supplied subject; integer, boolean, string and UUID inputs, their newtypes,
+enums and structs of them. Anything else is excluded with the reason in `excluded`, and accepting
+that is an explicit `allowExcluded`. Where two guards both hold — which the model admits over an
+infinite domain — the draw is reported in `ambiguous` and redrawn rather than decided; a view
+filter or invariant over a field no command set is reported in `undetermined`. Neither fails.
+
+The model is `ir.json`, the compact IR the suite's `spec_digest` is taken over. The explorer refuses
+a package whose `ir.json` does not hash to `suite.json`'s digest; regenerate the package rather than
+editing either file.
+
+## Check a concurrent history
+
+A suite and the explorer drive a target one call at a time, so a race between two clients never
+happens under them. `check-history` reads an
+`ess-history/1` document, one run of several clients with each call's invoke and return instants,
+and searches for an order of the calls that the specification's own model accepts, answer for
+answer.
+
+```shell-session
+$ ess verify conform check-history \
+    --path examples/billing \
+    --history target/history.json
+```
+
+| exit | meaning |
+|---|---|
+| 0 | `Linearizable`: some order of the calls explains every recorded answer. |
+| 1 | `Violation`: no order does. The report names the longest partial order found and a shrunk history that is still a violation. |
+| 3 | `Unknown`: the search spent `--budget` model executions (default 1,000,000) first. Unknown is not a pass. |
+| 2 | The specification did not load, or the history was refused, for example because it was recorded against another specification. |
+
+The search is split by subject: calls on different instances are checked apart. A call that never
+answered may have taken effect or not, and is placed after every other call. A history records no
+inputs, so a call is explained by any input the suite would submit for its command. A read of a view
+that records its rows is judged at the consistency the view declares: under `read_your_writes` no
+client reads a state older than its own last write, and under `eventual` each client's reads converge
+once its first `--settle` reads after the last write (default 4) are past. Reads that cannot be judged
+are listed with their reason. The same history and budget always print the same report;
+`--format json` prints it as JSON.
+
+### Draw a history as client lanes
+
+```shell-session
+$ ess verify conform web \
+    --path examples/billing \
+    --history target/history.json \
+    --out target/lanes
+```
+
+`web --history` checks the history as `check-history` does and writes one `index.html`, or prints
+it when `--out` is absent. Each client is a lane, each call a bar from its invoke to its return, and
+each call the search placed carries its position in the order found. A history that declares more
+than 16 clients draws a lane for each client that made a call and counts the rest in one row. For a violation, the page
+marks the call where the search failed. Where one other call explains the failure, it names that
+call too, with the state each of the two needed and the state the other order left. Below that is
+the shrunk history, drawn the same way. The page carries its stylesheet and no script, so it opens
+from disk and fetches nothing. The same history renders to the same bytes. It exits 0 whatever the
+verdict; the verdict as an exit status is `check-history`'s.
+
+`--out` replaces the files `ess` owns in that directory, including a scenario player's, so write
+history pages and the player to different directories.
+### Import a recorded log
+
+A service that logs its calls can be judged from its log. `import-history` reads a JSON Lines log,
+one call per line in the log's own shape, through an adapter you write, and writes `ess-history/1`:
+
+```yaml
+format: ess-history-adapter/1
+fields:
+  operation_id: { pointer: /correlation }
+  client: { pointer: /request/client }
+  command: { pointer: /request/command }
+  subject_key: { pointer: /request/subject }
+  invoked_at: { pointer: /request/at_ms }
+  returned_at: { pointer: /response/at_ms }
+  outcome: { pointer: /response/outcome }
+  completion:
+    pointer: /response/status
+    values: { ok: Returned, timeout: Indeterminate }
+```
+
+```shell-session
+$ ess verify conform import-history --path examples/billing \
+    --log calls.jsonl --adapter adapter.yaml --output target/history.json
+$ ess verify conform check-history --path examples/billing --history target/history.json
+```
+
+Every field is either a JSON pointer or `absent`. Nothing is guessed. If a line lacks a field that
+the call cannot be judged without, the import is refused (exit 2) and each such field is named on
+its line. Those fields are the client, command, subject, invoke instant and completion, plus the
+return instant and outcome of a `Returned` call. Refusals name the log line and the field. Other
+fields can be missing, and each case is reported as a `coverage-gap`:
+
+- A missing `operation_id` is given a generated version-8 UUID. No ESS writer uses version 8, so a
+  generated ID cannot collide with a carried one.
+- `rows` is optional in the adapter. A view read without rows is imported, but `check-history` will
+  not judge it.
+- The document's `seed` is never carried and is written as 0.
+
+Gaps are printed on stderr. With `--output FILE`, they are also written as a JSON array to
+`FILE.gaps.json`. This file is always written; it is never empty because `seed` is always a gap.
+A history imported with gaps carries seed 0 and generated IDs by construction, and only the gaps
+file records which values were not in the log. An `--output` is refused if it or its gaps file is
+the `--log` or `--adapter` file (hard links included) or a file of the `--path` specification.
+Both files are written to temporary siblings, and replace existing files only once both writes have
+succeeded.
+
+Instants must be unsigned integers, such as epoch milliseconds. Client labels are numbered in the
+order they first appear.
