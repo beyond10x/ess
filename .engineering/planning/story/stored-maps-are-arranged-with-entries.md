@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:stored-maps-are-arranged-with-entries
 kind: story
-status: active
+status: implemented
 title: Stored Map fields are arranged only as {}
 refs:
 - provider: github
   reference: beyond10x/ess#240
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T05:37:20Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T05:37:21Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T09:58:25Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":1,"verification":1}}}
 ---
 ## Outcome
 
