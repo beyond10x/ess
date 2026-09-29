@@ -37,11 +37,20 @@ const BLOG: &str = "website/blog";
 /// state they were in on 2026-09-21, nineteen minors behind, which nothing noticed.
 const BLOG_LAG: u64 = 3;
 
-/// The page whose version literals must name the newest release.
+/// The pages whose version literals must name the newest release.
 ///
-/// This is the page a newcomer follows, so every version in it is an instruction to download that
-/// version. A historical version number belongs on the history page, not here.
-const INSTALL: &str = "website/docs/getting-started.md";
+/// These are the pages a newcomer follows, so every version in them is an instruction to download
+/// that version. A historical version number belongs on the history page, not here. The list is
+/// the walkthrough `crates/edge/ess-cli/tests/tutorial_page.rs` runs, in the same order.
+const INSTALL: &[&str] = &[
+    "website/docs/start/install.md",
+    "website/docs/start/first-specification.md",
+    "website/docs/start/first-conformance-run.md",
+    "website/docs/start/runners/typescript.md",
+    "website/docs/start/runners/go.md",
+    "website/docs/start/runners/rust.md",
+    "website/docs/start/explore-the-example.md",
+];
 
 /// The repository front page, which a reader lands on before any site page.
 ///
@@ -314,9 +323,12 @@ pub fn run(root: &Path) -> Result<String, String> {
     let changelog = fs::read_to_string(root.join("CHANGELOG.md"))
         .map_err(|error| format!("read CHANGELOG.md: {error}"))?;
     let newest = newest_release(&changelog)?;
-    let install = fs::read_to_string(root.join(INSTALL))
-        .map_err(|error| format!("read {INSTALL}: {error}"))?;
-    let pinned = install_defects(INSTALL, &install, &newest);
+    let mut pinned = Vec::new();
+    for page in INSTALL {
+        let install = fs::read_to_string(root.join(page))
+            .map_err(|error| format!("read {page}: {error}"))?;
+        pinned.extend(install_defects(page, &install, &newest));
+    }
 
     let notes = newest_note(root)?;
     let trailing = match (
@@ -1075,14 +1087,15 @@ mod tests {
     #[test]
     fn an_install_walkthrough_pinned_to_an_older_release_is_refused() {
         let defects = install_defects(
-            INSTALL,
+            INSTALL[0],
             "downloads the latest published release, `0.13.2`,\n$ version=0.27.0\n",
             "0.27.0",
         );
         assert_eq!(
             defects,
             vec![format!(
-                "{INSTALL}:1: names 0.13.2, newest release is 0.27.0"
+                "{}:1: names 0.13.2, newest release is 0.27.0",
+                INSTALL[0]
             )]
         );
     }

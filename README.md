@@ -54,6 +54,10 @@ is deprecated, and a pinned caller needs no change.
 
 ## Install the command
 
+[Install ess](https://beyond10x.github.io/docs/ess/start/install/) covers every route: a verified
+archive on macOS (`shasum`) or Linux (`sha256sum`), `cargo install` from the release tag, an agent
+plugin, and pinning the release for a project. In short:
+
 Every version release publishes checksum-pinned archives for Linux and macOS on x86-64 and ARM64.
 Pick the target for your machine from the [release page](https://github.com/beyond10x/ess/releases):
 
