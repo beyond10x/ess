@@ -2148,6 +2148,16 @@ fn run_as(
         }
         return Err(first.expect("nonempty finite lifecycle"));
     }
+    // A branch copying its input into an entity whose invariants over it no bounded input meets
+    // is refused naming them, never sent an input its own entity refuses (beyond10x/ess#234).
+    if let Some((named, tried)) = crate::witness::unmet_invariants(ir, command, outcome, false)
+        .map_err(RefusalCause::NoWitness)?
+    {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: named,
+            tried,
+        });
+    }
     let routed = subject_fact::routes(command, outcome);
     // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,
     // for every branch it decides; further witnesses are the boundaries of its predicates alone.
@@ -2171,8 +2181,31 @@ fn run_as(
             }
         }
     } else {
-        arranged_as(ir, command, outcome, actors, routed, witness)?
+        // A guard no input meets beside the invariants of the entity it copies the input into is
+        // refused naming them, where the guard alone is met (beyond10x/ess#234).
+        arranged_as(ir, command, outcome, actors, routed, witness).map_err(|cause| {
+            match (
+                &cause,
+                crate::witness::unmet_invariants(ir, command, outcome, true),
+            ) {
+                (RefusalCause::GuardUnsatisfiable { .. }, Ok(Some((named, tried)))) => {
+                    RefusalCause::GuardUnsatisfiable {
+                        predicate: named,
+                        tried,
+                    }
+                }
+                _ => cause,
+            }
+        })?
     };
+    // The input as it is sent, after every arrangement moved it: still within the invariants of
+    // the entity the branch copies it into (beyond10x/ess#234).
+    if let Some(named) = crate::witness::invariant_broken_by(ir, command, outcome, &input) {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: named,
+            tried: 1,
+        });
+    }
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());

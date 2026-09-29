@@ -748,7 +748,9 @@ header it is refused as `unsupported_format_version`.
 
 The finite prover cannot enumerate two facts against each other, so a command with such a guard
 needs a default branch, even over an enum. Synthesis arranges the row and sends the input once
-equal to the stored value and once different, one scenario per branch. An entity that declares a
+equal to the stored value and once different, one scenario per branch. The input side may name a
+member of a struct input, such as `input.publication.expected_fence`. A wrong-state scenario sends
+the input that misses such a guard on the row it arranges. An entity that declares a
 stored field named `input` keeps reading `input.<member>` as that field.
 
 ## A guard over another entity's row
@@ -794,8 +796,25 @@ It reports a refusal naming the scenario it could not build, and `synthesize` st
 | `.count`, `exists`, `forall` over an input list | yes. The list is built from the guard's own literal: a one-element list satisfies the guard, and `[]` or a list of other text refutes it. |
 | a list element by position (`tags.0`) | yes |
 | text ordering | yes, byte-wise |
+| `==` or `!=` between two input fields, at any depth (`owner == ticket.owner`) | yes. Each side is also tried at the other's value. |
 | `starts_with`, `ends_with`, `contains` | yes. The candidates are the literal, the guard's own literals composed around the field's text, and the literal with one character changed. |
 | `all`/`any` over many fields (`all: [any: [a > 10, b > 10], c > 10]`) | within two limits. Synthesis first tries up to 64 candidates in a fixed order. If none fits, it solves the guard from its own literals, one field at a time, or one group at a time for fields compared with each other, and tries up to 64 more. A guard past either limit is refused with `ESS-SYNTH-003`. First, each goal is broken down at most 64 times, and each `any` is tried first child first, so a guard that needs many disjunctions to take a later child can be refused. Second, a field compared only with other fields gets its base value, 0 and -1, so a strict chain over four such fields is refused. Where none of those fits either, a `Decimal` is also tried at the exact midpoint of every two adjacent literals it is compared with, so `amount > 0.1 and amount < 0.2` is met by `0.15`. |
+
+Every input also satisfies the invariants over it. That covers the invariants of each struct the
+input holds, and those of each entity a branch copies the input into. For
+`sets: {fingerprint: input.fingerprint}` beside the entity invariant
+`fingerprint.version == "v1"`, every input is sent with `fingerprint.version` at `"v1"`. The
+invariants' own literals are tried first. For a comparison of two fields, each field is also tried
+at the other's value and, for an order between numbers, one either side of it. A list whose
+`.count` an invariant reads is tried at the lengths the invariant names. Fields no invariant
+reads keep their own values.
+
+Each input is held to the invariants of the branches it can reach, not of every branch at once.
+Two branches may copy one input into two entities whose invariants disagree, and each branch gets
+an input its own entity accepts. When a guard moves a field that an invariant ties to another,
+such as `origin == "eu"` beside `origin == route`, the other field is moved with it. An input that
+still breaks an invariant is never sent. A branch whose entity invariants no input of this bounded
+search meets is refused with `ESS-SYNTH-003`, and the refusal names each invariant.
 
 A refusal with a `when:` over the input is taken before any accepting branch whose guard it
 overlaps. Synthesis holds a target to that twice. An accepting branch's witness refutes every such
