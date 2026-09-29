@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T05:22:12Z",
+  "actor": "human:timo",
+  "artifact": "story:a-guard-compares-a-link-field-with-an-input",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction 2: ess-conformance 1641/0, ess-domain 1031/0, ess-xtask 334/0; schema, generate, docs, clippy, fmt clean",
+    "reference": "~/.cache/ess-wave-n2/linkguard/c2/"
+  }
+}

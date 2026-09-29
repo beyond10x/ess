@@ -378,7 +378,18 @@ pub(super) fn prepare(
 /// disjunct held alone with every other refuted and the remaining conjuncts held, where it answers
 /// with this branch. One row on each side of the whole predicate shows only that *some* child is
 /// read; these show each one is (the rule `when_subject` follows, beyond10x/ess#155 and #204).
-pub(super) fn boundary_goals(outcome: &ResolvedOutcome) -> Vec<Goal> {
+///
+/// After them, the far side of every counter limit the predicate compares a stored counter of the
+/// related row with (beyond10x/ess#226, [`subject_fact::limit_goals`]): the nearest row a run holds
+/// short of the limit, answered by whichever branch the command takes there. The branch's own
+/// witness is the first row the search reaches that holds the predicate, which for a counter moved
+/// toward its limit is the nearest row at or past it; so a target whose limit is off by one either
+/// way fails. Each goal is paired with what it is ([`subject_fact::Further`]).
+pub(super) fn boundary_goals(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<(Goal, subject_fact::Further)> {
     let ResolvedCondition::Related {
         test: ResolvedRelatedTest::Holds { predicate },
         ..
@@ -410,6 +421,18 @@ pub(super) fn boundary_goals(outcome: &ResolvedOutcome) -> Vec<Goal> {
         for (refuted, mut held) in isolating(&disjuncts.iter().collect::<Vec<_>>(), true) {
             held.extend(rest.iter().cloned());
             goals.push((refuted, held));
+        }
+    }
+    let mut goals: Vec<(Goal, subject_fact::Further)> = goals
+        .into_iter()
+        .map(|goal| (goal, subject_fact::Further::Plain))
+        .collect();
+    if let Some((_, entity)) = read(command) {
+        let counters = subject_fact::counters(ir, entity);
+        for (goal, kind) in subject_fact::limit_goals(&counters, predicate, false) {
+            if !goals.iter().any(|(known, _)| known == &goal) {
+                goals.push((goal, kind));
+            }
         }
     }
     goals
@@ -499,7 +522,7 @@ pub(super) fn prepare_at(
                     after: Some(born.clone()),
                     ..Setup::none()
                 },
-            )
+            )?
         }
         _ => prepare_in(ir, outcome, actors, None, distinction)?,
     };

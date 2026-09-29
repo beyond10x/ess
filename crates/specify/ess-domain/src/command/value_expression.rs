@@ -10,7 +10,9 @@
 use ess_primitives::error::{ConstructRef, ValidationCode, ValidationError, ValidationErrors};
 use ess_primitives::facts::Number;
 
-use super::related_value::{input_carrier, referenced_entity, written_from_input, Referenced};
+use super::related_value::{
+    input_carrier, referenced_entity, subject_field_from_input, Referenced,
+};
 use super::{
     literal_representation, scalar_representation, CommandSpec, Effect, Outcome, PayloadSource,
     RelatedVia, Resolved, ScalarKind,
@@ -310,8 +312,9 @@ fn kind(source: &PayloadSource) -> &'static str {
 ///
 /// A subject field is read as it was before the outcome, so an existing subject's. On `creates:`
 /// there is no row before, but a field the branch sets from its input holds that input, so it is
-/// admitted there and read as the input (`written_from_input`). An input is carried by the subject
-/// field the branch sets from it, where there is one (`input_carrier`).
+/// admitted there and read as the input (`subject_field_from_input`, which counts the identity the
+/// branch fills from its input too). An input is carried by the subject field the branch sets from
+/// it, or by the identity it names the instance by, where there is one (`input_carrier`).
 fn related_via<'a>(
     context: &Context<'a>,
     at: &ConstructRef,
@@ -324,7 +327,9 @@ fn related_via<'a>(
             let created = context
                 .subject
                 .filter(|(_, existing)| !existing)
-                .filter(|_| written_from_input(context.outcome, name).is_some())
+                .filter(|(entity, _)| {
+                    subject_field_from_input(context.outcome, entity, name).is_some()
+                })
                 .and_then(|(entity, _)| entity.field(name).or(Some(&entity.identity)))
                 .filter(|held| held.name == *name);
             let held = if let Some(held) = created {

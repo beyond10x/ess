@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:a-guard-compares-a-link-field-with-an-input
 kind: story
-status: active
+status: implemented
 title: A when_subject guard comparing a link field with an input is refused (ESS-SYNTH-003)
 refs:
 - provider: github
   reference: beyond10x/ess#193
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T21:12:07Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T21:12:08Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T06:23:41Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

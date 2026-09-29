@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T06:23:43Z",
+  "actor": "human:timo",
+  "artifact": "story:overlapping-accepting-guards-have-declared-precedence",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "merged-tree check on integrate/ess-0.42 at 76e00af60 (linkguard, caller-digest, overlap-precedence, diff-prefix, mutate-dead-guard merged): clippy clean; ess-domain 1045, ess-compiler 225, ess-conformance 1718, ess-entity-runtime 83, ess-gen 271, ess-synth 238, ess-diff 232, ess-cli 831, ess-xtask 334 passed, 0 failed; schema, generate, docs, fmt clean",
+    "reference": "~/.cache/ess-wave-n2/int042-a.log"
+  }
+}

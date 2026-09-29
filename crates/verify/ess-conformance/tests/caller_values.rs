@@ -279,9 +279,10 @@ fn issue_168_a_note_records_the_account_of_the_caller_that_created_it() {
     assert_ne!(accounts[0], accounts[1]);
 }
 
-#[test]
-fn a_suite_whose_actors_declare_no_attributes_sends_no_caller() {
-    let text = NOTES
+/// [`NOTES`] with no actor attribute and no caller read: the same model shape, sent by nobody in
+/// particular.
+fn without_callers() -> String {
+    NOTES
         .replace(
             "    attributes:\n      - {name: account_id, type: demo.notes.AccountId}\n      - {name: agent_id, type: demo.notes.AgentId}\n",
             "",
@@ -291,7 +292,32 @@ fn a_suite_whose_actors_declare_no_attributes_sends_no_caller() {
         .replace(
             "        when_subject: {predicate: agent_id != caller.agent_id}\n",
             "        when: text == \"\"\n",
+        )
+}
+
+/// beyond10x/ess#216: the suite records the digest of the model it was synthesized from — the one
+/// `--target interpreted` and every adapter compute — not of the caller reading synthesis writes
+/// each caller's values into. A model without caller reads keeps the digest it always had.
+#[test]
+fn issue_216_the_suite_records_the_digest_of_the_model_not_of_a_caller_reading() {
+    for text in [NOTES.to_owned(), without_callers()] {
+        let model = ir(&text);
+        let synthesized = ess_conformance::synthesize::synthesize(&model).suite;
+        let expected = ess_conformance::SuiteProvenance::of(&model);
+        assert_eq!(
+            synthesized.provenance.spec_digest, expected.spec_digest,
+            "the suite's spec_digest is the model's"
         );
+        assert_eq!(
+            synthesized.provenance.contract_digest, expected.contract_digest,
+            "the suite's contract_digest is the model's"
+        );
+    }
+}
+
+#[test]
+fn a_suite_whose_actors_declare_no_attributes_sends_no_caller() {
+    let text = without_callers();
     let suite = suite(&text);
     for scenario in suite.scenarios.values() {
         for (command, caller) in sent(scenario) {

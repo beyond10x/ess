@@ -599,23 +599,29 @@ enum ConformCommand {
     ///
     /// A baseline scenario the target reports unsupported or skipped did not execute: it is listed,
     /// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that
-    /// no scored scenario killed is unwitnessed (ESS-MUTATE-004) when its suite gained synthesis
-    /// refusals the baseline does not have, and inconclusive when a scenario it changed was not
-    /// scored; it survives when every scored scenario passed and each scenario it left unscored is
-    /// the baseline's own, unchanged.
+    /// no scored scenario killed is inconclusive when a scenario it changed was not scored;
+    /// otherwise equivalent (ESS-MUTATE-005) when it left its outcome's guard satisfied by no
+    /// input, decided only for equality, membership and truth tests of input fields against
+    /// literals; otherwise unwitnessed (ESS-MUTATE-004) when its suite gained synthesis refusals
+    /// the baseline does not have, when it is on an outcome whose scenario the baseline refused,
+    /// or when it is a from-drop or transition-to mutant on a transition only such outcomes
+    /// perform. It survives when every scored scenario passed and each scenario it left unscored
+    /// is the baseline's own, unchanged.
     ///
-    /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran, every scored
-    /// mutant was killed, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
+    /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran and was not
+    /// equivalent, every scored mutant was killed or equivalent, and none is inconclusive or
+    /// unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
     /// a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing
     /// (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at
-    /// least one was unwitnessed or inconclusive, or none ran.
+    /// least one was unwitnessed or inconclusive, or none ran that was not equivalent.
     ///
     /// For an implementation of your own, split the audit in two. `--emit DIR` writes the
     /// baseline suite to `DIR/baseline/suite.json`, every mutant's suite to
     /// `DIR/<mutant-id>/suite.json` and a manifest, and runs nothing (exit 0, or 3 on
     /// ESS-MUTATE-003). Run your runner over each suite and write its conformance report to
     /// `report.json` beside it. `--collect DIR` scores those reports with the exit statuses above;
-    /// a missing report makes its mutant inconclusive.
+    /// a missing report makes its mutant inconclusive. `--emit` writes an ess-mutation-manifest/3;
+    /// `--collect` also reads the /2 and /1 manifests earlier releases wrote.
     #[command(group(
         clap::ArgGroup::new("mode").required(true).args(["target", "emit", "collect"])
     ))]
@@ -635,7 +641,7 @@ enum ConformCommand {
         /// Score the `report.json` a runner wrote beside each suite of an emitted directory.
         #[arg(long, conflicts_with = "path")]
         collect: Option<PathBuf>,
-        /// Where to write the `ess-mutation-report/2` document.
+        /// Where to write the `ess-mutation-report/3` document.
         #[arg(long)]
         report_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -3651,13 +3657,20 @@ fn conform_mutate_emit(
                     })
                 })
                 .count();
+            let dead = manifest
+                .mutants
+                .iter()
+                .filter(|mutant| mutant.unsatisfiable_guard.is_some())
+                .count();
             println!(
                 "emitted {} mutant(s) of {} ({} stillborn, no suite; {} with synthesis refusals \
-                 the baseline does not have) and the baseline to {}",
+                 the baseline does not have; {} with a guard no input satisfies) and the baseline \
+                 to {}",
                 manifest.mutants.len(),
                 manifest.specification,
                 stillborn,
                 gained,
+                dead,
                 dir.display()
             );
             println!(
@@ -3715,7 +3728,7 @@ fn finish_mutation_audit(
     let ran = report
         .mutants
         .iter()
-        .filter(|entry| entry.verdict != Verdict::Stillborn)
+        .filter(|entry| !matches!(entry.verdict, Verdict::Stillborn | Verdict::Equivalent))
         .count();
     Ok(if counts.survived > 0 {
         ExitCode::from(1)

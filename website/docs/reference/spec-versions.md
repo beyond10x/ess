@@ -198,6 +198,7 @@ predicate: …}`, a guard over the row of another entity whose identity the inpu
 | `ess-diff/8` | [0.34.0][r34] | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
 | `ess-diff/9` | [0.38.0][r38] | `PagingChanged` on `ViewChange`: a view's `paging:` (ess/16) declared, dropped or changed, carrying the parameters, the first page and whether a total is answered on each side. `OutcomeSetEffectChanged` on `CommandChange`: an outcome's `instances:` or `affects:` (ess/16) declared, dropped or changed, one line per construct on each side. | Refuses a delta carrying it. |
 | `ess-diff/10` | [0.41.0][r41] | `CauseChanged` on `BindingChange` whose before or after is an `external` cause: an event binding's `ess/18` delivery context (beyond10x/ess#195), carrying the event, the channel (`authority`) and the typed `context_fields`, each with any `wire` name, on each side. `ContextFieldDisplayChanged` and `ContextFieldSummaryChanged` on `BindingChange`: a context field's `display` or `summary` moved (documentation only). A cause change without an `external` side keeps its earlier format. | Refuses a delta carrying it. |
+| `ess-diff/11` | [0.42.0][r42] | `PrefixAdded`, `PrefixRemoved` and `PrefixChanged` on `TypeChange`: a newtype's `prefix:` (beyond10x/ess#219) declared, dropped or replaced, which the residual reported as `unclassified-changed` before. | Refuses a delta carrying it. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -411,6 +412,14 @@ baseline scenario reported `unsupported` or `skipped` is no longer red, and a mu
 killed with an excluded scenario it changed is `inconclusive`. The manifest adds each
 suite's `refused` list. `--collect` still reads a `/1` manifest and judges gained refusals by count.
 
+`ess-mutation-report/3` and `ess-mutation-manifest/3` were introduced in [0.42.0][r42].
+The report adds the `equivalent` verdict (`ESS-MUTATE-005`) with each mutant's
+`unsatisfiable_guard`, `counts.equivalent`, and each mutant's `baseline_refusals`: a mutant on an
+outcome whose scenario the baseline refused, or a `from-drop` or `transition-to` mutant on a
+transition only such outcomes perform, is `unwitnessed` rather than `survived`. The manifest adds
+each mutant's `unsatisfiable_guard`. `--collect` still reads `/2` and `/1` manifests, and refuses
+either when it carries `unsatisfiable_guard`.
+
 ## Still at version 1
 
 Never revised, and a document that claims a higher number is refused:
@@ -473,3 +482,4 @@ for a release and promises none.
 [r39]: https://github.com/beyond10x/ess/releases/tag/0.39.0
 [r40]: https://github.com/beyond10x/ess/releases/tag/0.40.0
 [r41]: https://github.com/beyond10x/ess/releases/tag/0.41.0
+[r42]: https://github.com/beyond10x/ess/releases/tag/0.42.0

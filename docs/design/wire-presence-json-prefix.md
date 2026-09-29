@@ -124,7 +124,14 @@ execution reader admits suite majors 24 and 25 (25 requires coverage).
 
 ## Not done here
 
-- `ess-diff` does not classify a changed prefix or presence policy; they fall to its residual.
+- `ess-diff` does not classify a changed presence policy; it falls to its residual. A changed prefix
+  is `prefix-added`, `prefix-removed` or `prefix-changed` in `ess-diff/11` (beyond10x/ess#219);
+  `ess-diff/10` shipped in 0.41.0 without them, so a `/3`–`/10` writer and reader refuse them.
+- The prefix relation compares the *declared* prefixes, not the effective ones. An outer newtype
+  that declares, drops or restates a prefix its inner layer already imposes is reported as
+  narrowed or expanded although the values it admits do not move. The direction is never
+  inverted. An effective-prefix relation would need the change to carry the effective prefix,
+  because the reader re-derives the relation from the change's own content.
 - `website/docs/reference/formats.md` and `spec-versions.md` do not list suite formats 24 and 25,
   and `FORMAT_RELEASES` / the toolchain model do not either.
 - A periodic binding's context fields take `presence:` without its checks.

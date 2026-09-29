@@ -3380,7 +3380,7 @@
           ]
         },
         "via": {
-          "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many`.",
+          "description": "The field that carries the relation.\n\nFor `owns`, a field **on the target**, typed as the source's identity. For `references`, a field **on the source**, typed as the target's identity — wrapped in `Optional<…>` for an optional `one`, in `List<…>` for `many` — or, for a `one` keyed by the same id, the source's own identity.",
           "type": "string",
           "pattern": "^_*[A-Za-z][A-Za-z0-9_]*$"
         }

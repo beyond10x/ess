@@ -171,6 +171,12 @@ fn pinned_verdicts(report: &MutationReport, pinned: &[(&str, Verdict, &str)]) {
                 entry.id,
                 entry.killers
             ),
+            Verdict::Equivalent => assert_eq!(
+                entry.unsatisfiable_guard.as_deref(),
+                Some(*evidence),
+                "{}",
+                entry.id
+            ),
             Verdict::Survived | Verdict::Inconclusive | Verdict::Unwitnessed => {}
         }
     }
@@ -609,7 +615,7 @@ fn two_audits_of_one_tree_are_byte_identical() {
     assert_eq!(first, second);
     assert!(first.ends_with("}\n"), "one trailing LF");
     let value: serde_json::Value = serde_json::from_str(&first).unwrap();
-    assert_eq!(value["format"], "ess-mutation-report/2");
+    assert_eq!(value["format"], "ess-mutation-report/3");
     assert_eq!(value["spec_digest"].as_str().map(str::len), Some(64));
     let ids: Vec<&str> = value["mutants"]
         .as_array()
@@ -709,7 +715,8 @@ fn every_mutate_code_is_derived_from_its_variant() {
             "ESS-MUTATE-001",
             "ESS-MUTATE-002",
             "ESS-MUTATE-003",
-            "ESS-MUTATE-004"
+            "ESS-MUTATE-004",
+            "ESS-MUTATE-005"
         ]
     );
 }

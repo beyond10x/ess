@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/defect-batch-0.42.0
+repository: ess
+publishedAt: 2026-09-29T18:00:00Z
+title: Link-field guards, overlap precedence, counter limits and unkillable mutants scored apart
+summary: >-
+  Synthesis witnesses a guard comparing a link field with an input and a stored counter at its limit; the first declared of overlapping accepting branches answers; a relation may ride on the identity. `ess-diff/11` names newtype prefix changes, and mutation report and manifest `/3` score unkillable mutants apart from survivors.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.42.0
+  version: 0.42.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

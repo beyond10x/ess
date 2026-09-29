@@ -76,21 +76,13 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity, conte
         "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct {}Data {{",
         context.type_name
     );
-    let _ = writeln!(
-        out,
-        "    /// The identity: `{}` — `{}`.\n    pub {}: {},",
-        entity.identity.name,
-        entity.identity.type_ref,
-        name::value_ident(&entity.identity.name),
-        emit.rust_type(&entity.identity.type_ref)
-    );
     let carried = emit.ir.relations_carried_by(&entity.name);
-    for field in &entity.fields {
-        let _ = writeln!(out, "    /// `{}` — `{}`.", field.name, field.type_ref);
-        // A doc attribute and not a typed field: a typed owner here would make the child hold the
-        // parent, which is a navigation decision the runtime owns and nothing synthesised here has
-        // a store to make good on (design §4.3).
-        if let Some(relation) = carried.get(field.name.as_str()) {
+    // A doc attribute and not a typed field: a typed owner here would make the child hold the
+    // parent, which is a navigation decision the runtime owns and nothing synthesised here has a
+    // store to make good on (design §4.3). The identity may carry one too — a one-to-one
+    // `references` keyed by the same id (beyond10x/ess#230) — and is documented the same way.
+    let annotate = |out: &mut String, field: &str| {
+        if let Some(relation) = carried.get(field) {
             let _ = writeln!(
                 out,
                 "    ///\n    /// Carries `{}`: `{}` {} {} `{}`.",
@@ -101,6 +93,22 @@ fn data_struct(out: &mut String, emit: &Emit<'_>, entity: &ResolvedEntity, conte
                 relation.relation.target
             );
         }
+    };
+    let _ = writeln!(
+        out,
+        "    /// The identity: `{}` — `{}`.",
+        entity.identity.name, entity.identity.type_ref
+    );
+    annotate(out, &entity.identity.name);
+    let _ = writeln!(
+        out,
+        "    pub {}: {},",
+        name::value_ident(&entity.identity.name),
+        emit.rust_type(&entity.identity.type_ref)
+    );
+    for field in &entity.fields {
+        let _ = writeln!(out, "    /// `{}` — `{}`.", field.name, field.type_ref);
+        annotate(out, &field.name);
         let _ = writeln!(
             out,
             "    pub {}: {},",

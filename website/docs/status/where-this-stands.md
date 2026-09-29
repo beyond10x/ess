@@ -9,13 +9,14 @@ description: Current-source ESS capabilities, a dated release observation, and t
 ESS is experimental and standalone.
 
 Latest published release observed on 29 September 2026:
-[0.41.0](https://github.com/beyond10x/ess/releases/tag/0.41.0). Its release record lists archives
+[0.42.0](https://github.com/beyond10x/ess/releases/tag/0.42.0). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated asset-list observation;
 it does not claim that the archives were downloaded, their checksums verified, or the binary
-installed or executed. The release adds source format `ess/18` (state-scoped refusals, `state` in
-a `when_subject` predicate, guards over a related row, a binding's delivery context), suites
-`ess-conformance/30` and `/31`, `ess-diff/10`, and mutation report and manifest `/2`, and fixes
-synthesis and mutation defects (see the changelog); 0.40.0 added reader-side composition (`ess-composition/3`)
+installed or executed. The release adds `ess-diff/11` (newtype prefix changes) and mutation report
+and manifest `/3` (unkillable mutants scored apart), and fixes synthesis defects (see the
+changelog); 0.41.0 added source format `ess/18` (state-scoped refusals, `state` in a
+`when_subject` predicate, guards over a related row, a binding's delivery context), suites
+`ess-conformance/30` and `/31`, `ess-diff/10`, and mutation report and manifest `/2`; 0.40.0 added reader-side composition (`ess-composition/3`)
 and ran suites `/22` to `/27` in the generated Go and TypeScript runtimes; 0.39.0 added concurrent-history conformance, `ess/17` and suites `/28` and `/29`. [Format version history](../reference/spec-versions.md) says what every format
 version number changed and which release introduced it, and the
 [changelog](https://github.com/beyond10x/ess/blob/main/CHANGELOG.md) lists every release.
@@ -51,7 +52,7 @@ this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.41.0` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.42.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|
@@ -72,7 +73,7 @@ The source checkout’s workspace version is `0.41.0` and includes separately do
 | Conformance targets | `billing`, `oracle-fixture`, `interpreted` | Built-in reference implementations. A production adapter must establish its own execution boundary; these targets do not prove independent deployment. |
 | Conformance formats | Defaults: `ess-conformance/4`, `ess-conformance-report/1`. Explicit count surfaces: `ess-conformance-report/2`, `ess-conformance-run/2`. CLI suite choices: `4`, `5` (default `4`); report choices: `1`, `2` (default `1`). | Actual report markers and CLI metadata; all-pass legacy execution can still mean inconclusive conformance. [count-report tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/count_reports.rs). |
 | Coverage qualification | Current-source `ess-conformance/5` requires explicit report/2 before execution | Only a nonempty all-pass selection with complete inventory and no in-scope refusal can qualify. Suite/5, carrier and paired replay were introduced in 0.21.0. [coverage CLI tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/coverage_cli.rs) and [conformance guide](../guides/verify-conformance.md#opt-into-declared-coverage). |
-| Mutation audit | `verify conform mutate` against `billing`, `oracle-fixture`, `interpreted`; classes `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`; writes `ess-mutation-report/2` | Mutates the specification, not the implementation, and runs no authored scenario: a survivor is a rule synthesis does not pin, answered by the model or a synthesis gap. [mutation audit tests](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/tests/mutation_audit.rs) and [conformance guide](../guides/verify-conformance.md#audit-the-suite-with-specification-mutants). |
+| Mutation audit | `verify conform mutate` against `billing`, `oracle-fixture`, `interpreted`; classes `from-drop`, `transition-to`, `guard-boundary`, `sets-retarget`, `guard-negate`, `guard-connective`, `error-swap`, `emit-drop`, `order-flip`; writes `ess-mutation-report/3` | Mutates the specification, not the implementation, and runs no authored scenario: a survivor is a rule synthesis does not pin, answered by the model or a synthesis gap. [mutation audit tests](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/tests/mutation_audit.rs) and [conformance guide](../guides/verify-conformance.md#audit-the-suite-with-specification-mutants). |
 | Browser conformance | Replay presentation with no execution report | A green replay is not independent execution evidence; digest comparison does not authenticate the publisher. [browser admission tests](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/tests/coverage_browser.rs). |
 | Runtime compilation | Checks supplied identities, component coverage, replica bounds and stateful storage | Does not establish live provisioning or all resource requirements. [runtime checks/tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/src/runtime.rs). |
 | Explicit executors | `execute`, `publish`, `fetch`, `reconcile` invoke external clients; reconciliation requires `--authority` naming a protected registry entry and refuses without one, compares an admitted baseline desired deployment with the desired one, and attempts at most one admitted mutation per release | Caller-supplied state, authority and credentials remain material; a supplied baseline is admitted intent rather than proof of application, and a stopped invocation leaves the affected release unknown rather than absent or rolled back. [CLI executor owner](https://github.com/beyond10x/ess/blob/main/crates/edge/ess-cli/src/main.rs). The support check invokes none of these verbs. |

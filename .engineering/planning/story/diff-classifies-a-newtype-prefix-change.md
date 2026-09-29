@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:diff-classifies-a-newtype-prefix-change
 kind: story
-status: active
+status: implemented
 title: verify diff leaves a newtype prefix change unclassified
 refs:
 - provider: github
   reference: beyond10x/ess#219
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T01:20:01Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-29T01:20:02Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T06:23:45Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

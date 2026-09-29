@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T05:24:42Z",
+  "actor": "human:timo",
+  "artifact": "story:unkillable-mutants-are-not-scored-survived",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction 2 (coordinator): ess-conformance 1632/0, ess-cli 826/0, ess-xtask 334/0; clippy, schema, generate, docs, fmt clean",
+    "reference": "~/.cache/ess-wave-n2/mutate-d/c2.log"
+  }
+}

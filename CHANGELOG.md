@@ -2,6 +2,169 @@
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-09-29
+
+### Changed
+
+- `ess verify conform mutate` no longer scores as `survived` a mutant no scenario could kill
+  (beyond10x/ess#218), on `--target` and `--emit`/`--collect` alike:
+  - A guard mutant that leaves its outcome's guard satisfied by no input — `any: [x == A, x == B]`
+    flipped to `all:` — is `equivalent` (`ESS-MUTATE-005`), and its entry names the guard as
+    `unsatisfiable_guard`. The guard is decided only for equality, membership and truth tests of
+    non-optional scalar input fields (not a `Timestamp`) against literals, with the baseline's
+    guard at the same outcome satisfied, by trying every combination of each field's values that
+    could matter — a boolean's two, an enum's variants, and for any other field its literals and
+    one value none of them equals — where there are at most 64. The combinations are counted
+    before any invariant applies, so a guard is never called dead that an input satisfies; an
+    ordering, a text match, a quantifier, a comparison of two fields, or a guard with more
+    combinations is not decided, and such a mutant is scored as before. A failing scenario still
+    kills it, and a changed scenario nothing scored keeps it `inconclusive`; otherwise
+    `equivalent` outranks `unwitnessed`, so the #203 shape (a flipped connective over two
+    disjoint equalities) is now `equivalent` with its added refusal still named. `counts` gains
+    `equivalent`; an equivalent mutant does not change the exit status, but a run whose every
+    mutant is equivalent or stillborn exits 3.
+  - A mutant on an outcome whose scenario the baseline suite already refused at synthesis (for
+    example `ESS-SYNTH-003` on a branch no arrangement reaches), and that no baseline scenario
+    takes, is `unwitnessed` (`ESS-MUTATE-004`, exit 3) instead of `survived`; its entry names that
+    refusal as `baseline_refusals` (`{code, scenario, subject}`). So is a `from-drop` or
+    `transition-to` mutant on a transition that only such outcomes perform, naming each of their
+    refusals; `--collect` reads the emitted baseline `ir.json` for which outcomes perform a
+    transition. A mutant on a witnessed outcome or transition that no scenario kills is still
+    `survived`.
+  - The audit writes `ess-mutation-report/3`, and `--emit` writes `ess-mutation-manifest/3`,
+    which records `unsatisfiable_guard` on each mutant whose guard the emitter found dead;
+    `--emit` reports how many mutants have one. `--collect` still reads the
+    `ess-mutation-manifest/2` 0.41.0 wrote and the `/1` before it, and scores no mutant of either
+    `equivalent`; a `/1` or `/2` manifest carrying `unsatisfiable_guard` is refused.
+
+### Fixed
+
+- **Synthesis witnesses a `when_subject` guard comparing a link field with an input (#193).**
+  `account_id != input.account_id`, where `account_id` is the link to the row's owner and the
+  input is of the owner's identity type, was refused as `ESS-SYNTH-003`. The branch the input
+  selects when it names the row's own owner is sent that owner; the branch it selects when it
+  names another is sent a second owner arranged beside the row, holding a row of its own, so a
+  target that ignores the guard, compares with the wrong owner, or asks only whether the named owner
+  holds any row, fails. Where the comparison sits in `all:` or `any:` beside another stored
+  field, each conjunct and disjunct is witnessed alone with the input bound. Such a row is refused
+  as `ESS-SYNTH-003`, naming it, where it lies past the bound on further rows or where the bounded
+  search missed it with an input naming an arranged owner leaving it undecided; a row every
+  candidate decided and no bounded arrangement meets adds nothing, as for every other guard.
+  Under a `cardinality: one` owner relation, a branch that files the row under the owner the input
+  names is sent a second owner holding no row, so the owner never holds two. Further rows take
+  instance names no earlier step of the scenario binds.
+  Both sides are decided on the opaque instance tokens the
+  view-filter fix binds: only `==` and `!=` between the link and that input are decided, and an
+  ordering, a literal or a text test over either stays refused as before. Where the second owner
+  cannot be arranged, the branch is refused as `ESS-SYNTH-004`, naming the owner's entity.
+
+- A suite synthesized from a model whose actors declare `attributes:` records that model's
+  `spec_digest` and `contract_digest` (beyond10x/ess#216). Synthesis reads such a model once per
+  caller assignment, each time over a copy with the caller's values written in, and the suite took
+  its digests from that copy. `ess verify conform run --target interpreted` then refused the very
+  specification it had synthesized the suite from ("its spec_digest … is not the suite's
+  spec_digest …"), and an adapter binding the model's digest would have refused the suite too. A
+  model without actor attributes keeps its suite bytes; a suite synthesized from a different model
+  is still refused.
+
+- **Two overlapping accepting guards have a declared answer** (beyond10x/ess#217). `validate`
+  accepted `small: amount < 100` beside `flagged: amount > 50`, and nothing said which branch
+  `amount: 75` takes. Among the accepting guarded branches of one command, the first declared whose
+  guard holds answers; input-guarded refusals are still taken first
+  (`docs/design/input-guard-overlap-precedence.md`). An `external:` branch takes its place in the
+  same declaration order: an accepting branch declared before it answers an input its guard claims,
+  whatever the provider says, which is the order Entity Runtime already applied. No source or suite
+  format change. Synthesis holds a target to it for each pair of accepting `when:` branches: a later
+  branch's witness refutes every accepting branch declared before it, an external branch's witness
+  refutes every accepting branch declared before it, the first-declared branch's scenario also sends
+  an input in each overlap and requires that branch, and a branch whose every tried candidate an
+  earlier one claims is refused with `ESS-SYNTH-003` naming it. In a command whose branches also read
+  the held state, the overlap is sent in the state the scenario arranged. A binding that would force
+  an external branch declared after an accepting one is refused like a guarded one.
+- **An overlap no scenario sends is listed, not dropped.** A `Decimal` compared with two literals less
+  than two apart (`11 < amount < 12`) held no value the witness ladder tried, so the overlap was
+  skipped and a branch there was refused as unreachable. Every witness and overlap search now tries
+  a second pass at the exact midpoint of each two adjacent literals (`11.5`, `0.15` for
+  `amount > 0.1 and amount < 0.2`); a witness the ladder already found is unchanged. An overlap the
+  scenario of the branch taken first still does not send — one no candidate reaches, or one arranged
+  over a stored row, a replay, a preserved subject or a held state another branch also claims — is
+  reported as a note naming both branches, unless the candidates cover every region and none lies
+  in both.
+- **The interpreter answers by the declared precedence.** It selected every branch whose `when:`
+  held and refused the overlap as open, and an Unknown guard anywhere made the call undecidable. It
+  now reads input-guarded refusals first (beyond10x/ess#178), then accepting and external branches
+  in declaration order, and stops at the first that answers: a later guard it cannot decide no
+  longer matters once an earlier branch holds. A forced external branch declared after a holding
+  accepting branch is not taken. Entity Runtime already selected this way; tests now pin the
+  accepting order and an accepting branch declared before an external one. Suites for models
+  without such an overlap keep their bytes.
+
+- **`ess verify diff` names a newtype's `prefix:` change** (beyond10x/ess#219). A `prefix:`
+  (ess/15) declared on a newtype is `type/<T>/prefix-added`, which narrows; one dropped is
+  `prefix-removed`, which widens; one replaced is `prefix-changed`, which narrows when the new
+  prefix extends the old one, widens when the old one extends the new one, and is `changed`
+  otherwise. Each is `ess-diff/11` vocabulary (unreleased; `ess-diff/10` shipped in 0.41.0
+  without them): an `ess-diff/3`–`/10` writer refuses it, and such a reader refuses it with
+  `unsupported_format_version`. The prefix no longer falls to the residual, so such a change is
+  no longer reported as `system/<name>/unclassified-changed`. A delta without a prefix change
+  keeps its format. The relation compares the declared prefixes: an outer newtype restating its
+  inner layer's prefix is reported as narrowed or expanded although its admitted values do not
+  move.
+- **A type's reading-contract change is reported once.** `reading-contract-changed` was reported
+  with a `system/<name>/unclassified-changed` beside it, because the type's `reading` was also
+  left to the residual. The delta for such a pair loses that second entry; its format stays
+  `ess-diff/3`.
+
+- **Synthesis witnesses a branch selected by a stored counter at its limit (#226).** A branch
+  whose stored guard compares a counter with a number literal (`retries >= 3`, `retries == 3`,
+  `credits <= 0`), where the counter is moved by `{increment: n}`, was refused as `ESS-SYNTH-003`:
+  every row short of the limit decided the guard alike and was one search node, and a row the
+  raising command left no longer held a determined value. The stored-row search now follows such a
+  counter's value within 16 of each literal its guards compare it with, and carries the value each
+  raise leaves, so it repeats the raising command — the guarded command itself, or another one — up
+  to the limit. Each side of the limit is witnessed: the branch at the limit is the first row the
+  search reaches that holds it, and the row beside it is witnessed once more, and past it for `==`,
+  so a target whose limit is off by one either way fails. Each side row sits at the nearest value a
+  run of the counter holds there — from the values it is created or set to, moved by its
+  increments — so `{increment: 2}` from 0 against `retries >= 3` is witnessed at 2 and 4. A side row
+  asserts whichever branch the command answers on it, so a sibling band (`blocked: 3..4` below
+  `over: >= 5`) is asserted there rather than refusing the default. The comparison may be a
+  conjunct of the guard, a disjunct of an `any:` among its conjuncts, or under `not:`
+  (`{not: retries < 3}` is witnessed as `retries >= 3`); at the limit the other disjuncts are
+  refuted. A side the model never holds a value on — past a refusal that stops the raises — adds
+  none. A side whose nearest value lies farther than 16 from the limit, or that the search does not
+  reach within that bound, is refused as `ESS-SYNTH-003` naming the step and the limit, and only
+  that row: the branch's own scenario stands. A limit farther than 16 from where the counter can
+  be followed, or counters whose followed values exceed the search budget, is refused as
+  `ESS-SYNTH-003` naming that bound; a search that left every row a raise moving away from the
+  limit reaches no longer claims it. A counter compared with an input (`retries >= input.max`) is
+  reached through the input as before. Models without such a guard keep their suites.
+
+- **A relation carried by the entity's own identity** (beyond10x/ess#230). `via:` may name the
+  identity of the entity holding the relation: an entity keyed by `user_id` declares
+  `{name: user, kind: references, target: demo.provisioning.User, cardinality: one, via: user_id}`,
+  a one-to-one link keyed by the same id, and the same relation may be declared from the other
+  side. It was refused as `missing_declaration` ("carried by `user_id`, which … does not declare").
+  The identity is type-checked against the target's identity as a declared field is.
+  `cardinality: many` through an identity, a `references` from an entity to itself through its own
+  identity, and an `owns` through the owned entity's identity are refused as
+  `conflicting_declaration` naming the cause. The `missing_declaration` hint for an unknown `via:`
+  now lists the identity beside the fields.
+- The identity-carried relation reaches every consumer: `x-ess-relation` on the identity property
+  of the entity schema and `x-ess-entities`, the relations sentence of the generated docs, and the
+  identity line of the synthesised Rust `…Data` struct. A `references` is never arranged as an
+  owner.
+- A `{related: …}` read through an identity follows the relation it carries: through the existing
+  subject's identity, through the identity a `creates:` branch fills from its input, and through
+  the input a branch names its instance by (`via: input.<field>`), where the identity type alone
+  names several entities. Synthesis arranges the referenced row between two decoys and keys the
+  subject by it, as for a field-carried reference. A `when_related:` guard on an update or move
+  whose input names both the subject and the related row is refused under `arrange_related_row`.
+  The identity counts as a carrier only where it carries such a relation to another entity: a
+  `creates:` branch cannot read the row it is creating through its own identity, and an earlier
+  branch keyed by the same input does not hide the relation that decides a `when_related:` guard.
+- Models without the construct keep their bytes and validate as before.
+
 ## [0.41.0] — 2026-09-29
 
 ### Added

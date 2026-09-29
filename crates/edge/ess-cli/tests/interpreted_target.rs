@@ -231,6 +231,188 @@ fn the_committed_billing_suite_runs_against_interpreted_as_unsatisfied_obligatio
     }
 }
 
+/// A specification whose actor carries an attribute, whose event field and stored field are filled
+/// from `{caller: …}`, and whose command compares the caller in a guard (beyond10x/ess#216).
+const CALLER_MODEL: &str = "format: ess/16
+system: demo
+version: v1
+summary: A note records the caller that wrote it.
+domain: demo.notes
+types:
+  - {name: demo.notes.NoteId, kind: newtype, of: Uuid}
+  - {name: demo.notes.AuthorId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.notes.Note
+    identity: {name: note_id, type: demo.notes.NoteId}
+    fields:
+      - {name: author_id, type: demo.notes.AuthorId}
+      - {name: text, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+actors:
+  - name: demo.notes.Writer
+    attributes:
+      - {name: author_id, type: demo.notes.AuthorId}
+    may: [demo.notes.WriteNote, demo.notes.EditNote]
+commands:
+  - name: demo.notes.WriteNote
+    input:
+      - {name: text, type: String}
+    outcomes:
+      - name: written
+        creates: demo.notes.Note
+        instance: note_id
+        sets: {author_id: {caller: author_id}, text: input.text}
+        emits: [demo.notes.NoteWritten]
+        payload:
+          demo.notes.NoteWritten: {note_id: {generated: true}, written_by: {caller: author_id}, text: input.text}
+  - name: demo.notes.EditNote
+    input:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: text, type: String}
+    outcomes:
+      - name: not-the-author
+        when_subject: {predicate: author_id != caller.author_id}
+        error: demo.notes.NotTheAuthor
+      - name: edited
+        updates: demo.notes.Note
+        instance: note_id
+        sets: {text: input.text}
+        emits: [demo.notes.NoteEdited]
+        payload:
+          demo.notes.NoteEdited: {note_id: input.note_id, text: input.text}
+errors:
+  - name: demo.notes.NotTheAuthor
+    summary: The caller did not write the note.
+events:
+  - name: demo.notes.NoteWritten
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: written_by, type: demo.notes.AuthorId}
+      - {name: text, type: String}
+  - name: demo.notes.NoteEdited
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: text, type: String}
+views:
+  - name: demo.notes.NoteDetails
+    source: demo.notes.Note
+    consistency: read_your_writes
+    fields:
+      - {name: note_id, type: demo.notes.NoteId}
+      - {name: author_id, type: demo.notes.AuthorId}
+      - {name: text, type: String}
+      - {name: state, type: demo.notes.Note.State}
+";
+
+/// A directory holding `text` as its `system.yaml`.
+fn specification(text: &str) -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("a scratch directory");
+    std::fs::write(directory.path().join("system.yaml"), text).expect("the model is written");
+    directory
+}
+
+/// beyond10x/ess#216: a run that synthesizes its own suite from a specification reading the caller
+/// interprets that same specification, so the two digests agree and the run is not refused.
+#[test]
+fn the_interpreted_target_runs_a_specification_that_reads_the_caller() {
+    let model = specification(CALLER_MODEL);
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .current_dir(root())
+        .args([
+            "verify",
+            "conform",
+            "run",
+            "--target",
+            "interpreted",
+            "--path",
+        ])
+        .arg(model.path())
+        .args(["--report-format", "2", "--format", "json"])
+        .output()
+        .expect("the `ess` binary runs");
+    let stderr = unwrapped(&output.stderr);
+    assert!(
+        !stderr.contains("is not the suite's spec_digest"),
+        "the suite synthesized in the run is the model interpreted: {stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("a report is rendered ({error}): {stderr}"));
+    let scenarios = report["scenarios"].as_array().expect("scenarios");
+    let ran: BTreeSet<&str> = scenarios
+        .iter()
+        .map(|scenario| scenario["scenario"].as_str().expect("a scenario id"))
+        .collect();
+    assert!(
+        ran.contains("demo.notes.WriteNote/outcome/written")
+            && ran.contains("demo.notes.EditNote/outcome/not-the-author"),
+        "the run executed the caller model's suite: {ran:?}"
+    );
+    // What the interpreter cannot carry out yet (a caller value source, a stored-field guard) is
+    // an unsatisfied obligation, never a failure; the run's exit says so as it does for billing.
+    for scenario in scenarios {
+        for check in scenario["checks"].as_array().expect("checks") {
+            let status = check["status"].as_str().expect("a check status");
+            assert!(
+                status == "passed" || status == "unsupported",
+                "`{}` holds no failed or errored check: {check:#}",
+                scenario["scenario"]
+            );
+        }
+    }
+}
+
+/// The refusal still answers a suite synthesized from another caller-reading model.
+#[test]
+fn the_interpreted_target_refuses_a_suite_from_another_caller_model() {
+    let synthesized = specification(CALLER_MODEL);
+    let suite = synthesized.path().join("suite.json");
+    let written = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .current_dir(root())
+        .args([
+            "verify",
+            "conform",
+            "synthesize",
+            "--target",
+            "ir",
+            "--path",
+        ])
+        .arg(synthesized.path())
+        .arg("--out")
+        .arg(&suite)
+        .output()
+        .expect("the `ess` binary runs");
+    assert!(written.status.success(), "{}", unwrapped(&written.stderr));
+
+    let other = specification(&CALLER_MODEL.replace(
+        "      - {name: text, type: String}\n    lifecycle",
+        "      - {name: text, type: String}\n      - {name: pinned, type: Boolean}\n    lifecycle",
+    ));
+    let output = Command::new(env!("CARGO_BIN_EXE_ess"))
+        .current_dir(root())
+        .args([
+            "verify",
+            "conform",
+            "run",
+            "--target",
+            "interpreted",
+            "--path",
+        ])
+        .arg(other.path())
+        .arg("--suite")
+        .arg(&suite)
+        .args(["--format", "json"])
+        .output()
+        .expect("the `ess` binary runs");
+    let stderr = unwrapped(&output.stderr);
+    assert!(
+        stderr.contains("is not the suite's spec_digest"),
+        "stdout: {}\nstderr: {stderr}",
+        unwrapped(&output.stdout)
+    );
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(output.stdout.is_empty(), "no report is rendered");
+}
+
 /// `--target interpreted` requires the specification, and refuses the wrong one by name.
 #[test]
 fn the_interpreted_target_refuses_a_missing_or_foreign_model() {

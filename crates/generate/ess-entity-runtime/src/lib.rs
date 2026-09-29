@@ -1476,7 +1476,10 @@ impl Projector<'_> {
         // Entity Runtime takes the first branch whose guard holds. An input-guarded refusal is
         // taken before any accepting branch whose guard it overlaps
         // (`docs/design/input-guard-overlap-precedence.md`), so every one of them comes first,
-        // then the other guarded branches, the default, and the wrong-state branch.
+        // then the other guarded branches, the default, and the wrong-state branch. The sort is
+        // stable on the source index, so among accepting guarded branches the first declared whose
+        // guard holds answers (beyond10x/ess#217), and an external branch, a guard over the provider's
+        // verdict in the same category, takes its place in that order.
         compiled.sort_by_key(|(index, outcome)| {
             let source = &command.outcomes[*index];
             let category = if outcome.wrong_state {
