@@ -2508,6 +2508,7 @@ lifecycle:
                 subject,
                 emits: vec![name("billing.invoice.Moved")],
                 payload: std::collections::BTreeMap::new(),
+                error_payload: std::collections::BTreeMap::new(),
                 error: None,
                 refuses: true,
                 accepts_nothing: false,

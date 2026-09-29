@@ -2152,6 +2152,11 @@ impl<'a> Resolver<'a> {
                 complete = false;
             }
             let payload = payload.unwrap_or_default();
+            let error_payload = self.error_payload(command, outcome, input, errors, entities);
+            if error_payload.is_none() {
+                complete = false;
+            }
+            let error_payload = error_payload.unwrap_or_default();
             let sets = self.sets(command, outcome, input, entities);
             if sets.is_none() {
                 complete = false;
@@ -2180,6 +2185,7 @@ impl<'a> Resolver<'a> {
                 emits,
                 payload,
                 error,
+                error_payload,
                 refuses: outcome.refuses,
                 accepts_nothing: outcome.accepts_nothing,
                 returns: outcome.returns,
@@ -2381,6 +2387,73 @@ impl<'a> Resolver<'a> {
                     ),
                     vec![Detail::Note {
                         text: format!("`{}` holds: {carried}", entity.name),
+                    }],
+                );
+            }
+        }
+        complete.then_some(determined)
+    }
+
+    /// The sources one outcome declares for its error's fields (ess/19,
+    /// `story:error-payload-sources`), resolved as [`Resolver::payload`] resolves an event's: in the
+    /// error's declaration order, each checked by [`Resolver::payload_field`].
+    ///
+    /// `{subject: …}` reads the row the refusal is answered for: its own existing subject, or,
+    /// on a branch answered after the row is read, the one its siblings name.
+    fn error_payload(
+        &mut self,
+        command: &CommandSpec,
+        outcome: &ess_domain::command::Outcome,
+        input: Option<&[ResolvedField]>,
+        errors: &BTreeMap<QualifiedName, ResolvedError>,
+        entities: &BTreeMap<QualifiedName, ResolvedEntity>,
+    ) -> Option<Vec<ResolvedPayloadField>> {
+        let Some(name) = &outcome.error else {
+            return Some(Vec::new());
+        };
+        if outcome.error_payload.is_empty() {
+            return Some(Vec::new());
+        }
+        // The error itself did not resolve, and the outcome's `error` walk already said so.
+        let error = errors.get(name)?;
+        let subject = ess_domain::command::subject_fact::error_subject(command, outcome)
+            .and_then(|declared| entities.get(&declared.entity));
+        let mut complete = true;
+        let mut determined = Vec::new();
+        for target in &error.fields {
+            let Some(source) = outcome.error_payload.get(&target.name) else {
+                continue;
+            };
+            match self.payload_field(
+                command,
+                outcome,
+                SourceBlock::Payload(name),
+                target,
+                source,
+                input,
+                subject,
+            ) {
+                Some(field) => determined.push(field),
+                None => complete = false,
+            }
+        }
+        for (target, source) in &outcome.error_payload {
+            if !error.fields.iter().any(|field| &field.name == target) {
+                complete = false;
+                let carried = names(error.fields.iter().map(|field| field.name.clone()));
+                self.refuse_payload(
+                    command,
+                    outcome,
+                    SourceBlock::Payload(name),
+                    Some((target, source)),
+                    codes::PAYLOAD_FILLS_UNDECLARED_FIELD,
+                    format!(
+                        "outcome `{}` of `{}` fills `{name}.{target}`, which the error does not \
+                         carry",
+                        outcome.name, command.name
+                    ),
+                    vec![Detail::Note {
+                        text: format!("`{name}` carries: {carried}"),
                     }],
                 );
             }

@@ -207,24 +207,36 @@ fn outcome(
                 wrong_state_entity(ir, command)
             } else {
                 selection_entity
-            };
-            match (reads_held, entity) {
-                (true, Some(entity)) => {
-                    for field in fields {
-                        held_field(entity, field).ok_or_else(|| {
-                            format!(
-                                "the field `{}` of error `{error}`, which neither the \
-                                 specification nor the held `{}` determines",
-                                field.name, entity.name
-                            )
-                        })?;
-                    }
+            }
+            .filter(|_| reads_held);
+            // A field the specification gives a source (ess/19, `story:error-payload-sources`)
+            // is filled from it, checked as an event payload's source is; any other is read from
+            // the held row, where there is one and it holds the field.
+            for source in &outcome.error_payload {
+                if matches!(source.value, ResolvedPayloadValue::Cleared) {
+                    return Err(format!("`{{cleared}}` on the error `{error}`"));
                 }
-                _ => {
+                value(ir, command, source, entity, false)?;
+            }
+            let unsourced = fields.iter().filter(|field| {
+                !outcome
+                    .error_payload
+                    .iter()
+                    .any(|source| source.target == field.name)
+            });
+            for field in unsourced {
+                let Some(entity) = entity else {
                     return Err(format!(
                         "the fields of error `{error}`, which the specification gives no source"
-                    ))
-                }
+                    ));
+                };
+                held_field(entity, field).ok_or_else(|| {
+                    format!(
+                        "the field `{}` of error `{error}`, which neither the specification nor \
+                         the held `{}` determines",
+                        field.name, entity.name
+                    )
+                })?;
             }
         }
     }

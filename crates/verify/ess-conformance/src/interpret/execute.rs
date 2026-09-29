@@ -549,7 +549,7 @@ fn related_absent(
         return Ok(None);
     };
     if absent.subject.is_none() && absent.error.is_some() {
-        return Ok(Some(vec![refusal(spec, absent, store)]));
+        return Ok(Some(vec![refusal(ir, spec, absent, store, input, None)?]));
     }
     match take(ir, spec, absent, store, input, generated)? {
         Ok(step) => Ok(Some(vec![step])),
@@ -606,7 +606,7 @@ fn refused_by_input(
     };
     for (outcome, guard) in refusals {
         match guard.evaluate(&facts) {
-            Truth::True => return Ok(Some(vec![refusal(spec, outcome, store)])),
+            Truth::True => return Ok(Some(vec![refusal(ir, spec, outcome, store, input, None)?])),
             Truth::False => {}
             Truth::Unknown => {
                 return Err(Undetermined::Undecidable {
@@ -712,13 +712,51 @@ fn reference(spec: &ResolvedCommand, outcome: &ResolvedOutcome) -> OutcomeRef {
     OutcomeRef::new(CommandRef::new(spec.name.clone()), outcome.name.clone())
 }
 
-/// The declared error `outcome` reports, carrying no field — no error field has a declared source.
-fn declared_error(outcome: &ResolvedOutcome) -> Option<DeclaredErrorValue> {
-    outcome
-        .error
-        .as_ref()
-        .filter(|_| outcome.refuses)
-        .map(|handle| DeclaredErrorValue::new(ErrorRef::from(handle)))
+/// The declared error `outcome` reports, carrying the fields the specification gives a source
+/// (ess/19, `story:error-payload-sources`) and no other.
+///
+/// An input field carries the input's value, a literal its value at the field's type, and a
+/// `{subject: …}` the row the refusal is answered for (`held`). A `{generated: true}` field is
+/// the implementation's to choose, so it is not carried, and a field with no source is not
+/// carried either, as before `ess/19`. A source this module does not read — the caller, a related
+/// row — is a gap, as it is on an event's payload.
+fn declared_error(
+    ir: &EssIr,
+    outcome: &ResolvedOutcome,
+    input: &BTreeMap<String, Node>,
+    held: Option<&Instance>,
+) -> Result<Option<DeclaredErrorValue>, Undetermined> {
+    let Some(handle) = outcome.error.as_ref().filter(|_| outcome.refuses) else {
+        return Ok(None);
+    };
+    let mut error = DeclaredErrorValue::new(ErrorRef::from(handle));
+    for field in &outcome.error_payload {
+        let value = match &field.value {
+            ResolvedPayloadValue::Generated => None,
+            ResolvedPayloadValue::SubjectField { field: read, .. } => {
+                held.and_then(|row| row.fields.get(read)).cloned()
+            }
+            ResolvedPayloadValue::InputField { field: read, .. } => input
+                .get(read)
+                .filter(|value| **value != Node::Null)
+                .cloned(),
+            ResolvedPayloadValue::Literal { value } => {
+                Some(literal(ir, &field.target_type, value)?)
+            }
+            other => {
+                return Err(Undetermined::NotInterpreted {
+                    construct: format!(
+                        "the value source `{}` of error `{handle}`",
+                        other.describe()
+                    ),
+                })
+            }
+        };
+        if let Some(value) = value {
+            error = error.with(field.target.clone(), value);
+        }
+    }
+    Ok(Some(error))
 }
 
 /// The store a branch is building, and where its assigned values come from.
@@ -785,6 +823,8 @@ fn take(
     };
     let mut created: Option<(String, Node)> = None;
     let mut touched: Option<(QualifiedName, String)> = None;
+    // The row an existing subject held before this branch, which an error field may read.
+    let mut before: Option<Instance> = None;
 
     if let Some(subject) = &outcome.subject {
         let entity = ir.entity(&subject.entity);
@@ -818,10 +858,13 @@ fn take(
                 })?;
                 let key = identity_key(identity, &entity.name)?;
                 let Some(held) = store.instance(&entity.name, &key) else {
-                    return Ok(Ok(unknown_instance(spec, store)));
+                    return Ok(Ok(unknown_instance(ir, spec, store, input)?));
                 };
+                before = Some(held.clone());
                 let after = match act(ir, &outcome.sets, effect, held, input, &mut work)? {
-                    Acted::NotFromHere => return Ok(Ok(wrong_state(spec, store))),
+                    Acted::NotFromHere => {
+                        return Ok(Ok(wrong_state(ir, spec, store, input, Some(held))?))
+                    }
                     Acted::Rests(after) => Some(after),
                     Acted::Removed => None,
                 };
@@ -849,7 +892,7 @@ fn take(
     }
     Ok(Ok(Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(outcome),
+        error: declared_error(ir, outcome, input, before.as_ref())?,
         events,
         next: work.next,
     }))
@@ -905,36 +948,57 @@ fn identity_key(identity: &Node, entity: &QualifiedName) -> Result<String, Undet
 /// The order is the model's (`ResolvedCondition::UnknownInstance`): an identity nobody holds is
 /// answered by the marker that exists for it, and before it existed by the wrong-state branch — an
 /// instance that does not exist rests in no state any move starts from.
-fn unknown_instance(spec: &ResolvedCommand, store: &Store) -> Step {
-    spec.outcomes
+fn unknown_instance(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &Store,
+    input: &BTreeMap<String, Node>,
+) -> Result<Step, Undetermined> {
+    match spec
+        .outcomes
         .iter()
         .find(|outcome| matches!(outcome.condition, ResolvedCondition::UnknownInstance))
-        .map_or_else(
-            || wrong_state(spec, store),
-            |outcome| refusal(spec, outcome, store),
-        )
+    {
+        Some(outcome) => refusal(ir, spec, outcome, store, input, None),
+        None => wrong_state(ir, spec, store, input, None),
+    }
 }
 
-/// The command's `wrong_state:` branch, else no declared one.
-fn wrong_state(spec: &ResolvedCommand, store: &Store) -> Step {
-    spec.outcomes
+/// The command's `wrong_state:` branch, else no declared one. `held` is the row it is answered
+/// for, where one is held.
+fn wrong_state(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    store: &Store,
+    input: &BTreeMap<String, Node>,
+    held: Option<&Instance>,
+) -> Result<Step, Undetermined> {
+    match spec
+        .outcomes
         .iter()
         .find(|outcome| matches!(outcome.condition, ResolvedCondition::WrongState))
-        .map_or_else(
-            || undeclared(store),
-            |outcome| refusal(spec, outcome, store),
-        )
+    {
+        Some(outcome) => refusal(ir, spec, outcome, store, input, held),
+        None => Ok(undeclared(store)),
+    }
 }
 
 /// A branch answered for the subject rather than the input: it reports its error where it refuses,
 /// and in either case moves, writes and emits nothing (`refusal_mutated_state`).
-fn refusal(spec: &ResolvedCommand, outcome: &ResolvedOutcome, store: &Store) -> Step {
-    Step {
+fn refusal(
+    ir: &EssIr,
+    spec: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    store: &Store,
+    input: &BTreeMap<String, Node>,
+    held: Option<&Instance>,
+) -> Result<Step, Undetermined> {
+    Ok(Step {
         outcome: Some(reference(spec, outcome)),
-        error: declared_error(outcome),
+        error: declared_error(ir, outcome, input, held)?,
         events: Vec::new(),
         next: store.clone(),
-    }
+    })
 }
 
 /// Writes `sets:` into `fields`.

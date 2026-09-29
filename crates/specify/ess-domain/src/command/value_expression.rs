@@ -108,6 +108,7 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
                     ));
                 }
             }
+            errors.extend(error_payload(&context, &site));
             if let Some((entity, _)) = context.subject {
                 for (target, source) in &outcome.sets {
                     let held = if entity.identity.name == *target {
@@ -134,6 +135,83 @@ pub(crate) fn validate(spec: &Specification) -> ValidationErrors {
     errors.extend(super::caller_value::validate(spec));
     // Set effects (ess/16, #167, #175): `instances:`, `affects:` and `{count: changed}`.
     errors.extend(super::set_effects::validate(spec));
+    errors
+}
+
+/// The `payload:` block keyed by the error an outcome reports (ess/19,
+/// `story:error-payload-sources`), checked entry by entry by the rules an event's payload is held
+/// to: the field must be one the error declares, and the source's type the field's.
+///
+/// `{subject: …}` reads the row the refusal is answered for, which only a branch answered after
+/// the row is read has: `wrong_state:`, a held-state or stored-field guard, or a branch acting on
+/// an existing subject of its own. An input-guarded refusal answers before any row is read
+/// (`docs/design/cross-record-and-stored-field-guards.md`, "The precedence order"), and an unknown
+/// identity has none.
+fn error_payload(context: &Context<'_>, site: &ConstructRef) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let outcome = context.outcome;
+    let Some(name) = &outcome.error else {
+        return errors;
+    };
+    if outcome.error_payload.is_empty() {
+        return errors;
+    }
+    let Some(error) = context.spec.errors().get(name) else {
+        return errors;
+    };
+    // An error's fields are filled as an event's are, so they are checked by the one rule: the
+    // error, seen as the record the branch fills.
+    let carried = super::EventSpec {
+        name: error.name.clone(),
+        fields: error.fields.clone(),
+        naming: error.naming.clone(),
+    };
+    let row = super::subject_fact::error_subject(context.command, outcome)
+        .and_then(|subject| context.spec.entities().get(&subject.entity))
+        .map(|entity| (entity, true));
+    let context = Context {
+        spec: context.spec,
+        command: context.command,
+        outcome,
+        resolved: context.resolved,
+        subject: row,
+    };
+    for (target, source) in &outcome.error_payload {
+        let at = site
+            .clone()
+            .key("payload")
+            .named(name.to_string())
+            .named(target);
+        errors.extend(super::check_payload_entry(
+            &at,
+            (context.command, outcome),
+            &carried,
+            target,
+            source,
+            context.resolved,
+        ));
+        let Some(filled) = carried.field(target) else {
+            continue;
+        };
+        check(
+            &context,
+            &at,
+            Place::Payload,
+            filled,
+            source,
+            0,
+            &mut errors,
+        );
+        errors.extend(fallback_literal(
+            &context,
+            &Filled::Payload {
+                at: &at,
+                event: &carried,
+            },
+            filled,
+            source,
+        ));
+    }
     errors
 }
 

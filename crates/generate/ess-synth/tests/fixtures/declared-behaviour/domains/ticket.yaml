@@ -45,20 +45,36 @@ actors:
 errors:
   - name: desk.ticket.NegativeEstimate
     summary: The estimate is below zero.
+    fields:
+      - {name: estimate, type: Integer}
+      - {name: minimum, type: Integer}
   - name: desk.ticket.TicketNotFound
     summary: No ticket carries the identity.
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
   - name: desk.ticket.TicketStateConflict
     summary: The ticket is not in a state this command acts from.
     fields:
       - {name: state, type: desk.ticket.Ticket.State}
+      - {name: ticket_id, type: desk.ticket.TicketId}
   - name: desk.ticket.NotYours
     summary: The caller did not open the ticket.
+    fields:
+      - {name: caller, type: desk.ticket.AgentId}
+      - {name: opened_by, type: desk.ticket.AgentId}
   - name: desk.ticket.TicketIsClosed
     summary: A closed ticket takes no comment.
+    fields:
+      - {name: title, type: desk.ticket.Title}
+      - {name: priority, type: desk.ticket.Priority}
   - name: desk.ticket.PagerRefused
     summary: The pager refused the page.
+    fields:
+      - {name: reason, type: String}
   - name: desk.ticket.Throttled
     summary: The pager throttles urgent pages.
+    fields:
+      - {name: page_id, type: desk.ticket.EscalationId}
 
 events:
   - name: desk.ticket.TicketOpened
@@ -101,6 +117,8 @@ commands:
       - name: negative-estimate
         when: estimate < 0
         error: desk.ticket.NegativeEstimate
+        payload:
+          desk.ticket.NegativeEstimate: {estimate: input.estimate, minimum: 0}
       - name: opened
         creates: desk.ticket.Ticket
         instance: ticket_id
@@ -131,8 +149,16 @@ commands:
           desk.ticket.TicketClosed:
             ticket_id: input.ticket_id
             title: {subject: title}
-      - {name: no-such-ticket, unknown_instance: true, error: desk.ticket.TicketNotFound}
-      - {name: already-closed, wrong_state: true, error: desk.ticket.TicketStateConflict}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+      - name: already-closed
+        wrong_state: true
+        error: desk.ticket.TicketStateConflict
+        payload:
+          desk.ticket.TicketStateConflict: {ticket_id: input.ticket_id}
 
   - name: desk.ticket.ReopenTicket
     input:
@@ -149,8 +175,16 @@ commands:
           desk.ticket.TicketReopened:
             ticket_id: input.ticket_id
             reopen_count: {subject: reopen_count}
-      - {name: no-such-ticket, unknown_instance: true, error: desk.ticket.TicketNotFound}
-      - {name: not-closed, wrong_state: true, error: desk.ticket.TicketStateConflict}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+      - name: not-closed
+        wrong_state: true
+        error: desk.ticket.TicketStateConflict
+        payload:
+          desk.ticket.TicketStateConflict: {ticket_id: input.ticket_id}
 
   - name: desk.ticket.Reprioritize
     input:
@@ -160,6 +194,8 @@ commands:
       - name: forbidden
         when_subject: {predicate: opened_by != caller.agent_id}
         error: desk.ticket.NotYours
+        payload:
+          desk.ticket.NotYours: {caller: {caller: agent_id}, opened_by: {subject: opened_by}}
       - name: kept-high
         when_subject: {field: priority, equals: High}
         updates: desk.ticket.Ticket
@@ -179,7 +215,11 @@ commands:
           desk.ticket.TicketReprioritized:
             ticket_id: input.ticket_id
             priority: input.priority
-      - {name: no-such-ticket, unknown_instance: true, error: desk.ticket.TicketNotFound}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
 
   - name: desk.ticket.Comment
     input:
@@ -189,6 +229,8 @@ commands:
       - name: refused-closed
         when_subject_state: Closed
         error: desk.ticket.TicketIsClosed
+        payload:
+          desk.ticket.TicketIsClosed: {title: {subject: title}, priority: {subject: priority}}
       - name: commented
         updates: desk.ticket.Ticket
         instance: ticket_id
@@ -199,7 +241,11 @@ commands:
           desk.ticket.TicketCommented:
             ticket_id: input.ticket_id
             note: input.text
-      - {name: no-such-ticket, unknown_instance: true, error: desk.ticket.TicketNotFound}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
 
   - name: desk.ticket.DeleteTicket
     input:
@@ -212,7 +258,11 @@ commands:
         payload:
           desk.ticket.TicketDeleted:
             ticket_id: input.ticket_id
-      - {name: no-such-ticket, unknown_instance: true, error: desk.ticket.TicketNotFound}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
 
   - name: desk.ticket.Escalate
     input:
@@ -222,10 +272,14 @@ commands:
       - name: pager-refused
         external: the pager refuses the page
         error: desk.ticket.PagerRefused
+        payload:
+          desk.ticket.PagerRefused: {reason: input.reason}
       - name: throttled
         external: the pager throttles urgent pages
         when: urgent == true
         error: desk.ticket.Throttled
+        payload:
+          desk.ticket.Throttled: {page_id: {generated: true}}
       - name: quiet
         when: urgent == false
         accepts: nothing

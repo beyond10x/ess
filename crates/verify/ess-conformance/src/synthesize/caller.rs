@@ -319,6 +319,7 @@ fn written(
             .iter_mut()
             .flat_map(|payload| payload.fields.iter_mut())
             .chain(outcome.sets.iter_mut())
+            .chain(outcome.error_payload.iter_mut())
         {
             write_value(field, values);
         }
