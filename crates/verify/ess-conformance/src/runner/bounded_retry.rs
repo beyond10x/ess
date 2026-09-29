@@ -141,7 +141,7 @@ pub(super) fn configure_repeated_external<T: ConformanceTarget>(
 
 /// The values each named input must carry, and the inputs that must be absent, or `None` after
 /// recording why an expected value could not be resolved.
-fn expected(
+pub(super) fn expected(
     binding: &BindingRef,
     input: &BTreeMap<String, ScenarioValue>,
     run: &mut Run,

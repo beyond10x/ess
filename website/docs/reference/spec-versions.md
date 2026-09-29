@@ -54,7 +54,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/15` | [0.37.0][r37] | `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing`, `preconditions:`; `input.` in subject guards; `equals_ignore_case`, `in_ignore_case`; `prefix:`, `Json`, `presence:`; aggregates over `Optional` fields |
 | `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`, `{related: …}`, literal `else:` |
 | `ess/17` | [0.39.0][r39] | `returns: true` |
-| `ess/18` | Unreleased | a list in `when_subject_state:`, and `when_subject_state:` on a refusal naming no subject; `state` in a `when_subject` predicate; `when_related:` |
+| `ess/18` | Unreleased | a list in `when_subject_state:`, and `when_subject_state:` on a refusal naming no subject; `state` in a `when_subject` predicate; `when_related:`; `when.context_fields`, `when.context_authority` and `context.<field>` on a binding |
 
 The sections below give each version's rules. The first five are a table:
 
@@ -197,6 +197,7 @@ predicate: …}`, a guard over the row of another entity whose identity the inpu
 | `ess-diff/7` | [0.34.0][r34] | `GroupingChanged` and `FieldAggregateChanged` on `ViewChange`: an aggregate view's group keys and what one field computes. | Refuses a delta carrying either. |
 | `ess-diff/8` | [0.34.0][r34] | `AlphabetChanged` on `TypeChange`, related by set membership, and `InputExampleChanged` on `CommandChange`. | Refuses a delta carrying either. |
 | `ess-diff/9` | [0.38.0][r38] | `PagingChanged` on `ViewChange`: a view's `paging:` (ess/16) declared, dropped or changed, carrying the parameters, the first page and whether a total is answered on each side. `OutcomeSetEffectChanged` on `CommandChange`: an outcome's `instances:` or `affects:` (ess/16) declared, dropped or changed, one line per construct on each side. | Refuses a delta carrying it. |
+| `ess-diff/10` | Unreleased | `CauseChanged` on `BindingChange` whose before or after is an `external` cause: an event binding's `ess/18` delivery context (beyond10x/ess#195), carrying the event, the channel (`authority`) and the typed `context_fields`, each with any `wire` name, on each side. `ContextFieldDisplayChanged` and `ContextFieldSummaryChanged` on `BindingChange`: a context field's `display` or `summary` moved (documentation only). A cause change without an `external` side keeps its earlier format. | Refuses a delta carrying it. |
 
 `ess-diff/5` exists because a variant's own name does not move when its wire spelling does. Before
 it, the variant set and the variant order both said nothing, and the comparison returned an empty
@@ -306,6 +307,14 @@ before target callbacks. Released suites 26 and 27 retain their meaning and byte
 Direct responses preserve exact integers, nested presence policies, collection order and
 duplicate multiplicity; Binary64 remains outside the admitted profile. Responses are bounded
 to 1 MiB, depth 128 and 65,536 members per collection, without truncation.
+
+`ess-conformance/30` and `ess-conformance/31`, unreleased, carry the `ess/18` delivery context
+(beyond10x/ess#195): `deliver_event` delivers one occurrence of an event from its external
+channel with the context that channel binds, and `expect_every_invocation` requires every
+invocation for one occurrence to carry what it was delivered with. Version 30 is ordinary; 31
+carries declared coverage. The Rust runner executes both; Go and TypeScript generation refuse
+them, and older readers refuse these envelopes before target callbacks. A suite without them
+keeps its earlier format.
 
 For `ess/7`, generated held-state refusals include ordinary `wrong_state` outcomes:
 they compare the complete subject before and after the call and refuse every

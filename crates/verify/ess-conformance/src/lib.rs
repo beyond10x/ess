@@ -138,6 +138,7 @@ pub mod coverage;
 pub mod coverage_build;
 pub mod decision;
 pub mod defined_aggregates;
+pub mod delivery_context;
 pub mod direct_response;
 pub mod evidence;
 pub mod faulty;
@@ -201,8 +202,8 @@ pub use synthesize::{
 };
 pub use target::{
     ConformanceTarget, Deadline, DeclaredErrorValue, ElapsedObservation, ElapsedObservationRequest,
-    EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity, InstantMark,
-    InvocationObservationRequest, ObservedEvent, ObservedInvocation, OrderedScan,
+    EventDeliveryRequest, EventObservationRequest, ExternalOutcomeControl, ImplementationIdentity,
+    InstantMark, InvocationObservationRequest, ObservedEvent, ObservedInvocation, OrderedScan,
     OrderedScanRequest, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
     SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };

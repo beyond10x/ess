@@ -7,7 +7,8 @@
 //! new major the synthesizer learns to write turns this red until both runtimes read it.
 //!
 //! The only majors left out are the ones a generated package cannot hold: the direct-response pair
-//! ([`direct_response::ORDINARY`], [`direct_response::COVERAGE`]), which the Go and TypeScript
+//! ([`direct_response::ORDINARY`], [`direct_response::COVERAGE`]) and the delivery-context pair
+//! ([`delivery_context::ORDINARY`], [`delivery_context::COVERAGE`]), which the Go and TypeScript
 //! emitters refuse at generation. `only_the_direct_response_pair_is_left_out` keeps that
 //! exclusion honest.
 
@@ -16,9 +17,9 @@ mod support_go;
 use std::collections::BTreeSet;
 
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
-use ess_conformance::direct_response;
 use ess_conformance::scenario::SUPPORTED_SUITE_FORMATS;
 use ess_conformance::ConformanceSuite;
+use ess_conformance::{delivery_context, direct_response};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 
 /// A small specification, for a real suite and a real coverage inventory.
@@ -81,7 +82,15 @@ fn emittable_majors() -> BTreeSet<u32> {
     SUPPORTED_SUITE_FORMATS
         .iter()
         .copied()
-        .filter(|major| *major != direct_response::ORDINARY && *major != direct_response::COVERAGE)
+        .filter(|major| {
+            ![
+                direct_response::ORDINARY,
+                direct_response::COVERAGE,
+                delivery_context::ORDINARY,
+                delivery_context::COVERAGE,
+            ]
+            .contains(major)
+        })
         .collect()
 }
 
@@ -228,8 +237,14 @@ fn only_the_direct_response_pair_is_left_out() {
         .collect();
     assert_eq!(
         excluded,
-        [direct_response::ORDINARY, direct_response::COVERAGE],
-        "only the direct-response pair is left out; `tests/direct_returns.rs` \
-         (`pure_return_generators_refuse_unsupported_execution`) holds both emitters to refusing it"
+        [
+            direct_response::ORDINARY,
+            direct_response::COVERAGE,
+            delivery_context::ORDINARY,
+            delivery_context::COVERAGE,
+        ],
+        "only the direct-response and delivery-context pairs are left out; \
+         `tests/direct_returns.rs` (`pure_return_generators_refuse_unsupported_execution`) and \
+         `tests/delivery_context.rs` hold both emitters to refusing them"
     );
 }

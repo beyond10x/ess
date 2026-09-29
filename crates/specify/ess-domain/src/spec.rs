@@ -313,6 +313,7 @@ impl Specification {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
         errors.extend(crate::binding::periodic::validate_specification(self));
+        errors.extend(crate::binding::context::validate_specification(self));
         errors.extend(crate::binding::retry::validate_specification(self));
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a

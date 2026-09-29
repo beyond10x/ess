@@ -1711,6 +1711,13 @@ impl<T: ConformanceTarget> ConformanceTarget for Untraced<T> {
         self.0.redeliver_event(request)
     }
 
+    fn deliver_event(
+        &self,
+        request: crate::target::EventDeliveryRequest,
+    ) -> Result<(), TargetError> {
+        self.0.deliver_event(request)
+    }
+
     fn end_scenario(&self, scenario: &ScenarioContext) -> Result<(), TargetError> {
         self.0.end_scenario(scenario)
     }

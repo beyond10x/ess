@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:sets-retarget-mutants-get-a-separating-witness
 kind: story
-status: active
+status: implemented
 title: 'sets-retarget: with three boolean inputs, the mutant''s suite still witnesses the swapped pair with one value (follow-up to #161)'
 refs:
 - provider: github
   reference: beyond10x/ess#202
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T17:59:48Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T01:53:24Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Story: sets-retarget: with three boolean inputs, the mutant's suite still witnesses the swapped pair with one value (follow-up to #161)
 

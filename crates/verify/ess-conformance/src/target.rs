@@ -16,7 +16,8 @@
 //! | [`observe_events`](ConformanceTarget::observe_events) | `events:` a component `publishes:`, observed away from the command that caused them | [`EventuallyEvent`](crate::scenario::ScenarioStep::EventuallyEvent) |
 //! | [`configure_external_outcome`](ConformanceTarget::configure_external_outcome) | an outcome declared `external:` (§12) | [`ConfigureExternalOutcome`](crate::scenario::ScenarioStep::ConfigureExternalOutcome) |
 //! | [`redeliver_event`](ConformanceTarget::redeliver_event) | a binding's `delivery: at_least_once` (§17) — and *only* that word: an `at_most_once` binding synthesises no redelivery and reaches this method never | [`RedeliverEvent`](crate::scenario::ScenarioStep::RedeliverEvent) |
-//! | [`observe_invocations`](ConformanceTarget::observe_invocations) | a binding's `mapping:` (§16) | [`ExpectInvocation`](crate::scenario::ScenarioStep::ExpectInvocation) |
+//! | [`deliver_event`](ConformanceTarget::deliver_event) | a binding's `when.context_fields` (ess/18): an event an external channel delivers, with the context that channel binds | [`DeliverEvent`](crate::scenario::ScenarioStep::DeliverEvent) |
+//! | [`observe_invocations`](ConformanceTarget::observe_invocations) | a binding's `mapping:` (§16) | [`ExpectInvocation`](crate::scenario::ScenarioStep::ExpectInvocation), [`ExpectEveryInvocation`](crate::scenario::ScenarioStep::ExpectEveryInvocation) |
 //! | [`mark_instant`](ConformanceTarget::mark_instant) | none — it names the instant a duration claim is measured from, which the suite may not invent | [`MarkInstant`](crate::scenario::ScenarioStep::MarkInstant) |
 //! | [`observe_elapsed`](ConformanceTarget::observe_elapsed) | a timer, a wrap-up window, a TTL: a length of time the system's own behaviour turns on | [`ExpectNotBefore`](crate::scenario::ScenarioStep::ExpectNotBefore), [`ExpectWithin`](crate::scenario::ScenarioStep::ExpectWithin), [`ExpectQuiet`](crate::scenario::ScenarioStep::ExpectQuiet) |
 //! | [`scan_view`](ConformanceTarget::scan_view) | a view's `order_by:` read one row at a time: whether a consumer can stop the producer | [`ExpectHalt`](crate::scenario::ScenarioStep::ExpectHalt), [`EventuallyHalt`](crate::scenario::ScenarioStep::EventuallyHalt) |
@@ -264,6 +265,32 @@ pub trait ConformanceTarget {
     /// therefore owes this method nothing at all, and it has no default body because a system with
     /// one `at_least_once` binding owes it everything.
     fn redeliver_event(&self, request: RedeliveryRequest) -> Result<(), TargetError>;
+
+    /// Delivers one occurrence of an event from an external channel, with the delivery context
+    /// that channel binds, to the bindings that react to it (ess/18, beyond10x/ess#195).
+    ///
+    /// What `when.context_fields` obliges. The event is one nothing in the specification publishes
+    /// — a context is admitted only for such an event — so no command the suite runs can make it
+    /// happen, and the suite delivers it itself: `payload` is the occurrence's fields and `context`
+    /// the values the channel named by `authority` binds, each already checked against its
+    /// declared type. Bind them exactly as a real channel would, and make the invocation read the
+    /// context from here and never from the payload. A later
+    /// [`redeliver_event`](Self::redeliver_event) of the event repeats the most recent occurrence
+    /// delivered here, with **that** occurrence's context.
+    ///
+    /// Optional, and the default body says so: a target that has no external channel to deliver
+    /// on answers [`TargetError::Unsupported`], and each scenario that needs it is recorded
+    /// `unsupported` with the target's reason — never passed.
+    fn deliver_event(&self, request: EventDeliveryRequest) -> Result<(), TargetError> {
+        Err(TargetError::unsupported(
+            format!(
+                "delivering `{}` from the external channel `{}` with its context",
+                request.event, request.authority
+            ),
+            "this target cannot deliver an event from an external channel with its delivery \
+             context",
+        ))
+    }
 
     /// Reports the command invocations a binding made (§16).
     ///
@@ -780,6 +807,10 @@ pub struct ElapsedObservation {
 }
 
 /// A request to deliver an already-published event to its bindings again (§17).
+///
+/// For an event delivered from an external channel ([`EventDeliveryRequest`]), the occurrence
+/// repeated is the most recent one delivered, and it carries the context that occurrence arrived
+/// with — not the context of any earlier delivery.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RedeliveryRequest {
     /// Which event to deliver again.
@@ -787,6 +818,25 @@ pub struct RedeliveryRequest {
     /// It does not say which binding: an event reaches everything that reacts to it, and naming one
     /// would be a delivery the transport does not have.
     pub event: EventRef,
+    /// The scenario this belongs to.
+    pub correlation: CorrelationId,
+}
+
+/// A request to deliver one occurrence of an event from an external channel, with its delivery
+/// context (ess/18, beyond10x/ess#195).
+///
+/// A redelivery of the event afterwards ([`RedeliveryRequest`]) repeats the most recent occurrence
+/// delivered this way, and carries that occurrence's context.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EventDeliveryRequest {
+    /// Which event.
+    pub event: EventRef,
+    /// The binding-local name of the external channel the occurrence arrives on.
+    pub authority: String,
+    /// The occurrence's fields, by declared name.
+    pub payload: BTreeMap<String, Node>,
+    /// The delivery context the channel binds, by declared field name.
+    pub context: BTreeMap<String, Node>,
     /// The scenario this belongs to.
     pub correlation: CorrelationId,
 }

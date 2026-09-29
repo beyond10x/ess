@@ -214,6 +214,34 @@ pub fn validate_specification(spec: &crate::Specification) -> ValidationErrors {
     errors
 }
 
+/// Most fields one host-bound table declares.
+pub const FIELD_TABLE_LIMIT: usize = 64;
+
+/// One table of host-bound fields: at most [`FIELD_TABLE_LIMIT`] entries, each a valid field name
+/// declared once. `what` names the table's owner in the message — `periodic host` for a periodic
+/// host's tables, `delivery context` for an event binding's (beyond10x/ess#195).
+pub(crate) fn field_table(fields: &[Field], path: &str, what: &str) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    if fields.len() > FIELD_TABLE_LIMIT {
+        errors.push(ValidationError::new(
+            ValidationCode::UnsupportedConstruct,
+            path,
+            format!("{what} field limit is {FIELD_TABLE_LIMIT} per table"),
+        ));
+    }
+    let mut names = BTreeSet::new();
+    for field in fields {
+        if crate::types::field_name(&field.name).is_err() || !names.insert(&field.name) {
+            errors.push(ValidationError::new(
+                ValidationCode::DuplicateDeclaration,
+                path,
+                format!("{what} fields require unique valid declared names"),
+            ));
+        }
+    }
+    errors
+}
+
 /// The only initially admitted periodic profile, with every choice explicit.
 #[derive(
     Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
@@ -247,24 +275,11 @@ impl PeriodicCause {
             ("context_fields", &self.host.context_fields),
             ("read_fields", &self.host.read_fields),
         ] {
-            let path = format!("{at}.host.{label}");
-            if fields.len() > 64 {
-                errors.push(ValidationError::new(
-                    ValidationCode::UnsupportedConstruct,
-                    &path,
-                    "periodic host field limit is 64 per table",
-                ));
-            }
-            let mut names = BTreeSet::new();
-            for field in fields {
-                if crate::types::field_name(&field.name).is_err() || !names.insert(&field.name) {
-                    errors.push(ValidationError::new(
-                        ValidationCode::DuplicateDeclaration,
-                        &path,
-                        "periodic host fields require unique valid declared names",
-                    ));
-                }
-            }
+            errors.extend(field_table(
+                fields,
+                &format!("{at}.host.{label}"),
+                "periodic host",
+            ));
         }
         errors
     }

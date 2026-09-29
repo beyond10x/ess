@@ -535,7 +535,8 @@ const REQUIREMENTS: &[Requirement] = &[
                     | ResolvedMappingValue::EventAccessor { .. }
                     | ResolvedMappingValue::Selection { .. }
                     | ResolvedMappingValue::HostContext { .. }
-                    | ResolvedMappingValue::HostRead { .. } => false,
+                    | ResolvedMappingValue::HostRead { .. }
+                    | ResolvedMappingValue::DeliveryContext { .. } => false,
                 })
             })
         },

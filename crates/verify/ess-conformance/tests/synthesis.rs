@@ -362,6 +362,8 @@ fn shape(synthesis: &Synthesis, id: &str) -> Vec<&'static str> {
             ScenarioStep::SnapshotView { .. } => "snapshot view",
             ScenarioStep::ExpectViewUnchanged { .. } => "unchanged view",
             ScenarioStep::ExpectDirectResponse { .. } => "direct response",
+            ScenarioStep::DeliverEvent { .. } => "deliver",
+            ScenarioStep::ExpectEveryInvocation { .. } => "every invocation",
         })
         .collect()
 }

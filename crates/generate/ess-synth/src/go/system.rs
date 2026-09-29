@@ -441,6 +441,7 @@ fn crossing(binding: &ResolvedBinding, field: &str) -> String {
             ResolvedMappingValue::Literal { .. }
             | ResolvedMappingValue::EventAccessor { .. }
             | ResolvedMappingValue::HostContext { .. }
+            | ResolvedMappingValue::DeliveryContext { .. }
             | ResolvedMappingValue::HostRead { .. }
             | ResolvedMappingValue::Selection { .. } => false,
         })

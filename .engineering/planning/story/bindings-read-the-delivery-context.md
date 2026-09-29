@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:bindings-read-the-delivery-context
 kind: story
-status: active
+status: implemented
 title: An event-triggered binding cannot read the delivery context (the channel or subscription the event arrived on)
 refs:
 - provider: github
   reference: beyond10x/ess#195
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T17:59:46Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T17:59:46Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T01:53:31Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 # Story: An event-triggered binding cannot read the delivery context (the channel or subscription the event arrived on)
 

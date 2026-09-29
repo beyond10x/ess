@@ -598,13 +598,61 @@ invent that machinery preemptively. Conformance for nonmechanical crossings stil
 an independent conversion oracle or explicit expected-value vectors, not the target
 under test supplying its own expected result.
 
-Typed context remains a follow-up contract, not admitted syntax in this accessor
-implementation. Keep the four-row acceptance open until that context is supplied honestly,
+Typed context is a separate contract, not accessor syntax. It is built in `ess/18`
+(beyond10x/ess#195), as specified in the next section. Keep the four-row acceptance open until
+that context is supplied honestly,
 the real conversion obligations are verified, and the actual consumer has written and
 verified all four rows against a published ESS release.
 Do not alter source Optional types, make required command inputs Optional, or invent
 event fields to manufacture that count. Private consumer identifiers and exact source
 citations belong in the retained review evidence, not this public-source design.
+
+## The delivery context contract (`ess/18`, beyond10x/ess#195)
+
+An event binding declares the context beside its event:
+
+```yaml
+when:
+  event: demo.inbox.MessageReceived
+  context_authority: account-messages
+  context_fields:
+    - {name: account_id, type: demo.inbox.AccountId}
+mapping:
+  account_id: context.account_id
+  message_id: event.message_id
+```
+
+| Clause | Rule |
+|---|---|
+| Declaration | `context_fields` is a typed record separate from the payload. `context_authority` is a binding-local name for the external channel whose authority binds it. Neither is a credential. Each needs the other. An empty record is refused, and so is a field declared twice. Types resolve like any field. |
+| Source | `context.<field>` reads one declared field. It is assignable to the input, or crosses a declared conversion. A missing declaration or an undeclared field is refused. It is never a lookup in the payload. `event.<channel>` is still not a field, and `host_context.` still belongs to the periodic host. |
+| Admission | Only for an event that no command outcome emits and no binding escalates into, that is, an event an external channel delivers. An event the system publishes has no channel to bind a context. The context is refused beside `periodic:`. |
+| Format | `ess/18`. Below it, both `context_fields` and `context.<field>` are refused, in YAML and JSON sources alike. Before `ess/18`, `context.x` was literal text; it is now a reference. |
+| Domain and IR | `BindingCause::External { event, authority, context_fields }`. `ResolvedBinding.context` sits beside the unchanged event cause and is serialised only when present. The mapping value is `ResolvedMappingValue::DeliveryContext`. |
+| Delivery | Redelivery carries the context of the occurrence it repeats. Delivery words and failure policies are those of any event binding. |
+| Target protocol | `deliver_event` hands over one occurrence (payload and context) from its channel. Its default answer is unsupported, which records the scenario `unsupported` with the target's reason. A later `redeliver_event` repeats the most recent delivered occurrence. |
+| Conformance | suite/30 (and /31 with coverage) adds `deliver_event` and `expect_every_invocation`. The `mapping` scenario delivers one event under two contexts and requires each invocation to carry its own. The `delivery` scenario delivers under two contexts, redelivers, and requires every invocation for the second occurrence to carry the second context. A target that ignores the context fails `mapping`. A target that redelivers with the first delivery's context fails `delivery`. Go and TypeScript generation refuse these suites. |
+| Generation | AsyncAPI carries the declared context on the reaction and the mapped source. Generated docs name the channel and the fields. The synthesis plan owes the delivery to the host, as an external obligation. |
+
+Two limits are recorded rather than guessed around. A mapping that crosses a declared
+conversion, reads a bounded accessor or reads a selection has no exact expectation, and its
+scenario is refused with the reason. If no payload field reaches the input, the occurrences
+cannot be told apart by their invocations. The `delivery` scenario then delivers once and
+requires the context of every invocation, and the first-context defect is not observable
+through that binding.
+
+The delivered values are chosen, not numbered. Each field's values are collected over the first
+64 witness distinctions, skipping any its type's invariants refuse. Every context field the
+mapping reads then differs between the two deliveries. Within each delivery it also shares no
+value, at any depth, with any other context or payload field: a flag inside a payload struct and
+a list element count. Where no admitted values can do that, only `mapping` and `delivery` are
+refused, and the reason names the two values that collide. `flow` and `on-failure` deliver once
+and are still synthesized.
+
+In `ess verify diff`, a context field's name, type and wire name are part of the binding's
+cause, so a wire rename is a `cause-changed`. A context field's `display` or `summary` is
+documentation. It is reported as `context-field-display-changed` or
+`context-field-summary-changed`, both `ess-diff/10`, and not as a cause change.
 
 ## Verification required before implementation is called complete
 

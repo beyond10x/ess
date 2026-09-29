@@ -50,9 +50,49 @@
   identities, illegal moves) refuse with the new strategy `arrange_related_row` named.
 - The interpreted target reports a scenario of such a command `unsupported`, naming the guard.
   Entity Runtime refuses the command with `RelatedGuardUnsupported`.
+- **An event binding reads the delivery context its event arrived with (`ess/18`, beyond10x/ess#195).**
+  A binding declares `when.context_fields` (a typed record separate from the payload) and
+  `when.context_authority` (the external channel whose authority binds it), and reads a field as
+  `context.<field>` in `mapping:`. The context is admitted only for an event that no command
+  outcome emits and no binding escalates into. Beside `periodic:` it is refused. Below `ess/18`,
+  both the keys and `context.<field>` are refused, in YAML and JSON sources. A missing or
+  undeclared context field is a refusal, never a payload lookup, and `event.<channel>` is still
+  not a field. The compiler resolves the context into `ResolvedBinding.context`, beside the
+  unchanged event cause, and the mapping value into `ResolvedMappingValue::DeliveryContext`. A
+  binding without a context keeps its bytes. The domain cause is
+  `BindingCause::External { event, authority, context_fields }`. `ess verify diff` reports a
+  context change as a cause change, rendered with the event, the channel and the context fields
+  (each with its type and any `wire` name) on each side. A context field's `display` or
+  `summary` is documentation and gets its own kind: `context-field-display-changed` or
+  `context-field-summary-changed`.
+- **Conformance delivers such an event itself (suite/30 and /31).** The new target method is
+  `deliver_event`. It is optional, and its default answer is unsupported, which records the
+  scenario `unsupported` with the target's reason. The new steps are `deliver_event` and
+  `expect_every_invocation`. The `mapping` scenario delivers one event under two contexts and
+  requires each invocation to carry its own. The `delivery` scenario redelivers the second
+  occurrence and requires every invocation for it to carry the second context, so a redelivery
+  carries its original context. Each mapped context value differs between the two deliveries.
+  Within each delivery it also shares no value, at any depth, with any payload value or other
+  context value, whatever their names and types. That includes a flag inside a payload struct
+  and a list element. So a target that reads the context from the payload, or swaps two context
+  fields, fails. Values are chosen within what each type's invariants admit. Where no admitted
+  values keep the fields apart, only `mapping` and `delivery` are refused, and the reason names
+  the two values that collide. Two mapped `Boolean` context fields beside a `Boolean` payload
+  field are one such case. `flow` and `on-failure` are still synthesized. Go and TypeScript
+  generation refuse these suites.
+- AsyncAPI carries the declared delivery context on the reaction and a `delivery_context` mapped
+  source. Generated docs name the channel and its fields. The synthesis plan owes the delivery
+  to the host, as an external obligation.
 
 ### Changed
 
+- Before `ess/18`, a mapping value written `context.<x>` was literal text. It is now refused as a
+  delivery-context reference that nothing declares.
+- **`ess-diff/10` (unreleased).** A binding cause change whose before or after is an `external`
+  cause (an `ess/18` delivery context) needs `ess-diff/10`, and so do the two context-field
+  documentation kinds. Writing it as `ess-diff/3` to `/9` is
+  refused, and readers of those formats refuse it with `unsupported_format_version`. Every other
+  change keeps its earlier format.
 - Below `ess/18`, `state` in a `when_subject` predicate is refused as `unsupported_format_version`
   (it was `unobservable_fact`).
 - `ess verify conform mutate` writes `ess-mutation-report/2`, and `--emit` writes

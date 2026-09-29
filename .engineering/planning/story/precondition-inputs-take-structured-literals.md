@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:precondition-inputs-take-structured-literals
 kind: story
-status: active
+status: implemented
 title: 'A precondition cannot open a session whose command takes a list: literal refused as not a scalar, fixture refused by the explorer'
 refs:
 - provider: github
   reference: beyond10x/ess#205
 relations:
 - serves: vision:O2
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-28T17:59:49Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-28T17:59:49Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-29T01:53:27Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":10,"verification":1}}}
 ---
 # Story: A precondition cannot open a session whose command takes a list: literal refused as not a scalar, fixture refused by the explorer
 

@@ -185,20 +185,20 @@ fn validate_suite(value: &Json) -> Result<(), AdmissionError> {
     )?;
     let version = SuiteFormat::parse(p["suite_version"].text()?)
         .map_err(|e| p["suite_version"].error("UnsupportedSuiteVersion", e.to_string()))?;
-    if !matches!(version.major(), 1..=29) {
+    if !matches!(version.major(), 1..=31) {
         return Err(p["suite_version"].error(
             "UnsupportedSuiteVersion",
-            "execution readers admit suite majors 1–29",
+            "execution readers admit suite majors 1–31",
         ));
     }
     if matches!(
         version.major(),
-        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29
+        5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31
     ) != root.contains_key("coverage")
     {
         return Err(value.error(
             "InvalidCoverage",
-            "coverage is required exactly for odd suite majors from /5 through /29",
+            "coverage is required exactly for odd suite majors from /5 through /31",
         ));
     }
     for scenario in root["scenarios"].object()?.values() {
@@ -414,10 +414,14 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             && matches!(tag, "resolve_fixtures" | "expect_event_values"))
         || crate::outcome_shapes::needs_newer(tag, major)
         || crate::absent_input::needs_newer(tag, major)
+        || crate::delivery_context::needs_newer(tag, major)
     {
         return Err(value.error("UnsupportedVocabulary", "step requires a newer suite major"));
     }
     let (required, optional): (&[&str], &[&str]) = match tag {
+        _ if crate::delivery_context::step_keys(tag).is_some() => {
+            crate::delivery_context::step_keys(tag).unwrap_or_default()
+        }
         _ if crate::bounded_retry::step_keys(tag, major).is_some() => {
             crate::bounded_retry::step_keys(tag, major).unwrap_or_default()
         }
@@ -485,7 +489,19 @@ fn step_value(value: &Json, major: u32) -> Result<(), AdmissionError> {
             }
             "times" | "count" => crate::bounded_retry::admit_positive(&field.raw)
                 .map_err(|reason| field.error("InvalidRepetition", reason))?,
-            "input" | "params" | "subject" => values(field, major, tag == "expect_invocation")?,
+            "input" | "params" | "subject" | "selecting" => values(
+                field,
+                major,
+                matches!(tag, "expect_invocation" | "expect_every_invocation"),
+            )?,
+            "authority" if tag == "deliver_event" => {
+                ess_domain::binding::BindingName::new(field.text()?)
+                    .map_err(|error| field.error("InvalidAuthority", error.to_string()))?;
+            }
+            "context" if tag == "deliver_event" => {
+                field.object()?;
+                field.payload()?;
+            }
             "identity" => field.payload()?,
             "fields" | "payload" | "caller" => {
                 field.object()?;
@@ -547,6 +563,7 @@ fn response_payloads(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
 /// carries the vocabulary it owns.
 fn construct_formats(suite: &ConformanceSuite) -> Result<(), AdmissionError> {
     crate::direct_response::admit(suite)?;
+    crate::delivery_context::admit(suite)?;
     crate::fixtures::admit_format(suite)?;
     crate::absent_input::admit_format(suite)?;
     crate::leaf_payloads::admit_format(suite)?;

@@ -1310,6 +1310,48 @@ ticks coalesce to one pending tick. Stop acknowledgement means the loop and its
 work have quiesced. Native generation reports `PeriodicHostRequired` until that
 real host capability is supplied; it does not fabricate a scheduler or event.
 
+### Read the channel an event arrived on
+
+Some events do not carry their recipient in the payload. For example, a service subscribes to
+`accounts/{account_id}/messages` for each account, and the recipient is the subscription the
+event arrived on. `ess/18` lets an event binding declare that delivery context and read it:
+
+```yaml
+when:
+  event: example.inbox.MessageReceived
+  context_authority: account-messages
+  context_fields:
+    - {name: account_id, type: example.inbox.AccountId}
+invoke: {command: example.inbox.RecordMessage}
+mapping:
+  account_id: context.account_id
+  message_id: event.message_id
+  peer: event.from
+delivery: at_least_once
+on_failure: retry
+```
+
+`context_fields` is a typed record separate from the payload. `context_authority` names the
+external channel whose authority binds it. It is a name, not a credential, and each key
+requires the other. `context.<field>` reads one declared field. The field's type must fit the
+input, or a declared conversion must cross it. The host binds the context from the channel the
+occurrence arrived on and supplies it with that occurrence. A redelivery carries the context
+of the occurrence it repeats.
+
+The rules:
+
+- A context is admitted only for an event an external channel delivers. If a command outcome
+  of the specification emits the event, or a binding escalates into it, the event has no
+  channel, and the context is refused.
+- A context mapping with no declaration is refused. It is never looked up in the payload.
+  `event.channel` is not a field.
+- `host_context.<field>` still belongs to a periodic host.
+- Below `ess/18`, both keys and `context.<field>` are refused.
+
+Conformance delivers the event itself, under two different contexts, and requires each
+invocation to carry its own. See
+[Verify conformance](verify-conformance.md#deliver-an-event-with-its-context).
+
 ### Preserve clock-reading provenance
 
 An `ess/3` newtype can attach a reading contract while retaining its scalar wire
