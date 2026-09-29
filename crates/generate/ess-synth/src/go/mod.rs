@@ -41,6 +41,7 @@ mod accessor;
 mod entity;
 mod http;
 mod items;
+mod json;
 mod layout;
 mod name;
 mod obligation;
@@ -211,6 +212,7 @@ impl<'a> Emit<'a> {
             Primitive::Timestamp => "NewTimestamp",
             Primitive::Duration => "NewDuration",
             Primitive::Uuid => "NewUuid",
+            Primitive::Json => "NewJson",
             other => panic!("`{other:?}` maps onto a Go type directly and has no constructor"),
         };
         self.qualify(self.layout.primitives(), wrapper)
@@ -286,7 +288,6 @@ impl<'a> Emit<'a> {
 /// allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Go)?;
-    crate::failure::json(ir, plan, crate::Target::Go)?;
     crate::failure::input_absent(ir, plan, crate::Target::Go)?;
     crate::existence::refuse(ir, plan, crate::Target::Go)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Go)?;
@@ -303,7 +304,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
 
     let mut artifacts = vec![
         module_file(&layout, provenance),
-        primitives_package(&layout, provenance),
+        primitives_package(&layout, provenance, json::used(ir)),
     ];
     if let Some(helper) = reading::helper(ir, &layout, provenance) {
         artifacts.push(helper);
@@ -574,11 +575,20 @@ fn module_file(layout: &Layout, provenance: &Provenance) -> Artifact {
 ///
 /// Fixed per emitter version rather than derived from the specification, exactly as the Rust
 /// emitter's is: the same eight primitives get the same eight spellings whatever the system.
-fn primitives_package(layout: &Layout, provenance: &Provenance) -> Artifact {
+/// `Json` is the ninth, and only in a model that uses it (see `json`), so every other model keeps
+/// these bytes.
+fn primitives_package(layout: &Layout, provenance: &Provenance, with_json: bool) -> Artifact {
     let package = layout.primitives();
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push('\n');
-    out.push_str(PRIMITIVES_DOC);
+    if with_json {
+        out.push_str(&json::with_json(
+            PRIMITIVES_DOC,
+            &[("The four below have no", "The five below have no")],
+        ));
+    } else {
+        out.push_str(PRIMITIVES_DOC);
+    }
     let _ = writeln!(out, "package {}", package.name);
     for (type_name, what, rendering) in PRIMITIVES {
         let _ = write!(
@@ -593,6 +603,9 @@ fn primitives_package(layout: &Layout, provenance: &Provenance) -> Artifact {
              {{\n\treturn {type_name}{{value: value}}\n}}\n\n// Value is the wrapped \
              rendering.\nfunc (v {type_name}) Value() string {{\n\treturn v.value\n}}\n"
         );
+    }
+    if with_json {
+        out.push_str(json::PRIMITIVE);
     }
     Artifact::new(package.file(), out)
 }
