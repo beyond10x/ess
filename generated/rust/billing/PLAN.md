@@ -68,7 +68,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 
 | capability | source | stage | why |
 | --- | --- | --- | --- |
-| actor grants | `billing.invoice.Auditor` | planning | observes only; it may invoke no command; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling |
-| actor grants | `billing.invoice.Customer` | planning | may invoke `billing.invoice.CreateInvoice`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling |
+| actor grants | `billing.invoice.Auditor` | planning | observes only; it may invoke no command; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
+| actor grants | `billing.invoice.Customer` | planning | may invoke `billing.invoice.CreateInvoice`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | workload | `email-service` | planning | requires at least 2 replica(s); topology synthesis is deferred with its design |
 | workload | `invoice-service` | planning | requires at least 2 replica(s); topology synthesis is deferred with its design |

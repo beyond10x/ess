@@ -558,7 +558,7 @@ fn expected_refusals() -> Vec<(Capability, SynthesisRefusal)> {
             SynthesisRefusal {
                 reason: RefusalReason::NeedsCallerIdentity,
                 stage: RefusalStage::Planning,
-                detail: "may invoke `contract.local.Admin`, `contract.local.Run`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling".to_owned(),
+                detail: "may invoke `contract.local.Admin`, `contract.local.Run`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry".to_owned(),
             },
         ),
         (

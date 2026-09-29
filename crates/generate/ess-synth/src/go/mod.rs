@@ -466,10 +466,10 @@ fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
 /// reader has to act on. Each rule names the capability kinds it touches, so the parity question —
 /// *what is different about my command contracts* — is still answerable from the table.
 ///
-/// Two rows are conditional on the specification declaring a served surface at all, because a
-/// weakening naming a capability kind this module has no instance of is a row a reader has to check
-/// and then discard. Everything else here is a fact about Go and holds whatever the specification
-/// says.
+/// Two rows are conditional on the specification declaring a served surface at all, and one on it
+/// declaring an actor, because a weakening naming a capability kind this module has no instance of
+/// is a row a reader has to check and then discard. Everything else here is a fact about Go and
+/// holds whatever the specification says.
 fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
     let serves = !http::served(ir, refusals).is_empty();
     let mut exhaustive_affects = vec![
@@ -561,7 +561,23 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
             affects: vec![CapabilityKind::ComponentTransport],
         });
     }
+    out.extend(grant_table_weakening(ir));
     out
+}
+
+/// The first target's types crate carries every actor's grants as data; this one does not.
+fn grant_table_weakening(ir: &EssIr) -> Option<TargetWeakening> {
+    (!ir.actors().is_empty()).then(|| TargetWeakening {
+        guarantee: "an actor's declared grants are available as generated data: every declared \
+                    actor and the qualified commands it may invoke"
+            .to_owned(),
+        instead: "this target emits no grant table, so a Go caller enforcing a grant copies the \
+                  `may` lists from the plan's `actor grants` rows. Enforcement itself is refused \
+                  in every target, the first included; what is weaker here is only where the \
+                  data a caller enforces comes from"
+            .to_owned(),
+        affects: vec![CapabilityKind::ActorGrants],
+    })
 }
 
 /// The module file at the generated root.

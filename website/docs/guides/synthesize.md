@@ -51,7 +51,7 @@ weakenings separately; command behavior remains a handler obligation.
 
 What a target holds more weakly or cannot represent at all is declared in a `TARGET.md` beside the
 plan — a named weakening, never a silent downgrade. The Rust target is the one the others are
-measured against and emits no such file; Go's names four weakenings and the browser's six, each
+measured against and emits no such file; Go's names five weakenings and the browser's six, each
 with the capabilities it touches. The browser tree's first row is the worked example: it cannot
 carry `#![forbid(unsafe_code)]`, because a WebAssembly export is a `#[no_mangle]` item and rustc's
 own `unsafe_code` lint flags one. The file says so, states that the crate contains no `unsafe`

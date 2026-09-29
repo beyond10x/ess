@@ -48,6 +48,13 @@
         "error_type",
         "view_type"
       ]
+    },
+    {
+      "guarantee": "an actor's declared grants are available as generated data: every declared actor and the qualified commands it may invoke",
+      "instead": "this target emits no grant table, so a Go caller enforcing a grant copies the `may` lists from the plan's `actor grants` rows. Enforcement itself is refused in every target, the first included; what is weaker here is only where the data a caller enforces comes from",
+      "affects": [
+        "actor_grants"
+      ]
     }
   ],
   "refusals": []
