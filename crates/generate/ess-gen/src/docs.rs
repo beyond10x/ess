@@ -1279,6 +1279,26 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
         ),
         Inline::text("."),
     ]);
+    if let Some(context) = &binding.context {
+        let mut sentence = vec![
+            Inline::text("Each occurrence arrives on the external channel "),
+            Inline::code(context.authority.to_string()),
+            Inline::text(", whose authority binds its delivery context: "),
+        ];
+        for (index, field) in context.fields.iter().enumerate() {
+            if index > 0 {
+                sentence.push(Inline::text(", "));
+            }
+            sentence.push(Inline::code(field.name.clone()));
+            sentence.push(Inline::text(" ("));
+            sentence.push(Inline::code(field.type_ref.to_string()));
+            sentence.push(Inline::text(")"));
+        }
+        sentence.push(Inline::text(
+            ". A redelivery carries the context of the occurrence it repeats.",
+        ));
+        under.prose(sentence);
+    }
 
     under.push(Block::Diagram {
         kind: DiagramKind::BindingFlow,
@@ -1604,19 +1624,14 @@ fn condition_sentence(
         ],
         // Rendered as `SubjectState` is — the predicate through `Display` — so the published
         // contract names the stored fields the branch reads (ess/9).
-        ResolvedCondition::SubjectPredicate { predicate, input } => {
-            let mut out = vec![
+        ResolvedCondition::SubjectPredicate { predicate, input } => input_guarded(
+            vec![
                 Inline::text("Taken when the existing subject's stored fields satisfy "),
                 Inline::code(predicate.to_string()),
-            ];
-            if let Some(guard) = input {
-                out.push(Inline::text(", and "));
-                out.push(Inline::code(guard.to_string()));
-                out.push(Inline::text(" holds of the input"));
-            }
-            out.push(Inline::text("."));
-            out
-        }
+            ],
+            input.as_ref(),
+        ),
+        ResolvedCondition::Related { .. } => related_condition(condition),
         ResolvedCondition::SubjectState { state, predicate } => vec![Inline::text(format!(
             "Taken when the existing subject is in {state}{}.",
             predicate.as_ref().map_or(String::new(), |guard| format!(
@@ -1726,6 +1741,40 @@ fn unknown_instance_sentence(command: &ResolvedCommand) -> &'static str {
     }
 }
 
+/// A guard over a row of another entity (ess/18, `when_related:`), in the sentence every projection
+/// opens it with.
+fn related_condition(condition: &ResolvedCondition) -> Vec<Inline> {
+    let ResolvedCondition::Related {
+        via,
+        entity,
+        test,
+        input,
+    } = condition
+    else {
+        return Vec::new();
+    };
+    input_guarded(
+        vec![Inline::text(ess_compiler::ir::related_sentence(
+            via, entity, test,
+        ))],
+        input.as_ref(),
+    )
+}
+
+/// A condition sentence with its input guard, where it has one, and the closing stop.
+fn input_guarded(
+    mut out: Vec<Inline>,
+    input: Option<&ess_primitives::predicate::Predicate>,
+) -> Vec<Inline> {
+    if let Some(guard) = input {
+        out.push(Inline::text(", and "));
+        out.push(Inline::code(guard.to_string()));
+        out.push(Inline::text(" holds of the input"));
+    }
+    out.push(Inline::text("."));
+    out
+}
+
 /// How a generated test is meant to reach a branch.
 ///
 /// On the page because the specification computes it once, on the model, so that no two projections
@@ -1759,6 +1808,10 @@ fn strategy_sentence(strategy: TestStrategy) -> &'static str {
         TestStrategy::SendExistingIdentity => {
             "A test reaches it by sending the command twice with one identity: the first call \
              creates the record, the second is answered by this branch."
+        }
+        TestStrategy::ArrangeRelatedRow => {
+            "A test reaches it by arranging the row of the other entity the input names, or its \
+             absence, and sending the command for it."
         }
     }
 }
@@ -1883,6 +1936,24 @@ fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
         Inline::text(") ← "),
     ];
     match &mapping.value {
+        ResolvedMappingValue::DeliveryContext { field, type_ref } => {
+            out.push(Inline::text("the delivery context's "));
+            out.push(Inline::code(field.clone()));
+            out.push(Inline::text(" ("));
+            out.push(Inline::code(type_ref.to_string()));
+            out.push(Inline::text(
+                "), which the external channel binds and supplies with each occurrence, never read \
+                 from the payload",
+            ));
+            if let Some(because) = &mapping.conversion {
+                out.push(Inline::text(format!(
+                    ". The two types differ, and the crossing is declared: \"{}.\"",
+                    because.trim().trim_end_matches('.')
+                )));
+            } else {
+                out.push(Inline::text("."));
+            }
+        }
         ResolvedMappingValue::HostContext { field, type_ref }
         | ResolvedMappingValue::HostRead { field, type_ref } => {
             let phase = if matches!(&mapping.value, ResolvedMappingValue::HostContext { .. }) {
@@ -2928,7 +2999,8 @@ fn crossing_users(ir: &EssIr, conversion: &ResolvedConversion) -> Vec<Vec<Inline
         for mapping in &binding.mapping {
             let crossed = matches!(
                 &mapping.value,
-                ResolvedMappingValue::HostContext { type_ref, .. }
+                ResolvedMappingValue::DeliveryContext { type_ref, .. }
+                | ResolvedMappingValue::HostContext { type_ref, .. }
                 | ResolvedMappingValue::HostRead { type_ref, .. }
                 | ResolvedMappingValue::EventField { type_ref, .. }
                 | ResolvedMappingValue::EventAccessor { type_ref, .. }

@@ -10,12 +10,12 @@ Refusals under `ess/15`, by validation code:
 
 | Code | Refused |
 |---|---|
-| `conflicting_declaration` | `unknown_instance:` beside another condition, twice on one command, with an effect, or with `refuses: false` and an `error:`; `deletes:` with `sets:` or beside another verb; `into:` without `creates:`; `accepts: nothing` beside a subject, event, error, assignment, replay or a condition other than `when:`/default; a precondition whose input selects a refusing branch or several branches |
-| `missing_declaration` | a refusing `unknown_instance:` branch with no `error:`; a precondition leaving a required, non-fixture input out |
+| `conflicting_declaration` | `unknown_instance:` beside another condition, twice on one command, with an effect, or with `refuses: false` and an `error:`; `deletes:` with `sets:` or beside another verb; `into:` without `creates:`; `accepts: nothing` beside a subject, event, error, assignment, replay or a condition other than `when:`/default; a precondition whose input selects a refusing branch or several branches; a precondition literal a struct or newtype invariant is not true of (unknown included, as the setup reader requires), or whose created row an entity invariant is false of. That row holds its identity, its state and every `sets:` value the document decides: an input literal, a literal, the input or the `else:` fallback of an omitted optional one, and a struct source built of those. A value generated or read from a fixture, the caller or another record is unknown there, and an invariant reading one is not refused |
+| `missing_declaration` | a refusing `unknown_instance:` branch with no `error:`; a precondition leaving a required, non-fixture input out, or a struct literal in one leaving a non-optional field out |
 | `unreachable_branch` | `unknown_instance:` on a command with no `moves:`/`updates:`/`deletes:` branch reading `instance:` from input |
 | `unknown_state` | `into:` naming a state the lifecycle does not declare |
-| `undeclared_reference` | a precondition naming an undeclared command, input field, actor, an actor not granted the command, or a fixture the command does not declare for that input |
-| `type_mismatch` | a precondition literal that is not a value of its input's type |
+| `undeclared_reference` | a precondition naming an undeclared command, input field, actor, an actor not granted the command, or a fixture the command does not declare for that input; a struct literal in a precondition naming a field its type does not declare. `{fixture: name}` is a fixture reference only on an input its command declares a fixture input for, and a literal elsewhere |
+| `type_mismatch` | a precondition literal that is not a value of its input's type, held to it down to every scalar leaf as an `example:` is; a list, map or struct literal is a value (beyond10x/ess#205), `null` only where the type is optional, and a `Json` or `Binary64` leaf or a union literal never |
 | `unobservable_fact` | a precondition whose guard its literal input leaves undecided, or whose command selects by the existing subject |
 | `non_exhaustive_branches` | a precondition whose input selects no branch |
 | `empty_change` (unchanged) | a subjectless outcome with no event, no error and no `accepts: nothing` |
@@ -23,7 +23,8 @@ Refusals under `ess/15`, by validation code:
 Known limits: a state reachable only through a creation `into:` it is still refused by the entity's
 own reachability check (`unreachable_state`); the generated explorers exclude a command with an
 `unknown_instance:` branch or a `deletes:` effect, and refuse a precondition that reads a fixture
-input; `ess-diff` reports a changed creation state as `outcome-subject-changed` (no separate
+input; a command whose input they cannot draw, such as a list, stays out of every sequence, and a
+precondition still sends it with its literal input; `ess-diff` reports a changed creation state as `outcome-subject-changed` (no separate
 `CreationStateChanged` kind, so no new delta format) and a changed precondition list as an
 unclassified system change; Entity Runtime lowering refuses an `unknown_instance:` branch, a
 `deletes:` effect, a creation `into:` a state and `accepts: nothing` with the lowering code
@@ -271,6 +272,21 @@ request a declared refusal claims by its input is refused whether or not a recor
 identity; only a request no such refusal claims is answered by the creation, the update or
 `existing_instance:`. The creating half is therefore not "the first answer" the ess/15 marker is;
 the generated page says so.
+
+The same precedence holds on a command that only addresses an existing record (`moves:`,
+`updates:` or `deletes:` with `instance:` from its input, no existence form), and conformance
+witnesses both halves of it (beyond10x/ess#209). The refusal's own scenario sends the refused
+input for an identity nothing stored, as before. It then creates the record through a declared
+creation, the same arrangement the accepting branch gets, drives it to a state the command runs
+from, sends the refused input for it, and requires the error and no event. It also requires the
+row unchanged, but only where an identity view shows the row: with no such view nothing reads the
+row back, and the half makes no claim about it. A target that looks the record up before it checks the input fails the first half; a target that
+checks the input only for unknown records fails the second. If no arrangement reaches that
+record, synthesis withdraws the scenario and refuses it with the arrangement's cause. It is not
+filed to be skipped at run time. Three cases keep their own families: a refusal whose guard reads
+the identity field stays a plain send (#178), a command reading stored fields already sends its
+refusals for an arranged row, and a command whose branches read the held state gets no arranged
+half.
 
 | Code | Refused |
 |---|---|

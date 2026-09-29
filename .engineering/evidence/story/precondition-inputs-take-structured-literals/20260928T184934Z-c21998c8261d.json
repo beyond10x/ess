@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-28T18:49:34Z",
+  "actor": "human:timo",
+  "artifact": "story:precondition-inputs-take-structured-literals",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-a-preconditions-pass-2",
+    "review": "review-result:adversary-a-preconditions-pass-2",
+    "outcome": "fixed"
+  }
+}

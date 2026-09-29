@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T22:33:09Z",
+  "actor": "human:timo",
+  "artifact": "story:sets-retarget-mutants-get-a-separating-witness",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "connective_and_source_mutants 12 (issue shape red before), adversary_distinguish_pass1 6 (was 3 red), pass2 8 (was 3 red), ess-conformance 1579 passed on 70579f4621; mutation lanes unchanged (billing killed 12); generate --check up to date",
+    "reference": "~/.cache/ess-wave-n2/distinguish/after3.log"
+  }
+}

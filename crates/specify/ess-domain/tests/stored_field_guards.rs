@@ -213,7 +213,7 @@ fn in_a_command_with_no_subject_bearing_sibling_it_is_refused_at_when_subject() 
 
 #[test]
 fn it_reads_the_entity_fields_and_nothing_else() {
-    for guard in ["colour == Red", "state == Created", "parcel_id == x"] {
+    for guard in ["colour == Red", "parcel_id == x"] {
         let errors = refused(&with_guard(&format!(
             "        when_subject:\n          predicate: {guard}\n"
         )));
@@ -239,6 +239,20 @@ fn it_reads_the_entity_fields_and_nothing_else() {
         ),
         "{errors}"
     );
+    // The held state as `state` is readable from `ess/18` (beyond10x/ess#204); under this
+    // fixture's `ess/9` it is refused at the same key with the format it needs.
+    let errors = refused(&with_guard(
+        "        when_subject:\n          predicate: state == Created\n",
+    ));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::UnsupportedFormatVersion,
+            "outcomes.refused-overweight.when_subject"
+        ),
+        "{errors}"
+    );
+    assert!(errors.to_string().contains("ess/18"), "{errors}");
 }
 
 #[test]

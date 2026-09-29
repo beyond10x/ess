@@ -97,7 +97,10 @@ impl Json {
             .is_some_and(|p| {
                 matches!(
                     p.suite_version.as_str(),
-                    "ess-conformance/28" | "ess-conformance/29"
+                    "ess-conformance/28"
+                        | "ess-conformance/29"
+                        | "ess-conformance/30"
+                        | "ess-conformance/31"
                 )
             });
         let scope = if direct_profile {

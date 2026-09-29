@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T18:40:57Z",
+  "actor": "human:timo",
+  "artifact": "story:arrangement-searches-every-creating-command",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-conformance --test arrangement_creators: base e93278196 1 passed 4 failed (#198 SYNTH-003/004, #209 no record arranged, #199 SYNTH-004); unit a118b82775: 5 passed; adversary 14 + 13 passed",
+    "reference": "~/.cache/ess-wave-n2/arrangement/red-all.log vs gate3.log"
+  }
+}

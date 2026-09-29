@@ -32,7 +32,7 @@ The rule orders refusals ahead of accepting branches and nothing else:
 |---|---|
 | input-guarded refusal, accepting branch with an input guard: a plain `when:`, the `when:` beside a `when_subject:`, or an external branch's `when:` | the refusal, before any stored row is read or any provider asked |
 | input-guarded refusal, default | not an overlap: the default is what no other guard selects |
-| two input-guarded refusals | unchanged: a witness of one refutes the other where the command has no default |
+| two input-guarded refusals | unordered: a witness of one refutes the other with or without a default, so it selects exactly one outcome; where no input does, synthesis refuses the scenario naming both guards (beyond10x/ess#209) |
 | two accepting guarded branches | unchanged |
 | a refusal decided by the stored row, the held state or a provider; the wrong-state branch | unchanged |
 

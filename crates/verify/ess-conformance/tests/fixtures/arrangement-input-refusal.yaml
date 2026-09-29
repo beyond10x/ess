@@ -1,0 +1,71 @@
+format: ess/14
+system: vault
+version: v1
+domain: vault.acct
+summary: An account is onboarded, then configured once; configuration refuses bad input.
+entities:
+  - name: vault.acct.Account
+    identity: {name: account_id, type: String}
+    fields:
+      - {name: issuer, type: String}
+    lifecycle:
+      initial: New
+      states: [New, Configured]
+      terminal: [Configured]
+      transitions:
+        - {name: configure, from: [New], to: Configured}
+actors:
+  - name: vault.acct.Operator
+    may: [vault.acct.Onboard, vault.acct.Configure]
+errors:
+  - name: vault.acct.SecretTooShort
+    fields: []
+  - name: vault.acct.MissingConfiguration
+    fields: []
+  - name: vault.acct.IdRequired
+    fields: []
+  - name: vault.acct.AlreadyConfigured
+    fields: []
+commands:
+  - name: vault.acct.Onboard
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: onboarded
+        creates: vault.acct.Account
+        instance: account_id
+        emits: [vault.acct.Onboarded]
+        payload:
+          vault.acct.Onboarded: {account_id: {generated: true}}
+  - name: vault.acct.Configure
+    input:
+      - {name: id, type: String}
+      - {name: secret, type: String}
+      - {name: issuer, type: String}
+    outcomes:
+      - {name: id-required, when: id == "", error: vault.acct.IdRequired}
+      - {name: secret-too-short, when: secret.count < 12, error: vault.acct.SecretTooShort}
+      - {name: missing-configuration, when: issuer == "", error: vault.acct.MissingConfiguration}
+      - {name: already-configured, wrong_state: true, error: vault.acct.AlreadyConfigured}
+      - name: configured
+        moves: vault.acct.Account.configure
+        instance: id
+        sets: {issuer: input.issuer}
+        emits: [vault.acct.Configured]
+        payload:
+          vault.acct.Configured: {account_id: input.id}
+events:
+  - name: vault.acct.Onboarded
+    fields:
+      - {name: account_id, type: String}
+  - name: vault.acct.Configured
+    fields:
+      - {name: account_id, type: String}
+views:
+  - name: vault.acct.Accounts
+    source: vault.acct.Account
+    consistency: read_your_writes
+    fields:
+      - {name: account_id, type: String}
+      - {name: state, type: vault.acct.Account.State}
+      - {name: issuer, type: String}

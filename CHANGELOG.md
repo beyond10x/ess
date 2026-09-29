@@ -2,6 +2,213 @@
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-09-29
+
+### Added
+
+- **`ess/18`**, the source format of this release's new authored constructs. Every construct below
+  is refused under an earlier header with `unsupported_format_version`; a model without them keeps
+  its bytes and compiled digest.
+- **A refusal scoped to some held states** (beyond10x/ess#201). `when_subject_state:` may list
+  several states (`[Delivered, Cancelled]`), and a refusal may carry it without naming a subject:
+  it reads the subject its siblings name. A command can now accept a re-send in one state no move
+  starts from and refuse in the others, where `wrong_state:` gave them all one answer. Each state
+  is named once; every state left to the default must be one its move starts from.
+  `when_state_changes:` still needs the branch's own move. Synthesis writes one
+  `<entity>/state/<S>/refuses/<command>` scenario per wrong state `S`: it witnesses every guarded
+  branch that answers `S`, each on its own row arranged and observed in `S` with an input that
+  selects it, then the plain wrong-state row where an input still reaches it. An accepting branch
+  with a list is witnessed in every state it lists. Entity Runtime lowers a list to membership of
+  `$from_state`.
+- **`state` in a `when_subject` predicate** (beyond10x/ess#204): the held lifecycle state beside
+  the stored fields, `{all: [state == Ready, hold_note != ""]}`. A branch reading it that moves must
+  be able to move from every state it may be selected in. Guarded branches select before
+  `wrong_state:` applies, so the predicate may name a state no move starts from. Synthesis arranges
+  the row in the state and witnesses each conjunct's boundary; Entity Runtime lowers `state` to
+  `$from_state`.
+- **A guard over a row of another entity** (beyond10x/ess#211). An outcome may carry
+  `when_related: {via: input.<field>, exists: false}`, taken when no row of the entity whose
+  identity `input.<field>` carries exists, or `when_related: {via: input.<field>, predicate: …}`,
+  taken when that row exists and the predicate over its stored fields (and `input.`) holds. It sits
+  on any branch, a `creates:` and a refusal that names no subject included, and composes with
+  `when:`. One hop, keyed by the other entity's identity only; a lookup by any other field stays out
+  of scope. A missing row makes the predicate unknown and selects only the `exists: false` branch,
+  which a command with a predicate branch must declare. A missing row is answered by that branch
+  before any other, so it carries no `when:`. `existing_instance:` may sit in the same command and
+  answers first: the command's own identity is checked before the related row is read. On one
+  branch beside a `when_subject*`, `wrong_state`, `unknown_instance`, `existing_instance`,
+  `input_absent`, `external` or `replays` key it is `conflicting_declaration`.
+- Conformance synthesis witnesses every branch of such a command: `exists: false` with an identity
+  no row carries beside two rows that carry others, and each other branch on a related row created
+  between two decoys, searched toward the predicates so each side is witnessed. A related predicate
+  with two or more connective children is witnessed once more per child, on a row isolating it (a
+  conjunct refuted alone, a disjunct held alone), with the branch the command answers there
+  asserted; a boundary no arrangement reaches is refused under the branch's scenario id. A creator
+  needing a related row of an entity it is already arranging (a folder inside a folder) gives way
+  to the next creator. Where the related row is the row the creation is owned by, through the same
+  input field, it is arranged once. A driver running such a command for another scenario arranges
+  the related row first, and each further row it creates carries its own identity and its own
+  related row. Families that would send the command without a related row (boundaries, unknown
+  identities, illegal moves) refuse with the new strategy `arrange_related_row` named.
+- The interpreted target reports a scenario of such a command `unsupported`, naming the guard.
+  Entity Runtime refuses the command with `RelatedGuardUnsupported`.
+- **An event binding reads the delivery context its event arrived with (`ess/18`, beyond10x/ess#195).**
+  A binding declares `when.context_fields` (a typed record separate from the payload) and
+  `when.context_authority` (the external channel whose authority binds it), and reads a field as
+  `context.<field>` in `mapping:`. The context is admitted only for an event that no command
+  outcome emits and no binding escalates into. Beside `periodic:` it is refused. Below `ess/18`,
+  both the keys and `context.<field>` are refused, in YAML and JSON sources. A missing or
+  undeclared context field is a refusal, never a payload lookup, and `event.<channel>` is still
+  not a field. The compiler resolves the context into `ResolvedBinding.context`, beside the
+  unchanged event cause, and the mapping value into `ResolvedMappingValue::DeliveryContext`. A
+  binding without a context keeps its bytes. The domain cause is
+  `BindingCause::External { event, authority, context_fields }`. `ess verify diff` reports a
+  context change as a cause change, rendered with the event, the channel and the context fields
+  (each with its type and any `wire` name) on each side. A context field's `display` or
+  `summary` is documentation and gets its own kind: `context-field-display-changed` or
+  `context-field-summary-changed`.
+- **Conformance delivers such an event itself (suite/30 and /31).** The new target method is
+  `deliver_event`. It is optional, and its default answer is unsupported, which records the
+  scenario `unsupported` with the target's reason. The new steps are `deliver_event` and
+  `expect_every_invocation`. The `mapping` scenario delivers one event under two contexts and
+  requires each invocation to carry its own. The `delivery` scenario redelivers the second
+  occurrence and requires every invocation for it to carry the second context, so a redelivery
+  carries its original context. Each mapped context value differs between the two deliveries.
+  Within each delivery it also shares no value, at any depth, with any payload value or other
+  context value, whatever their names and types. That includes a flag inside a payload struct
+  and a list element. So a target that reads the context from the payload, or swaps two context
+  fields, fails. Values are chosen within what each type's invariants admit. Where no admitted
+  values keep the fields apart, only `mapping` and `delivery` are refused, and the reason names
+  the two values that collide. Two mapped `Boolean` context fields beside a `Boolean` payload
+  field are one such case. `flow` and `on-failure` are still synthesized. Go and TypeScript
+  generation refuse these suites.
+- AsyncAPI carries the declared delivery context on the reaction and a `delivery_context` mapped
+  source. Generated docs name the channel and its fields. The synthesis plan owes the delivery
+  to the host, as an external obligation.
+
+### Changed
+
+- Before `ess/18`, a mapping value written `context.<x>` was literal text. It is now refused as a
+  delivery-context reference that nothing declares.
+- **`ess-diff/10` (unreleased).** A binding cause change whose before or after is an `external`
+  cause (an `ess/18` delivery context) needs `ess-diff/10`, and so do the two context-field
+  documentation kinds. Writing it as `ess-diff/3` to `/9` is
+  refused, and readers of those formats refuse it with `unsupported_format_version`. Every other
+  change keeps its earlier format.
+- Below `ess/18`, `state` in a `when_subject` predicate is refused as `unsupported_format_version`
+  (it was `unobservable_fact`).
+- `ess verify conform mutate` writes `ess-mutation-report/2`, and `--emit` writes
+  `ess-mutation-manifest/2`. `--collect` still reads an `ess-mutation-manifest/1` emission.
+- A mutant whose suite gained synthesis refusals the baseline's does not have, and that no scored
+  scenario killed, is now `unwitnessed` (`ESS-MUTATE-004`, exit 3) instead of `survived`. Every
+  mutant entry lists the refusals it added as `added_refusals` (`{code, scenario}` or
+  `{code, subject}`), and the text output names them beside the verdict. The manifest records each
+  suite's refusals as `refused`. (#203)
+- A baseline is red (`ESS-MUTATE-001`) only when a scenario failed or ended `error`, on both
+  `--target` and `--collect`. Baseline scenarios reported `unsupported` or `skipped` are listed as
+  `baseline.not_scored` with their status, and each mutant is scored on the scenarios the baseline
+  executed. A mutant scenario the baseline reported but did not execute is listed on the mutant as
+  `excluded`. A baseline that executed nothing is refused with `nothing scored` (exit 3). `--target
+  interpreted` on a specification with views now scores instead of being refused. (#210)
+
+### Fixed
+
+- Conformance synthesis arranges a stored-row search from every creating command, not only the
+  first one. Creations are tried in command-name order (the order the IR keeps commands in), each
+  within its own node budget. A `when_subject:` branch that only a later creation's row selects is
+  now witnessed. A creation that cannot leave a row gives way to the next one, and synthesis
+  refuses only when every creation fails, keeping the first creation's cause. The lifecycle
+  arrangement also tries the next creation when the one on the shortest route cannot be arranged.
+  (beyond10x/ess#198)
+- An input-guarded refusal on a command that addresses an existing record keeps its plain send,
+  because the input refusal is answered before existence. It now also has an arranged half: the
+  record is created through a declared creation and driven to a state the command runs from, then
+  the refused input is sent for it, and the scenario requires the error and no event. Where an
+  identity view shows the row, it also requires the row unchanged. If the record cannot be
+  arranged, the scenario is withdrawn and refused at synthesis with the arrangement's cause, rather
+  than filed only to be skipped at run time. A refusal whose guard reads the identity field stays a
+  plain send. (beyond10x/ess#209)
+- An input-guarded refusal's witness now also refutes every overlapping sibling input-guarded
+  refusal, so each send selects exactly one declared outcome. Where no input does that, synthesis
+  refuses the scenario and names both guards. (beyond10x/ess#209)
+- A further source of a multi-source transition can now be arranged through a branch that a stored
+  fact selects, the same way that branch's own scenarios are arranged. The stored-row fallback
+  search runs under the further instance's own name. Owner arrangement still does not fall back.
+  (beyond10x/ess#199)
+- A `Map` command input is no longer witnessed as `{}` (beyond10x/ess#196). Synthesis sends one
+  entry — the key is the key primitive's own witness at the map's path, spelled as a setup key is
+  (`"tags"`, `1`, `true`), and the value is built at `<map>.0` like a list element — so a `sets:` or
+  payload copy of a map is asserted to hold that entry, and a target that drops or empties it fails.
+  A further instance moves the key and the value, so an update that writes a map is sent a value
+  different from the prior one (as #161 does for scalars). `<map>.count` is now a fact on command
+  input, so a `.count` guard over a map is decided and tried at the empty map and at the lengths
+  either side of its literal. A map keyed by `Decimal` (no setup spelling), or whose value has no
+  finite witness, is still `{}`. No suite format change; the committed gatepass suite is
+  regenerated (`notes` now carries one entry).
+- A system precondition can now open a session whose command takes a list, map or struct
+  (beyond10x/ess#205). A precondition's literal input is checked against the input's declared type
+  all the way down: a list against its element type, a map against its key spelling and value
+  type, a struct against its declared fields, its required fields and its invariants, and `null`
+  wherever the type is optional. Each scalar leaf is checked exactly as an `example:` is. A `Json`
+  or `Binary64` leaf and a union literal are still refused. Before this fix, `accounts: []` was
+  refused as "not a scalar", leaving the input out was refused as missing, and a fixture reference
+  was refused by both generated explorers.
+- The generated Go and TypeScript explorers now send a precondition whose command they leave out of
+  sequences only because they cannot draw one of its inputs (a list, for example). The precondition
+  supplies that input as a literal. The model then starts from the row it leaves, and a target
+  that stores a different value is reported as a setup failure. No sequence draws that command,
+  and it is still listed as excluded.
+- A precondition literal is now checked the way the conformance setup reader checks a value. Every
+  newtype invariant around a list, map or struct applies to the whole literal. A struct invariant
+  reads nested members and list `.count`, and it must be true (unknown is refused). A member whose
+  type allows absence through a newtype over `Optional` may be left out. The row a precondition
+  creates is checked against its entity's invariants. `{fixture: name}` is read as a fixture
+  reference only on an input that has a fixture input; anywhere else it is a literal
+  (beyond10x/ess#205).
+- The branch a precondition selects is now decided over its literal input the way the interpreter
+  decides it: a guard over a list count or a struct member, and `defined()` over a structured value.
+  The created row is also checked against literal `sets:` values, `{input: x, else: …}` fallbacks and
+  struct sources. The conformance setup reader now treats a newtype over `Optional` as optional, as
+  validation does (beyond10x/ess#205).
+- **Synthesis binds a view filter over the identity or a link field (#193).** The identity of a row
+  a scenario made, every field an arrangement filled with an instance (the link to an owner), and
+  every view parameter sent as one are bound as opaque tokens, one per instance. `id == param.id`
+  is decided and read with the created row's identity as `param.id`; `account_id == param.account`
+  is read with the arranged owner. Before, both were refused as `ESS-SYNTH-005`. A parameter compared
+  with the identity or a link field is bound from that comparison, whatever it is named, when it is
+  declared at the field's type. Only `==` and `!=` between two tokens are decided: the same token is
+  equal, two instances of one type (a captured instance, or the identity a `creates:` branch
+  publishes) are different; an ordering, a literal, a text test or a length over an identity stays
+  refused as before. Where such a filter holds the scenario's row, a further instance the filter
+  refuses is arranged and asserted `Excludes`, so a target that ignores the filter fails; for a
+  filter over the identity it is created under the subject's own owner, so a read answering the
+  owner's rows fails too. An ordered list read by the owner (`account_id == param.account` with
+  `order_by:`) arranges its second row under the same owner; it was refused as `ESS-SYNTH-014`.
+  A filter over the link gets a row under another owner asserted `Excludes`, also where the view
+  projects the link and not the identity. An owner is given several rows only where the owning
+  relation is `cardinality: many`; under `cardinality: one` the by-id row goes under a second
+  owner, aggregate rows each get their own, and an ordered list read by the owner stays refused as
+  `ESS-SYNTH-014`, now naming the cardinality.
+- **An aggregate view grouped by a link field is synthesized (#193).** Rows of one group are created
+  under one arranged owner, each group under its own, and each group is asserted with the owner's
+  identity as its key. Before, the view was refused as `ESS-SYNTH-017`. Rows given one value of a
+  link the view aggregates (`count_distinct: account_id`) share an owner too. An aggregate whose
+  group keys are all scoped (`group_by: [account_id, memo]`) gains a group repeating the later
+  keys under another first key, so a target dropping the first key fails.
+- A filter reading `defined(<link field>)` on a row whose link the arrangement filled with an
+  instance is now `true`; it was evaluated `false`.
+- Synthesis separates the inputs a `sets-retarget` mutant joins, even where more same-typed inputs
+  feed `sets:` than the type has values (beyond10x/ess#202). Within each branch, every `sets:`
+  source is paired with each input of its type that no `sets:` entry reads — the input a retarget
+  leaves behind, whether it retargets onto an input feeding another field or onto one only a
+  payload or guard reads. Every such pair is sent apart where it can be and pinned, so no later
+  move gives it one value again; pairs the model shows joined (one input into two fields, or an
+  unread input named like the field) go first. This holds whether field and input names match or
+  not, and also on branches whose row and input the stored-row search chooses. Where a joined pair
+  cannot be sent apart, the synthesis carries a new note, `UnseparatedSources`, naming the
+  scenario and the two inputs; a note never names a scenario the finished suite does not hold.
+  Committed suites of unmutated specifications are unchanged.
+
 ## [0.40.0] — 2026-09-28
 
 ### Added

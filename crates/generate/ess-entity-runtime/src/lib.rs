@@ -449,6 +449,10 @@ pub enum LoweringCode {
     /// `affects:` changing rows beside the subject. An entity-core operation acts on the one
     /// instance its request names.
     SetEffectUnsupported,
+    /// A branch guarded by a row of another entity the input names (ess/18, `when_related:`):
+    /// entity-core decides from a command's arguments and the one row its request addresses, and
+    /// has no read of another entity's row.
+    RelatedGuardUnsupported,
 }
 
 /// Projects one admitted component-scoped service contract.
@@ -1269,10 +1273,32 @@ impl Projector<'_> {
         refused
     }
 
+    /// Refuses every branch of `command` guarded by a related row (ess/18, beyond10x/ess#211), and
+    /// says whether it refused one: such a command is not lowered further.
+    fn refuse_related_guards(&mut self, command: &ResolvedCommand) -> bool {
+        let mut refused = false;
+        for outcome in &command.outcomes {
+            if matches!(outcome.condition, ResolvedCondition::Related { .. }) {
+                self.diagnostic(
+                    LoweringCode::RelatedGuardUnsupported,
+                    format!("{}.{}.when_related", command.name, outcome.name.as_str()),
+                    "a branch guarded by a row of another entity (ess/18, `when_related:`) has no \
+                     Entity Runtime definition; an entity-core operation reads its arguments and \
+                     the one row its request names",
+                );
+                refused = true;
+            }
+        }
+        refused
+    }
+
     #[allow(clippy::too_many_lines)]
     fn build_command(&mut self, command: &ResolvedCommand) {
         let command_path = command.name.to_string();
         if self.refuse_set_effects(command) {
+            return;
+        }
+        if self.refuse_related_guards(command) {
             return;
         }
         let mut targets = BTreeSet::new();
@@ -1889,7 +1915,22 @@ impl Projector<'_> {
             .fields
             .iter()
             .any(|field| field.name == ess_domain::command::subject_fact::INPUT_NAMESPACE);
-        let mut stored = Typing::over(source, &entity.fields);
+        // `state` in a stored-field predicate (ess/18, beyond10x/ess#204) reads the held state,
+        // which an outcome selector reads as `$from_state`; `$state` there would be the
+        // destination, and entity-core refuses it in a selector.
+        let reads_state = matches!(
+            &outcome.condition,
+            ResolvedCondition::SubjectPredicate { predicate, .. }
+                if ess_domain::command::subject_fact::reads_state(predicate)
+        ) && !entity
+            .fields
+            .iter()
+            .any(|field| field.name == ess_domain::entity::EntitySpec::STATE);
+        let mut stored_fields = entity.fields.clone();
+        if reads_state {
+            stored_fields.push(entity.state_field());
+        }
+        let mut stored = Typing::over(source, &stored_fields);
         if reads_input {
             stored.input = Some(&command.input);
         }
@@ -1898,15 +1939,42 @@ impl Projector<'_> {
         } else {
             PathRewrite::Entity
         };
+        let stored_rewrite = if reads_state {
+            PathRewrite::Held(Box::new(stored_rewrite))
+        } else {
+            stored_rewrite
+        };
         match &outcome.condition {
             ResolvedCondition::When { predicate } => {
                 when = Some(lower_typed(predicate, &PathRewrite::Input, &input));
             }
-            ResolvedCondition::SubjectState { state, predicate } => {
+            // One held state keeps its `in_state` lowering; a list (ess/18, beyond10x/ess#201) is
+            // membership of `$from_state`, as `when_state_changes:` lowers its states.
+            ResolvedCondition::SubjectState {
+                state: ess_domain::entity::HeldStates::One(state),
+                predicate,
+            } => {
                 in_state = Some(state.to_string());
                 when = predicate
                     .as_ref()
                     .map(|predicate| lower_typed(predicate, &PathRewrite::Input, &input));
+            }
+            ResolvedCondition::SubjectState {
+                state: states @ ess_domain::entity::HeldStates::Listed(_),
+                predicate,
+            } => {
+                let held = Condition::In {
+                    values: [
+                        Value::String("$from_state".to_owned()),
+                        Value::Array(
+                            states
+                                .iter()
+                                .map(|state| Value::String(state.to_string()))
+                                .collect(),
+                        ),
+                    ],
+                };
+                when = Some(with_input_guard(held, predicate.as_ref(), &input));
             }
             ResolvedCondition::SubjectField {
                 field,
@@ -1948,7 +2016,9 @@ impl Projector<'_> {
                 };
                 when = Some(with_input_guard(held, predicate.as_ref(), &input));
             }
-            ResolvedCondition::Otherwise => {}
+            // A related-row guard is refused for the whole command before any branch is lowered
+            // (`refuse_related_guards`).
+            ResolvedCondition::Otherwise | ResolvedCondition::Related { .. } => {}
             ResolvedCondition::External { cause } => {
                 when = Some(external_evidence(command, outcome, cause, slots));
             }
@@ -3432,6 +3502,9 @@ enum PathRewrite {
         outer: Box<PathRewrite>,
         binder: String,
     },
+    /// A stored-field predicate reading the held state (ess/18, beyond10x/ess#204): the bare
+    /// `state` is `$from_state`, every other path is the inner rewrite's.
+    Held(Box<PathRewrite>),
 }
 
 impl PathRewrite {
@@ -3466,6 +3539,13 @@ impl PathRewrite {
                     Value::String(base.clone())
                 } else {
                     Value::String(format!("{base}.{}", tail.join(".")))
+                }
+            }
+            Self::Held(inner) => {
+                if segments.len() == 1 && segments[0] == ess_domain::entity::EntitySpec::STATE {
+                    Value::String("$from_state".to_owned())
+                } else {
+                    inner.path(path)
                 }
             }
             Self::Bound { outer, binder } => {

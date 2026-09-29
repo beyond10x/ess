@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/defect-batch-0.41.0
+repository: ess
+publishedAt: 2026-09-29T12:00:00Z
+title: State-scoped refusals, guards over a related row, delivery context, and a synthesis and mutation defect batch
+summary: >-
+  `ess/18` adds state-scoped refusals, `state` in a `when_subject` predicate, guards over a related row (`when_related:`) and a binding's delivery context. Synthesis now witnesses map inputs, identity and link view filters, every creating command and the record a refusal needs; mutation scores gained refusals apart from survivors.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.41.0
+  version: 0.41.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

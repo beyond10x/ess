@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T23:49:19Z",
+  "actor": "human:timo",
+  "artifact": "story:a-guard-reads-another-entity-by-identity",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction 2: cargo test -p ess-conformance 1564/0, ess-domain 1031/0, ess-compiler 222/0, ess-xtask 334/0; schema/generate/docs checks, clippy, fmt clean",
+    "reference": "~/.cache/ess-wave-n2/relguard/c2/"
+  }
+}

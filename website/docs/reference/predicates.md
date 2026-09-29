@@ -23,7 +23,8 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 | Place | What the predicate reads | Notes |
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
-| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | Not `state`. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
+| a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
+| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | Keyed by that entity's identity only, one hop; a lookup by any other field is not expressible. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other; never beside a `when_subject*` guard. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
@@ -36,7 +37,7 @@ Two outcome keys that look like guards are **not** predicates:
   variant. Its other shape, `when_subject: {predicate: …}` (`ess/9`), is a predicate and is listed
   above. A mapping that writes keys of both shapes is refused while the document is read, and the
   predicate shape under a header older than `ess/9` is refused with `unsupported_format_version`.
-- `when_subject_state` is one lifecycle state name.
+- `when_subject_state` is one lifecycle state name, or from `ess/18` a list of them.
 
 A binding's `when:` names its cause, such as `periodic:`. It is not a predicate.
 
@@ -749,6 +750,33 @@ The finite prover cannot enumerate two facts against each other, so a command wi
 needs a default branch, even over an enum. Synthesis arranges the row and sends the input once
 equal to the stored value and once different, one scenario per branch. An entity that declares a
 stored field named `input` keeps reading `input.<member>` as that field.
+
+## A guard over another entity's row
+
+From `ess/18`, a branch may be guarded by one row of another entity: the row whose identity an input
+field carries. `when_related: {via: input.tenant, exists: false}` is taken when no row carries
+`input.tenant`; `when_related: {via: input.tenant, predicate: redirect_client != input.client}` is
+taken when the row exists and the predicate over its stored fields holds. `input.tenant` must be a
+required input typed as exactly one entity's identity. The guard composes with `when:` and with any
+subject a branch names, a `creates:` included, and a refusal may carry it without naming one. A
+command reads one related row, declares at most one `exists: false` branch, and declares one
+wherever it has a predicate branch, because a missing row selects no predicate and never the
+default.
+
+A missing row is answered by the `exists: false` branch before any other branch, whatever the
+input: an `exists: false` branch therefore carries no `when:`, and an accepting `when:` branch may
+overlap it. The one answer before it is `existing_instance:`, which may sit in the same command: an
+identity a record already carries is refused as taken before the related row is read.
+
+Synthesis sends the `exists: false` branch an identity no row carries, beside two rows of the entity
+that carry others and with an input an accepting `when:` branch would take. It sends every other
+branch the identity of a row it creates between two decoys, arranged so that each predicate is
+witnessed true in its own scenario and false in the default's, including a predicate over a stored
+field alone. A predicate with two or more `all`/`any` children is sent once more per child, on a
+row where that child alone decides it, so a target that drops one conjunct or one disjunct fails;
+where no row can isolate a child, synthesis reports `ESS-SYNTH-003` for the branch. Beside
+`existing_instance:` it sends a taken identity naming a related row that does not exist, and
+requires the `existing_instance:` refusal. Under an earlier header the key is refused as `unsupported_format_version`.
 
 ## What synthesis can witness
 

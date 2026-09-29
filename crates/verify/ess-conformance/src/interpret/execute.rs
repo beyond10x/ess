@@ -461,6 +461,9 @@ fn interpretable(spec: &ResolvedCommand, recorded: bool) -> Result<(), Undetermi
             ResolvedCondition::SubjectState { .. } | ResolvedCondition::StateChange { .. } => {
                 return gap(format!("the guard over the subject's held state of `{at}`"));
             }
+            ResolvedCondition::Related { .. } => {
+                return gap(format!("the guard over a related row of `{at}`"));
+            }
             ResolvedCondition::InputAbsent => {
                 return gap(format!("the absent-input branch of `{at}`"));
             }

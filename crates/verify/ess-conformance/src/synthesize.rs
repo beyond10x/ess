@@ -181,9 +181,12 @@ mod absent_input;
 mod aggregate;
 mod bounded_retry;
 mod caller;
+mod delivery_context;
 mod existence;
+mod identity;
 mod paging;
 mod related;
+mod related_guard;
 mod set_effects;
 mod subject_fact;
 
@@ -199,7 +202,7 @@ use ess_compiler::ir::{
 };
 use ess_domain::binding::Delivery;
 use ess_domain::command::{OutcomeName, TestStrategy};
-use ess_domain::entity::{EntitySpec, Invariant, StateName};
+use ess_domain::entity::{Cardinality, EntitySpec, Invariant, StateName};
 use ess_domain::name::QualifiedName;
 use ess_domain::types::MAX_TYPE_DEPTH;
 use ess_domain::view::AssertionStyle;
@@ -275,6 +278,18 @@ pub enum Note {
         /// The subject fields no view lets it observe, in name order.
         unobserved: Vec<String>,
     },
+    /// A branch whose `sets:` read one input into two targets while a same-typed input feeds none —
+    /// the pair a `sets-retarget` mutant joins — is sent with the two inputs equal, because no input
+    /// its guards leave tells them apart (beyond10x/ess#202). Its scenario then cannot tell the
+    /// model it was synthesized from from the one that writes the unread input.
+    UnseparatedSources {
+        /// The branch's scenario.
+        scenario: ScenarioId,
+        /// The input read into two or more targets.
+        source: String,
+        /// The same-typed input no target reads.
+        unread: String,
+    },
 }
 
 impl fmt::Display for Note {
@@ -312,6 +327,17 @@ impl fmt::Display for Note {
                     if names.len() == 1 { "it" } else { "them" }
                 )
             }
+            Self::UnseparatedSources {
+                scenario,
+                source,
+                unread,
+            } => write!(
+                f,
+                "`{scenario}` sends `{source}` and `{unread}` with one value: `{source}` feeds two \
+                 or more `sets:` targets while `{unread}` feeds none, and no input its guards leave \
+                 tells them apart, so a model writing `{unread}` where this one writes `{source}` \
+                 passes it too"
+            ),
         }
     }
 }
@@ -637,6 +663,13 @@ pub enum RefusalCause {
     WitnessRejected(ShapeErrors),
 }
 
+/// The repair for a family asked to send a command guarded by a related row (ess/18, #211): only the
+/// command's own outcome scenarios and its drivers arrange that row, and any other family has none
+/// to point it at.
+const RELATED_UNARRANGED: &str = "the command is selected by a row of another entity its input \
+     names (`when_related:`), which this scenario family does not arrange; cover it with an \
+     authored scenario (ess-scenario/1)";
+
 /// `RefusalCause::CountUnwitnessed`'s number in the `SYNTH` family, the next after
 /// [`crate::aggregate::UNWITNESSED`].
 pub const COUNT_UNWITNESSED: u16 = 18;
@@ -812,6 +845,9 @@ impl RefusalCause {
                 "the branch is selected by the subject's stored fields, which this scenario family \
                  cannot arrange; cover it with an authored scenario (ess-scenario/1)"
             }
+            Self::StrategyWithoutGuard {
+                strategy: TestStrategy::ArrangeRelatedRow,
+            } => RELATED_UNARRANGED,
             Self::StrategyWithoutGuard { .. } => {
                 "`TestStrategy` and `OutcomeCondition` have drifted apart in `ess-domain`"
             }
@@ -901,6 +937,13 @@ impl fmt::Display for RefusalCause {
                 f,
                 "its strategy is `{strategy}`: the subject's stored fields select it, and this \
                  scenario asked for an input that reaches it"
+            ),
+            Self::StrategyWithoutGuard {
+                strategy: strategy @ TestStrategy::ArrangeRelatedRow,
+            } => write!(
+                f,
+                "its command's strategy is `{strategy}`: a row of another entity the input names \
+                 selects its branch, and this scenario family arranges none"
             ),
             Self::StrategyWithoutGuard { strategy } => {
                 write!(f, "its strategy is `{strategy}` and it declares no guard")
@@ -1226,7 +1269,7 @@ impl fmt::Display for BindingGap {
 
 /// Why a scenario could not get the instance it needed.
 ///
-/// Three shapes, and the difference is which line of the specification an author goes and edits.
+/// Four shapes, and the difference is which line of the specification an author goes and edits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unreachable {
     /// No outcome brings an instance of the entity into existence.
@@ -1254,6 +1297,13 @@ pub enum Unreachable {
         /// The branch that could not be reached.
         outcome: OutcomeRef,
     },
+    /// The rows are read by their owner, through the link `via`, and the owning relation is
+    /// `cardinality: one`: an owner holds one row, so no second row is ever read beside it
+    /// (beyond10x/ess#193).
+    OwnerHoldsOne {
+        /// The field that links a row to its owner.
+        via: String,
+    },
 }
 
 impl Unreachable {
@@ -1270,6 +1320,10 @@ impl Unreachable {
             Self::Unwitnessable { .. } => {
                 "the route to this state runs through a branch no input reaches; see that \
                  outcome's own refusal"
+            }
+            Self::OwnerHoldsOne { .. } => {
+                "an owner under `cardinality: one` holds one row, so an order over one owner's \
+                 rows has nothing to rank; declare `cardinality: many` if an owner holds several"
             }
         }
     }
@@ -1289,6 +1343,11 @@ impl fmt::Display for Unreachable {
                     "the route runs through `{outcome}`, which no input reaches"
                 )
             }
+            Self::OwnerHoldsOne { via } => write!(
+                f,
+                "the rows are read by the owner `{via}` names, and the owning relation is \
+                 `cardinality: one`, so an owner holds one row"
+            ),
         }
     }
 }
@@ -1329,10 +1388,20 @@ impl fmt::Display for InstanceNeed {
 pub fn synthesize(ir: &EssIr) -> Synthesis {
     // ess/16 (#168): a model whose actors carry attributes is synthesized once per caller
     // assignment, each read with the caller's values written in (`caller::synthesize`).
-    if caller::uses(ir) {
-        return caller::synthesize(ir);
-    }
-    synthesize_plain(ir)
+    let mut synthesis = if caller::uses(ir) {
+        caller::synthesize(ir)
+    } else {
+        synthesize_plain(ir)
+    };
+    // A note about an unseparated pair is recorded with its branch's scenario, and later passes
+    // (fixtures, clock offsets, caller readings) may drop that scenario; a note naming a scenario
+    // the suite does not hold points at nothing, so it goes with it (beyond10x/ess#202).
+    let suite = &synthesis.suite;
+    synthesis.notes.retain(|note| match note {
+        Note::UnseparatedSources { scenario, .. } => suite.scenario(scenario).is_some(),
+        _ => true,
+    });
+    synthesis
 }
 
 /// [`synthesize`], for a model in which nothing depends on who sends a command.
@@ -1354,6 +1423,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     }
     let actors = granted_actors(ir);
 
+    let mut unseparated_notes = Vec::new();
     for command in ir.commands().values() {
         for outcome in &command.outcomes {
             // A wrong-state branch gets no scenario from here. §10 asks for one scenario per
@@ -1383,6 +1453,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
             else {
                 continue;
             };
+            unseparated_notes.extend(unseparated(command, outcome, &id, &scenario));
             insert(&mut suite, id, scenario, &mut refusals);
         }
     }
@@ -1395,6 +1466,7 @@ fn synthesize_plain(ir: &EssIr) -> Synthesis {
     existence::existence(ir, &actors, &mut suite, &mut refusals);
     set_effects::set_effects(ir, &actors, &mut suite, &mut refusals);
     notes.extend(partial);
+    notes.extend(unseparated_notes);
     invariants(ir, &actors, &mut suite, &mut refusals);
     bindings(ir, &actors, &mut suite, &mut refusals);
     aggregate::aggregates(ir, &actors, &mut suite, &mut refusals);
@@ -1573,6 +1645,7 @@ pub(crate) fn needs_of(
             }
             ScenarioStep::ExecuteCommand { command, .. }
             | ScenarioStep::ExpectInvocation { command, .. }
+            | ScenarioStep::ExpectEveryInvocation { command, .. }
             | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
@@ -1618,7 +1691,10 @@ pub(crate) fn needs_of(
             // it is most obviously about.
             // Fixture setup is an adapter capability, not a declared command/event realization.
             // Keep upstream-backed view witnesses in the component that owns the view.
-            ScenarioStep::EstablishEntity { .. }
+            // An event from an external channel is emitted by no component: the suite delivers it,
+            // so the one that reacts needs nothing more than the command it invokes.
+            ScenarioStep::DeliverEvent { .. }
+            | ScenarioStep::EstablishEntity { .. }
             | ScenarioStep::ResolveFixtures { .. }
             | ScenarioStep::ExpectNoEvents
             | ScenarioStep::ExpectOutcome { .. }
@@ -1703,6 +1779,72 @@ fn outcome_scenario(
         steps.extend(more);
         source.extend(depends);
     }
+    // ess/18 (#201): a branch whose `when_subject_state:` lists several states is witnessed in each
+    // of them, on a further row per state after the first invocation, so a target that mishandles
+    // any listed state fails. A state refusal is witnessed per state by `state_refusals`.
+    if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
+        if state.is_listed() && outcome.subject.is_some() && !is_state_refusal(command, outcome) {
+            for (nth, held) in state.iter().enumerate() {
+                if run.before.as_ref() == Some(held) {
+                    continue;
+                }
+                if let Some((more, depends, _)) = exercise_as(
+                    ir,
+                    command,
+                    outcome,
+                    actors,
+                    &id,
+                    refusals,
+                    Witness::Listed(nth),
+                ) {
+                    steps.extend(more);
+                    source.extend(depends);
+                }
+            }
+        }
+    }
+    // ess/18 (#211): a related predicate with two or more connective children is witnessed once
+    // more per child, on a further related row isolating it, with whichever branch the command
+    // answers there asserted — so a target dropping one conjunct, or one disjunct, fails. A boundary
+    // no bounded arrangement reaches is refused under this scenario's id, never dropped.
+    if related_guard::routes(command, outcome) {
+        let of = command
+            .outcomes
+            .iter()
+            .position(|branch| branch.name == outcome.name)
+            .expect("the outcome is the command's");
+        for (goal, (refuted, held)) in related_guard::boundary_goals(outcome).iter().enumerate() {
+            let answering: Vec<&ResolvedOutcome> = command
+                .outcomes
+                .iter()
+                .filter(|branch| related_guard::routes(command, branch))
+                .collect();
+            let found = answering.iter().find_map(|branch| {
+                exercise_as(
+                    ir,
+                    command,
+                    branch,
+                    actors,
+                    &id,
+                    &mut Vec::new(),
+                    Witness::RelatedBoundary { of, goal },
+                )
+            });
+            match found {
+                Some((more, depends, _)) => {
+                    steps.extend(more);
+                    source.extend(depends);
+                }
+                None => refusals.push(Refusal::about(
+                    &id,
+                    RefusalCause::GuardUnsatisfiable {
+                        predicate: related_guard::describe_goal(refuted, held),
+                        tried: answering.len(),
+                    },
+                )),
+            }
+        }
+    }
     Some((
         id,
         ConformanceScenario::new(purpose(command, outcome), steps, source),
@@ -1718,6 +1860,18 @@ enum Witness {
     /// `{input: f, else: <literal>}` left out ([`without_literal_fallbacks`]). A run that can leave
     /// nothing out is not built.
     LiteralFallbacks,
+    /// A further instance arranged in the `n`th state a listed `when_subject_state:` names (ess/18,
+    /// beyond10x/ess#201), so every listed state is witnessed and not only the first one reached.
+    Listed(usize),
+    /// A further related row the `goal`th boundary of the related predicate of branch `of` (by
+    /// index) names, and the branch the command answers with on it (ess/18, beyond10x/ess#211,
+    /// [`related_guard::boundary_goals`]).
+    RelatedBoundary {
+        /// The branch whose predicate the boundary belongs to, by its index in the command.
+        of: usize,
+        /// Which of that predicate's boundaries.
+        goal: usize,
+    },
 }
 
 /// Arrange the instance the branch acts on, run the branch, and assert everything it promises.
@@ -1943,7 +2097,7 @@ fn run_as(
             .expect("validated common selection subject");
         let mut first = None;
         for state in &ir.entity(&subject.entity).lifecycle.states {
-            match run_state_refusal(ir, command, outcome, state, actors) {
+            match run_state_refusal(ir, command, outcome, state, actors, Distinction::PLAIN) {
                 Ok(run) => return Ok(run),
                 Err(reason) => {
                     first.get_or_insert(reason);
@@ -1953,7 +2107,30 @@ fn run_as(
         return Err(first.expect("nonempty finite lifecycle"));
     }
     let routed = subject_fact::routes(command, outcome);
-    let (mut setup, input) = arranged_as(ir, command, outcome, actors, routed, witness)?;
+    // A command guarded by a related row (ess/18, #211) is arranged with that row, or its absence,
+    // for every branch it decides; further witnesses are the boundaries of its predicates alone.
+    let related = related_guard::routes(command, outcome);
+    let mut related_at = Distinction::PLAIN;
+    let (mut setup, input) = if related {
+        match witness {
+            Witness::Full => related_guard::prepare(ir, command, outcome, actors)?,
+            Witness::RelatedBoundary { of, goal } => {
+                let goals = command
+                    .outcomes
+                    .get(of)
+                    .map(related_guard::boundary_goals)
+                    .unwrap_or_default();
+                let named = goals.get(goal).ok_or_else(related_guard::unarranged)?;
+                related_at = Distinction::further(goal + 1);
+                related_guard::prepare_at(ir, command, outcome, actors, related_at, Some(named))?
+            }
+            Witness::LiteralFallbacks | Witness::Listed(_) => {
+                return Err(related_guard::unarranged())
+            }
+        }
+    } else {
+        arranged_as(ir, command, outcome, actors, routed, witness)?
+    };
 
     let command_ref = CommandRef::new(command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), outcome.name.clone());
@@ -1991,8 +2168,29 @@ fn run_as(
     invoke.push(ScenarioStep::ExpectOutcome {
         outcome: outcome_ref,
     });
+    // A creation guarded by a related row (ess/18, #211) is sent after that row's own creation,
+    // which may publish the same event — a folder inside a folder. So the new row is bound here,
+    // from this command's events, and later steps name it rather than the first occurrence.
+    if related {
+        if let Some(ResolvedSubject {
+            entity,
+            effect: ResolvedEffect::Creates,
+            instance: ResolvedInstance::Observed { event, field },
+            ..
+        }) = &outcome.subject
+        {
+            let name = instance_name(&ir.entity(entity).name, related_at);
+            invoke.push(ScenarioStep::CaptureInstance {
+                instance: name.clone(),
+                entity: EntityRef::from(entity),
+                event: EventRef::from(event),
+                field: field.name.clone(),
+            });
+            setup.instance = Some(name);
+        }
+    }
 
-    if subject_fact::uses(command) && outcome.error.is_none() {
+    if (subject_fact::uses(command) || related) && outcome.error.is_none() {
         invoke.push(ScenarioStep::ExpectNoError);
     }
     let mut after_steps = if routed {
@@ -2155,11 +2353,17 @@ fn unchanged_writes(
         .count()
 }
 
+/// Whether `outcome` is a refusal of a held-state command that names no subject of its own: the
+/// effect-free default (ess/7), or a refusal guarded by a literal held state (ess/18,
+/// beyond10x/ess#201). Both read the subject their siblings name, are witnessed on a row arranged in
+/// each held state that selects them, and change nothing.
 fn is_state_refusal(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> bool {
     has_subject_guards(command)
-        && state_default(outcome)
+        && (state_default(outcome)
+            || matches!(outcome.condition, ResolvedCondition::SubjectState { .. }))
         && outcome.error.is_some()
         && outcome.subject.is_none()
+        && outcome.replays.is_none()
 }
 
 fn run_state_refusal(
@@ -2168,8 +2372,9 @@ fn run_state_refusal(
     outcome: &ResolvedOutcome,
     state: &StateName,
     actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
 ) -> Result<Run, RefusalCause> {
-    let input = reach_in_state(ir, command, outcome, state, Distinction::PLAIN)?;
+    let input = reach_in_state(ir, command, outcome, state, distinction)?;
     let subject = command
         .selection_subject(outcome)
         .expect("validated common selection subject");
@@ -2178,7 +2383,7 @@ fn run_state_refusal(
         &subject.entity,
         std::slice::from_ref(state),
         actors,
-        Distinction::PLAIN,
+        distinction,
         &[],
     )
     .map_err(|reason| RefusalCause::InstanceRequired {
@@ -2245,6 +2450,13 @@ fn run_state_refusal(
     })
 }
 
+/// One `<entity>/state/<S>/refuses/<command>` scenario per held state a subjectless refusal is
+/// selected in.
+///
+/// Every such refusal of the command that some input selects in `S` is witnessed there, in
+/// declaration order, each on a row of its own (a further distinction per refusal after the first),
+/// so two refusals of one state that the input tells apart (ess/18, beyond10x/ess#201) share the one
+/// id the state has and are both asserted, rather than colliding on it.
 fn state_refusals(
     ir: &EssIr,
     actors: &BTreeMap<QualifiedName, ActorRef>,
@@ -2252,52 +2464,73 @@ fn state_refusals(
     refusals: &mut Vec<Refusal>,
 ) {
     for command in ir.commands().values() {
-        for outcome in command
+        let refusing: Vec<&ResolvedOutcome> = command
             .outcomes
             .iter()
             .filter(|o| is_state_refusal(command, o))
-        {
-            let subject = command
-                .selection_subject(outcome)
-                .expect("validated common selection subject");
-            for state in &ir.entity(&subject.entity).lifecycle.states {
-                let id = ScenarioId::Refusal {
-                    entity: EntityRef::from(&subject.entity),
-                    state: state.clone(),
-                    command: CommandRef::new(command.name.clone()),
-                    refuses: true,
+            .collect();
+        let Some(first) = refusing.first() else {
+            continue;
+        };
+        let subject = command
+            .selection_subject(first)
+            .expect("validated common selection subject");
+        for state in &ir.entity(&subject.entity).lifecycle.states {
+            let id = ScenarioId::Refusal {
+                entity: EntityRef::from(&subject.entity),
+                state: state.clone(),
+                command: CommandRef::new(command.name.clone()),
+                refuses: true,
+            };
+            let mut steps = Vec::new();
+            let mut source = BTreeSet::new();
+            let mut failed = false;
+            let mut witnessed = 0;
+            for outcome in &refusing {
+                let distinction = if witnessed == 0 {
+                    Distinction::PLAIN
+                } else {
+                    Distinction::further(witnessed)
                 };
-                match run_state_refusal(ir, command, outcome, state, actors) {
+                match run_state_refusal(ir, command, outcome, state, actors, distinction) {
                     Ok(run) => {
-                        let mut steps = run.steps();
+                        witnessed += 1;
+                        steps.extend(run.steps());
                         steps.push(ScenarioStep::ExpectError {
                             error: ErrorRef::from(outcome.error.as_ref().expect("named refusal")),
                             fields: BTreeMap::new(),
                         });
-                        insert(
-                            suite,
-                            id,
-                            ConformanceScenario::new(
-                                ScenarioPurpose::new(format!(
-                                    "`{}` refuses in held state `{state}` without effects",
-                                    command.name
-                                ))
-                                .expect("nonempty purpose"),
-                                steps,
-                                run.source,
-                            ),
-                            refusals,
-                        );
+                        source.extend(run.source);
                     }
-                    // No input reaches the refusal in this state: not a refusal of its own, as
+                    // No input reaches this refusal in this state: not a refusal of its own, as
                     // before a count guard past the cap was named.
                     Err(
                         RefusalCause::GuardUnsatisfiable { .. }
                         | RefusalCause::CountUnwitnessed { .. },
                     ) => {}
-                    Err(cause) => refusals.push(Refusal::about(&id, cause)),
+                    Err(cause) => {
+                        failed = true;
+                        refusals.push(Refusal::about(&id, cause));
+                    }
                 }
             }
+            if steps.is_empty() || failed {
+                continue;
+            }
+            insert(
+                suite,
+                id,
+                ConformanceScenario::new(
+                    ScenarioPurpose::new(format!(
+                        "`{}` refuses in held state `{state}` without effects",
+                        command.name
+                    ))
+                    .expect("nonempty purpose"),
+                    steps,
+                    source,
+                ),
+                refusals,
+            );
         }
     }
 }
@@ -2522,7 +2755,7 @@ fn replay_condition(
             }
             ResolvedCondition::SubjectPredicate { predicate, input } => {
                 observed.extend(subject_fact::read_by(ir, &subject.entity, predicate));
-                match subject_fact::row_truth(ir, &subject.entity, settled, predicate) {
+                match subject_fact::row_truth(ir, &subject.entity, settled, Some(held), predicate) {
                     Truth::True => {}
                     Truth::False => return Ok(false),
                     Truth::Unknown => return Err(RefusalCause::NoWitness(WitnessGap {
@@ -2534,6 +2767,8 @@ fn replay_condition(
                 }
                 input.as_ref()
             }
+            // No related row was arranged for the replay: the original's own scenario witnessed it.
+            ResolvedCondition::Related { .. } => return Err(related_guard::unarranged()),
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::ExternalWhen { .. }
@@ -2731,6 +2966,30 @@ struct Arrangement {
     settled: BTreeMap<String, Determined>,
 }
 
+impl Arrangement {
+    /// The identity this instance is known by for the rest of the scenario.
+    fn identity(&self) -> ScenarioValue {
+        ScenarioValue::instance(self.instance.clone())
+    }
+
+    /// Whether `view` holds this row for a read sending `params` ([`shows_row`]).
+    fn shows(
+        &self,
+        ir: &EssIr,
+        view: &ResolvedView,
+        params: &BTreeMap<String, ScenarioValue>,
+    ) -> Result<bool, Vec<FactPath>> {
+        shows_row(
+            ir,
+            view,
+            &self.state,
+            &self.settled,
+            Some(&self.identity()),
+            params,
+        )
+    }
+}
+
 /// The cheapest of several candidate states the specification can actually reach.
 ///
 /// `cancel` may start in `Placed` or in `Held`, and both are legal sources for the same scenario —
@@ -2793,7 +3052,10 @@ fn arrange(
     let all = ir.drivers();
     let drivers: &[Driver<'_>] = all.get(entity).map_or(&[], Vec::as_slice);
     // Every creating branch is a place to start (ess/15, `into:`): the route is the shortest from
-    // the state some creation lands in, ties to the first creator declared.
+    // the state some creation lands in, ties to the first creator in the order `EssIr::drivers`
+    // yields them: command name, then declared branch order, since the IR keeps commands by name.
+    // A creation that cannot be arranged, or whose route cannot be driven, gives way to the next
+    // in that order (beyond10x/ess#198), and the cause kept is the first one's.
     let mut creators = drivers
         .iter()
         .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
@@ -2801,33 +3063,39 @@ fn arrange(
     if creators.peek().is_none() {
         return Err(Unreachable::NothingCreates);
     }
-    let mut chosen: Option<(&Driver<'_>, Vec<Driver<'_>>)> = None;
-    for creator in creators {
-        let Some(path) = route_from(ir, entity, drivers, born(ir, creator), target) else {
-            continue;
-        };
-        if chosen
-            .as_ref()
-            .is_none_or(|(_, held)| path.len() < held.len())
-        {
-            chosen = Some((creator, path));
+    let mut routed: Vec<(&Driver<'_>, Vec<Driver<'_>>)> = creators
+        .filter_map(|creator| {
+            route_from(ir, entity, drivers, born(ir, creator), target).map(|path| (creator, path))
+        })
+        .collect();
+    // Stable: equal lengths keep the drivers' name order.
+    routed.sort_by_key(|(_, path)| path.len());
+    let mut first: Option<Unreachable> = None;
+    for (creator, route) in routed {
+        let arranged = created(ir, entity, creator, actors, distinction, arranging, None).and_then(
+            |arrangement| {
+                advance(
+                    ir,
+                    entity,
+                    arrangement,
+                    route,
+                    target,
+                    actors,
+                    distinction,
+                    arranging,
+                )
+            },
+        );
+        match arranged {
+            Ok(arrangement) => return Ok(arrangement),
+            Err(reason) => {
+                first.get_or_insert(reason);
+            }
         }
     }
-    let (creator, route) = chosen.ok_or_else(|| Unreachable::NoPath {
+    Err(first.unwrap_or_else(|| Unreachable::NoPath {
         from: ir.entity(entity).lifecycle.initial.clone(),
-    })?;
-
-    let arrangement = created(ir, entity, creator, actors, distinction, arranging, None)?;
-    advance(
-        ir,
-        entity,
-        arrangement,
-        route,
-        target,
-        actors,
-        distinction,
-        arranging,
-    )
+    }))
 }
 
 /// The second half of [`arrange`]: an instance already created, driven along `route` to `target`.
@@ -2853,15 +3121,14 @@ fn advance(
         let moved = if subject_fact::uses(driver.command) {
             match subject_fact::step(ir, entity, &driver, &arrangement, actors) {
                 Some(next) => next,
-                None if distinction == Distinction::PLAIN && arranging.is_empty() => {
-                    return subject_fact::reach_state(ir, entity, target, actors).map_err(|_| {
-                        Unreachable::Unwitnessable {
+                None if arranging.is_empty() => {
+                    return subject_fact::reach_state(ir, entity, target, actors, distinction)
+                        .map_err(|_| Unreachable::Unwitnessable {
                             outcome: OutcomeRef::new(
                                 CommandRef::new(driver.command.name.clone()),
                                 driver.outcome.name.clone(),
                             ),
-                        }
-                    });
+                        });
                 }
                 None => {
                     return Err(Unreachable::Unwitnessable {
@@ -2883,6 +3150,11 @@ fn advance(
                 // A move acts on a row that already exists, so its input names that row and
                 // nothing else: whatever owner it needed was arranged before the row was created.
                 &BTreeMap::new(),
+                &arranging
+                    .iter()
+                    .copied()
+                    .chain([entity])
+                    .collect::<Vec<_>>(),
             )?;
             let mut next = arrangement.clone();
             next.steps.extend(invoked.steps);
@@ -2913,14 +3185,108 @@ fn created(
     arranging: &[&EntityHandle],
     input: Option<&BTreeMap<String, Node>>,
 ) -> Result<Arrangement, Unreachable> {
+    // Its owner first, and everything that owns *that*. An owned row cannot exist without the row it
+    // belongs to, so the arrangement that brings one into being is incomplete without it.
+    // Not where the owner is the row a related guard reads through the same field (ess/18): that
+    // row is arranged once, by the related-row search, as the one the guard needs.
+    let related_owner = related_guard::routes(creator.command, creator.outcome)
+        && related_guard::owner_is_related(ir, creator.command, creator.outcome);
+    let owner = if related_owner {
+        None
+    } else {
+        arrange_owner(ir, creator.outcome, entity, actors, distinction, arranging)
+    };
+    created_owned(
+        ir,
+        entity,
+        creator,
+        actors,
+        distinction,
+        arranging,
+        owner.as_ref(),
+        input,
+    )
+}
+
+/// An owner already in the scenario, as [`created_owned`] takes it: the input field `creator`'s
+/// `sets:` names the owner through, and no steps. `None` where `entity` has no owner or `creator`
+/// does not name it from its input.
+fn under_owner(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    owner: &InstanceName,
+) -> Option<(String, Arrangement)> {
+    // An owner that holds at most one row is never given a second.
+    if !shares_owner(ir, entity) {
+        return None;
+    }
+    let belongs = ir.owner_of(entity)?;
+    let field = creator
+        .outcome
+        .sets
+        .iter()
+        .find_map(|set| match &set.value {
+            ResolvedPayloadValue::InputField { field, .. }
+                if set.target == belongs.via && set.conversion.is_none() =>
+            {
+                Some(field.clone())
+            }
+            _ => None,
+        })?;
+    Some((
+        field,
+        Arrangement {
+            instance: owner.clone(),
+            state: ir.entity(&belongs.owner).lifecycle.initial.clone(),
+            steps: Vec::new(),
+            source: BTreeSet::new(),
+            settled: BTreeMap::new(),
+        },
+    ))
+}
+
+/// Whether an owner of `entity` may hold several of its rows: the owning relation is
+/// `cardinality: many`.
+fn shares_owner(ir: &EssIr, entity: &EntityHandle) -> bool {
+    ir.owner_of(entity)
+        .is_some_and(|owned| owned.relation.cardinality == Cardinality::Many)
+}
+
+/// The owner a row was created under, where its link to the owner holds an arranged instance, and
+/// the field that link is.
+fn owner_of_row<'a>(
+    ir: &'a EssIr,
+    entity: &EntityHandle,
+    settled: &'a BTreeMap<String, Determined>,
+) -> Option<(&'a str, &'a InstanceName)> {
+    let via = ir.owner_of(entity)?.via;
+    match &settled.get(via)?.value {
+        ScenarioValue::Instance { instance } => Some((via, instance)),
+        _ => None,
+    }
+}
+
+/// [`created`], under an owner the caller arranged: the input field that names it, and the steps
+/// that bring it into being — empty where an earlier row of the same scenario already did, so rows
+/// that share an owner share one (beyond10x/ess#193, an aggregate grouped by its link field).
+// One argument per thing an arranging run is told, and the witness it is for.
+#[allow(clippy::too_many_arguments)]
+fn created_owned(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    arranging: &[&EntityHandle],
+    owner: Option<&(String, Arrangement)>,
+    input: Option<&BTreeMap<String, Node>>,
+) -> Result<Arrangement, Unreachable> {
     let instance = instance_name(&ir.entity(entity).name, distinction);
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
 
-    // Its owner first, and everything that owns *that*. An owned row cannot exist without the row it
-    // belongs to, so the arrangement that brings one into being is incomplete without it.
-    let owner = arrange_owner(ir, creator.outcome, entity, actors, distinction, arranging);
-    let bound: BTreeMap<String, InstanceName> = match &owner {
+    let bound: BTreeMap<String, InstanceName> = match owner {
         None => BTreeMap::new(),
         Some((field, arrangement)) => {
             steps.extend(arrangement.steps.iter().cloned());
@@ -2932,9 +3298,31 @@ fn created(
     };
 
     let mut settled = BTreeMap::new();
-    let created = match input {
-        Some(input) => invoke_with(ir, creator, None, actors, &bound, input),
-        None => invoke(ir, creator, None, None, actors, distinction, &bound)?,
+    // Mid-arrangement of `entity`: a creator that needs a related row of an entity already being
+    // arranged stops there (ess/18).
+    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+    let created = if related_guard::routes(creator.command, creator.outcome) {
+        related_guard::drive(
+            ir,
+            creator,
+            None,
+            actors,
+            distinction,
+            &bound,
+            input,
+            &chain,
+        )
+        .map_err(|_| Unreachable::Unwitnessable {
+            outcome: OutcomeRef::new(
+                CommandRef::new(creator.command.name.clone()),
+                creator.outcome.name.clone(),
+            ),
+        })?
+    } else {
+        match input {
+            Some(input) => invoke_with(ir, creator, None, actors, &bound, input),
+            None => invoke(ir, creator, None, None, actors, distinction, &bound, &chain)?,
+        }
     };
     steps.extend(created.steps);
     source.extend(created.source);
@@ -3045,6 +3433,8 @@ fn arrange_owner(
 /// The outcome is asserted rather than assumed, because an arrangement that quietly failed produces
 /// a scenario that proves nothing and says it passed — which is the shape of green this whole
 /// milestone exists to rule out.
+// One argument per thing an arranging run is told: the arranging chain joined the six (ess/18).
+#[allow(clippy::too_many_arguments)]
 fn invoke(
     ir: &EssIr,
     driver: &Driver<'_>,
@@ -3053,9 +3443,27 @@ fn invoke(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
     bound: &BTreeMap<String, InstanceName>,
+    arranging: &[&EntityHandle],
 ) -> Result<Invocation, Unreachable> {
     let command_ref = CommandRef::new(driver.command.name.clone());
     let outcome_ref = OutcomeRef::new(command_ref.clone(), driver.outcome.name.clone());
+    // A branch of a command guarded by a related row (ess/18, #211) is run with the row it needs
+    // arranged first, as its own scenario runs it.
+    if related_guard::routes(driver.command, driver.outcome) {
+        return related_guard::drive(
+            ir,
+            driver,
+            instance,
+            actors,
+            distinction,
+            bound,
+            None,
+            arranging,
+        )
+        .map_err(|_| Unreachable::Unwitnessable {
+            outcome: outcome_ref,
+        });
+    }
     // The cause is not carried up. That branch has a refusal of its own, under its own id, saying
     // exactly why no input reaches it; repeating it here would be one defect reported twice with two
     // repairs to weigh.
@@ -3372,7 +3780,7 @@ fn has_subject_guards(command: &ResolvedCommand) -> bool {
 /// their partition. The single place the partition decides anything is [`admits_held_state`].
 fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>> {
     match condition {
-        ResolvedCondition::SubjectState { state, .. } => Some(BTreeSet::from([state])),
+        ResolvedCondition::SubjectState { state, .. } => Some(state.iter().collect()),
         ResolvedCondition::StateChange { states, .. } => Some(states.iter().collect()),
         ResolvedCondition::When { .. }
         | ResolvedCondition::Otherwise
@@ -3381,6 +3789,7 @@ fn admitted_states(condition: &ResolvedCondition) -> Option<BTreeSet<&StateName>
         | ResolvedCondition::WrongState
         | ResolvedCondition::SubjectField { .. }
         | ResolvedCondition::SubjectPredicate { .. }
+        | ResolvedCondition::Related { .. }
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
         | ResolvedCondition::ExistingInstance => None,
@@ -3493,7 +3902,7 @@ fn prepare_state_input(
     // move to CHANGE the held state would have had the arrival state offered to it, and a scenario
     // that arranges a state the branch refuses proves nothing about the branch it names.
     let states: Vec<_> = match &outcome.condition {
-        ResolvedCondition::SubjectState { state, .. } => vec![state.clone()],
+        ResolvedCondition::SubjectState { state, .. } => state.iter().cloned().collect(),
         _ => lifecycle.states.iter().cloned().collect(),
     };
     let mut first = None;
@@ -3659,13 +4068,29 @@ fn reach(
     // which `has_subject_guards` now answers for it. `run` and `invoke` both route such a command
     // through `prepare_state_input`, which decides the state and the input together and is the only
     // place allowed to pick.
+    // A listed guard (ess/18) is reached in the first state it lists that an input selects it in.
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
-        return reach_in_state(ir, command, outcome, state, distinction);
+        let mut first = None;
+        for held in state.iter() {
+            match reach_in_state(ir, command, outcome, held, distinction) {
+                Ok(input) => return Ok(input),
+                Err(reason) => {
+                    first.get_or_insert(reason);
+                }
+            }
+        }
+        return Err(first.expect("a held-state guard names at least one state"));
     }
     if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         return Err(RefusalCause::StrategyWithoutGuard {
             strategy: outcome.test_strategy,
         });
+    }
+    // Every branch of a command guarded by a related row (ess/18, #211) is decided by that row, which
+    // only `related_guard::prepare` arranges: an input chosen here would be sent for a row nobody
+    // arranged, and a correct implementation would answer another branch.
+    if related_guard::uses(command) {
+        return Err(related_guard::unarranged());
     }
     let (guards, satisfy) = plain_guards(command, outcome)?;
     let mut tried = 0;
@@ -3701,6 +4126,9 @@ pub(super) struct Shadow {
     claimed: BTreeMap<OutcomeName, String>,
     /// Whether some candidate satisfying the guard was lost to anything other than a refusal.
     otherwise: bool,
+    /// Whether the branch shadowed is itself an input-guarded refusal, which the model orders
+    /// neither before nor after its siblings.
+    refusal: bool,
 }
 
 impl Shadow {
@@ -3710,10 +4138,11 @@ impl Shadow {
         outcome: &ResolvedOutcome,
         facts: &crate::InputFacts<'_>,
     ) -> Result<(), RefusalCause> {
-        if outcome.error.is_some() {
+        if outcome.error.is_some() && !is_input_guarded_refusal(outcome) {
             self.otherwise = true;
             return Ok(());
         }
+        self.refusal |= outcome.error.is_some();
         let mut claimed = false;
         for refusal in sibling_refusals(command, outcome) {
             let Some(guard) = when(refusal) else {
@@ -3737,6 +4166,16 @@ impl Shadow {
             .iter()
             .map(|(name, guard)| format!("{name} ({guard})"))
             .collect();
+        if self.refusal {
+            // Two refusals whose guards overlap: the model takes neither first, so an input both
+            // claim selects no one outcome (beyond10x/ess#209, adversary pass 1).
+            return Some(format!(
+                "{} outside {}, an input-guarded refusal the model orders neither before nor \
+                 after it",
+                rendered(guards, true),
+                refusals.join(", ")
+            ));
+        }
         Some(format!(
             "{} outside {}, the input-guarded refusal taken first",
             rendered(guards, true),
@@ -3752,7 +4191,8 @@ impl Shadow {
 /// must also refute every sibling input-guarded refusal ([`admits_plain`]), and a candidate search
 /// varies only what its guards read — so where none of the first candidates steps out of a refusal
 /// (`count < 5` beside `open == false`, and `count` at its base `1`), the search runs again over
-/// the refusals' guards as well, which puts `5` on `count`'s ladder.
+/// the refusals' guards as well, which puts `5` on `count`'s ladder. An input-guarded refusal
+/// refutes its sibling refusals too, so it is searched the same way.
 fn searched_guards<'c>(
     command: &'c ResolvedCommand,
     outcome: &'c ResolvedOutcome,
@@ -3760,7 +4200,7 @@ fn searched_guards<'c>(
     satisfy: bool,
 ) -> Vec<Vec<&'c Predicate>> {
     let mut searches = vec![guards.to_vec()];
-    if satisfy && outcome.error.is_none() {
+    if satisfy && (outcome.error.is_none() || is_input_guarded_refusal(outcome)) {
         let mut widened = guards.to_vec();
         widened.extend(
             sibling_refusals(command, outcome)
@@ -3832,7 +4272,13 @@ fn selects_branch(
         };
     }
     if let ResolvedCondition::SubjectState { state, .. } = &outcome.condition {
-        return selected_in_state(command, outcome, state, &facts);
+        // The held state the arrangement left, where the guard admits it; otherwise the first it
+        // lists, which is the state a listed guard (ess/18) is reached in by [`reach`].
+        let held = held
+            .filter(|held| state.contains(held))
+            .or_else(|| state.iter().next())
+            .expect("a held-state guard names at least one state");
+        return selected_in_state(command, outcome, held, &facts);
     }
     if has_subject_guards(command) && !existence::creates_unknown(outcome) {
         let held = held.ok_or(RefusalCause::StrategyWithoutGuard {
@@ -3884,7 +4330,8 @@ fn plain_guards<'c>(
         | TestStrategy::SendNoInput
         | TestStrategy::SendExistingIdentity
         | TestStrategy::ConstructInputInState
-        | TestStrategy::ObserveSubjectFact => {
+        | TestStrategy::ObserveSubjectFact
+        | TestStrategy::ArrangeRelatedRow => {
             return Err(RefusalCause::StrategyWithoutGuard { strategy })
         }
     };
@@ -3922,7 +4369,10 @@ fn admits_plain(
             .filter(|other| other.name != outcome.name)
             .filter_map(when)
             .collect()
-    } else if outcome.error.is_none() {
+    } else if outcome.error.is_none() || is_input_guarded_refusal(outcome) {
+        // An input-guarded refusal refutes its sibling refusals as well: beside a default the
+        // model orders none of them before another, so an input two of them claim selects no one
+        // outcome, and a scenario requiring either would require a choice the model does not make.
         sibling_refusals(command, outcome)
             .filter_map(when)
             .collect()
@@ -4256,6 +4706,8 @@ fn view_expectations(
         return out;
     };
     let (instance, settled) = (run.instance.as_ref(), &run.settled);
+    let identity = identity_of(subject, instance);
+    let identity = identity.as_ref();
     let projections = row_projections(ir);
     let Some(views) = projections.get(&subject.entity) else {
         return out;
@@ -4265,7 +4717,14 @@ fn view_expectations(
     // other view of the same entity — so what each view holds cannot be settled one view at a time.
     let mut decided: Vec<(&&ResolvedView, bool)> = Vec::new();
     for view in views {
-        match shows(ir, view, state, settled, &bound(view, settled)) {
+        match shows_row(
+            ir,
+            view,
+            state,
+            settled,
+            identity,
+            &bound(ir, view, settled, identity),
+        ) {
             // Neither asserted nor counted: an eventual read of a row left as it was proves nothing.
             Ok(_) if awaits_nothing(command, view, run, state) => {}
             Ok(admits) => decided.push((view, admits)),
@@ -4290,6 +4749,7 @@ fn view_expectations(
         entity: &subject.entity,
         actors,
         settled,
+        identity,
         taken: &taken,
     };
     let (mut companions, unwitnessed) = arrange_ranked(&context, &decided, id, refusals);
@@ -4315,10 +4775,10 @@ fn view_expectations(
             // assertion cannot see, and an entity that has not reached the filtered state yet is
             // exactly that case at the other end. Without the identity `Excludes {}` reads "holds
             // no rows", which a companion this scenario put there makes false for every target.
-            let params = bound(view, settled);
-            let filled = companions.iter().any(|companion| {
-                shows(ir, view, &companion.state, &companion.settled, &params) == Ok(true)
-            });
+            let params = bound(ir, view, settled, identity);
+            let filled = companions
+                .iter()
+                .any(|companion| companion.shows(ir, view, &params) == Ok(true));
             if fields.is_empty() && filled {
                 Vec::new()
             } else {
@@ -4328,15 +4788,21 @@ fn view_expectations(
         let expectations =
             expectations
                 .into_iter()
-                .chain(matching.get(&name).map(|(instance, contained)| {
-                    let fields = identifying_arranged(ir, &subject.entity, instance, view);
-                    if *contained {
-                        ViewExpectation::Contains { fields }
-                    } else {
-                        ViewExpectation::Excludes { fields }
-                    }
-                }));
-        let params = bound(view, settled);
+                .chain(
+                    matching
+                        .get(&name)
+                        .into_iter()
+                        .flatten()
+                        .map(|(fields, contained)| {
+                            let fields = fields.clone();
+                            if *contained {
+                                ViewExpectation::Contains { fields }
+                            } else {
+                                ViewExpectation::Excludes { fields }
+                            }
+                        }),
+                );
+        let params = bound(ir, view, settled, identity);
         for expectation in expectations {
             require(view, &name, params.clone(), expectation, &mut out.asserted);
         }
@@ -4378,6 +4844,7 @@ fn view_expectations(
             ir,
             view,
             settled,
+            identity,
             *admits_subject,
             &companions,
             &unwitnessed,
@@ -4409,6 +4876,8 @@ struct Beside<'a> {
     actors: &'a BTreeMap<QualifiedName, ActorRef>,
     /// What the subject's fields hold, which binds each view's parameters.
     settled: &'a BTreeMap<String, Determined>,
+    /// The subject's identity, which binds a parameter compared with it.
+    identity: Option<&'a ScenarioValue>,
     /// Every instance name the scenario already captured before the view assertions.
     taken: &'a BTreeSet<InstanceName>,
 }
@@ -4451,12 +4920,43 @@ fn arrange_ranked(
         // The subject's own binding, and it is the right one: a companion counts towards a ranked
         // read only if the *caller's* parameter admits it. A row in another queue is a row this
         // query never asked for.
-        let params = bound(view, beside.settled);
+        let params = bound(ir, view, beside.settled, beside.identity);
+        // A list read by the subject's owner (`account_id == param.account`) holds only rows of that
+        // owner, so the further rows are created under it (beyond10x/ess#193) — where the owner
+        // may hold many. One that holds one never shows a second row, and the order is refused.
+        let read_by_owner = owner_of_row(ir, beside.entity, beside.settled)
+            .filter(|(via, _)| reads_root(view, via));
+        if let (Some((via, _)), false) = (read_by_owner, shares_owner(ir, beside.entity)) {
+            if rows_shown(ir, view, *admits_subject, &companions, &params) < RANKING_ROWS {
+                refusals.push(Refusal::about(
+                    id,
+                    RefusalCause::OrderUnwitnessed {
+                        view: name.clone(),
+                        entity: EntityRef::from(beside.entity),
+                        arranged: rows_shown(ir, view, *admits_subject, &companions, &params),
+                        reason: Unreachable::OwnerHoldsOne {
+                            via: via.to_owned(),
+                        },
+                    },
+                ));
+                unwitnessed.insert(name.clone());
+                continue;
+            }
+        }
+        let owner = read_by_owner.map(|(_, owner)| owner);
         while rows_shown(ir, view, *admits_subject, &companions, &params)
             < paging::rows_wanted(view)
         {
             let distinction = beside.next(&companions);
-            match arrange_beside(ir, beside.entity, view, beside.actors, distinction, &params) {
+            match arrange_beside(
+                ir,
+                beside.entity,
+                view,
+                beside.actors,
+                distinction,
+                owner,
+                &params,
+            ) {
                 Ok(companion) => companions.push(companion),
                 // A paged view's further rows are for its pages; its order is witnessed by two.
                 Err(_)
@@ -4484,10 +4984,17 @@ fn arrange_ranked(
     (companions, unwitnessed)
 }
 
+/// Per view, each further row asserted beside the subject's: the fields that name it, and whether
+/// the view holds it.
+type Matching = BTreeMap<ViewRef, Vec<(BTreeMap<String, ScenarioValue>, bool)>>;
+
+/// What a further row must be for one of [`arrange_matching`]'s cases.
+type Wanted<'w> = Box<dyn Fn(&Arrangement) -> bool + 'w>;
+
 /// Per view, a further row asserted beside the subject's, by the name its arrangement bound and
 /// whether the view holds it (story:view-filters-witnessed-on-matching-rows).
 ///
-/// Two cases, both only for a view that projects the identity — without it the subject's
+/// Three cases, all only for a view that projects the identity — without it the subject's
 /// `Excludes {}` reads "holds no rows" and a second row cannot be told apart from the first:
 ///
 /// - **The subject's row does not meet the filter.** `Excludes` over it alone passes a target
@@ -4500,25 +5007,39 @@ fn arrange_ranked(
 ///   the filter decides it: `Contains` under `equals_ignore_case`, `Excludes` under its negation.
 ///   The plain witness meets a fold only in the case written, which a byte-wise target decides the
 ///   same way.
+/// - **The filter reads an identity, and holds the subject's row.** `id == param.id` asks for the
+///   row this scenario made, and a target that ignores the filter returns every row — which, with
+///   the subject the only one, passes. A further row the filter refuses is arranged and asserted
+///   `Excludes` (beyond10x/ess#193): for a filter over the identity, one under the subject's own
+///   owner where that owner may hold many rows, so the identity alone tells them apart; for a
+///   filter over the link to the owner, one under another owner. A filter over both gets both. A
+///   view that projects the link and not the identity is named by the link, so the second of these
+///   is the one case that does not need the identity projected.
 ///
 /// A companion already arranged serves where it answers the case; a new one is pushed onto
 /// `companions`, so it lands in every view of the entity and is counted as every companion is. A
 /// view no arrangement reaches keeps what it had.
+#[allow(clippy::too_many_lines)]
 fn arrange_matching(
     beside: &Beside<'_>,
     decided: &[(&&ResolvedView, bool)],
     companions: &mut Vec<Arrangement>,
-) -> BTreeMap<ViewRef, (InstanceName, bool)> {
+) -> Matching {
     let ir = beside.ir;
-    let mut matching = BTreeMap::new();
+    let mut matching = Matching::new();
+    let identity_name = &ir.entity(beside.entity).identity.name;
+    let owner = owner_of_row(ir, beside.entity, beside.settled);
     for (view, admits_subject) in decided {
-        let identified = view
-            .field(&ir.entity(beside.entity).identity.name)
-            .is_some();
-        if !identified || !reads_row_fields(view) {
+        let identified = view.field(identity_name).is_some();
+        // The link to the subject's owner where the filter reads it: a row under another owner is
+        // told apart by it, and the view names that row by the link where it projects no identity
+        // (beyond10x/ess#193).
+        let linked = owner.filter(|(via, _)| reads_root(view, via));
+        let link_told = linked.is_some_and(|(via, _)| view.field(via).is_some());
+        if !(identified || link_told) || !reads_row_fields(view) {
             continue;
         }
-        let params = &bound(view, beside.settled);
+        let params = &bound(ir, view, beside.settled, beside.identity);
         let bytewise = view
             .filter
             .as_ref()
@@ -4527,43 +5048,116 @@ fn arrange_matching(
                 filter: Some(byte_exact(filter)),
                 ..(**view).clone()
             });
-        let held = |row: &Arrangement| shows(ir, view, &row.state, &row.settled, params);
-        let wanted: Box<dyn Fn(&Arrangement) -> bool + '_> = match &bytewise {
-            Some(bytewise) => Box::new(move |row: &Arrangement| {
-                let bytes = shows(ir, bytewise, &row.state, &row.settled, params);
-                matches!((held(row), bytes), (Ok(folded), Ok(exact)) if folded != exact)
-            }),
-            None if *admits_subject
+        let held = |row: &Arrangement| row.shows(ir, view, params);
+        let under = |row: &Arrangement, via: &str, owner: &InstanceName| {
+            row.settled.get(via).map(|held| &held.value)
+                == Some(&ScenarioValue::instance(owner.clone()))
+        };
+        let mut wanted: Vec<(Wanted<'_>, Option<&InstanceName>)> = Vec::new();
+        let by_identity = identified && reads_root(view, identity_name);
+        match &bytewise {
+            Some(bytewise) if identified => wanted.push((
+                Box::new(move |row: &Arrangement| {
+                    let bytes = row.shows(ir, bytewise, params);
+                    matches!((held(row), bytes), (Ok(folded), Ok(exact)) if folded != exact)
+                }),
+                None,
+            )),
+            Some(_) => continue,
+            None if *admits_subject && (by_identity || linked.is_some()) => {
+                // The filter names the subject's row by an identity. A further row it refuses is
+                // asserted `Excludes`:
+                //
+                // - where it reads the row's identity, under the subject's own owner, so that the
+                //   identity is all that tells the two apart and a by-id read answering the
+                //   owner's rows fails. Only where the owner may hold many rows; one that holds
+                //   one is never given a second, and the row goes under an owner of its own;
+                // - where it reads the link, under another owner, so that a read ignoring the
+                //   owner fails.
+                if by_identity {
+                    let shared = owner.filter(|_| shares_owner(ir, beside.entity));
+                    wanted.push((
+                        Box::new(move |row: &Arrangement| {
+                            held(row) == Ok(false)
+                                && shared.is_none_or(|(via, owner)| under(row, via, owner))
+                        }),
+                        shared.map(|(_, owner)| owner),
+                    ));
+                }
+                if let Some((via, owner)) = linked.filter(|_| link_told || identified) {
+                    wanted.push((
+                        Box::new(move |row: &Arrangement| {
+                            held(row) == Ok(false) && !under(row, via, owner)
+                        }),
+                        None,
+                    ));
+                }
+            }
+            None if !identified
+                || *admits_subject
                 || plain_row_shown(ir, beside.entity, view, beside.actors, params) =>
             {
                 continue;
             }
-            None => Box::new(move |row: &Arrangement| held(row) == Ok(true)),
-        };
-        let at = if let Some(at) = companions.iter().position(wanted.as_ref()) {
-            at
-        } else {
-            let distinction = beside.next(companions);
-            let Some(companion) = arrange_toward_by(
-                ir,
-                beside.entity,
-                view,
-                beside.actors,
-                distinction,
-                wanted.as_ref(),
-            ) else {
-                continue;
+            None => wanted.push((
+                Box::new(move |row: &Arrangement| held(row) == Ok(true)),
+                None,
+            )),
+        }
+        let mut taken: Vec<usize> = Vec::new();
+        for (accept, sibling) in &wanted {
+            let at = if let Some(at) = companions.iter().position(accept.as_ref()) {
+                at
+            } else {
+                let distinction = beside.next(companions);
+                let Some(companion) = arrange_toward_by(
+                    ir,
+                    beside.entity,
+                    view,
+                    beside.actors,
+                    distinction,
+                    *sibling,
+                    accept.as_ref(),
+                ) else {
+                    continue;
+                };
+                companions.push(companion);
+                companions.len() - 1
             };
-            companions.push(companion);
-            companions.len() - 1
-        };
-        let row = &companions[at];
-        matching.insert(
-            ViewRef::new(view.name.clone()),
-            (row.instance.clone(), held(row) == Ok(true)),
-        );
+            if taken.contains(&at) {
+                continue;
+            }
+            taken.push(at);
+            let row = &companions[at];
+            let fields = if identified {
+                identifying_arranged(ir, beside.entity, &row.instance, view)
+            } else {
+                linked
+                    .and_then(|(via, _)| {
+                        row.settled
+                            .get(via)
+                            .map(|held| (via.to_owned(), held.value.clone()))
+                    })
+                    .into_iter()
+                    .collect()
+            };
+            matching
+                .entry(ViewRef::new(view.name.clone()))
+                .or_default()
+                .push((fields, held(row) == Ok(true)));
+        }
     }
     matching
+}
+
+/// Whether a view's filter reads the row field `field`.
+fn reads_root(view: &ResolvedView, field: &str) -> bool {
+    view.filter.as_ref().is_some_and(|filter| {
+        filter
+            .fact_paths()
+            .into_iter()
+            .any(|path| path.namespace() == field)
+    })
 }
 
 /// Whether a view's filter reads a field of the row: anything but its state and the caller's
@@ -4587,9 +5181,8 @@ fn plain_row_shown(
     params: &BTreeMap<String, ScenarioValue>,
 ) -> bool {
     ir.entity(entity).lifecycle.states.iter().any(|state| {
-        arrange(ir, entity, state, actors, Distinction::PLAIN, &[]).is_ok_and(|arranged| {
-            shows(ir, view, &arranged.state, &arranged.settled, params) == Ok(true)
-        })
+        arrange(ir, entity, state, actors, Distinction::PLAIN, &[])
+            .is_ok_and(|arranged| arranged.shows(ir, view, params) == Ok(true))
     })
 }
 
@@ -4719,6 +5312,9 @@ fn arranged_as(
     match witness {
         Witness::Full => arranged(ir, command, outcome, actors, routed),
         Witness::LiteralFallbacks => arranged_without_fallbacks(ir, command, outcome, actors),
+        Witness::Listed(nth) => arranged_in_listed_state(ir, command, outcome, actors, nth),
+        // Only a command reading a related row builds one, and `run_as` arranges it there.
+        Witness::RelatedBoundary { .. } => Err(related_guard::unarranged()),
     }
 }
 
@@ -4755,6 +5351,33 @@ fn arranged_without_fallbacks(
         return Err(no_literal_fallback_run(command));
     }
     Ok((setup, omitted))
+}
+
+/// The arrangement and input of [`Witness::Listed`]: a further instance, under a distinction of its
+/// own, arranged in and observed at the `nth` state the branch's listed guard names, with an input
+/// the branch is selected by there.
+fn arranged_in_listed_state(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    nth: usize,
+) -> Result<(Setup, BTreeMap<String, Node>), RefusalCause> {
+    let without = || RefusalCause::StrategyWithoutGuard {
+        strategy: outcome.test_strategy,
+    };
+    let ResolvedCondition::SubjectState { state, .. } = &outcome.condition else {
+        return Err(without());
+    };
+    let held = state.iter().nth(nth).ok_or_else(without)?;
+    let distinction = Distinction::further(FRESH_WITNESSES + 2 + nth);
+    let input = reach_in_state(ir, command, outcome, held, distinction)?;
+    let mut setup = prepare_in(ir, outcome, actors, Some(held), distinction)?;
+    let instance = setup.instance.clone().ok_or_else(without)?;
+    let (observed, view) = observe_subject_state(ir, outcome, &instance, held)?;
+    setup.steps.extend(observed);
+    setup.source.insert(view.into());
+    Ok((setup, input))
 }
 
 /// Why [`Witness::LiteralFallbacks`] builds nothing. Never reported: the full invocation is the
@@ -5371,13 +5994,24 @@ fn equals_a_sibling(
 /// witness gives the moved field its value, as [`freshened`] takes one, and the branch is decided
 /// again by [`selects_branch`]; where neither can move the input stands, because no input tells the
 /// two apart.
+///
+/// Three inputs of a two-valued type cannot all differ (beyond10x/ess#202), so the pairs that
+/// matter most are separated first: the [`source_pairs`], each `sets:` source beside a same-typed
+/// input no `sets:` entry reads. A `sets-retarget` mutant's model leaves the original source unread,
+/// and only a witness sending it apart from the new source tells the mutant from the declared
+/// model. Once apart — moved, or sent apart already — each such pair is pinned: no later move may
+/// give its two inputs one value again. No other pair is pinned.
 fn distinguished(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
-    mut input: BTreeMap<String, Node>,
+    input: BTreeMap<String, Node>,
     held: Option<&StateName>,
 ) -> BTreeMap<String, Node> {
+    let keeps = |next: &BTreeMap<String, Node>| {
+        selects_branch(ir, command, outcome, held, next).unwrap_or(false)
+    };
+    let (mut input, pinned) = sources_apart(ir, command, outcome, input, &keeps);
     for set in &outcome.sets {
         let ResolvedPayloadValue::InputField { field, .. } = &set.value else {
             continue;
@@ -5395,31 +6029,173 @@ fn distinguished(
             if !input.contains_key(field) || input.get(field) != input.get(sibling) {
                 continue;
             }
-            'moved: for moving in [sibling, field] {
-                for nth in 1..=FRESH_WITNESSES {
-                    let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
-                        .ok()
-                        .and_then(|inputs| inputs.into_iter().next())
-                        .and_then(|mut further| further.remove(moving))
-                    else {
-                        continue;
-                    };
-                    if input.get(moving) == Some(&moved) {
-                        continue;
-                    }
-                    let mut next = input.clone();
-                    next.insert(moving.clone(), moved);
-                    if admitted(ir, command, &next)
-                        && selects_branch(ir, command, outcome, held, &next).unwrap_or(false)
-                    {
-                        input = next;
-                        break 'moved;
-                    }
-                }
+            if let Some(next) = moved_apart(ir, command, &input, [sibling, field], &pinned, &keeps)
+            {
+                input = next;
             }
         }
     }
     input
+}
+
+/// Every pair a `sets-retarget` mutant could join, read off the model being synthesized
+/// (beyond10x/ess#202): `(source, unread)`, where `source` is an input some `sets:` entry of
+/// `outcome` reads and `unread` is an input of the same declared type that no `sets:` entry of it
+/// reads. A retarget leaves the original source unread whichever input it retargets to — one
+/// feeding two targets, or one only a payload or a guard reads — so every such pair is one a
+/// mutant may have joined.
+///
+/// Pairs come in priority order: first those the model shows joined — `source` feeds two or more
+/// targets, or `unread` is named like a target `source` feeds — then the rest, each group in
+/// declaration order of `source`, then of `unread`. Where not every pair can be sent apart, the
+/// joined ones are the ones kept apart. The flag says which group a pair is in.
+pub(super) fn source_pairs<'c>(
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+) -> Vec<(&'c str, &'c str, bool)> {
+    let mut fed: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for set in &outcome.sets {
+        if let ResolvedPayloadValue::InputField { field, .. } = &set.value {
+            fed.entry(field.as_str())
+                .or_default()
+                .push(set.target.as_str());
+        }
+    }
+    let mut joined = Vec::new();
+    let mut rest = Vec::new();
+    for source in &command.input {
+        let Some(targets) = fed.get(source.name.as_str()) else {
+            continue;
+        };
+        for unread in command.input.iter().filter(|other| {
+            other.name != source.name
+                && other.type_ref == source.type_ref
+                && !fed.contains_key(other.name.as_str())
+        }) {
+            let (source, unread) = (source.name.as_str(), unread.name.as_str());
+            if targets.len() >= 2 || targets.contains(&unread) {
+                joined.push((source, unread, true));
+            } else {
+                rest.push((source, unread, false));
+            }
+        }
+    }
+    joined.extend(rest);
+    joined
+}
+
+/// `input` with every one of the [`source_pairs`] sent apart that can be, in their order, and the
+/// pairs that end apart — the pins every later move must keep. For each pair still sent one value,
+/// the unread input is moved first, because no `sets:` entry reads it into the row, and the source
+/// only where the unread one cannot move; a move is kept only where the input is still admitted,
+/// `keeps` it on the branch, and leaves every pair already pinned apart. Used by [`distinguished`]
+/// and by the stored-row search's arrangement ([`subject_fact::prepare`]).
+pub(super) fn sources_apart<'c>(
+    ir: &EssIr,
+    command: &'c ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    mut input: BTreeMap<String, Node>,
+    keeps: &dyn Fn(&BTreeMap<String, Node>) -> bool,
+) -> (BTreeMap<String, Node>, Vec<(&'c str, &'c str)>) {
+    let mut pinned: Vec<(&str, &str)> = Vec::new();
+    for (source, unread, _) in source_pairs(command, outcome) {
+        if !input.contains_key(source) || !input.contains_key(unread) {
+            continue;
+        }
+        if input.get(source) == input.get(unread) {
+            if let Some(next) = moved_apart(ir, command, &input, [unread, source], &pinned, keeps) {
+                input = next;
+            }
+        }
+        if input.get(source) != input.get(unread) {
+            pinned.push((source, unread));
+        }
+    }
+    (input, pinned)
+}
+
+/// The notes for a scenario whose last invocation of `command` sends a joined pair of
+/// [`source_pairs`] of `outcome` with one value (beyond10x/ess#202), one note per pair: no input
+/// the guards and the pins leave told them apart, so the `sets-retarget` mutant this model may be
+/// is not killed by this scenario.
+///
+/// Only joined pairs are noted — the source feeds two targets, or the unread input is named like
+/// the source's target — because those are the pairs a retarget shows. A declared source held
+/// equal to an input it never joined (a guard fixing both, or a row whose writes must still
+/// change) is a pair the model does not name, and noting it would report a separation nothing lost.
+fn unseparated(
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    id: &ScenarioId,
+    scenario: &ConformanceScenario,
+) -> Vec<Note> {
+    let Some(sent) = scenario.steps.iter().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: sent,
+            input,
+            ..
+        } if sent.to_string() == command.name.to_string() => Some(input),
+        _ => None,
+    }) else {
+        return Vec::new();
+    };
+    source_pairs(command, outcome)
+        .into_iter()
+        .filter(|(_, _, joined)| *joined)
+        .filter(|(source, unread, _)| {
+            match (
+                sent.get(*source).and_then(ScenarioValue::as_literal),
+                sent.get(*unread).and_then(ScenarioValue::as_literal),
+            ) {
+                (Some(first), Some(second)) => first == second,
+                _ => false,
+            }
+        })
+        .map(|(source, unread, _)| Note::UnseparatedSources {
+            scenario: id.clone(),
+            source: source.to_owned(),
+            unread: unread.to_owned(),
+        })
+        .collect()
+}
+
+/// `input` with the first of `moving` that can move given a further witness's value, where the
+/// result is admitted, `keeps` it on the branch, and leaves every `pinned` pair apart; nothing
+/// where no such move exists. See [`distinguished`].
+fn moved_apart(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    input: &BTreeMap<String, Node>,
+    moving: [&str; 2],
+    pinned: &[(&str, &str)],
+    keeps: &dyn Fn(&BTreeMap<String, Node>) -> bool,
+) -> Option<BTreeMap<String, Node>> {
+    for moving in moving {
+        for nth in 1..=FRESH_WITNESSES {
+            let Some(moved) = candidates(ir, command, &[], Distinction::further(nth))
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|mut further| further.remove(moving))
+            else {
+                continue;
+            };
+            if input.get(moving) == Some(&moved) {
+                continue;
+            }
+            let mut next = input.clone();
+            next.insert(moving.to_owned(), moved);
+            if pinned
+                .iter()
+                .any(|(first, second)| next.get(*first) == next.get(*second))
+            {
+                continue;
+            }
+            if admitted(ir, command, &next) && keeps(&next) {
+                return Some(next);
+            }
+        }
+    }
+    None
 }
 
 /// What a row holds in `target` before a branch writes it, where a scenario can know: the literal
@@ -5635,9 +6411,7 @@ fn rows_shown(
     usize::from(admits_subject)
         + companions
             .iter()
-            .filter(|companion| {
-                shows(ir, view, &companion.state, &companion.settled, params) == Ok(true)
-            })
+            .filter(|companion| companion.shows(ir, view, params) == Ok(true))
             .count()
 }
 
@@ -5653,6 +6427,7 @@ fn arrange_beside(
     view: &ResolvedView,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    owner: Option<&InstanceName>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Arrangement, Unreachable> {
     let lifecycle = &ir.entity(entity).lifecycle;
@@ -5665,11 +6440,11 @@ fn arrange_beside(
     if admitted.is_empty() {
         // No state alone admits a row, so the filter reads the row's fields: the instance is
         // created with an input chosen toward it.
-        return arrange_toward(ir, entity, view, actors, distinction, params).ok_or_else(|| {
-            Unreachable::NoPath {
+        return arrange_toward(ir, entity, view, actors, distinction, owner, params).ok_or_else(
+            || Unreachable::NoPath {
                 from: lifecycle.initial.clone(),
-            }
-        });
+            },
+        );
     }
     arrange_first(ir, entity, &admitted, actors, distinction, &[])
 }
@@ -5696,31 +6471,30 @@ fn arrange_toward(
     view: &ResolvedView,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    owner: Option<&InstanceName>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Option<Arrangement> {
     let filter = view.filter.as_ref()?;
-    let admitted =
-        |row: &Arrangement| shows(ir, view, &row.state, &row.settled, params) == Ok(true);
+    let admitted = |row: &Arrangement| row.shows(ir, view, params) == Ok(true);
     if filter.uses_case_fold() {
         let bytewise = ResolvedView {
             filter: Some(byte_exact(filter)),
             ..view.clone()
         };
-        let changed = |row: &Arrangement| {
-            admitted(row) && shows(ir, &bytewise, &row.state, &row.settled, params) == Ok(false)
-        };
-        let found = arrange_toward_by(ir, entity, view, actors, distinction, &changed);
+        let changed =
+            |row: &Arrangement| admitted(row) && row.shows(ir, &bytewise, params) == Ok(false);
+        let found = arrange_toward_by(ir, entity, view, actors, distinction, owner, &changed);
         if found.is_some() {
             return found;
         }
     }
     if let Some(bound) = paging::with_bound_params(view, params) {
-        let found = arrange_toward_by(ir, entity, &bound, actors, distinction, &admitted);
+        let found = arrange_toward_by(ir, entity, &bound, actors, distinction, owner, &admitted);
         if found.is_some() {
             return found;
         }
     }
-    arrange_toward_by(ir, entity, view, actors, distinction, &admitted)
+    arrange_toward_by(ir, entity, view, actors, distinction, owner, &admitted)
 }
 
 /// `predicate` with every case-insensitive comparison made byte for byte: `equals_ignore_case`
@@ -5757,10 +6531,11 @@ fn arrange_toward_by(
     view: &ResolvedView,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    owner: Option<&InstanceName>,
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let filter = view.filter.as_ref()?;
-    arrange_toward_filter(ir, entity, filter, actors, distinction, accept)
+    arrange_toward_owned(ir, entity, filter, actors, distinction, owner, accept)
 }
 
 /// [`arrange_toward_by`], with the filter handed in rather than lent by a view: a set effect's
@@ -5771,6 +6546,21 @@ fn arrange_toward_filter(
     filter: &Predicate,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
+    accept: &dyn Fn(&Arrangement) -> bool,
+) -> Option<Arrangement> {
+    arrange_toward_owned(ir, entity, filter, actors, distinction, None, accept)
+}
+
+/// [`arrange_toward_filter`], each row created under `owner` where one is given and the creating
+/// branch names its owner through `sets:` (beyond10x/ess#193): a further row beside the subject's,
+/// told from it by nothing but its identity, or read by the same owner's list.
+fn arrange_toward_owned(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    filter: &Predicate,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    owner: Option<&InstanceName>,
     accept: &dyn Fn(&Arrangement) -> bool,
 ) -> Option<Arrangement> {
     let all = ir.drivers();
@@ -5816,8 +6606,21 @@ fn arrange_toward_filter(
             if selects_branch(ir, creator.command, creator.outcome, None, &input) != Ok(true) {
                 continue;
             }
-            let Ok(start) = created(ir, entity, creator, actors, distinction, &[], Some(&input))
-            else {
+            let under = owner.and_then(|owner| under_owner(ir, entity, creator, owner));
+            let start = match &under {
+                Some(under) => created_owned(
+                    ir,
+                    entity,
+                    creator,
+                    actors,
+                    distinction,
+                    &[],
+                    Some(under),
+                    Some(&input),
+                ),
+                None => created(ir, entity, creator, actors, distinction, &[], Some(&input)),
+            };
+            let Ok(start) = start else {
                 continue;
             };
             let mut best: Option<Arrangement> = None;
@@ -5893,12 +6696,32 @@ fn identifying(
             };
             ScenarioValue::instance(bound.clone())
         }
-        // The branch published it, and this scenario is the one that ran the branch.
-        ResolvedInstance::Observed { event, field } => {
-            ScenarioValue::observed(EventRef::from(event), field.name.clone())
-        }
+        // The branch published it, and this scenario is the one that ran the branch — bound right
+        // after it where an earlier step published the same event (ess/18, a related row of the
+        // created entity), and otherwise read from the event itself.
+        ResolvedInstance::Observed { event, field } => instance.map_or_else(
+            || ScenarioValue::observed(EventRef::from(event), field.name.clone()),
+            |bound| ScenarioValue::instance(bound.clone()),
+        ),
     };
     [(named, value)].into_iter().collect()
+}
+
+/// The identity of the instance a scenario is about, as the scenario refers to it, or `None` where
+/// nothing bound one.
+fn identity_of(
+    subject: &ResolvedSubject,
+    instance: Option<&InstanceName>,
+) -> Option<ScenarioValue> {
+    match &subject.instance {
+        // The caller supplied it, so the scenario knows it as whatever the arrangement bound.
+        ResolvedInstance::Supplied { .. } => instance.cloned().map(ScenarioValue::instance),
+        // The branch published it, and this scenario is the one that ran the branch.
+        ResolvedInstance::Observed { event, field } => Some(ScenarioValue::observed(
+            EventRef::from(event),
+            field.name.clone(),
+        )),
+    }
 }
 
 /// What this scenario supplies for each parameter the view declares.
@@ -5908,12 +6731,18 @@ fn identifying(
 /// asserting. So `queue_id == param.queue_id` asks for the queue the instance was just placed in,
 /// and the row it expects is the one it created.
 ///
+/// A parameter compared with the row's identity, or with a link field the arrangement filled with
+/// an instance, is sent as that identity: `id == param.id` asks for the row the scenario made, known
+/// by `identity` (beyond10x/ess#193, [`identity::param`]).
+///
 /// A parameter the arrangement did not settle comes back missing, which leaves the filter
 /// undecidable and the view refused by name — the same answer this module gives everywhere for a
 /// question the model cannot decide.
 fn bound(
+    ir: &EssIr,
     view: &ResolvedView,
     settled: &BTreeMap<String, Determined>,
+    identity: Option<&ScenarioValue>,
 ) -> BTreeMap<String, ScenarioValue> {
     view.params
         .iter()
@@ -5922,7 +6751,9 @@ fn bound(
         .filter_map(|param| {
             settled
                 .get(&param.name)
-                .map(|determined| (param.name.clone(), determined.value.clone()))
+                .map(|determined| determined.value.clone())
+                .or_else(|| identity::param(ir, view, &param.name, settled, identity))
+                .map(|value| (param.name.clone(), value))
         })
         .collect()
 }
@@ -5953,6 +6784,21 @@ fn shows(
     view: &ResolvedView,
     state: &StateName,
     settled: &BTreeMap<String, Determined>,
+    params: &BTreeMap<String, ScenarioValue>,
+) -> Result<bool, Vec<FactPath>> {
+    shows_row(ir, view, state, settled, None, params)
+}
+
+/// [`shows`], for a row whose identity the scenario knows: the subject's, or an arranged instance's
+/// ([`Arrangement::identity`]). The identity, every link field the arrangement filled with an
+/// instance, and every parameter sent as one are bound as opaque tokens, so a filter comparing two
+/// of them is decided (beyond10x/ess#193, [`identity`]).
+fn shows_row(
+    ir: &EssIr,
+    view: &ResolvedView,
+    state: &StateName,
+    settled: &BTreeMap<String, Determined>,
+    identity: Option<&ScenarioValue>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<bool, Vec<FactPath>> {
     let Some(filter) = &view.filter else {
@@ -6011,6 +6857,9 @@ fn shows(
                 facts.set(path, fact);
             }
         }
+    }
+    for (path, token) in identity::facts(ir, view, settled, identity, params) {
+        facts.set(path, token);
     }
 
     match filter.evaluate(&facts) {
@@ -6123,6 +6972,7 @@ fn purpose(command: &ResolvedCommand, outcome: &ResolvedOutcome) -> ScenarioPurp
         TestStrategy::SendUnknownIdentity => "an identity no record carries",
         TestStrategy::SendNoInput => "a request with no input at all",
         TestStrategy::SendExistingIdentity => "a second call with an identity a record carries",
+        TestStrategy::ArrangeRelatedRow => "an arranged row of the entity its input names, or none",
     };
     let text = format!(
         "`{}` answers `{}` for {reached}",
@@ -6230,19 +7080,83 @@ fn lifecycle(
                     command: CommandRef::new((*command).clone()),
                     refuses,
                 };
-                let Some((scenario, unobserved)) =
-                    refused_here(ir, handle, &drivers, command, state, actors, &id, refusals)
-                else {
-                    continue;
-                };
-                if !unobserved.is_empty() {
-                    notes.push(Note::PartialObservation {
-                        scenario: id.clone(),
-                        unobserved,
-                    });
+                if let Some(scenario) = wrong_state_scenario(
+                    ir, handle, &drivers, command, state, actors, &id, refusals, notes,
+                ) {
+                    insert(suite, id, scenario, refusals);
                 }
-                insert(suite, id, scenario, refusals);
             }
+        }
+    }
+}
+
+/// The `<entity>/state/<S>/refuses/<command>` scenario of one wrong state, or `None` with the
+/// refusal recorded.
+///
+/// Guarded branches reading `state` select before `wrong_state:` applies (ess/18, the #192
+/// ruling): each that may be taken in `S` is witnessed on a row of its own
+/// ([`subject_fact::state_answered_rows`]), ahead of the plain wrong-state row, which is written
+/// only where some input and row still reach it. A state they answer together, over their input
+/// halves, is still this state's scenario, and never dropped.
+#[allow(clippy::too_many_arguments)]
+fn wrong_state_scenario(
+    ir: &EssIr,
+    handle: &EntityHandle,
+    drivers: &[Driver<'_>],
+    command: &QualifiedName,
+    state: &StateName,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    id: &ScenarioId,
+    refusals: &mut Vec<Refusal>,
+    notes: &mut Vec<Note>,
+) -> Option<ConformanceScenario> {
+    let answered = ir.commands().get(command).map_or_else(
+        || Ok((Vec::new(), BTreeSet::new())),
+        |declared| subject_fact::state_answered_rows(ir, declared, handle, state, actors),
+    );
+    let (rows, depends) = match answered {
+        Ok(found) => found,
+        Err(cause) => {
+            refusals.push(Refusal::about(id, cause));
+            return None;
+        }
+    };
+    let mut plain = Vec::new();
+    match refused_here(ir, handle, drivers, command, state, actors, id, &mut plain) {
+        Some((mut scenario, unobserved)) => {
+            refusals.extend(plain);
+            if !unobserved.is_empty() {
+                notes.push(Note::PartialObservation {
+                    scenario: id.clone(),
+                    unobserved,
+                });
+            }
+            let mut steps = rows;
+            steps.append(&mut scenario.steps);
+            scenario.steps = steps;
+            scenario.source.extend(depends);
+            Some(scenario)
+        }
+        // No input and row reach the plain wrong-state case: the guards answer every one, so
+        // their rows are the scenario.
+        None if !rows.is_empty()
+            && plain.iter().all(|refused| {
+                matches!(refused.cause, RefusalCause::GuardUnsatisfiable { .. })
+            }) =>
+        {
+            Some(ConformanceScenario::new(
+                ScenarioPurpose::new(format!(
+                    "`{command}` in held state `{state}` is answered by the guarded branches \
+                     reading it"
+                ))
+                .expect("nonempty purpose"),
+                rows,
+                depends,
+            ))
+        }
+        None => {
+            refusals.extend(plain);
+            None
         }
     }
 }
@@ -7202,8 +8116,9 @@ fn from_source(
         .map(Vec::as_slice)
         .unwrap_or_default()
     {
-        let params = bound(view, &left);
-        if shows(ir, view, to, &left, &params) != Ok(true) {
+        let known = identity_of(subject, Some(&arrangement.instance));
+        let params = bound(ir, view, &left, known.as_ref());
+        if shows_row(ir, view, to, &left, known.as_ref(), &params) != Ok(true) {
             continue;
         }
         let identity = identifying(ir, subject, Some(&arrangement.instance), view);
@@ -7442,6 +8357,13 @@ fn with_count(
             } else {
                 let filler = last?;
                 elements.resize(wanted, filler);
+            }
+        }
+        // A map only shrinks: a new entry needs a key of the declared key type, which this
+        // type-blind resize cannot spell (beyond10x/ess#196).
+        Node::Map(entries) if entries.len() >= wanted => {
+            while entries.len() > wanted {
+                entries.pop_last();
             }
         }
         _ => return None,
@@ -7873,6 +8795,7 @@ fn holds_after(
     // The state the branch leaves the instance in, which is what decides whether a filtered view
     // holds a row to read the invariant off. A branch with a subject always has one.
     let state = run.after.clone()?;
+    let known = identity_of(subject, run.instance.as_ref());
     let views = projections
         .get(&subject.entity)
         .map(Vec::as_slice)
@@ -7881,7 +8804,7 @@ fn holds_after(
     let mut steps = run.steps();
     let mut named: BTreeSet<ViewRef> = BTreeSet::new();
     for invariant in &entity.invariants {
-        let witnesses = witnesses_for(ir, invariant, views, &state, &run.settled);
+        let witnesses = witnesses_for(ir, invariant, views, &state, &run.settled, known.as_ref());
         if witnesses.is_empty() {
             let (unpublished, unassertable) =
                 unobserved(ir, invariant, &entity.observable_fields(), views);
@@ -7900,7 +8823,7 @@ fn holds_after(
         for view in witnesses {
             steps.extend(assert_satisfied(
                 view,
-                bound(view, &run.settled),
+                bound(ir, view, &run.settled, known.as_ref()),
                 invariant.predicate.clone(),
             ));
             named.insert(ViewRef::new(view.name.clone()));
@@ -8243,8 +9166,12 @@ fn holds_at(
             let Some(state) = run.after.clone() else {
                 continue;
             };
-            let params = bound(view, &run.settled);
-            if !matches!(shows(ir, view, &state, &run.settled, &params), Ok(true)) {
+            let known = identity_of(subject, run.instance.as_ref());
+            let params = bound(ir, view, &run.settled, known.as_ref());
+            if !matches!(
+                shows_row(ir, view, &state, &run.settled, known.as_ref(), &params),
+                Ok(true)
+            ) {
                 continue;
             }
 
@@ -8321,13 +9248,21 @@ fn witnesses_for<'a>(
     views: &[&'a ResolvedView],
     state: &StateName,
     settled: &BTreeMap<String, Determined>,
+    identity: Option<&ScenarioValue>,
 ) -> Vec<&'a ResolvedView> {
     views
         .iter()
         .filter(|view| {
             predicate_projectable(ir, &view.fields, &invariant.predicate)
                 && matches!(
-                    shows(ir, view, state, settled, &bound(view, settled)),
+                    shows_row(
+                        ir,
+                        view,
+                        state,
+                        settled,
+                        identity,
+                        &bound(ir, view, settled, identity)
+                    ),
                     Ok(true)
                 )
         })
@@ -8402,6 +9337,10 @@ fn bindings(
     for binding in ir.bindings().values() {
         if binding.cause.periodic().is_some() {
             crate::periodic::synthesize(ir, binding, suite, refusals);
+            continue;
+        }
+        if binding.context.is_some() {
+            delivery_context::synthesize(ir, binding, suite, refusals);
             continue;
         }
         let subject = BindingRef::new(binding.name.clone());
@@ -8549,6 +9488,7 @@ fn mapping(
         .map(|mapped| {
             let value = match &mapped.value {
                 ResolvedMappingValue::HostContext { .. } | ResolvedMappingValue::HostRead { .. } => return Err(BindingGap::AccessorObservation { reason: "PeriodicHostMapping: no event supplies this input".into() }),
+                ResolvedMappingValue::DeliveryContext { .. } => return Err(BindingGap::AccessorObservation { reason: "DeliveryContext: only a delivered event carries a context".into() }),
                 ResolvedMappingValue::Selection { selector, projection, .. } => {
                     if mapped.conversion.is_some() { return Err(BindingGap::AccessorObservation { reason: "selection result requires an explicit host conversion".into() }); }
                     let selection = crate::selection::Observation::of(ir, binding, *selector, projection, &mapped.target_type).map_err(|reason| BindingGap::AccessorObservation { reason })?;

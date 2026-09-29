@@ -151,8 +151,10 @@ use crate::types::{
     ConversionRegistry, EnumVariant, Field, Primitive, TypeBody, TypeRef, TypeRegistry,
 };
 
+pub mod context;
 pub mod periodic;
 pub mod retry;
+use context::ExternalEvent;
 use periodic::PeriodicCause;
 use retry::RetryBound;
 
@@ -162,15 +164,23 @@ use retry::RetryBound;
 pub enum BindingCause {
     /// A declared event.
     Event(QualifiedName),
+    /// A declared event delivered by an external channel, with the typed context that channel
+    /// binds (ess/18, beyond10x/ess#195, [`context`]).
+    ///
+    /// A variant of its own rather than a field beside [`Self::Event`], so that a binding without
+    /// a context keeps its bytes and a binding with one cannot be read as reacting to the event
+    /// alone.
+    External(ExternalEvent),
     /// A session-local host poll.
     Periodic(PeriodicCause),
 }
 
 impl BindingCause {
-    /// The event, only for an event cause.
+    /// The event, for an event cause with or without a delivery context.
     pub fn event(&self) -> Option<&QualifiedName> {
         match self {
             Self::Event(event) => Some(event),
+            Self::External(external) => Some(&external.event),
             Self::Periodic(_) => None,
         }
     }
@@ -178,7 +188,14 @@ impl BindingCause {
     pub fn periodic(&self) -> Option<&PeriodicCause> {
         match self {
             Self::Periodic(periodic) => Some(periodic),
-            Self::Event(_) => None,
+            Self::Event(_) | Self::External(_) => None,
+        }
+    }
+    /// The external delivery and its context, only for an event that declares one.
+    pub fn external(&self) -> Option<&ExternalEvent> {
+        match self {
+            Self::External(external) => Some(external),
+            Self::Event(_) | Self::Periodic(_) => None,
         }
     }
 }
@@ -187,6 +204,28 @@ impl std::fmt::Display for BindingCause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Event(event) => event.fmt(f),
+            // The channel and the context too, so a change to either alone reads as one.
+            Self::External(external) => {
+                write!(
+                    f,
+                    "{} delivered by {} with context (",
+                    external.event, external.authority
+                )?;
+                for (index, field) in external.context_fields.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(&field.name)?;
+                    // The name the channel binds it under, where it is not the field's own.
+                    if let Some(wire) = field.naming.wire.as_deref() {
+                        if wire != field.name {
+                            write!(f, " (wire `{wire}`)")?;
+                        }
+                    }
+                    write!(f, ": {}", field.type_ref)?;
+                }
+                f.write_str(")")
+            }
             Self::Periodic(periodic) => write!(
                 f,
                 "periodic {} ({})",
@@ -244,6 +283,14 @@ pub struct RawTrigger {
     pub event: Option<QualifiedName>,
     /// A periodic cause, exclusive with event.
     pub periodic: Option<PeriodicCause>,
+    /// The binding-local name of the external channel whose authority binds the event's delivery
+    /// context (ess/18). Required beside `context_fields`.
+    #[serde(default)]
+    pub context_authority: Option<BindingName>,
+    /// The typed delivery context each occurrence of the event arrives with, read in `mapping:` as
+    /// `context.<field>` (ess/18). Only for an event an external channel delivers.
+    #[serde(default)]
+    pub context_fields: Option<Vec<Field>>,
 }
 
 /// What a binding does.
@@ -696,6 +743,12 @@ impl<'de> serde::Deserialize<'de> for AuthoredMappingSource {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum MappingSource {
+    /// A field of the delivery context the triggering event arrived with: `context.account_id`
+    /// (ess/18, [`context`]).
+    DeliveryContext {
+        /// One declared context field.
+        field: String,
+    },
     /// A lifetime-constant field supplied by the required host.
     HostContext {
         /// One declared context field.
@@ -739,6 +792,11 @@ impl MappingSource {
 
     /// Reads `event.customer_email` as a field, anything else as a literal.
     pub fn parse(value: &str) -> Self {
+        if let Some(field) = value.strip_prefix(ExternalEvent::PREFIX) {
+            return Self::DeliveryContext {
+                field: field.to_owned(),
+            };
+        }
         if let Some(field) = value.strip_prefix("host_context.") {
             return Self::HostContext {
                 field: field.to_owned(),
@@ -767,6 +825,7 @@ impl std::fmt::Display for MappingSource {
     /// As the document wrote it, so a diagnostic quotes the author rather than the model.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::DeliveryContext { field } => write!(f, "{}{field}", ExternalEvent::PREFIX),
             Self::HostContext { field } => write!(f, "host_context.{field}"),
             Self::HostRead { field } => write!(f, "host_read.{field}"),
             Self::EventField { field } => write!(f, "{}{field}", Self::EVENT_PREFIX),
@@ -915,6 +974,9 @@ impl BindingSpec {
         errors.extend(self.check_escalation());
         errors.extend(retry::check_shape(self));
         errors.extend(self.check_periodic_cause());
+        if let Some(external) = self.cause.external() {
+            errors.extend(external.validate(&format!("binding.{}.when", self.name)));
+        }
 
         for (target, source) in &self.mapping {
             let at = format!("binding.{}.mapping.{target}", self.name);
@@ -965,7 +1027,8 @@ impl BindingSpec {
                         errors.push(ValidationError::new(ValidationCode::UnsupportedConstruct, at, "selection mapping requires a local selector and zero to three declared fields"));
                     }
                 }
-                MappingSource::HostContext { .. }
+                MappingSource::DeliveryContext { .. }
+                | MappingSource::HostContext { .. }
                 | MappingSource::HostRead { .. }
                 | MappingSource::EventField { .. } => {}
                 MappingSource::EventAccessor { segments } => {
@@ -1046,6 +1109,26 @@ impl BindingSpec {
                     at,
                     "host mappings require a periodic cause and one declared field",
                 ));
+            }
+        }
+        if let MappingSource::DeliveryContext { field } = source {
+            if self.cause.external().is_none() || crate::types::field_name(field).is_err() {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::UnobservableFact,
+                        at,
+                        format!(
+                            "`{source}` reads a delivery context, and binding `{}` declares none \
+                             with one field of that name",
+                            self.name
+                        ),
+                    )
+                    .with_hint(
+                        "declare the context under `when:` — `context_authority: <channel>` and \
+                         `context_fields: [{name, type}]` — for an event an external channel \
+                         delivers (ess/18); a context is never looked up in the payload",
+                    ),
+                );
             }
         }
         errors
@@ -1146,26 +1229,10 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
             }
         }
 
-        let cause =
-            match (raw.when.event, raw.when.periodic) {
-                (Some(event), None) => BindingCause::Event(event),
-                (None, Some(periodic)) => BindingCause::Periodic(periodic),
-                // A `when:` that names no cause is one author mistake in several spellings — an empty
-                // block, a null `event:`, a null `periodic:` — so it gets one refusal here rather than
-                // a parse error per spelling, exactly as `escalate` with no event does.
-                (None, None) => return Err(errors.with(ValidationError::new(
-                    ValidationCode::MissingDeclaration,
-                    format!("binding.{name}.when"),
-                    "says nothing; write `event: <event>` or `periodic:` with its cause under it",
-                ))),
-                (Some(_), Some(_)) => {
-                    return Err(errors.with(ValidationError::new(
-                        ValidationCode::ConflictingDeclaration,
-                        format!("binding.{name}.when"),
-                        "exactly one of event and periodic is required",
-                    )))
-                }
-            };
+        let cause = match cause_of(&name, raw.when) {
+            Ok(cause) => cause,
+            Err(error) => return Err(errors.with(error)),
+        };
         let binding = Self {
             name,
             cause,
@@ -1186,6 +1253,78 @@ impl TryFrom<RawBindingSpec> for BindingSpec {
 
         errors.extend(binding.validate());
         errors.into_result(binding)
+    }
+}
+
+/// What a `when:` block says the binding reacts to, or the one refusal that says it does not.
+///
+/// A delivery context (`context_authority` with `context_fields`, ess/18) makes an event cause an
+/// [`External`](BindingCause::External) one; each key without the other is a missing
+/// declaration, and a context beside `periodic:` is a conflict.
+fn cause_of(name: &BindingName, when: RawTrigger) -> Result<BindingCause, ValidationError> {
+    let RawTrigger {
+        event,
+        periodic,
+        context_authority,
+        context_fields,
+    } = when;
+    if (context_authority.is_some() || context_fields.is_some()) && periodic.is_some() {
+        return Err(ValidationError::new(
+            ValidationCode::ConflictingDeclaration,
+            format!("binding.{name}.when"),
+            "a delivery context belongs to an event an external channel delivers, not to a \
+             periodic cause",
+        )
+        .with_hint(
+            "a periodic host supplies its context under `periodic.host.context_fields`, read as \
+             `host_context.<field>`",
+        ));
+    }
+    let context =
+        match (context_authority, context_fields) {
+            (None, None) => None,
+            (Some(authority), Some(fields)) => Some((authority, fields)),
+            (None, Some(_)) => return Err(ValidationError::new(
+                ValidationCode::MissingDeclaration,
+                format!("binding.{name}.when.context_authority"),
+                "`context_fields` names no `context_authority`, so nothing says which external \
+                 channel binds the context",
+            )
+            .with_hint(
+                "name the channel, as in `context_authority: account-messages`; naming a field \
+                 does not establish who supplies it",
+            )),
+            (Some(_), None) => return Err(ValidationError::new(
+                ValidationCode::MissingDeclaration,
+                format!("binding.{name}.when.context_fields"),
+                "`context_authority` names a channel and `context_fields` declares no context for \
+                 it",
+            )
+            .with_hint("declare the typed fields the channel binds")),
+        };
+    match (event, periodic) {
+        (Some(event), None) => Ok(match context {
+            None => BindingCause::Event(event),
+            Some((authority, context_fields)) => BindingCause::External(ExternalEvent {
+                event,
+                authority,
+                context_fields,
+            }),
+        }),
+        (None, Some(periodic)) => Ok(BindingCause::Periodic(periodic)),
+        // A `when:` that names no cause is one author mistake in several spellings — an empty
+        // block, a null `event:`, a null `periodic:` — so it gets one refusal here rather than a
+        // parse error per spelling, exactly as `escalate` with no event does.
+        (None, None) => Err(ValidationError::new(
+            ValidationCode::MissingDeclaration,
+            format!("binding.{name}.when"),
+            "says nothing; write `event: <event>` or `periodic:` with its cause under it",
+        )),
+        (Some(_), Some(_)) => Err(ValidationError::new(
+            ValidationCode::ConflictingDeclaration,
+            format!("binding.{name}.when"),
+            "exactly one of event and periodic is required",
+        )),
     }
 }
 
@@ -1393,6 +1532,14 @@ impl Ends<'_> {
             }
         }
 
+        if let Some(external) = self.binding.cause.external() {
+            for field in &external.context_fields {
+                errors.extend(self.types.resolve(
+                    &field.type_ref,
+                    &self.at(&format!("when.context_fields.{}", field.name)),
+                ));
+            }
+        }
         if let Some(event) = self.event() {
             if let Err(error) = crate::selection::SelectionPlan::resolve(
                 &self.binding.selection_inputs,
@@ -1437,6 +1584,9 @@ impl Ends<'_> {
         }
 
         match source {
+            MappingSource::DeliveryContext { field } => {
+                errors.extend(self.check_context_entry(&at, field, filled.map(|(_, input)| input)));
+            }
             MappingSource::HostContext { field } | MappingSource::HostRead { field } => {
                 errors.extend(self.check_host_entry(
                     &at,
@@ -1502,6 +1652,69 @@ impl Ends<'_> {
             }
         }
 
+        errors
+    }
+
+    /// `context.<field>` against the declared delivery context and the input it fills.
+    ///
+    /// A binding with no context, or a field name that is not one, is refused by
+    /// [`BindingSpec::validate`] already, so it is not refused a second time here.
+    fn check_context_entry(
+        &self,
+        at: &str,
+        field: &str,
+        filled: Option<&Field>,
+    ) -> ValidationErrors {
+        let mut errors = ValidationErrors::new();
+        let Some(external) = self.binding.cause.external() else {
+            return errors;
+        };
+        if crate::types::field_name(field).is_err() {
+            return errors;
+        }
+        let Some(read) = external.field(field) else {
+            let declared: Vec<&str> = external
+                .context_fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect();
+            errors.push(
+                ValidationError::new(
+                    ValidationCode::UndeclaredReference,
+                    at,
+                    format!(
+                        "binding `{}` declares no delivery context field `{field}`",
+                        self.binding.name
+                    ),
+                )
+                .with_hint(format!(
+                    "the context `{}` binds declares: {}",
+                    external.authority,
+                    declared.join(", ")
+                )),
+            );
+            return errors;
+        };
+        if let Some(input) = filled {
+            if !self.conversions.permits(&read.type_ref, &input.type_ref) {
+                errors.push(
+                    ValidationError::new(
+                        ValidationCode::TypeMismatch,
+                        at,
+                        format!(
+                            "context field `{field}` has type `{}`, and input `{}` requires `{}`; \
+                             no conversion is declared",
+                            read.type_ref, input.name, input.type_ref
+                        ),
+                    )
+                    .with_hint(format!(
+                        "declare the crossing — `conversions: [{{from: {}, to: {}, because: …}}]` \
+                         — or make the two types agree",
+                        read.type_ref, input.type_ref
+                    )),
+                );
+            }
+        }
         errors
     }
 

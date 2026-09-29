@@ -363,6 +363,28 @@ state/input assignments for gaps and overlaps using the shared finite coverage
 proof; unsupported or open input domains require a genuine default. Runtime
 witnesses additionally validate their concrete inputs and invariants.
 
+From `ess/18` (0.41.0) the guard may list several states, and a refusal may carry it without
+naming a subject; it reads the subject its sibling branches name. That is how a command answers
+differently in different states its moves do not start from, where `wrong_state` gives them all
+one answer:
+
+```yaml
+- name: shipped
+  moves: demo.ship.Order.ship
+  instance: order_id
+- name: already-shipped            # a re-send is accepted and changes nothing
+  when_subject_state: Shipped
+  preserves: demo.ship.Order
+  instance: order_id
+- name: gone
+  when_subject_state: [Delivered, Cancelled]
+  error: demo.ship.Gone
+```
+
+Every state no guard claims falls to the default, whose move must start there. The synthesized
+suite arranges an order in `Delivered` and one in `Cancelled`, each refused with `Gone` and left
+unchanged.
+
 ### Guard an outcome by the subject's stored fields
 
 "Express parcels over 20 kg are refused at dispatch" depends on two fields stored when the parcel
@@ -403,7 +425,10 @@ commands:
 ```
 
 The predicate reads the entity's declared fields and nothing else: not the input, which stays in
-`when:` beside it, and not `state`, which stays with `when_subject_state:`. The refusal names no
+`when:` beside it, and — before `ess/18` — not `state`. From `ess/18` (0.41.0) it may read
+`state`, the lifecycle state the row holds, to select by the state and a stored field together:
+`{all: [state == Ready, hold_note != ""]}`; a branch reading it that moves must be able to move
+from every state it may be selected in. The refusal names no
 subject of its own and reads the parcel its sibling moves. An `Optional` field may be read; an
 absent value is unknown and selects no branch, so write `not defined(field)` to select on absence.
 
@@ -1284,6 +1309,48 @@ occurrence. The first tick follows one period, work is serial, and excess busy
 ticks coalesce to one pending tick. Stop acknowledgement means the loop and its
 work have quiesced. Native generation reports `PeriodicHostRequired` until that
 real host capability is supplied; it does not fabricate a scheduler or event.
+
+### Read the channel an event arrived on
+
+Some events do not carry their recipient in the payload. For example, a service subscribes to
+`accounts/{account_id}/messages` for each account, and the recipient is the subscription the
+event arrived on. `ess/18` lets an event binding declare that delivery context and read it:
+
+```yaml
+when:
+  event: example.inbox.MessageReceived
+  context_authority: account-messages
+  context_fields:
+    - {name: account_id, type: example.inbox.AccountId}
+invoke: {command: example.inbox.RecordMessage}
+mapping:
+  account_id: context.account_id
+  message_id: event.message_id
+  peer: event.from
+delivery: at_least_once
+on_failure: retry
+```
+
+`context_fields` is a typed record separate from the payload. `context_authority` names the
+external channel whose authority binds it. It is a name, not a credential, and each key
+requires the other. `context.<field>` reads one declared field. The field's type must fit the
+input, or a declared conversion must cross it. The host binds the context from the channel the
+occurrence arrived on and supplies it with that occurrence. A redelivery carries the context
+of the occurrence it repeats.
+
+The rules:
+
+- A context is admitted only for an event an external channel delivers. If a command outcome
+  of the specification emits the event, or a binding escalates into it, the event has no
+  channel, and the context is refused.
+- A context mapping with no declaration is refused. It is never looked up in the payload.
+  `event.channel` is not a field.
+- `host_context.<field>` still belongs to a periodic host.
+- Below `ess/18`, both keys and `context.<field>` are refused.
+
+Conformance delivers the event itself, under two different contexts, and requires each
+invocation to carry its own. See
+[Verify conformance](verify-conformance.md#deliver-an-event-with-its-context).
 
 ### Preserve clock-reading provenance
 

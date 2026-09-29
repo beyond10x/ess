@@ -1,0 +1,48 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.inbox
+summary: Messages arrive per account on an external channel, and the account is the subscription they arrived on.
+types:
+  - {name: demo.inbox.AccountId, kind: newtype, of: String}
+errors:
+  - name: demo.inbox.Unavailable
+    summary: The store could not record the message this time.
+    fields: []
+events:
+  - name: demo.inbox.MessageReceived
+    fields:
+      - {name: message_id, type: String}
+      - {name: from, type: String}
+  - name: demo.inbox.MessageRecorded
+    fields:
+      - {name: account_id, type: demo.inbox.AccountId}
+      - {name: message_id, type: String}
+commands:
+  - name: demo.inbox.RecordMessage
+    input:
+      - {name: account_id, type: demo.inbox.AccountId}
+      - {name: message_id, type: String}
+      - {name: peer, type: String}
+    outcomes:
+      - name: recorded
+        emits: [demo.inbox.MessageRecorded]
+        payload:
+          demo.inbox.MessageRecorded: {account_id: input.account_id, message_id: input.message_id}
+      - name: unavailable
+        external: the store answers a server error
+        error: demo.inbox.Unavailable
+bindings:
+  - id: received
+    when:
+      event: demo.inbox.MessageReceived
+      context_authority: account-messages
+      context_fields:
+        - {name: account_id, type: demo.inbox.AccountId}
+    invoke: {command: demo.inbox.RecordMessage}
+    mapping:
+      account_id: context.account_id
+      message_id: event.message_id
+      peer: event.from
+    delivery: at_least_once
+    on_failure: retry

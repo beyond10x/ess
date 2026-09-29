@@ -597,10 +597,18 @@ enum ConformCommand {
     /// by authoring a scenario, which runs identically in every mutant's suite and so can never
     /// kill one. No authored scenario is run.
     ///
-    /// Exit 0: the baseline passed, at least one mutant ran, and every mutant that ran was
-    /// killed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
-    /// the baseline suite did not pass (ESS-MUTATE-001), the classes found no site
-    /// (ESS-MUTATE-003), or no mutant survived and at least one was inconclusive or none ran.
+    /// A baseline scenario the target reports unsupported or skipped did not execute: it is listed,
+    /// not scored, and each mutant is scored on the scenarios the baseline executed. A mutant that
+    /// no scored scenario killed is unwitnessed (ESS-MUTATE-004) when its suite gained synthesis
+    /// refusals the baseline does not have, and inconclusive when a scenario it changed was not
+    /// scored; it survives when every scored scenario passed and each scenario it left unscored is
+    /// the baseline's own, unchanged.
+    ///
+    /// Exit 0: no baseline scenario failed or ended error, at least one mutant ran, every scored
+    /// mutant was killed, and none is inconclusive or unwitnessed. Exit 1: the specification did not load, or at least one mutant survived. Exit 3:
+    /// a baseline scenario failed or ended error (ESS-MUTATE-001), the baseline executed nothing
+    /// (nothing scored), the classes found no site (ESS-MUTATE-003), or no mutant survived and at
+    /// least one was unwitnessed or inconclusive, or none ran.
     ///
     /// For an implementation of your own, split the audit in two. `--emit DIR` writes the
     /// baseline suite to `DIR/baseline/suite.json`, every mutant's suite to
@@ -627,7 +635,7 @@ enum ConformCommand {
         /// Score the `report.json` a runner wrote beside each suite of an emitted directory.
         #[arg(long, conflicts_with = "path")]
         collect: Option<PathBuf>,
-        /// Where to write the `ess-mutation-report/1` document.
+        /// Where to write the `ess-mutation-report/2` document.
         #[arg(long)]
         report_out: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -3607,7 +3615,7 @@ fn conform_mutate_emit(
     }
     let emission = match mutate::emit(&raw.parsed, &raw.texts, &mutant_classes(classes)) {
         Ok(emission) => emission,
-        Err(refusal) if refusal.code().is_some() => {
+        Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
             return Ok(ExitCode::from(3));
         }
@@ -3628,11 +3636,28 @@ fn conform_mutate_emit(
                 .iter()
                 .filter(|mutant| mutant.stillborn.is_some())
                 .count();
+            let gained = manifest
+                .mutants
+                .iter()
+                .filter(|mutant| {
+                    mutant.refused.as_ref().is_some_and(|refused| {
+                        refused.iter().any(|key| {
+                            !manifest
+                                .baseline
+                                .refused
+                                .as_ref()
+                                .is_some_and(|baseline| baseline.contains(key))
+                        })
+                    })
+                })
+                .count();
             println!(
-                "emitted {} mutant(s) of {} ({} stillborn, no suite) and the baseline to {}",
+                "emitted {} mutant(s) of {} ({} stillborn, no suite; {} with synthesis refusals \
+                 the baseline does not have) and the baseline to {}",
                 manifest.mutants.len(),
                 manifest.specification,
                 stillborn,
+                gained,
                 dir.display()
             );
             println!(
@@ -3670,7 +3695,7 @@ fn finish_mutation_audit(
 
     let report = match audited {
         Ok(report) => report,
-        Err(refusal) if refusal.code().is_some() => {
+        Err(refusal) if refusal.is_inconclusive() => {
             eprintln!("{refusal}");
             return Ok(ExitCode::from(3));
         }
@@ -3694,7 +3719,7 @@ fn finish_mutation_audit(
         .count();
     Ok(if counts.survived > 0 {
         ExitCode::from(1)
-    } else if counts.inconclusive > 0 || ran == 0 {
+    } else if counts.unwitnessed > 0 || counts.inconclusive > 0 || ran == 0 {
         ExitCode::from(3)
     } else {
         ExitCode::SUCCESS

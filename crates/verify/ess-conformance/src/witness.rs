@@ -74,9 +74,20 @@
 //!
 //! A type that refers to itself, and a field whose name cannot be spelled as a fact path. Both are
 //! [`WitnessGap`], and both are reported rather than worked around. Everything else in the model has
-//! a value: a list is `[]` (one element where a guard reads into it, rule 3), a map is `{}`, a
-//! union is its first variant in the encoding
-//! `ess-gen` publishes, and an enum is its first declared variant.
+//! a value: a list is `[]` (one element where a guard reads into it, rule 3, or where a branch copies
+//! it whole into a payload or a stored field, ess#196), a union is its first
+//! variant in the encoding `ess-gen` publishes, and an enum is its first declared variant.
+//!
+//! **A map holds one entry** (beyond10x/ess#196), so a target that drops or empties a copied map
+//! fails its assertion. The key is the key primitive's own witness at the map's path — `"tags"`,
+//! `1`, `true` — in the spelling a setup key is read by, and it moves with the instance as every
+//! leaf does (rule 5). The value is built at `<map>.0`, as a list's element is, and recorded there.
+//! A guard over `<map>.count`, which the flattener publishes, is tried at the empty map and at the
+//! lengths rule 3 names, each further entry a copy of the first under the next instance's key. A map
+//! whose key is a `Decimal`, which has no setup spelling, or whose value has no finite witness, is
+//! `{}`. A value that reaches a type already being built — a type that refers to itself through a
+//! map or a copied list — is unfolded once, and every map and copied list inside that one entry is
+//! empty.
 //!
 //! **A witness is only as good as the type it is built from.** `currency: String` with no invariant
 //! gets the text `"amount.currency"`, because that is every value the specification permits. An
@@ -382,6 +393,48 @@ pub fn candidates(
         extend_paired(&mut builder, command, &solved, &presence_omits, &mut inputs)?;
     }
     Ok(admitted_inputs(ir, command, inputs))
+}
+
+/// One base witness for a table of declared fields that is not a command's input — an event's
+/// payload, a binding's delivery context (beyond10x/ess#195) — at `distinction`.
+///
+/// The base value [`candidates`] starts from, by the same rules. Two fields of one table differ
+/// only where the witness is built from the field's path: `String`, `Uuid`, `Json`, and what is
+/// made of them. `Integer`, `Decimal`, `Timestamp`, `Duration`, `Bytes`, `Boolean` and an enum
+/// take their value from `distinction` alone, so two such fields of one type carry one value at
+/// one distinction; a caller that must keep them apart gives each field its own distinction, as
+/// delivery-context synthesis does. Two distinctions give a field different values where its type
+/// has two. Every value is checked against its declared type and invariants.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when a field has no safe value, or none its declared invariants admit.
+pub(crate) fn fields(
+    ir: &EssIr,
+    fields: &[ess_compiler::ir::ResolvedField],
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, WitnessGap> {
+    let mut builder = Builder::new(ir, distinction, BTreeSet::new(), BTreeMap::new());
+    let mut values = BTreeMap::new();
+    for field in fields {
+        let path = FactPath::new(&field.name).map_err(|_| WitnessGap {
+            path: field.name.clone(),
+            type_ref: field.type_ref.to_string(),
+            reason: "is named in a way no fact path can spell, so no guard could read it",
+        })?;
+        let Some(value) = builder.member(&field.type_ref, &path, &BTreeMap::new(), 0, true)? else {
+            continue;
+        };
+        if crate::input::validate_typed_value(ir, &field.type_ref, &value).is_err() {
+            return Err(WitnessGap {
+                path: field.name.clone(),
+                type_ref: field.type_ref.to_string(),
+                reason: "has no base value its declared invariants admit",
+            });
+        }
+        values.insert(field.name.clone(), value);
+    }
+    Ok(values)
 }
 
 /// The optional inputs, and optional members of inputs, that a branch copies into an emitted event
@@ -1576,6 +1629,7 @@ fn count_ladders(
     ladders: &mut BTreeMap<FactPath, Vec<Choice>>,
 ) {
     let mut list_lengths: BTreeMap<FactPath, Vec<usize>> = BTreeMap::new();
+    let mut map_lengths: BTreeMap<FactPath, Vec<usize>> = BTreeMap::new();
     for path in read_paths(guards) {
         let Some(parent) = counted(&path) else {
             continue;
@@ -1588,9 +1642,26 @@ fn count_ladders(
                 .entry(parent)
                 .or_default()
                 .extend(count_lengths(guards, &path, false));
+        } else if builder.maps.contains(&parent) {
+            map_lengths
+                .entry(parent)
+                .or_default()
+                .extend(count_lengths(guards, &path, false));
         }
     }
     invariant_ladders(builder, ladders);
+    // A map's base holds one entry, so the empty map is its first alternative; only a map whose
+    // count a guard reads is varied at all (beyond10x/ess#196).
+    for (path, lengths) in map_lengths {
+        let mut ladder = vec![Choice::Elements(0)];
+        for held in lengths {
+            let choice = Choice::Elements(held);
+            if held != 1 && !ladder.contains(&choice) {
+                ladder.push(choice);
+            }
+        }
+        ladders.insert(path, ladder);
+    }
     for path in &builder.lists {
         // One element first, as unit A1 built it; length 0 is the base `[]`.
         let mut ladder = vec![Choice::Elements(1)];
@@ -2085,6 +2156,7 @@ const BASE_DURATION_SECONDS: usize = 1;
 const BASE_BYTE: u8 = 0;
 
 /// Builds one input from the declared types, recording where a candidate could vary it.
+#[derive(Clone)]
 struct Builder<'ir> {
     ir: &'ir EssIr,
     /// Which instance the input is for.
@@ -2107,6 +2179,17 @@ struct Builder<'ir> {
     leaves: BTreeMap<FactPath, (Leaf, Node)>,
     /// Every expanded path that holds a declared list.
     lists: BTreeSet<FactPath>,
+    /// Every recorded path that holds a map with one entry in its base (beyond10x/ess#196): what a
+    /// `.count` guard over it varies by [`Choice::Elements`].
+    maps: BTreeSet<FactPath>,
+    /// The declared types being built on the way down to the current value, outermost first.
+    building: Vec<String>,
+    /// The input paths a `sets:` or payload value copies whole: a list at or under one holds one
+    /// element in the base rather than `[]`, as a map holds one entry (beyond10x/ess#196).
+    copied: BTreeSet<FactPath>,
+    /// Whether the value being built is already inside the one entry a type that refers to itself
+    /// through a map or a copied list is unfolded to.
+    unfolded: bool,
     /// Every path that holds an `Optional` member of an input or of a struct, which a
     /// [`Choice::Omit`] can leave out.
     optionals: BTreeSet<FactPath>,
@@ -2146,6 +2229,10 @@ impl<'ir> Builder<'ir> {
             positional,
             leaves: BTreeMap::new(),
             lists: BTreeSet::new(),
+            maps: BTreeSet::new(),
+            building: Vec::new(),
+            copied: BTreeSet::new(),
+            unfolded: false,
             optionals: BTreeSet::new(),
             invariants: BTreeMap::new(),
             alphabets: BTreeMap::new(),
@@ -2173,6 +2260,7 @@ impl<'ir> Builder<'ir> {
                 })
                 .collect();
         }
+        self.copied = copied_inputs(command);
         let mut input = BTreeMap::new();
         for field in &command.input {
             let path = FactPath::new(&field.name).map_err(|_| WitnessGap {
@@ -2241,7 +2329,43 @@ impl<'ir> Builder<'ir> {
         base
     }
 
-    /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3).
+    /// The one element of a copied list, or the value of a map's entry, built at `<path>.0`; or
+    /// `None` where it has none, and then nothing the attempt recorded is kept.
+    ///
+    /// A value that reaches a type already being built is unfolded once — `{name, children:
+    /// {"children": {name, children: {}}}}` — and every map and copied list inside that one entry is
+    /// empty, so a type that refers to itself through a map keeps a finite witness (beyond10x/ess#196).
+    fn entry(
+        &mut self,
+        of: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Option<Node> {
+        let recursive = reaches(self.ir, of, &self.building);
+        if recursive && self.unfolded {
+            return None;
+        }
+        let mut probe = self.clone();
+        probe.unfolded |= recursive;
+        let value = probe
+            .value(of, &path.child("0"), overrides, depth + 1, record)
+            .ok()?;
+        probe.unfolded = self.unfolded;
+        *self = probe;
+        Some(value)
+    }
+
+    /// Whether `path` is, or lies inside, an input a branch copies whole.
+    fn is_copied(&self, path: &FactPath) -> bool {
+        self.copied
+            .iter()
+            .any(|copied| path.segments().starts_with(copied.segments()))
+    }
+
+    /// One value of `List<of>` at `path`: `[]`, unless a guard reads into it (rule 3) or a branch
+    /// copies it (beyond10x/ess#196), where it holds one element.
     fn list(
         &mut self,
         of: &ResolvedTypeRef,
@@ -2251,6 +2375,13 @@ impl<'ir> Builder<'ir> {
         record: bool,
     ) -> Result<Node, WitnessGap> {
         if !record || !self.expand.contains(path) {
+            // A copied list holds one element, so a target that drops it, or anything inside it,
+            // fails the copy's assertion; a guard's list keeps the ladders below.
+            if record && self.is_copied(path) {
+                if let Some(element) = self.entry(of, path, overrides, depth, record) {
+                    return Ok(Node::Seq(vec![element]));
+                }
+            }
             return Ok(Node::Seq(Vec::new()));
         }
         if let Some(&held) = self
@@ -2273,6 +2404,52 @@ impl<'ir> Builder<'ir> {
             Some(Choice::Elements(held)) => Node::Seq(vec![element; *held]),
             _ => Node::Seq(Vec::new()),
         })
+    }
+
+    /// One value of `Map<key, of>` at `path`: one entry (beyond10x/ess#196), or as many as a
+    /// [`Choice::Elements`] asks for where a guard reads `<path>.count`.
+    ///
+    /// The key is [`map_key`]; the value is built at `<path>.0`, as a list's element is, and every
+    /// further entry holds a copy of it under the key of the next instance. Where no entry can be
+    /// built — a `Decimal` key has no setup spelling, and a value type that refers to itself or
+    /// holds a `Binary64` has no finite witness — the map is `{}`, as it always was, and nothing
+    /// the attempt recorded is kept.
+    fn map(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Node {
+        let ResolvedTypeRef::Map { key, value: of } = type_ref else {
+            unreachable!("called for a map only");
+        };
+        let key = *key;
+        let Some(first) = map_key(key, path, self.distinction) else {
+            return Node::Map(BTreeMap::new());
+        };
+        let Some(value) = self.entry(of, path, overrides, depth, record) else {
+            return Node::Map(BTreeMap::new());
+        };
+        if record {
+            self.maps.insert(path.clone());
+        }
+        let held = match overrides.get(path) {
+            Some(Choice::Elements(held)) => *held,
+            _ => 1,
+        };
+        let mut entries = BTreeMap::new();
+        if held > 0 {
+            entries.insert(first, value.clone());
+        }
+        for ordinal in 1..held {
+            let at = Distinction(self.distinction.get().saturating_add(ordinal));
+            if let Some(spelling) = map_key(key, path, at) {
+                entries.insert(spelling, value.clone());
+            }
+        }
+        Node::Map(entries)
     }
 
     /// One value of `type_ref`, at `path`.
@@ -2304,7 +2481,7 @@ impl<'ir> Builder<'ir> {
             // leaving one out is a candidate's choice, made by `member`.
             ResolvedTypeRef::Optional { of } => self.value(of, path, overrides, depth + 1, record),
             ResolvedTypeRef::List { of } => self.list(of, path, overrides, depth, record),
-            ResolvedTypeRef::Map { .. } => Ok(Node::Map(BTreeMap::new())),
+            ResolvedTypeRef::Map { .. } => Ok(self.map(type_ref, path, overrides, depth, record)),
             ResolvedTypeRef::Primitive { name } => {
                 if *name == Primitive::Binary64 {
                     return Err(WitnessGap { path: path.to_string(), type_ref: name.to_string(), reason: "requires a finite Binary64 conformance codec that this suite format does not admit" });
@@ -2312,87 +2489,112 @@ impl<'ir> Builder<'ir> {
                 Ok(chosen(self.primitive(*name, path, record)))
             }
             ResolvedTypeRef::Declared { name } => {
-                // Read through the IR reference rather than through `self`, so what comes back
-                // lives as long as the IR and the recursive calls below can still borrow `self`.
-                let ir = self.ir;
-                match &ir.named_type(name).body {
-                    ResolvedBody::Newtype { of, invariants, .. } => {
-                        // The outermost newtype of a chain sees every layer below it, so its
-                        // answer is the effective one and an inner layer never replaces it.
-                        if !self.alphabets.contains_key(path) {
-                            if let Some(alphabet) = chain_alphabet(ir, type_ref) {
-                                self.alphabets.insert(path.clone(), alphabet);
-                            }
-                        }
-                        if !self.prefixes.contains_key(path) {
-                            if let Some(prefix) = chain_prefix(ir, type_ref) {
-                                self.prefixes.insert(path.clone(), prefix);
-                            }
-                        }
-                        if record {
-                            let recorded = self.invariants.entry(path.clone()).or_default();
-                            for invariant in invariants {
-                                if !recorded.contains(&invariant.predicate) {
-                                    recorded.push(invariant.predicate.clone());
-                                }
-                            }
-                        }
-                        self.value(of, path, overrides, depth + 1, record)
-                    }
-                    ResolvedBody::Enum { variants } => {
-                        // The variants cycle, so a closed set of two names distinguishes two
-                        // instances and no more — which is the type's answer, not a shortfall here.
-                        let variant = if variants.is_empty() {
-                            String::new()
-                        } else {
-                            variants[self.distinction.get() % variants.len()]
-                                .name()
-                                .to_owned()
-                        };
-                        let base = self
-                            .examples
-                            .get(path)
-                            .cloned()
-                            .unwrap_or(Node::Text(variant));
-                        if record {
-                            self.leaves.insert(
-                                path.clone(),
-                                (
-                                    Leaf::Enum {
-                                        variants: variants
-                                            .iter()
-                                            .map(|variant| variant.name().to_owned())
-                                            .collect(),
-                                    },
-                                    base.clone(),
-                                ),
-                            );
-                        }
-                        Ok(chosen(base))
-                    }
-                    ResolvedBody::Union { tag, variants } => {
-                        let Some((label, variant)) = variants.iter().next() else {
-                            return Ok(Node::Map(BTreeMap::new()));
-                        };
-                        let inner = self.value(variant, path, overrides, depth + 1, false)?;
-                        Ok(Node::Map(BTreeMap::from([
-                            (tag.clone(), Node::Text(label.clone())),
-                            (UNION_VALUE.to_owned(), inner),
-                        ])))
-                    }
-                    ResolvedBody::Struct { fields, .. } => {
-                        let mut value = BTreeMap::new();
-                        for field in fields {
-                            let child = path.child(&field.name);
-                            if let Some(inner) =
-                                self.member(&field.type_ref, &child, overrides, depth + 1, record)?
-                            {
-                                value.insert(field.name.clone(), inner);
-                            }
-                        }
-                        Ok(Node::Map(value))
+                // Every declared type on the way down is known, so a map whose value reaches one
+                // is witnessed `{}` at once (beyond10x/ess#196) rather than at the depth limit.
+                let declared = self.ir.named_type(name).name.to_string();
+                self.building.push(declared);
+                let built = self.declared(type_ref, path, overrides, depth, record);
+                self.building.pop();
+                built
+            }
+        }
+    }
+
+    /// One value of the declared type `type_ref`, at `path`: [`value`](Self::value)'s arm for it.
+    fn declared(
+        &mut self,
+        type_ref: &ResolvedTypeRef,
+        path: &FactPath,
+        overrides: &BTreeMap<FactPath, Choice>,
+        depth: usize,
+        record: bool,
+    ) -> Result<Node, WitnessGap> {
+        let ResolvedTypeRef::Declared { name } = type_ref else {
+            unreachable!("called for a declared type only");
+        };
+        let chosen = |base: Node| match overrides.get(path) {
+            Some(Choice::Value(value)) => value.clone(),
+            _ => base,
+        };
+        // Read through the IR reference rather than through `self`, so what comes back
+        // lives as long as the IR and the recursive calls below can still borrow `self`.
+        let ir = self.ir;
+        match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, invariants, .. } => {
+                // The outermost newtype of a chain sees every layer below it, so its
+                // answer is the effective one and an inner layer never replaces it.
+                if !self.alphabets.contains_key(path) {
+                    if let Some(alphabet) = chain_alphabet(ir, type_ref) {
+                        self.alphabets.insert(path.clone(), alphabet);
                     }
                 }
+                if !self.prefixes.contains_key(path) {
+                    if let Some(prefix) = chain_prefix(ir, type_ref) {
+                        self.prefixes.insert(path.clone(), prefix);
+                    }
+                }
+                if record {
+                    let recorded = self.invariants.entry(path.clone()).or_default();
+                    for invariant in invariants {
+                        if !recorded.contains(&invariant.predicate) {
+                            recorded.push(invariant.predicate.clone());
+                        }
+                    }
+                }
+                self.value(of, path, overrides, depth + 1, record)
+            }
+            ResolvedBody::Enum { variants } => {
+                // The variants cycle, so a closed set of two names distinguishes two
+                // instances and no more — which is the type's answer, not a shortfall here.
+                let variant = if variants.is_empty() {
+                    String::new()
+                } else {
+                    variants[self.distinction.get() % variants.len()]
+                        .name()
+                        .to_owned()
+                };
+                let base = self
+                    .examples
+                    .get(path)
+                    .cloned()
+                    .unwrap_or(Node::Text(variant));
+                if record {
+                    self.leaves.insert(
+                        path.clone(),
+                        (
+                            Leaf::Enum {
+                                variants: variants
+                                    .iter()
+                                    .map(|variant| variant.name().to_owned())
+                                    .collect(),
+                            },
+                            base.clone(),
+                        ),
+                    );
+                }
+                Ok(chosen(base))
+            }
+            ResolvedBody::Union { tag, variants } => {
+                let Some((label, variant)) = variants.iter().next() else {
+                    return Ok(Node::Map(BTreeMap::new()));
+                };
+                let inner = self.value(variant, path, overrides, depth + 1, false)?;
+                Ok(Node::Map(BTreeMap::from([
+                    (tag.clone(), Node::Text(label.clone())),
+                    (UNION_VALUE.to_owned(), inner),
+                ])))
+            }
+            ResolvedBody::Struct { fields, .. } => {
+                let mut value = BTreeMap::new();
+                for field in fields {
+                    let child = path.child(&field.name);
+                    if let Some(inner) =
+                        self.member(&field.type_ref, &child, overrides, depth + 1, record)?
+                    {
+                        value.insert(field.name.clone(), inner);
+                    }
+                }
+                Ok(Node::Map(value))
             }
         }
     }
@@ -2464,6 +2666,101 @@ fn primitive_value(primitive: Primitive, path: &FactPath, distinction: Distincti
             }),
         )])),
     }
+}
+
+/// Whether a value of `type_ref` reaches one of the declared types in `building`: a type that
+/// refers to itself through a map or a copied list, which is witnessed empty there rather than
+/// nested to the depth limit (beyond10x/ess#196).
+fn reaches(ir: &EssIr, type_ref: &ResolvedTypeRef, building: &[String]) -> bool {
+    fn walk(
+        ir: &EssIr,
+        type_ref: &ResolvedTypeRef,
+        building: &[String],
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        match type_ref {
+            ResolvedTypeRef::Primitive { .. } => false,
+            ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => {
+                walk(ir, of, building, seen)
+            }
+            ResolvedTypeRef::Map { value, .. } => walk(ir, value, building, seen),
+            ResolvedTypeRef::Declared { name } => {
+                let declared = ir.named_type(name);
+                let spelled = declared.name.to_string();
+                if building.contains(&spelled) {
+                    return true;
+                }
+                if !seen.insert(spelled) {
+                    return false;
+                }
+                match &declared.body {
+                    ResolvedBody::Newtype { of, .. } => walk(ir, of, building, seen),
+                    ResolvedBody::Enum { .. } => false,
+                    ResolvedBody::Union { variants, .. } => variants
+                        .values()
+                        .any(|variant| walk(ir, variant, building, seen)),
+                    ResolvedBody::Struct { fields, .. } => fields
+                        .iter()
+                        .any(|field| walk(ir, &field.type_ref, building, seen)),
+                }
+            }
+        }
+    }
+    !building.is_empty() && walk(ir, type_ref, building, &mut BTreeSet::new())
+}
+
+/// Every input path a branch copies whole into an event payload or a stored field: `input.<x>`,
+/// and `{input: x, else: …}`, at any depth of a struct-valued target.
+fn copied_inputs(command: &ResolvedCommand) -> BTreeSet<FactPath> {
+    use ess_compiler::ir::{ResolvedPayloadField, ResolvedPayloadValue};
+    fn walk(fields: &[ResolvedPayloadField], found: &mut BTreeSet<FactPath>) {
+        for field in fields {
+            match &field.value {
+                ResolvedPayloadValue::InputField { field, .. }
+                | ResolvedPayloadValue::InputOrGenerated { field, .. } => {
+                    if let Ok(path) = FactPath::new(field) {
+                        found.insert(path);
+                    }
+                }
+                ResolvedPayloadValue::Struct { fields } => walk(fields, found),
+                _ => {}
+            }
+        }
+    }
+    let mut found = BTreeSet::new();
+    for outcome in &command.outcomes {
+        for payload in &outcome.payload {
+            walk(&payload.fields, &mut found);
+        }
+        walk(&outcome.sets, &mut found);
+        for affect in &outcome.affects {
+            walk(&affect.sets, &mut found);
+        }
+    }
+    found
+}
+
+/// The key of a map's witness entry: the key primitive's own witness at the map's path and
+/// instance (rules 2 and 5), in the spelling a setup key is read by — `true`, `1`, the text itself —
+/// or `None` where the primitive has no setup spelling.
+///
+/// Held to the same reader the flattener admits a key by, so a key it builds is never refused.
+fn map_key(key: Primitive, path: &FactPath, distinction: Distinction) -> Option<String> {
+    if matches!(
+        key,
+        Primitive::Binary64 | Primitive::Json | Primitive::Decimal
+    ) {
+        return None;
+    }
+    let spelling = match primitive_value(key, path, distinction) {
+        Node::Text(text) => text,
+        Node::Bool(flag) => flag.to_string(),
+        Node::Number(number) => number.as_i64()?.to_string(),
+        _ => return None,
+    };
+    crate::input::setup_map_key(key, &spelling)
+        .is_ok()
+        .then_some(spelling)
 }
 
 /// One byte, base64. [`BASE_BYTE`] encodes as `AA==`.

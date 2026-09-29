@@ -304,6 +304,7 @@ impl Selection<'_> {
             self.ir,
             self.entity,
             &row.settled,
+            Some(&row.state),
             predicate,
             Some((self.command, self.input)),
         )
@@ -922,6 +923,7 @@ fn matching_none(
                     ir,
                     entity,
                     &row.settled,
+                    Some(&row.state),
                     filter,
                     Some((command, input)),
                 ) == Truth::False

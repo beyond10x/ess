@@ -53,6 +53,7 @@
 //! cascade of errors buries the one that matters.
 
 mod bounded_retry;
+mod delivery_context;
 
 use ess_domain::view::{Direction, Ranking};
 use std::cmp::Ordering;
@@ -555,6 +556,18 @@ impl<C: Clock> Runner<C> {
                 field,
             } => capture_instance(instance, entity, event, field, run),
             ScenarioStep::RedeliverEvent { event } => redeliver_event(event, run, target),
+            ScenarioStep::DeliverEvent {
+                event,
+                authority,
+                payload,
+                context,
+            } => delivery_context::deliver_event(event, authority, payload, context, run, target),
+            ScenarioStep::ExpectEveryInvocation {
+                binding,
+                command,
+                selecting,
+                input,
+            } => self.expect_every_invocation(binding, command, selecting, input, run, target),
             ScenarioStep::ExpectInvocation {
                 binding,
                 command,

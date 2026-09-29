@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T01:53:22Z",
+  "actor": "human:timo",
+  "artifact": "story:arrangement-searches-every-creating-command",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "merged-tree check on integrate/ess-0.41 after binding-context merge: clippy -D warnings clean; ess-domain 1045, ess-compiler 225, ess-conformance 1630, ess-entity-runtime 81, ess-gen 271, ess-synth 238, ess-diff 215, ess-xtask 334 passed, 0 failed; schema, generate, docs, fmt checks clean",
+    "reference": "~/.cache/ess-wave-n2/int-after-bind.log"
+  }
+}

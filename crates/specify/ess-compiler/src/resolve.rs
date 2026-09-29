@@ -45,7 +45,7 @@ use ess_domain::command::related_value::{input_carrier, referenced_entity, Refer
 use ess_domain::command::{
     CommandSpec, Effect, ErrorSpec, EventSpec, InstanceSurface, Outcome, OutcomeCondition, Subject,
 };
-use ess_domain::command::{PayloadSource, RelatedVia};
+use ess_domain::command::{PayloadSource, RelatedTest, RelatedVia};
 use ess_domain::component::{ComponentName, ComponentSpec};
 use ess_domain::entity::{EntitySpec, StateMachine};
 use ess_domain::name::QualifiedName;
@@ -66,9 +66,9 @@ use crate::ir::{
     ResolvedComponent, ResolvedComponentSetting, ResolvedCondition, ResolvedConversion,
     ResolvedDomain, ResolvedEffect, ResolvedEntity, ResolvedError, ResolvedEvent, ResolvedField,
     ResolvedInstance, ResolvedMapping, ResolvedMappingValue, ResolvedOutcome, ResolvedPayload,
-    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedRelation,
-    ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView, ResolvedWorkload, TypeHandle,
-    ViewHandle,
+    ResolvedPayloadField, ResolvedPayloadValue, ResolvedRelatedTest, ResolvedRelatedVia,
+    ResolvedRelation, ResolvedSubject, ResolvedType, ResolvedTypeRef, ResolvedView,
+    ResolvedWorkload, TypeHandle, ViewHandle,
 };
 use crate::source::{Location, SourceMap, Span};
 
@@ -1313,15 +1313,18 @@ impl<'a> Resolver<'a> {
                     })
                     .map(ActorHandle::new);
                 let declared = self.spec.commands().get(&precondition.command)?;
-                let outcome =
-                    ess_domain::command::precondition_branch(declared, &precondition.input)
-                        .ok()?
-                        .name
-                        .clone();
+                let outcome = ess_domain::command::precondition_branch(
+                    &self.spec.system().types,
+                    declared,
+                    &precondition.input,
+                )
+                .ok()?
+                .name
+                .clone();
                 let mut input = BTreeMap::new();
                 let mut fixtures = BTreeMap::new();
                 for (field, value) in &precondition.input {
-                    if ess_domain::command::precondition_fixture(value).is_some() {
+                    if ess_domain::command::precondition_fixture(declared, field, value).is_some() {
                         continue;
                     }
                     input.insert(field.clone(), value.clone());
@@ -1932,9 +1935,12 @@ impl<'a> Resolver<'a> {
             let set_effects = self.set_effects(command, outcome, input, entities);
             complete &= set_effects.is_some();
             let (instances, affects) = set_effects.unwrap_or_default();
+            let related = self.related_guard(command, outcome, input);
+            complete &=
+                related.is_some() || !matches!(outcome.condition, OutcomeCondition::Related { .. });
             resolved.push(ResolvedOutcome {
                 name: outcome.name.clone(),
-                condition: condition_of(outcome, subject.as_ref()),
+                condition: condition_of(outcome, subject.as_ref(), related),
                 subject,
                 replays: None,
                 complete_refusal: self.spec.system().format.major() >= 7
@@ -1974,7 +1980,7 @@ impl<'a> Resolver<'a> {
             if let Some(origin) = &outcome.replays {
                 let original = resolved.iter().position(|o| &o.name == origin)?;
                 let subject = resolved[original].subject.clone()?;
-                resolved[index].condition = condition_of(outcome, Some(&subject));
+                resolved[index].condition = condition_of(outcome, Some(&subject), None);
                 resolved[index].replays = Some(crate::ir::ResolvedReplay {
                     origin: origin.clone(),
                     subject,
@@ -2522,6 +2528,31 @@ impl<'a> Resolver<'a> {
             value,
             conversion,
         })
+    }
+
+    /// `when_related:` (ess/18, #211): the input field a related-guard branch reads and the entity
+    /// whose identity it carries, by the rule `ess-domain` validated it with. `None` for a branch
+    /// that reads no related row, and for one whose read did not resolve.
+    fn related_guard(
+        &self,
+        command: &CommandSpec,
+        outcome: &Outcome,
+        input: Option<&[ResolvedField]>,
+    ) -> Option<(ResolvedRelatedVia, EntityHandle)> {
+        let OutcomeCondition::Related { via, .. } = &outcome.condition else {
+            return None;
+        };
+        let read = input?.iter().find(|field| &field.name == via)?;
+        match ess_domain::command::related_guard::related_entity(self.spec, command, via) {
+            Referenced::Entity(entity) => Some((
+                ResolvedRelatedVia::Input {
+                    field: read.name.clone(),
+                    type_ref: read.type_ref.clone(),
+                },
+                EntityHandle::new(entity.name.clone()),
+            )),
+            Referenced::NoEntity | Referenced::Ambiguous(_) => None,
+        }
     }
 
     /// `{related: {via, field}}` (ess/16, #166): the entity `via` names, by the rule
@@ -3634,11 +3665,17 @@ impl<'a> Resolver<'a> {
         if !escalation_resolved {
             return None;
         }
-        let (mapping, selection) =
-            self.selection_mapping(&binding, &events[event_name], &commands[&binding.command])?;
+        let context = self.delivery_context(&binding, path, needles)?;
+        let (mapping, selection) = self.selection_mapping(
+            &binding,
+            &events[event_name],
+            &commands[&binding.command],
+            context.as_ref(),
+        )?;
         Some(ResolvedBinding {
             name: binding.name,
             cause: crate::ir::ResolvedBindingCause::Event(event_handle),
+            context,
             command: command_handle,
             mapping,
             selection,
@@ -3654,6 +3691,32 @@ impl<'a> Resolver<'a> {
             naming: binding.naming,
             refs: binding.refs,
         })
+    }
+
+    /// The delivery context an external channel binds (ess/18, beyond10x/ess#195), its fields
+    /// resolved as a periodic host's are: `Some(None)` for a binding that declares none, `None`
+    /// where a field's type did not resolve.
+    #[allow(clippy::option_option)]
+    fn delivery_context(
+        &mut self,
+        binding: &BindingSpec,
+        path: &str,
+        needles: &[String],
+    ) -> Option<Option<crate::ir::ResolvedDeliveryContext>> {
+        let Some(external) = binding.cause.external() else {
+            return Some(None);
+        };
+        let fields = self.fields(
+            codes::BINDING_UNDECLARED_REFERENCE,
+            &external.context_fields,
+            &external.event,
+            path,
+            needles,
+        )?;
+        Some(Some(crate::ir::ResolvedDeliveryContext {
+            authority: external.authority.clone(),
+            fields,
+        }))
     }
 
     fn periodic_binding(
@@ -3753,6 +3816,7 @@ impl<'a> Resolver<'a> {
                 context,
                 read,
             }),
+            context: None,
             command: command_handle,
             mapping,
             selection: None,
@@ -3775,6 +3839,7 @@ impl<'a> Resolver<'a> {
         binding: &BindingSpec,
         event: &ResolvedEvent,
         command: &ResolvedCommand,
+        context: Option<&crate::ir::ResolvedDeliveryContext>,
     ) -> Option<(
         Vec<ResolvedMapping>,
         Option<crate::ir::ResolvedSelectionPlan>,
@@ -3789,7 +3854,7 @@ impl<'a> Resolver<'a> {
                 types: BTreeMap::new(),
             })
         };
-        let mapping = self.mapping(binding, event, command)?;
+        let mapping = self.mapping(binding, event, command, context)?;
         if let Some(selection) = &mut selection {
             let mut names = BTreeSet::new();
             for input in &selection.plan.inputs {
@@ -3834,6 +3899,7 @@ impl<'a> Resolver<'a> {
         binding: &BindingSpec,
         event: &ResolvedEvent,
         command: &ResolvedCommand,
+        context: Option<&crate::ir::ResolvedDeliveryContext>,
     ) -> Option<Vec<ResolvedMapping>> {
         let mut complete = true;
         for target in binding.mapping.keys() {
@@ -3889,6 +3955,14 @@ impl<'a> Resolver<'a> {
                         Vec::new(),
                         &input.name,
                     );
+                }
+                // The one context an event binding reads: the delivery context it declares
+                // (ess/18), never the periodic host's.
+                Some(MappingSource::DeliveryContext { field }) => {
+                    match self.mapped_context(binding, command, input, field, context) {
+                        Some(mapped) => resolved.push(mapped),
+                        None => complete = false,
+                    }
                 }
                 Some(MappingSource::Literal { value }) => resolved.push(ResolvedMapping {
                     target: input.name.clone(),
@@ -4091,6 +4165,87 @@ impl<'a> Resolver<'a> {
     }
 
     /// One mapping from an event field onto a command input.
+    /// `context.<field>`: a field of the declared delivery context, its type assignable to the
+    /// input or crossed by a declared conversion.
+    fn mapped_context(
+        &mut self,
+        binding: &BindingSpec,
+        command: &ResolvedCommand,
+        input: &ResolvedField,
+        field: &str,
+        context: Option<&crate::ir::ResolvedDeliveryContext>,
+    ) -> Option<ResolvedMapping> {
+        let Some(source) = context.and_then(|context| context.field(field)) else {
+            let declared = names(
+                context
+                    .map(|context| context.fields.iter().map(|field| field.name.clone()))
+                    .into_iter()
+                    .flatten(),
+            );
+            self.refuse_mapping(
+                binding,
+                codes::MAPPING_READS_UNDECLARED_FIELD,
+                format!(
+                    "binding `{}` reads `context.{field}`, which its delivery context does not \
+                     declare",
+                    binding.name
+                ),
+                vec![Detail::Note {
+                    text: format!("the delivery context declares: {declared}"),
+                }],
+                &input.name,
+            );
+            return None;
+        };
+        let from = spec_type_ref(&source.type_ref);
+        let to = spec_type_ref(&input.type_ref);
+        let conversion = if is_assignable(&from, &to) {
+            None
+        } else if let Some(crossing) = self
+            .spec
+            .conversions()
+            .iter()
+            .find(|crossing| crossing.from == from && crossing.to == to)
+        {
+            Some(crossing.because.clone())
+        } else {
+            self.refuse_mapping(
+                binding,
+                codes::MAPPING_TYPE_MISMATCH,
+                format!("binding `{}` is invalid", binding.name),
+                vec![
+                    Detail::Typed {
+                        subject: format!("context.{field}"),
+                        type_ref: source.type_ref.to_string(),
+                        requires: false,
+                    },
+                    Detail::Typed {
+                        subject: format!("{}.{}", command.name, input.name),
+                        type_ref: input.type_ref.to_string(),
+                        requires: true,
+                    },
+                    Detail::Note {
+                        text: format!(
+                            "no conversion from `{}` to `{}` is declared",
+                            source.type_ref, input.type_ref
+                        ),
+                    },
+                ],
+                &input.name,
+            );
+            return None;
+        };
+        Some(ResolvedMapping {
+            target: input.name.clone(),
+            target_type: input.type_ref.clone(),
+            value: ResolvedMappingValue::DeliveryContext {
+                field: field.to_owned(),
+                type_ref: source.type_ref.clone(),
+            },
+            conversion,
+        })
+    }
+
     fn mapped_field(
         &mut self,
         binding: &BindingSpec,
@@ -4181,6 +4336,7 @@ impl<'a> Resolver<'a> {
         let mut needles = Vec::new();
         if let Some(source) = binding.mapping.get(target) {
             needles.push(match source {
+                MappingSource::DeliveryContext { field } => format!("{target}: context.{field}"),
                 MappingSource::HostContext { field } => format!("{target}: host_context.{field}"),
                 MappingSource::HostRead { field } => format!("{target}: host_read.{field}"),
                 MappingSource::EventField { field } => {
@@ -4326,8 +4482,28 @@ fn names(values: impl IntoIterator<Item = String>) -> String {
 /// carries that transition by value, so the set is read off work this resolver has already done
 /// rather than looked up again — which is the difference between the domain's condition and the
 /// IR's mirror of it.
-fn condition_of(outcome: &Outcome, subject: Option<&ResolvedSubject>) -> ResolvedCondition {
+fn condition_of(
+    outcome: &Outcome,
+    subject: Option<&ResolvedSubject>,
+    related: Option<(ResolvedRelatedVia, EntityHandle)>,
+) -> ResolvedCondition {
     match &outcome.condition {
+        // `related` is `None` only where the command did not resolve, and an incomplete command
+        // reaches no `EssIr`: the default stands in for it until the refusal is reported.
+        OutcomeCondition::Related { test, input, .. } => match related {
+            Some((via, entity)) => ResolvedCondition::Related {
+                via,
+                entity,
+                test: match test {
+                    RelatedTest::Absent => ResolvedRelatedTest::Absent,
+                    RelatedTest::Holds(predicate) => ResolvedRelatedTest::Holds {
+                        predicate: predicate.clone(),
+                    },
+                },
+                input: input.clone(),
+            },
+            None => ResolvedCondition::Otherwise,
+        },
         OutcomeCondition::When(predicate) => ResolvedCondition::When {
             predicate: predicate.clone(),
         },

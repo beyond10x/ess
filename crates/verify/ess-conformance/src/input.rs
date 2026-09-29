@@ -28,18 +28,19 @@
 //! | an enum | nothing to consume: the segment is undeclared | a scalar, as text |
 //! | a union | not a scalar: `a union` | not a scalar: `a union` |
 //! | `List<T>` | `count`, or an element index into `T` | not a scalar: `a list` |
-//! | `Map<K, V>` | not a scalar: `a map` | not a scalar: `a map` |
+//! | `Map<K, V>` | `count`; any other segment: not a scalar: `a map` | not a scalar: `a map` |
 //!
 //! A list publishes its size as `<path>.count` and element `n` under `<path>.<n>`, which is the
 //! convention [`FactSource::cardinality`] and the quantifiers read for an observed collection
 //! (ess#94). So `tags.count > 0`, `lines.0.quantity` and `forall`/`exists` over an input list are
-//! decided rather than refused.
+//! decided rather than refused. A map publishes `<path>.count` the same way (ess#196), and nothing
+//! for its entries.
 //!
 //! **Its limits, named rather than discovered later.** A union is not projected *at all*, not even
 //! its tag — which is a `String` a fact could hold, and which a later wave may decide to bind as
-//! `payee.kind`. A map requires collection facts this typed projector does not publish, including
-//! its legal cardinality. The projection walk is bounded at [`MAX_TYPE_DEPTH`]; semantic path
-//! validation has no such depth limit.
+//! `payee.kind`. A map publishes its cardinality and no entry: no fact path spells a key. The
+//! projection walk is bounded at [`MAX_TYPE_DEPTH`]; semantic path validation has no such depth
+//! limit.
 //!
 //! # A candidate that is not a value of the input's type is refused here
 //!
@@ -208,7 +209,7 @@ pub fn bind(
                 &mut facts,
                 &mut errors,
             ),
-            None if field.type_ref.is_optional() => {}
+            None if admits_absence(ir, &field.type_ref, 0) => {}
             None if completeness == Completeness::Partial => {}
             None => errors.push(ShapeError::MissingField {
                 at: String::new(),
@@ -229,6 +230,23 @@ pub fn bind(
         Ok(facts)
     } else {
         Err(ShapeErrors(errors))
+    }
+}
+
+/// Whether a member of type `type_ref` may be left out: an `Optional`, through any newtype over one
+/// (beyond10x/ess#205). The rule `ess-domain` admits a precondition literal by, so a member it lets
+/// a literal omit is one this reader accepts omitted.
+fn admits_absence(ir: &EssIr, type_ref: &ResolvedTypeRef, depth: usize) -> bool {
+    if depth > MAX_TYPE_DEPTH {
+        return false;
+    }
+    match type_ref {
+        ResolvedTypeRef::Optional { .. } => true,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => admits_absence(ir, of, depth + 1),
+            _ => false,
+        },
+        _ => false,
     }
 }
 
@@ -450,7 +468,7 @@ fn setup_body(
     }
 }
 
-fn setup_map_key(kind: Primitive, spelling: &str) -> Result<(), String> {
+pub(crate) fn setup_map_key(kind: Primitive, spelling: &str) -> Result<(), String> {
     // A `sets:` literal gained a `Decimal` spelling (#135); a map key did not.
     if !matches!(kind, Primitive::Decimal) && primitive_literal(kind, spelling).is_some() {
         return Ok(());
@@ -979,11 +997,12 @@ fn project_value(
             Node::Seq(elements) => project_list(ir, of, elements, path, depth, facts, errors),
             _ => wrong(errors, format!("{type_ref}")),
         },
-        ResolvedTypeRef::Map { .. } => {
-            if !matches!(value, Node::Map(_)) {
-                wrong(errors, format!("{type_ref}"));
-            }
-        }
+        // A map publishes its size as `<path>.count`, as a list does, so a `.count` guard over one
+        // is decided (beyond10x/ess#196). Its entries are not facts: no path reaches a key.
+        ResolvedTypeRef::Map { .. } => match value {
+            Node::Map(entries) => facts.set(path.child("count"), FactValue::count(entries.len())),
+            _ => wrong(errors, format!("{type_ref}")),
+        },
         ResolvedTypeRef::Declared { name } => {
             let declared = ir.named_type(name);
             match &declared.body {
@@ -1038,7 +1057,7 @@ fn project_value(
                                     errors,
                                 );
                             }
-                            None if field.type_ref.is_optional() => {}
+                            None if admits_absence(ir, &field.type_ref, 0) => {}
                             None => errors.push(ShapeError::MissingField {
                                 at: path.to_string(),
                                 field: field.name.clone(),

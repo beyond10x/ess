@@ -224,7 +224,173 @@ pub(super) fn existence(
             }
         }
         refusals_on_a_stored_row(ir, command, actors, suite, refusals);
+        refusals_on_an_arranged_row(ir, command, actors, suite, refusals);
     }
+}
+
+/// Every input-guarded refusal on a command that addresses an existing record, sent for a record
+/// the scenario arranged (beyond10x/ess#209).
+///
+/// Its own scenario sends the refused input for an identity nothing stored, which the precedence
+/// admits: an input refusal is answered before existence (`docs/design/outcome-shapes.md`
+/// "Precedence"). A target that looks the record up first answers that send "not found", so this
+/// adds the other half, as [`refusals_on_a_stored_row`] does for the two existence forms: the
+/// record created through a declared creation and driven to a state the command runs from, the
+/// refused input sent for it, and the refusal required with no event and the row unchanged — the
+/// last only where some identity view shows the row. Where no arrangement reaches that record, the
+/// scenario is withdrawn and refused with the arrangement's cause, never filed to be skipped at
+/// run time.
+///
+/// Left to their own families: the two existence forms (their stored-row half is above), a command
+/// reading stored fields (its refusals are already sent for an arranged row), a command whose
+/// branches read the held state, and a refusal whose guard reads the identity field, which stays a
+/// plain send (beyond10x/ess#178).
+fn refusals_on_an_arranged_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    suite: &mut ConformanceSuite,
+    refusals: &mut Vec<Refusal>,
+) {
+    if !creations(command).is_empty()
+        || subject_fact::uses(command)
+        || super::has_subject_guards(command)
+    {
+        return;
+    }
+    // The branch acting on the input-named record: the arrangement it would be sent for.
+    let Some(addressing) = command.outcomes.iter().find(|outcome| {
+        outcome.subject.as_ref().is_some_and(|subject| {
+            subject.effect != ResolvedEffect::Creates
+                && matches!(subject.instance, ResolvedInstance::Supplied { .. })
+        })
+    }) else {
+        return;
+    };
+    for refusal in command.outcomes.iter().filter(|outcome| {
+        is_input_guarded_refusal(outcome)
+            && outcome.subject.is_none()
+            && !subject_fact::reads_identity(command, outcome)
+    }) {
+        let id = outcome_id(command, refusal);
+        let Some(filed) = suite.scenarios.get(&id) else {
+            continue;
+        };
+        let taken = super::bound_instances(&filed.steps);
+        match arranged_refusal(ir, command, addressing, refusal, actors, &taken) {
+            Ok(part) => {
+                let scenario = suite
+                    .scenarios
+                    .get_mut(&id)
+                    .expect("checked to be filed above");
+                scenario.steps.extend(part.steps);
+                scenario.source.extend(part.source);
+            }
+            Err(cause) => {
+                suite.scenarios.remove(&id);
+                refusals.push(Refusal::about(&id, cause));
+            }
+        }
+    }
+}
+
+/// The arranged half of [`refusals_on_an_arranged_row`]: the record `addressing` acts on, arranged
+/// under names the scenario has not bound, then `refusal`'s input sent for it.
+fn arranged_refusal(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    addressing: &ResolvedOutcome,
+    refusal: &ResolvedOutcome,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    taken: &BTreeSet<super::InstanceName>,
+) -> Result<Segment, RefusalCause> {
+    let subject = addressing
+        .subject
+        .as_ref()
+        .expect("the addressing branch names a subject");
+    let error = refusal
+        .error
+        .as_ref()
+        .ok_or(RefusalCause::StrategyWithoutGuard {
+            strategy: refusal.test_strategy,
+        })?;
+    let mut setup = None;
+    for distinction in
+        std::iter::once(Distinction::PLAIN).chain((1..=MAX_CANDIDATES).map(Distinction::further))
+    {
+        let arranged = super::prepare_in(ir, addressing, actors, None, distinction)?;
+        if super::bound_instances(&arranged.steps).is_disjoint(taken) {
+            setup = Some(arranged);
+            break;
+        }
+    }
+    let mut setup = setup.ok_or(RefusalCause::StrategyWithoutGuard {
+        strategy: refusal.test_strategy,
+    })?;
+    // Refused, the record stays where the arrangement left it.
+    setup.after.clone_from(&setup.before);
+    let refused = reach(ir, command, refusal, Distinction::PLAIN)?;
+    // Where no identity view shows the arranged row, nothing can read it back, so the half is
+    // filed without the unchanged-row claim and still requires the error and no event. The plain
+    // send needs no view either, so the scenario is not lost over it (adversary pass 1).
+    let observed = identity_views(ir, subject).any(|view| {
+        setup.after.as_ref().is_some_and(|state| {
+            shows(ir, view, state, &setup.settled, &BTreeMap::new()) == Ok(true)
+        })
+    });
+    let preservation = if observed {
+        subject_fact::preserve_refused_subject(ir, subject, &setup)?
+    } else {
+        subject_fact::Preservation {
+            before: Vec::new(),
+            after: Vec::new(),
+            source: BTreeSet::new(),
+            unobserved: Vec::new(),
+        }
+    };
+
+    let command_ref = CommandRef::new(command.name.clone());
+    let branch = OutcomeRef::new(command_ref.clone(), refusal.name.clone());
+    let mut steps = setup.steps.clone();
+    steps.extend(preservation.before);
+    steps.push(ScenarioStep::ExecuteCommand {
+        command: command_ref.clone(),
+        actor: actors.get(&command.name).cloned(),
+        input: supply(
+            command,
+            &refused,
+            Some(subject),
+            setup.instance.as_ref(),
+            &setup.bound,
+        ),
+        caller: BTreeMap::new(),
+    });
+    steps.push(ScenarioStep::ExpectOutcome {
+        outcome: branch.clone(),
+    });
+    let mut source: BTreeSet<EssSemanticRef> = setup.source;
+    source.extend(preservation.source);
+    source.insert(command_ref.into());
+    source.insert(branch.into());
+    source.insert(EntityRef::from(&subject.entity).into());
+    if let Some(actor) = actors.get(&command.name) {
+        source.insert(actor.clone().into());
+    }
+    let named = ErrorRef::from(error);
+    steps.push(ScenarioStep::ExpectError {
+        error: named.clone(),
+        fields: BTreeMap::new(),
+    });
+    source.insert(named.into());
+    let forbidden = not_emitted(ir, &[]);
+    for event in &forbidden {
+        steps.push(ScenarioStep::ExpectNoEvent {
+            event: event.clone(),
+        });
+    }
+    source.extend(forbidden.into_iter().map(EssSemanticRef::from));
+    steps.extend(preservation.after);
+    Ok(Segment { steps, source })
 }
 
 /// The scenario id of one outcome.
@@ -400,7 +566,7 @@ fn segment(
     let error = declared.error.as_ref().ok_or_else(no_error)?;
     let at = fresh.distinction();
     let identity = identity_at(ir, command, field, fresh)?;
-    let mut first = reach(ir, command, creating, at)?;
+    let mut first = creating_input(ir, command, creating, at)?;
     first.insert(field.to_owned(), identity.clone());
     let mut second = second;
     second.insert(field.to_owned(), identity);
@@ -467,6 +633,22 @@ fn segment(
     Ok(Segment { steps, source })
 }
 
+/// The input a creating branch is sent with: the one that reaches it, or — for a command reading a
+/// related row (ess/18), which only an arrangement of that row reaches — a plain one, which the
+/// creation then sends with the related row arranged for it.
+fn creating_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if super::related_guard::uses(command) {
+        super::related_guard::plain_input(ir, command, distinction)
+    } else {
+        reach(ir, command, outcome, distinction)
+    }
+}
+
 /// The create-or-refuse witness: for **every** creating branch, create with a fresh identity,
 /// snapshot the row, send the same identity again through that branch's own input with other
 /// field values, and require the declared error, no event and the row as it was. A target that
@@ -487,11 +669,12 @@ fn existing_instance(
     let mut source = BTreeSet::new();
     for (nth, (outcome, field)) in creating.into_iter().enumerate() {
         let fresh = Fresh::Stored(nth);
-        let first = reach(ir, command, outcome, fresh.distinction())?;
+        let first = creating_input(ir, command, outcome, fresh.distinction())?;
         // Other field values where the branch's own input allows them, so an overwrite is visible.
         let mut second = first.clone();
         for further in 0..=FRESH_WITNESSES {
-            let Ok(other) = reach(ir, command, outcome, Distinction::further(further)) else {
+            let Ok(other) = creating_input(ir, command, outcome, Distinction::further(further))
+            else {
                 continue;
             };
             let differs = other
@@ -501,6 +684,11 @@ fn existing_instance(
                 second = other;
                 break;
             }
+        }
+        // Beside a related guard (ess/18, #211) the second call names a related row that does not
+        // exist: the identity is checked first, so `existing_instance:` still answers.
+        if super::related_guard::uses(command) {
+            super::related_guard::point_at_missing(ir, command, &mut second)?;
         }
         let part = segment(
             ir,

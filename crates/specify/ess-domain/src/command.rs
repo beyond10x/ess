@@ -204,6 +204,8 @@ pub mod finite;
 pub mod fixture_inputs;
 mod narrowing;
 pub(crate) mod outcome_shapes;
+pub mod related_guard;
+pub use related_guard::RelatedTest;
 pub mod related_value;
 pub use related_value::RelatedVia;
 pub mod set_effects;
@@ -416,10 +418,31 @@ pub enum OutcomeCondition {
         /// Additional input eligibility, the ordinary `when:`.
         input: Option<Predicate>,
     },
-    /// Taken when the named existing subject is in this state and the optional input guard holds.
+    /// A row of another entity, named by an identity the input carries, is absent — or present and
+    /// satisfying a predicate over its stored fields — conjunctive with an optional input guard
+    /// (`when_related:`, ess/18, beyond10x/ess#211).
+    ///
+    /// It reads a row the command does not address, so it sits on any branch: a `creates:`, a
+    /// refusal naming no subject. One hop, by identity only — see [`related_guard`].
+    Related {
+        /// The input field carrying the other entity's identity, without its `input.` prefix.
+        via: String,
+        /// What the branch requires of that row.
+        test: RelatedTest,
+        /// Additional input eligibility, the ordinary `when:`.
+        input: Option<Predicate>,
+    },
+    /// Taken when the named existing subject is in one of these states and the optional input
+    /// guard holds.
+    ///
+    /// From `ess/18` (beyond10x/ess#201) the guard may list several states, and a refusal may carry
+    /// it without naming a subject of its own: it reads the subject its siblings name, as a
+    /// [`SubjectPredicate`](Self::SubjectPredicate) refusal does. That is how a command answers
+    /// differently in different states its moves do not start from — an accepted no-op in one, a
+    /// refusal in others — where `wrong_state:` gives every such state one answer.
     SubjectState {
-        /// The held lifecycle state, read from the subject rather than the input.
-        state: crate::entity::StateName,
+        /// The held lifecycle states, read from the subject rather than the input.
+        state: crate::entity::HeldStates,
         /// An additional predicate over the unchanged command-input namespace.
         predicate: Option<Predicate>,
     },
@@ -501,7 +524,7 @@ impl OutcomeCondition {
             Self::SubjectState { predicate, .. }
             | Self::StateChange { predicate, .. }
             | Self::SubjectField { predicate, .. } => predicate.as_ref(),
-            Self::SubjectPredicate { input, .. } => input.as_ref(),
+            Self::SubjectPredicate { input, .. } | Self::Related { input, .. } => input.as_ref(),
             Self::Otherwise
             | Self::External { .. }
             | Self::WrongState
@@ -519,6 +542,7 @@ impl OutcomeCondition {
             | Self::SubjectState { .. }
             | Self::SubjectField { .. }
             | Self::SubjectPredicate { .. }
+            | Self::Related { .. }
             | Self::StateChange { .. }
             | Self::Otherwise
             | Self::WrongState
@@ -535,6 +559,7 @@ impl OutcomeCondition {
             Self::SubjectField { .. } | Self::SubjectPredicate { .. } => {
                 TestStrategy::ObserveSubjectFact
             }
+            Self::Related { .. } => TestStrategy::ArrangeRelatedRow,
             Self::SubjectState { .. } | Self::StateChange { .. } => {
                 TestStrategy::ConstructInputInState
             }
@@ -588,6 +613,7 @@ impl OutcomeCondition {
             Self::When(_)
             | Self::SubjectState { .. }
             | Self::StateChange { .. }
+            | Self::Related { .. }
             | Self::Otherwise
             | Self::ExternalWhen { .. }
             | Self::External { .. }
@@ -642,6 +668,9 @@ pub enum TestStrategy {
     /// Send the command twice for one identity (ess/16, `existing_instance:`): the first call
     /// creates the record, the second finds it and is refused.
     SendExistingIdentity,
+    /// Arrange the row of another entity the input names — or its absence — and send the command
+    /// for it (ess/18, `when_related:`).
+    ArrangeRelatedRow,
 }
 
 impl TestStrategy {
@@ -658,6 +687,7 @@ impl TestStrategy {
             Self::SendUnknownIdentity => "send_unknown_identity",
             Self::SendExistingIdentity => "send_existing_identity",
             Self::SendNoInput => "send_no_input",
+            Self::ArrangeRelatedRow => "arrange_related_row",
         }
     }
 }
@@ -1949,6 +1979,7 @@ impl Outcome {
             | OutcomeCondition::WrongState
             | OutcomeCondition::SubjectField { .. }
             | OutcomeCondition::SubjectPredicate { .. }
+            | OutcomeCondition::Related { .. }
             | OutcomeCondition::UnknownInstance
             | OutcomeCondition::InputAbsent
             | OutcomeCondition::ExistingInstance => false,
@@ -2065,6 +2096,7 @@ impl CommandSpec {
                     | OutcomeCondition::StateChange { .. }
                     | OutcomeCondition::SubjectField { .. }
                     | OutcomeCondition::SubjectPredicate { .. }
+                    | OutcomeCondition::Related { .. }
             )
         {
             errors.push(ValidationError::at(site.clone(), ValidationCode::ConflictingDeclaration,
@@ -2627,6 +2659,12 @@ impl CommandSpec {
             return errors;
         }
 
+        // A command reading a related row (ess/18, beyond10x/ess#211) partitions that row's fields
+        // with the input, which needs the other entity's field types, known at assembly; here its
+        // own branches are checked, including that it selects on nothing else.
+        if related_guard::uses(self) {
+            return related_guard::validate_shape(self);
+        }
         // Two strategies stay two (`cross-record-and-stored-field-guards.md`, "One strategy or
         // two"): a command selecting on stored fields and on the held lifecycle state at once is
         // refused before either partition is asked about it.
@@ -3975,6 +4013,361 @@ fn example_admitted(
     example_layers(&layers.newtypes, example, &value, instant)
 }
 
+/// Whether `literal` is a value `declared` accepts as a precondition's literal input
+/// (beyond10x/ess#205), answered as validation reports it.
+///
+/// A precondition sends its literal as written, so unlike an `example:` it may be structured: a
+/// list of values of the element type, a map of values of the value type under keys spelled as the
+/// key primitive, a struct naming only its declared fields and every required one and holding its
+/// invariants, or `null` where the type is optional. Each scalar leaf is held exactly as an
+/// `example:` is, by [`example_admitted`], so a `Binary64` leaf stays refused; a `Json` leaf and a
+/// union are refused too, because neither has one literal spelling a target compares by.
+pub(crate) fn precondition_literal_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
+                              for `example:`, a list, map or struct of them, or `null` where it \
+                              is optional";
+    let layers = types.newtype_layers(declared);
+    if matches!(literal, Node::Null) {
+        return if layers.optional {
+            Ok(())
+        } else {
+            Err((
+                ValidationCode::TypeMismatch,
+                format!("`null` is not a value of `{declared}`, which is not optional"),
+                STRUCTURED,
+            ))
+        };
+    }
+    let structured = matches!(layers.terminal, TypeRef::List(_) | TypeRef::Map(..))
+        || matches!(&layers.terminal, TypeRef::Named(name) if matches!(
+            types.get(name).map(|named| &named.body),
+            Some(crate::types::TypeBody::Struct { .. })
+        ));
+    precondition_terminal_admitted(types, declared, &layers.terminal, literal)?;
+    // A scalar's newtype layers are held by `example_admitted`; a structured value's are held here,
+    // over the whole literal read as `value`, as the setup reader holds them.
+    if structured {
+        for layer in &layers.newtypes {
+            let crate::types::TypeBody::Newtype { of, invariants, .. } = &layer.body else {
+                continue;
+            };
+            let facts = LiteralFacts::of(types, &[("value", of, literal)]);
+            for invariant in invariants {
+                facts.holds(invariant, literal, &layer.name)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// [`precondition_literal_admitted`] for the terminal a literal's newtype layers wrap.
+fn precondition_terminal_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    terminal: &TypeRef,
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    const STRUCTURED: &str = "a precondition literal is a value of the input's type: a scalar as \
+                              for `example:`, a list, map or struct of them, or `null` where it \
+                              is optional";
+    let mismatch =
+        |message: String, hint: &'static str| Err((ValidationCode::TypeMismatch, message, hint));
+    let within = |at: String| {
+        move |(code, message, hint): ExampleRefusal| (code, format!("{at}: {message}"), hint)
+    };
+    match terminal {
+        TypeRef::Primitive(Primitive::Json) => mismatch(
+            format!(
+                "`{declared}` is a Json, which a precondition literal does not carry: it has no \
+                 one spelling a target compares by"
+            ),
+            STRUCTURED,
+        ),
+        TypeRef::List(element) => {
+            let Node::Seq(items) = literal else {
+                return mismatch(
+                    format!("`{literal}` is not a list, and `{declared}` is one"),
+                    STRUCTURED,
+                );
+            };
+            for (index, item) in items.iter().enumerate() {
+                precondition_literal_admitted(types, element, item)
+                    .map_err(within(format!("element {index}")))?;
+            }
+            Ok(())
+        }
+        TypeRef::Map(key, value) => {
+            let Node::Map(entries) = literal else {
+                return mismatch(
+                    format!("`{literal}` is not a map, and `{declared}` is one"),
+                    STRUCTURED,
+                );
+            };
+            for (spelling, entry) in entries {
+                let spelled = match primitive_literal(*key, spelling) {
+                    Ok(()) => *key != Primitive::Decimal,
+                    Err(Some(_)) => false,
+                    Err(None) => key.admits(&Node::Text(spelling.clone())).is_some(),
+                };
+                if !spelled {
+                    return mismatch(
+                        format!("key `{spelling}` is not a spelling of a `{key}` map key"),
+                        STRUCTURED,
+                    );
+                }
+                precondition_literal_admitted(types, value, entry)
+                    .map_err(within(format!("key `{spelling}`")))?;
+            }
+            Ok(())
+        }
+        TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+            Some(crate::types::TypeBody::Struct { fields, invariants }) => {
+                struct_literal_admitted(types, declared, fields, invariants, literal)
+            }
+            Some(crate::types::TypeBody::Union { .. }) => mismatch(
+                format!(
+                    "`{declared}` reaches the union `{name}`, which a precondition literal does \
+                     not carry"
+                ),
+                "declare the input a fixture input of the command, or send a variant through a \
+                 struct input",
+            ),
+            _ => example_admitted(types, declared, literal),
+        },
+        _ => example_admitted(types, declared, literal),
+    }
+}
+
+/// A struct literal: only declared fields, every required one, each held to its type, and the
+/// struct's invariants not false over the scalar fields it writes.
+fn struct_literal_admitted(
+    types: &TypeRegistry,
+    declared: &TypeRef,
+    fields: &[Field],
+    invariants: &[crate::entity::Invariant],
+    literal: &Node,
+) -> Result<(), ExampleRefusal> {
+    let Node::Map(entries) = literal else {
+        return Err((
+            ValidationCode::TypeMismatch,
+            format!("`{literal}` is not a struct, and `{declared}` is one"),
+            "write the struct as a map of its fields",
+        ));
+    };
+    if let Some(unknown) = entries
+        .keys()
+        .find(|key| !fields.iter().any(|field| &field.name == *key))
+    {
+        return Err((
+            ValidationCode::UndeclaredReference,
+            format!(
+                "`{declared}` declares no field `{unknown}`; it declares {}",
+                join(fields.iter().map(|field| &field.name))
+            ),
+            "write only the fields the struct declares",
+        ));
+    }
+    for field in fields {
+        let Some(value) = entries.get(&field.name) else {
+            if types.newtype_layers(&field.type_ref).optional {
+                continue;
+            }
+            return Err((
+                ValidationCode::MissingDeclaration,
+                format!("`{declared}` requires the field `{}`", field.name),
+                "write every field the struct does not declare Optional",
+            ));
+        };
+        precondition_literal_admitted(types, &field.type_ref, value).map_err(
+            |(code, message, hint)| (code, format!("field `{}`: {message}", field.name), hint),
+        )?;
+    }
+    let written: Vec<(&str, &TypeRef, &Node)> = fields
+        .iter()
+        .filter_map(|field| {
+            entries
+                .get(&field.name)
+                .map(|value| (field.name.as_str(), &field.type_ref, value))
+        })
+        .collect();
+    let facts = LiteralFacts::of(types, &written);
+    for invariant in invariants {
+        facts.holds(invariant, literal, name_of(declared))?;
+    }
+    Ok(())
+}
+
+/// The name a refusal cites for a struct: the named type the reference reaches.
+fn name_of(declared: &TypeRef) -> &dyn fmt::Display {
+    match declared {
+        TypeRef::Optional(of) => name_of(of),
+        TypeRef::Named(name) => name,
+        other => other,
+    }
+}
+
+/// An admitted literal, flattened into the facts an invariant over it reads (beyond10x/ess#205).
+///
+/// The projection the conformance setup reader makes (`ess-conformance` `input.rs`, `project`),
+/// so a literal validation admits is one that reader admits: every scalar leaf at its dotted path,
+/// a newtype transparent, a struct's members one segment deeper, a list's size at `<path>.count`
+/// and each element at `<path>.<index>`, and a struct, list, map or `Json` value marked present.
+/// `null` and a left-out member bind nothing, so an invariant reading one is unknown.
+pub(crate) struct LiteralFacts {
+    facts: ess_primitives::facts::FactStore,
+    instants: BTreeSet<ess_primitives::facts::FactPath>,
+    durations: BTreeSet<ess_primitives::facts::FactPath>,
+}
+
+impl LiteralFacts {
+    /// The facts of each `(member, type, literal)`, each rooted at its member name.
+    pub(crate) fn of(types: &TypeRegistry, members: &[(&str, &TypeRef, &Node)]) -> Self {
+        let mut facts = Self {
+            facts: ess_primitives::facts::FactStore::new(),
+            instants: BTreeSet::new(),
+            durations: BTreeSet::new(),
+        };
+        for (member, declared, literal) in members {
+            if let Ok(path) = ess_primitives::facts::FactPath::new(member) {
+                facts.project(types, declared, literal, &path, 0);
+            }
+        }
+        facts
+    }
+
+    /// Binds one more fact, such as a created row's `state`.
+    pub(crate) fn set(&mut self, path: ess_primitives::facts::FactPath, value: FactValue) {
+        self.facts.set(path, value);
+    }
+
+    fn project(
+        &mut self,
+        types: &TypeRegistry,
+        declared: &TypeRef,
+        literal: &Node,
+        path: &ess_primitives::facts::FactPath,
+        depth: usize,
+    ) {
+        if depth > crate::types::MAX_TYPE_DEPTH || matches!(literal, Node::Null) {
+            return;
+        }
+        let layers = types.newtype_layers(declared);
+        if matches!(literal, Node::Map(_) | Node::Seq(_))
+            || matches!(layers.terminal, TypeRef::Primitive(Primitive::Json))
+        {
+            self.facts.mark_present(path.clone());
+        }
+        match &layers.terminal {
+            // Any JSON value, and no fact, as the setup reader projects one.
+            TypeRef::Primitive(Primitive::Json) | TypeRef::Map(..) | TypeRef::Optional(_) => {}
+            TypeRef::Primitive(primitive) => {
+                if let Some(value) = primitive.admits(literal) {
+                    self.facts.set(path.clone(), value);
+                    match primitive {
+                        Primitive::Timestamp => {
+                            self.instants.insert(path.clone());
+                        }
+                        Primitive::Duration => {
+                            self.durations.insert(path.clone());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            TypeRef::List(element) => {
+                if let Node::Seq(items) = literal {
+                    self.facts
+                        .set(path.child("count"), FactValue::count(items.len()));
+                    for (index, item) in items.iter().enumerate() {
+                        self.project(
+                            types,
+                            element,
+                            item,
+                            &path.child(&index.to_string()),
+                            depth + 1,
+                        );
+                    }
+                }
+            }
+            TypeRef::Named(name) => match types.get(name).map(|named| &named.body) {
+                Some(crate::types::TypeBody::Enum { .. }) => {
+                    if let Some(text) = literal.as_text() {
+                        self.facts.set(path.clone(), FactValue::text(text));
+                    }
+                }
+                Some(crate::types::TypeBody::Struct { fields, .. }) => {
+                    if let Node::Map(entries) = literal {
+                        for field in fields {
+                            if let Some(value) = entries.get(&field.name) {
+                                self.project(
+                                    types,
+                                    &field.type_ref,
+                                    value,
+                                    &path.child(&field.name),
+                                    depth + 1,
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            },
+        }
+    }
+
+    /// The invariant's truth over these facts: what a created row's check reads.
+    pub(crate) fn truth(
+        &self,
+        invariant: &crate::entity::Invariant,
+    ) -> ess_primitives::predicate::Truth {
+        invariant.predicate.evaluate(self)
+    }
+
+    /// Refused unless `invariant` is true of `literal` of the type `owner`, as the setup reader
+    /// requires: an invariant these facts leave unknown is refused too.
+    fn holds(
+        &self,
+        invariant: &crate::entity::Invariant,
+        literal: &Node,
+        owner: &dyn fmt::Display,
+    ) -> Result<(), ExampleRefusal> {
+        match self.truth(invariant) {
+            ess_primitives::predicate::Truth::True => Ok(()),
+            truth => Err((
+                ValidationCode::ConflictingDeclaration,
+                format!(
+                    "`{literal}` is not a value of `{owner}`: its invariant `{invariant}` is {} \
+                     for it, and a literal must make it true",
+                    truth.as_str()
+                ),
+                "write a literal every invariant of the type holds for",
+            )),
+        }
+    }
+}
+
+impl ess_primitives::facts::FactSource for LiteralFacts {
+    fn fact(&self, path: &ess_primitives::facts::FactPath) -> Option<FactValue> {
+        self.facts.fact(path)
+    }
+
+    fn present(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.facts.present(path)
+    }
+
+    fn orders_as_instant(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        self.instants.contains(path)
+    }
+
+    fn orders_text_by_bytes(&self, path: &ess_primitives::facts::FactPath) -> bool {
+        !self.durations.contains(path)
+    }
+}
+
 /// Every newtype layer's alphabet and invariants, held against one example read as `value`.
 fn example_layers(
     newtypes: &[&crate::types::NamedType],
@@ -4337,9 +4730,14 @@ pub struct RawOutcome {
     /// predicate over the subject's declared fields (ess/9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when_subject: Option<RawSubjectFact>,
+    /// A row of another entity, named by an identity the input carries: absent (`exists: false`),
+    /// or present and satisfying a predicate over its stored fields, composed with `when`
+    /// (ess/18, beyond10x/ess#211).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_related: Option<related_guard::RawRelatedGuard>,
     /// Equality against the existing subject's declared lifecycle state, composed with `when`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when_subject_state: Option<crate::entity::StateName>,
+    pub when_subject_state: Option<crate::entity::HeldStates>,
     /// Whether this branch's `moves:` changes the lifecycle state the subject already holds,
     /// composed with `when`.
     ///
@@ -4548,13 +4946,38 @@ fn outcome_conflict(
 fn outcome_condition(
     name: &OutcomeName,
     when: Option<Predicate>,
-    subject_state: Option<crate::entity::StateName>,
+    subject_state: Option<crate::entity::HeldStates>,
     state_changes: Option<bool>,
     external: Option<String>,
     wrong_state: bool,
 ) -> Result<OutcomeCondition, ValidationErrors> {
     let conflict =
         |key: &str, message: String, hint: &str| Err(outcome_conflict(name, key, message, hint));
+    // A listed guard (ess/18, beyond10x/ess#201) names each state once and at least one; it is
+    // then kept in name order, so the order an author listed them in is not part of the model.
+    let subject_state = match subject_state {
+        Some(crate::entity::HeldStates::Listed(states)) => {
+            let mut seen = BTreeSet::new();
+            if let Some(repeated) = states.iter().find(|state| !seen.insert(*state)) {
+                return conflict(
+                    "when_subject_state",
+                    format!("outcome `{name}` lists held state `{repeated}` more than once"),
+                    "name each state once",
+                );
+            }
+            if seen.is_empty() {
+                return conflict(
+                    "when_subject_state",
+                    format!("outcome `{name}` lists no held state, so no subject selects it"),
+                    "name at least one state, or drop the key",
+                );
+            }
+            Some(crate::entity::HeldStates::Listed(
+                seen.into_iter().cloned().collect(),
+            ))
+        }
+        other => other,
+    };
     if subject_state.is_some() && state_changes.is_some() {
         return conflict(
             "when_state_changes",
@@ -4624,6 +5047,7 @@ fn subject_authority(
     condition: &OutcomeCondition,
     subject: Option<&Subject>,
     replays: bool,
+    refusal: bool,
     held_state_key: &str,
 ) -> Result<(), ValidationErrors> {
     if condition.reads_subject_fact()
@@ -4639,8 +5063,16 @@ fn subject_authority(
              refusal beside it",
         ));
     }
+    // A refusal selected by a literal held state names no subject of its own from ess/18
+    // (beyond10x/ess#201): it reads the subject its siblings name, and whether one does is the
+    // command's question (`subject_state::validate_shape`), as it is for the predicate form. The
+    // format gate is `primitive_admission`'s. `when_state_changes:` is not relaxed: it tests the
+    // branch's own move, and a refusal takes none.
+    let subjectless_refusal =
+        refusal && subject.is_none() && matches!(condition, OutcomeCondition::SubjectState { .. });
     if (condition.reads_held_state() || matches!(condition, OutcomeCondition::SubjectField { .. }))
         && !replays
+        && !subjectless_refusal
         && !subject.is_some_and(|subject| subject.surface() == InstanceSurface::CommandInput)
     {
         let key = if condition.reads_subject_fact() {
@@ -4705,6 +5137,15 @@ impl TryFrom<RawOutcome> for Outcome {
             outcome_shapes::existing_alone(&raw)?;
         }
         let held_state_key = held_state_key(raw.when_subject_state.is_some());
+        let related = match raw.when_related.take() {
+            Some(guard) => {
+                related_guard::alone(&raw)?;
+                let read = guard.read(&raw.name)?;
+                related_guard::absent_alone(&raw, &read.1)?;
+                Some(read)
+            }
+            None => None,
+        };
         let subject_fact = raw.when_subject;
         let input_predicate = raw.when.clone();
         if subject_fact.is_some()
@@ -4766,7 +5207,15 @@ impl TryFrom<RawOutcome> for Outcome {
                 predicate: fact.predicate,
                 input: input_predicate,
             },
-            None => condition,
+            None => match related {
+                // `related_guard::alone` admitted `when:` and nothing else beside it.
+                Some((via, test)) => OutcomeCondition::Related {
+                    via,
+                    test,
+                    input: input_predicate,
+                },
+                None => condition,
+            },
         };
         // `refuses:` answers a question only a wrong-state branch is asked. On any other branch it
         // reads like a claim about the outcome and decides nothing, so it is refused where the
@@ -4804,6 +5253,7 @@ impl TryFrom<RawOutcome> for Outcome {
             &condition,
             subject.as_ref(),
             raw.replays.is_some(),
+            raw.error.is_some(),
             held_state_key,
         )?;
         // `updates:` takes no transition and `creates:` starts at the lifecycle's initial state, so
@@ -5121,6 +5571,7 @@ impl From<Outcome> for RawOutcome {
     #[allow(clippy::too_many_lines)]
     fn from(outcome: Outcome) -> Self {
         let when_subject = RawSubjectFact::written(&outcome.condition);
+        let when_related = related_guard::RawRelatedGuard::written(&outcome.condition);
         let preserves = outcome
             .subject
             .as_ref()
@@ -5138,30 +5589,30 @@ impl From<Outcome> for RawOutcome {
         let unknown_instance = outcome.condition == OutcomeCondition::UnknownInstance;
         let input_absent = outcome.condition == OutcomeCondition::InputAbsent;
         let existing_instance = outcome.condition == OutcomeCondition::ExistingInstance;
-        let (when, when_subject_state, when_state_changes, external, wrong_state) = match outcome
-            .condition
-        {
-            OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
-            OutcomeCondition::SubjectField { predicate, .. } => {
-                (predicate, None, None, None, false)
-            }
-            OutcomeCondition::SubjectPredicate { input, .. } => (input, None, None, None, false),
-            OutcomeCondition::SubjectState { state, predicate } => {
-                (predicate, Some(state), None, None, false)
-            }
-            OutcomeCondition::StateChange { changes, predicate } => {
-                (predicate, None, Some(changes), None, false)
-            }
-            OutcomeCondition::Otherwise
-            | OutcomeCondition::UnknownInstance
-            | OutcomeCondition::InputAbsent
-            | OutcomeCondition::ExistingInstance => (None, None, None, None, false),
-            OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
-            OutcomeCondition::ExternalWhen { cause, predicate } => {
-                (Some(predicate), None, None, Some(cause), false)
-            }
-            OutcomeCondition::WrongState => (None, None, None, None, true),
-        };
+        let (when, when_subject_state, when_state_changes, external, wrong_state) =
+            match outcome.condition {
+                OutcomeCondition::When(predicate) => (Some(predicate), None, None, None, false),
+                OutcomeCondition::SubjectField { predicate, .. } => {
+                    (predicate, None, None, None, false)
+                }
+                OutcomeCondition::SubjectPredicate { input, .. }
+                | OutcomeCondition::Related { input, .. } => (input, None, None, None, false),
+                OutcomeCondition::SubjectState { state, predicate } => {
+                    (predicate, Some(state), None, None, false)
+                }
+                OutcomeCondition::StateChange { changes, predicate } => {
+                    (predicate, None, Some(changes), None, false)
+                }
+                OutcomeCondition::Otherwise
+                | OutcomeCondition::UnknownInstance
+                | OutcomeCondition::InputAbsent
+                | OutcomeCondition::ExistingInstance => (None, None, None, None, false),
+                OutcomeCondition::External { cause } => (None, None, None, Some(cause), false),
+                OutcomeCondition::ExternalWhen { cause, predicate } => {
+                    (Some(predicate), None, None, Some(cause), false)
+                }
+                OutcomeCondition::WrongState => (None, None, None, None, true),
+            };
         let (creates, moves, updates, instance) = match outcome.subject {
             None => (None, None, None, None),
             Some(Subject {
@@ -5212,6 +5663,7 @@ impl From<Outcome> for RawOutcome {
             when,
             when_subject_state,
             when_subject,
+            when_related,
             when_state_changes,
             external,
             wrong_state,

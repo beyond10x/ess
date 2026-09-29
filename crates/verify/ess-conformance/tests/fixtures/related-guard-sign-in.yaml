@@ -1,0 +1,81 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.signin
+summary: A sign-in is created only for a tenant with a configuration that registers the client.
+types:
+  - {name: demo.signin.TenantId, kind: newtype, of: Uuid}
+  - {name: demo.signin.ClientId, kind: newtype, of: String}
+  - {name: demo.signin.SignInId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.signin.Configuration
+    identity: {name: tenant, type: demo.signin.TenantId}
+    fields:
+      - {name: redirect_client, type: demo.signin.ClientId}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: demo.signin.SignIn
+    identity: {name: sign_in_id, type: demo.signin.SignInId}
+    fields:
+      - {name: tenant, type: demo.signin.TenantId}
+      - {name: client, type: demo.signin.ClientId}
+    lifecycle: {initial: Initiated, states: [Initiated], terminal: [Initiated]}
+errors:
+  - {name: demo.signin.NoConfiguration, summary: The tenant has no configuration., fields: []}
+  - {name: demo.signin.NoRedirectEntry, summary: The configuration does not register the client., fields: []}
+events:
+  - name: demo.signin.TenantConfigured
+    fields:
+      - {name: tenant, type: demo.signin.TenantId}
+  - name: demo.signin.SignInInitiated
+    fields:
+      - {name: sign_in_id, type: demo.signin.SignInId}
+actors:
+  - name: demo.signin.Operator
+    may: [demo.signin.ConfigureTenant, demo.signin.InitiateSignIn]
+commands:
+  - name: demo.signin.ConfigureTenant
+    input:
+      - {name: redirect_client, type: demo.signin.ClientId}
+    outcomes:
+      - name: configured
+        creates: demo.signin.Configuration
+        instance: tenant
+        emits: [demo.signin.TenantConfigured]
+        payload:
+          demo.signin.TenantConfigured: {tenant: {generated: true}}
+        sets:
+          redirect_client: input.redirect_client
+  - name: demo.signin.InitiateSignIn
+    input:
+      - {name: tenant, type: demo.signin.TenantId}
+      - {name: client, type: demo.signin.ClientId}
+    outcomes:
+      - name: no-configuration
+        when_related: {via: input.tenant, exists: false}
+        error: demo.signin.NoConfiguration
+      - name: no-redirect-entry
+        when_related: {via: input.tenant, predicate: redirect_client != input.client}
+        error: demo.signin.NoRedirectEntry
+      - name: initiated
+        creates: demo.signin.SignIn
+        instance: sign_in_id
+        emits: [demo.signin.SignInInitiated]
+        payload:
+          demo.signin.SignInInitiated: {sign_in_id: {generated: true}}
+        sets:
+          tenant: input.tenant
+          client: input.client
+views:
+  - name: demo.signin.Configurations
+    source: demo.signin.Configuration
+    consistency: read_your_writes
+    fields:
+      - {name: tenant, type: demo.signin.TenantId}
+      - {name: redirect_client, type: demo.signin.ClientId}
+  - name: demo.signin.SignIns
+    source: demo.signin.SignIn
+    consistency: read_your_writes
+    fields:
+      - {name: sign_in_id, type: demo.signin.SignInId}
+      - {name: tenant, type: demo.signin.TenantId}
+      - {name: client, type: demo.signin.ClientId}

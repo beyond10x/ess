@@ -676,9 +676,14 @@ fn every_rust_suite_tag_is_executed_or_refused_by_name_in_typescript() {
         .nth(1)
         .and_then(|rest| rest.split("};").next())
         .expect("runtime.ts declares UNEXECUTED_STEPS");
-    // Suite/28 vocabulary, which `ts::emit` refuses before a package exists
-    // (`direct_response::refuse_generation`), so no TypeScript runtime meets it.
-    let beyond: &[&str] = &["expect_direct_response"];
+    // Suite/28 and suite/30 vocabulary, which `ts::emit` refuses before a package exists
+    // (`direct_response::refuse_generation`, `delivery_context::refuse_generation`), so no
+    // TypeScript runtime meets it.
+    let beyond: &[&str] = &[
+        "expect_direct_response",
+        "deliver_event",
+        "expect_every_invocation",
+    ];
     // Only the executors count: a label in the admission or decode switch says the tag is read,
     // not that it is run. Steps are run by `ScenarioRun.step`, expectations decided by
     // `ScenarioRun.decide`, values resolved by `resolve` and — the two observed-invocation kinds —

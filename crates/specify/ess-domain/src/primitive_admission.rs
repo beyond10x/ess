@@ -269,6 +269,35 @@ fn held_state_conditions(
             "subject-state outcome guards require specification format ess/3",
         ));
     }
+    // beyond10x/ess#201: a listed `when_subject_state:` is a sequence an older reader cannot
+    // parse, and a subjectless refusal carrying one is a document an older reader refuses.
+    if format.major() < crate::system::FormatVersion::V18.major() {
+        for outcome in &command.outcomes {
+            let crate::command::OutcomeCondition::SubjectState { state, .. } = &outcome.condition
+            else {
+                continue;
+            };
+            let what = if state.is_listed() {
+                "a list of held states in `when_subject_state`"
+            } else if crate::command::subject_state::is_subjectless_refusal(outcome) {
+                "`when_subject_state` on a refusal that names no subject"
+            } else {
+                continue;
+            };
+            errors.push(
+                ValidationError::at(
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.as_str())
+                        .key("when_subject_state"),
+                    ValidationCode::UnsupportedFormatVersion,
+                    format!("{what} requires specification format ess/18"),
+                )
+                .with_hint("declare `format: ess/18`"),
+            );
+        }
+    }
     if format.major() < 4 && crate::command::subject_state::uses_state_changes(command) {
         errors.push(ValidationError::at(
             command.site().key("outcomes"),
@@ -335,6 +364,21 @@ pub fn predicates(
                         .key("outcomes")
                         .named(outcome.name.to_string())
                         .key("when_subject"),
+                    predicate,
+                ));
+            }
+            // And the one over a related row (ess/18, `when_related:`).
+            if let crate::command::OutcomeCondition::Related {
+                test: crate::command::RelatedTest::Holds(predicate),
+                ..
+            } = &outcome.condition
+            {
+                found.push((
+                    command
+                        .site()
+                        .key("outcomes")
+                        .named(outcome.name.to_string())
+                        .key(crate::command::related_guard::KEY),
                     predicate,
                 ));
             }

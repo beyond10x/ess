@@ -1,0 +1,98 @@
+format: ess/14
+system: shop
+version: v1
+domain: shop.order
+summary: An order ships only once paid, and closes from either placed or shipped.
+types:
+  - {name: shop.order.OrderId, kind: newtype, of: Uuid}
+entities:
+  - name: shop.order.Order
+    identity: {name: order_id, type: shop.order.OrderId}
+    fields:
+      - {name: paid, type: Boolean}
+    lifecycle:
+      initial: Placed
+      states: [Placed, Shipped, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: ship, from: [Placed], to: Shipped}
+        - {name: close, from: [Placed, Shipped], to: Closed}
+actors:
+  - name: shop.order.Clerk
+    may: [shop.order.PlaceUnpaidOrder, shop.order.PayOrder, shop.order.ShipOrder, shop.order.CloseOrder]
+errors:
+  - name: shop.order.NotPaid
+    fields: []
+  - name: shop.order.Conflict
+    fields: []
+commands:
+  - name: shop.order.PlaceUnpaidOrder
+    input:
+      - {name: note, type: String}
+    outcomes:
+      - name: placed
+        creates: shop.order.Order
+        instance: order_id
+        sets: {paid: "false"}
+        emits: [shop.order.OrderPlaced]
+        payload:
+          shop.order.OrderPlaced: {order_id: {generated: true}}
+  - name: shop.order.PayOrder
+    input:
+      - {name: order_id, type: shop.order.OrderId}
+    outcomes:
+      - name: paid
+        updates: shop.order.Order
+        instance: order_id
+        sets: {paid: "true"}
+        emits: [shop.order.OrderPaid]
+        payload:
+          shop.order.OrderPaid: {order_id: input.order_id}
+  - name: shop.order.ShipOrder
+    input:
+      - {name: order_id, type: shop.order.OrderId}
+    outcomes:
+      - name: not-paid
+        when_subject:
+          predicate: paid == false
+        error: shop.order.NotPaid
+      - name: shipped
+        moves: shop.order.Order.ship
+        instance: order_id
+        emits: [shop.order.OrderMoved]
+        payload:
+          shop.order.OrderMoved: {order_id: input.order_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.Conflict
+  - name: shop.order.CloseOrder
+    input:
+      - {name: order_id, type: shop.order.OrderId}
+    outcomes:
+      - name: closed
+        moves: shop.order.Order.close
+        instance: order_id
+        emits: [shop.order.OrderMoved]
+        payload:
+          shop.order.OrderMoved: {order_id: input.order_id}
+      - name: wrong-state
+        wrong_state: true
+        error: shop.order.Conflict
+events:
+  - name: shop.order.OrderPlaced
+    fields:
+      - {name: order_id, type: shop.order.OrderId}
+  - name: shop.order.OrderPaid
+    fields:
+      - {name: order_id, type: shop.order.OrderId}
+  - name: shop.order.OrderMoved
+    fields:
+      - {name: order_id, type: shop.order.OrderId}
+views:
+  - name: shop.order.Orders
+    source: shop.order.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: shop.order.OrderId}
+      - {name: state, type: shop.order.Order.State}
+      - {name: paid, type: Boolean}

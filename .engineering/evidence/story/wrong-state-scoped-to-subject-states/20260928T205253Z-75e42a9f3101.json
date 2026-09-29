@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T20:52:53Z",
+  "actor": "human:timo",
+  "artifact": "story:wrong-state-scoped-to-subject-states",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "state_scoped_refusals 11, adversary_state_scoped_pass1 5 + pass2 7 (was 4 and 3 red), ess-domain 1013, ess-entity-runtime 79, ess-conformance 1511 passed on 535ecd0c16; merged tree: schema current, docs 59 formats, lanes green",
+    "reference": "~/.cache/ess-wave-n2/statescoped/gate3/"
+  }
+}

@@ -757,6 +757,13 @@ impl<T: ConformanceTarget> ConformanceTarget for Faulty<T> {
         Ok(())
     }
 
+    fn deliver_event(
+        &self,
+        request: crate::target::EventDeliveryRequest,
+    ) -> Result<(), TargetError> {
+        self.inner.deliver_event(request)
+    }
+
     fn observe_invocations(
         &self,
         request: InvocationObservationRequest,

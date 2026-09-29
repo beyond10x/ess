@@ -4,7 +4,7 @@
 //! audit runs every suite in process; an adopter's implementation runs in its own language, so the
 //! audit is split in two. [`mutate::emit`] writes the baseline suite and every mutant's suite and
 //! runs nothing. The project runs its own runner over each and writes the conformance report it
-//! already writes. [`mutate::collect`] scores those reports into the same `ess-mutation-report/1`.
+//! already writes. [`mutate::collect`] scores those reports into the same `ess-mutation-report/2`.
 //!
 //! The deciding check is the first one: the reference target run over every emitted suite, its
 //! reports collected, comes to exactly the report the built-in audit writes for the same tree.

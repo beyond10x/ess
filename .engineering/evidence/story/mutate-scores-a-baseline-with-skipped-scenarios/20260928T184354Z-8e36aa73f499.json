@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-28T18:43:54Z",
+  "actor": "human:timo",
+  "artifact": "story:mutate-scores-a-baseline-with-skipped-scenarios",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-a-mutate-pass-1",
+    "review": "review-result:adversary-a-mutate-pass-1",
+    "outcome": "fixed"
+  }
+}

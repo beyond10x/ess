@@ -164,6 +164,9 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 }
                 OutcomeCondition::SubjectPredicate { predicate, .. } => {
                     errors.extend(check(command, entity, types, predicate, &site));
+                    if reads_state(predicate) && admits_state(types) {
+                        errors.extend(state_moves(outcome, entity, predicate, &site));
+                    }
                 }
                 _ => {}
             }
@@ -205,6 +208,68 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
     errors
 }
 
+/// A branch that reads the held state in its `when_subject` predicate and takes a move must be
+/// able to take it in every state the predicate may select it in (ess/18, beyond10x/ess#204).
+///
+/// The author named the state, so a state the predicate leaves open that the move does not start
+/// from is a contradiction in the branch itself, reported where it is written — the same rule
+/// `when_subject_state:` is held to. Each declared state is bound as `state` alone; where the
+/// predicate is then not decided false, the branch can be selected there.
+fn state_moves(
+    outcome: &Outcome,
+    entity: &EntitySpec,
+    predicate: &ess_primitives::predicate::Predicate,
+    site: &ess_primitives::error::ConstructRef,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let Some(Effect::Moves { transition }) =
+        outcome.subject.as_ref().map(|subject| &subject.effect)
+    else {
+        return errors;
+    };
+    let Some(declared) = entity
+        .states
+        .transitions
+        .iter()
+        .find(|declared| declared.name == *transition)
+    else {
+        return errors;
+    };
+    let Ok(path) = ess_primitives::facts::FactPath::new(EntitySpec::STATE) else {
+        return errors;
+    };
+    for state in entity
+        .states
+        .states
+        .iter()
+        .filter(|state| !declared.from.contains(*state))
+    {
+        let mut facts = ess_primitives::facts::FactStore::new();
+        facts.set_if_absent(
+            path.clone(),
+            ess_primitives::facts::FactValue::text(state.as_str()),
+        );
+        if predicate.evaluate(&facts) != ess_primitives::predicate::Truth::False {
+            errors.push(
+                ValidationError::at(
+                    site.clone(),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{predicate}` may select `{}` while the subject is `{state}`, and move \
+                         `{transition}` does not start there",
+                        outcome.name
+                    ),
+                )
+                .with_hint(format!(
+                    "narrow the predicate to the states `{transition}` starts from: {}",
+                    super::join(declared.from.iter())
+                )),
+            );
+        }
+    }
+    errors
+}
+
 /// Whether `field` is a declared enum field of `entity` and `equals` one of its variants.
 fn declares_variant(entity: &EntitySpec, types: &TypeRegistry, field: &str, equals: &str) -> bool {
     entity
@@ -238,6 +303,45 @@ pub fn reads_input(entity: &EntitySpec, predicate: &ess_primitives::predicate::P
             .any(|path| path.namespace() == INPUT_NAMESPACE && path.segments().len() > 1)
 }
 
+/// Whether a stored-field predicate reads the held lifecycle state as `state` (ess/18,
+/// beyond10x/ess#204).
+///
+/// The bare path `state`, the pseudo-field entity invariants already read. An entity cannot
+/// declare a stored field of that name — it would shadow the lifecycle in every invariant — so the
+/// path is never a stored field.
+pub fn reads_state(predicate: &ess_primitives::predicate::Predicate) -> bool {
+    predicate
+        .fact_paths()
+        .iter()
+        .any(|path| path.namespace() == EntitySpec::STATE && path.segments().len() == 1)
+}
+
+/// The fields a `when_subject` predicate reads, in declaration order: the entity's stored fields,
+/// then, where the format admits it (ess/18), the held state as `state`, typed by the lifecycle's
+/// own synthesised enum so the partition treats it as the closed set it is.
+fn readable_fields(entity: &EntitySpec, admits_state: bool) -> Vec<crate::types::Field> {
+    let mut fields = entity.fields.clone();
+    if admits_state
+        && !entity
+            .fields
+            .iter()
+            .any(|field| field.name == EntitySpec::STATE)
+    {
+        fields.push(crate::types::Field::new(
+            EntitySpec::STATE,
+            TypeRef::Named(entity.name.child(EntitySpec::STATE_TYPE)),
+        ));
+    }
+    fields
+}
+
+/// Whether this build reads `state` in a `when_subject` predicate at the document's format.
+fn admits_state(types: &TypeRegistry) -> bool {
+    types
+        .format()
+        .is_none_or(|format| format.major() >= crate::system::FormatVersion::V18.major())
+}
+
 fn declares_input_field(entity: &EntitySpec) -> bool {
     entity
         .fields
@@ -248,8 +352,10 @@ fn declares_input_field(entity: &EntitySpec) -> bool {
 /// The expression checker, over the entity's declared fields and — from `ess/15` — the command's
 /// input under `input.` (beyond10x/ess#157).
 ///
-/// The environment `entity.rs` builds for invariants, minus the `state` pseudo-field: the lifecycle
-/// stays with `when_subject_state:` and `when_state_changes:`. The checker's own diagnostics are
+/// The environment `entity.rs` builds for invariants, minus the identity, and — below `ess/18` —
+/// minus the `state` pseudo-field, which from `ess/18` reads the held lifecycle state
+/// (beyond10x/ess#204). Below it `state` is refused with the format it needs, as an `input.`
+/// operand is below `ess/15`. The checker's own diagnostics are
 /// kept — `unobservable_fact` for a root the entity does not declare, `type_mismatch` and
 /// `undeclared_reference` for a literal or an input field the command does not declare — and sited
 /// at the key the author wrote. Below `ess/15` an `input.` operand is refused with the format it
@@ -283,7 +389,20 @@ fn check(
         );
         return errors;
     }
-    let mut environment = DomainEnvironment::new(types, &entity.fields);
+    if reads_state(predicate) && !admits_state(types) {
+        errors.push(
+            ValidationError::at(
+                site.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "reading the held lifecycle state as `state` in a `when_subject` predicate \
+                 requires specification format ess/18",
+            )
+            .with_hint("declare `format: ess/18`, or guard the state with `when_subject_state:`"),
+        );
+        return errors;
+    }
+    let readable = readable_fields(entity, admits_state(types));
+    let mut environment = DomainEnvironment::new(types, &readable);
     if admits_input && !declares_input_field(entity) {
         environment = environment.with_input(&command.input);
     }
@@ -357,8 +476,9 @@ fn validate_partition(
         })
         .collect();
     let default = command.default_outcome();
+    let readable = readable_fields(entity, admits_state(types));
     let Some(cases) = finite::analyze_with_fields(
-        &DomainEnvironment::new(types, &entity.fields),
+        &DomainEnvironment::new(types, &readable),
         &DomainEnvironment::new(types, &command.input),
         &guards,
     ) else {

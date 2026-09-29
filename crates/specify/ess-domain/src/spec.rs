@@ -313,6 +313,7 @@ impl Specification {
         let mut errors = crate::primitive_admission::specification(self);
         errors.extend(crate::wire::validate(self));
         errors.extend(crate::binding::periodic::validate_specification(self));
+        errors.extend(crate::binding::context::validate_specification(self));
         errors.extend(crate::binding::retry::validate_specification(self));
 
         // Entities contribute the enum their lifecycle forms, so a view projecting `state` and a
@@ -336,6 +337,7 @@ impl Specification {
         }
         errors.extend(crate::command::subject_state::validate(self, &registry));
         errors.extend(crate::command::subject_fact::validate(self, &registry));
+        errors.extend(crate::command::related_guard::validate(self, &registry));
         for event in self.events.values() {
             if let Err(event_errors) = event.validate(&registry) {
                 errors.extend(event_errors);

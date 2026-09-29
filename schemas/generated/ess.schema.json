@@ -634,6 +634,22 @@
       "type": "string",
       "pattern": "^ess/[1-9][0-9]*$"
     },
+    "HeldStates": {
+      "description": "One held lifecycle state, or a nonempty list of them (ess/18).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/StateName"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StateName"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      ]
+    },
     "HostInputContract": {
       "description": "A binding-local required interface; a declaration is not proof of authentication.",
       "type": "object",
@@ -2552,6 +2568,17 @@
             }
           ]
         },
+        "when_related": {
+          "description": "A row of another entity, named by an identity the input carries: absent (`exists: false`), or present and satisfying a predicate over its stored fields, composed with `when` (ess/18, beyond10x/ess#211).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RawRelatedGuard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "when_state_changes": {
           "description": "Whether this branch's `moves:` changes the lifecycle state the subject already holds, composed with `when`.\n\n`true` is the **first** report of the state the move arrives at; `false` is a restatement of the state already held. It names no state — the transition declares its arrival state and its `from` set, and this picks a side of that set. Admitted only beside `moves:`, for the reason the [module documentation](self) gives: nothing else declares an arrival state to compare against.\n\nAn `Option<bool>` and not a `bool`, because `false` is a condition rather than an absence — the distinction [`refuses`](Self::refuses) draws for the same reason. `wrong_state: false` is the same document as leaving that key out; `when_state_changes: false` is not.",
           "type": [
@@ -2574,7 +2601,7 @@
           "description": "Equality against the existing subject's declared lifecycle state, composed with `when`.",
           "anyOf": [
             {
-              "$ref": "#/definitions/StateName"
+              "$ref": "#/definitions/HeldStates"
             },
             {
               "type": "null"
@@ -2711,6 +2738,38 @@
         },
         "via": {
           "description": "A field of the subject, or `input.<field>`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawRelatedGuard": {
+      "description": "`when_related:` as a document writes it.",
+      "type": "object",
+      "required": [
+        "via"
+      ],
+      "properties": {
+        "exists": {
+          "description": "`false`: the branch is taken when no row carries that identity. Written instead of `predicate`, never beside it.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "predicate": {
+          "description": "What must hold of that row's stored fields — and of the input, read under `input.` — for the branch to be taken. Written instead of `exists`, never beside it.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Predicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "via": {
+          "description": "The input field that carries the other entity's identity, written `input.<field>`.",
           "type": "string"
         }
       },
@@ -2878,6 +2937,29 @@
       "description": "What a binding reacts to.",
       "type": "object",
       "properties": {
+        "context_authority": {
+          "description": "The binding-local name of the external channel whose authority binds the event's delivery context (ess/18). Required beside `context_fields`.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BindingName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context_fields": {
+          "description": "The typed delivery context each occurrence of the event arrives with, read in `mapping:` as `context.<field>` (ess/18). Only for an event an external channel delivers.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        },
         "event": {
           "description": "The event.",
           "anyOf": [

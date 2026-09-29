@@ -1,0 +1,80 @@
+format: ess/18
+system: demo
+version: v1
+domain: demo.ship
+summary: An order shipped once, accepted again while shipped, and refused once it is gone.
+types:
+  - {name: demo.ship.OrderId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.ship.Order
+    identity: {name: order_id, type: demo.ship.OrderId}
+    fields: []
+    lifecycle:
+      initial: Placed
+      states: [Placed, Shipped, Delivered, Cancelled]
+      terminal: [Delivered, Cancelled]
+      transitions:
+        - {name: ship, from: [Placed], to: Shipped}
+        - {name: deliver, from: [Shipped], to: Delivered}
+        - {name: cancel, from: [Placed, Shipped], to: Cancelled}
+actors:
+  - name: demo.ship.Clerk
+    may: [demo.ship.PlaceOrder, demo.ship.ShipOrder, demo.ship.DeliverOrder, demo.ship.CancelOrder]
+errors:
+  - {name: demo.ship.Gone, summary: The order is delivered or cancelled., fields: []}
+events:
+  - name: demo.ship.OrderPlaced
+    fields: [{name: order_id, type: demo.ship.OrderId}]
+  - name: demo.ship.OrderShipped
+    fields: [{name: order_id, type: demo.ship.OrderId}]
+  - name: demo.ship.OrderDelivered
+    fields: [{name: order_id, type: demo.ship.OrderId}]
+  - name: demo.ship.OrderCancelled
+    fields: [{name: order_id, type: demo.ship.OrderId}]
+commands:
+  - name: demo.ship.PlaceOrder
+    input: []
+    outcomes:
+      - name: placed
+        creates: demo.ship.Order
+        instance: order_id
+        emits: [demo.ship.OrderPlaced]
+        payload: {demo.ship.OrderPlaced: {order_id: {generated: true}}}
+  - name: demo.ship.ShipOrder
+    input: [{name: order_id, type: demo.ship.OrderId}]
+    outcomes:
+      - name: shipped
+        moves: demo.ship.Order.ship
+        instance: order_id
+        emits: [demo.ship.OrderShipped]
+        payload: {demo.ship.OrderShipped: {order_id: input.order_id}}
+      - name: already-shipped
+        when_subject_state: Shipped
+        preserves: demo.ship.Order
+        instance: order_id
+      - name: gone
+        when_subject_state: [Delivered, Cancelled]
+        error: demo.ship.Gone
+  - name: demo.ship.DeliverOrder
+    input: [{name: order_id, type: demo.ship.OrderId}]
+    outcomes:
+      - name: delivered
+        moves: demo.ship.Order.deliver
+        instance: order_id
+        emits: [demo.ship.OrderDelivered]
+        payload: {demo.ship.OrderDelivered: {order_id: input.order_id}}
+  - name: demo.ship.CancelOrder
+    input: [{name: order_id, type: demo.ship.OrderId}]
+    outcomes:
+      - name: cancelled
+        moves: demo.ship.Order.cancel
+        instance: order_id
+        emits: [demo.ship.OrderCancelled]
+        payload: {demo.ship.OrderCancelled: {order_id: input.order_id}}
+views:
+  - name: demo.ship.Orders
+    source: demo.ship.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: demo.ship.OrderId}
+      - {name: state, type: demo.ship.Order.State}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-28T19:15:20Z",
+  "actor": "human:timo",
+  "artifact": "story:map-inputs-get-a-non-empty-witness",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary_map_witness_pass1 14 passed (was 11/3 red); pass2 4 passed, 3 ignored under story:collections-reach-their-upper-count-boundary; ess-conformance 1431 passed at correction 1; clippy and fmt clean on e54a2a16b5",
+    "reference": "~/.cache/ess-wave-n2/mapwitness/r1-full.log"
+  }
+}

@@ -2068,3 +2068,133 @@ fn invariants_at_two_layers_of_a_newtype_chain_lower_to_distinct_rule_names() {
         "{child}"
     );
 }
+
+/// Billing at `ess/18` with these edits to `domains/invoice.yaml`.
+fn compile_billing_ess18(invoice: &[(&str, &str)]) -> EssIr {
+    let mut changes = vec![
+        ("system.yaml", "format: ess/1\n", "format: ess/18\n"),
+        (
+            "domains/email.yaml",
+            "            recipient: input.recipient\n",
+            "            recipient: input.recipient\n            message_id: {generated: true}\n",
+        ),
+        (
+            "domains/invoice.yaml",
+            "          billing.invoice.InvoiceCreated:\n",
+            "          billing.invoice.InvoiceCreated:\n            invoice_id: {generated: true}\n",
+        ),
+    ];
+    changes.extend(
+        invoice
+            .iter()
+            .map(|(before, after)| ("domains/invoice.yaml", *before, *after)),
+    );
+    compile_changes(&example("billing"), &changes)
+}
+
+/// Which branch the lowered runtime takes for `operation` on an invoice resting in `state`.
+fn taken_in(
+    lowered: &ess_entity_runtime::LoweredService,
+    operation: &str,
+    state: &str,
+    channel: &str,
+) -> String {
+    let registry = registry(lowered);
+    let runtime = Runtime::new(&registry);
+    let binding = &lowered.bindings().commands()[&name(operation)];
+    let arguments = json!({
+        "input": {"invoice_id": "b404a1e8-9360-4af5-a0ac-8a483adfa225"},
+        "bound": bound_for(binding, |_| None)
+    });
+    let row = invoice_instance(state, channel);
+    match runtime.decide_before_load(
+        &row.entity,
+        row.version,
+        row.id.clone(),
+        operation,
+        arguments,
+    ) {
+        Ok(PreloadDecision::Load(prepared)) => match prepared.select_with(&row) {
+            Ok(LoadedDecision::NeedsFulfillment(prepared)) => prepared.outcome().to_owned(),
+            Ok(LoadedDecision::Complete(evaluation)) => match evaluation.into_decision() {
+                Ok(_) => "accepted without fulfillment".to_owned(),
+                Err(refusal) => format!("refused: {refusal:?}"),
+            },
+            Err(error) => format!("error: {error:?}"),
+        },
+        Ok(_) => "decided before load".to_owned(),
+        Err(error) => format!("error before load: {error:?}"),
+    }
+}
+
+/// beyond10x/ess#201: a refusal naming no subject, selected by one held state or by a list of
+/// them, lowers to a held-state selector the runtime decides — one state as `in_state`, as before,
+/// a list as membership of `$from_state`.
+#[test]
+fn a_subjectless_listed_held_state_refusal_lowers_and_decides_per_state() {
+    let ir = compile_billing_ess18(&[(
+        "      - name: wrong-state\n        wrong_state: true\n        error: billing.invoice.InvoiceStateConflict\n        summary: The invoice is not in Draft, so it was not issued.\n",
+        "      - name: issued-already\n        when_subject_state: Issued\n        error: billing.invoice.InvoiceStateConflict\n        summary: The invoice is already issued.\n      - name: settled\n        when_subject_state: [Paid, Cancelled]\n        error: billing.invoice.InvoiceStateConflict\n        summary: The invoice is paid or cancelled.\n",
+    )]);
+    let lowered = lower_billing_changes(&ir).expect("held-state refusals lower");
+    let invoice = &lowered.definitions()[&name("billing.invoice.Invoice")];
+    let issue = &invoice.operations["billing.invoice.IssueInvoice"];
+    let outcome = |name: &str| {
+        issue
+            .outcomes
+            .iter()
+            .find(|candidate| candidate.name == name)
+            .expect("outcome is lowered")
+    };
+    assert_eq!(
+        outcome("issued-already").in_state.as_deref(),
+        Some("Issued")
+    );
+    assert_eq!(outcome("settled").in_state, None);
+    assert_eq!(
+        serde_json::to_value(&outcome("settled").when).expect("condition serializes"),
+        json!({"in": ["$from_state", ["Cancelled", "Paid"]]})
+    );
+    assert_eq!(
+        taken_in(&lowered, "billing.invoice.IssueInvoice", "Draft", "Email"),
+        "issued"
+    );
+    for (state, branch) in [
+        ("Issued", "issued-already"),
+        ("Paid", "settled"),
+        ("Cancelled", "settled"),
+    ] {
+        let taken = taken_in(&lowered, "billing.invoice.IssueInvoice", state, "Email");
+        assert!(
+            taken.starts_with("refused") && taken.contains(&format!("\"{branch}\"")),
+            "{state}: {taken}"
+        );
+    }
+}
+
+/// beyond10x/ess#204: `state` in a `when_subject` predicate lowers to the held state the selector
+/// may read, `$from_state` — `$state` is the destination and is refused in an outcome selector.
+#[test]
+fn state_in_a_stored_field_predicate_lowers_to_the_held_state() {
+    let refusal = "      - name: invoice_id\n        type: billing.invoice.InvoiceId\n\n    outcomes:\n      - name: posted\n        when_subject:\n          predicate:\n            all:\n              - state == Issued\n              - channel == Post\n        error: billing.invoice.InvoiceStateConflict\n      - name: cancelled\n";
+    let ir = compile_billing_ess18(&[(KEPT_INPUT, refusal)]);
+    let lowered = lower_billing_changes(&ir).expect("a state-reading refusal lowers");
+    let invoice = &lowered.definitions()[&name("billing.invoice.Invoice")];
+    let posted = &invoice.operations["billing.invoice.CancelInvoice"].outcomes[0];
+    assert_eq!(posted.name, "posted");
+    let when = serde_json::to_value(&posted.when)
+        .expect("condition serializes")
+        .to_string();
+    assert!(
+        when.contains("\"$from_state\"") && !when.contains("\"$state\""),
+        "{when}"
+    );
+    for (state, channel, expected) in [
+        ("Issued", "Post", "refused"),
+        ("Issued", "Email", "cancelled"),
+        ("Draft", "Post", "cancelled"),
+    ] {
+        let taken = taken_in(&lowered, "billing.invoice.CancelInvoice", state, channel);
+        assert!(taken.starts_with(expected), "{state}/{channel}: {taken}");
+    }
+}

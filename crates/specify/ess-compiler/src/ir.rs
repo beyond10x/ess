@@ -265,6 +265,18 @@ impl ResolvedTypeRef {
             other => other,
         }
     }
+
+    /// This reference as a document writes it, with every handle read back to its name.
+    pub fn written(&self) -> ess_domain::types::TypeRef {
+        use ess_domain::types::TypeRef;
+        match self {
+            Self::Primitive { name } => TypeRef::Primitive(*name),
+            Self::Declared { name } => TypeRef::Named(name.name().clone()),
+            Self::Optional { of } => TypeRef::Optional(Box::new(of.written())),
+            Self::List { of } => TypeRef::List(Box::new(of.written())),
+            Self::Map { key, value } => TypeRef::Map(*key, Box::new(value.written())),
+        }
+    }
 }
 
 impl fmt::Display for ResolvedTypeRef {
@@ -591,15 +603,38 @@ pub enum ResolvedCondition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<Predicate>,
     },
+    /// A row of another entity, named by an identity the input carries, is absent — or present and
+    /// satisfying a predicate over its stored fields — and the optional input guard holds
+    /// (`when_related:`, ess/18, beyond10x/ess#211).
+    ///
+    /// A missing row makes the predicate `Unknown`, so it selects only the
+    /// [`Absent`](ResolvedRelatedTest::Absent) branch: never a predicate branch and never the
+    /// default.
+    Related {
+        /// The input field carrying the other entity's identity.
+        via: ResolvedRelatedVia,
+        /// The entity whose identity that field carries.
+        entity: EntityHandle,
+        /// What the branch requires of the row.
+        test: ResolvedRelatedTest,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
+    },
     /// Taken when this predicate over the command's input holds.
     When {
         /// The predicate.
         predicate: Predicate,
     },
-    /// The existing subject must have this held state and satisfy the optional input guard.
+    /// The existing subject must hold one of these states and satisfy the optional input guard.
+    ///
+    /// One state is written as the state itself, so every model before `ess/18` keeps its IR
+    /// bytes; a list (ess/18, beyond10x/ess#201) is written as a sequence in name order. A refusal
+    /// may carry it without a subject of its own and reads the one its siblings name — see
+    /// [`ResolvedCommand::selection_subject`].
     SubjectState {
-        /// The declared lifecycle state immediately before command selection.
-        state: StateName,
+        /// The declared lifecycle states immediately before command selection.
+        state: ess_domain::entity::HeldStates,
         /// The additional ordinary input predicate, when declared.
         predicate: Option<Predicate>,
     },
@@ -1024,6 +1059,39 @@ pub enum ResolvedPayloadValue {
     ChangedCount,
 }
 
+/// What a [`ResolvedCondition::Related`] branch requires of the row the input names (ess/18).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolvedRelatedTest {
+    /// `exists: false`: no row carries the identity.
+    Absent,
+    /// The row exists and this predicate over its stored fields — and `input.` — holds.
+    Holds {
+        /// The predicate.
+        predicate: Predicate,
+    },
+}
+
+/// The sentence a published contract opens a [`ResolvedCondition::Related`] branch with, without
+/// its input guard or final stop: one phrasing, shared by every projection that prints it.
+pub fn related_sentence(
+    via: &ResolvedRelatedVia,
+    entity: &EntityHandle,
+    test: &ResolvedRelatedTest,
+) -> String {
+    match test {
+        ResolvedRelatedTest::Absent => format!(
+            "Taken when no `{}` carries the identity `{via}` names",
+            entity.name()
+        ),
+        ResolvedRelatedTest::Holds { predicate } => format!(
+            "Taken when the `{}` that `{via}` names exists and its stored fields satisfy \
+             `{predicate}`",
+            entity.name()
+        ),
+    }
+}
+
 /// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "from", rename_all = "snake_case")]
@@ -1267,11 +1335,13 @@ impl ResolvedCommand {
             })
             .or_else(|| {
                 // A refusal guarded by the subject's stored fields names no subject of its own and
-                // reads the existing one its siblings name (ess/9).
-                matches!(
+                // reads the existing one its siblings name (ess/9); so does a refusal guarded by
+                // a literal held state (ess/18, beyond10x/ess#201).
+                (matches!(
                     outcome.condition,
                     ResolvedCondition::SubjectPredicate { .. }
-                )
+                ) || (matches!(outcome.condition, ResolvedCondition::SubjectState { .. })
+                    && outcome.error.is_some()))
                 .then(|| {
                     self.outcomes
                         .iter()
@@ -1610,6 +1680,15 @@ impl ResolvedActor {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedMappingValue {
+    /// A typed field of the delivery context the triggering event arrived with (ess/18,
+    /// beyond10x/ess#195): declared in [`ResolvedBinding::context`], supplied by the external
+    /// channel with each occurrence, never read from the payload.
+    DeliveryContext {
+        /// Declared context field.
+        field: String,
+        /// Resolved source type.
+        type_ref: ResolvedTypeRef,
+    },
     /// A typed lifetime-constant field from the authenticated host.
     HostContext {
         /// Declared host field.
@@ -1694,6 +1773,23 @@ pub struct ResolvedPeriodic {
     pub read: Vec<ResolvedField>,
 }
 
+/// The typed delivery context an event from an external channel arrives with (ess/18,
+/// beyond10x/ess#195), its fields resolved against this model.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedDeliveryContext {
+    /// The binding-local name of the external channel whose authority binds the context.
+    pub authority: BindingName,
+    /// The declared context fields, in declaration order, each type resolved.
+    pub fields: Vec<ResolvedField>,
+}
+
+impl ResolvedDeliveryContext {
+    /// The declared context field with this name.
+    pub fn field(&self, name: &str) -> Option<&ResolvedField> {
+        self.fields.iter().find(|field| field.name == name)
+    }
+}
+
 /// The real cause; serialization retains the old event member exactly.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1750,6 +1846,12 @@ pub struct ResolvedBinding {
     /// The resolved cause, preserving legacy event representation.
     #[serde(flatten)]
     pub cause: ResolvedBindingCause,
+    /// The delivery context an event cause arrives with, where the binding declares one (ess/18).
+    ///
+    /// Beside the cause rather than inside it, so that the event member keeps its place and a
+    /// binding without a context keeps its bytes. `Some` only for an event cause.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<ResolvedDeliveryContext>,
     /// The command it invokes.
     pub command: CommandHandle,
     /// One entry per mapped command input, in the command's declaration order.

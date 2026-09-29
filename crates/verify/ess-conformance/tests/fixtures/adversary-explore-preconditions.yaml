@@ -1,0 +1,62 @@
+format: ess/15
+system: explorepre
+version: v1
+preconditions:
+  - command: explorepre.desk.OpenSession
+    input:
+      user_id: 00000000-0000-4000-8000-000000000152
+      opened_at: "2024-05-01T00:00:00Z"
+      accounts:
+        - {name: First, account_id: a1, note: null, limits: {"｡": 9007199254740993, "😀": 2, "z": -1}}
+        - {account_id: "b2", name: "Ünïcode", limits: {}}
+domain: explorepre.desk
+types:
+  - name: explorepre.desk.Account
+    kind: struct
+    fields:
+      - {name: account_id, type: String}
+      - {name: name, type: String}
+      - {name: note, type: 'Optional<String>'}
+      - {name: limits, type: 'Optional<Map<String, Integer>>'}
+errors:
+  - name: explorepre.desk.TooEarly
+    summary: The session opens before the service started.
+    fields: []
+entities:
+  - name: explorepre.desk.User
+    identity: {name: user_id, type: Uuid}
+    fields:
+      - {name: accounts, type: 'List<explorepre.desk.Account>'}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+events:
+  - {name: explorepre.desk.SessionOpened, fields: [{name: user_id, type: Uuid}]}
+  - {name: explorepre.desk.Cleared}
+actors:
+  - {name: explorepre.desk.Agent, may: [explorepre.desk.OpenSession, explorepre.desk.ClearWrapUp]}
+commands:
+  - name: explorepre.desk.OpenSession
+    input:
+      - {name: user_id, type: Uuid}
+      - {name: opened_at, type: Timestamp}
+      - {name: accounts, type: 'List<explorepre.desk.Account>'}
+    outcomes:
+      - name: too-early
+        when: user_id == "00000000-0000-4000-8000-000000000999"
+        error: explorepre.desk.TooEarly
+      - name: opened
+        creates: explorepre.desk.User
+        instance: user_id
+        sets: {accounts: input.accounts}
+        emits: [explorepre.desk.SessionOpened]
+        payload: {explorepre.desk.SessionOpened: {user_id: input.user_id}}
+  - name: explorepre.desk.ClearWrapUp
+    outcomes:
+      - {name: cleared, emits: [explorepre.desk.Cleared]}
+views:
+  - name: explorepre.desk.Users
+    source: explorepre.desk.User
+    consistency: read_your_writes
+    fields:
+      - {name: user_id, type: Uuid}
+      - {name: accounts, type: 'List<explorepre.desk.Account>'}
+      - {name: state, type: explorepre.desk.User.State}
