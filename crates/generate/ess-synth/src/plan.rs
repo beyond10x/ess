@@ -982,6 +982,32 @@ fn delivery_disposition(ir: &EssIr, binding: &ResolvedBinding) -> SynthesisDispo
     if let Some(refusal) = periodic_host_refusal(binding) {
         return refusal;
     }
+    // An event from an external channel arrives on no in-process pump: nothing in the model
+    // publishes it, and its context is bound by the channel (ess/18, beyond10x/ess#195).
+    if let Some(context) = &binding.context {
+        let fields: Vec<String> = context
+            .fields
+            .iter()
+            .map(|field| format!("`{}: {}`", field.name, field.type_ref))
+            .collect();
+        return SynthesisDisposition::Obligation(ImplementationObligation {
+            reason: ObligationReason::External {
+                cause: format!(
+                    "the external channel `{}` delivers `{}`",
+                    context.authority, binding.cause
+                ),
+            },
+            contract: format!(
+                "deliver each occurrence of `{}` arriving on `{}` to `{}` with its delivery \
+                 context ({}) bound from that channel and validated against the declared types; \
+                 a redelivery carries the context of the occurrence it repeats",
+                binding.cause,
+                context.authority,
+                binding.name,
+                fields.join(", ")
+            ),
+        });
+    }
     let acceptors = accepting_components(ir, binding);
     if acceptors.len() == 1 {
         return SynthesisDisposition::Generated;
@@ -1132,7 +1158,9 @@ pub(crate) fn determined_prepared_input<'a>(
             .then_some(DeterminedInput::Omitted);
     };
     match &mapping.value {
-        ResolvedMappingValue::HostContext { .. } | ResolvedMappingValue::HostRead { .. } => None,
+        ResolvedMappingValue::DeliveryContext { .. }
+        | ResolvedMappingValue::HostContext { .. }
+        | ResolvedMappingValue::HostRead { .. } => None,
         ResolvedMappingValue::Selection {
             selector,
             projection,
@@ -1255,6 +1283,11 @@ fn undetermined_mappings(ir: &EssIr, binding: &ResolvedBinding) -> Vec<String> {
             continue;
         };
         undetermined.push(match &mapping.value {
+            ResolvedMappingValue::DeliveryContext { field, .. } => format!(
+                "`{}` requires delivery context field `{field}`, which the external channel \
+                 supplies with each occurrence",
+                mapping.target
+            ),
             ResolvedMappingValue::HostContext { field, .. }
             | ResolvedMappingValue::HostRead { field, .. } => {
                 format!("`{}` requires host field `{field}`", mapping.target)

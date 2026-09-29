@@ -2894,6 +2894,29 @@
       "description": "What a binding reacts to.",
       "type": "object",
       "properties": {
+        "context_authority": {
+          "description": "The binding-local name of the external channel whose authority binds the event's delivery context (ess/18). Required beside `context_fields`.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BindingName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context_fields": {
+          "description": "The typed delivery context each occurrence of the event arrives with, read in `mapping:` as `context.<field>` (ess/18). Only for an event an external channel delivers.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Field"
+          }
+        },
         "event": {
           "description": "The event.",
           "anyOf": [

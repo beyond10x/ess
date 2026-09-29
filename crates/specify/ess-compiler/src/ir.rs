@@ -265,6 +265,18 @@ impl ResolvedTypeRef {
             other => other,
         }
     }
+
+    /// This reference as a document writes it, with every handle read back to its name.
+    pub fn written(&self) -> ess_domain::types::TypeRef {
+        use ess_domain::types::TypeRef;
+        match self {
+            Self::Primitive { name } => TypeRef::Primitive(*name),
+            Self::Declared { name } => TypeRef::Named(name.name().clone()),
+            Self::Optional { of } => TypeRef::Optional(Box::new(of.written())),
+            Self::List { of } => TypeRef::List(Box::new(of.written())),
+            Self::Map { key, value } => TypeRef::Map(*key, Box::new(value.written())),
+        }
+    }
 }
 
 impl fmt::Display for ResolvedTypeRef {
@@ -1617,6 +1629,15 @@ impl ResolvedActor {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedMappingValue {
+    /// A typed field of the delivery context the triggering event arrived with (ess/18,
+    /// beyond10x/ess#195): declared in [`ResolvedBinding::context`], supplied by the external
+    /// channel with each occurrence, never read from the payload.
+    DeliveryContext {
+        /// Declared context field.
+        field: String,
+        /// Resolved source type.
+        type_ref: ResolvedTypeRef,
+    },
     /// A typed lifetime-constant field from the authenticated host.
     HostContext {
         /// Declared host field.
@@ -1701,6 +1722,23 @@ pub struct ResolvedPeriodic {
     pub read: Vec<ResolvedField>,
 }
 
+/// The typed delivery context an event from an external channel arrives with (ess/18,
+/// beyond10x/ess#195), its fields resolved against this model.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ResolvedDeliveryContext {
+    /// The binding-local name of the external channel whose authority binds the context.
+    pub authority: BindingName,
+    /// The declared context fields, in declaration order, each type resolved.
+    pub fields: Vec<ResolvedField>,
+}
+
+impl ResolvedDeliveryContext {
+    /// The declared context field with this name.
+    pub fn field(&self, name: &str) -> Option<&ResolvedField> {
+        self.fields.iter().find(|field| field.name == name)
+    }
+}
+
 /// The real cause; serialization retains the old event member exactly.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1757,6 +1795,12 @@ pub struct ResolvedBinding {
     /// The resolved cause, preserving legacy event representation.
     #[serde(flatten)]
     pub cause: ResolvedBindingCause,
+    /// The delivery context an event cause arrives with, where the binding declares one (ess/18).
+    ///
+    /// Beside the cause rather than inside it, so that the event member keeps its place and a
+    /// binding without a context keeps its bytes. `Some` only for an event cause.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<ResolvedDeliveryContext>,
     /// The command it invokes.
     pub command: CommandHandle,
     /// One entry per mapped command input, in the command's declaration order.

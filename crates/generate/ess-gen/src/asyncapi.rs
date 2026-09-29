@@ -364,6 +364,27 @@ struct Reaction {
     mapping: Vec<MappedInput>,
     #[serde(skip_serializing_if = "Option::is_none")]
     selection: Option<ess_domain::selection::SelectionPlan>,
+    /// The typed context each occurrence arrives with from its external channel (ess/18), which
+    /// the handler is supplied beside the payload. Absent for a binding that declares none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delivery_context: Option<DeliveryContext>,
+}
+
+/// The delivery context a binding declares, as its handler is owed it.
+#[derive(serde::Serialize)]
+struct DeliveryContext {
+    /// The external channel whose authority binds the context.
+    authority: String,
+    /// Its fields, in declaration order.
+    fields: Vec<ContextField>,
+}
+
+/// One delivery context field.
+#[derive(serde::Serialize)]
+struct ContextField {
+    name: String,
+    #[serde(rename = "type")]
+    type_ref: String,
 }
 
 /// A binding, from the side that published the event.
@@ -399,6 +420,12 @@ struct MappedInput {
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum MappedSource {
+    /// A field of the delivery context the event arrived with (ess/18).
+    DeliveryContext {
+        field: String,
+        #[serde(rename = "type")]
+        type_ref: String,
+    },
     HostContext {
         field: String,
         type_ref: String,
@@ -861,6 +888,17 @@ fn reaction(ir: &EssIr, binding: &ResolvedBinding) -> Reaction {
             .selection
             .as_ref()
             .map(|selection| selection.plan.clone()),
+        delivery_context: binding.context.as_ref().map(|context| DeliveryContext {
+            authority: context.authority.to_string(),
+            fields: context
+                .fields
+                .iter()
+                .map(|field| ContextField {
+                    name: field.name.clone(),
+                    type_ref: field.type_ref.to_string(),
+                })
+                .collect(),
+        }),
     }
 }
 
@@ -901,6 +939,12 @@ fn mapped_input(mapping: &ResolvedMapping) -> MappedInput {
         target: mapping.target.clone(),
         target_type: mapping.target_type.to_string(),
         source: match &mapping.value {
+            ResolvedMappingValue::DeliveryContext { field, type_ref } => {
+                MappedSource::DeliveryContext {
+                    field: field.clone(),
+                    type_ref: type_ref.to_string(),
+                }
+            }
             ResolvedMappingValue::HostContext { field, type_ref } => MappedSource::HostContext {
                 field: field.clone(),
                 type_ref: type_ref.to_string(),

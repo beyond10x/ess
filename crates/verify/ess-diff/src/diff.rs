@@ -1066,11 +1066,44 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
     lines
 }
 
+/// The delivery context a binding declares, as the part of its cause a host binds (ess/18): the
+/// channel, and each field's name, type and the wire name the channel binds it under.
+///
+/// A wire name written out as the field's own name is the same wire name, so it is left out.
+/// `display` and `summary` are documentation, reported by their own kinds
+/// ([`BindingChange::ContextFieldDisplayChanged`], [`BindingChange::ContextFieldSummaryChanged`]),
+/// and are not part of the cause.
+fn written_context(
+    binding: &ResolvedBinding,
+) -> Option<(ess_domain::binding::BindingName, Vec<ess_domain::Field>)> {
+    let context = binding.context.as_ref()?;
+    let fields = context
+        .fields
+        .iter()
+        .map(|field| {
+            let mut written = ess_domain::Field::new(&field.name, field.type_ref.written());
+            let wire = wire_name(&field.naming, &field.name);
+            if wire != field.name {
+                written.naming.wire = Some(wire.to_owned());
+            }
+            written
+        })
+        .collect();
+    Some((context.authority.clone(), fields))
+}
+
 fn written_cause(binding: &ResolvedBinding) -> ess_domain::binding::BindingCause {
     match &binding.cause {
-        ess_compiler::ir::ResolvedBindingCause::Event(event) => {
-            ess_domain::binding::BindingCause::Event(event.name().clone())
-        }
+        ess_compiler::ir::ResolvedBindingCause::Event(event) => match written_context(binding) {
+            None => ess_domain::binding::BindingCause::Event(event.name().clone()),
+            Some((authority, context_fields)) => ess_domain::binding::BindingCause::External(
+                ess_domain::binding::context::ExternalEvent {
+                    event: event.name().clone(),
+                    authority,
+                    context_fields,
+                },
+            ),
+        },
         ess_compiler::ir::ResolvedBindingCause::Periodic(periodic) => {
             ess_domain::binding::BindingCause::Periodic(periodic.contract.clone())
         }
@@ -1101,6 +1134,9 @@ fn written_mapping(mapping: &ess_compiler::ir::ResolvedMapping) -> String {
                 "total"
             }
         ),
+        ess_compiler::ir::ResolvedMappingValue::DeliveryContext { field, type_ref } => {
+            format!("context.{field} : {type_ref}")
+        }
         ess_compiler::ir::ResolvedMappingValue::HostContext { field, type_ref } => {
             format!("host_context.{field} : {type_ref}")
         }
@@ -1726,6 +1762,60 @@ fn binding_changes(before: &EssIr, after: &EssIr, changes: &mut Vec<SemanticChan
     }
 }
 
+/// A binding's cause, and its delivery context, against its counterpart's.
+///
+/// The context is compared as the cause carries it ([`written_context`]): a documentation-only
+/// edit to a context field is not a cause change, and is reported by its own kind.
+fn compare_causes(
+    was: &ResolvedBinding,
+    is: &ResolvedBinding,
+    push: &mut impl FnMut(BindingChange),
+) {
+    let (was_context, is_context) = (written_context(was), written_context(is));
+    if was.cause != is.cause || was_context != is_context {
+        match (&was.cause, &is.cause) {
+            (
+                ess_compiler::ir::ResolvedBindingCause::Event(before),
+                ess_compiler::ir::ResolvedBindingCause::Event(after),
+            ) if was_context == is_context => push(BindingChange::EventChanged {
+                before: EventRef::from(before),
+                after: EventRef::from(after),
+            }),
+            _ => push(BindingChange::CauseChanged {
+                before: Box::new(written_cause(was)),
+                after: Box::new(written_cause(is)),
+            }),
+        }
+    }
+    if let (Some(was_context), Some(is_context)) = (&was.context, &is.context) {
+        for field in &was_context.fields {
+            let Some(now) = is_context.field(&field.name) else {
+                continue;
+            };
+            for delta in naming_deltas(&field.naming, &now.naming, &field.name) {
+                match delta {
+                    // In the cause, compared above.
+                    NamingDelta::Wire(..) => {}
+                    NamingDelta::Display(before, after) => {
+                        push(BindingChange::ContextFieldDisplayChanged {
+                            field: field.name.clone(),
+                            before,
+                            after,
+                        });
+                    }
+                    NamingDelta::Summary(before, after) => {
+                        push(BindingChange::ContextFieldSummaryChanged {
+                            field: field.name.clone(),
+                            before,
+                            after,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One binding against its counterpart.
 ///
 /// `delivery` is not compared, because [`Delivery`](ess_domain::binding::Delivery) has one
@@ -1739,21 +1829,7 @@ fn compare_bindings(
     is: &ResolvedBinding,
     push: &mut impl FnMut(BindingChange),
 ) {
-    if was.cause != is.cause {
-        match (&was.cause, &is.cause) {
-            (
-                ess_compiler::ir::ResolvedBindingCause::Event(before),
-                ess_compiler::ir::ResolvedBindingCause::Event(after),
-            ) => push(BindingChange::EventChanged {
-                before: EventRef::from(before),
-                after: EventRef::from(after),
-            }),
-            _ => push(BindingChange::CauseChanged {
-                before: Box::new(written_cause(was)),
-                after: Box::new(written_cause(is)),
-            }),
-        }
-    }
+    compare_causes(was, is, push);
     let (was_invoked, is_invoked) = (
         CommandRef::from(&was.command),
         CommandRef::from(&is.command),
@@ -2189,18 +2265,26 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
             );
         }
         "actors" => remove_keys(declaration, &["may"]),
-        "bindings" => remove_keys(
-            declaration,
-            &[
-                "event",
-                "command",
-                "mapping",
-                "delivery",
-                "failure",
-                "escalation",
-                "retry",
-            ],
-        ),
+        "bindings" => {
+            remove_keys(
+                declaration,
+                &[
+                    "event",
+                    "command",
+                    "mapping",
+                    "delivery",
+                    "failure",
+                    "escalation",
+                    "retry",
+                ],
+            );
+            // The delivery context's channel and fields are compared by the cause and by the
+            // context-field naming kinds; anything else a context carries stays residual.
+            if let Some(context) = declaration.get_mut("context") {
+                remove_keys(context, &["authority"]);
+                residual_fields(context, "fields");
+            }
+        }
         "components" => remove_keys(
             declaration,
             &["owns", "accepts", "publishes", "reached_by", "cli"],

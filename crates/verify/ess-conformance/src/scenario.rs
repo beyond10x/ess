@@ -155,7 +155,13 @@ impl ConformanceSuite {
     /// Call only for newly generated suites, never to rewrite admitted bytes or a caller-pinned
     /// legacy document. Coverage builders select their inventory-bearing counterpart separately.
     pub fn select_fresh_format(&mut self) {
-        self.provenance.suite_version = if crate::direct_response::used_by(self) {
+        self.provenance.suite_version = if crate::delivery_context::used_by(self) {
+            SuiteFormat::parse(&format!(
+                "ess-conformance/{}",
+                crate::delivery_context::ORDINARY
+            ))
+            .expect("constant suite version")
+        } else if crate::direct_response::used_by(self) {
             SuiteFormat::parse("ess-conformance/28").expect("constant suite version")
         } else if crate::leaf_payloads::used_by(self)
             || crate::absent_input::used_by(self)
@@ -425,7 +431,7 @@ impl SuiteProvenance {
 /// refuse a suite it understands perfectly.
 pub const SUPPORTED_SUITE_FORMATS: &[u32] = &[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29,
+    27, 28, 29, 30, 31,
 ];
 
 /// The version of the *document shape* a suite is written in — `ess-conformance/1`.
@@ -1758,6 +1764,7 @@ impl fmt::Display for Holds {
 /// |---|---|---|
 /// | [`CaptureInstance`](Self::CaptureInstance) | which instance the second command in a sequence acts on | §19 |
 /// | [`RedeliverEvent`](Self::RedeliverEvent) | that the same event may arrive twice | §17 |
+/// | [`DeliverEvent`](Self::DeliverEvent) | that an event from an external channel arrives with its delivery context | ess/18 |
 /// | [`ExpectInvocation`](Self::ExpectInvocation) | which value a binding's mapping put in which input | §16 |
 /// | [`MarkInstant`](Self::MarkInstant) | the instant a window opens at, said out loud | §37 |
 /// | [`ExpectNotBefore`](Self::ExpectNotBefore) | that a consequence does **not** arrive early | §37 |
@@ -2095,6 +2102,25 @@ pub enum ScenarioStep {
         /// The event to deliver again.
         event: EventRef,
     },
+    /// Deliver one occurrence of an event from an external channel, with the delivery context
+    /// that channel binds (suite/[`ORDINARY`](crate::delivery_context::ORDINARY), ess/18,
+    /// beyond10x/ess#195).
+    ///
+    /// The event is one nothing in the specification publishes, so no command can make it happen;
+    /// the suite delivers it, and chooses both its fields and its context. A later
+    /// [`RedeliverEvent`](Self::RedeliverEvent) of the event repeats this occurrence with this
+    /// context.
+    DeliverEvent {
+        /// The event.
+        event: EventRef,
+        /// The binding-local name of the external channel it arrives on.
+        authority: String,
+        /// The occurrence's fields, by declared name.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        payload: BTreeMap<String, Node>,
+        /// The delivery context the channel binds, by declared field name.
+        context: BTreeMap<String, Node>,
+    },
     /// Require that a binding invoked its command with these values (§16).
     ///
     /// The only assertion that can catch a **swapped mapping**. `recipient: event.contact` and
@@ -2133,6 +2159,26 @@ pub enum ScenarioStep {
         /// and one when the refusal is final.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         count: Option<NonZeroU32>,
+    },
+    /// Require that a binding invoked its command for an occurrence, and that **every** invocation
+    /// made for it carries these values (suite/[`ORDINARY`](crate::delivery_context::ORDINARY)).
+    ///
+    /// `selecting` names the inputs that tell the occurrence apart — those its payload fills — and
+    /// `input` everything each of its invocations must have received. Not a count: under
+    /// `at_least_once` an occurrence may be invoked more than once, and every one of those
+    /// invocations is required to agree, which is what a redelivery carrying the original context
+    /// means. Observed for the step's whole eventual window; a disagreeing invocation fails at
+    /// once.
+    ExpectEveryInvocation {
+        /// Whose invocations.
+        binding: BindingRef,
+        /// The command it invokes.
+        command: CommandRef,
+        /// The inputs that select the occurrence's invocations.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        selecting: BTreeMap<String, ScenarioValue>,
+        /// What every selected invocation must have received, by declared field name.
+        input: BTreeMap<String, ScenarioValue>,
     },
     /// Read a view (§14).
     ///
@@ -2948,12 +2994,14 @@ mod tests {
             "ess-conformance/27",
             "ess-conformance/28",
             "ess-conformance/29",
+            "ess-conformance/30",
+            "ess-conformance/31",
         ] {
             let earlier = SuiteFormat::parse(earlier).expect("well formed");
             assert!(earlier.is_supported());
         }
 
-        let later = SuiteFormat::parse("ess-conformance/30").expect("well formed");
+        let later = SuiteFormat::parse("ess-conformance/32").expect("well formed");
         assert!(
             !later.is_supported(),
             "a later format may mean something different by the same words"

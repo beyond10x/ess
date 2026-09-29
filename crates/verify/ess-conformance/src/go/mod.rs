@@ -48,6 +48,7 @@ pub const PACKAGE: &str = "essconform";
 /// and the fourth is the suite's own canonical JSON.
 pub fn emit(suite: &ConformanceSuite) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     crate::direct_response::refuse_generation(suite, "Go")?;
+    crate::delivery_context::refuse_generation(suite, "Go")?;
     refuse_unadmitted(suite, "Go")?;
     let json = suite.to_canonical_json()?;
     let file = |name: &str, contents: String| GoArtifact {
@@ -70,6 +71,7 @@ pub fn emit_input(
 ) -> Result<Vec<GoArtifact>, crate::admission::AdmissionError> {
     let suite = input.selected();
     crate::direct_response::refuse_generation(suite.suite(), "Go")?;
+    crate::delivery_context::refuse_generation(suite.suite(), "Go")?;
     refuse_unadmitted(suite.suite(), "Go")?;
     let file = |name: &str, contents: String| GoArtifact {
         path: format!("{PACKAGE}/{name}"),

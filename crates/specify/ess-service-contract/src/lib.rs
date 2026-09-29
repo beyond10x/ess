@@ -505,6 +505,9 @@ fn include_binding(
         include_fields(types, &periodic.context);
         include_fields(types, &periodic.read);
     }
+    if let Some(context) = &binding.context {
+        include_fields(types, &context.fields);
+    }
     if let Some(selection) = &binding.selection {
         types.extend(selection.types.values().map(|handle| handle.name().clone()));
         for input in &selection.plan.inputs {
@@ -525,7 +528,8 @@ fn include_binding(
     for mapping in &binding.mapping {
         include_type_ref(types, &mapping.target_type);
         let source = match &mapping.value {
-            ResolvedMappingValue::HostContext { type_ref, .. }
+            ResolvedMappingValue::DeliveryContext { type_ref, .. }
+            | ResolvedMappingValue::HostContext { type_ref, .. }
             | ResolvedMappingValue::HostRead { type_ref, .. }
             | ResolvedMappingValue::Selection { type_ref, .. }
             | ResolvedMappingValue::EventField { type_ref, .. } => Some(type_ref),

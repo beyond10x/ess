@@ -1279,6 +1279,26 @@ fn binding_section(ir: &EssIr, binding: &ResolvedBinding) -> Block {
         ),
         Inline::text("."),
     ]);
+    if let Some(context) = &binding.context {
+        let mut sentence = vec![
+            Inline::text("Each occurrence arrives on the external channel "),
+            Inline::code(context.authority.to_string()),
+            Inline::text(", whose authority binds its delivery context: "),
+        ];
+        for (index, field) in context.fields.iter().enumerate() {
+            if index > 0 {
+                sentence.push(Inline::text(", "));
+            }
+            sentence.push(Inline::code(field.name.clone()));
+            sentence.push(Inline::text(" ("));
+            sentence.push(Inline::code(field.type_ref.to_string()));
+            sentence.push(Inline::text(")"));
+        }
+        sentence.push(Inline::text(
+            ". A redelivery carries the context of the occurrence it repeats.",
+        ));
+        under.prose(sentence);
+    }
 
     under.push(Block::Diagram {
         kind: DiagramKind::BindingFlow,
@@ -1883,6 +1903,24 @@ fn mapping_bullet(ir: &EssIr, mapping: &ResolvedMapping) -> Vec<Inline> {
         Inline::text(") ← "),
     ];
     match &mapping.value {
+        ResolvedMappingValue::DeliveryContext { field, type_ref } => {
+            out.push(Inline::text("the delivery context's "));
+            out.push(Inline::code(field.clone()));
+            out.push(Inline::text(" ("));
+            out.push(Inline::code(type_ref.to_string()));
+            out.push(Inline::text(
+                "), which the external channel binds and supplies with each occurrence, never read \
+                 from the payload",
+            ));
+            if let Some(because) = &mapping.conversion {
+                out.push(Inline::text(format!(
+                    ". The two types differ, and the crossing is declared: \"{}.\"",
+                    because.trim().trim_end_matches('.')
+                )));
+            } else {
+                out.push(Inline::text("."));
+            }
+        }
         ResolvedMappingValue::HostContext { field, type_ref }
         | ResolvedMappingValue::HostRead { field, type_ref } => {
             let phase = if matches!(&mapping.value, ResolvedMappingValue::HostContext { .. }) {
@@ -2928,7 +2966,8 @@ fn crossing_users(ir: &EssIr, conversion: &ResolvedConversion) -> Vec<Vec<Inline
         for mapping in &binding.mapping {
             let crossed = matches!(
                 &mapping.value,
-                ResolvedMappingValue::HostContext { type_ref, .. }
+                ResolvedMappingValue::DeliveryContext { type_ref, .. }
+                | ResolvedMappingValue::HostContext { type_ref, .. }
                 | ResolvedMappingValue::HostRead { type_ref, .. }
                 | ResolvedMappingValue::EventField { type_ref, .. }
                 | ResolvedMappingValue::EventAccessor { type_ref, .. }

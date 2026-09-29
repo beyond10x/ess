@@ -30,7 +30,7 @@
 //! | [`ViewChange`] | `ResolvedView::{domain, source, fields, filter, consistency, naming}` — `assertion_style` is a pure function of the consistency (`Consistency::assertion_style`) |
 //! | [`ActorChange`] | `ResolvedActor::{domain, may, naming}` |
 //! | [`ComponentChange`] | `ResolvedComponent::{owns, accepts, publishes, naming}` |
-//! | [`BindingChange`] | `ResolvedBinding::{cause, command, mapping, failure, escalation, naming}` — `delivery` has one inhabitant, so a change kind for it could never fire (see `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs`) |
+//! | [`BindingChange`] | `ResolvedBinding::{cause, context, command, mapping, failure, escalation, naming}` — the context's channel and each field's name, type and wire name are part of the cause, a context field's display name and summary have kinds of their own; `delivery` has one inhabitant, so a change kind for it could never fire (see `a_binding_still_has_one_delivery_a_document_can_write` in `tests/canonical.rs`) |
 //!
 //! `name` is the map key in every case, so it is identity rather than a comparable field: a change
 //! of name is an [`Added`](TypeChange::Added) and a [`Removed`](TypeChange::Removed), never a
@@ -365,8 +365,25 @@ fn alphabet_relation(before: Option<&str>, after: Option<&str>) -> SemanticRelat
 
 impl SemanticChange {
     /// The first document version that can represent this change without losing meaning.
-    pub const fn minimum_format(&self) -> u32 {
+    ///
+    /// Not `const`: a cause change is `ess-diff/10` vocabulary when either side is an `external`
+    /// cause (ess/18, beyond10x/ess#195), and that is read through the boxed cause.
+    pub fn minimum_format(&self) -> u32 {
         match self {
+            Self::Binding {
+                changed: BindingChange::CauseChanged { before, after },
+                ..
+            } if matches!(**before, ess_domain::binding::BindingCause::External(_))
+                || matches!(**after, ess_domain::binding::BindingCause::External(_)) =>
+            {
+                10
+            }
+            Self::Binding {
+                changed:
+                    BindingChange::ContextFieldDisplayChanged { .. }
+                    | BindingChange::ContextFieldSummaryChanged { .. },
+                ..
+            } => 10,
             Self::View {
                 changed: ViewChange::PagingChanged { .. },
                 ..
@@ -2835,7 +2852,8 @@ pub enum BindingChange {
         /// The event it reacts to.
         after: EventRef,
     },
-    /// Its cause or complete required periodic host contract changed.
+    /// Its cause or complete required periodic host contract changed. With an `external` cause
+    /// (a delivery context, ess/18) on either side, this is `ess-diff/10` vocabulary.
     CauseChanged {
         /// The previous typed event or periodic source contract.
         before: Box<ess_domain::binding::BindingCause>,
@@ -2917,6 +2935,26 @@ pub enum BindingChange {
         /// What it says.
         after: Option<String>,
     },
+    /// A delivery-context field's display name moved (ess/18). Documentation only; its name,
+    /// type and wire name are part of the cause. `ess-diff/10` vocabulary.
+    ContextFieldDisplayChanged {
+        /// Which context field.
+        field: String,
+        /// What it was shown as.
+        before: String,
+        /// What it is shown as.
+        after: String,
+    },
+    /// A delivery-context field's one-line summary moved (ess/18). Documentation only.
+    /// `ess-diff/10` vocabulary.
+    ContextFieldSummaryChanged {
+        /// Which context field.
+        field: String,
+        /// What it said.
+        before: Option<String>,
+        /// What it says.
+        after: Option<String>,
+    },
 }
 
 impl BindingChange {
@@ -2937,15 +2975,20 @@ impl BindingChange {
             Self::WireNameChanged { .. } => "wire-name-changed",
             Self::DisplayNameChanged { .. } => "display-name-changed",
             Self::SummaryChanged { .. } => "summary-changed",
+            Self::ContextFieldDisplayChanged { .. } => "context-field-display-changed",
+            Self::ContextFieldSummaryChanged { .. } => "context-field-summary-changed",
         }
     }
 
-    /// The command input a mapping change is about, where the change is one.
+    /// The command input a mapping change is about, or the context field a context-field change
+    /// is about, where the change is one.
     fn member(&self) -> Option<String> {
         match self {
             Self::MappingAdded { target, .. }
             | Self::MappingRemoved { target }
             | Self::MappingValueChanged { target, .. } => Some(target.clone()),
+            Self::ContextFieldDisplayChanged { field, .. }
+            | Self::ContextFieldSummaryChanged { field, .. } => Some(field.clone()),
             _ => None,
         }
     }
@@ -2990,6 +3033,20 @@ impl BindingChange {
             }
             Self::SummaryChanged { before, after } => format!(
                 "summary {} → {}",
+                optional(before.as_ref()),
+                optional(after.as_ref())
+            ),
+            Self::ContextFieldDisplayChanged {
+                field,
+                before,
+                after,
+            } => format!("context field `{field}` display name `{before}` → `{after}`"),
+            Self::ContextFieldSummaryChanged {
+                field,
+                before,
+                after,
+            } => format!(
+                "context field `{field}` summary {} → {}",
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),

@@ -176,6 +176,32 @@ These operations use suite/6 or declared-coverage suite/7 and explicit report/2.
 Previous readers refuse their vocabulary. Controlled adapter tests do not prove
 that an unrelated production adapter implements these capabilities.
 
+## Deliver an event with its context
+
+A binding that declares a delivery context (`ess/18`) reacts to an event that nothing in the
+specification publishes. No command in the suite can make that event happen, so the suite
+delivers it with the `deliver_event` step. The step names the event, the external channel
+(`authority`), the occurrence's fields and the context the channel binds. The suite chooses
+all of these values, so every expected input is a value it put in.
+
+| Scenario | What it requires |
+|---|---|
+| `mapping` | One event is delivered under two different contexts. Each invocation carries its own delivery's context. |
+| `delivery` | Two occurrences are delivered under two contexts, and then the event is redelivered. Every invocation for the second occurrence (`expect_every_invocation`) carries the second context. |
+| `flow`, `on-failure` | The same as for any binding, with the event delivered by the suite. |
+
+A target implements `deliver_event` in Rust. It binds the context as a real channel would,
+and the invocation must read the context from the delivery, never from the payload. A later
+`redeliver_event` repeats the most recent delivered occurrence, with that occurrence's own
+context.
+
+If a target cannot deliver an event with its context, it answers unsupported, which is the
+default. Its scenarios are then recorded `unsupported` with the target's reason, and are never
+passed.
+
+These steps use suite/30, or suite/31 with declared coverage. Go and TypeScript generation
+refuse a suite that carries them.
+
 ## Run a supported target
 
 ```shell-session

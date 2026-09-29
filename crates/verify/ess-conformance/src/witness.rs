@@ -395,6 +395,48 @@ pub fn candidates(
     Ok(admitted_inputs(ir, command, inputs))
 }
 
+/// One base witness for a table of declared fields that is not a command's input — an event's
+/// payload, a binding's delivery context (beyond10x/ess#195) — at `distinction`.
+///
+/// The base value [`candidates`] starts from, by the same rules. Two fields of one table differ
+/// only where the witness is built from the field's path: `String`, `Uuid`, `Json`, and what is
+/// made of them. `Integer`, `Decimal`, `Timestamp`, `Duration`, `Bytes`, `Boolean` and an enum
+/// take their value from `distinction` alone, so two such fields of one type carry one value at
+/// one distinction; a caller that must keep them apart gives each field its own distinction, as
+/// delivery-context synthesis does. Two distinctions give a field different values where its type
+/// has two. Every value is checked against its declared type and invariants.
+///
+/// # Errors
+///
+/// [`WitnessGap`] when a field has no safe value, or none its declared invariants admit.
+pub(crate) fn fields(
+    ir: &EssIr,
+    fields: &[ess_compiler::ir::ResolvedField],
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, WitnessGap> {
+    let mut builder = Builder::new(ir, distinction, BTreeSet::new(), BTreeMap::new());
+    let mut values = BTreeMap::new();
+    for field in fields {
+        let path = FactPath::new(&field.name).map_err(|_| WitnessGap {
+            path: field.name.clone(),
+            type_ref: field.type_ref.to_string(),
+            reason: "is named in a way no fact path can spell, so no guard could read it",
+        })?;
+        let Some(value) = builder.member(&field.type_ref, &path, &BTreeMap::new(), 0, true)? else {
+            continue;
+        };
+        if crate::input::validate_typed_value(ir, &field.type_ref, &value).is_err() {
+            return Err(WitnessGap {
+                path: field.name.clone(),
+                type_ref: field.type_ref.to_string(),
+                reason: "has no base value its declared invariants admit",
+            });
+        }
+        values.insert(field.name.clone(), value);
+    }
+    Ok(values)
+}
+
 /// The optional inputs, and optional members of inputs, that a branch copies into an emitted event
 /// field declaring a presence policy or holding a struct member that does (beyond10x/ess#139), and
 /// that no guard reads — neither the input itself nor anything under it.

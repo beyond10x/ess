@@ -181,6 +181,7 @@ mod absent_input;
 mod aggregate;
 mod bounded_retry;
 mod caller;
+mod delivery_context;
 mod existence;
 mod identity;
 mod paging;
@@ -1626,6 +1627,7 @@ pub(crate) fn needs_of(
             }
             ScenarioStep::ExecuteCommand { command, .. }
             | ScenarioStep::ExpectInvocation { command, .. }
+            | ScenarioStep::ExpectEveryInvocation { command, .. }
             | ScenarioStep::ExecuteCommandWithoutInput { command, .. } => {
                 if !handles(ir, component, command.name()) {
                     needs.insert(command.clone().into());
@@ -1671,7 +1673,10 @@ pub(crate) fn needs_of(
             // it is most obviously about.
             // Fixture setup is an adapter capability, not a declared command/event realization.
             // Keep upstream-backed view witnesses in the component that owns the view.
-            ScenarioStep::EstablishEntity { .. }
+            // An event from an external channel is emitted by no component: the suite delivers it,
+            // so the one that reacts needs nothing more than the command it invokes.
+            ScenarioStep::DeliverEvent { .. }
+            | ScenarioStep::EstablishEntity { .. }
             | ScenarioStep::ResolveFixtures { .. }
             | ScenarioStep::ExpectNoEvents
             | ScenarioStep::ExpectOutcome { .. }
@@ -9135,6 +9140,10 @@ fn bindings(
             crate::periodic::synthesize(ir, binding, suite, refusals);
             continue;
         }
+        if binding.context.is_some() {
+            delivery_context::synthesize(ir, binding, suite, refusals);
+            continue;
+        }
         let subject = BindingRef::new(binding.name.clone());
         let event_handle = binding.cause.event().expect("event cause");
         let event = EventRef::from(event_handle);
@@ -9280,6 +9289,7 @@ fn mapping(
         .map(|mapped| {
             let value = match &mapped.value {
                 ResolvedMappingValue::HostContext { .. } | ResolvedMappingValue::HostRead { .. } => return Err(BindingGap::AccessorObservation { reason: "PeriodicHostMapping: no event supplies this input".into() }),
+                ResolvedMappingValue::DeliveryContext { .. } => return Err(BindingGap::AccessorObservation { reason: "DeliveryContext: only a delivered event carries a context".into() }),
                 ResolvedMappingValue::Selection { selector, projection, .. } => {
                     if mapped.conversion.is_some() { return Err(BindingGap::AccessorObservation { reason: "selection result requires an explicit host conversion".into() }); }
                     let selection = crate::selection::Observation::of(ir, binding, *selector, projection, &mapped.target_type).map_err(|reason| BindingGap::AccessorObservation { reason })?;
