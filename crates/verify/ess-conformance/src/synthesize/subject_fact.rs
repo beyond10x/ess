@@ -751,7 +751,9 @@ fn without_input(ir: &EssIr, entity: &EntityHandle, predicate: &Predicate) -> Pr
 /// replaced by the value the row holds, the input side by the input path it names. Handed to the
 /// candidate search beside the command's own guards, its literals are the values the input is
 /// tried at — the row's value, and by rule 3 its neighbours — so one candidate names the stored
-/// value and another does not, and the guard is witnessed both ways (beyond10x/ess#157).
+/// value and another does not, and the guard is witnessed both ways (beyond10x/ess#157). A
+/// comparison inside a quantifier over a stored list or map is grounded once per element the row
+/// holds ([`ground_leaf`], beyond10x/ess#240).
 pub(super) fn grounded(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -762,38 +764,391 @@ pub(super) fn grounded(
     for predicate in predicates {
         leaves(predicate, &mut found);
     }
-    let held = |path: &FactPath| -> Option<ess_primitives::facts::FactValue> {
-        let (root, rest) = path.segments().split_first()?;
-        let mut node = settled.get(root)?.value.as_literal()?;
-        for segment in rest {
-            let Node::Map(entries) = node else {
-                return None;
-            };
-            node = entries.get(segment)?;
-        }
-        super::fact_value(node)
+    let mut out = Vec::new();
+    for leaf in found.iter().filter(|leaf| reads_input(ir, entity, leaf)) {
+        ground_leaf(settled, &[], leaf, &mut out);
+    }
+    out
+}
+
+/// The value the row holds at `path`, reading a quantifier's binder as the element it is bound to
+/// (innermost first): a struct member by name, a list element by its ordinal.
+fn held_node(
+    settled: &BTreeMap<String, super::Determined>,
+    bound: &[(&str, &Node)],
+    path: &FactPath,
+) -> Option<Node> {
+    let (root, rest) = path.segments().split_first()?;
+    let mut node = match bound.iter().rev().find(|(name, _)| name == root) {
+        Some((_, element)) => *element,
+        None => settled.get(root)?.value.as_literal()?,
     };
+    for segment in rest {
+        node = match node {
+            Node::Map(entries) => entries.get(segment)?,
+            Node::Seq(items) => items.get(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(node.clone())
+}
+
+/// One leaf of a row/input comparison, grounded on the row: a comparison with its stored side
+/// replaced by the value held there; a quantifier over a stored collection once per element the row
+/// holds, its binder read as that element (beyond10x/ess#240). A map's elements are its values in
+/// key order — what the quantifier binds — and a list's its elements, so `exists r in
+/// redirect_uris: r == input.application` over a row holding `{k: v}` grounds `v == application`,
+/// and the input is tried at `v`, which satisfies it, and at its neighbours, which do not. An empty
+/// collection grounds nothing: the input cannot move a quantifier over it.
+fn ground_leaf(
+    settled: &BTreeMap<String, super::Determined>,
+    bound: &[(&str, &Node)],
+    leaf: &Predicate,
+    out: &mut Vec<Predicate>,
+) {
     let side = |operand: &Operand| -> Option<Operand> {
         match operand {
-            Operand::Fact(path) => match input_path(path) {
-                Some(rest) => Some(Operand::Fact(rest)),
-                None => held(path).map(Operand::Literal),
-            },
+            Operand::Fact(path) if !bound.iter().any(|(name, _)| *name == path.namespace()) => {
+                match input_path(path) {
+                    Some(rest) => Some(Operand::Fact(rest)),
+                    None => held_node(settled, bound, path)
+                        .as_ref()
+                        .and_then(super::fact_value)
+                        .map(Operand::Literal),
+                }
+            }
+            Operand::Fact(path) => held_node(settled, bound, path)
+                .as_ref()
+                .and_then(super::fact_value)
+                .map(Operand::Literal),
             Operand::Literal(value) => Some(Operand::Literal(value.clone())),
         }
     };
+    match leaf {
+        Predicate::Compare { left, op, right } => {
+            if let (Some(left), Some(right)) = (side(left), side(right)) {
+                // Only a comparison the input takes part in steers the input.
+                if matches!(left, Operand::Fact(_)) || matches!(right, Operand::Fact(_)) {
+                    out.push(Predicate::Compare {
+                        left,
+                        op: *op,
+                        right,
+                    });
+                }
+            }
+        }
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            let elements = match held_node(settled, bound, &quantified.over) {
+                Some(Node::Map(entries)) => entries.into_values().collect(),
+                Some(Node::Seq(items)) => items,
+                _ => Vec::new(),
+            };
+            let mut body = Vec::new();
+            leaves(&quantified.body, &mut body);
+            for element in &elements {
+                let mut inner = bound.to_vec();
+                inner.push((quantified.bind.as_str(), element));
+                for leaf in &body {
+                    ground_leaf(settled, &inner, leaf, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The distinction the second and third entries of a spread collection are built at, past every
+/// further instance an arrangement numbers ([`MAX_CANDIDATES`](super::MAX_CANDIDATES)) and the
+/// second owner ([`OTHER_OWNER`]), so an entry never repeats a value another row of the scenario
+/// holds. A row at distinction `d` takes `SPREAD + 2d` and `SPREAD + 2d + 1`.
+const SPREAD: usize = 2 * (super::MAX_CANDIDATES + 2);
+
+/// The quantifiers of `predicates` whose collection is stored on the row and whose body compares
+/// an element with the command's input (beyond10x/ess#240): the leaves [`spread`] arranges several
+/// entries for and [`witnesses_elements`] holds a scenario to.
+fn elementwise(ir: &EssIr, entity: &EntityHandle, predicates: &[Predicate]) -> Vec<Predicate> {
+    let declared = ir.entity(entity);
+    let mut found = Vec::new();
+    for predicate in predicates {
+        leaves(predicate, &mut found);
+    }
+    found.retain(|leaf| match leaf {
+        Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+            input_path(&quantified.over).is_none()
+                && declared
+                    .fields
+                    .iter()
+                    .any(|field| field.name == quantified.over.namespace())
+                && reads_input(ir, entity, leaf)
+        }
+        _ => false,
+    });
     found
+}
+
+/// Whether any of `predicates` is an [`elementwise`] quantifier.
+pub(super) fn has_elementwise(ir: &EssIr, entity: &EntityHandle, predicates: &[Predicate]) -> bool {
+    !elementwise(ir, entity, predicates).is_empty()
+}
+
+/// Whether the row `node` and `input` witness every [`elementwise`] quantifier of `predicates`
+/// element by element (beyond10x/ess#240).
+///
+/// A quantifier one element decides — an `exists` that holds, a `forall` that fails — must read
+/// otherwise over the collection's first element alone, over its last alone, and as the other
+/// quantifier, so a target reading only the first value, only the last, or `forall` for `exists`
+/// (and the reverse) answers this scenario wrongly. One the whole collection decides — an `exists`
+/// that fails, a `forall` that holds — must hold two or more elements, so it is not decided by one
+/// value standing in for all of them. A quantifier the row does not decide is not held to either.
+pub(super) fn witnesses_elements(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    predicates: &[Predicate],
+    node: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> bool {
+    let truth = |settled: &BTreeMap<String, super::Determined>, leaf: &Predicate| {
+        row_truth_with(
+            ir,
+            entity,
+            settled,
+            Some(&node.state),
+            leaf,
+            Some((command, input)),
+        )
+    };
+    elementwise(ir, entity, predicates).iter().all(|leaf| {
+        let (Predicate::Forall(quantified) | Predicate::Exists(quantified)) = leaf else {
+            return true;
+        };
+        let exists = matches!(leaf, Predicate::Exists(_));
+        let held = truth(&node.settled, leaf);
+        let count = match held_node(&node.settled, &[], &quantified.over) {
+            Some(Node::Map(entries)) => entries.len(),
+            Some(Node::Seq(items)) => items.len(),
+            _ => return true,
+        };
+        let one_decides = match held {
+            Truth::True => exists,
+            Truth::False => !exists,
+            Truth::Unknown => return true,
+        };
+        if !one_decides {
+            return count >= 2;
+        }
+        let other = if exists {
+            Predicate::Forall(quantified.clone())
+        } else {
+            Predicate::Exists(quantified.clone())
+        };
+        let differs = |truth: Truth| truth != held && truth != Truth::Unknown;
+        differs(truth(&node.settled, &other))
+            && [false, true].into_iter().all(|last| {
+                one_element(&node.settled, &quantified.over, last)
+                    .is_some_and(|settled| differs(truth(&settled, leaf)))
+            })
+    })
+}
+
+/// `settled` with the stored collection at `path` cut to its first element, or its `last` — a map
+/// to its first or last entry in key order, the order a quantifier walks it in.
+fn one_element(
+    settled: &BTreeMap<String, super::Determined>,
+    path: &FactPath,
+    last: bool,
+) -> Option<BTreeMap<String, super::Determined>> {
+    let (root, rest) = path.segments().split_first()?;
+    let mut out = settled.clone();
+    let held = out.get_mut(root)?;
+    let mut value = held.value.as_literal()?.clone();
+    let mut at = &mut value;
+    for segment in rest {
+        at = match at {
+            Node::Map(members) => members.get_mut(segment)?,
+            _ => return None,
+        };
+    }
+    match at {
+        Node::Map(entries) => {
+            let kept = if last {
+                entries.pop_last()?
+            } else {
+                entries.pop_first()?
+            };
+            *entries = BTreeMap::from([kept]);
+        }
+        Node::Seq(items) => {
+            let kept = if last {
+                items.pop()?
+            } else {
+                items.first()?.clone()
+            };
+            *items = vec![kept];
+        }
+        _ => return None,
+    }
+    held.value = ScenarioValue::Literal { value };
+    Some(out)
+}
+
+/// Inputs for `driver` that write each stored collection an [`elementwise`] quantifier of `hints`
+/// reads with several entries rather than the witness's one (beyond10x/ess#240): the witness input
+/// at `distinction`, with the collection's input set to three entries in three shapes — every value
+/// distinct, every value the first, and the first value either side of another. Over those an
+/// `exists` finds a row where the one matching value is neither first nor last, a `forall` one where
+/// several values all satisfy it and one where the one failing value sits in the middle, which is
+/// what [`witnesses_elements`] asks of the row a scenario is arranged on.
+///
+/// The further entries are the witnesses at [`SPREAD`], so no value repeats one another row holds.
+/// Empty where no such quantifier reads a field `driver` writes from its input, or where the input
+/// cannot hold two distinct entries (a map keyed by a `Boolean` holds two at most).
+fn spread(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    driver: &Driver<'_>,
+    hints: &[Predicate],
+    distinction: Distinction,
+) -> Vec<BTreeMap<String, Node>> {
+    let quantifiers = elementwise(ir, entity, hints);
+    if quantifiers.is_empty() {
+        return Vec::new();
+    }
+    let mapping = mapped(driver.outcome);
+    let guards: Vec<&Predicate> = driver
+        .command
+        .outcomes
         .iter()
-        .filter(|leaf| reads_input(ir, entity, leaf))
-        .filter_map(|leaf| match leaf {
-            Predicate::Compare { left, op, right } => Some(Predicate::Compare {
-                left: side(left)?,
-                op: *op,
-                right: side(right)?,
-            }),
-            _ => None,
+        .filter_map(|branch| input_guard(&branch.condition))
+        .collect();
+    let at = |distinction: Distinction| {
+        candidates(ir, driver.command, &guards, distinction)
+            .ok()?
+            .into_iter()
+            .next()
+    };
+    let Some(base) = at(distinction) else {
+        return Vec::new();
+    };
+    let further = [
+        at(Distinction::further(SPREAD + 2 * distinction.get())),
+        at(Distinction::further(SPREAD + 2 * distinction.get() + 1)),
+    ];
+    let mut shapes = vec![base.clone(), base.clone(), base.clone()];
+    let mut written = BTreeSet::new();
+    for leaf in &quantifiers {
+        let (Predicate::Forall(quantified) | Predicate::Exists(quantified)) = leaf else {
+            continue;
+        };
+        let Some(sent) = mapping.get(quantified.over.namespace()) else {
+            continue;
+        };
+        let mut path = vec![(*sent).to_owned()];
+        path.extend(quantified.over.segments()[1..].iter().cloned());
+        if !written.insert(path.clone()) {
+            continue;
+        }
+        let witnesses = std::iter::once(Some(&base))
+            .chain(further.iter().map(Option::as_ref))
+            .flatten()
+            .filter_map(|input| node_at(input, &path));
+        let Some(collections) = spread_collection(witnesses) else {
+            continue;
+        };
+        for (shape, collection) in shapes.iter_mut().zip(collections) {
+            set_at(shape, &path, collection);
+        }
+    }
+    if written.is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<BTreeMap<String, Node>> = Vec::new();
+    for shape in shapes {
+        if shape != base && !out.contains(&shape) {
+            out.push(shape);
+        }
+    }
+    out
+}
+
+/// The three collections [`spread`] writes, from the first entry of each witness collection: every
+/// value distinct, every value the first, and the first value either side of the second. `None`
+/// where the witnesses give fewer than two distinct entries — a map's keys collide, or every value
+/// is one value.
+fn spread_collection<'n>(witnesses: impl Iterator<Item = &'n Node>) -> Option<[Node; 3]> {
+    let mut keys = BTreeSet::new();
+    let mut values = Vec::new();
+    let mut map = false;
+    for collection in witnesses {
+        match collection {
+            Node::Map(entries) => {
+                map = true;
+                if let Some((key, value)) = entries.first_key_value() {
+                    if keys.insert(key.clone()) {
+                        values.push(value.clone());
+                    }
+                }
+            }
+            Node::Seq(items) => values.extend(items.first().cloned()),
+            _ => {}
+        }
+    }
+    let (first, middle) = match values.as_slice() {
+        [first, middle, ..] if values.iter().any(|value| value != first) => {
+            (first.clone(), middle.clone())
+        }
+        _ => return None,
+    };
+    let odd = (0..values.len())
+        .map(|index| {
+            if index == 1 {
+                middle.clone()
+            } else {
+                first.clone()
+            }
         })
-        .collect()
+        .collect();
+    let layouts = [values.clone(), vec![first; values.len()], odd];
+    Some(layouts.map(|layout| {
+        if map {
+            Node::Map(keys.iter().cloned().zip(layout).collect())
+        } else {
+            Node::Seq(layout)
+        }
+    }))
+}
+
+/// The node at `path` in a command input, through struct members.
+fn node_at<'a>(input: &'a BTreeMap<String, Node>, path: &[String]) -> Option<&'a Node> {
+    let (root, rest) = path.split_first()?;
+    let mut node = input.get(root)?;
+    for segment in rest {
+        node = match node {
+            Node::Map(members) => members.get(segment)?,
+            _ => return None,
+        };
+    }
+    Some(node)
+}
+
+/// `input` with the node at `path` replaced, where every step to it exists.
+fn set_at(input: &mut BTreeMap<String, Node>, path: &[String], value: Node) {
+    let Some((root, rest)) = path.split_first() else {
+        return;
+    };
+    let Some(mut node) = input.get_mut(root) else {
+        return;
+    };
+    for segment in rest {
+        node = match node {
+            Node::Map(members) => match members.get_mut(segment) {
+                Some(member) => member,
+                None => return,
+            },
+            _ => return,
+        };
+    }
+    *node = value;
 }
 
 /// The inputs tried against `arrangement` for one command reading stored fields: the witness
@@ -882,17 +1237,19 @@ fn linked_inputs(
     Ok(inputs)
 }
 
-/// [`reach_at`] over [`linked_inputs`].
+/// [`reach_at`] over [`linked_inputs`]. Only an input `accept` takes of the row is offered.
 fn reach_linked(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
     entity: &EntityHandle,
     arrangement: &Arrangement,
+    accept: &dyn Fn(&Arrangement, &BTreeMap<String, Node>) -> bool,
 ) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
     for input in linked_inputs(ir, command, entity, arrangement)? {
         if selects(ir, command, entity, arrangement, &input)?
             .is_some_and(|branch| branch.name == outcome.name)
+            && accept(arrangement, &input)
         {
             return Ok(Some(input));
         }
@@ -1487,6 +1844,9 @@ struct Profile {
     hints: Vec<Decided>,
     leaves: Vec<Decided>,
     on_literal: Vec<bool>,
+    /// For each [`elementwise`] quantifier, which of the collection's values repeat an earlier one:
+    /// rows [`spread`] writes decide every hint alike and differ only here (beyond10x/ess#240).
+    shapes: Vec<Vec<usize>>,
 }
 
 /// One three-valued answer, ordered so a search node can be keyed on it.
@@ -1532,6 +1892,26 @@ fn profile(
             .iter()
             .map(|leaf| on_literal(leaf).is_some_and(|eq| truth(&eq) == Truth::True))
             .collect(),
+        shapes: elementwise(ir, entity, hints)
+            .iter()
+            .filter_map(|leaf| match leaf {
+                Predicate::Forall(quantified) | Predicate::Exists(quantified) => {
+                    held_node(&arrangement.settled, &[], &quantified.over)
+                }
+                _ => None,
+            })
+            .map(|collection| {
+                let values: Vec<Node> = match collection {
+                    Node::Map(entries) => entries.into_values().collect(),
+                    Node::Seq(items) => items,
+                    _ => Vec::new(),
+                };
+                values
+                    .iter()
+                    .map(|value| values.iter().position(|other| other == value).unwrap_or(0))
+                    .collect()
+            })
+            .collect(),
     }
 }
 
@@ -1570,7 +1950,11 @@ fn creations(
     {
         return Ok(out);
     }
-    for input in hinted(ir, entity, creator, hints)?.unwrap_or_default() {
+    // And the rows whose stored collections hold several entries, where a quantifier over one
+    // compares its elements with the input (beyond10x/ess#240).
+    let mut inputs = hinted(ir, entity, creator, hints)?.unwrap_or_default();
+    inputs.extend(spread(ir, entity, creator, hints, distinction));
+    for input in inputs {
         if input_selects(ir, creator.command, creator.outcome, &input)? {
             if let Ok(arrangement) = created(
                 ir,
@@ -1692,11 +2076,14 @@ fn successors(
     {
         return out;
     }
-    for input in hinted(ir, entity, driver, hints)
+    // A move writing a stored collection a quantifier compares with the input is also offered
+    // with several entries (beyond10x/ess#240), as a creation is.
+    let mut inputs = hinted(ir, entity, driver, hints)
         .ok()
         .flatten()
-        .unwrap_or_default()
-    {
+        .unwrap_or_default();
+    inputs.extend(spread(ir, entity, driver, hints, Distinction::PLAIN));
+    for input in inputs {
         if input_selects(ir, driver.command, driver.outcome, &input).unwrap_or(false) {
             out.push(advanced(
                 ir,
@@ -2028,6 +2415,59 @@ fn shadowed(
     }
 }
 
+/// The row [`prepare`] starts from and the input that selects the branch on it, and whether the
+/// two witness every [`elementwise`] quantifier of `hints` element by element
+/// ([`witnesses_elements`], beyond10x/ess#240).
+///
+/// Where the command has such a quantifier, the search first offers only inputs that do, and the
+/// plain search runs only where no bounded arrangement holds one — a quantifier whose collection no
+/// input writes, or whose values the witnesses cannot spread. Every other command searches once,
+/// as it always did.
+fn first_row(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    label: &str,
+) -> Result<(Arrangement, BTreeMap<String, Node>, bool), RefusalCause> {
+    if has_elementwise(ir, entity, hints) {
+        let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
+            witnesses_elements(ir, command, entity, hints, node, input)
+        };
+        if let Ok((row, input)) = search(
+            ir,
+            entity,
+            actors,
+            hints,
+            Distinction::PLAIN,
+            label,
+            |node| reach_linked(ir, command, outcome, entity, node, &strict),
+        ) {
+            return Ok((row, input, true));
+        }
+    }
+    let mut shadow = super::Shadow::default();
+    let (row, input) = search(
+        ir,
+        entity,
+        actors,
+        hints,
+        Distinction::PLAIN,
+        label,
+        |node| {
+            let found = reach_linked(ir, command, outcome, entity, node, &|_, _| true)?;
+            if found.is_none() {
+                shadowed_at(ir, command, outcome, entity, node, &mut shadow)?;
+            }
+            Ok(found)
+        },
+    )
+    .map_err(|cause| shadowed(outcome, &shadow, cause))?;
+    Ok((row, input, false))
+}
+
 /// Arrange the row the branch under test is selected for, and the input that selects it.
 pub(super) fn prepare(
     ir: &EssIr,
@@ -2045,23 +2485,17 @@ pub(super) fn prepare(
     if let Some(refusal) = unarrangeable(ir, entity, &fields) {
         return Err(refusal);
     }
-    let mut shadow = super::Shadow::default();
-    let (arrangement, input) = search(
-        ir,
-        entity,
-        actors,
-        &hints,
-        Distinction::PLAIN,
-        &label,
-        |node| {
-            let found = reach_linked(ir, command, outcome, entity, node)?;
-            if found.is_none() {
-                shadowed_at(ir, command, outcome, entity, node, &mut shadow)?;
-            }
-            Ok(found)
-        },
-    )
-    .map_err(|cause| shadowed(outcome, &shadow, cause))?;
+    // Where a quantifier over a stored collection compares its elements with the input, the row
+    // and input witness it element by element wherever some arrangement does ([`first_row`]), and
+    // every refinement below keeps that.
+    let (arrangement, input, elementwise) =
+        first_row(ir, command, outcome, entity, actors, &hints, &label)?;
+    let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
+        witnesses_elements(ir, command, entity, &hints, node, input)
+    };
+    let any = |_: &Arrangement, _: &BTreeMap<String, Node>| true;
+    let accept: &dyn Fn(&Arrangement, &BTreeMap<String, Node>) -> bool =
+        if elementwise { &strict } else { &any };
     // A row the branch's writes would leave unchanged proves nothing about them (beyond10x/ess#161).
     // So where the plain row leaves some write unchanged, the search is asked again — under the
     // plain witness and then further ones — for a row that leaves fewer unchanged, and keeps the
@@ -2080,7 +2514,7 @@ pub(super) fn prepare(
             let Ok((row, input)) =
                 search(ir, entity, actors, &hints, distinction, &label, |node| {
                     Ok(
-                        reach_linked(ir, command, outcome, entity, node)?.filter(|input| {
+                        reach_linked(ir, command, outcome, entity, node, accept)?.filter(|input| {
                             super::unchanged_writes(ir, outcome, input, &node.settled) < bound
                         }),
                     )
@@ -2101,6 +2535,7 @@ pub(super) fn prepare(
             .flatten()
             .is_some_and(|branch| branch.name == outcome.name)
             && super::unchanged_writes(ir, outcome, next, &arrangement.settled) <= unchanged
+            && accept(&arrangement, next)
     };
     let (input, _) = super::sources_apart(ir, command, outcome, input, &keeps);
     let bound = bind_links(

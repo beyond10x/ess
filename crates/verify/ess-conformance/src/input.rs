@@ -33,12 +33,14 @@
 //! A list publishes its size as `<path>.count` and element `n` under `<path>.<n>`, which is the
 //! convention [`FactSource::cardinality`] and the quantifiers read for an observed collection
 //! (ess#94). So `tags.count > 0`, `lines.0.quantity` and `forall`/`exists` over an input list are
-//! decided rather than refused. A map publishes `<path>.count` the same way (ess#196), and nothing
-//! for its entries.
+//! decided rather than refused. A map publishes `<path>.count` the same way (ess#196), and its
+//! values under `<path>.<index>` in key order (ess#240): a quantifier over a map binds its values,
+//! as the compiler types the binder and as Entity Runtime folds it.
 //!
 //! **Its limits, named rather than discovered later.** A union is not projected *at all*, not even
 //! its tag — which is a `String` a fact could hold, and which a later wave may decide to bind as
-//! `payee.kind`. A map publishes its cardinality and no entry: no fact path spells a key. The
+//! `payee.kind`. A map publishes no key: no fact path spells one, and the ordinal a value is
+//! published under is a position a quantifier walks, never a path an author can write. The
 //! projection walk is bounded at [`MAX_TYPE_DEPTH`]; semantic path validation has no such depth
 //! limit.
 //!
@@ -166,9 +168,71 @@ pub(crate) fn declared_as(
     path: &FactPath,
     wanted: Primitive,
 ) -> bool {
-    ess_compiler::expression::resolve_path(ir, fields, path, "conformance facts").is_ok_and(
-        |resolved| matches!(resolved.terminal, ResolvedTypeRef::Primitive { name } if name == wanted),
-    )
+    declared_primitive(ir, fields, path, 0) == Some(wanted)
+}
+
+/// The primitive `path` resolves to, through any newtype or `Optional` — and through a map's value
+/// at an ordinal, which is where [`project`] publishes it and where a quantifier over the map reads
+/// it (beyond10x/ess#240), though no authored path can name one.
+fn declared_primitive(
+    ir: &EssIr,
+    fields: &[ResolvedField],
+    path: &FactPath,
+    depth: usize,
+) -> Option<Primitive> {
+    match ess_compiler::expression::resolve_path(ir, fields, path, "conformance facts") {
+        Ok(resolved) => match resolved.terminal {
+            ResolvedTypeRef::Primitive { name } => Some(name),
+            _ => None,
+        },
+        Err(_) if depth < MAX_TYPE_DEPTH => {
+            let segments = path.segments();
+            (1..segments.len()).find_map(|at| {
+                let ordinal = &segments[at];
+                if ordinal.parse::<usize>().ok()?.to_string() != *ordinal {
+                    return None;
+                }
+                let prefix = FactPath::from_segments(&segments[..at]);
+                let resolved = ess_compiler::expression::resolve_path(
+                    ir,
+                    fields,
+                    &prefix,
+                    "conformance facts",
+                )
+                .ok()?;
+                let value = map_value(ir, &resolved.terminal, 0)?;
+                let element = [ResolvedField {
+                    name: "value".to_owned(),
+                    type_ref: value.clone(),
+                    naming: ess_domain::Naming::default(),
+                }];
+                let mut rest = vec!["value".to_owned()];
+                rest.extend(segments[at + 1..].iter().cloned());
+                declared_primitive(ir, &element, &FactPath::from_segments(rest), depth + 1)
+            })
+        }
+        Err(_) => None,
+    }
+}
+
+/// The value type of a map, through any newtype or `Optional` over one.
+fn map_value<'a>(
+    ir: &'a EssIr,
+    type_ref: &'a ResolvedTypeRef,
+    depth: usize,
+) -> Option<&'a ResolvedTypeRef> {
+    if depth > MAX_TYPE_DEPTH {
+        return None;
+    }
+    match type_ref {
+        ResolvedTypeRef::Map { value, .. } => Some(value),
+        ResolvedTypeRef::Optional { of } => map_value(ir, of, depth + 1),
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => map_value(ir, of, depth + 1),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Projects a map of values into facts, guided by the fields some construct declares.
@@ -994,13 +1058,15 @@ fn project_value(
         // the convention `FactSource::cardinality` reads for an observed collection — so a
         // quantifier and a `.count` guard over command input are decided (ess#94).
         ResolvedTypeRef::List { of } => match value {
-            Node::Seq(elements) => project_list(ir, of, elements, path, depth, facts, errors),
+            Node::Seq(items) => project_list(ir, of, items.iter(), path, depth, facts, errors),
             _ => wrong(errors, format!("{type_ref}")),
         },
         // A map publishes its size as `<path>.count`, as a list does, so a `.count` guard over one
-        // is decided (beyond10x/ess#196). Its entries are not facts: no path reaches a key.
-        ResolvedTypeRef::Map { .. } => match value {
-            Node::Map(entries) => facts.set(path.child("count"), FactValue::count(entries.len())),
+        // is decided (beyond10x/ess#196), and its values under `<path>.<index>` in key order — what
+        // a quantifier binds, as the compiler and Entity Runtime read it — so a quantifier over one
+        // is decided (beyond10x/ess#240). No path reaches a key.
+        ResolvedTypeRef::Map { value: of, .. } => match value {
+            Node::Map(map) => project_list(ir, of, map.values(), path, depth, facts, errors),
             _ => wrong(errors, format!("{type_ref}")),
         },
         ResolvedTypeRef::Declared { name } => {
@@ -1101,18 +1167,19 @@ fn mark_aggregate(
     }
 }
 
-/// Binds `<path>.count` and each element of a list under `<path>.<index>`.
-fn project_list(
+/// Binds `<path>.count` and each element of a list, or each value of a map in key order, under
+/// `<path>.<index>`.
+fn project_list<'n>(
     ir: &EssIr,
     of: &ResolvedTypeRef,
-    elements: &[Node],
+    elements: impl ExactSizeIterator<Item = &'n Node>,
     path: &FactPath,
     depth: usize,
     facts: &mut FactStore,
     errors: &mut Vec<ShapeError>,
 ) {
     facts.set(path.child("count"), FactValue::count(elements.len()));
-    for (index, element) in elements.iter().enumerate() {
+    for (index, element) in elements.enumerate() {
         project(
             ir,
             of,

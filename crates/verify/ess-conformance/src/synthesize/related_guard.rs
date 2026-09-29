@@ -680,39 +680,64 @@ fn with_row(
                 && trues.iter().all(|child| truth(child) == Truth::True)
         })
     };
-    let (row, input) = subject_fact::search_within(
-        ir,
-        entity,
-        actors,
-        &predicates,
-        Distinction::further(first),
-        "related row",
-        arranging,
-        |node| {
-            let inputs = if let Some(chosen) = chosen {
-                vec![chosen.clone()]
-            } else {
-                let grounded = subject_fact::grounded(ir, entity, &node.settled, &predicates);
-                let mut searched = guards.clone();
-                searched.extend(grounded.iter());
-                let mut inputs = candidates(ir, command, &searched, distinction)
-                    .map_err(RefusalCause::NoWitness)?;
-                if !grounded.is_empty() {
-                    if let Ok(further) = candidates(ir, command, &searched, retry(distinction)) {
-                        inputs.extend(further);
-                    }
+    // The first input tried on a row that selects `outcome` there — and, `strict`, witnesses every
+    // quantifier over a stored collection element by element.
+    let selecting = |node: &Arrangement,
+                     strict: bool|
+     -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
+        let inputs = if let Some(chosen) = chosen {
+            vec![chosen.clone()]
+        } else {
+            let grounded = subject_fact::grounded(ir, entity, &node.settled, &predicates);
+            let mut searched = guards.clone();
+            searched.extend(grounded.iter());
+            let mut inputs =
+                candidates(ir, command, &searched, distinction).map_err(RefusalCause::NoWitness)?;
+            if !grounded.is_empty() {
+                if let Ok(further) = candidates(ir, command, &searched, retry(distinction)) {
+                    inputs.extend(further);
                 }
-                inputs
-            };
-            Ok(inputs.into_iter().find(|input| {
-                meets(node, input)
-                    && selects(ir, command, entity, Some(node), input)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|branch| branch.name == outcome.name)
-            }))
-        },
-    )?;
+            }
+            inputs
+        };
+        Ok(inputs.into_iter().find(|input| {
+            meets(node, input)
+                && selects(ir, command, entity, Some(node), input)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|branch| branch.name == outcome.name)
+                && (!strict
+                    || subject_fact::witnesses_elements(
+                        ir,
+                        command,
+                        entity,
+                        &predicates,
+                        node,
+                        input,
+                    ))
+        }))
+    };
+    let search = |strict: bool| {
+        subject_fact::search_within(
+            ir,
+            entity,
+            actors,
+            &predicates,
+            Distinction::further(first),
+            "related row",
+            arranging,
+            |node| selecting(node, strict),
+        )
+    };
+    // Where a quantifier over a stored collection of the row compares its elements with the input,
+    // a row and input that witness it element by element are searched for first
+    // (`subject_fact::witnesses_elements`, beyond10x/ess#240), and the plain search runs only where
+    // none does. Every other command searches once, as it always did.
+    let (row, input) = if subject_fact::has_elementwise(ir, entity, &predicates) {
+        search(true).or_else(|_| search(false))?
+    } else {
+        search(false)?
+    };
     Ok((row, first, input))
 }
 
