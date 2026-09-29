@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-09-29
+
 ### Changed
 
 - `ess verify conform mutate` no longer scores as `survived` a mutant no scenario could kill
