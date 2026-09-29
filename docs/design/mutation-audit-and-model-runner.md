@@ -455,15 +455,33 @@ over the IR predicate node, and facts bound with `bindFact` from the input, whic
 fields. This replaces the draft's regex, which could not read `amount.amount > 0`, the first guard
 of the normative example. Then:
 
-1. **A supplied subject in a state that no move of this command starts from** takes the command's
-   `wrong_state` outcome, and does so before any guard. This is how `RawOutcome` defines the branch:
-   "taken because the subject is in a state no move starts from" (`command.rs:3025-3032`). If the
-   command declares no `wrong_state` branch, the model cannot say what happens, and the draw is
+The order is Entity Runtime's (`ess-entity-runtime` sorts a command's branches into input-guarded
+refusals, the other guarded branches, the default and `wrong_state`; entity-core takes the first
+whose guard holds, then answers `wrong_state` where that branch moves from a state no move starts
+from), and it is the precedence [cross-record and stored-field guards](cross-record-and-stored-field-guards.md)
+states. Until beyond10x/ess#235 step 1 below came last: the model answered `wrong_state` before any
+guard, so a target in Entity Runtime's order disagreed wherever a refused input met a subject in a
+wrong state.
+
+1. **An input-guarded refusal holds** (an outcome with a `when` and an `error`): the first declared
+   whose guard holds, before anything else is read — whether a record carries the supplied
+   identity, the state it rests in, and every accepting branch the refusal overlaps
+   ([input-guard overlap precedence](input-guard-overlap-precedence.md)). No external branch is
+   eligible beside it.
+2. **Exactly one other `when` holds**: that outcome. **None holds**: the `otherwise` outcome. If
+   there is none, the draw is ambiguous.
+3. **The outcome from step 2 moves the subject from a state that no move of this command starts
+   from**: the command's `wrong_state` outcome. This is how `RawOutcome` defines the branch: "taken
+   because the subject is in a state no move starts from" (`command.rs:3025-3032`). An outcome that
+   moves nothing answers in every state, and that includes an eligible external branch that moves
+   nothing: Entity Runtime sorts it ahead of the default, so the draw still offers it beside
+   `wrong_state`, and once it is arranged it is the expected answer. Where more than one `when`
+   holds and every one of them moves, each would be the wrong-state answer, so the draw is not
+   ambiguous. If the command
+   declares no `wrong_state` branch, the model cannot say what happens, and the draw is
    *ambiguous* (item 4).
-2. **Exactly one `when` holds**: that outcome.
-3. **None holds**: the `otherwise` outcome. If there is none, the draw is ambiguous.
-4. **More than one holds, or the selected outcome moves from a state the subject is not in**
-   (although another move of the command starts from it): the draw is **ambiguous**. It is not
+4. **More than one accepting `when` holds, or the selected outcome moves from a state the subject is
+   not in** (although another move of the command starts from it): the draw is **ambiguous**. It is not
    executed. It is counted in `ambiguous` as `command` with the outcome names, and the attempt is
    redrawn. The draft took the first match in declaration order. That is a choice the
    specification does not make: overlap is refused only over finite domains (`command.rs:
@@ -635,6 +653,10 @@ existing lanes do, rather than skipping.
   lanes print and compare them.
 - **P2-8.** `ir.json` equals `EssIr::to_compact_json()` plus LF, and `source_digest` is SHA-256
   over it (a Rust unit test in `ess-compiler`).
+- **P2-9** (beyond10x/ess#235). Over `tests/fixtures/explore-guards-first.yaml`, a target in Entity
+  Runtime's order passes and reaches every outcome, and three targets fail in both lanes: one
+  answering `wrong_state` before any guard, one answering the later of two overlapping refusals,
+  and one answering an accepting branch over the refusal it overlaps.
 
 ## What each implementation unit checks before building
 
@@ -660,10 +682,9 @@ Each of these is **inferred** and is confirmed with one measurement before it is
 - How a view field maps to an entity field: by name, or through a projection? Read the IR of one
   view with a renamed field, if the model admits one. If it does, compare only the fields whose
   name equals an entity field, and say so in the README.
-- The `wrong_state` precedence in step 1 matches what `reach_in_state` (`synthesize.rs:1580`)
-  arranges. Run billing's `PayInvoice` refusal scenario and read which input it sends in which
-  state. If synthesis treats an input guard as taking precedence, the model follows synthesis, and
-  this page is corrected in the unit's report.
+- The `wrong_state` precedence matches what `reach_in_state` (`synthesize.rs:1580`) arranges.
+  Answered by beyond10x/ess#235: synthesis and Entity Runtime both take an input guard first, so the
+  model does too (steps 1–3 above); `tests/explore_guards_first.rs` pins it in both lanes.
 - `write_owned_files` accepts new file names inside the existing `conformance-typescript` and
   `conformance-go` families (`main.rs:2958-2964`). Emit into a directory that holds an older
   package.

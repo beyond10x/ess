@@ -675,6 +675,22 @@ function suppliedOutcome(command: Command): Node | undefined {
   );
 }
 
+/**
+ * Whether an outcome is an input-guarded refusal: a `when:` and an `error:`, which Entity Runtime
+ * tries before every other branch.
+ */
+function isInputRefusal(outcome: Node): boolean {
+  return (
+    outcome.condition?.kind === 'when' && typeof outcome.error === 'string' && outcome.error !== ''
+  );
+}
+
+/**
+ * Which branch a step takes, in Entity Runtime's order (beyond10x/ess#235): the input-guarded
+ * refusals, the first declared whose guard holds; then the accepting guarded branch that holds, or
+ * the default; then, where that branch moves from a state no move of the command starts from, the
+ * wrong-state branch.
+ */
 function decide(command: Command, input: Row, model: Model): Decision {
   const outcomes = list(command.node.outcomes);
   const supplied = suppliedOutcome(command);
@@ -687,10 +703,25 @@ function decide(command: Command, input: Row, model: Model): Decision {
     moves.flatMap((outcome: Node) => list(outcome.subject.transition.from)),
   );
   const wrong = outcomes.find((outcome: Node) => outcome.condition?.kind === 'wrong_state');
+  const source = facts(input);
+  // Entity Runtime's order (beyond10x/ess#235): an input-guarded refusal, the first declared whose
+  // guard holds, answers before anything else is read — the record, its state, a provider, and
+  // every accepting branch it overlaps.
+  for (const outcome of outcomes) {
+    if (!isInputRefusal(outcome)) continue;
+    const guard = command.guards.get(outcome.name) as Predicate;
+    const truth = guard.evaluate(source);
+    if (truth === TruthUnknown) {
+      return {
+        kind: 'unknown',
+        reason: `the guard of \`${outcome.name}\` (${guard}) is unknown over a generated input`,
+      };
+    }
+    if (truth === TruthTrue) return { kind: 'take', outcome, externals: [] };
+  }
   if (supplied !== undefined && record === undefined) {
     return { kind: 'ambiguous', names: ['no record for the supplied instance'] };
   }
-  const source = facts(input);
   // What a step may take where no ordinary branch can be: the eligible external branches alone,
   // or `otherwise`, when there are none.
   const orExternal = (otherwise: { kind: 'ambiguous'; names: string[] }): Decision => {
@@ -701,17 +732,28 @@ function decide(command: Command, input: Row, model: Model): Decision {
     }
     return otherwise;
   };
-  if (record !== undefined && moves.length > 0 && !starts.has(record.fields.state)) {
-    if (wrong !== undefined) return { kind: 'take', outcome: wrong, externals: [] };
+  // A move from a state no move of this command starts from is the wrong-state answer, whichever
+  // guarded branch or default made it (entity-core `admit_state`); a branch that moves nothing
+  // answers in every state. That includes an eligible external branch: Entity Runtime sorts it
+  // ahead of the default, so an arranged one answers here, and the draw offers it beside the
+  // wrong-state answer. Where the subject is stranded, only externals that move nothing are
+  // eligible (`eligibleExternals` drops a move from a state it does not start from).
+  const stranded = record !== undefined && moves.length > 0 && !starts.has(record.fields.state);
+  const wrongState = (): Decision => {
+    if (wrong !== undefined) {
+      const eligible = eligibleExternals(command, outcomes, source, record);
+      if (typeof eligible === 'string') return { kind: 'unknown', reason: eligible };
+      return { kind: 'take', outcome: wrong, externals: eligible };
+    }
     return orExternal({
       kind: 'ambiguous',
-      names: [`no outcome for state ${record.fields.state}`],
+      names: [`no outcome for state ${record!.fields.state}`],
     });
-  }
+  };
 
   const holding: Node[] = [];
   for (const outcome of outcomes) {
-    if (outcome.condition?.kind !== 'when') continue;
+    if (outcome.condition?.kind !== 'when' || isInputRefusal(outcome)) continue;
     const guard = command.guards.get(outcome.name) as Predicate;
     const truth = guard.evaluate(source);
     if (truth === TruthUnknown) {
@@ -729,6 +771,11 @@ function decide(command: Command, input: Row, model: Model): Decision {
   if (typeof externals === 'string') return { kind: 'unknown', reason: externals };
   let selected: Node;
   if (holding.length > 1) {
+    // Where every branch that holds moves and the subject rests where no move starts, each of them
+    // is the wrong-state answer, so the overlap decides nothing.
+    if (stranded && holding.every((outcome) => outcome.subject?.effect === 'moves')) {
+      return wrongState();
+    }
     return orExternal({ kind: 'ambiguous', names: holding.map((outcome) => String(outcome.name)) });
   } else if (holding.length === 1) {
     selected = holding[0];
@@ -743,6 +790,7 @@ function decide(command: Command, input: Row, model: Model): Decision {
     record !== undefined &&
     !list(selected.subject.transition.from).includes(record.fields.state)
   ) {
+    if (stranded) return wrongState();
     const names = [String(selected.name)];
     if (wrong !== undefined) names.push(String(wrong.name));
     return orExternal({ kind: 'ambiguous', names });

@@ -103,3 +103,6 @@ Defects filed after the batch was scoped join it: #227 (filed 2026-09-28), #216 
 - 2026-09-29 (third consumer batch): #242 ({$instance} inside list inputs refused by author) and #243 (authored step expecting an external branch compiles without configure_external_outcome) are defects and join 0.43; #244 (elapsed-time and calendar-window guards) is a feature request; the stored-field comparison ask went to #233 as a comment. Stories are created on integrate/ess-0.43 (the 0.42 branch is frozen as the release PR head).
 
 - #234 (2026-09-29, adversary pass 1): every blocker is fixed in the unit except the `touched` default refused beside a `when_subject` over an unset optional struct member (acceptance line 3): that follows #239's absent-field rule and is re-checked once #239 merges into integrate/ess-0.43. An invariant repair cannot satisfy is refused per outcome naming the invariant (never sent).
+
+- 2026-09-29 #239: observation before the command does not require an absent Optional field (runner compares top-level fields exactly; a view may omit the key). An 'absent or null' runner test needs a suite-format change; not in 0.43.
+- 2026-09-29 #243: new ESS-AUTHOR-037 enters the coverage inventory without a coverage-format bump, as 034-036 did; released readers refuse an inventory carrying it rather than misjudge it.

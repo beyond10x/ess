@@ -21,6 +21,19 @@
   request such a refusal claims on a command whose other branches it does not interpret yet; Entity
   Runtime already decides it before the row is loaded. Of two input-guarded refusals one request selects, the first declared answers, as Entity Runtime orders them: validation admits the overlap (it was `conflicting_declaration` on a held-state command), the interpreter returns that one refusal, and synthesis has a refusal's witness refute only the refusals declared before it, so a refusal nested inside an earlier one keeps its scenario rather than being withdrawn. Where the prover cannot decide one refusal's guard, only that refusal leaves the joint proof; a decidable one beside it still counts. One precedence order now answers every command, written once in the cross-record guards design note and linked from the others: on a `when_related:` command `existing_instance:` then `exists: false`; then input-guarded refusals, first declared; then existence of the addressed row; then the held state; then accepting and external branches in declaration order. The interpreter answers a missing related row by its `exists: false` branch before an input refusal, and synthesis sends that branch an input a refusal claims, so a target checking the input first fails it. Committed suites are byte-identical.
 
+- **The generated explorer decides a step in Entity Runtime's order (beyond10x/ess#235).** The
+  seeded explorer in the Go and TypeScript conformance packages answered a command's `wrong_state`
+  branch before evaluating any guard, so a target that refuses a bad input whatever state the
+  subject is in — as Entity Runtime and synthesis do — was reported as disagreeing. The explorer now
+  takes an input-guarded refusal (a `when:` with an `error:`) first, the first declared whose guard
+  holds, before it reads the record, its state or an external branch; then the accepting guarded
+  branch or the default; and answers `wrong_state` only where that branch moves from a state no
+  move of the command starts from. A branch that moves nothing answers in every state, an eligible
+  external branch included: on a subject resting where no move starts, the explorer offers it
+  beside `wrong_state` and, once arranged, expects it. Two accepting guards that both hold still
+  leave the draw ambiguous, unless every one of them moves from such a state.
+  `docs/design/mutation-audit-and-model-runner.md` states the order.
+
 ## [0.42.0] — 2026-09-29
 
 ### Changed
