@@ -176,8 +176,7 @@ an input. Entity Runtime stores it as its own JSON field kind. The Rust code tar
 as the generated types crate's dependency-free `json::Value`, and the Go code target as the
 generated `primitives.Json`, which carries the document text unchanged. The web code target
 carries the Rust value through its bridge, and its page holds it as `JSON.parse` answers it. The
-CLI code target refuses a model that uses it, at every position, until it has a representation
-for it.
+CLI code target reads a `Json` flag as one JSON document into the same `json::Value`.
 
 ### Carry finite binary floating-point values
 

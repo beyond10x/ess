@@ -13,6 +13,7 @@ use ess_compiler::ir::{
     ResolvedField, ResolvedTypeRef,
 };
 use ess_domain::name::QualifiedName;
+use ess_domain::Primitive;
 use ess_gen::Provenance;
 
 use super::layout::Layout;
@@ -110,6 +111,23 @@ fn value_set(ir: &EssIr, type_ref: &ResolvedTypeRef) -> Option<Vec<String>> {
     }
 }
 
+/// `true` where a flag's argument is one JSON document: a `Json` field, bare, optional, repeated,
+/// or through a newtype over one — the same positions [`value_set`] reads an enum through.
+///
+/// A struct, union or map member that holds `Json` is not one: the whole member is one free-text
+/// flag, as it is whatever its members are, and this target types none of them.
+fn json(ir: &EssIr, type_ref: &ResolvedTypeRef) -> bool {
+    match type_ref {
+        ResolvedTypeRef::Optional { of } | ResolvedTypeRef::List { of } => json(ir, of),
+        ResolvedTypeRef::Primitive { name } => *name == Primitive::Json,
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Newtype { of, .. } => json(ir, of),
+            _ => false,
+        },
+        ResolvedTypeRef::Map { .. } => false,
+    }
+}
+
 /// `true` where a field may be left out.
 fn optional(type_ref: &ResolvedTypeRef) -> bool {
     matches!(type_ref, ResolvedTypeRef::Optional { .. })
@@ -147,6 +165,16 @@ fn argument(ir: &EssIr, field: &ResolvedField, indent: &str) -> String {
             out,
             "\n{indent}        .value_parser(\n{indent}            \
              ::clap::builder::PossibleValuesParser::new({values:?}),\n{indent}        )",
+        );
+    }
+    if json(ir, &field.type_ref) {
+        // One argument holding one document, read by the model's own JSON reader at parse time: a
+        // malformed document is a usage error naming the byte it stopped at, and a handler gets
+        // the `json::Value` with member order and number spelling as typed.
+        let _ = write!(
+            out,
+            "\n{indent}        .value_parser(|text: &str| {{\n{indent}            \
+             crate::json::parse(text).map_err(|error| error.to_string())\n{indent}        }})",
         );
     }
     let _ = write!(out, ",\n{indent})");
@@ -357,7 +385,19 @@ pub(crate) fn main_module(ir: &EssIr, surfaces: &[Surface<'_>], provenance: &Pro
     let mut out = provenance.commented_for("//", "cargo xtask synth --target clap");
     out.push_str(
         "\n\n//! The binary: parse the tree, answer `completions` from it, dispatch the rest.\n\n\
-         mod handler;\nmod tree;\n\n\
+         mod handler;\n",
+    );
+    if crate::rust::json::used(ir) {
+        // The module is the Rust types crate's, byte for byte, and a binary uses only its reader
+        // and — once a handler prints a `Json` response — its writer; the rest is not dead code
+        // worth a second, trimmed copy.
+        out.push_str(
+            "// The Rust types crate's `json` module, byte for byte; this binary uses part of it.\n\
+             #[allow(dead_code)]\nmod json;\n",
+        );
+    }
+    out.push_str(
+        "mod tree;\n\n\
          pub use self::handler::{Handler, Unimplemented};\n\n\
          fn main() -> ::std::process::ExitCode {\n    \
          let matches = self::tree::command().get_matches();\n    \

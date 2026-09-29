@@ -61,7 +61,6 @@ pub struct Emission {
 /// rather than inventing a surface nobody declared.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Clap)?;
-    crate::failure::json(ir, plan, crate::Target::Clap)?;
     crate::failure::input_absent(ir, plan, crate::Target::Clap)?;
     crate::existence::refuse(ir, plan, crate::Target::Clap)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Clap)?;
@@ -88,6 +87,16 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Emission, crate::Ta
             tree::handler_module(ir, &surfaces, provenance),
         ),
     ];
+    // A model that uses `Json` gets the Rust types crate's own `json` module, byte for byte: the
+    // reader a `Json` flag is parsed with and the writer a handler prints a `Json` response with.
+    // One reader, not a second answer to "what is a JSON document"; and a model without `Json`
+    // keeps its previous bytes.
+    if crate::rust::json::used(ir) {
+        artifacts.push(Artifact::new(
+            layout.source("json"),
+            crate::rust::json::types_module(),
+        ));
+    }
     artifacts.sort_by(|left, right| left.path.cmp(&right.path));
 
     Ok(Emission {
