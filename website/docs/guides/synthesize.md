@@ -150,6 +150,17 @@ schema refuses (the route's `400`), or an unmet obligation (the route's `501`). 
 `handle` call the same decode-run-render function, so a conformance runner or an in-process caller
 gets what the HTTP surface answers without writing its own dispatch table.
 
+## Entity invariants are checked
+
+An entity's `invariants:` are fully determined, so the Rust target generates their check. Each
+entity that declares one gets `broken_invariant()` on its data type: the first declared invariant
+the value breaks, as the specification spells it, or `None`. A behaviour asks it before storing a
+value. An invariant is broken only when it is false. One that reads something absent, such as an
+empty `Optional`, a list position past the end, or `state`, which the data type does not hold,
+decides nothing, as the conformance interpreter reads it. An invariant the target cannot evaluate
+is refused at synthesis by name. See the
+[invariant check tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/invariant_check.rs).
+
 ## Honest limits
 
 * **Generated code is structural, never behavioural.** Every algorithm is an obligation.

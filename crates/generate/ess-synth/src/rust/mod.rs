@@ -33,6 +33,7 @@ mod actor;
 mod entity;
 pub(crate) mod feasibility;
 pub(crate) mod http;
+mod invariant;
 pub(crate) mod items;
 pub(crate) mod json;
 pub(crate) mod layout;
@@ -110,6 +111,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
     crate::failure::retry_bound(ir, plan, crate::Target::Rust)?;
     let layout = feasibility::checked(ir, plan, crate::Target::Rust)?;
     accessor::preflight(ir, plan, &layout)?;
+    invariant::preflight(ir, plan, &layout)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -329,6 +331,7 @@ fn primitives_module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Ar
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(PRIMITIVES);
     out.push_str(&reading::helpers(ir));
+    out.push_str(invariant::runtime(ir));
     Artifact::new(
         format!("crates/{}/src/primitives.rs", layout.package()),
         out,

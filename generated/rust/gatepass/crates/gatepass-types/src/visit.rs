@@ -86,8 +86,8 @@ pub struct VisitorName(pub String);
 /// The identity and every declared field. The state is deliberately not one: inside the domain it
 /// is carried by the type parameter of [`Visit<S>`], and at a boundary by [`VisitSnapshot::state`].
 ///
-/// Every value satisfies `deposit.amount >= 0` — declared here, enforced by whatever behaviour constructs one.
-/// Every value satisfies `expected_minutes > 0` — declared here, enforced by whatever behaviour constructs one.
+/// Every value satisfies `deposit.amount >= 0` — checked by [`VisitData::broken_invariant`].
+/// Every value satisfies `expected_minutes > 0` — checked by [`VisitData::broken_invariant`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisitData {
     /// The identity: `visit_id` — `gatepass.visit.VisitId`.
@@ -112,6 +112,25 @@ pub struct VisitData {
     pub badge: Option<Badge>,
     /// `on_watchlist` — `Boolean`.
     pub on_watchlist: bool,
+}
+
+impl VisitData {
+    /// The first declared invariant of `gatepass.visit.Visit` this value breaks, as the specification declares it,
+    /// or `None` when it breaks none.
+    ///
+    /// An invariant is broken only when it is false of this value. One that reads something
+    /// absent — an empty `Optional`, a list position past the end, or `state`, which this
+    /// type does not hold — decides nothing, as the conformance interpreter reads it.
+    pub fn broken_invariant(&self) -> Option<&'static str> {
+        use crate::primitives::invariant as iv;
+        if iv::broken(iv::compare(iv::Fact::number(&self.deposit.amount.0), iv::Op::Ge, iv::Fact::number("0"), false, true)) {
+            return Some("deposit.amount >= 0");
+        }
+        if iv::broken(iv::compare(Some(iv::Fact::integer(self.expected_minutes)), iv::Op::Gt, iv::Fact::number("0"), false, true)) {
+            return Some("expected_minutes > 0");
+        }
+        None
+    }
 }
 
 /// The states of `gatepass.visit.Visit`, at the type level.
