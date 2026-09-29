@@ -338,6 +338,8 @@ jobs:
 
       - name: Workspace tests ${{ matrix.shard }}
         if: ${{ !cancelled() && steps.archives.outcome == 'success' }}
+        env:
+          ESS_TUTORIAL_NETWORK: "1"
         run: task test-shard SHARD=${{ matrix.shard }}
 
       - name: Feature-off tests ${{ matrix.shard }}

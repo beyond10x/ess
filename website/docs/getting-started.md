@@ -1,14 +1,20 @@
 ---
 title: Getting started
 sidebar_position: 2
-description: Install ess, write a one-file specification, generate a contract from it, and hold a small implementation to the conformance suite it obliges.
+description: Install ess, write a one-file specification, pin the toolchain, generate a contract from it, and hold a small implementation to the conformance suite it obliges.
 ---
 
 # Getting started
 
-This page takes you from an installed `ess` to three things: a specification you wrote, an OpenAPI
-document generated from it, and a passing conformance run of an implementation against the suite
-the specification obliges. The second half walks through the larger example in the repository.
+This page takes you from an installed `ess` and an empty directory to three things: a specification
+you wrote, an OpenAPI document generated from it, and a passing conformance run of an
+implementation against the suite the specification obliges. The second half walks through the
+larger example in the repository.
+
+Every file this page has you write and every `ess` command it has you run is also run by the
+repository's own tests, and the output shown is the output they compare. Where a command prints
+more than is worth reading, `…` marks the lines left out. Paths print as they do when you start in
+your home directory, `~`.
 
 ## Install the command
 
@@ -23,25 +29,38 @@ for four native targets:
 | macOS Apple Silicon | `aarch64-apple-darwin` |
 
 Choose the target for your machine. This example downloads the latest published release, `0.43.0`,
-for Apple Silicon, verifies the archive before extracting it, and runs the binary in place:
+for Linux x86-64, verifies the archive before extracting it, and runs the binary in place:
 
 ```shell-session
 $ version=0.43.0
-$ target=aarch64-apple-darwin
+$ target=x86_64-unknown-linux-gnu
 $ archive="ess-${version}-${target}.tar.gz"
 $ base="https://github.com/beyond10x/ess/releases/download/${version}"
 $ curl --fail --location --remote-name "${base}/${archive}"
 $ curl --fail --location --remote-name "${base}/SHA256SUMS"
-$ grep -F "  ${archive}" SHA256SUMS | shasum -a 256 --check
-ess-0.43.0-aarch64-apple-darwin.tar.gz: OK
+$ grep -F "  ${archive}" SHA256SUMS | sha256sum --check
+ess-0.43.0-x86_64-unknown-linux-gnu.tar.gz: OK
 $ tar -xzf "${archive}"
 $ "./ess-${version}-${target}/ess" --version
 ess 0.43.0
 ```
 
+On macOS, set `target=aarch64-apple-darwin` (or `x86_64-apple-darwin` on Intel) and check the
+archive with `shasum`, which macOS ships in place of `sha256sum`:
+
+```shell-session
+$ grep -F "  ${archive}" SHA256SUMS | shasum -a 256 --check
+ess-0.43.0-aarch64-apple-darwin.tar.gz: OK
+```
+
 `SHA256SUMS` covers all four archives. Filtering the exact filename lets the checksum tool verify
 the one archive you downloaded without treating the other three as missing files. Put the extracted
-`ess` on your `PATH`; the rest of this page calls it `ess`.
+`ess` on your `PATH`; the rest of this page calls it `ess`:
+
+```shell-session ess-tutorial
+$ ess --version
+ess 0.43.0
+```
 
 If your machine is not in the release matrix, or you need to work from current `main`, build the
 locked Rust workspace from a source checkout:
@@ -59,15 +78,18 @@ The first level of `ess` is four areas: `specify` (write and resolve a specifica
 
 ## Write a specification
 
-Make a directory for the project and write one file, `spec/system.yaml`. It describes a list of
-tasks: a task is added with a title and a priority, and can be completed once.
+Make a directory for the project, with a `spec` directory inside it:
 
-```shell-session
-$ mkdir -p tasks/spec && cd tasks
+```shell-session ess-tutorial
+$ mkdir -p tasks/spec
+$ cd tasks
 ```
 
-```yaml title="spec/system.yaml"
-format: ess/1
+Write one file, `spec/system.yaml`. It describes a list of tasks: a task is added with a title and
+a priority, and can be completed once.
+
+```yaml ess-tutorial file=tasks/spec/system.yaml title="spec/system.yaml"
+format: ess/18
 system: tasks
 version: v1
 summary: A list of tasks that can be completed.
@@ -118,7 +140,7 @@ commands:
         sets: {title: input.title, priority: input.priority}
         emits: [tasks.list.TaskAdded]
         payload:
-          tasks.list.TaskAdded: {title: input.title}
+          tasks.list.TaskAdded: {task_id: {generated: true}, title: input.title}
       - name: rejected
         error: tasks.list.InvalidPriority
 
@@ -146,14 +168,14 @@ events:
       - {name: task_id, type: tasks.list.TaskId}
 
 views:
-  - name: tasks.list.OpenTasks
+  - name: tasks.list.Tasks
     source: tasks.list.Task
     consistency: read_your_writes
-    filter: state == Open
     fields:
       - {name: task_id, type: tasks.list.TaskId}
       - {name: title, type: tasks.list.Title}
       - {name: priority, type: Integer}
+      - {name: state, type: tasks.list.Task.State}
 
 components:
   - component: task-service
@@ -163,21 +185,61 @@ components:
     reached_by: network
 ```
 
-A few things in it are required rather than stylistic:
+`format: ess/18` is the newest version of the specification language; the
+[format history](./reference/spec-versions.md) lists what each version admits. A few things in the
+file are required rather than stylistic:
 
 - `AddTask` can be refused, so it declares the refusal as an outcome (`rejected`). The guard
   `when: priority >= 0` says which input takes which branch.
 - `CompleteTask` declares what it answers when the task is not `Open` (`wrong_state: true`). The
   lifecycle has no arrow out of `Done`, so completing a task twice is illegal without a second rule
   saying so.
-- `sets:` says what the new task holds, and `payload:` says what the event carries. Without them a
-  generated test could find the task and say nothing about its contents. `task_id` has no line in
-  either: the implementation assigns it, so the suite checks its presence and type only.
+- `sets:` says what the new task holds, and `payload:` gives every field of each event a source.
+  Without them a generated test could find the task and say nothing about its contents.
+  `task_id: {generated: true}` says the implementation assigns the identity, so the suite checks
+  its presence and type only.
+- The view `tasks.list.Tasks` shows each task with its `state`. A refusal such as completing a
+  `Done` task is observed through a view that projects the entity's identity and state; without
+  one, synthesis refuses that scenario and says so.
 
-Validate it. Validation resolves every name and reports every problem in one run:
+## Pin the toolchain
 
-```shell-session
-$ ess specify validate --path spec
+Next to `spec/`, write `ess-inputs.yaml`. It names the files that make up the specification, so
+every command reads exactly those:
+
+```yaml ess-tutorial file=tasks/ess-inputs.yaml title="ess-inputs.yaml"
+format: ess-inputs/2
+specification: [spec/system.yaml]
+scenarios: []
+```
+
+Pin the release this project is maintained with. `--pin` downloads that release, verifies it
+against the release's `SHA256SUMS`, caches it, and writes the pin into the nearest `ess-inputs.yaml`:
+
+```shell-session ess-tutorial
+$ ess specify toolchain install --pin 0.43.0
+installed ess 0.43.0 at ~/.cache/ess/toolchains/0.43.0/ess
+pinned ~/tasks/ess-inputs.yaml: requires: ess 0.43.0
+```
+
+The manifest now reads:
+
+```yaml ess-tutorial expect=tasks/ess-inputs.yaml title="ess-inputs.yaml"
+format: ess-inputs/2
+requires: ess 0.43.0
+specification: [spec/system.yaml]
+scenarios: []
+```
+
+From now on, any `ess` run in this directory or below it runs 0.43.0 from the cache, whatever
+release is on your `PATH`, so a later upgrade does not change what this project generates until you
+move the pin. `ess specify toolchain which` prints the release that would run and why.
+
+Validate the specification. Passing the directory makes `ess` read its `ess-inputs.yaml`.
+Validation resolves every name and reports every problem in one run:
+
+```shell-session ess-tutorial
+$ ess specify validate --path .
 tasks v1 — 1 file(s), valid
 ```
 
@@ -188,35 +250,34 @@ hint. The
 
 ## Generate a contract
 
-```shell-session
-$ ess generate --path spec --kind openapi --out generated
-openapi/task-service.yaml — 10736 byte(s)
+```shell-session ess-tutorial
+$ ess generate --path . --kind openapi --out generated
+openapi/task-service.yaml — 10755 byte(s)
 1 artifact(s), written to generated
 ```
 
 The OpenAPI document is a projection of the validated model, one per component. Regenerating after a
-change to the specification replaces it; it is never edited by hand. `--kind` also accepts `docs`,
-`site`, `schema` and `asyncapi`, and omitting it writes all five. See
+change to the specification replaces it; it is never edited by hand. `--kind` also accepts `docs`
+(Markdown), `site` (the same pages as a browsable HTML site), `docs-ir`, `schema` and `asyncapi`;
+omitting it writes all of them except `docs-ir`. See
 [Generate contracts and documentation](./guides/generate-artifacts.md).
 
 ## Hold an implementation to the specification
 
 The specification obliges a conformance suite: one scenario for each outcome, each lifecycle move
 and each move that must be refused. `ess` writes that suite together with a runner, as a Go or a
-TypeScript test package. This example uses TypeScript and needs Node.js 20 or later:
+TypeScript test package:
 
-```shell-session
-$ ess verify conform synthesize --path spec --target typescript --out conformance
+```shell-session ess-tutorial
+$ ess verify conform synthesize --path . --target typescript --out conformance
 6 scenario(s) (0 authored), 0 refusal(s), 13 file(s) written to conformance
-$ cd conformance/essconform
-$ npm install
 ```
 
 The package asks the implementation questions through one interface, `Target`: run this command,
 read this view. Write a test file that answers them. The implementation below keeps tasks in a
 `Map`; a real target would call your service instead.
 
-```ts title="conformance/essconform/src/conformance.test.ts"
+```ts ess-tutorial file=tasks/conformance/essconform/src/conformance.test.ts title="conformance/essconform/src/conformance.test.ts"
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { ErrUnsupported, run } from "./index.js";
@@ -267,10 +328,13 @@ function newTarget(): Target {
     },
 
     queryView(request: ViewRequest): ViewResult {
-      if (request.view !== "tasks.list.OpenTasks") throw ErrUnsupported;
-      const rows = [...tasks.values()]
-        .filter((task) => task.state === "Open")
-        .map(({ task_id, title, priority }) => ({ task_id, title, priority }));
+      if (request.view !== "tasks.list.Tasks") throw ErrUnsupported;
+      const rows = [...tasks.values()].map(({ task_id, title, priority, state }) => ({
+        task_id,
+        title,
+        priority,
+        state,
+      }));
       return { rows };
     },
 
@@ -292,28 +356,43 @@ await test("conformance", async (t) => {
 });
 ```
 
-Run it, asking for a report file:
+Install the package's dependencies and run it, asking for a report file. This needs Node.js 20 or
+later. `ESS_REPORT_FORMAT=2` selects the report format this suite requires; without it the runner
+stops before the first scenario and says so.
 
-```shell-session
-$ ESS_REPORT_OUT=$PWD/report.json npm test
+```shell-session ess-tutorial requires=node
+$ cd conformance/essconform
+$ npm install
+…
+$ ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=report.json npm test
 …
     ok 1 - tasks.list.AddTask/outcome/added
+…
     ok 2 - tasks.list.AddTask/outcome/rejected
+…
     ok 3 - tasks.list.CompleteTask/outcome/already-done
+…
     ok 4 - tasks.list.CompleteTask/outcome/completed
+…
     ok 5 - tasks.list.Task/state/Done/refuses/tasks.list.CompleteTask
+…
     ok 6 - tasks.list.Task/transition/complete/by/tasks.list.CompleteTask/completed
+…
 ok 1 - conformance
-# report: passed, 6 scenario(s), 0 not passed, written to …/report.json
+…
+# tasks v1, 6 scenario(s), spec digest ae9ae1d659481748f19a00a1451b0a656fa7abec1474b3c51ff1dc1dd53f0919
+# report/2: passed, written to report.json
+…
 ```
 
-`report.json` is an `ess-conformance-report/1` naming the specification, its digest, the
-implementation and the result. A skipped scenario, from a method that threw `ErrUnsupported`, makes
-the report `inconclusive` rather than `passed`.
+`report.json` is an `ess-conformance-report/2` naming the specification, the implementation, and
+the count of passed, failed, error, skipped and unsupported scenarios. Its `execution_status` is
+`passed`. Its `conformance_status` is `inconclusive`, because this run states nothing about
+coverage: [Verify conformance](./guides/verify-conformance.md) describes the stricter settings.
 
 To see that the suite tests something, break the implementation. Leave the task `Open` in
 `CompleteTask` (`task.state = "Open"`) and run `npm test` again: three scenarios fail, one of them
-with ``step 6: `tasks.list.CompleteTask` took `completed`, and the specification says
+with ``step 8: `tasks.list.CompleteTask` took `completed`, and the specification says
 `already-done` ``.
 
 Regenerating the package after a change to the specification keeps `src/conformance.test.ts`, which
@@ -327,10 +406,11 @@ both view consistencies and a type of every kind. From a checkout of the reposit
 below run against it. Replace `ess` with `cargo run --quiet --locked --bin ess --` to use the
 checkout's own build.
 
-```shell-session
+```shell-session ess-tutorial checkout
 $ ess specify validate --path examples/billing
 billing v3 — 5 file(s), valid
 
+$ mkdir -p target
 $ ess specify compile --path examples/billing --out target/billing.ir.json
 billing v3 — 5 file(s), 26 declaration(s), compiled to target/billing.ir.json
 ```
@@ -340,17 +420,30 @@ Compilation writes canonical JSON. Running it twice with the same input produces
 Inspect one declaration, or the interaction graph. Names resolve before inspection, so an unknown or
 ambiguous name is a refusal rather than an empty result:
 
-```shell-session
+```shell-session ess-tutorial checkout
 $ ess specify inspect --path examples/billing billing.invoice.Invoice
+entities:
+  domain: billing.invoice
+…
 $ ess specify graph --path examples/billing --format mermaid
+flowchart TB
+…
 ```
 
 Generate documentation. `docs` writes Markdown with Mermaid diagrams; `site` renders the same pages
 as a browsable HTML site with its own stylesheet and diagram renderer:
 
-```shell-session
+```shell-session ess-tutorial checkout
 $ ess generate --path examples/billing --kind docs --out target/projections
+…
+docs/index.md — 4140 byte(s)
+…
+6 artifact(s), written to target/projections
 $ ess generate --path examples/billing --kind site --out target/site
+…
+index.html — 11793 byte(s)
+…
+9 artifact(s), written to target/site
 ```
 
 The entry pages are `target/projections/docs/index.md` and `target/site/index.html`.
@@ -360,7 +453,7 @@ specification, and it does not host the site.
 Run the billing suite against the repository's own reference implementation of billing, which is
 built into `ess`:
 
-```shell-session
+```shell-session ess-tutorial checkout
 $ ess verify conform synthesize --path examples/billing --out target/billing-suite.json
 32 scenario(s) (0 authored), 0 refusal(s), written to target/billing-suite.json
 $ ess verify conform run --suite target/billing-suite.json --target billing
