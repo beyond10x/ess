@@ -76,6 +76,7 @@ fn stored(condition: &ResolvedCondition) -> Option<Predicate> {
         | ResolvedCondition::Otherwise
         | ResolvedCondition::ExternalWhen { .. }
         | ResolvedCondition::External { .. }
+        | ResolvedCondition::Related { .. }
         | ResolvedCondition::WrongState
         | ResolvedCondition::UnknownInstance
         | ResolvedCondition::InputAbsent
@@ -496,7 +497,7 @@ fn without_input(ir: &EssIr, entity: &EntityHandle, predicate: &Predicate) -> Pr
 /// candidate search beside the command's own guards, its literals are the values the input is
 /// tried at — the row's value, and by rule 3 its neighbours — so one candidate names the stored
 /// value and another does not, and the guard is witnessed both ways (beyond10x/ess#157).
-fn grounded(
+pub(super) fn grounded(
     ir: &EssIr,
     entity: &EntityHandle,
     settled: &BTreeMap<String, super::Determined>,
@@ -1090,6 +1091,7 @@ fn creations(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     hints: &[Predicate],
     distinction: Distinction,
+    arranging: &[&EntityHandle],
 ) -> Result<Vec<Arrangement>, RefusalCause> {
     let required = |reason| RefusalCause::InstanceRequired {
         entity: EntityRef::from(entity),
@@ -1097,7 +1099,7 @@ fn creations(
         reason,
     };
     let mut out =
-        vec![created(ir, entity, creator, actors, distinction, &[], None).map_err(required)?];
+        vec![created(ir, entity, creator, actors, distinction, arranging, None).map_err(required)?];
     if has_subject_guards(creator.command)
         || creator.outcome.test_strategy == ess_domain::command::TestStrategy::InjectFault
     {
@@ -1105,9 +1107,15 @@ fn creations(
     }
     for input in hinted(ir, entity, creator, hints)?.unwrap_or_default() {
         if input_selects(ir, creator.command, creator.outcome, &input)? {
-            if let Ok(arrangement) =
-                created(ir, entity, creator, actors, distinction, &[], Some(&input))
-            {
+            if let Ok(arrangement) = created(
+                ir,
+                entity,
+                creator,
+                actors,
+                distinction,
+                arranging,
+                Some(&input),
+            ) {
                 out.push(arrangement);
             }
         }
@@ -1160,6 +1168,7 @@ fn successors(
     arrangement: &Arrangement,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     hints: &[Predicate],
+    arranging: &[&EntityHandle],
 ) -> Vec<Arrangement> {
     let mut out = Vec::new();
     if uses(driver.command) {
@@ -1191,6 +1200,7 @@ fn successors(
         }
         return out;
     }
+    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
     if let Ok(invoked) = invoke(
         ir,
         driver,
@@ -1199,6 +1209,7 @@ fn successors(
         actors,
         Distinction::PLAIN,
         &BTreeMap::new(),
+        &chain,
     ) {
         let mut next = arrangement.clone();
         next.steps.extend(invoked.steps);
@@ -1211,6 +1222,8 @@ fn successors(
     }
     if has_subject_guards(driver.command)
         || driver.outcome.test_strategy == ess_domain::command::TestStrategy::InjectFault
+        // A related-row command (ess/18) is run only with the row it reads arranged, above.
+        || super::related_guard::uses(driver.command)
     {
         return out;
     }
@@ -1250,6 +1263,23 @@ fn search<T>(
     hints: &[Predicate],
     distinction: Distinction,
     field: &str,
+    goal: impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<(Arrangement, T), RefusalCause> {
+    search_within(ir, entity, actors, hints, distinction, field, &[], goal)
+}
+
+/// [`search`], inside an arrangement of the entities `arranging` names: a creator or a driver that
+/// would need one of them again (a related row of its own entity, ess/18) stops at the cycle, and
+/// the next creator is tried.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn search_within<T>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    distinction: Distinction,
+    field: &str,
+    arranging: &[&EntityHandle],
     mut goal: impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
     let all = ir.drivers();
@@ -1268,6 +1298,7 @@ fn search<T>(
             hints,
             distinction,
             field,
+            arranging,
             &mut goal,
         ) {
             Ok(found) => return Ok(found),
@@ -1298,9 +1329,10 @@ fn search_from<T>(
     hints: &[Predicate],
     distinction: Distinction,
     field: &str,
+    arranging: &[&EntityHandle],
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
-    let mut level = creations(ir, entity, creator, actors, hints, distinction)?;
+    let mut level = creations(ir, entity, creator, actors, hints, distinction, arranging)?;
     let mut seen = BTreeSet::new();
     let mut first: Option<RefusalCause> = None;
     loop {
@@ -1351,7 +1383,9 @@ fn search_from<T>(
                 {
                     continue;
                 }
-                next.extend(successors(ir, entity, driver, node, actors, hints));
+                next.extend(successors(
+                    ir, entity, driver, node, actors, hints, arranging,
+                ));
             }
         }
         level = next;

@@ -566,7 +566,7 @@ fn segment(
     let error = declared.error.as_ref().ok_or_else(no_error)?;
     let at = fresh.distinction();
     let identity = identity_at(ir, command, field, fresh)?;
-    let mut first = reach(ir, command, creating, at)?;
+    let mut first = creating_input(ir, command, creating, at)?;
     first.insert(field.to_owned(), identity.clone());
     let mut second = second;
     second.insert(field.to_owned(), identity);
@@ -633,6 +633,22 @@ fn segment(
     Ok(Segment { steps, source })
 }
 
+/// The input a creating branch is sent with: the one that reaches it, or — for a command reading a
+/// related row (ess/18), which only an arrangement of that row reaches — a plain one, which the
+/// creation then sends with the related row arranged for it.
+fn creating_input(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if super::related_guard::uses(command) {
+        super::related_guard::plain_input(ir, command, distinction)
+    } else {
+        reach(ir, command, outcome, distinction)
+    }
+}
+
 /// The create-or-refuse witness: for **every** creating branch, create with a fresh identity,
 /// snapshot the row, send the same identity again through that branch's own input with other
 /// field values, and require the declared error, no event and the row as it was. A target that
@@ -653,11 +669,12 @@ fn existing_instance(
     let mut source = BTreeSet::new();
     for (nth, (outcome, field)) in creating.into_iter().enumerate() {
         let fresh = Fresh::Stored(nth);
-        let first = reach(ir, command, outcome, fresh.distinction())?;
+        let first = creating_input(ir, command, outcome, fresh.distinction())?;
         // Other field values where the branch's own input allows them, so an overwrite is visible.
         let mut second = first.clone();
         for further in 0..=FRESH_WITNESSES {
-            let Ok(other) = reach(ir, command, outcome, Distinction::further(further)) else {
+            let Ok(other) = creating_input(ir, command, outcome, Distinction::further(further))
+            else {
                 continue;
             };
             let differs = other
@@ -667,6 +684,11 @@ fn existing_instance(
                 second = other;
                 break;
             }
+        }
+        // Beside a related guard (ess/18, #211) the second call names a related row that does not
+        // exist: the identity is checked first, so `existing_instance:` still answers.
+        if super::related_guard::uses(command) {
+            super::related_guard::point_at_missing(ir, command, &mut second)?;
         }
         let part = segment(
             ir,

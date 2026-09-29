@@ -198,7 +198,7 @@ impl PredicateSite<'_> {
 /// Every predicate the IR holds, each with its site and owner fields.
 ///
 /// Type, entity and struct invariants, outcome guards (the `when`, and the input predicate beside a
-/// subject or external condition), `when_subject:` predicates, view filters and binding
+/// subject or external condition), `when_subject:` and `when_related:` predicates, view filters and binding
 /// selections — the IR-side mirror of `ess_domain::primitive_admission::predicates`, which a test
 /// holds this to on every model under `examples/`. A consumer that must refuse a construct wherever
 /// a predicate reads it asks this walk, so a position cannot be forgotten in one consumer and
@@ -239,31 +239,7 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
         }
     }
     for command in ir.commands().values() {
-        for outcome in &command.outcomes {
-            let at = ConstructRef::new(ConstructKind::Command, command.name.to_string())
-                .key("outcomes")
-                .named(outcome.name.to_string());
-            if let Some(predicate) = input_predicate(&outcome.condition) {
-                found.push(PredicateSite {
-                    site: at.clone(),
-                    predicate,
-                    fields: command.input.clone(),
-                    input: Vec::new(),
-                });
-            }
-            if let ResolvedCondition::SubjectPredicate { predicate, .. } = &outcome.condition {
-                let fields = command
-                    .selection_subject(outcome)
-                    .map(|subject| ir.entity(&subject.entity).fields.clone())
-                    .unwrap_or_default();
-                found.push(PredicateSite {
-                    site: at.key("when_subject"),
-                    predicate,
-                    input: stored_input(&fields, &command.input),
-                    fields,
-                });
-            }
-        }
+        command_sites(ir, command, &mut found);
     }
     for view in ir.views().values() {
         if let Some(filter) = &view.filter {
@@ -304,6 +280,54 @@ pub fn predicate_sites(ir: &EssIr) -> Vec<PredicateSite<'_>> {
     found
 }
 
+/// The predicates one command's outcomes hold: each input guard, each `when_subject:` predicate over
+/// the subject's stored fields, and each `when_related:` predicate over the related row's (ess/18).
+fn command_sites<'ir>(
+    ir: &'ir EssIr,
+    command: &'ir crate::ir::ResolvedCommand,
+    found: &mut Vec<PredicateSite<'ir>>,
+) {
+    for outcome in &command.outcomes {
+        let at = ConstructRef::new(ConstructKind::Command, command.name.to_string())
+            .key("outcomes")
+            .named(outcome.name.to_string());
+        if let Some(predicate) = input_predicate(&outcome.condition) {
+            found.push(PredicateSite {
+                site: at.clone(),
+                predicate,
+                fields: command.input.clone(),
+                input: Vec::new(),
+            });
+        }
+        if let ResolvedCondition::SubjectPredicate { predicate, .. } = &outcome.condition {
+            let fields = command
+                .selection_subject(outcome)
+                .map(|subject| ir.entity(&subject.entity).fields.clone())
+                .unwrap_or_default();
+            found.push(PredicateSite {
+                site: at.clone().key("when_subject"),
+                predicate,
+                input: stored_input(&fields, &command.input),
+                fields,
+            });
+        }
+        if let ResolvedCondition::Related {
+            entity,
+            test: crate::ir::ResolvedRelatedTest::Holds { predicate },
+            ..
+        } = &outcome.condition
+        {
+            let fields = ir.entity(entity).fields.clone();
+            found.push(PredicateSite {
+                site: at.key("when_related"),
+                predicate,
+                input: stored_input(&fields, &command.input),
+                fields,
+            });
+        }
+    }
+}
+
 /// What a `when_subject` predicate over `fields` reads under `input.` (ess/15): the command's input,
 /// unless the entity declares a field named `input`, which keeps being read as itself.
 fn stored_input(fields: &[ResolvedField], input: &[ResolvedField]) -> Vec<ResolvedField> {
@@ -325,7 +349,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         ResolvedCondition::SubjectState { predicate, .. }
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
-        ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::Related { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState

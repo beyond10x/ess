@@ -949,6 +949,23 @@ fn written_condition(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and {guard}")),
         ),
+        ResolvedCondition::Related {
+            via,
+            entity,
+            test,
+            input,
+        } => format!(
+            "when {}{}",
+            match test {
+                ess_compiler::ir::ResolvedRelatedTest::Absent =>
+                    format!("no {} carries {via}", entity.name()),
+                ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } =>
+                    format!("the {} {via} names satisfies {predicate}", entity.name()),
+            },
+            input
+                .as_ref()
+                .map_or(String::new(), |guard| format!(" and {guard}")),
+        ),
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "when subject state is {state}{}",
             predicate

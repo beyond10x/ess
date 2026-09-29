@@ -245,7 +245,8 @@ fn input_predicate(condition: &ResolvedCondition) -> Option<&Predicate> {
         ResolvedCondition::SubjectState { predicate, .. }
         | ResolvedCondition::StateChange { predicate, .. }
         | ResolvedCondition::SubjectField { predicate, .. } => predicate.as_ref(),
-        ResolvedCondition::SubjectPredicate { input, .. } => input.as_ref(),
+        ResolvedCondition::SubjectPredicate { input, .. }
+        | ResolvedCondition::Related { input, .. } => input.as_ref(),
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState

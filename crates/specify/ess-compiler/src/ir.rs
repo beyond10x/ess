@@ -591,6 +591,24 @@ pub enum ResolvedCondition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input: Option<Predicate>,
     },
+    /// A row of another entity, named by an identity the input carries, is absent — or present and
+    /// satisfying a predicate over its stored fields — and the optional input guard holds
+    /// (`when_related:`, ess/18, beyond10x/ess#211).
+    ///
+    /// A missing row makes the predicate `Unknown`, so it selects only the
+    /// [`Absent`](ResolvedRelatedTest::Absent) branch: never a predicate branch and never the
+    /// default.
+    Related {
+        /// The input field carrying the other entity's identity.
+        via: ResolvedRelatedVia,
+        /// The entity whose identity that field carries.
+        entity: EntityHandle,
+        /// What the branch requires of the row.
+        test: ResolvedRelatedTest,
+        /// The ordinary input guard, when declared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input: Option<Predicate>,
+    },
     /// Taken when this predicate over the command's input holds.
     When {
         /// The predicate.
@@ -1027,6 +1045,39 @@ pub enum ResolvedPayloadValue {
     },
     /// How many rows the set outcome changed (ess/16, beyond10x/ess#167): `{count: changed}`.
     ChangedCount,
+}
+
+/// What a [`ResolvedCondition::Related`] branch requires of the row the input names (ess/18).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolvedRelatedTest {
+    /// `exists: false`: no row carries the identity.
+    Absent,
+    /// The row exists and this predicate over its stored fields — and `input.` — holds.
+    Holds {
+        /// The predicate.
+        predicate: Predicate,
+    },
+}
+
+/// The sentence a published contract opens a [`ResolvedCondition::Related`] branch with, without
+/// its input guard or final stop: one phrasing, shared by every projection that prints it.
+pub fn related_sentence(
+    via: &ResolvedRelatedVia,
+    entity: &EntityHandle,
+    test: &ResolvedRelatedTest,
+) -> String {
+    match test {
+        ResolvedRelatedTest::Absent => format!(
+            "Taken when no `{}` carries the identity `{via}` names",
+            entity.name()
+        ),
+        ResolvedRelatedTest::Holds { predicate } => format!(
+            "Taken when the `{}` that `{via}` names exists and its stored fields satisfy \
+             `{predicate}`",
+            entity.name()
+        ),
+    }
 }
 
 /// Where a [`ResolvedPayloadValue::RelatedField`] reads the other row's identity (ess/16).

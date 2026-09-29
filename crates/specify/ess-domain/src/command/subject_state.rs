@@ -65,6 +65,7 @@ fn admitted(outcome: &Outcome, entity: &EntitySpec) -> Option<BTreeSet<StateName
         | OutcomeCondition::Otherwise
         | OutcomeCondition::SubjectField { .. }
         | OutcomeCondition::SubjectPredicate { .. }
+        | OutcomeCondition::Related { .. }
         | OutcomeCondition::External { .. }
         | OutcomeCondition::ExternalWhen { .. }
         | OutcomeCondition::WrongState
@@ -220,6 +221,7 @@ pub fn validate(spec: &Specification, types: &TypeRegistry) -> ValidationErrors 
                 | OutcomeCondition::Otherwise
                 | OutcomeCondition::SubjectField { .. }
                 | OutcomeCondition::SubjectPredicate { .. }
+                | OutcomeCondition::Related { .. }
                 | OutcomeCondition::External { .. }
                 | OutcomeCondition::ExternalWhen { .. }
                 | OutcomeCondition::WrongState

@@ -127,6 +127,7 @@ impl RawGroupOutcome {
             name: self.name.clone(),
             when: None,
             when_subject: None,
+            when_related: None,
             when_subject_state: None,
             when_state_changes: None,
             external: Some(self.external.clone()),

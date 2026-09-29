@@ -54,7 +54,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/15` | [0.37.0][r37] | `unknown_instance:`, `deletes:`, `into:`, `accepts: nothing`, `preconditions:`; `input.` in subject guards; `equals_ignore_case`, `in_ignore_case`; `prefix:`, `Json`, `presence:`; aggregates over `Optional` fields |
 | `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`, `{related: …}`, literal `else:` |
 | `ess/17` | [0.39.0][r39] | `returns: true` |
-| `ess/18` | Unreleased | a list in `when_subject_state:`, and `when_subject_state:` on a refusal naming no subject; `state` in a `when_subject` predicate |
+| `ess/18` | Unreleased | a list in `when_subject_state:`, and `when_subject_state:` on a refusal naming no subject; `state` in a `when_subject` predicate; `when_related:` |
 
 The sections below give each version's rules. The first five are a table:
 
@@ -179,7 +179,10 @@ all one answer (beyond10x/ess#201). `when_state_changes:` still needs the branch
 `when_subject` predicate may read `state`, the lifecycle state the addressed row holds before
 selection, beside its stored fields: `{all: [state == Ready, hold_note != ""]}`
 (beyond10x/ess#204). A guarded branch selects before `wrong_state:` applies, and one taking a
-move must be able to take it in every state its predicate may select it in.
+move must be able to take it in every state its predicate may select it in. An outcome may carry
+`when_related: {via: input.<field>, exists: false}` or `when_related: {via: input.<field>,
+predicate: …}`, a guard over the row of another entity whose identity the input carries
+(beyond10x/ess#211). A missing row is answered by the `exists: false` branch before any other.
 
 ## `ess-diff/` — what moved between two revisions
 

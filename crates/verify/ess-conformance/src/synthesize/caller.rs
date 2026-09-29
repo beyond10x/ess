@@ -336,6 +336,12 @@ fn written(
                     *input = write_predicate(input, &on_input);
                 }
             }
+            // The related row is another entity's, which reads no caller; its input guard may.
+            ResolvedCondition::Related { input, .. } => {
+                if let Some(input) = input {
+                    *input = write_predicate(input, &on_input);
+                }
+            }
             ResolvedCondition::Otherwise
             | ResolvedCondition::External { .. }
             | ResolvedCondition::WrongState

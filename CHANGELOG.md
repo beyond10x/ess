@@ -24,6 +24,32 @@
   `wrong_state:` applies, so the predicate may name a state no move starts from. Synthesis arranges
   the row in the state and witnesses each conjunct's boundary; Entity Runtime lowers `state` to
   `$from_state`.
+- **A guard over a row of another entity** (beyond10x/ess#211). An outcome may carry
+  `when_related: {via: input.<field>, exists: false}`, taken when no row of the entity whose
+  identity `input.<field>` carries exists, or `when_related: {via: input.<field>, predicate: …}`,
+  taken when that row exists and the predicate over its stored fields (and `input.`) holds. It sits
+  on any branch, a `creates:` and a refusal that names no subject included, and composes with
+  `when:`. One hop, keyed by the other entity's identity only; a lookup by any other field stays out
+  of scope. A missing row makes the predicate unknown and selects only the `exists: false` branch,
+  which a command with a predicate branch must declare. A missing row is answered by that branch
+  before any other, so it carries no `when:`. `existing_instance:` may sit in the same command and
+  answers first: the command's own identity is checked before the related row is read. On one
+  branch beside a `when_subject*`, `wrong_state`, `unknown_instance`, `existing_instance`,
+  `input_absent`, `external` or `replays` key it is `conflicting_declaration`.
+- Conformance synthesis witnesses every branch of such a command: `exists: false` with an identity
+  no row carries beside two rows that carry others, and each other branch on a related row created
+  between two decoys, searched toward the predicates so each side is witnessed. A related predicate
+  with two or more connective children is witnessed once more per child, on a row isolating it (a
+  conjunct refuted alone, a disjunct held alone), with the branch the command answers there
+  asserted; a boundary no arrangement reaches is refused under the branch's scenario id. A creator
+  needing a related row of an entity it is already arranging (a folder inside a folder) gives way
+  to the next creator. Where the related row is the row the creation is owned by, through the same
+  input field, it is arranged once. A driver running such a command for another scenario arranges
+  the related row first, and each further row it creates carries its own identity and its own
+  related row. Families that would send the command without a related row (boundaries, unknown
+  identities, illegal moves) refuse with the new strategy `arrange_related_row` named.
+- The interpreted target reports a scenario of such a command `unsupported`, naming the guard.
+  Entity Runtime refuses the command with `RelatedGuardUnsupported`.
 
 ### Changed
 

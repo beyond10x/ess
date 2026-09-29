@@ -254,6 +254,7 @@ fn changed(
             actors,
             Distinction::further(first + nth),
             &BTreeMap::new(),
+            &[read.entity],
         ) else {
             continue;
         };

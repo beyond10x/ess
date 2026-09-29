@@ -662,6 +662,27 @@ pub(crate) fn condition_phrase(condition: &ResolvedCondition) -> String {
                 .as_ref()
                 .map_or(String::new(), |guard| format!(" and `{guard}`")),
         ),
+        ResolvedCondition::Related {
+            via,
+            entity,
+            test,
+            input,
+        } => match test {
+            ess_compiler::ir::ResolvedRelatedTest::Absent => format!(
+                "when no `{}` carries the identity `{via}` names{}",
+                entity.name(),
+                input
+                    .as_ref()
+                    .map_or(String::new(), |guard| format!(" and `{guard}`")),
+            ),
+            ess_compiler::ir::ResolvedRelatedTest::Holds { predicate } => format!(
+                "when the `{}` that `{via}` names satisfies `{predicate}`{}",
+                entity.name(),
+                input
+                    .as_ref()
+                    .map_or(String::new(), |guard| format!(" and `{guard}`")),
+            ),
+        },
         ResolvedCondition::SubjectState { state, predicate } => format!(
             "when the existing subject is in {state}{}",
             predicate

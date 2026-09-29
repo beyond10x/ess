@@ -111,6 +111,8 @@ pub fn status(outcome: &ResolvedOutcome) -> &'static str {
             | ResolvedCondition::SubjectField { .. }
             | ResolvedCondition::SubjectPredicate { .. }
             | ResolvedCondition::StateChange { .. }
+            // And so is one decided by a stored row of another entity (ess/18, `when_related:`).
+            | ResolvedCondition::Related { .. }
             // A duplicate of a record that exists conflicts with that record (ess/16).
             | ResolvedCondition::ExistingInstance,
             true,
