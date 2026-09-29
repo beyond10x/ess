@@ -3,7 +3,7 @@ title: What changed
 description: What each ESS release changed for somebody using it, newest release first.
 ---
 
-<!-- ess-what-changed-begin: generated from changes/*.yaml by `cargo xtask whats-changed`; edit a change record, not this page -->
+[ess-what-changed-begin]: # (generated from changes/*.yaml by cargo xtask whats-changed; edit a change record, not this page)
 
 What each ESS release is worth to somebody using it: what became possible, how much it matters, and where to read the rest, newest release first. The [changelog](https://github.com/beyond10x/ess/blob/main/CHANGELOG.md) is the complete record at the level each change was made; this page is the short one.
 
@@ -253,4 +253,4 @@ migration · significant impact · [release notes](https://github.com/beyond10x/
 
 ESS 0.1.0 extracts system modeling, schema contracts, generators, and conformance into an independent repository with no AEP dependency.
 
-<!-- ess-what-changed-end -->
+[ess-what-changed-end]: #

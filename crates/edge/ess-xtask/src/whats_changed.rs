@@ -316,8 +316,8 @@ fn render_site(fragments: &[Fragment], posts: &BTreeMap<String, String>) -> Stri
          it, newest release first.\n---\n\n",
     );
     out.push_str(
-        "<!-- ess-what-changed-begin: generated from changes/*.yaml by `cargo xtask \
-         whats-changed`; edit a change record, not this page -->\n\n",
+        "[ess-what-changed-begin]: # (generated from changes/*.yaml by cargo xtask whats-changed; \
+         edit a change record, not this page)\n\n",
     );
     out.push_str(
         "What each ESS release is worth to somebody using it: what became possible, how much it \
@@ -354,7 +354,7 @@ fn render_site(fragments: &[Fragment], posts: &BTreeMap<String, String>) -> Stri
         out.push_str(&site_text(fragment.summary.trim()));
         out.push('\n');
     }
-    out.push_str("\n<!-- ess-what-changed-end -->\n");
+    out.push_str("\n[ess-what-changed-end]: #\n");
     out
 }
 

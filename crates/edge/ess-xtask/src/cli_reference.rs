@@ -22,10 +22,10 @@ use std::path::Path;
 pub const PAGE: &str = "website/docs/reference/cli.md";
 
 /// The line that opens the generated block.
-const BEGIN: &str = "<!-- ess-cli-begin -->";
+const BEGIN: &str = "[ess-cli-begin]: #";
 
 /// The line that closes the generated block.
-const END: &str = "<!-- ess-cli-end -->";
+const END: &str = "[ess-cli-end]: #";
 
 /// The `ess` binary test that renders its own command tree.
 const ESS_TEST: &str = "tests::cli_reference_block";

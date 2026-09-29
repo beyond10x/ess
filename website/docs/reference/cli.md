@@ -358,7 +358,7 @@ is under `ess generate project kubernetes`. Their arguments are listed under
 
 ## Command reference
 
-<!-- ess-cli-begin -->
+[ess-cli-begin]: #
 
 This section is generated from the `ess` command definition by `cargo xtask cli-reference`. Change the command's help text and regenerate rather than editing it here.
 
@@ -1443,4 +1443,4 @@ ess infra import openapi [OPTIONS] --path <PATH>
 | `--out` | `<OUT>` | no |  | Where to write the replay-checked `ess-openapi-import/1` envelope |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
-<!-- ess-cli-end -->
+[ess-cli-end]: #
