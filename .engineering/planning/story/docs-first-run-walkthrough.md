@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-first-run-walkthrough
 kind: story
-status: active
+status: implemented
 title: The walkthrough goes from an empty directory to a green conformance run
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -12,10 +12,11 @@ scope:
   path: website/docs/getting-started.md
 - confidence: cited
   path: website/docs/index.md
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T14:11:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-09-29T14:11:13Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-09-29T14:29:14Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
@@ -28,7 +29,7 @@ compares the output they print.
 - Tutorial blocks are fenced with an `ess-tutorial` attribute; `cargo test -p ess-cli --test
   tutorial_page` writes them to a temporary directory, runs each command against the built binary,
   and compares every recorded output line. Changing one expected line makes the test fail.
-- The TypeScript step runs where `node` is on PATH and ends `report: passed, <n> scenario(s)`.
+- The TypeScript step runs where `node` is on PATH and ends `# report/2: passed`.
 - The tutorial uses the current `ess/` format and pins the toolchain with `ess specify toolchain
   install --pin`.
 - `index.md` describes `site` as HTML.
