@@ -2,13 +2,14 @@
 format: aep.planning-md/3
 id: epic:public-docs-overhaul
 kind: epic
-status: active
+status: implemented
 title: Public documentation takes a first-time adopter from zero to a green conformance run
 summary: 'Audit and overhaul of the website docs and README against 0.38.0: stale claims, missing adopter path, navigation, jargon.'
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T14:10:56Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-29T14:10:56Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-29T16:21:06Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 

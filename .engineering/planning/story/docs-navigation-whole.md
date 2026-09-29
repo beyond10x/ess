@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-navigation-whole
 kind: story
-status: active
+status: implemented
 title: Every page is reachable and every link lands on a rendered page
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -18,10 +18,11 @@ scope:
   path: website/docs/guides/record-realization.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T14:12:10Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-09-29T14:12:10Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-09-29T16:21:01Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

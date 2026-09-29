@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:docs-guides-current-and-plain
 kind: story
-status: active
+status: implemented
 title: The guides and CLI reference name current releases and read without internal shorthand
 relations:
 - decomposes: epic:public-docs-overhaul
@@ -16,10 +16,11 @@ scope:
   path: website/docs/guides/write-a-specification.md
 - confidence: cited
   path: website/docs/reference/cli.md
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-29T14:31:37Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-09-29T14:31:38Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-09-29T16:21:02Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
