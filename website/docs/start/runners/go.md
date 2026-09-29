@@ -226,5 +226,5 @@ PASS
 ```
 
 Every scenario passes, and `go/report.json` is the same `ess-conformance-report/2` the TypeScript
-run writes. [Verify conformance](../../guides/verify-conformance.md#hold-your-own-implementation-to-the-suite)
+run writes. [Verify conformance](../../guides/verify/runners.md#hold-your-own-implementation-to-the-suite)
 covers authored scenarios, coverage and the report in full.

@@ -279,7 +279,7 @@ qualification failures exit 1 before publication effects.
 
 Success qualifies only the supplied exact declared selection. Attachment binding, producer origin
 and artifact execution remain **unverified**; signature verification remains **unsupported**.
-See [component delivery](../concepts/component-delivery.md#migrate-the-release-component-action)
+See [component delivery](../concepts/component-delivery.md#release-a-component-with-the-action)
 for the breaking action inputs and old/new action/ESS compatibility.
 
 The compiler and projection operations stay offline. The commands that say `execute`, `publish`,

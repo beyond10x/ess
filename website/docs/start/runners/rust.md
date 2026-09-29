@@ -139,5 +139,5 @@ As written, every scenario comes back unsupported and the assertion fails: `exec
 from the suite, so two runs against a deterministic implementation produce the same report.
 
 The built-in targets of `ess verify conform run` (`billing`, `oracle-fixture`, `interpreted`) are
-implementations of this trait. [Verify conformance](../../guides/verify-conformance.md#a-target-in-rust)
+implementations of this trait. [Verify conformance](../../guides/verify/runners.md#a-target-in-rust)
 says what a Rust target must preserve.

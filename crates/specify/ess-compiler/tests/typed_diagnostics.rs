@@ -730,7 +730,7 @@ fn no_production_code_assigns_a_refusals_location() {
     );
 }
 
-/// The adopter-facing sample in `website/docs/guides/write-a-specification.md:134-137`.
+/// The adopter-facing sample in `website/docs/guides/specify/layout-and-validation.md:132-134`.
 ///
 /// It prints two `location` strings and one code. The guide is a published page; if the migration
 /// moved either, the page would be wrong and nothing else in the gate would notice.

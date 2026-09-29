@@ -127,5 +127,5 @@ Then run `npm test` with `ESS_REPORT_FORMAT=2` set; `ESS_REPORT_OUT` names a fil
 $ ESS_REPORT_FORMAT=2 ESS_REPORT_OUT=report.json npm test
 ```
 
-[Verify conformance](../../guides/verify-conformance.md#hold-your-own-implementation-to-the-suite)
+[Verify conformance](../../guides/verify/runners.md#hold-your-own-implementation-to-the-suite)
 covers authored scenarios, coverage and the report in full.
