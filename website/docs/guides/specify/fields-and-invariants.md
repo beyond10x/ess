@@ -173,8 +173,9 @@ It projects to the empty JSON Schema, which every value satisfies, and a suite c
 structurally: an object with the same members in another order is the same value. It is never a map
 key, a predicate never reads one, and no literal spells one, so a payload fills a `Json` field from
 an input. Entity Runtime stores it as its own JSON field kind. The Rust code target represents it
-as the generated types crate's dependency-free `json::Value`. The Go, web and CLI code targets
-refuse a model that uses it, at every position, until they have a representation for it.
+as the generated types crate's dependency-free `json::Value`, and the Go code target as the
+generated `primitives.Json`, which carries the document text unchanged. The web and CLI code
+targets refuse a model that uses it, at every position, until they have a representation for it.
 
 ### Carry finite binary floating-point values
 

@@ -128,6 +128,13 @@ fn helpers_file(
     emit.import("io");
     emit.import("net/http");
     emit.import("strconv");
+    if super::json::used(ir) {
+        return emit.file(
+            provenance,
+            SERVER_DOC,
+            &super::json::with_json(SURFACE_HELPERS, super::json::SURFACE_SUBSTITUTIONS),
+        );
+    }
     emit.file(provenance, SERVER_DOC, SURFACE_HELPERS)
 }
 
@@ -156,7 +163,15 @@ fn wire_file(
             })
     };
 
-    let mut body = String::from(WIRE_HELPERS);
+    // A model that uses `Json` reads objects with their member order (see `super::json`).
+    let mut body = if super::json::used(ir) {
+        emit.import("bytes");
+        let mut body = super::json::with_json(WIRE_HELPERS, super::json::WIRE_SUBSTITUTIONS);
+        body.push_str(super::json::WIRE);
+        body
+    } else {
+        String::from(WIRE_HELPERS)
+    };
     for declared in ir.types().values() {
         if presents(CapabilityKind::DomainType, &declared.name) {
             type_encoder(&mut body, &emit, declared);
@@ -543,7 +558,10 @@ fn encode_into(
 fn encode_primitive(primitive: Primitive, source: &str) -> String {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => {
+            // Embedded as it is spelled: members in order, numbers as written (beyond10x/ess#224).
+            format!("json.RawMessage({source}.Value())")
+        }
         Primitive::String | Primitive::Boolean | Primitive::Integer => source.to_owned(),
         Primitive::Bytes => format!("base64.StdEncoding.EncodeToString({source})"),
         Primitive::Decimal | Primitive::Timestamp | Primitive::Duration | Primitive::Uuid => {
@@ -556,7 +574,7 @@ fn encode_primitive(primitive: Primitive, source: &str) -> String {
 fn encode_key(primitive: Primitive, source: &str) -> String {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => unreachable!("ess-domain refuses a Json map key"),
         Primitive::String => source.to_owned(),
         Primitive::Boolean => format!("strconv.FormatBool({source})"),
         Primitive::Integer => format!("strconv.FormatInt({source}, 10)"),
@@ -638,7 +656,8 @@ fn decode_into(
                 Primitive::Decimal
                 | Primitive::Timestamp
                 | Primitive::Duration
-                | Primitive::Uuid => {
+                | Primitive::Uuid
+                | Primitive::Json => {
                     format!("{}({held})", emit.primitive_ctor(*name))
                 }
                 _ => held,
@@ -710,7 +729,7 @@ fn decode_into(
 fn decode_primitive(primitive: Primitive) -> (&'static str, &'static str) {
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => ("jsonAt", "any JSON value"),
         Primitive::String => ("textAt", "a string"),
         Primitive::Boolean => ("boolAt", "true or false"),
         Primitive::Integer => ("integerAt", "a whole number"),
@@ -735,7 +754,7 @@ fn decode_key(
     let held = format!("key{}", next(slot));
     match primitive {
         Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-        Primitive::Json => unreachable!("Json is refused before target rendering"),
+        Primitive::Json => unreachable!("ess-domain refuses a Json map key"),
         Primitive::String => return source.to_owned(),
         Primitive::Boolean => {
             let _ = writeln!(

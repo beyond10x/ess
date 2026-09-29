@@ -967,7 +967,9 @@ impl Layout {
     ) -> String {
         let wrapper = match primitive {
             Primitive::Binary64 => unreachable!("Binary64 is refused before target rendering"),
-            Primitive::Json => unreachable!("Json is refused before target rendering"),
+            // The document's text in a wrapper, emitted only for a model that uses `Json` (see
+            // `super::json` for why not `json.RawMessage`).
+            Primitive::Json => "Json",
             Primitive::String => return "string".to_owned(),
             Primitive::Boolean => return "bool".to_owned(),
             Primitive::Integer => return "int64".to_owned(),
