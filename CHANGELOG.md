@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.41.0] — 2026-09-29
+
 ### Added
 
 - **`ess/18`**, the source format of this release's new authored constructs. Every construct below

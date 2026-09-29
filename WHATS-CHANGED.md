@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.41.0](#state-scoped-refusals-guards-over-a-related-row-delivery-context-and-a-synthesis-and-mutation-defect-batch) | State-scoped refusals, guards over a related row, delivery context, and a synthesis and mutation defect batch | capability | significant |
 | [0.40.0](#generated-go-and-typescript-runtimes-run-every-suite-and-reader-side-composition-checks) | Generated Go and TypeScript runtimes run every suite, and reader-side composition checks | capability | significant |
 | [0.39.0](#concurrent-histories-checked-against-the-model-and-direct-library-returns) | Concurrent histories checked against the model, and direct library returns | capability | significant |
 | [0.38.0](#set-effects-caller-values-existence-selected-outcomes-bounded-retries-and-paged-views) | Set effects, caller values, existence-selected outcomes, bounded retries and paged views | capability | significant |
@@ -34,6 +35,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.41.0 — 2026-09-29
+
+### State-scoped refusals, guards over a related row, delivery context, and a synthesis and mutation defect batch
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.41.0)
+
+`ess/18` adds state-scoped refusals, `state` in a `when_subject` predicate, guards over a related row (`when_related:`) and a binding's delivery context. Synthesis now witnesses map inputs, identity and link view filters, every creating command and the record a refusal needs; mutation scores gained refusals apart from survivors.
 
 ## 0.40.0 — 2026-09-28
 

@@ -75,3 +75,13 @@ Defects filed after the batch was scoped join it: #227 (filed 2026-09-28), #216 
 | D (revised 2) | refusal-beside-state (#227), caller-digest (#216), overlap-precedence (#217), mutate-dead-guard (#218), diff-prefix (#219), distinguish-lists (#202), counter-limit (#226) |
 
 - 2026-09-29: #213, #214 and #215 were filed under a personal account; recreated by the App as #227, #228 and #229 and the originals closed. References above use the new numbers.
+
+- 2026-09-29 (operator): 0.41.0 is cut from the merged batch (#193 view-filter part, #195, #196, #198, #199, #201, #202, #203, #204, #205, #209, #210, #211). Units still open (#193 guard case, #216, #217, #218, #219, #226, #227, #202 lists) continue on a new integration branch cut from main after the 0.41.0 PR merges, for 0.42.0. #230 (a relation carried by the identity field refused as ESS-ENTITY-005) is a defect and joins that batch; comments added to #227, #228 and #229 from a second adopter.
+
+- #219 (2026-09-29): `ess-diff/10` ships in 0.41.0, so the prefix kinds cannot join it; they need `ess-diff/11` (unreleased, 0.42.0). Relation for `prefix-changed` is decided by comparison as `alphabet-changed` is (extends → narrowed, shortened → expanded, otherwise changed). The `reading` residual fix is accepted.
+
+- #218 (2026-09-29): `ess-mutation-report/2` and `ess-mutation-manifest/2` ship in 0.41.0, so the `equivalent` verdict (ESS-MUTATE-005), `baseline_refusals`, `unsatisfiable_guard` and `counts.equivalent` need `ess-mutation-report/3` and `ess-mutation-manifest/3` (unreleased, 0.42.0); `--collect` keeps reading `/1` and `/2`. Precedence accepted: a failing scenario kills first, a dead guard (`equivalent`) comes before the unwitnessed reasons, so the #203 fixture mutant is now `equivalent` with its added refusal still named.
+
+- #218 (2026-09-29, adversary pass 1): a dead guard never overrides `inconclusive` (the fallback scenario may kill it); only an otherwise `survived` or `unwitnessed` mutant becomes `equivalent`. Transition-class mutants (`from-drop`, `transition-to`) on a transition that only baseline-unwitnessed or dead outcomes perform are scored `unwitnessed` naming the baseline refusal; in scope of #218.
+
+- #217 (2026-09-29, correction 1): an external branch declared after accepting `when:` branches that cover its inputs is unreachable and refused at synthesis; the committed `guarded_external.rs` model declares `rejected` first (its intent kept). This matches Entity Runtime source order; CHANGELOG lists it under Changed.

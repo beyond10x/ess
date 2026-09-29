@@ -8,13 +8,15 @@ description: Current-source ESS capabilities, a dated release observation, and t
 
 ESS is experimental and standalone.
 
-Latest published release observed on 28 September 2026:
-[0.40.0](https://github.com/beyond10x/ess/releases/tag/0.40.0). Its release record lists archives
+Latest published release observed on 29 September 2026:
+[0.41.0](https://github.com/beyond10x/ess/releases/tag/0.41.0). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated asset-list observation;
 it does not claim that the archives were downloaded, their checksums verified, or the binary
-installed or executed. The release adds composition format `ess-composition/3` (reader-side
-conformance), and its generated Go and TypeScript runtimes run suites `ess-conformance/22` to `/27`;
-0.39.0 added concurrent-history conformance, `ess/17` and suites `/28` and `/29`. [Format version history](../reference/spec-versions.md) says what every format
+installed or executed. The release adds source format `ess/18` (state-scoped refusals, `state` in
+a `when_subject` predicate, guards over a related row, a binding's delivery context), suites
+`ess-conformance/30` and `/31`, `ess-diff/10`, and mutation report and manifest `/2`, and fixes
+synthesis and mutation defects (see the changelog); 0.40.0 added reader-side composition (`ess-composition/3`)
+and ran suites `/22` to `/27` in the generated Go and TypeScript runtimes; 0.39.0 added concurrent-history conformance, `ess/17` and suites `/28` and `/29`. [Format version history](../reference/spec-versions.md) says what every format
 version number changed and which release introduced it, and the
 [changelog](https://github.com/beyond10x/ess/blob/main/CHANGELOG.md) lists every release.
 
@@ -49,7 +51,7 @@ this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.40.0` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.41.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|
