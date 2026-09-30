@@ -164,6 +164,7 @@ pub mod reference;
 pub mod replay;
 pub mod report;
 pub mod response;
+pub mod results;
 pub mod runner;
 pub mod scenario;
 pub mod selection;

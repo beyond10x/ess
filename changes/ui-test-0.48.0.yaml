@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/ui-test-0.48.0
+repository: ess
+publishedAt: 2026-09-30T23:00:00Z
+title: ess ui test runs UI tests by node path
+summary: >-
+  `ess ui test` runs `ess-ui-test/1` tests, which select nodes by their document path, headless against the terminal renderer, and writes a Playwright spec for the generated React project from the same file.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.48.0
+  version: 0.48.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

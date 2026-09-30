@@ -1166,13 +1166,13 @@ fn command_handler(
          {{\n\t\t// 400 and not 422: this is a body the schema decides, which is the \
          difference\n\t\t// between fixing a value and fixing a serialiser.\n\t\treturn \
          refusal(400, err.Error())\n\t}}\n\toutcome, unmet := \
-         system.{field}.{method}(input)\n\tif unmet != nil {{\n\t\treturn refusal(501, \
-         unmet.Error())\n\t}}\n\t// Deliver what this command published to every binding that reacts to it, then \
+         system.{field}.{method}(input)\n\tif unmet != nil {{\n\t\treturn \
+         unfinished(unmet.Error(), false)\n\t}}\n\t// Deliver what this command published to every binding that reacts to it, then \
          take it\n\t// off the log: a long-running server keeps nothing from one request to the \
          next. Pump answers\n\t// only for what this command published, and returns with all of \
          it delivered.\n\tfailure := system.Pump()\n\tsystem.TakePublished()\n{invocations}\tif \
-         failure != nil {{\n\t\treturn refusal(501, \"delivering what the command published: \
-         \"+failure.Error())\n\t}}\n\treturn answer{function}(outcome)\n}}\n",
+         failure != nil {{\n\t\treturn unfinished(\"delivering what the command published: \
+         \"+failure.Error(), true)\n\t}}\n\treturn answer{function}(outcome)\n}}\n",
         command.name,
         invocations = if records_invocations {
             "\tsystem.TakeInvocations()\n"
@@ -1266,8 +1266,8 @@ fn view_handler(
         out,
         "\n// serve{function} answers `GET` `{}` at `{}` consistency: every row the owed \
          projection\n// holds.\nfunc serve{function}(system *{system}) response {{\n\trows, unmet \
-         := system.{field}.{method}()\n\tif unmet != nil {{\n\t\treturn refusal(501, \
-         unmet.Error())\n\t}}\n\tencoded := make([]any, 0, len(rows))\n\tfor _, row := range rows \
+         := system.{field}.{method}()\n\tif unmet != nil {{\n\t\treturn \
+         unfinished(unmet.Error(), false)\n\t}}\n\tencoded := make([]any, 0, len(rows))\n\tfor _, row := range rows \
          {{\n\t\tencoded = append(encoded, encodeView{function}(row))\n\t}}\n\treturn \
          rendered(200, map[string]any{{\"rows\": encoded}})\n}}\n",
         view.name,
@@ -1546,6 +1546,18 @@ func (r response) write(writer http.ResponseWriter) {
 // parse a second format to read why.
 func refusal(status int, detail string) response {
 	return rendered(status, map[string]any{"refused": detail})
+}
+
+// unfinished is the 501 the contract declares: the realization is unfinished.
+//
+// Its body is refusal's with one more member, committed: true when the command's effect and
+// events were committed and delivering what it published failed, and false when an unmet
+// obligation stopped it before anything was written.
+func unfinished(detail string, committed bool) response {
+	return rendered(501, struct {
+		Refused   string `json:"refused"`
+		Committed bool   `json:"committed"`
+	}{detail, committed})
 }
 
 // methodNotAllowed is the answer for a path this surface holds under a different method.

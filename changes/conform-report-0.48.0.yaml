@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/conform-report-0.48.0
+repository: ess
+publishedAt: 2026-09-30T23:00:00Z
+title: An outside runner's results become a conformance report
+summary: >-
+  `ess verify conform report` turns a runner's per-scenario results into an `ess-conformance-report/2` whose producer profile says the results were supplied and ESS executed nothing; aep 0.66.0 records it as evidence.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.48.0
+  version: 0.48.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

@@ -2,6 +2,80 @@
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-09-30
+
+### Added
+
+- `ess ui test --path <document> <tests…> [--format text|json] [--playwright <out>]` runs
+  `ess-ui-test/1` files: tests that open pages, select nodes by canonical node path (row key for
+  collection items), type, choose, act, page, expect text, rows and section state, play live
+  events, advance time and expect commands, with per-test fixtures. They run headless against
+  the terminal renderer and write `ess-ui-test-report/1` (exit 1 on a failure); `--playwright`
+  writes a Playwright spec for the generated React project from the same file, selecting
+  `[data-ui-path]`, where every step the terminal refuses is `test.fixme` with the same reason.
+  `ess-ui-tui` gains a read-only `App::regions()`; generated React column headers carry their
+  column's `data-ui-path`. Example tests: `examples/partner-portal/tests/`.
+- `ess verify conform report --suite <suite.json> --results <results.json> --implementation <name>
+  --report-out <path> [--runner <name>@<version>]` writes an `ess-conformance-report/2` from the
+  per-scenario results of a runner outside ESS, in any language. ESS admits the suite (an original
+  suite of any admitted format, or an `ess-conformance-input/1` carrier) and takes coverage, the suite
+  reference and policy from that admission, so the report qualifies exactly as one from ESS's own
+  run would, including a suite that nests as deep as `conform run --suite` admits. Exit 0 when
+  written, 2 when refused.
+- `ess-conformance-results/1` (unreleased) is the results document: closed `format`, exact u64
+  `completed_at`, optional `suite_digest` and `results: [{scenario_id, status, message?}]`, where
+  `status` is `passed`, `failed`, `error` or `unsupported`. The command refuses the whole document,
+  naming every offending entry, for a result for a scenario outside the suite, a scenario with no
+  result, two results for one scenario, any other status, and a `suite_digest` that is not the
+  admitted suite's. An entry refused for its own structure (an unknown field, say) still counts as
+  the result for the scenario it names, so that scenario is not also reported as having none.
+  Nothing is written on a refusal. `message` is read and not carried into the report.
+- report/2 `producer_profile` gains `external-scenario-status/1`, or
+  `external-scenario-status/1;runner=<name>@<version>`, for supplied results. It follows the Rust
+  category rules (`skipped` unavailable) and says that ESS executed nothing. ESS's own report/2
+  reader admits it; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1`
+  refuses it. `aep plan artifact evidence --from` admits it from aep 0.66.0; aep 0.65.0 and earlier refuse it.
+- `ess generate release check-conformance`, `publish-conformance` and `publish` still qualify a
+  passed report with this profile, and say so: `conformance: passed (results supplied by
+  <name>@<version>; ESS executed nothing) for the supplied exact declared selection`, or `by an
+  external runner` when the report names none.
+- Library: `ess_conformance::results` (`report`, `admit_suite`, `ExternalResults`, `Runner`,
+  `RESULTS_FORMAT`) and `CountReport::from_external`. `ProducerProfile` gains `External`.
+  `CountReport::producer_profile()` and `CountReport::runner()` tell supplied results from an ESS
+  run.
+
+### Changed
+
+- A served `501` says whether the command's effect was committed, in a boolean `committed` member
+  every `501` body now carries (beyond10x/ess#260). An unmet obligation, where nothing was written,
+  answers `{"refused": …, "committed": false}`; a committed command whose delivery to a binding
+  failed answers `{"refused": "delivering what the command published: …", "committed": true}`,
+  with the same words as before. The contract's `501` schema declares `committed` (boolean,
+  required) for every command. The generated Rust and Go servers answer the same members, and a
+  served view's `501` carries `committed: false`.
+- **Breaking for a Rust shell that matches every variant of the server's `entry::Refused`
+  without a wildcard arm**: the committed case is a new variant, `Refused::Undelivered(String)`,
+  where 0.47.0 answered `Refused::Unmet`. Add an `Undelivered` arm. A shell that matched
+  `Refused::Unmet(detail)` and tested `detail` for the prefix `delivering what the command
+  published` no longer sees that case under `Unmet`; match `Refused::Undelivered`, or call
+  `Refused::committed()`. A shell that only calls `status()` or `to_string()` is unaffected: both
+  answer as before. `http::Response::from(&Refused)` renders a refusal as served, `committed`
+  included.
+- The web bridge's `unmet-obligation` refusal carries `committed` the same way, and a command
+  whose delivery failed after it took effect is the new `BridgeError::Undelivered` (the same
+  `kind`); a `match` over every `BridgeError` variant without a wildcard arm needs one more arm.
+- A newer `ess` delegating to the release an `ess-inputs.yaml` pins (`requires: ess X.Y.Z`) now
+  prints its one-line `note: ess … is the dispatcher; delegating to ess …` on stderr for every
+  command, not only `--version`, so output written by the pinned release is not taken for the
+  newer one's (beyond10x/ess#261). `ESS_TOOLCHAIN_QUIET=1` silences it; stdout is the delegated
+  release's alone.
+
+### Fixed
+
+- `ess ui check --model <dir>` reads the specification through the directory's
+  `ess-inputs.yaml`, as `ess specify validate --path <dir>` does, instead of every YAML file
+  below it; `--model <dir>/ess-inputs.yaml` means its directory (beyond10x/ess#262).
+
 ## [0.47.0] — 2026-09-30
 
 ### Added

@@ -260,6 +260,7 @@ fn the_sidebar_has_the_adopter_categories_in_order_collapsed() {
             "reference/diagnostics",
             "reference/formats",
             "reference/ess-ui",
+            "reference/ess-ui-test",
             "reference/spec-versions",
             "reference/predicates",
             "reference/glossary",

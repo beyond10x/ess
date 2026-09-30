@@ -17,12 +17,15 @@ pub enum Refused {
     Unknown(String),
     /// The input is not the command's declared input; the route answers this `400`.
     Input(String),
-    /// The realization is unfinished; the route answers this `501`, which the contract declares.
-    ///
-    /// Either a port reported an unmet obligation, or the command's effect was committed and
-    /// delivering what it published failed (the detail then begins `delivering what the command
-    /// published`). Not to be retried: after a failed delivery a retry performs the command twice.
+    /// A port reported an unmet obligation, and nothing was written; the route answers this
+    /// `501`, which the contract declares, with `committed: false`.
     Unmet(String),
+    /// The command's effect and events were committed, and delivering what it published to a
+    /// binding failed; the route answers this `501` with `committed: true`.
+    ///
+    /// The detail begins `delivering what the command published`. Not to be retried: a retry
+    /// performs the command twice.
+    Undelivered(String),
 }
 
 impl Refused {
@@ -31,8 +34,14 @@ impl Refused {
         match self {
             Self::Unknown(_) => 404,
             Self::Input(_) => 400,
-            Self::Unmet(_) => 501,
+            Self::Unmet(_) | Self::Undelivered(_) => 501,
         }
+    }
+
+    /// `true` when the command's effect was committed before the refusal: the `501` body's
+    /// `committed` member.
+    pub fn committed(&self) -> bool {
+        matches!(self, Self::Undelivered(_))
     }
 }
 
@@ -43,7 +52,9 @@ impl std::fmt::Display for Refused {
                 f,
                 "`{name}` is not a command or view this surface declares"
             ),
-            Self::Input(detail) | Self::Unmet(detail) => f.write_str(detail),
+            Self::Input(detail) | Self::Unmet(detail) | Self::Undelivered(detail) => {
+                f.write_str(detail)
+            }
         }
     }
 }

@@ -89,8 +89,10 @@ When the nearest `ess-inputs.yaml` above the working directory carries an exact
 `requires: ess X.Y.Z` naming another release, or `ESS_TOOLCHAIN=X.Y.Z` is set, any `ess` runs that
 release from its cache (`$XDG_CACHE_HOME/ess/toolchains/X.Y.Z/ess`, else
 `~/.cache/ess/toolchains/`) with the same arguments and environment, installing it first when it is
-not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called. `ess --version` then names
-both the dispatcher and the release it delegated to. A release that cannot be installed is refused,
+not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called. Every delegated command
+prints one note on stderr naming the dispatcher, the release it delegated to and why
+(`ESS_TOOLCHAIN_QUIET=1` silences it); stdout is the delegated release's alone, and `ess --version`
+prints both releases' lines. A release that cannot be installed is refused,
 naming the newest cached one. This walk upwards reads only the pin; input selection still reads
 only the manifest of the directory it is given. The `toolchain` commands always run in the `ess`
 you called.
@@ -1299,6 +1301,28 @@ ess verify conform run [OPTIONS] --target <TARGET>
 | `--allow-incomplete` |  | no |  | Explicitly retain diagnostic execution exit behavior |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
+#### `ess verify conform report`
+
+Turn a runner's own per-scenario results into a report/2 for a suite ESS admits.
+
+For a runner outside ESS, written in any language, that executed the suite itself. ESS admits the suite (an original suite document or an `ess-conformance-input/1` carrier) and takes coverage, suite reference and policy from that admission; the runner supplies only an `ess-conformance-results/1` document with one terminal status per scenario. The report's `producer_profile` is `external-scenario-status/1` (naming `--runner` when given), so it cannot be read as a run ESS executed.
+
+Refused, writing nothing: a result for a scenario the suite does not contain, a scenario with no result, two results for one scenario, a status other than passed, failed, error or unsupported, and a `suite_digest` that is not the admitted suite's.
+
+Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
+
+```text
+ess verify conform report [OPTIONS] --suite <SUITE> --results <RESULTS> --implementation <IMPLEMENTATION> --report-out <REPORT_OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--suite` | `<SUITE>` | yes |  | The suite the runner executed, exactly the bytes it was given |
+| `--results` | `<RESULTS>` | yes |  | The runner's `ess-conformance-results/1` document |
+| `--implementation` | `<IMPLEMENTATION>` | yes |  | The implementation the runner held to the suite, as the report names it |
+| `--report-out` | `<REPORT_OUT>` | yes |  | Where to write the canonical `ess-conformance-report/2` |
+| `--runner` | `<RUNNER>` | no |  | The runner that produced the results, as `<name>@<version>` |
+
 #### `ess verify conform mutate`
 
 Audit the suite with specification mutants, each replayed against a reference target.
@@ -1531,5 +1555,20 @@ ess ui run [OPTIONS] --tui --path <PATH>
 | `--tui` |  | yes |  | Run in the terminal; the only renderer this command offers so far, so it must be named |
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to run |
 | `--fixtures` | `<FIXTURES>` | no |  | A fixture directory replacing the one the document names |
+
+#### `ess ui test`
+
+Run `ess-ui-test/1` tests headless against the terminal renderer, or with `--playwright` write them as a Playwright spec for the generated React project. Exits 1 when a test fails
+
+```text
+ess ui test [OPTIONS] --path <PATH> <TESTS>...
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<TESTS>`… |  | yes |  | `ess-ui-test/1` files |
+| `--path` | `<PATH>` | yes |  | The `ess-ui/1` document under test; every test file must name it |
+| `--format` | `<FORMAT>` | no | `text` | Report format. One of `text`, `json`. |
+| `--playwright` | `<OUT>` | no |  | Write the tests as a Playwright spec for the generated React project to this file, instead of running them |
 
 [ess-cli-end]: #

@@ -3,6 +3,7 @@ use crate::{
     admission::{AdmissionError, AdmittedSuite},
     count_json::Json,
     coverage::{Counts as CoverageCounts, Knowledge, Refusal, Selection, SuiteReference},
+    results::{ExternalResults, Runner},
     ConformanceReport, ExecutedRun, ScenarioId, ScenarioResult, Status,
 };
 use ess_primitives::evidence::SpecDigest;
@@ -34,6 +35,60 @@ pub enum ProducerProfile {
     /// Go skipped semantics; errors and unsupported are unavailable categories.
     #[serde(rename = "go-scenario-status/1")]
     Go,
+    /// Results a runner outside ESS supplied (`ess-conformance-results/1`); ESS executed nothing.
+    ///
+    /// Rust's category semantics: skipped is unavailable. On the wire it may name the runner, as
+    /// `external-scenario-status/1;runner=<name>@<version>`.
+    #[serde(rename = "external-scenario-status/1")]
+    External,
+}
+
+const EXTERNAL_PROFILE: &str = "external-scenario-status/1";
+const RUNNER_MARK: &str = ";runner=";
+
+/// The wire `producer_profile`: the category semantics, and for supplied results the runner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+struct Profile {
+    kind: ProducerProfile,
+    runner: Option<Runner>,
+}
+impl Profile {
+    const fn of(kind: ProducerProfile) -> Self {
+        Self { kind, runner: None }
+    }
+}
+impl TryFrom<String> for Profile {
+    type Error = String;
+    fn try_from(text: String) -> Result<Self, String> {
+        match text.as_str() {
+            "rust-scenario-status/1" => Ok(Self::of(ProducerProfile::Rust)),
+            "go-scenario-status/1" => Ok(Self::of(ProducerProfile::Go)),
+            EXTERNAL_PROFILE => Ok(Self::of(ProducerProfile::External)),
+            other => match other
+                .strip_prefix(EXTERNAL_PROFILE)
+                .and_then(|rest| rest.strip_prefix(RUNNER_MARK))
+            {
+                Some(runner) => Ok(Self {
+                    kind: ProducerProfile::External,
+                    runner: Some(Runner::parse(runner)?),
+                }),
+                None => Err(format!("unknown producer_profile {other:?}")),
+            },
+        }
+    }
+}
+impl From<Profile> for String {
+    fn from(profile: Profile) -> Self {
+        match (profile.kind, profile.runner) {
+            (ProducerProfile::Rust, _) => "rust-scenario-status/1".into(),
+            (ProducerProfile::Go, _) => "go-scenario-status/1".into(),
+            (ProducerProfile::External, None) => EXTERNAL_PROFILE.into(),
+            (ProducerProfile::External, Some(runner)) => {
+                format!("{EXTERNAL_PROFILE}{RUNNER_MARK}{runner}")
+            }
+        }
+    }
 }
 /// Five terminal categories and their checked sum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -117,7 +172,7 @@ struct WireReport {
     specification: String,
     spec_digest: SpecDigest,
     implementation: String,
-    producer_profile: ProducerProfile,
+    producer_profile: Profile,
     suite: SuiteReference,
     execution_status: CountStatus,
     counts: ScenarioCounts,
@@ -158,15 +213,60 @@ impl CountReport {
         if run.status != ConformanceReport::verdict(&run.scenarios) {
             return Err(error("run verdict contradicts terminal results"));
         }
+        Self::assemble(
+            admitted,
+            run.scenarios.iter().map(|r| (&r.scenario, r.status)),
+            run.implementation.to_string(),
+            Profile::of(ProducerProfile::Rust),
+            run.completed_at.epoch_millis(),
+        )
+    }
+    /// Publish results a runner outside ESS supplied, over ESS's own admission of the suite.
+    ///
+    /// Coverage, suite reference and policy come from `admitted`; the profile is
+    /// `external-scenario-status/1`, naming `runner` when given, so the report cannot be read as
+    /// a run ESS executed.
+    pub fn from_external(
+        results: &ExternalResults,
+        admitted: &AdmittedSuite,
+        implementation: &str,
+        runner: Option<Runner>,
+    ) -> Result<Self, AdmissionError> {
+        crate::results::implementation(implementation)?;
+        if results.admitted_digest() != admitted.digest() {
+            return Err(error("results were admitted against different suite bytes"));
+        }
+        Self::assemble(
+            admitted,
+            results.results().iter().map(|r| (&r.scenario, r.status)),
+            implementation.into(),
+            Profile {
+                kind: ProducerProfile::External,
+                runner,
+            },
+            results.completed_at(),
+        )
+    }
+    fn assemble<'a>(
+        admitted: &AdmittedSuite,
+        results: impl Iterator<Item = (&'a ScenarioId, Status)>,
+        implementation: String,
+        producer_profile: Profile,
+        completed_at: u64,
+    ) -> Result<Self, AdmissionError> {
         let mut outcomes = Outcomes::default();
-        for result in &run.scenarios {
-            let ids = match result.status {
+        let mut total = 0_u64;
+        for (scenario, status) in results {
+            let ids = match status {
                 Status::Passed => &mut outcomes.passed,
                 Status::Failed => &mut outcomes.failed,
                 Status::Error => &mut outcomes.error,
                 Status::Unsupported => &mut outcomes.unsupported,
             };
-            ids.push(result.scenario.clone());
+            ids.push(scenario.clone());
+            total = total
+                .checked_add(1)
+                .ok_or_else(|| error("result count overflow"))?;
         }
         for ids in [
             &mut outcomes.passed,
@@ -177,22 +277,23 @@ impl CountReport {
             ids.sort();
         }
         let counts = ScenarioCounts {
-            total: length(&run.scenarios)?,
+            total,
             passed: length(&outcomes.passed)?,
             failed: length(&outcomes.failed)?,
             error: length(&outcomes.error)?,
             unsupported: length(&outcomes.unsupported)?,
             skipped: 0,
         };
-        let execution_status = execution(ProducerProfile::Rust, &counts)?;
+        let execution_status = execution(producer_profile.kind, &counts)?;
+        let provenance = &admitted.suite().provenance;
         let result = Self(WireReport {
             format: COUNT_REPORT_FORMAT.into(),
-            specification: format!("{}/{}", run.suite.system, run.suite.specification_version),
-            spec_digest: run.suite.spec_digest.clone(),
-            implementation: run.implementation.to_string(),
-            producer_profile: ProducerProfile::Rust,
+            specification: format!("{}/{}", provenance.system, provenance.specification_version),
+            spec_digest: provenance.spec_digest.clone(),
+            implementation,
+            producer_profile,
             suite: SuiteReference {
-                version: run.suite.suite_version.to_string(),
+                version: provenance.suite_version.to_string(),
                 digest_profile: "sha256-json-bytes/1".into(),
                 digest: admitted.digest().into(),
             },
@@ -202,7 +303,7 @@ impl CountReport {
             coverage: ReportCoverage::of(admitted),
             conformance_status: qualification(execution_status, admitted),
             policy: "complete-selection/1".into(),
-            completed_at: run.completed_at.epoch_millis(),
+            completed_at,
         });
         result.validate(admitted)?;
         Ok(result)
@@ -285,7 +386,7 @@ impl CountReport {
                 "total or exact selected outcome membership disagrees",
             ));
         }
-        let expected = execution(r.producer_profile, &r.counts)?;
+        let expected = execution(r.producer_profile.kind, &r.counts)?;
         if r.execution_status != expected
             || r.conformance_status != qualification(expected, admitted)
         {
@@ -315,9 +416,18 @@ impl CountReport {
     pub fn completed_at(&self) -> u64 {
         self.0.completed_at
     }
+    /// Who produced the outcomes: [`ProducerProfile::External`] means a runner outside ESS
+    /// supplied them and ESS executed nothing.
+    pub fn producer_profile(&self) -> ProducerProfile {
+        self.0.producer_profile.kind
+    }
+    /// The runner the report names, only ever for [`ProducerProfile::External`].
+    pub fn runner(&self) -> Option<&Runner> {
+        self.0.producer_profile.runner.as_ref()
+    }
 }
 fn execution(profile: ProducerProfile, c: &ScenarioCounts) -> Result<CountStatus, AdmissionError> {
-    if (profile == ProducerProfile::Rust && c.skipped != 0)
+    if (matches!(profile, ProducerProfile::Rust | ProducerProfile::External) && c.skipped != 0)
         || (profile == ProducerProfile::Go && (c.error != 0 || c.unsupported != 0))
     {
         return Err(error("category unavailable for producer profile"));
@@ -387,7 +497,7 @@ impl CountRun {
     }
     fn validate(&self) -> Result<(), AdmissionError> {
         if self.0.format != COUNT_RUN_FORMAT
-            || self.0.summary.producer_profile != ProducerProfile::Rust
+            || self.0.summary.producer_profile.kind != ProducerProfile::Rust
         {
             return Err(error("unsupported detailed format/profile"));
         }

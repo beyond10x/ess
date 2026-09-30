@@ -28,7 +28,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub use model::{load_model, Model};
+pub use model::{load_model, model_from_sources, Model};
 
 /// The format marker of the JSON report.
 pub const FORMAT: &str = "ess-ui-check/1";
@@ -360,12 +360,35 @@ pub fn exit_code(args: &CheckArgs) -> Result<u8, CheckError> {
     report(args).map(|report| u8::from(report.has_errors()))
 }
 
+/// Runs `ess ui check` with the model already compiled, ignoring `args.model`: for a caller that
+/// resolves the specification itself (the CLI reads a directory through its `ess-inputs.yaml`).
+pub fn run_with_model(args: &CheckArgs, model: Option<&Model>) -> Result<ExitCode, CheckError> {
+    let text = std::fs::read_to_string(&args.path)
+        .map_err(|error| CheckError(format!("cannot read {}: {error}", args.path.display())))?;
+    let options = Options {
+        lacks: args.lacks.clone(),
+    };
+    let base = args.path.parent().unwrap_or_else(|| Path::new("."));
+    let report = check_source(
+        &text,
+        &args.path.display().to_string(),
+        base,
+        model,
+        &options,
+    );
+    print(&report, args.format)
+}
+
 /// Runs `ess ui check`: prints the report to standard output and returns the exit status.
 pub fn run(args: &CheckArgs) -> Result<ExitCode, CheckError> {
     let report = report(args)?;
+    print(&report, args.format)
+}
+
+fn print(report: &Report, format: OutputFormat) -> Result<ExitCode, CheckError> {
     let mut stdout = std::io::stdout().lock();
     stdout
-        .write_all(report.render(args.format).as_bytes())
+        .write_all(report.render(format).as_bytes())
         .and_then(|()| stdout.flush())
         .map_err(|error| CheckError(format!("cannot write the report: {error}")))?;
     Ok(ExitCode::from(u8::from(report.has_errors())))

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T03:42:23Z",
+  "actor": "human:timo",
+  "artifact": "story:external-results-become-a-report",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: external_results 15, conform_report 3, targeted report/2 lanes (ess-conformance 312, ess-cli 119); clippy; docs/cli-reference/schema --check; fmt-check. aep 0.65.0 refuses the new producer profile until aep accepts it",
+    "reference": "impl/external-results-report@570fecbf8"
+  }
+}

@@ -1,0 +1,50 @@
+format: ess-ui-test/1
+document: ../ui.yaml
+tests:
+  - name: the search narrows the partner list
+    steps:
+      - open: partners.list
+      - expect: {at: pages/partners.list/sections/list, rows: 6}
+      - type: {at: pages/partners.list/sections/filters, text: cedar}
+      - expect: {at: pages/partners.list/sections/list, rows: [pt-003]}
+      - expect: {at: pages/partners.list/sections/list/rows/pt-003, text: Cedar Partners}
+
+  - name: a tier choice narrows the partner list
+    steps:
+      - open: partners.list
+      - choose: {at: pages/partners.list/sections/filters/choices/tier, option: gold}
+      - expect: {at: pages/partners.list/sections/list, rows: [pt-001, pt-005]}
+
+  - name: a longer list pages
+    fixtures:
+      views:
+        partners.Page:
+          total: 12
+          rows:
+            - {id: pt-101, name: Partner 01, tier: silver, tags: []}
+            - {id: pt-102, name: Partner 02, tier: silver, tags: []}
+            - {id: pt-103, name: Partner 03, tier: silver, tags: []}
+            - {id: pt-104, name: Partner 04, tier: silver, tags: []}
+            - {id: pt-105, name: Partner 05, tier: silver, tags: []}
+            - {id: pt-106, name: Partner 06, tier: silver, tags: []}
+            - {id: pt-107, name: Partner 07, tier: silver, tags: []}
+            - {id: pt-108, name: Partner 08, tier: silver, tags: []}
+            - {id: pt-109, name: Partner 09, tier: silver, tags: []}
+            - {id: pt-110, name: Partner 10, tier: silver, tags: []}
+            - {id: pt-111, name: Partner 11, tier: gold, tags: []}
+            - {id: pt-112, name: Partner 12, tier: gold, tags: []}
+    steps:
+      - open: partners.list
+      - expect: {at: pages/partners.list/sections/list, rows: 10}
+      - page: {at: pages/partners.list/sections/list, to: 2}
+      - expect: {at: pages/partners.list/sections/list, rows: [pt-111, pt-112]}
+      - expect: {at: pages/partners.list/sections/list/rows/pt-112, text: Partner 12}
+
+  - name: deleting a partner asks first and sends the command
+    steps:
+      - open: partners.list
+      - act: pages/partners.list/sections/list/rows/pt-003/row_actions/delete
+      - expect: {at: pages/partners.list/overlays/delete, text: Delete partner}
+      - expect: {at: pages/partners.list/overlays/delete, text: Cloud rollout}
+      - act: pages/partners.list/overlays/delete
+      - expect_command: {command: partners.DeletePartner, input: {id: pt-003}}

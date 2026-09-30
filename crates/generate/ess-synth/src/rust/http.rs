@@ -730,8 +730,9 @@ fn entry_point(
          [`entry::Refused::Unknown`] naming `name` when this surface declares no command or \
          view\n/// by it; [`entry::Refused::Input`] when `input` is not the command's declared \
          input (the\n/// route's `400`); [`entry::Refused::Unmet`] when the port reports an \
-         unmet obligation, or when\n/// the command took effect and delivering what it \
-         published failed (the route's `501`).\npub fn handle{angled}({system}: &mut \
+         unmet obligation, and\n/// [`entry::Refused::Undelivered`] when the command took \
+         effect and delivering what it published\n/// failed (the route's `501`, with \
+         `committed` `false` and `true`).\npub fn handle{angled}({system}: &mut \
          {system_crate}::System{angled}, name: &str, {input}: json::Value) -> \
          Result<json::Value, entry::Refused>\n",
         component.name
@@ -875,7 +876,8 @@ fn command_handler(
 /// attempt stopped holds its event in its own held-back list, and an earlier event that keeps
 /// failing is attempted again there without failing this pump. So the log is taken whatever the
 /// pump answered, and the answer is `501` only when delivering what *this* command published
-/// failed; the command's own effect stands either way.
+/// failed; the command's own effect stands either way, which is why that refusal is
+/// `Refused::Undelivered` and its `501` says `committed: true`.
 fn settle(server: &Server<'_>) -> String {
     let failure = if system::pump_fails_with_transport(server.ir) {
         "{failure:?}"
@@ -893,7 +895,7 @@ fn settle(server: &Server<'_>) -> String {
     let _ = write!(
         out,
         "    if let Err(failure) = delivered {{\n        return \
-         Err(entry::Refused::Unmet(format!(\"delivering what the command published: \
+         Err(entry::Refused::Undelivered(format!(\"delivering what the command published: \
          {failure}\")));\n    }}\n"
     );
     out
@@ -1203,6 +1205,21 @@ impl Response {
         body.push('}');
         Self::new(status, JSON, body)
     }
+
+    /// The `501` the contract declares: the realization is unfinished.
+    ///
+    /// Its body is [`Response::refusal`]'s with one more member, `committed`: `true` when the
+    /// command's effect and events were committed and delivering what it published failed, and
+    /// `false` when an unmet obligation stopped it before anything was written.
+    pub fn unfinished(detail: &str, committed: bool) -> Self {
+        let mut body = String::from("{");
+        crate::json::member(&mut body, "refused");
+        crate::json::push_text(&mut body, detail);
+        crate::json::member(&mut body, "committed");
+        body.push_str(if committed { "true" } else { "false" });
+        body.push('}');
+        Self::new(501, JSON, body)
+    }
 }
 
 /// The answer for what a construct's shared path produced: the declared outcome at the status
@@ -1213,7 +1230,18 @@ impl Response {
 pub fn answer(result: Result<(u16, String), crate::entry::Refused>) -> Response {
     match result {
         Ok((status, body)) => Response::new(status, JSON, body),
-        Err(refused) => Response::refusal(refused.status(), &refused.to_string()),
+        Err(refused) => Response::from(&refused),
+    }
+}
+
+impl From<&crate::entry::Refused> for Response {
+    /// The refusal as served: at [`crate::entry::Refused::status`], and for a `501` with the
+    /// `committed` member the contract declares.
+    fn from(refused: &crate::entry::Refused) -> Self {
+        match refused.status() {
+            501 => Self::unfinished(&refused.to_string(), refused.committed()),
+            status => Self::refusal(status, &refused.to_string()),
+        }
     }
 }
 
@@ -1402,12 +1430,15 @@ pub enum Refused {
     Unknown(String),
     /// The input is not the command's declared input; the route answers this `400`.
     Input(String),
-    /// The realization is unfinished; the route answers this `501`, which the contract declares.
-    ///
-    /// Either a port reported an unmet obligation, or the command's effect was committed and
-    /// delivering what it published failed (the detail then begins `delivering what the command
-    /// published`). Not to be retried: after a failed delivery a retry performs the command twice.
+    /// A port reported an unmet obligation, and nothing was written; the route answers this
+    /// `501`, which the contract declares, with `committed: false`.
     Unmet(String),
+    /// The command's effect and events were committed, and delivering what it published to a
+    /// binding failed; the route answers this `501` with `committed: true`.
+    ///
+    /// The detail begins `delivering what the command published`. Not to be retried: a retry
+    /// performs the command twice.
+    Undelivered(String),
 }
 
 impl Refused {
@@ -1416,8 +1447,14 @@ impl Refused {
         match self {
             Self::Unknown(_) => 404,
             Self::Input(_) => 400,
-            Self::Unmet(_) => 501,
+            Self::Unmet(_) | Self::Undelivered(_) => 501,
         }
+    }
+
+    /// `true` when the command's effect was committed before the refusal: the `501` body's
+    /// `committed` member.
+    pub fn committed(&self) -> bool {
+        matches!(self, Self::Undelivered(_))
     }
 }
 
@@ -1428,7 +1465,9 @@ impl std::fmt::Display for Refused {
                 f,
                 "`{name}` is not a command or view this surface declares"
             ),
-            Self::Input(detail) | Self::Unmet(detail) => f.write_str(detail),
+            Self::Input(detail) | Self::Unmet(detail) | Self::Undelivered(detail) => {
+                f.write_str(detail)
+            }
         }
     }
 }

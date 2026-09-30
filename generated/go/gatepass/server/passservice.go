@@ -163,7 +163,7 @@ func serveGatepassVisitAdmitVisitor(system *system.System, body []byte) response
 	}
 	outcome, unmet := system.PassService.AdmitVisitor(input)
 	if unmet != nil {
-		return refusal(501, unmet.Error())
+		return unfinished(unmet.Error(), false)
 	}
 	// Deliver what this command published to every binding that reacts to it, then take it
 	// off the log: a long-running server keeps nothing from one request to the next. Pump answers
@@ -171,7 +171,7 @@ func serveGatepassVisitAdmitVisitor(system *system.System, body []byte) response
 	failure := system.Pump()
 	system.TakePublished()
 	if failure != nil {
-		return refusal(501, "delivering what the command published: "+failure.Error())
+		return unfinished("delivering what the command published: "+failure.Error(), true)
 	}
 	return answerGatepassVisitAdmitVisitor(outcome)
 }
@@ -222,7 +222,7 @@ func serveGatepassVisitRegisterVisit(system *system.System, body []byte) respons
 	}
 	outcome, unmet := system.PassService.RegisterVisit(input)
 	if unmet != nil {
-		return refusal(501, unmet.Error())
+		return unfinished(unmet.Error(), false)
 	}
 	// Deliver what this command published to every binding that reacts to it, then take it
 	// off the log: a long-running server keeps nothing from one request to the next. Pump answers
@@ -230,7 +230,7 @@ func serveGatepassVisitRegisterVisit(system *system.System, body []byte) respons
 	failure := system.Pump()
 	system.TakePublished()
 	if failure != nil {
-		return refusal(501, "delivering what the command published: "+failure.Error())
+		return unfinished("delivering what the command published: "+failure.Error(), true)
 	}
 	return answerGatepassVisitRegisterVisit(outcome)
 }
@@ -276,7 +276,7 @@ func serveGatepassVisitSignOutVisitor(system *system.System, body []byte) respon
 	}
 	outcome, unmet := system.PassService.SignOutVisitor(input)
 	if unmet != nil {
-		return refusal(501, unmet.Error())
+		return unfinished(unmet.Error(), false)
 	}
 	// Deliver what this command published to every binding that reacts to it, then take it
 	// off the log: a long-running server keeps nothing from one request to the next. Pump answers
@@ -284,7 +284,7 @@ func serveGatepassVisitSignOutVisitor(system *system.System, body []byte) respon
 	failure := system.Pump()
 	system.TakePublished()
 	if failure != nil {
-		return refusal(501, "delivering what the command published: "+failure.Error())
+		return unfinished("delivering what the command published: "+failure.Error(), true)
 	}
 	return answerGatepassVisitSignOutVisitor(outcome)
 }
@@ -325,7 +325,7 @@ func answerGatepassVisitSignOutVisitor(outcome visit.SignOutVisitorOutcome) resp
 func serveGatepassVisitVisitById(system *system.System) response {
 	rows, unmet := system.PassService.VisitById()
 	if unmet != nil {
-		return refusal(501, unmet.Error())
+		return unfinished(unmet.Error(), false)
 	}
 	encoded := make([]any, 0, len(rows))
 	for _, row := range rows {
@@ -339,7 +339,7 @@ func serveGatepassVisitVisitById(system *system.System) response {
 func serveGatepassVisitExpectedVisits(system *system.System) response {
 	rows, unmet := system.PassService.ExpectedVisits()
 	if unmet != nil {
-		return refusal(501, unmet.Error())
+		return unfinished(unmet.Error(), false)
 	}
 	encoded := make([]any, 0, len(rows))
 	for _, row := range rows {

@@ -59,6 +59,14 @@ pub enum BridgeError {
         /// The construct that requires it, in the specification's own spelling.
         source: String,
     },
+    /// The command took effect, and delivering what it published reached an obligation
+    /// nothing has satisfied: the command is not to be run again, because its effect stands.
+    Undelivered {
+        /// The capability kind, as the plan spells it.
+        capability: String,
+        /// The construct that requires it, in the specification's own spelling.
+        source: String,
+    },
     /// A redelivery named an occurrence the log does not hold.
     NoSuchOccurrence(usize),
 }
@@ -97,14 +105,8 @@ impl BridgeError {
                 json::member(out, "found");
                 json::push_text(out, &error.found);
             }
-            Self::Unmet { capability, source } => {
-                json::member(out, "kind");
-                json::push_text(out, "unmet-obligation");
-                json::member(out, "capability");
-                json::push_text(out, capability);
-                json::member(out, "source");
-                json::push_text(out, source);
-            }
+            Self::Unmet { capability, source } => unmet(out, capability, source, false),
+            Self::Undelivered { capability, source } => unmet(out, capability, source, true),
             Self::NoSuchOccurrence(occurrence) => {
                 json::member(out, "kind");
                 json::push_text(out, "no-such-occurrence");
@@ -129,6 +131,29 @@ impl From<billing_types::obligation::UnmetObligation> for BridgeError {
             source: unmet.source.to_owned(),
         }
     }
+}
+
+impl BridgeError {
+    /// The refusal for a command whose effect stands and whose delivery reached `unmet`.
+    fn undelivered(unmet: billing_types::obligation::UnmetObligation) -> Self {
+        Self::Undelivered {
+            capability: unmet.capability.to_owned(),
+            source: unmet.source.to_owned(),
+        }
+    }
+}
+
+/// An unmet obligation as the page reads it, with `committed` saying whether the command's
+/// effect stands.
+fn unmet(out: &mut String, capability: &str, source: &str, committed: bool) {
+    json::member(out, "kind");
+    json::push_text(out, "unmet-obligation");
+    json::member(out, "capability");
+    json::push_text(out, capability);
+    json::member(out, "source");
+    json::push_text(out, source);
+    json::member(out, "committed");
+    out.push_str(if committed { "true" } else { "false" });
 }
 
 /// The running system, behind a boundary that erases which realization assembled it.
@@ -202,7 +227,8 @@ where
             }
             other => return Err(BridgeError::UnknownCommand(other.to_owned())),
         }
-        self.pump()?;
+        // The command's effect stands whatever delivering it answers.
+        self.pump().map_err(BridgeError::undelivered)?;
         Ok(out)
     }
 

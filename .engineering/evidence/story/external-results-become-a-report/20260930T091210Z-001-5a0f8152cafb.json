@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-30T09:12:10Z",
+  "actor": "human:timo",
+  "artifact": "story:external-results-become-a-report",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: adversary_results_pass1 6, external_results 16, conform_report 3, delivery_trust 42 passed, 0 failed"
+  }
+}

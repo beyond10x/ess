@@ -295,6 +295,17 @@ fn the_bridge_refuses_the_command_whose_event_stuck_as_unmet() {
     );
 }
 
+/// beyond10x/ess#260: the command whose event stuck took effect, and the bridge's refusal says so
+/// as a member a page reads, as the served `501` does.
+#[test]
+fn the_bridge_marks_the_stuck_command_as_committed() {
+    let (_, answer) = served("stuck");
+    assert!(
+        answer.contains(r#""kind":"unmet-obligation""#) && answer.contains(r#""committed":true"#),
+        "the stuck `Open` took effect before its delivery failed: {answer}"
+    );
+}
+
 #[test]
 fn the_bridge_keeps_answering_every_command_after_a_stuck_event() {
     for label in ["ping-1", "ping-2"] {

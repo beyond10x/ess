@@ -195,7 +195,7 @@ fn main() {
             Err(refused) => {
                 assert_eq!(
                     answered,
-                    http::Response::refusal(refused.status(), &refused.to_string()),
+                    http::Response::from(refused),
                     "`{name}` refuses the same way on both paths"
                 );
             }
@@ -331,9 +331,9 @@ const EXPECTED: &str = concat!(
      array\"}\n",
     "desk.tickets.Ping ok 502 {\"outcome\":\"busy\",\"published\":[],\"error\":\"desk.tickets.Busy\"}\n",
     "desk.tickets.Ping refused 501 {\"refused\":\"unmet obligation: command_behavior \
-     `desk.tickets.Ping` — see PLAN.md\"}\n",
+     `desk.tickets.Ping` — see PLAN.md\",\"committed\":false}\n",
     "desk.tickets.Tickets ok 200 {\"rows\":[{\"id\":\"t1\",\"title\":\"printer\"}]}\n",
     "desk.tickets.Titles refused 501 {\"refused\":\"unmet obligation: view_query \
-     `desk.tickets.Titles` — see PLAN.md\"}\n",
+     `desk.tickets.Titles` — see PLAN.md\",\"committed\":false}\n",
     "unknown `desk.tickets.Nowhere` is not a command or view this surface declares\n",
 );

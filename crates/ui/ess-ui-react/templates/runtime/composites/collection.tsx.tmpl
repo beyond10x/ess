@@ -35,6 +35,12 @@ export function Collection(props: {
   const container = props["data-ui-path"] ?? frame;
   const scopedContainer = useUiPath(container);
   const rowPath = (key: string) => (scopedContainer === undefined ? undefined : `${scopedContainer}/rows/${key}`);
+  // A column header renders its own canonical path (`<collection>/columns/<name>`, or `…/columns/all/<name>` for
+  // selectable columns), scoped as the collection is when it sits inside a row.
+  const columnPath = (own: string) =>
+    container !== undefined && scopedContainer !== undefined && own.startsWith(`${container}/`)
+      ? `${scopedContainer}${own.slice(container.length)}`
+      : own;
   const data = useData(props.reads);
   const section = useSectionName();
   const [selected, setSelected] = useState<Json[]>([]);
@@ -190,7 +196,7 @@ export function Collection(props: {
           <tr>
             {selectionOn ? <th /> : null}
             {columns.map((column) => (
-              <th key={column.name}>
+              <th key={column.name} data-ui-path={columnPath(column["data-ui-path"])}>
                 {column.sortable ? (
                   <button type="button" className="ui-sort" onClick={() => toggleSort(column.field)}>
                     {fieldLabel(column)}

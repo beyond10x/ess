@@ -9,6 +9,26 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.48.0 — 2026-09-30
+
+### An outside runner's results become a conformance report
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/ui-tests-and-supplied-results) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.48.0)
+
+`ess verify conform report` turns a runner's per-scenario results into an `ess-conformance-report/2` whose producer profile says the results were supplied and ESS executed nothing; aep 0.66.0 records it as evidence.
+
+### A served 501 says whether the effect was committed
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/ui-tests-and-supplied-results) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.48.0)
+
+Every served `501` carries `committed`: false for an unmet obligation, true when the command took effect and delivering what it published failed. Rust shells gain `Refused::Undelivered`.
+
+### ess ui test runs UI tests by node path
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/ui-tests-and-supplied-results) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.48.0)
+
+`ess ui test` runs `ess-ui-test/1` tests, which select nodes by their document path, headless against the terminal renderer, and writes a Playwright spec for the generated React project from the same file.
+
 ## 0.47.0 — 2026-09-30
 
 ### ess-ui/1 UI documents load, check and render

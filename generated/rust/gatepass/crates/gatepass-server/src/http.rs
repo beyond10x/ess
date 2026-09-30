@@ -95,6 +95,21 @@ impl Response {
         body.push('}');
         Self::new(status, JSON, body)
     }
+
+    /// The `501` the contract declares: the realization is unfinished.
+    ///
+    /// Its body is [`Response::refusal`]'s with one more member, `committed`: `true` when the
+    /// command's effect and events were committed and delivering what it published failed, and
+    /// `false` when an unmet obligation stopped it before anything was written.
+    pub fn unfinished(detail: &str, committed: bool) -> Self {
+        let mut body = String::from("{");
+        crate::json::member(&mut body, "refused");
+        crate::json::push_text(&mut body, detail);
+        crate::json::member(&mut body, "committed");
+        body.push_str(if committed { "true" } else { "false" });
+        body.push('}');
+        Self::new(501, JSON, body)
+    }
 }
 
 /// The answer for what a construct's shared path produced: the declared outcome at the status
@@ -105,7 +120,18 @@ impl Response {
 pub fn answer(result: Result<(u16, String), crate::entry::Refused>) -> Response {
     match result {
         Ok((status, body)) => Response::new(status, JSON, body),
-        Err(refused) => Response::refusal(refused.status(), &refused.to_string()),
+        Err(refused) => Response::from(&refused),
+    }
+}
+
+impl From<&crate::entry::Refused> for Response {
+    /// The refusal as served: at [`crate::entry::Refused::status`], and for a `501` with the
+    /// `committed` member the contract declares.
+    fn from(refused: &crate::entry::Refused) -> Self {
+        match refused.status() {
+            501 => Self::unfinished(&refused.to_string(), refused.committed()),
+            status => Self::refusal(status, &refused.to_string()),
+        }
     }
 }
 

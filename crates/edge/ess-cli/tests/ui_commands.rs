@@ -202,7 +202,7 @@ fn the_ui_area_offers_load_docs_and_run() {
         .filter(|line| line.starts_with("  ") && !line.starts_with("   "))
         .filter_map(|line| line.split_whitespace().next())
         .collect();
-    assert_eq!(offered, ["load", "check", "docs", "run"], "{help}");
+    assert_eq!(offered, ["load", "check", "docs", "run", "test"], "{help}");
 }
 
 #[test]
@@ -245,5 +245,98 @@ fn ui_check_exits_1_naming_the_node_of_an_error() {
             .as_str()
             .is_some_and(|path| path.starts_with("navigation"))),
         "{errors:?}"
+    );
+}
+
+/// A specification directory with an `ess-inputs.yaml`, the listed files only, plus a stray YAML
+/// file the manifest does not list and that is no ESS document (beyond10x/ess#262).
+fn manifest_model(scratch: &Path) -> std::path::PathBuf {
+    let from = workspace_root().join("crates/ui/ess-ui-check/tests/fixtures/model");
+    let spec = scratch.join("spec");
+    std::fs::create_dir_all(spec.join("domains")).expect("writable");
+    std::fs::create_dir_all(spec.join("acknowledgements")).expect("writable");
+    for file in [
+        "system.yaml",
+        "components.yaml",
+        "domains/stock.yaml",
+        "domains/audit.yaml",
+    ] {
+        std::fs::copy(from.join(file), spec.join(file)).expect("the fixture model");
+    }
+    std::fs::write(
+        spec.join("ess-inputs.yaml"),
+        "format: ess-inputs/1\nspecification: [system.yaml, components.yaml, domains/stock.yaml, domains/audit.yaml]\nscenarios: []\n",
+    )
+    .expect("writable");
+    std::fs::write(
+        spec.join("acknowledgements/one.yaml"),
+        "acknowledged: [something]\n",
+    )
+    .expect("writable");
+    spec
+}
+
+const MODEL_DOCUMENT: &str = "format: ess-ui/1\napp: t\nmodel: shop\nplacement_profile: fat\n\
+shells: {app: {regions: {main: {kind: page_outlet}}}}\n\
+navigation: {home: p, sections: [{name: all, pages: [p]}]}\n\
+pages: {p: {kind: detail_page, title: P, sections: [{name: summary, reads: stock.Items}, \
+{name: gone, component: collection, reads: stock.Missing}]}}\n";
+
+#[test]
+fn ui_check_model_reads_a_directory_through_its_ess_inputs() {
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let spec = manifest_model(scratch.path());
+    let document = scratch.path().join("ui.yaml");
+    std::fs::write(&document, MODEL_DOCUMENT).expect("writable");
+    for model in [spec.clone(), spec.join("ess-inputs.yaml")] {
+        let output = ess(&[
+            "ui",
+            "check",
+            "--path",
+            utf8(&document),
+            "--model",
+            utf8(&model),
+            "--format",
+            "json",
+        ]);
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|_| panic!("{}: {}", model.display(), text(&output.stderr)));
+        let findings = report["findings"].as_array().expect("a findings list");
+        let views: Vec<&serde_json::Value> = findings
+            .iter()
+            .filter(|finding| finding["check"] == "view_in_model")
+            .collect();
+        assert_eq!(views.len(), 1, "{}: {findings:#?}", model.display());
+        assert_eq!(
+            views[0]["path"],
+            "pages/p/sections/gone/reads",
+            "{}",
+            model.display()
+        );
+    }
+}
+
+#[test]
+fn ui_test_runs_the_example_tests() {
+    let output = ess(&[
+        "ui",
+        "test",
+        "--path",
+        EXAMPLE,
+        "examples/partner-portal/tests/partners-list.yaml",
+        "examples/partner-portal/tests/live.yaml",
+        "examples/partner-portal/tests/stale.yaml",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is JSON");
+    assert_eq!(report["format"], "ess-ui-test-report/1");
+    let tests = report["tests"].as_array().expect("a tests list");
+    assert!(!tests.is_empty());
+    assert!(
+        tests.iter().all(|test| test["status"] == "passed"),
+        "{tests:#?}"
     );
 }

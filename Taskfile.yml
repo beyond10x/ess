@@ -42,6 +42,7 @@ tasks:
         --package ess-ui-check
         --package ess-ui-docs
         --package ess-ui-react
+        --package ess-ui-test
         --package ess-ui-tui
         --package ess-xtask
         --package gatepass-realization
