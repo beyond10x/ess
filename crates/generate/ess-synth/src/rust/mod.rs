@@ -109,7 +109,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
 }
 
 /// The same code as [`workspace`], laid out as one crate at the generated root
-/// (`--layout crate`): see [`single`].
+/// (`--layout crate`); the folding is in the private `single` module.
 ///
 /// # Errors
 ///
