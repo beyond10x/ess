@@ -7,7 +7,7 @@ title: A committed command is answered with its outcome, not 501
 relations:
 - serves: vision:O2
 - decomposes: epic:language-consistency-after-adoption
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -23,3 +23,7 @@ A command whose effect was committed is answered with its own declared outcome, 
 ## Origin
 
 Evidence: `docs/design/review-external-requests-2026-09.md` (served-committed-command-answers-its-outcome). Drafted, not scheduled; a fit review precedes dispatch.
+
+## Second request
+
+A second downstream need (2026-09-30, adapter work on 0.48.0): a committed 501 carries no `published` list, so plane adapters and HTTP clients that follow published events never see events that were committed. Answering a committed command with its own outcome (which carries `published` like any 2xx) plus `undelivered: [{binding, event}]` covers it; no separate change to the 501 body is made. Fit review: accept, redesigned into this story.
