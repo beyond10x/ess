@@ -6,14 +6,14 @@ status: active
 title: A runner's per-scenario results become a canonical conformance report
 relations:
 - serves: vision:O2
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T03:18:18Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T03:18:19Z", actor: "human:timo", revision: 3}
 ---
 ## Outcome
 
-A runner written in any language records a canonical `ess-conformance-run/2` report for a suite
+A runner written in any language records a canonical `ess-conformance-report/2` for a suite
 ESS admits, by handing ESS its per-scenario results; the report says the results were supplied by
 the runner, so evidence built on it cannot be mistaken for a run ESS executed.
 
