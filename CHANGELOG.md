@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ess verify conform report --suite <suite.json> --results <results.json> --implementation <name>
+  --report-out <path> [--runner <name>@<version>]` writes an `ess-conformance-report/2` from the
+  per-scenario results of a runner outside ESS, in any language. ESS admits the suite (an original
+  suite of any admitted format, or an `ess-conformance-input/1` carrier) and takes coverage, the suite
+  reference and policy from that admission, so the report qualifies exactly as one from ESS's own
+  run would. Exit 0 when written, 2 when refused.
+- `ess-conformance-results/1` (unreleased) is the results document: closed `format`, exact u64
+  `completed_at`, optional `suite_digest` and `results: [{scenario_id, status, message?}]`, where
+  `status` is `passed`, `failed`, `error` or `unsupported`. The command refuses the whole document,
+  naming every offending entry, for a result for a scenario outside the suite, a scenario with no
+  result, two results for one scenario, any other status, and a `suite_digest` that is not the
+  admitted suite's. Nothing is written on a refusal. `message` is read and not carried into the
+  report.
+- report/2 `producer_profile` gains `external-scenario-status/1`, or
+  `external-scenario-status/1;runner=<name>@<version>`, for supplied results. It follows the Rust
+  category rules (`skipped` unavailable) and says that ESS executed nothing. ESS's own report/2
+  reader admits it; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1`
+  refuses it. `aep plan artifact evidence --from` admits it from aep 0.66.0; aep 0.65.0 and earlier refuse it.
+- Library: `ess_conformance::results` (`report`, `admit_suite`, `ExternalResults`, `Runner`,
+  `RESULTS_FORMAT`) and `CountReport::from_external`. `ProducerProfile` gains `External`.
+
+### Changed
+
+- A newer `ess` delegating to the release an `ess-inputs.yaml` pins (`requires: ess X.Y.Z`) now
+  prints its one-line `note: ess … is the dispatcher; delegating to ess …` on stderr for every
+  command, not only `--version`, so output written by the pinned release is not taken for the
+  newer one's (beyond10x/ess#261). `ESS_TOOLCHAIN_QUIET=1` silences it; stdout is the delegated
+  release's alone.
+
 ## [0.47.0] — 2026-09-30
 
 ### Added

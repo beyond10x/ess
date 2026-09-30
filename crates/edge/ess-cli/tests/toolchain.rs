@@ -139,6 +139,7 @@ impl Fixture {
             .args(args)
             .env_remove("ESS_TOOLCHAIN")
             .env_remove("ESS_TOOLCHAIN_DELEGATED")
+            .env_remove("ESS_TOOLCHAIN_QUIET")
             .env("ESS_TOOLCHAIN_DIR", &self.cache)
             .env("ESS_TOOLCHAIN_BASE_URL", &self.releases);
         command
@@ -345,6 +346,47 @@ fn version_names_the_dispatcher_and_the_delegated_release() {
         ),
         "{note}"
     );
+}
+
+/// beyond10x/ess#261: a newer `ess` under an older pin used to delegate every other command in
+/// silence, so a reader could not tell which release wrote the output.
+#[test]
+fn every_delegated_command_names_the_delegation_once_on_stderr() {
+    let fixture = Fixture::new();
+    assert_eq!(fixture.install(FAKE).status.code(), Some(0));
+    fixture.pin(&format!("ess {FAKE}"));
+    for args in [&["specify", "validate"][..], &["--version"][..]] {
+        let output = fixture.ess(&fixture.project, args);
+        assert_eq!(output.status.code(), Some(0), "{args:?}: {}", err(&output));
+        let note = err(&output);
+        assert_eq!(note.matches("delegating to").count(), 1, "{args:?}: {note}");
+        assert!(
+            note.contains(&format!(
+                "ess {THIS} is the dispatcher; delegating to ess {FAKE}"
+            )),
+            "{args:?}: {note}"
+        );
+    }
+    // Stdout is the delegated release's alone.
+    let output = fixture.ess(&fixture.project, &["specify", "validate"]);
+    assert_eq!(
+        out(&output),
+        format!("FAKE-ESS {FAKE} delegated=1\narg:specify\narg:validate\n")
+    );
+}
+
+#[test]
+fn the_delegation_note_can_be_silenced() {
+    let fixture = Fixture::new();
+    assert_eq!(fixture.install(FAKE).status.code(), Some(0));
+    fixture.pin(&format!("ess {FAKE}"));
+    let output = fixture
+        .command(&fixture.project, &["specify", "validate"])
+        .env("ESS_TOOLCHAIN_QUIET", "1")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", err(&output));
+    assert!(!err(&output).contains("delegating to"), "{}", err(&output));
 }
 
 #[test]

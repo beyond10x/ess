@@ -30,6 +30,8 @@ const DELEGATED: &str = "ESS_TOOLCHAIN_DELEGATED";
 const CACHE: &str = "ESS_TOOLCHAIN_DIR";
 /// Replaces the release download base; a `file://` URL or a plain path reads a directory.
 const BASE_URL: &str = "ESS_TOOLCHAIN_BASE_URL";
+/// Non-empty: delegate without the stderr note naming the release delegated to.
+const QUIET: &str = "ESS_TOOLCHAIN_QUIET";
 const DEFAULT_BASE_URL: &str = "https://github.com/beyond10x/ess/releases/download";
 /// A released `ess` archive is tens of megabytes; this bounds a hostile or broken source.
 const DOWNLOAD_LIMIT: u64 = 1 << 30;
@@ -230,10 +232,15 @@ pub(crate) fn delegate() -> Option<ExitCode> {
         }
         // The dispatcher names itself before anything can fail, so `--version` always does. Its
         // stdout stays lines ending in a release, which the release smoke check reads with
-        // `awk '{print $NF}'`; why it delegates goes to stderr.
+        // `awk '{print $NF}'`.
         if asks_version(&arguments) {
             println!("ess {}", this());
             std::io::stdout().flush().ok();
+        }
+        // Why it delegates goes to stderr on every command, so output written by an older pinned
+        // release is never taken for this one's (beyond10x/ess#261). `ESS_TOOLCHAIN_QUIET`
+        // silences it; stdout is the delegated release's alone either way.
+        if std::env::var_os(QUIET).is_none_or(|value| value.is_empty()) {
             eprintln!(
                 "note: ess {} is the dispatcher; delegating to ess {} ({})",
                 this(),

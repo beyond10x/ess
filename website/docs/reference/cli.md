@@ -89,8 +89,10 @@ When the nearest `ess-inputs.yaml` above the working directory carries an exact
 `requires: ess X.Y.Z` naming another release, or `ESS_TOOLCHAIN=X.Y.Z` is set, any `ess` runs that
 release from its cache (`$XDG_CACHE_HOME/ess/toolchains/X.Y.Z/ess`, else
 `~/.cache/ess/toolchains/`) with the same arguments and environment, installing it first when it is
-not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called. `ess --version` then names
-both the dispatcher and the release it delegated to. A release that cannot be installed is refused,
+not cached. A minor line `ess X.Y`, or no pin, runs the `ess` you called. Every delegated command
+prints one note on stderr naming the dispatcher, the release it delegated to and why
+(`ESS_TOOLCHAIN_QUIET=1` silences it); stdout is the delegated release's alone, and `ess --version`
+prints both releases' lines. A release that cannot be installed is refused,
 naming the newest cached one. This walk upwards reads only the pin; input selection still reads
 only the manifest of the directory it is given. The `toolchain` commands always run in the `ess`
 you called.
