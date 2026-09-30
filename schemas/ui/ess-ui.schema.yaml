@@ -1,0 +1,1492 @@
+# ess-ui/1 — a renderer-neutral UI component specification (meta-spec).
+#
+# This file is data. A validator reads it to check an app document; a renderer reads it to know
+# which constructs to honour; a documentation generator lays it out as chapters (`groups`, then
+# each construct's `group` and `order`). Every construct carries `summary`, `doc`, `fields` (each
+# with a one-line `note`) and an `example`: a nested YAML value taken from
+# examples/partner-portal/ui.yaml.
+#
+# Two structural rules hold throughout. Anything whose order is meaningful (sections, columns,
+# navigation entries, fields, actions, nested nodes, widget bodies) is a list of named nodes; a
+# map is used only where order carries no meaning, so a reader that sorts map keys cannot
+# reorder a page. The composite kinds are one union discriminated by `component`
+# (`constructs.Composite.union`).
+
+format: ess-ui/1
+
+# ════════════════════════════════════════════════════════════════════════════════════════════
+# Type rule (stated once)
+# ════════════════════════════════════════════════════════════════════════════════════════════
+type_rule:
+  summary: Types are YAML structure, never strings to be parsed.
+  doc: >
+    A field's `type` is one of three things. (1) A lowercase primitive name from `primitives`.
+    (2) A constructor map from `constructors`. (3) A capitalized bare name: a construct of this
+    schema (Page, Reads, State …) or, inside an app document, an entry of the document's `types`
+    map or a type of the ESS model (PartnerId, Money). Names that must resolve at validation time
+    (a page, an overlay, a view, a command) use `{ref: kind}`. `required`, `default` and `note`
+    are siblings of `type`, never part of it.
+  primitives:
+    string:    {note: text}
+    integer:   {note: whole number}
+    number:    {note: decimal number}
+    boolean:   {note: true or false}
+    duration:  {note: a length of time, pattern: "^[0-9]+(ms|s|m|h)$", example: 30s}
+    timestamp: {note: an instant}
+    date:      {note: a calendar date}
+    time:      {note: a time of day}
+    json:      {note: any JSON value}
+    expr:      {note: "a binding expression (see `expressions`); a value, never a type constructor"}
+    name:      {note: "a node name; matches NodePath.syntax.segment_pattern"}
+  constructors:
+    list:     {form: {list: T}, options: {unique: {type: boolean, default: false, effect: no_duplicate_elements, note: a set}}, example: {list: PartnerId, unique: true}}
+    map:      {form: {map: {key: K, value: V}}, example: {map: {key: StepId, value: {record: {x: number, y: number}}}}}
+    optional: {form: {optional: T}, example: {optional: UserId}}
+    enum:     {form: {enum: [a, b]}, example: {enum: [light, dark]}}
+    one_of:   {form: {one_of: [T1, T2]}, example: {one_of: [duration, expr]}}
+    record:   {form: {record: {field: T}}, example: {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}}
+    ref:      {form: {ref: kind}, kinds: [shell, page, section, overlay, channel, state, page_kind, composite_kind, widget, view, command, event], example: {ref: view},
+               note: "view, command and event resolve in the ESS model; the others in the document"}
+    const:    {form: {const: value}, example: {const: ess-ui/1}}
+
+expressions:
+  summary: Binding expressions — the values of fields typed `expr`.
+  doc: Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
+  forms:
+    - {form: "state.<name>",             note: page, section or overlay state}
+    - {form: "params.<name>",            note: path params of the page, or values passed to an overlay}
+    - {form: "args.<name>",              note: a widget parameter, inside the widget's body}
+    - {form: "row.<field>",              note: the current row of a collection, record or board}
+    - {form: "selection.<field>",        note: the selected row(s) of the section}
+    - {form: "draft.<field>",            note: the unsaved input of the enclosing form}
+    - {form: "section.<name>.selection", note: another section's selection}
+    - {form: "channel.<name>.<field>",   note: a named field of a channel}
+    - {form: "shell.<name>",             note: shell state}
+    - {form: "url.query.<name>",         note: a query parameter (guards only)}
+    - {form: "actor.<field>",            note: "the signed-in actor: user_id, account_id, roles, signed_in, may(<command>)"}
+    - {form: "widget.<field>",           note: the widget row inside a board}
+    - {form: "same_as(<section>)",       note: the params of another section's read}
+    - {form: "matches(params)",          note: true when a live row satisfies the section's read params}
+    - {form: "operators",                note: "==, !=, in [..], not, and, or, literals"}
+
+unmapped_marker:
+  summary: How a retrofit marks a value it could not determine.
+  pattern: "^UNMAPPED: .+$"
+  accepted_by: {types: [string, expr, name, duration, "{enum: …}", "{ref: …}"], note: a field of any other type (boolean, a number, a record, a list or a map) refuses the marker}
+  at_reads: a marker written as a `reads` or `loads` is no read at all; the node records it in its `unmapped` list
+  validator: {action: report, severity: warning}
+  renderer: {action: treat_as_absent}
+  example: {endpoint: "UNMAPPED: the submit handler is not wired to an API call"}
+
+# ════════════════════════════════════════════════════════════════════════════════════════════
+# Shorthands — every abbreviated form, with what it accepts and what it expands to
+# ════════════════════════════════════════════════════════════════════════════════════════════
+shorthands:
+  summary: Abbreviated forms and special values, each defined by what it accepts and what it expands to.
+  placeholders:
+    $value:  the value written (`$value.<field>` is one of its fields)
+    $key:    the map key the value sits under
+    $page:   the enclosing page
+    $action: the enclosing action
+    $item:   one value of an enum type
+  absent_placeholder: an entry of `expands_to` whose placeholder resolves to nothing is dropped
+  validation: a short form is checked against its `accepts` before it expands; one that `accepts` does not admit is refused with its path
+  operators:
+    expr:                    the expanded value is this expression string
+    first_present:           the first listed source that has a value
+    each_value_of_enum_type: one entry per value of the named enum type, shaped by `as`
+    remove_inherited:        the inherited entry of that name is removed during page kind merge
+    merge_under:             the named overlay is copied and the local props are merged over it
+  index:       # every shorthand; the construct carries the same entry under `shorthand`
+    - {construct: Field,      accepts: string,                               expands_to: {field: $value, name: $value}}
+    - {construct: Field,      at: name, accepts: absent,                     expands_to: {first_present: [field]}}
+    - {construct: Reads,      accepts: {ref: view},                          expands_to: {view: $value}}
+    - {construct: Composite,  accepts: {ref: composite_kind},                expands_to: {component: $value}}
+    - {construct: choice,     at: "options[]", accepts: string,              expands_to: {value: $value, label: $value}}
+    - {construct: choice,     at: options, accepts: name,                    expands_to: {each_value_of_enum_type: $value, as: {value: $item, label: $item}}}
+    - {construct: header,     at: title, accepts: {const: from_page},        expands_to: $page.title}
+    - {construct: Action,     at: "sets.*", accepts: {const: toggle},        expands_to: {expr: "not $key"}}
+    - {construct: Action,     at: confirm, accepts: {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}, expands_to: {overlay: {kind: dialog, component: confirm, title: $value.title, does: $action.does, confirm_label: $value.confirm_label}, show: $value.show}}
+    - {construct: Action,     at: name, accepts: absent,                     expands_to: {first_present: [opens, does.last_segment_snake_case, navigate.to, export.reads, upload.does, sets.first_key]}}
+    - {construct: Page,       at: "state.* | overlays.* | header.*", accepts: {const: null}, expands_to: {remove_inherited: $key}}
+    - {construct: Page,       at: "sections[]", accepts: {record: {name: name, remove: {const: true}}}, expands_to: {remove_inherited: $value.name}}
+    - {construct: filter_bar, at: "choices[]", accepts: {record: {name: name, remove: {const: true}}}, expands_to: {remove_inherited: $value.name}}
+    - {construct: Page,       at: shell, accepts: absent,                    expands_to: {first_present: [shells.app, only_shell]}}
+    - {construct: overlay,    at: same_as, accepts: {ref: overlay},          expands_to: {merge_under: $value}}
+    - {construct: NavEntry,   at: label, accepts: absent,                    expands_to: $page.title}
+    - {construct: PageLayout, accepts: absent,                               expands_to: stack}
+  inheritance:
+    summary: How a page, or a page kind, is merged over the kind it names.
+    maps: {merge: deep, key_order: [inherited, then_new], conflict_winner: page, null_value: remove_inherited}
+    named_lists: {match_by: name, order: [inherited_in_their_order, then_new_in_page_order], remove: "{name: <n>, remove: true}", different_component: page_entry_replaces}
+    other_lists: {merge: replace}
+    layout: {merge: replace}
+
+groups:
+  - {name: document,   order: 1, title: The document,                summary: Root, naming, node addressing and shared types.}
+  - {name: navigation, order: 2, title: Shell and navigation,        summary: The application frame and how pages are reached.}
+  - {name: pages,      order: 3, title: Pages and sections,          summary: Routes, layouts, page templates, and the section as the unit of loading.}
+  - {name: composites, order: 4, title: Composites, widgets and primitives, summary: The composite union, header and overlay, app-defined widgets, the 9 primitives, and renderer fallbacks.}
+  - {name: data,       order: 5, title: Reads, actions and fixtures, summary: How the UI reads ESS views, runs ESS commands, and runs without a backend.}
+  - {name: live,       order: 6, title: Live data,                   summary: Channels and how sections apply their events.}
+  - {name: state,      order: 7, title: State placement,             summary: Where every piece of UI state lives, and how a profile moves it.}
+
+layers:
+  - {name: shell,     contains: [page],                         note: "application frame: regions, preload, guards, navigation"}
+  - {name: page,      contains: [section, overlay],             note: one route; owns page state and layout}
+  - {name: section,   contains: [composite, widget, primitive], note: a region with its own read and lifecycle}
+  - {name: composite, contains: [composite, widget, primitive], note: one member of the composite union}
+  - {name: widget,    contains: [composite, widget, primitive], note: an app-defined composite; may not contain itself, directly or indirectly}
+  - {name: primitive, contains: [],                             note: one of 9 renderer-neutral leaves}
+
+# ════════════════════════════════════════════════════════════════════════════════════════════
+# Constructs
+# ════════════════════════════════════════════════════════════════════════════════════════════
+constructs:
+
+  # ── document ─────────────────────────────────────────────────────────────────────────────
+  Document:
+    group: document
+    order: 1
+    summary: The root of a ess-ui/1 file describing one application.
+    doc: >
+      One document describes one frontend. It names the ESS model every view, command and event
+      resolves against, the placement profile that decides where state lives, the shells,
+      navigation, reusable widgets and pages. Names are dot-separated and follow navigation, not
+      files: page `partners.list` of app `portal` is `portal.partners.list`, and its route is
+      derived from the name. Old routes are kept as page `aliases`.
+    fields:
+      format:             {type: {const: ess-ui/1}, required: true, note: format marker}
+      app:                {type: name, required: true, note: root of every fully qualified name}
+      title:              {type: string, note: human title of the application}
+      model:              {type: string, required: true, note: the ESS system that views, commands and events resolve against}
+      actor:              {type: {enum: [from_session, anonymous]}, default: from_session, note: whose grants decide what is visible}
+      placement_profile:  {type: {enum: [thin, fat, hybrid]}, required: true, note: default state placement for the whole document}
+      placement_defaults: {type: {map: {key: StateClass, value: Store}}, note: overrides entries of the profile's default table}
+      shells:             {type: {map: {key: name, value: Shell}}, required: true, note: application frames}
+      navigation:         {type: Navigation, required: true, note: menu structure and home page}
+      page_kinds:         {type: {map: {key: name, value: PageKind}}, note: app-defined page templates}
+      widgets:            {type: {map: {key: name, value: Widget}}, note: app-defined composites usable wherever a composite kind is}
+      types:              {type: {map: {key: name, value: Type}}, note: named value types}
+      pages:              {type: {map: {key: name, value: Page}}, required: true, note: every route of the app}
+      channels:           {type: {map: {key: name, value: Channel}}, note: live data sources}
+      fixtures:           {type: FixtureIndex, note: sample data so renderers run without a backend}
+      unmapped:           {type: {list: string}, note: document-level gaps found by a retrofit}
+    example:
+      format: ess-ui/1
+      app: portal
+      title: Partner portal
+      model: partners.platform
+      actor: from_session
+      placement_profile: hybrid
+      placement_defaults: {draft: session_storage, preference: server}
+      fixtures: {dir: fixtures, index: fixtures/index.yaml}
+      navigation: {home: overview, sections: [{name: home, label: Home, pages: [overview]}]}
+      shells: {app: {regions: {main: {kind: page_outlet}}}}
+      pages: {overview: {kind: dashboard_page, title: Overview, sections: [{name: board, component: board, reads: {view: dashboards.Mine}}]}}
+
+  Type:
+    group: document
+    order: 2
+    summary: A named value type declared once in the document's `types` map.
+    doc: >
+      Use `types` for value shapes several states, params or filters share — money, a time
+      window, an enum of stages. ESS entity ids (PartnerId, UserId) are not redeclared; they
+      resolve in the model.
+    fields:
+      "(value)": {type: {one_of: [primitive, constructor, named_type]}, note: "a primitive name, a constructor map, or a capitalized named type"}
+    example:
+      Money:       {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}
+      DealStage:   {enum: [lead, qualified, proposal, won, lost]}
+      TimeWindow:  {record: {from: timestamp, to: timestamp, preset: {enum: [this_month, last_30d, this_quarter, custom]}}}
+
+  NodePath:
+    group: document
+    order: 3
+    summary: The stable address of any node — shell region, page, section, overlay, composite, widget instance or primitive.
+    doc: >
+      Every node has a `name` unique among its siblings: map entries are named by their key,
+      list entries carry `name` (or a derived default). A node's path is the chain of container
+      keys and names from the document root, joined with `/`. Page names keep their dots, since
+      `/` is the separator. Paths never contain list indices. Rows of a collection are addressed
+      by their row key under `rows/`. Editors address a node by path to insert, replace or
+      remove it; validators report every finding by path.
+    fields:
+      "(value)": {type: string, note: "a path; see syntax"}
+    syntax:
+      separator: "/"
+      segment_pattern: "^[A-Za-z0-9_.-]+$"
+      forbidden: [list_indices, empty_segment]
+      grammar:
+        - {segment: container_key, then: child_name, note: "e.g. pages/partners.list"}
+        - {segment: field_key,     then: none,       note: "a single-valued child such as header or reads: pages/partners.list/header"}
+      containers:        # how children of each container are named
+        - {container: [shells, page_kinds, widgets, types, pages, channels, regions, overlays, state, params, board_widgets], child_name: map_key, note: maps; order carries no meaning}
+        - {container: [columns, inputs, fields], child_name: {first_present: [name, field]}}
+        - {container: [row_actions, bulk_actions, actions, item_actions, node_actions, edge_actions, alternatives], child_name: {first_present: [name, derived_action_name]}}
+        - {container: [sections, item, choices, parts, metrics, toolbar, guards, tabs, groups, children, body, navigation_sections], child_name: name, note: lists of named nodes; order is meaningful}
+        - {container: preload_views, child_name: view}
+        - {container: rows, child_name: {row_key: {first_present: [live.match, id]}}, note: runtime rows of a collection}
+      widget_instances: {expanded_body_path: "<instance path>/body/<node name>"}
+      uniqueness: {scope: siblings, severity: error}
+      stability: inserting, removing or reordering a sibling changes no other node's path
+    examples:
+      - shells/app/regions/nav
+      - pages/partners.list/sections/list/columns/tier
+      - pages/partners.list/sections/list/row_actions/edit
+      - pages/partners.list/sections/list/item/card/body/tier
+      - pages/partners.list/sections/list/rows/pt-003/item/card
+      - pages/tickets.detail/sections/reply/children/send
+      - pages/partners.detail/layout/columns/side
+      - widgets/partner_card/body/title
+    example: pages/partners.list/sections/list/item/card/body/tier
+
+  # ── navigation ───────────────────────────────────────────────────────────────────────────
+  Shell:
+    group: navigation
+    order: 1
+    summary: An application frame with regions, preloads, guards and shell-wide state.
+    doc: >
+      A shell is what stays on screen while pages change: navigation, page outlet, overlay slot,
+      notifications. Use one shell per distinct frame (the signed-in app, the sign-in screens).
+      Guards run before any page of the shell opens; preloads warm views many pages need,
+      without blocking navigation unless the policy says so.
+    fields:
+      regions:  {type: {map: {key: name, value: Region}}, required: true, note: named areas of the frame}
+      preload:  {type: Preload, note: views read when the shell starts}
+      guards:   {type: {list: Guard}, note: checks run before each page of the shell opens}
+      state:    {type: {map: {key: name, value: State}}, note: "shell-wide state: nav expanded, theme, credentials"}
+      overlays: {type: {map: {key: name, value: overlay}}, note: overlays reachable from every page}
+      source:   {type: {list: string}, note: traceability to retrofitted files}
+    example:
+      regions:
+        nav:     {kind: navigation, props: {collapsible: true, search: {over: [label, synonyms]}}}
+        main:    {kind: page_outlet}
+        overlay: {kind: overlay_outlet, props: {one_at_a_time: true}}
+        notify:  {kind: notifications}
+      state:
+        nav_expanded: {type: boolean, class: preference, default: true}
+        credentials:  {type: {record: {access_token: string, refresh_token: string}}, class: credential, sensitive: true, store: server_session, pinned: true}
+      preload: {policy: in_background, except_on: [auth.sign_in], views: [{view: session.Me}, {view: tags.All}]}
+      guards: [{name: signed_in, when: "not actor.signed_in", then: {redirect: auth.sign_in}}]
+
+  Region:
+    group: navigation
+    order: 2
+    summary: One named area of a shell.
+    doc: >
+      Regions say what a shell area is for, not how it looks. A renderer maps `navigation` to a
+      sidebar, a TUI pane or a command palette; `overlay_outlet` is where drawers and dialogs
+      appear; `assistant` hosts a chat helper.
+    fields:
+      kind:    {type: {enum: [navigation, page_outlet, overlay_outlet, notifications, assistant, account_menu]}, required: true, note: role of the region}
+      props:   {type: {map: {key: name, value: json}}, note: "kind-specific options: collapsible, search, one_at_a_time, actions"}
+      visible: {type: expr, default: "true", note: shows the region only when true}
+    example: {kind: account_menu, props: {actions: [{name: switch_org, opens: switch_org, label: Switch organization}, {name: sign_out, does: session.SignOut, label: Sign out}]}}
+
+  Preload:
+    group: navigation
+    order: 3
+    summary: Views a shell reads before or alongside the first page.
+    doc: >
+      Preloading replaces route guards that block navigation until many stores are filled.
+      `in_background` starts the reads and lets the page render at once; `before_first_page`
+      blocks and should be rare.
+    fields:
+      views:     {type: {list: {record: {view: {ref: view}, params: {optional: {map: {key: name, value: expr}}}, endpoint: {optional: string}}}}, note: "views to read; each is named by its view"}
+      policy:    {type: {enum: [before_first_page, in_background, on_demand]}, default: in_background, note: whether the first page waits}
+      except_on: {type: {list: {ref: page}}, note: pages that skip the preload}
+    example: {policy: in_background, except_on: [auth.sign_in], views: [{view: session.Me}, {view: tags.All}]}
+
+  Guard:
+    group: navigation
+    order: 4
+    summary: A condition checked before a page opens, with a redirect, refusal or state change.
+    doc: Guards express sign-in requirements and link-borne state. Evaluated in order; the first whose `when` holds decides. Business permissions belong in actor grants.
+    fields:
+      name: {type: name, required: true, note: node name among the shell's guards}
+      when: {type: expr, required: true, note: condition over actor, url and page}
+      then: {type: {one_of: [{record: {redirect: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, {record: {refuse: string}}, {record: {set: {map: {key: expr, value: expr}}}}]}, required: true, note: redirect, refuse with a message, or set shell state}
+    example: {name: invite_link, when: url.query.invite, then: {set: {shell.invite_token: url.query.invite}}}
+
+  Navigation:
+    group: navigation
+    order: 5
+    summary: The menu — sections of pages, the home page, hidden routes and search.
+    doc: >
+      Navigation lists every page exactly once: in a section, or in `hidden` when it is reached
+      by link or redirect only. With `visibility: by_actor_grants` a page appears when the actor
+      may read the views its eager sections read, so role lists disappear from UI code.
+    fields:
+      home:         {type: {ref: page}, required: true, note: page opened at the app root}
+      sections:     {type: {list: NavSection}, required: true, note: menu groups in display order}
+      hidden:       {type: {list: {ref: page}}, note: routed pages not shown in the menu}
+      visibility:   {type: {enum: [by_actor_grants, by_roles]}, default: by_actor_grants, note: how the menu decides what to show}
+      search:       {type: {record: {over: {list: {enum: [label, synonyms]}}}}, note: menu search fields}
+      restrictions: {type: {list: {record: {when: expr, sections: {list: name}, unmapped: {optional: {list: string}}}}}, note: when a condition holds only these sections show}
+    example:
+      home: overview
+      visibility: by_actor_grants
+      search: {over: [label, synonyms]}
+      sections:
+        - {name: sales, label: Sales, icon: briefcase, pages: [partners.list, deals.list, deals.pipeline]}
+      hidden: [partners.detail, auth.sign_in]
+      restrictions: [{when: "actor.roles == {partner}", sections: [home, billing, support]}]
+
+  NavSection:
+    group: navigation
+    order: 6
+    summary: One group of the menu.
+    doc: A section is a heading with pages under it — a fixed list, or entries generated from a view.
+    fields:
+      name:  {type: name, required: true, note: node name}
+      label: {type: string, note: heading text}
+      icon:  {type: string, note: semantic icon name mapped by the renderer}
+      pages: {type: {one_of: [{list: {ref: page}}, DynamicNavEntries]}, required: true, note: fixed pages or entries from a view}
+    example: {name: billing, label: Billing, icon: receipt, pages: [invoices.list]}
+
+  DynamicNavEntries:
+    group: navigation
+    order: 7
+    summary: Menu entries generated from the rows of a view.
+    doc: Use when the menu depends on data, such as one entry per saved view.
+    fields:
+      from_view: {type: {ref: view}, required: true, note: one entry per row}
+      page:      {type: {ref: page}, required: true, note: page each entry opens}
+      param:     {type: name, required: true, note: page param filled from the row id}
+      label:     {type: expr, default: row.label, note: entry text}
+      synonyms:  {type: {list: string}, note: extra search words}
+      filter:    {type: expr, note: rows to skip}
+    example: {from_view: saved_views.Mine, page: deals.saved, param: view_id, label: row.label, synonyms: [filter, view]}
+
+  NavEntry:
+    group: navigation
+    order: 8
+    summary: How a page appears in the menu, declared on the page as `nav`.
+    doc: The label and search synonyms of a page, plus the role list a retrofitted app used.
+    shorthand:
+      - {at: label, accepts: absent, expands_to: $page.title}
+    fields:
+      label:       {type: string, default: $page.title, note: menu text}
+      synonyms:    {type: {list: string}, note: extra words the menu search matches}
+      roles_today: {type: {list: string}, note: traceability only; visibility comes from grants}
+    example: {label: Partners, synonyms: [resellers, accounts]}
+
+  # ── pages ────────────────────────────────────────────────────────────────────────────────
+  Page:
+    group: pages
+    order: 1
+    summary: One route — its state, layout, header, sections and overlays.
+    doc: >
+      A page owns the state a link should reproduce (filters, paging, selection) and composes
+      sections, each loading on its own. Start from a page kind and declare only what differs.
+      `layout` arranges sections renderer-neutrally. Use `switch_to` for sibling pages shown as
+      a view switch.
+    inheritance:
+      from: kind
+      merge: shorthands.inheritance
+      conflict_winner: page
+      applies_to: [state, sections, overlays, header, layout]
+    shorthand:
+      - {at: "state.* | overlays.* | header.*", accepts: {const: null}, expands_to: {remove_inherited: $key}}
+      - {at: "sections[]", accepts: {record: {name: name, remove: {const: true}}}, expands_to: {remove_inherited: $value.name}}
+      - {at: shell, accepts: absent, expands_to: {first_present: [shells.app, only_shell]}}
+    fields:
+      kind:      {type: {ref: page_kind}, required: true, note: template the page starts from}
+      shell:     {type: {ref: shell}, default: {first_present: [shells.app, only_shell]}, note: frame the page renders in}
+      title:     {type: string, note: header title}
+      nav:       {type: NavEntry, note: menu label and synonyms}
+      params:    {type: {map: {key: name, value: Type}}, note: path parameters (always in the URL)}
+      aliases:   {type: {list: string}, note: legacy route paths}
+      switch_to: {type: {list: {ref: page}}, note: sibling pages offered in the header}
+      visible:   {type: expr, note: extra condition beyond grants, such as a feature flag}
+      layout:    {type: PageLayout, default: stack, note: how sections are arranged}
+      state:     {type: {map: {key: name, value: {optional: State}}}, note: page state}
+      header:    {type: header, note: title, total, actions, live status}
+      sections:  {type: {list: Section}, required: true, note: "regions of the page, named, in declaration order; merged with the kind's by name"}
+      overlays:  {type: {map: {key: name, value: {optional: overlay}}}, note: drawers and dialogs of the page (unordered)}
+      profile:   {type: {enum: [thin, fat]}, note: placement for this page in a hybrid document}
+      source:    {type: {list: string}, note: files the page was retrofitted from}
+      unmapped:  {type: {list: string}, note: gaps the retrofit could not resolve}
+    example:
+      kind: detail_page
+      title: Partner
+      params: {id: PartnerId}
+      layout: {columns: [{name: side, sections: [summary], width: narrow}, {name: main, sections: [deals], width: wide}]}
+      header: {actions: [{name: edit, opens: edit, label: Edit}]}
+      sections:
+        - {name: summary, component: record, reads: {view: partners.ById, params: {id: params.id}}, fields: [name, {field: tier, as: badge}]}
+        - {name: deals, component: collection, reads: {view: deals.ByPartner, params: {partner_id: params.id}}, columns: [title, {field: stage, as: badge}]}
+      overlays:
+        edit: {kind: drawer, component: form, same_as: partners.list.edit}
+
+  PageLayout:
+    group: pages
+    order: 2
+    summary: A renderer-neutral arrangement of a page's sections.
+    doc: >
+      `stack` shows sections one below the other in declaration order. `columns` splits the page
+      into named columns, each listing its sections. `areas` names grid cells row by row and
+      places sections into areas; an area spanning several cells repeats its name. Renderers
+      without columns or areas fall back to a stack in section declaration order.
+    shorthand:
+      - {accepts: absent, expands_to: stack}
+    fields:
+      stack:   {type: {const: stack}, note: sections top to bottom in declaration order}
+      columns: {type: {list: {record: {name: name, sections: {list: {ref: section}}, width: {optional: {enum: [narrow, normal, wide]}}}}}, note: named columns left to right}
+      areas:   {type: {record: {grid: {list: {list: name}}, place: {map: {key: name, value: {list: {ref: section}}}}}}, note: grid of area names and the sections placed in each}
+    form: {one_of: [{const: stack}, {record: {columns: {list: {record: {name: name, sections: {list: {ref: section}}, width: {optional: {enum: [narrow, normal, wide]}}}}}}}, {record: {areas: {record: {grid: {list: {list: name}}, place: {map: {key: name, value: {list: {ref: section}}}}}}}}]}
+    default: stack
+    degrades: {no_columns: stack, no_areas: stack}
+    example:
+      areas:
+        grid: [[kpis, kpis], [pipeline, feed], [board, board]]
+        place: {kpis: [kpis], pipeline: [pipeline], feed: [feed], board: [board]}
+
+  PageKind:
+    group: pages
+    order: 3
+    summary: A page template that fills the same sections, state, header and overlays.
+    doc: >
+      Most admin pages share one grammar: header with title and total, filters, a collection,
+      a create/edit drawer and a delete confirm. A page kind captures it once. Built-in kinds are
+      listed in `builtins`; a document adds its own under `page_kinds` with `extends`.
+    fields:
+      extends:  {type: {ref: page_kind}, note: kind to start from}
+      purpose:  {type: string, note: one line on when to use it}
+      state:    {type: {map: {key: name, value: State}}, note: state every page of the kind has}
+      sections: {type: {list: Section}, note: "sections every page of the kind has, named, in order"}
+      overlays: {type: {map: {key: name, value: overlay}}, note: overlays every page of the kind has}
+      header:   {type: header, note: default header}
+      layout:   {type: PageLayout, note: default layout}
+    builtins:
+      list_page:
+        purpose: rows of one entity with search, filters, paging and row actions
+        state:
+          search: {type: string, class: page_state, store: url, pinned: true}
+          page:   {type: integer, class: page_state, store: url, pinned: true, default: 1}
+          size:   {type: integer, class: page_state, store: url, pinned: true, default: 25}
+          sort:   {type: {optional: {record: {by: string, dir: {enum: [asc, desc]}}}}, class: page_state, store: url, pinned: true}
+        sections:
+          - {name: filters, component: filter_bar, binds: [state.search], search: {binds: state.search}}
+          - {name: list, component: collection}
+        header: {title: from_page, total: list, filters: filters}
+      report_page:
+        purpose: read-only rows over a time window with export and optional live inserts
+        state:
+          window: {type: {record: {from: timestamp, to: timestamp, preset: {enum: [this_month, last_30d, this_quarter, custom]}}}, class: page_state, store: url, pinned: true, default: {preset: last_30d}}
+          page:   {type: integer, class: page_state, store: url, pinned: true, default: 1}
+          size:   {type: integer, class: page_state, store: url, pinned: true, default: 50}
+        sections:
+          - {name: filters, component: filter_bar, binds: [state.window], window: {binds: state.window}}
+          - {name: list, component: collection}
+        header: {title: from_page, total: list, filters: filters}
+      detail_page:
+        purpose: one record and its related sections
+        sections: [{name: summary, component: record}]
+      settings_page:
+        purpose: one settings record edited in place
+        sections: [{name: settings, component: form}]
+      dashboard_page:
+        purpose: a board of widgets each with its own read or channel
+        sections: [{name: board, component: board}]
+      editor_page:
+        purpose: a graph or document edited as a whole
+        sections: [{name: editor, component: graph_editor}]
+      form_page:
+        purpose: a standalone form such as sign-in
+        sections: [{name: form, component: form}]
+      static_page:
+        purpose: fixed content without reads
+        sections: [{name: body, component: record}]
+    example:
+      extends: list_page
+      purpose: rows of one entity with a drawer to create and edit and a confirm to delete
+      state: {tags: {type: {list: Tag}, class: page_state, store: url, pinned: true}}
+      overlays:
+        create: {kind: drawer, component: form}
+        edit:   {kind: drawer, component: form}
+        delete: {kind: dialog, component: confirm, confirm_label: Delete}
+      header: {title: from_page, total: list, filters: filters, actions: [{name: create, opens: create, label: New}]}
+
+  Section:
+    group: pages
+    order: 4
+    summary: A region of a page with one read and its own loading lifecycle.
+    doc: >
+      The section, not the page, is the unit of loading. Each has at most one `reads`, its own
+      states and optional live updates; a slow section never blocks its siblings. Use `load:
+      on_visible` for partial loading and `depends_on` when a section needs another section's
+      selection. `component` names a member of the composite union or a widget; its props are
+      written inline beside the section's own fields, and a key that is neither is refused.
+      `children` adds widgets or primitives rendered with the section (a caption, a button).
+    fields:
+      name:       {type: name, required: true, note: node name among the page's sections}
+      component:  {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the section renders}
+      reads:      {type: Reads, note: "the section's data; one per section; it is the composite's own `reads`"}
+      live:       {type: Live, note: how channel events change the rows}
+      load:       {type: {enum: [eager, on_visible, on_demand]}, default: eager, note: when the read starts}
+      depends_on: {type: {ref: section}, note: sibling whose selection the params use; loads after it}
+      visible:    {type: expr, note: shows the section only when true}
+      states:     {type: SectionStates, note: how each lifecycle state renders}
+      state:      {type: {map: {key: name, value: State}}, note: state local to the section}
+      children:   {type: {list: Node}, note: extra named nodes rendered after the composite}
+      profile:    {type: {enum: [thin, fat]}, note: placement for this section in a hybrid document}
+      degrades:   {type: {map: {key: Capability, value: name}}, note: fallbacks for renderers lacking a capability}
+      unmapped:   {type: {list: string}, note: gaps found by a retrofit}
+    lifecycle:
+      states: [idle, loading, ready, empty, refreshing, stale, failed, forbidden]
+      transitions:
+        - {from: idle,           to: loading,    on: mounted and dependencies satisfied}
+        - {from: loading,        to: ready,      on: the read returned rows}
+        - {from: loading,        to: empty,      on: the read returned zero rows}
+        - {from: loading,        to: failed,     on: refusal or transport error}
+        - {from: loading,        to: forbidden,  on: the actor lacks the grant for the view}
+        - {from: [ready, empty], to: refreshing, on: "params changed, a command outcome touched the view, or a poll tick"}
+        - {from: refreshing,     to: [ready, empty, failed], on: the read finished}
+        - {from: ready,          to: stale,      on: the feeding channel is down past stale_after}
+        - {from: stale,          to: refreshing, on: the channel reconnected}
+        - {from: failed,         to: loading,    on: retry}
+      invariants:
+        - {id: first_paint, rule: shell and page skeleton render before any read}
+        - {id: stale_marked, rule: a stale value is marked stale, never shown as current}
+    example:
+      name: list
+      component: collection
+      reads: {view: activity.Page, params: {from: state.window.from, to: state.window.to, types: state.types}, paging: cursor}
+      live: {channel: activity, effect: insert_top, only_if: matches(params), when_paged_away: count_new}
+      states: {loading: skeleton, empty: {message: Nothing happened in this window}, stale: {mark: both}}
+
+  SectionStates:
+    group: pages
+    order: 5
+    summary: How a section renders each lifecycle state.
+    doc: Declare what the user sees while loading, when there is nothing, when the read failed, when access is denied, and when live data went stale.
+    fields:
+      loading:    {type: {enum: [skeleton, spinner, none]}, default: skeleton, note: first load}
+      refreshing: {type: {enum: [keep_rows, skeleton]}, default: keep_rows, note: later loads}
+      empty:      {type: {record: {message: string, action: {optional: Action}}}, note: ready with no rows}
+      failed:     {type: {record: {message: {optional: string}, retry: boolean}}, default: {retry: true}, note: read refused or transport error}
+      forbidden:  {type: {record: {message: {optional: string}}}, note: actor lacks the grant}
+      stale:      {type: {record: {mark: {enum: [badge, dim, both]}}}, default: {mark: badge}, note: live channel down}
+    example: {loading: skeleton, empty: {message: No partners yet, action: {name: create, opens: create, label: New partner}}}
+
+  # ── composites ───────────────────────────────────────────────────────────────────────────
+  collection:
+    group: composites
+    order: 1
+    summary: Rows of a view with columns, sorting, paging, selection and row actions.
+    doc: >
+      Use for any list, table or card grid. Columns are fields of the rows; `as` picks a semantic
+      rendering. Row actions run commands bound to the row or open overlays. `item` nests nodes
+      per row (widgets, metrics, primitives); `expand` shows detail inline; `group_by` and
+      `reorder` give a kanban. A TUI renders it as a scrollable list.
+    fields:
+      reads:        {type: Reads, note: the rows}
+      columns:      {type: {one_of: [{list: Field}, {record: {binds: expr, all: {list: Field}}}, string]}, note: "fixed columns, user-selectable columns, or an UNMAPPED string"}
+      sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {list: name}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
+      style:        {type: {enum: [table, cards, list, tree]}, default: table, note: presentation hint}
+      selection:    {type: {one_of: [{enum: [none, single, multiple]}, {record: {mode: {enum: [single, multiple]}, enabled: expr}}]}, default: none, note: row selection, optionally only in a mode}
+      row_actions:  {type: {list: Action}, note: actions per row}
+      bulk_actions: {type: {list: Action}, note: actions on the selection}
+      actions:      {type: {list: Action}, note: actions on the whole collection}
+      expand:       {type: Node, note: detail shown when a row expands}
+      item:         {type: {list: Node}, note: "nested named nodes per row, in order"}
+      reorder:      {type: {record: {does: {ref: command}, endpoint: {optional: string}}}, note: drag to reorder, saved by a command}
+      group_by:     {type: name, note: field rows are grouped under}
+    example:
+      component: collection
+      style: cards
+      selection: multiple
+      reads: {view: partners.Page, params: {q: state.search, tier: state.tier}, paging: server, debounce: 300ms}
+      columns: [{field: name, sortable: true}, {field: tier, as: badge}, {field: revenue_ytd, as: number, sortable: true}]
+      item: [{name: card, component: partner_card, args: {partner: row}}]
+      row_actions: [{name: open, navigate: {to: partners.detail, params: {id: row.id}}, label: Open}, {name: delete, opens: delete, as: icon}]
+
+  record:
+    group: composites
+    order: 2
+    summary: One row shown as labelled, read-only fields.
+    doc: Use for detail views, KPI panels and read-only summaries.
+    fields:
+      reads:   {type: Reads, note: the row}
+      fields:  {type: {list: Field}, note: fields to show}
+      tabs:    {type: {list: Tab}, note: fields split into tabs}
+      item:    {type: {list: Node}, note: "nested named nodes such as metrics or widgets, in order"}
+      actions: {type: {list: Action}, note: actions on the record}
+    example:
+      component: record
+      reads: {view: partners.ById, params: {id: params.id}}
+      fields: [name, {field: tier, as: badge}, website, {field: created_at, as: date}]
+      item: [{name: revenue, component: money, args: {value: row.revenue_ytd}}]
+
+  form:
+    group: composites
+    order: 3
+    summary: Inputs bound to one ESS command's input.
+    doc: >
+      A form is a command's input made editable. Field types, required-ness, validation and error
+      messages come from the command; the form chooses order, grouping and widgets. A refusal is
+      shown on the form as the command's typed error. Settings pages use `groups` that save on
+      change; typed editors use `variant_by` to generate one form per type.
+    fields:
+      does:       {type: {ref: command}, required: true, note: command the form submits}
+      loads:      {type: Reads, note: initial values for edit forms}
+      fields:     {type: {list: Field}, default: {from: does.input_fields, order: declaration}, note: inputs shown}
+      groups:     {type: {list: FormGroup}, note: independently saved groups}
+      tabs:       {type: {list: Tab}, note: fields split into tabs}
+      parts:      {type: {list: Node}, note: "nested named nodes inside the form, in order"}
+      actions:    {type: {list: Action}, note: extra actions next to submit}
+      result:     {type: Node, note: shows the command's outcome}
+      record:     {type: Node, note: read-only fields above the inputs}
+      submit:     {type: {record: {label: {optional: string}, closes: {optional: boolean}, auto: {optional: boolean}}}, note: submit button; auto submits on open}
+      draft:      {type: State, note: "the unsaved input (class draft)"}
+      save:       {type: {enum: [on_submit, on_change, on_blur]}, default: on_submit, note: when the command runs}
+      variant_by: {type: {record: {field: name, forms: {map: {key: string, value: name}}}}, note: one generated form per value of a field}
+      endpoint:   {type: string, note: traceability}
+    example:
+      component: form
+      does: deals.CreateDeal
+      tabs:
+        - {name: basics, label: Basics, fields: [title, {field: value, as: number}]}
+        - {name: schedule, label: Schedule, fields: [{field: close_date, as: date}]}
+
+  choice:
+    group: composites
+    order: 4
+    summary: Pick one or many values from a view or a fixed list.
+    doc: One composite replaces dropdowns, tag pickers, tree selects and checkbox lists. `style` is a hint; a TUI renders all styles as a checklist popup.
+    shorthand:
+      - {at: "options[]", accepts: string, expands_to: {value: $value, label: $value}}
+      - {at: options, accepts: name, expands_to: {each_value_of_enum_type: $value, as: {value: $item, label: $item}}}
+    fields:
+      reads:     {type: Reads, note: options from a view}
+      options:   {type: {one_of: [{list: {record: {value: json, label: string}}}, {list: string}, name]}, note: fixed options or a named enum type}
+      binds:     {type: expr, note: state the value is written to}
+      multiple:  {type: boolean, default: false, note: many values}
+      style:     {type: {enum: [dropdown, tags, tree, grouped, radio, segmented, checklist]}, default: dropdown, note: presentation hint}
+      creatable: {type: {record: {does: {ref: command}}}, note: typed values create new options}
+      visible:   {type: expr, note: shows the choice only when true}
+      note:      {type: string, note: author remark}
+    example: {component: choice, multiple: true, options: DealStage}
+
+  filter_bar:
+    group: composites
+    order: 5
+    summary: Search, choices, inputs and a time window bound to page state.
+    doc: A filter bar writes page state; sections read it in their params. Because that state lives in the URL, a filtered view is a link.
+    shorthand:
+      - {at: "choices[]", accepts: {record: {name: name, remove: {const: true}}}, expands_to: {remove_inherited: $value.name}}
+    fields:
+      binds:   {type: {list: expr}, required: true, note: state the bar writes}
+      search:  {type: {record: {binds: expr, placeholder: {optional: string}}}, note: free-text search}
+      window:  {type: {record: {binds: expr, time: {optional: boolean}}}, note: date or date-time range}
+      choices: {type: {list: Node}, note: "choice composites, named, in order"}
+      inputs:  {type: {list: Field}, note: free inputs each bound to state with binds}
+      actions: {type: {list: Action}, note: actions next to the filters}
+      reset:   {type: boolean, default: false, note: offers a reset-all button}
+    example:
+      component: filter_bar
+      binds: [state.search, state.stage, state.min_value]
+      search: {binds: state.search}
+      choices: [{name: stage, component: choice, multiple: true, options: DealStage}]
+      inputs: [{field: min_value, as: number, binds: state.min_value}]
+
+  header:
+    group: composites
+    order: 6
+    summary: Page title, count, primary actions, view switch, filters and live status.
+    doc: Every page has one header, placed by position (`header`) rather than by `component`, so it is not a member of the composite union. `total` names the section whose total is shown; `live` lists channels whose connection state is shown, so a stale page is visibly stale.
+    shorthand:
+      - {at: title, accepts: {const: from_page}, expands_to: $page.title}
+    fields:
+      title:   {type: {one_of: [string, {const: from_page}]}, note: header title}
+      total:   {type: {ref: section}, note: section whose total is shown}
+      actions: {type: {list: Action}, note: primary actions}
+      switch:  {type: {list: name}, note: pages from switch_to, or modes of this page}
+      filters: {type: {ref: section}, note: filter bar rendered in the header}
+      live:    {type: {list: {ref: channel}}, note: channels whose lifecycle is shown}
+      metrics: {type: {list: Node}, note: "headline metrics, named, in order"}
+      help:    {type: {record: {text: {optional: string}, link: {optional: string}}}, note: help text or link}
+    example:
+      live: [tickets]
+      actions: [{name: create, opens: create, label: New ticket}]
+
+  overlay:
+    group: composites
+    order: 7
+    summary: A drawer, dialog, fullscreen pane or popover shown on demand.
+    doc: "Overlays hold forms, confirms and detail views opened by actions. They belong to a page or a shell. An overlay is a frame around one member of the composite union (or a widget): the frame fields below sit beside the member's own props, and a key that is neither is refused. `same_as` reuses another overlay's definition, addressed as `<page>.<overlay>`; local props override."
+    shorthand:
+      - {at: same_as, accepts: {ref: overlay}, expands_to: {merge_under: $value}}
+    fields:
+      kind:      {type: {enum: [drawer, dialog, fullscreen, popover]}, required: true, note: presentation hint; a TUI uses a full-screen pane}
+      component: {type: {one_of: [{ref: composite_kind}, {ref: widget}]}, required: true, note: what the overlay renders}
+      title:     {type: string, note: "overlay title; a confirm shows it as its question"}
+      params:    {type: {map: {key: name, value: expr}}, note: values passed by the opener}
+      state:     {type: {map: {key: name, value: State}}, note: overlay-local state}
+      same_as:   {type: {ref: overlay}, note: reuse another overlay; local props override}
+      unmapped:  {type: {list: string}, note: gaps found by a retrofit}
+    example:
+      kind: drawer
+      component: record
+      title: Invoice
+      reads: {view: invoices.ById, params: {id: params.id}}
+      fields: [number, partner, {field: status, as: badge}, {field: due, as: date}]
+      actions: [{name: pdf, export: {reads: invoices.Pdf, as: zip}, label: Download PDF}]
+
+  confirm:
+    group: composites
+    order: 8
+    summary: A yes/no step before a command, listing references and consequences.
+    doc: Use before destructive commands, inside an overlay whose `title` is the question. `references` shows what still uses the record; `input` asks the user to type a value; `alternatives` offers a softer action.
+    fields:
+      body:          {type: string, note: explanation}
+      does:          {type: {ref: command}, note: command run on confirm}
+      references:    {type: {ref: view}, note: the used-by view shown first}
+      consequences:  {type: {list: string}, note: what the command will do}
+      confirm_label: {type: string, default: Delete, note: confirm button text}
+      danger:        {type: boolean, default: true, note: styles the confirm as destructive}
+      input:         {type: {record: {label: string, must_equal: {optional: expr}}}, note: type-to-confirm}
+      alternatives:  {type: {list: Action}, note: other actions offered}
+      endpoint:      {type: string, note: traceability}
+    example:
+      kind: dialog
+      component: confirm
+      title: Close ticket
+      does: tickets.CloseTicket
+      input: {label: Type CLOSE to confirm, must_equal: CLOSE}
+      alternatives: [{name: snooze, does: tickets.SnoozeTicket, label: Snooze for a day}]
+
+  metric:
+    group: composites
+    order: 9
+    summary: One number from a view or channel, with a window and a stale mark.
+    doc: For KPI tiles and per-row live numbers. With `from` a metric reads a channel field; when the channel is stale the number is marked stale, not shown as current.
+    fields:
+      reads:  {type: Reads, note: value from a view}
+      from:   {type: expr, note: value from a channel field}
+      match:  {type: name, note: row field that picks a keyed value}
+      window: {type: duration, note: time window the value covers}
+      format: {type: {enum: [number, duration, percent, bytes]}, default: number, note: display format}
+      label:  {type: string, note: caption}
+    example: {component: metric, from: channel.metrics.overdue_invoices, label: Overdue invoices}
+
+  chart:
+    group: composites
+    order: 10
+    summary: A series view drawn as a chart.
+    doc: A renderer without charts shows the series as a table (degrade no_charts).
+    fields:
+      reads:  {type: Reads, required: true, note: the series}
+      chart:  {type: {one_of: [{enum: [line, bar, doughnut, pie, polar, single_number, list, table]}, {record: {binds: expr, options: {list: string}}}]}, required: true, note: chart kind, fixed or chosen by data}
+      x:      {type: name, note: x-axis field}
+      series: {type: {list: name}, note: y fields}
+    example: {component: chart, chart: bar, reads: {view: deals.StageTotals, params: {window: state.window}}, x: stage, series: [count, value], degrades: {no_charts: table}}
+
+  board:
+    group: composites
+    order: 11
+    summary: A user-arranged grid of widgets, persisted.
+    doc: A board reads a dashboard record; each row places a widget whose kind is chosen by `widget_by`. A renderer without free layout stacks them in layout order.
+    fields:
+      reads:        {type: Reads, required: true, note: the dashboard record}
+      widget_by:    {type: name, note: row field choosing the widget kind}
+      widgets:      {type: {map: {key: name, value: Node}}, note: node per widget kind}
+      item_actions: {type: {list: Action}, note: actions on each placed widget}
+      layout:       {type: {record: {persisted_by: {ref: command}, editable_by: {optional: {ref: command}}, state: {optional: expr}}}, note: how the arrangement is saved}
+    example:
+      component: board
+      reads: {view: dashboards.Mine}
+      widget_by: type
+      widgets:
+        win_rate: {component: metric, reads: {view: deals.WinRate}, format: percent, label: Win rate}
+      layout: {persisted_by: dashboards.SaveLayout, state: state.layout}
+      degrades: {no_free_layout: stack}
+
+  graph_editor:
+    group: composites
+    order: 12
+    summary: Nodes and edges of a model, editable on a canvas.
+    doc: For flow and workflow editors. Nodes open an overlay to edit; edges carry actions such as inserting a step. A renderer without a canvas falls back to a collection of nodes.
+    fields:
+      reads:        {type: Reads, required: true, note: the graph}
+      nodes:        {type: {record: {kind_by: name, opens: {optional: {ref: overlay}}}}, note: node kind field and edit overlay}
+      edges:        {type: {record: {from: name, to: name, kind_by: {optional: name}}}, note: edge endpoints and kind}
+      node_actions: {type: {list: Action}, note: context menu of a node}
+      edge_actions: {type: {list: Action}, note: context menu of an edge}
+      toolbar:      {type: {list: Node}, note: "named nodes above the canvas, left to right"}
+    example:
+      component: graph_editor
+      reads: {view: workflows.Graph}
+      nodes: {kind_by: step_type, opens: edit_step}
+      edges: {from: from_step, to: to_step, kind_by: outcome}
+      edge_actions: [{name: insert, does: workflows.InsertStep, label: Insert step}]
+      toolbar: [{name: zoom, primitive: input, as: number, binds: state.zoom}]
+      degrades: {no_graph_editor: collection}
+
+  rich_text:
+    group: composites
+    order: 13
+    summary: Text with expression completion or markup.
+    doc: For message templates with {{expression}} completion, markup and JSON bodies.
+    fields:
+      completes: {type: {ref: view}, note: view of completable expressions}
+      syntax:    {type: {enum: [plain, expression, ssml, json, curl]}, default: expression, note: language of the text}
+      binds:     {type: expr, note: draft field the text is written to}
+    example: {component: rich_text, completes: templates.Expressions, syntax: expression, binds: draft.body}
+
+  references:
+    group: composites
+    order: 14
+    summary: The "used by" list of a record.
+    doc: Shown before destructive commands and in usage tabs so users see what depends on a record.
+    fields:
+      reads:     {type: Reads, required: true, note: the referencing records}
+      columns:   {type: {list: Field}, default: [label, type], note: columns shown}
+      navigates: {type: boolean, default: true, note: rows link to the referencing record}
+    example: {component: references, reads: {view: partners.UsedBy, params: {id: params.id}}}
+
+  Widget:
+    group: composites
+    order: 15
+    summary: An app-defined composite with typed parameters, usable wherever a composite kind is.
+    doc: >
+      Declare a widget under the document's `widgets` when the same arrangement of composites
+      and primitives recurs — a partner card, a money value, a toned status. Its `params` are
+      typed; its `body` is a list of named nodes that may read `args.<param>`. A widget is
+      expanded at its use site and then checked like a built-in. A widget may not contain itself.
+    fields:
+      summary: {type: string, required: true, note: one line shown in pickers and docs}
+      doc:     {type: string, note: longer description for authors}
+      params:  {type: {map: {key: name, value: {record: {type: Type, required: {optional: boolean}, default: {optional: json}, note: string}}}}, note: typed parameters}
+      arrange: {type: {enum: [row, column, grid]}, default: column, note: how body nodes are arranged}
+      body:    {type: {list: Node}, required: true, note: named nodes; each may use args}
+    example:
+      summary: A partner as a card with logo, tier and revenue.
+      params:
+        partner: {type: Partner, required: true, note: the partner row}
+      arrange: column
+      body:
+        - {name: logo,    primitive: image, src: args.partner.logo_url, alt: Partner logo, fit: contain}
+        - {name: title,   primitive: text, text: args.partner.name, style: heading}
+        - {name: tier,    component: status_badge, args: {status: args.partner.tier, tones: {registered: neutral, silver: info, gold: warning, platinum: success}}}
+        - {name: revenue, component: money, args: {value: args.partner.revenue_ytd}}
+        - {name: open,    primitive: link, text: Open, to: {to: partners.detail, params: {id: args.partner.id}}}
+
+  WidgetInstance:
+    group: composites
+    order: 16
+    summary: A use of a widget, with arguments.
+    doc: Written like a composite with `component` naming the widget and `args` supplying its params. Required params must be given; each arg must match the param type.
+    fields:
+      component: {type: {ref: widget}, required: true, note: the widget used}
+      args:      {type: {map: {key: name, value: json}}, note: "one entry per param: an expression, or a literal such as a map"}
+      name:      {type: name, note: node name, required inside lists}
+      visible:   {type: expr, note: shows the instance only when true}
+      body:      {type: {list: Node}, note: "written by expansion, never by an author: the widget body with args substituted"}
+    expansion:
+      - {step: substitute, detail: "args.<param> in the body is replaced by the bound expression"}
+      - {step: validate,   detail: "the expanded nodes are checked like built-ins; findings are reported at <instance path>/body/<node name>"}
+    example: {component: status_badge, args: {status: row.stage, tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}}}
+
+  Node:
+    group: composites
+    order: 17
+    summary: Anything that can appear inside a section, composite or widget — a composite, a widget instance or a primitive.
+    doc: Wherever a nested element is allowed (`item`, `children`, `body`, `parts`, `expand`, `choices`, `metrics`, `toolbar`), a Node is expected. In lists every node carries `name`; in the one map of nodes (board `widgets`) the key is its name. A `component` naming a member of the composite union is a composite; any other `component` names a widget.
+    fields:
+      "(value)": {type: {one_of: [Composite, WidgetInstance, Primitive]}, note: exactly one of component or primitive}
+    exactly_one_of: [component, primitive]
+    example: {name: send, primitive: button, label: Send, tone: primary, action: {name: send, does: tickets.PostReply}}
+
+  Field:
+    group: composites
+    order: 18
+    summary: One input of a form or one column of a collection.
+    doc: Columns and form inputs are fields. `as` is a semantic widget, not a component; a bare name is enough when the defaults fit.
+    shorthand:
+      - {accepts: string, expands_to: {field: $value, name: $value}}
+      - {at: name, accepts: absent, expands_to: {first_present: [field]}}
+    fields:
+      field:    {type: name, required: true, note: field of the command input or view row}
+      name:     {type: name, default: {from: field}, note: node name}
+      label:    {type: string, default: {from: model.field_label}, note: caption}
+      as:       {type: {enum: [text, number, secret, toggle, choice, tags, time, date, date_range, duration, file, rich_text, json, list, map, cron, color, badge, audio, link, metric]}, default: text, note: semantic widget}
+      choice:   {type: Node, note: "the choice composite for `as: choice`"}
+      sortable: {type: boolean, default: false, note: column can sort}
+      visible:  {type: expr, note: shows the field only when true}
+      binds:    {type: expr, note: bind to UI state instead of the command input}
+      note:     {type: string, note: author remark}
+    example: {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}
+
+  Tab:
+    group: composites
+    order: 19
+    summary: One tab of a form, record or overlay.
+    doc: A tab holds fields, or a nested node, or an action such as opening another overlay.
+    fields:
+      name:    {type: name, required: true, note: node name}
+      label:   {type: string, note: tab text}
+      visible: {type: expr, note: shows the tab only when true}
+      fields:  {type: {one_of: [{list: Field}, string]}, note: fields in the tab, or an UNMAPPED string}
+      form:    {type: {one_of: [Node, Action]}, note: nested node or an action}
+    example: {name: schedule, label: Schedule, fields: [{field: close_date, as: date}]}
+
+  FormGroup:
+    group: composites
+    order: 20
+    summary: A group of settings fields saved on its own.
+    doc: Settings pages save each group independently, often on change.
+    fields:
+      name:     {type: name, required: true, note: node name}
+      label:    {type: string, note: group heading}
+      fields:   {type: {list: Field}, required: true, note: fields in the group}
+      save:     {type: {enum: [with_form, on_change]}, default: with_form, note: when the group saves}
+      does:     {type: {ref: command}, note: command for this group if not the form's}
+      actions:  {type: {list: Action}, note: extra actions such as rotating a key}
+      endpoint: {type: string, note: traceability}
+    example: {name: profile, label: Profile, save: on_change, fields: [name, website, {field: logo, as: file}]}
+
+  Composite:
+    group: composites
+    order: 21
+    summary: The composite union — one type whose member is chosen by `component`.
+    doc: >
+      Every composite kind is a member of one union discriminated by `component`; the member's
+      props follow inline beside the fields below, and a key the member does not declare is
+      refused, naming the node's path. A composite written where a nested node is expected, a
+      section and an overlay all hold one member. `header` and `overlay` are composites placed by
+      position, so they are not members. A `component` that names no member names a widget. The
+      bare-name shorthand accepts a member only: a widget is always written
+      `{component: <widget>, args: …}`.
+    union:
+      tag: component
+      members: [collection, record, form, choice, filter_bar, confirm, metric, chart, board, graph_editor, rich_text, references]
+      other_tag_values: {ref: widget}
+    shorthand:
+      - {accepts: {ref: composite_kind}, expands_to: {component: $value}}
+    fields:
+      component: {type: {ref: composite_kind}, required: true, note: kind of the nested composite}
+      name:      {type: name, note: node name, required inside lists}
+      state:     {type: {map: {key: name, value: State}}, note: state local to this composite}
+      visible:   {type: expr, note: shows the composite only when true}
+      degrades:  {type: {map: {key: Capability, value: name}}, note: fallbacks for this composite}
+      unmapped:  {type: {list: string}, note: gaps found by a retrofit}
+    example: {component: metric, from: channel.metrics.open_deals, label: Open deals}
+
+  Degrades:
+    group: composites
+    order: 22
+    summary: Fallbacks for renderers that lack a capability.
+    doc: A renderer profile lists the capabilities it lacks. A construct declares a fallback per capability; otherwise the capability table's first fallback applies, and `refuse` stops generation.
+    rule:
+      when: {target_lacks: $capability, construct_uses: $capability}
+      use: [construct.degrades.$capability, "capabilities.$capability.fallbacks[0]"]
+      if_none: refuse
+    fields:
+      "(capability)": {type: {enum: [no_free_layout, no_charts, no_graph_editor, no_rich_text, no_drawer, no_drag, no_audio, no_file_upload, no_live, no_iframe, no_columns, no_areas]}, note: key of the degrades map; the value is a fallback name}
+    capabilities:
+      no_free_layout:  {fallbacks: [stack],              applies_to: [board]}
+      no_charts:       {fallbacks: [table, metric],      applies_to: [chart, board]}
+      no_graph_editor: {fallbacks: [collection, refuse], applies_to: [graph_editor]}
+      no_rich_text:    {fallbacks: [plain],              applies_to: [rich_text, form]}
+      no_drawer:       {fallbacks: [dialog, fullscreen], applies_to: [overlay]}
+      no_drag:         {fallbacks: [move_buttons],       applies_to: [collection, board, graph_editor]}
+      no_audio:        {fallbacks: [link],               applies_to: [collection, record]}
+      no_file_upload:  {fallbacks: [refuse],             applies_to: [form, Action]}
+      no_live:         {fallbacks: [poll, refuse],       applies_to: [Live, Channel]}
+      no_iframe:       {fallbacks: [link],               applies_to: [board, record]}
+      no_columns:      {fallbacks: [stack],              applies_to: [PageLayout], order: section_declaration}
+      no_areas:        {fallbacks: [stack],              applies_to: [PageLayout], order: section_declaration}
+    example: {no_graph_editor: collection, no_drag: move_buttons}
+
+  # ── primitives (layer: primitive) ────────────────────────────────────────────────────────
+  Primitive:
+    group: composites
+    order: 23
+    summary: The closed set of nine renderer-neutral leaves.
+    doc: >
+      Composites are the normal level of a spec. Primitives exist for the small pieces inside
+      widgets, item templates and section children: a caption, a toned badge, a button, an
+      image. Every primitive has `primitive` (its kind) and `name`; the kinds and their props are
+      the constructs text, badge, icon, button, link, input, toggle, image and divider.
+    fields:
+      primitive: {type: {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, required: true, note: kind of primitive}
+      name:      {type: name, note: node name, required inside lists}
+      visible:   {type: expr, note: shows the primitive only when true}
+    tone: {enum: [neutral, info, success, warning, danger]}
+    example: {name: hint, primitive: text, text: "Tip: drop a CSV here to import partners", style: caption}
+
+  text:
+    group: composites
+    order: 24
+    summary: A run of text, literal or from a field, with a style and a value format.
+    doc: Use for captions, headings and formatted values inside widgets and templates.
+    exactly_one_of: [text, field]
+    fields:
+      text:     {type: expr, note: literal or expression}
+      field:    {type: name, note: row field shown}
+      style:    {type: {enum: [body, caption, heading, mono]}, default: body, note: typographic role}
+      format:   {type: {enum: [plain, number, currency, percent, date, time, duration]}, default: plain, note: value formatting}
+      currency: {type: expr, note: currency code for format currency}
+    example: {name: amount, primitive: text, text: args.value.amount, format: currency, currency: args.value.currency}
+
+  badge:
+    group: composites
+    order: 25
+    summary: A short value in a toned pill.
+    doc: For statuses and tiers. `tone` is fixed; `tone_by` picks a tone from the value.
+    exactly_one_of: [text, field]
+    fields:
+      text:    {type: expr, note: literal or expression}
+      field:   {type: name, note: row field shown}
+      tone:    {type: {enum: [neutral, info, success, warning, danger]}, default: neutral, note: fixed tone}
+      tone_by: {type: {record: {value: expr, map: {map: {key: string, value: {enum: [neutral, info, success, warning, danger]}}}}}, note: tone per value}
+    example: {name: badge, primitive: badge, text: args.status, tone_by: {value: args.status, map: args.tones}}
+
+  icon:
+    group: composites
+    order: 26
+    summary: A semantic icon with an accessible label.
+    doc: The renderer maps the semantic name to its icon set; a TUI shows a glyph or the label.
+    fields:
+      icon:  {type: string, required: true, note: semantic icon name}
+      tone:  {type: {enum: [neutral, info, success, warning, danger]}, default: neutral, note: colour role}
+      label: {type: string, required: true, note: accessible text}
+    example: {name: typing, primitive: icon, icon: typing, tone: info, label: Someone is typing, visible: channel.ticket_chat.typing}
+
+  button:
+    group: composites
+    order: 27
+    summary: A button that runs one action.
+    doc: Use inside widgets and section children; page-level actions belong in the header.
+    fields:
+      label:  {type: string, required: true, note: button text}
+      action: {type: Action, required: true, note: what the button does}
+      tone:   {type: {enum: [primary, secondary, danger, ghost]}, default: secondary, note: emphasis}
+      icon:   {type: string, note: optional semantic icon}
+    example: {name: send, primitive: button, label: Send, tone: primary, action: {name: send, does: tickets.PostReply}}
+
+  link:
+    group: composites
+    order: 28
+    summary: Text that navigates to a page or an external address.
+    doc: Prefer `to` (a page of this app); `href` is for external addresses.
+    exactly_one_of: [to, href]
+    fields:
+      text:  {type: expr, required: true, note: link text}
+      to:    {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to open}
+      href:  {type: expr, note: external address}
+    example: {name: open, primitive: link, text: Open, to: {to: partners.detail, params: {id: args.partner.id}}}
+
+  input:
+    group: composites
+    order: 29
+    summary: A single free input bound to state or a draft field.
+    doc: For inputs outside a form's field list — a settings search, an inline value.
+    fields:
+      as:          {type: {enum: [text, number, search, date, time, secret]}, default: text, note: input type}
+      binds:       {type: expr, required: true, note: state or draft field written}
+      placeholder: {type: string, note: hint text}
+    example: {name: api_help, primitive: input, as: search, placeholder: Search settings, binds: state.settings_search}
+
+  toggle:
+    group: composites
+    order: 30
+    summary: An on/off switch bound to state, or running an action.
+    doc: Bind to UI state with `binds`, or run a command with `action`.
+    exactly_one_of: [binds, action]
+    fields:
+      label:  {type: string, required: true, note: switch text}
+      binds:  {type: expr, note: boolean written}
+      action: {type: Action, note: command run on change}
+    example: {name: api_toggle, primitive: toggle, label: Allow API access, binds: draft.api_enabled}
+
+  image:
+    group: composites
+    order: 31
+    summary: An image with required alternative text.
+    doc: A renderer without images (a TUI) shows the alt text.
+    fields:
+      src: {type: expr, required: true, note: image address}
+      alt: {type: string, required: true, note: alternative text}
+      fit: {type: {enum: [cover, contain]}, default: contain, note: scaling}
+    example: {name: logo, primitive: image, src: args.partner.logo_url, alt: Partner logo, fit: contain}
+
+  divider:
+    group: composites
+    order: 32
+    summary: A visual separator.
+    doc: Separates groups of nodes inside widgets and children.
+    fields:
+      orientation: {type: {enum: [horizontal, vertical]}, default: horizontal, note: direction}
+    example: {name: rule, primitive: divider}
+
+  # ── data ─────────────────────────────────────────────────────────────────────────────────
+  Reads:
+    group: data
+    order: 1
+    summary: The ESS view a section or composite reads — or, while designing, a named placeholder backed by a fixture.
+    doc: >
+      Every piece of data on screen comes from an ESS view. Params bind page state; `paging` says
+      who pages. While a screen is designed before its model exists, write `placeholder` with a
+      view name and a `fixture` file instead of `view`; renderers read the fixture, validators
+      report the placeholder as a warning until it is bound. `endpoint` and `derived` are
+      traceability for retrofits.
+    shorthand:
+      - {accepts: {ref: view}, expands_to: {view: $value}}
+    exactly_one_of: [view, placeholder]
+    constraints:
+      - {when: {paging: client}, requires: {view.bounded: true}, else: refuse}
+      - {when: {placeholder: present}, requires: {fixture: present}, else: refuse}
+    fields:
+      view:        {type: {ref: view}, note: ESS view name}
+      placeholder: {type: name, note: a view name not yet bound to the model}
+      fixture:     {type: string, note: fixture file answering the placeholder}
+      params:      {type: {map: {key: name, value: expr}}, note: view params bound to state}
+      paging:      {type: {enum: [server, client, cursor, append, none]}, default: none, note: who pages}
+      debounce:    {type: duration, note: coalesce param changes before reading}
+      refresh:     {type: {one_of: [duration, expr]}, note: poll interval}
+      cache:       {type: {record: {store: Store, ttl: {optional: duration}}}, default: {store: {resolve: {class: view_cache}}}, note: where the result is cached}
+      endpoint:    {type: string, note: traceability to the HTTP call replaced}
+      derived:     {type: string, note: traceability when data is computed client-side today}
+    example: {placeholder: forecast.Quarterly, fixture: fixtures/forecast.yaml}
+
+  Action:
+    group: data
+    order: 2
+    summary: "One user-triggered effect: run a command (`does`), open an overlay, navigate, export, upload, copy or set UI state."
+    doc: >
+      `does` names an ESS command; its input is bound from the row, selection or state, and its
+      typed errors are shown where the action happened. There is no reload to declare: the
+      command's outcome names the entities it changed, and every section reading a view over
+      them is patched or re-read. Visibility follows actor grants; `visible` adds a UI condition.
+    exactly_one_of: [does, opens, navigate, export, upload, copy, sets]
+    shorthand:
+      - {at: "sets.*", accepts: {const: toggle}, expands_to: {expr: "not $key"}}
+      - {at: confirm, accepts: {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}, expands_to: {overlay: {kind: dialog, component: confirm, title: $value.title, does: $action.does, confirm_label: $value.confirm_label}, show: $value.show}}
+      - {at: name, accepts: absent, expands_to: {first_present: [opens, does.last_segment_snake_case, navigate.to, export.reads, upload.does, sets.first_key]}}
+    fields:
+      name:       {type: name, note: "node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name"}
+      does:       {type: {ref: command}, note: ESS command to run}
+      bind:       {type: {map: {key: name, value: expr}}, note: command input from row, selection or state}
+      opens:      {type: {ref: overlay}, note: overlay to open}
+      navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
+      export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: expr}}}, note: download a view}
+      upload:     {type: {record: {accept: {list: string}, does: {ref: command}}}, note: file picker feeding a command}
+      copy:       {type: expr, note: value copied to the clipboard}
+      sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: UI state change only, never business data}
+      label:      {type: string, note: button or menu text}
+      as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
+      choice:     {type: Node, note: options for as choice}
+      loads:      {type: Reads, note: current value for a header toggle or choice}
+      confirm:    {type: {one_of: [{ref: overlay}, {record: {title: string, show: {optional: expr}, confirm_label: {optional: string}}}]}, note: confirm first}
+      optimistic: {type: boolean, default: false, requires: {does.outcome: unique_for_input}, note: apply the expected outcome at once and revert on refusal}
+      bulk:       {type: boolean, default: false, note: applies to the collection's selection}
+      visible:    {type: expr, note: UI condition beyond grants}
+      endpoint:   {type: string, note: traceability}
+    example:
+      - {name: move, does: deals.MoveDeal, bind: {deal_id: row.id}, as: choice, choice: {component: choice, options: DealStage}, optimistic: true}
+      - {name: import, upload: {accept: [text/csv], does: partners.ImportPartners}, label: Import CSV}
+      - {name: export, export: {reads: invoices.Page, as: csv, params: same_as(list)}, label: Export CSV}
+      - {name: remind, does: invoices.SendReminder, bind: {invoice_id: row.id}, visible: "row.status == overdue", confirm: {title: Send payment reminder}}
+
+  FixtureIndex:
+    group: data
+    order: 3
+    summary: Sample data per view and event scripts per channel, so renderers run without a backend.
+    doc: >
+      In fixture mode a renderer answers every read from a fixture file and plays each channel's
+      script in a loop, honouring delivery and coalesce. A file holds one view or several;
+      `derived` answers ById views from a list fixture. Placeholders name their fixture on the
+      read itself.
+    fields:
+      dir:     {type: string, note: fixture directory relative to the document}
+      index:   {type: string, note: file holding views, derived and scripts}
+      views:   {type: {map: {key: {ref: view}, value: string}}, note: view to fixture file}
+      derived: {type: {map: {key: {ref: view}, value: {one_of: [{record: {by_id_from: {ref: view}, key: name}}, {record: {same_as: {ref: view}}}]}}}, note: views answered from another fixture}
+      scripts: {type: {map: {key: {ref: channel}, value: string}}, note: channel to event script file}
+    script_entry:
+      type: {one_of: [{record: {at: duration, event: {ref: event}, payload: json}}, {record: {at: duration, lifecycle: {enum: [connecting, loading, live, reconnecting, stale, closed]}, payload: {optional: json}}}]}
+      note: an event to deliver, or a connection lifecycle change to simulate
+    view_file:
+      type: {one_of: [{record: {view: {ref: view}, total: {optional: integer}, by_params: {optional: json}, rows: {list: json}}}, {record: {views: {map: {key: {ref: view}, value: {record: {total: {optional: integer}, by_params: {optional: json}, rows: {list: json}}}}}}}]}
+      note: one view per file, or several; by_params records which params the rows answer
+    example:
+      dir: fixtures
+      views: {partners.Page: portal.yaml, deals.Page: portal.yaml}
+      derived: {partners.ById: {by_id_from: partners.Page, key: id}}
+      scripts: {activity: scripts/activity.yaml}
+
+  # ── live ─────────────────────────────────────────────────────────────────────────────────
+  Channel:
+    group: live
+    order: 1
+    summary: A live source of ESS events or a live view, with delivery and resume semantics.
+    doc: >
+      A channel says what it carries and in which direction; the renderer picks the transport.
+      `delivery: latest_value` may drop intermediate values (metrics); `every_event` may not
+      (an activity feed). `resume` says what happens after a reconnect. The connection
+      lifecycle is UI state, and a stale value is marked. Scope is decided by the ESS model.
+    transport_choice:
+      - {declared: direction server_to_client, renderer_picks: SSE, or long polling where SSE is unavailable}
+      - {declared: direction both, renderer_picks: WebSocket}
+      - {declared: no channel and a read with refresh, renderer_picks: polling}
+    fields:
+      carries:         {type: {one_of: [{record: {events: {list: {ref: event}}}}, {record: {view: {ref: view}}}]}, required: true, note: events (deltas) or a live view (replacing value)}
+      direction:       {type: {enum: [server_to_client, both]}, required: true, note: both when the client also sends commands on it}
+      sends:           {type: {list: {ref: command}}, note: commands sent over the channel}
+      delivery:        {type: {enum: [latest_value, every_event]}, required: true, note: whether values may be dropped}
+      resume:          {type: {enum: [from_last_seen, refetch]}, required: true, note: behaviour after reconnect}
+      scope:           {type: {enum: [account, user, session, param]}, default: account, note: which events reach the actor}
+      session:         {type: {record: {per: name}}, note: one channel instance per value}
+      lifecycle:       {type: {list: {enum: [connecting, loading, live, reconnecting, stale, closed]}}, note: connection states shown to the user}
+      reconnect:       {type: {record: {backoff: {record: {from: duration, to: duration}}}}, note: reconnect backoff}
+      stale_after:     {type: duration, note: down time after which fed sections are stale}
+      buffer:          {type: State, note: "class channel_buffer: unapplied events and last-seen cursor"}
+      fields:          {type: {map: {key: name, value: string}}, note: named fields readable as channel.<name>.<field>}
+      transport_today: {type: string, note: traceability only; never read by a renderer}
+      source:          {type: {list: string}, note: traceability}
+      unmapped:        {type: {list: string}, note: gaps found by a retrofit}
+    example:
+      carries: {events: [tickets.ReplyPosted, tickets.TypingStarted]}
+      direction: both
+      sends: [tickets.PostReply, tickets.StartTyping]
+      delivery: every_event
+      resume: from_last_seen
+      scope: param
+      session: {per: ticket_id}
+      buffer: {type: {list: ChatEvent}, class: channel_buffer}
+
+  Live:
+    group: live
+    order: 2
+    summary: How a section applies a channel's events to its rows.
+    doc: >
+      `effect` decides what an event does: patch a row, insert or patch, insert at the top of a
+      feed, remove, replace, or re-read. `only_if: matches(params)` drops live rows outside the
+      section's filters; `when_paged_away: count_new` shows "12 new" instead of shifting rows.
+    fields:
+      channel:         {type: {ref: channel}, required: true, note: channel to consume}
+      on:              {type: {list: {ref: event}}, note: subset of the channel's events}
+      effect:          {type: {enum: [patch_row, insert_or_patch, insert_top, remove_row, replace, refetch]}, required: true, note: what an event does to the rows}
+      match:           {type: name, default: id, note: row identity field}
+      only_if:         {type: expr, note: drop events that fail the condition}
+      coalesce:        {type: duration, note: batch bursts into one render}
+      when_paged_away: {type: {enum: [count_new, ignore, insert]}, default: count_new, note: behaviour when the reader is not on page one}
+      max_rows:        {type: integer, note: cap for insert_top feeds}
+    example: {channel: tickets, effect: insert_or_patch, only_if: matches(params), when_paged_away: count_new, coalesce: 500ms}
+
+  # ── state ────────────────────────────────────────────────────────────────────────────────
+  State:
+    group: state
+    order: 1
+    summary: One piece of UI state, its class and where it is stored.
+    doc: >
+      Every piece of state — filters, a selection, an open drawer, a draft, a cached view, a
+      channel buffer, a preference, a token — is declared with a `class`. Its `store` is explicit
+      or resolved from the placement profile, so one document deploys as a thin or a fat client.
+      `pinned` keeps a placement under any profile; `sensitive` forbids browser storage and the URL.
+    fields:
+      type:      {type: Type, required: true, note: structural type of the value}
+      class:     {type: StateClass, required: true, note: what kind of state this is}
+      store:     {type: Store, default: {resolve: PlacementProfile.resolution}, note: explicit placement}
+      pinned:    {type: boolean, default: false, note: no profile may move it}
+      default:   {type: json, note: initial value}
+      scope:     {type: {one_of: [{enum: [tab, device, session, user, account]}, string]}, default: {by_store: {memory: tab, url: tab, session_storage: tab, local_storage: device, server_session: session, server: user}}, note: sharing (string only for an UNMAPPED marker)}
+      sensitive: {type: boolean, default: false, note: forbids url, session_storage and local_storage}
+      ttl:       {type: duration, note: expiry}
+      clear_on:  {type: {list: {enum: [signout, account_switch, submit, close]}}, default: [signout, account_switch], note: events that clear it}
+      fallback:  {type: {record: {when: expr, store: Store}}, note: second placement used when the condition holds}
+      endpoint:  {type: string, note: traceability for store server}
+      note:      {type: string, note: author remark}
+    example:
+      layout:
+        type: {list: {record: {widget: string, x: integer, y: integer, w: integer, h: integer}}}
+        class: preference
+        store: server
+        scope: user
+        fallback: {when: "not actor.may(dashboards.SaveLayout)", store: local_storage}
+
+  StateClass:
+    group: state
+    order: 2
+    summary: The kind of a state — the key the placement profile uses.
+    doc: A profile maps each class to a default store; the class also decides what reload and sign-out do.
+    fields:
+      "(value)": {type: {enum: [page_state, selection, component_state, draft, view_cache, channel_buffer, preference, credential]}, note: one of the classes below}
+    meaning:
+      page_state:      filters, search, paging, sort, mode — what a link should reproduce
+      selection:       rows or a record the user picked; drives dependent sections and overlays
+      component_state: open/closed, expanded rows, active tab, scroll, tickers
+      draft:           unsaved form input
+      view_cache:      the last result of a read (rows, total, cursor)
+      channel_buffer:  events received but not applied, plus the last-seen cursor
+      preference:      per-user choices that outlive a page (theme, nav expanded, columns, layouts, positions)
+      credential:      tokens held for the actor; always sensitive
+    example: {type: {list: PartnerId, unique: true}, class: selection}
+
+  Store:
+    group: state
+    order: 3
+    summary: Where a state lives, with its durability, sharing, and reload/reconnect behaviour.
+    doc: >
+      Six stores from most local to authoritative. memory is lost on unmount; url travels with
+      links; session_storage survives a reload in one tab; local_storage survives restarts on one
+      device; server_session lives on the server for one login session (for example in a key-value store)
+      and is shared by its tabs; server is an ESS entity or view, durable and changed only by
+      commands.
+    fields:
+      "(value)": {type: {enum: [memory, url, session_storage, local_storage, server_session, server]}, note: one of the stores below}
+    meaning:
+      memory:
+        durability: lost on unmount, reload and tab close
+        sharing: one component instance in one tab
+        on_reload: gone; sections re-read and drafts are lost
+        on_reconnect: kept; the channel's resume decides replay or re-read
+      url:
+        durability: survives reload, back/forward and bookmarks
+        sharing: whoever holds the link
+        on_reload: restored exactly
+        on_reconnect: unaffected
+        constraints: {serializable: true, max_bytes_per_page: 2048, allows_sensitive: false, sent_with_each_request_in_thin: true}
+      session_storage:
+        durability: survives reload; lost when the tab closes; a duplicated tab gets a copy
+        sharing: one tab
+        on_reload: restored before the first read
+        on_reconnect: unaffected
+        constraints: {allows_sensitive: false, max_bytes_per_app: 1048576, key: [origin, actor.user_id, actor.account_id]}
+      local_storage:
+        durability: survives reload and browser restart until the profile is cleared or clear_on fires
+        sharing: one device (browser profile), all its tabs, synced by the storage event
+        on_reload: restored before first paint
+        on_reconnect: unaffected
+        constraints: {allows_sensitive: false, key: [origin, actor.user_id, actor.account_id]}
+      server_session:
+        durability: survives reload, tab close and reconnect; lost on sign-out, account switch or session expiry
+        sharing: every tab of the same login session; not other devices or users
+        on_reload: the server restores it and sends the rendered view model
+        on_reconnect: restored; buffered events let the server replay what the client missed
+        constraints: {bounded_per_session: true, authoritative: false}
+      server:
+        durability: durable
+        sharing: by scope — user (a preference entity) or account (a shared record); other sessions see changes through channels
+        on_reload: re-read
+        on_reconnect: re-read or replayed by the channel's resume
+        constraints: {writes_via: ess_command}
+    matrix:
+      - {store: memory,          survives_reload: false, survives_tab_close: false, survives_signout: false, across_tabs: false, across_devices: false, across_users: false}
+      - {store: url,             survives_reload: true,  survives_tab_close: via_link, survives_signout: via_link, across_tabs: via_link, across_devices: via_link, across_users: via_link}
+      - {store: session_storage, survives_reload: true,  survives_tab_close: false, survives_signout: false, across_tabs: false, across_devices: false, across_users: false}
+      - {store: local_storage,   survives_reload: true,  survives_tab_close: true,  survives_signout: unless_cleared, across_tabs: true, across_devices: false, across_users: false}
+      - {store: server_session,  survives_reload: true,  survives_tab_close: true,  survives_signout: false, across_tabs: true, across_devices: false, across_users: false}
+      - {store: server,          survives_reload: true,  survives_tab_close: true,  survives_signout: true,  across_tabs: true, across_devices: true, across_users: when_scope_account}
+    example: {type: {enum: [light, dark]}, class: preference, store: local_storage, pinned: true, default: light}
+
+  PlacementProfile:
+    group: state
+    order: 4
+    summary: A default store per state class — thin, fat or hybrid.
+    doc: >
+      The profile is how one document deploys as a thin or a fat client. thin keeps everything
+      but the URL on the server: a presenter executes reads, holds drafts and applies channel
+      events, and the client paints view models. fat keeps UI state in the browser and talks to
+      ESS views, commands and channels directly. hybrid lets each page or section pick.
+    fields:
+      idea:     {type: string, note: one line on the deployment shape}
+      reads:    {type: string, note: who executes reads}
+      channels: {type: string, note: who applies channel events}
+      defaults: {type: {map: {key: StateClass, value: Store}}, note: default store per class}
+    profiles:
+      thin:
+        idea: the server holds all state except what the URL carries; the client renders view models and forwards input
+        reads: a server-side presenter
+        channels: the server subscribes, applies events to the session's view cache and pushes rendered patches
+        defaults: {page_state: url, selection: server_session, component_state: server_session, draft: server_session, view_cache: server_session, channel_buffer: server_session, preference: server, credential: server_session}
+      fat:
+        idea: the client holds and computes UI state; the server is only the ESS model
+        reads: the client, against ESS views
+        channels: the client subscribes and applies events itself
+        defaults: {page_state: url, selection: memory, component_state: memory, draft: session_storage, view_cache: memory, channel_buffer: memory, preference: local_storage, credential: memory}
+      hybrid:
+        idea: each page or section picks thin or fat with profile
+        reads: per section
+        channels: server-applied when every fed section is thin, else delivered to the client
+        defaults: {}
+        unresolved: refuse
+    resolution:
+      order:          # first step that yields a store wins
+        - {step: explicit_store,    source: state.store}
+        - {step: pinned,            source: state.store, when: {state.pinned: true}, effect: profile_ignored}
+        - {step: section_profile,   source: "profiles[section.profile].defaults[state.class]"}
+        - {step: page_profile,      source: "profiles[page.profile].defaults[state.class]"}
+        - {step: document_defaults, source: "document.placement_defaults[state.class]"}
+        - {step: profile_defaults,  source: "profiles[document.placement_profile].defaults[state.class]"}
+      refusals:
+        - {when: {state.sensitive: true, store: [url, session_storage, local_storage]}, result: refuse}
+        - {when: {state.class: credential, store_not_in: [memory, server_session]}, result: refuse}
+        - {when: {store: url, value_serializable: false}, result: refuse}
+        - {when: {store: url, value_bytes_over: 2048}, result: refuse}
+        - {when: {renderer.thin_only: true, resolved_by_profile: fat}, result: refuse}
+    reload_and_reconnect:
+      reload:
+        memory: the section re-enters loading; a renderer warns on unload while a memory draft is dirty
+        url: page state restored; sections re-read with the same params
+        session_storage: restored before the first read; drafts refill their forms
+        local_storage: restored before first paint; a cached view paints stale-marked, then refreshes
+        server_session: the server renders the page from session state
+        server: re-read
+      reconnect:
+        memory: kept; resume refetch re-reads, from_last_seen replays from the buffer cursor
+        server_session: the server replays buffered events or re-reads, then pushes one patch
+        server: unaffected
+    example:
+      placement_profile: hybrid
+      placement_defaults: {page_state: url, selection: memory, draft: session_storage, preference: server, credential: server_session}
+      pages:
+        overview:      {kind: dashboard_page, profile: fat}
+        invoices.list: {kind: report_page, profile: thin}
+
+# ════════════════════════════════════════════════════════════════════════════════════════════
+# Lowering, traceability, checks
+# ════════════════════════════════════════════════════════════════════════════════════════════
+lowering:
+  - {construct: "reads (view, params)",        lowers_to: ESS view with params, filter and paging}
+  - {construct: reads placeholder,              lowers_to: nothing until bound; reported as a warning}
+  - {construct: does,                           lowers_to: "ESS command; the form is its input, refusals are its typed errors"}
+  - {construct: visibility and shown actions,   lowers_to: actor grants}
+  - {construct: live and channel events,        lowers_to: ESS events published by the model's components}
+  - {construct: channel delivery and resume,    lowers_to: component reach and binding delivery guarantees; streaming delivery is new}
+  - {construct: state in store server,          lowers_to: an ESS entity (a preference entity for class preference) and its view}
+  - {construct: state in store server_session,  lowers_to: a presentation domain in ESS (an entity per session) or host session storage}
+  - {construct: "state in memory, url, session_storage, local_storage", lowers_to: nothing; renderer-owned}
+  - {construct: "shell, pages, layouts, sections, composites, widgets, primitives, states, degrades", lowers_to: UiIr (new)}
+
+traceability:
+  endpoint: on Reads, Action, forms and overlays — the HTTP call of a retrofitted app
+  source: on Page, Shell and Channel — files the construct was read from
+  transport_today: on Channel — topic or URL used today
+  roles_today: on NavEntry — role list used today
+  unmapped: every value matching unmapped_marker.pattern, and every unmapped list entry
+
+checks:
+  report_by: NodePath      # every finding names the failing node by its path
+  list:
+    - {id: names_unique,        subject: "every node", must: unique_name_among_siblings, severity: error}
+    - {id: nav_resolves,        subject: ["navigation.sections[].pages[]", "navigation.hidden[]", navigation.home], must_resolve: {ref: page}, severity: error}
+    - {id: page_reachable,      subject: "pages.*", must_be_in: ["navigation.sections[].pages[]", "navigation.hidden[]", "navigation.sections[].pages.page"], severity: error}
+    - {id: opens_resolves,      subject: "**.opens", must_resolve_in: [page.overlays, page.kind.overlays, shell.overlays], severity: error}
+    - {id: same_as_resolves,    subject: "**.same_as", must_resolve: {ref: overlay}, severity: error}
+    - {id: page_refs,           subject: ["**.navigate.to", "**.to.to", "pages.*.switch_to[]", "shells.*.guards[].then.redirect"], must_resolve: {ref: page}, severity: error}
+    - {id: channel_refs,        subject: ["**.live.channel", "**.header.live[]", "channel.<name> inside expr"], must_resolve: {ref: channel}, severity: error}
+    - {id: section_refs,        subject: ["**.header.total", "**.header.filters", "**.depends_on", "pages.*.layout.columns[].sections[]", "pages.*.layout.areas.place.*[]"], must_resolve_in: [page.sections], severity: error}
+    - {id: layout_complete,     subject: "pages.*.layout", must: place_every_section_once, severity: warning}
+    - {id: widget_expands,      subject: "**.component naming a widget", must: [resolve_widget, required_args_present, args_match_param_types, no_recursion], then: check_expanded_body, severity: error}
+    - {id: primitive_props,     subject: "**.primitive", must: props_of_kind_only, severity: error}
+    - {id: unbound_placeholder, subject: "**.reads.placeholder", must: bind_to_view, severity: warning}
+    - {id: fixture_per_view,    subject: "**.reads.view", must_be_in: [fixtures.views, fixtures.derived], severity: warning}
+    - {id: script_per_channel,  subject: "channels.*", must_be_in: [fixtures.scripts], severity: warning}
+    - {id: state_resolves,      subject: "**.state.*", must: resolve_to_store, refusals: PlacementProfile.resolution.refusals, severity: error}
+    - {id: types_structural,    subject: "**.type", must_match: type_rule, forbidden: string_holding_a_type_expression, severity: error}
+    - {id: unmapped_reported,   subject: "**", matches: unmapped_marker.pattern, action: report, severity: warning}

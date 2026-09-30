@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T01:40:23Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-schema",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui --no-fail-fast (45 passed incl. adversary passes 1 and 2); clippy -D warnings; the example uses every construct",
+    "reference": "impl/ui-schema@51aee77ac"
+  }
+}

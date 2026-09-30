@@ -33,7 +33,7 @@ Every scope entry is `inferred`: the crates do not exist yet; each story owns on
 
 | Wave | Story | Branch | Managed tree id | Build dir | Scratch | Stage |
 |---|---|---|---|---|---|---|
-| 1 | ui-spec-schema | impl/ui-schema | ess-ui-schema | b10x-target/ess-ui-schema | ess-ui-wave/schema | dispatched |
+| 1 | ui-spec-schema | impl/ui-schema | ess-ui-schema | b10x-target/ess-ui-schema | ess-ui-wave/schema | merged 51aee77ac |
 | 2 | ui-spec-checks | impl/ui-checks | ess-ui-checks | b10x-target/ess-ui-checks | ess-ui-wave/checks | approved |
 | 2 | ui-spec-docs-generator | impl/ui-docs | ess-ui-docs | b10x-target/ess-ui-docs | ess-ui-wave/docs | approved |
 | 2 | ui-spec-tui-renderer | impl/ui-tui | ess-ui-tui | b10x-target/ess-ui-tui | ess-ui-wave/tui | approved |

@@ -36,6 +36,8 @@ never changed to follow a move.
 - **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
   `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
   dependency on the rest is `ess-primitives`.
+- **`crates/ui/`** — `ess-ui`: a renderer-neutral UI document (`ess-ui/1`, schema at
+  `schemas/ui/ess-ui.schema.yaml`) loaded into typed Rust, with no dependency on the rest.
 - **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
   repository's own tooling.
 
