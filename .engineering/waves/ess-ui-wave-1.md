@@ -34,7 +34,7 @@ Every scope entry is `inferred`: the crates do not exist yet; each story owns on
 | Wave | Story | Branch | Managed tree id | Build dir | Scratch | Stage |
 |---|---|---|---|---|---|---|
 | 1 | ui-spec-schema | impl/ui-schema | ess-ui-schema | b10x-target/ess-ui-schema | ess-ui-wave/schema | merged 51aee77ac |
-| 2 | ui-spec-checks | impl/ui-checks | ess-ui-checks | b10x-target/ess-ui-checks | ess-ui-wave/checks | dispatched |
+| 2 | ui-spec-checks | impl/ui-checks | ess-ui-checks | b10x-target/ess-ui-checks | ess-ui-wave/checks | merged 8f253724f (correction 2, coordinator-verified) |
 | 2 | ui-spec-docs-generator | impl/ui-docs | ess-ui-docs | b10x-target/ess-ui-docs | ess-ui-wave/docs | merged |
 | 2 | ui-spec-tui-renderer | impl/ui-tui | ess-ui-tui | b10x-target/ess-ui-tui | ess-ui-wave/tui | merged |
 | 2 | ui-spec-react-renderer | impl/ui-react | ess-ui-react | b10x-target/ess-ui-react | ess-ui-wave/react | merged |
@@ -59,3 +59,5 @@ the integration branch for its pull request, no tag, no release.
 ## Approval
 
 Operator approved all three waves in sequence, 2026-09-30.
+
+Waves 1–2 reached main in PR #255 (merge c78a0e14d); all five stories implemented.

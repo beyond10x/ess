@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-spec-checks
 kind: story
-status: active
+status: implemented
 title: An ess-ui document is checked with findings named by stable node path
 relations:
 - serves: vision:O2
@@ -11,10 +11,11 @@ relations:
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-check
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T00:35:23Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T03:15:27Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T05:07:16Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 
