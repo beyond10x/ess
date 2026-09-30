@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T05:07:13Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-react-renderer",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR #255 CI, 15 of 15 checks pass at f5368310f; merged c78a0e14d",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36669479998"
+  }
+}
