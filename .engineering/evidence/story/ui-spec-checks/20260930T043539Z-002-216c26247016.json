@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T04:35:39Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-checks",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: cargo test -p ess-ui-check 63 passed 0 failed; clippy -D warnings; fmt --check",
+    "reference": "impl/ui-checks@f68ba4f26"
+  }
+}
