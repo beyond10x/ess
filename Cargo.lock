@@ -721,6 +721,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ess-ui-check"
+version = "0.46.0"
+dependencies = [
+ "clap",
+ "ess-compiler",
+ "ess-domain",
+ "ess-ui",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "ess-ui-docs"
 version = "0.46.1"
 dependencies = [
