@@ -1,0 +1,83 @@
+import type { ChangeEvent, ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, type ActionSpec } from "../actions";
+import { useScope } from "../core";
+import { evaluate } from "../expr";
+import { FieldInput, type FieldSpec } from "../fields";
+import { isObject } from "../json";
+
+const PRESETS = ["this_month", "last_30d", "this_quarter", "custom"];
+
+/** Search, a time window, choices and inputs bound to page state. */
+export function FilterBar(props: {
+  "data-ui-path"?: string;
+  binds: string[];
+  search?: { binds: string; placeholder?: string };
+  window?: { binds: string; time?: boolean };
+  choices?: ReactNode;
+  inputs?: FieldSpec[];
+  actions?: ActionSpec[];
+  reset?: boolean;
+}): ReactNode {
+  const scope = useScope();
+  const search = props.search;
+  const window = props.window;
+  const windowValue = window ? evaluate(window.binds, scope.values) : undefined;
+  const range = isObject(windowValue) ? windowValue : {};
+  return (
+    <div className="ui-filter-bar" data-ui-path={useUiPath(props["data-ui-path"])}>
+      {search ? (
+        <input
+          type="search"
+          placeholder={search.placeholder ?? "Search"}
+          value={String(evaluate(search.binds, scope.values) ?? "")}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => scope.set(search.binds, event.target.value)}
+        />
+      ) : null}
+      {window ? (
+        <span className="ui-window">
+          <select
+            value={String(range.preset ?? "")}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => scope.set(`${window.binds}.preset`, event.target.value)}
+          >
+            {PRESETS.map((preset) => (
+              <option key={preset} value={preset}>
+                {preset.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          {range.preset === "custom" ? (
+            <>
+              <input
+                type={window.time ? "datetime-local" : "date"}
+                value={String(range.from ?? "")}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => scope.set(`${window.binds}.from`, event.target.value)}
+              />
+              <input
+                type={window.time ? "datetime-local" : "date"}
+                value={String(range.to ?? "")}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => scope.set(`${window.binds}.to`, event.target.value)}
+              />
+            </>
+          ) : null}
+        </span>
+      ) : null}
+      {props.choices}
+      {(props.inputs ?? []).map((field) => (
+        <FieldInput key={field.name} field={field} />
+      ))}
+      {(props.actions ?? []).map((action) => (
+        <ActionControl key={action.name} action={action} />
+      ))}
+      {props.reset !== false && props.binds.length > 0 ? (
+        <button
+          type="button"
+          className="ui-button ui-tone-ghost"
+          onClick={() => props.binds.forEach((bind) => scope.set(bind, null))}
+        >
+          Reset
+        </button>
+      ) : null}
+    </div>
+  );
+}

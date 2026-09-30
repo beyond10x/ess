@@ -4,8 +4,8 @@ ESS is a standalone Rust workspace for describing systems as typed data, compili
 descriptions into deterministic IR, projecting concrete artifacts, and checking implementations or
 infrastructure against what was declared.
 
-The canonical command is `ess`, and its first level is the four areas the crates are grouped into:
-`specify`, `generate`, `verify`, `infra`.
+The canonical command is `ess`, and its first level is the five areas the crates are grouped into:
+`specify`, `generate`, `verify`, `infra`, `ui`.
 
 New to ESS? [Getting started](https://beyond10x.github.io/docs/ess/getting-started/) goes from
 installing `ess` to a specification of your own, a generated contract and a passing conformance
@@ -49,7 +49,7 @@ The build and delivery commands each have a worked example in the
 Every verb is also spelled flat at the top level, exactly as it was before the areas existed:
 `ess validate --path examples/billing`, `ess conform run …`, `ess schema validate …`. A flat
 spelling runs the same command and prints the same bytes on both streams with the same exit status,
-with no notice of any kind; it is left out of `--help` so the listing stays the four areas. Nothing
+with no notice of any kind; it is left out of `--help` so the listing stays the five areas. Nothing
 is deprecated, and a pinned caller needs no change.
 
 ## Install the command
@@ -71,7 +71,7 @@ Pick the target for your machine from the [release page](https://github.com/beyo
 For example, to install the current release for Apple Silicon in the current directory:
 
 ```console
-version=0.46.0
+version=0.46.1
 target=aarch64-apple-darwin
 archive="ess-${version}-${target}.tar.gz"
 base="https://github.com/beyond10x/ess/releases/download/${version}"

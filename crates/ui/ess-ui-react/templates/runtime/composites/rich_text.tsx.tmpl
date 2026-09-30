@@ -1,0 +1,53 @@
+import type { ChangeEvent, ReactNode } from "react";
+import { useUiPath } from "../core";
+import { useScope } from "../core";
+import { useRead } from "../data";
+import { evaluate } from "../expr";
+import { isObject } from "../json";
+
+/** Multi-line text with completions from a view. */
+export function RichTextView(props: {
+  "data-ui-path"?: string;
+  completes?: string;
+  syntax?: "plain" | "expression" | "ssml" | "json" | "curl";
+  binds?: string;
+}): ReactNode {
+  const scope = useScope();
+  const completions = useRead(props.completes ? { view: props.completes } : undefined, scope.values, props.completes !== undefined);
+  const value = props.binds ? evaluate(props.binds, scope.values) : undefined;
+  const text = typeof value === "string" ? value : "";
+  const listId = `${props["data-ui-path"] ?? props.binds ?? "rich-text"}/completions`;
+  return (
+    <div className={`ui-rich-text ui-syntax-${props.syntax ?? "plain"}`} data-ui-path={useUiPath(props["data-ui-path"])}>
+      <textarea
+        rows={5}
+        value={text}
+        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => props.binds && scope.set(props.binds, event.target.value)}
+      />
+      {completions.rows.length > 0 ? (
+        <datalist id={listId}>
+          {completions.rows.map((row, index) => (
+            <option key={index} value={isObject(row) ? String(row.label ?? row.id) : String(row)} />
+          ))}
+        </datalist>
+      ) : null}
+      {completions.rows.length > 0 ? (
+        <div className="ui-completions">
+          {completions.rows.map((row, index) => {
+            const insert = isObject(row) ? String(row.label ?? row.id) : String(row);
+            return (
+              <button
+                key={index}
+                type="button"
+                className="ui-chip"
+                onClick={() => props.binds && scope.set(props.binds, `${text}${insert}`)}
+              >
+                {insert}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}

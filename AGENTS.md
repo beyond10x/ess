@@ -36,6 +36,8 @@ never changed to follow a move.
 - **`crates/infra/`** — `infra-domain`, `infra-compiler`, `infra-analyze`, `infra-spec`,
   `infra-project`, `ess-kubernetes`: the observed cluster, a separate bounded context whose only
   dependency on the rest is `ess-primitives`.
+- **`crates/ui/`** — `ess-ui`: a renderer-neutral UI document (`ess-ui/1`, schema at
+  `schemas/ui/ess-ui.schema.yaml`) loaded into typed Rust, with no dependency on the rest.
 - **`crates/edge/`** — `ess-cli`, `ess-xtask`: the `ess` binary an adopter runs, and this
   repository's own tooling.
 
@@ -220,7 +222,7 @@ downstream complains, and one task in the gate is the only thing that knows.
 The ESS agent plugin lives in `beyond10x/agentplugins` (`plugins/ess/`), with every other Beyond10x
 plugin. Its `agentplugins-check tools` runs every command the plugin spells against the newest ESS
 release and validates its syntax example with it, daily and on each of its pull requests, so a verb
-renamed or removed here turns that check red there. The first level of `ess` is the four areas and
+renamed or removed here turns that check red there. The first level of `ess` is the five areas and
 nothing else (`TOOLS` in `crates/edge/ess-cli/src/main.rs` is empty).
 
 **Reading a failed `Gate` without the log.** The Actions log endpoint redirects to a zip and

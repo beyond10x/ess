@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.46.1 — 2026-09-30
+
+### ess verify diff classifies error payload sources and three outcome flags
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.46.1)
+
+`ess verify diff` reports an outcome's error `payload:` sources declared, dropped or replaced, and a moved `accepts: nothing`, `returns:` or caller-decided refusal, as their own changes instead of one `unclassified-changed`. The new kinds need `ess-diff/12`; a delta without them keeps its format and bytes.
+
 ## 0.46.0 — 2026-09-30
 
 ### The Rust target generates what the specification fully determines

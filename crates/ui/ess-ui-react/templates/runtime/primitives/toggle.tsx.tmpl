@@ -1,0 +1,28 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, type ActionSpec } from "../actions";
+import { useScope } from "../core";
+import { evaluate, truthy } from "../expr";
+
+/** An on/off switch bound to state or draft, or running an action. */
+export function ToggleView(props: { "data-ui-path": string; label: string; binds?: string; action?: ActionSpec }): ReactNode {
+  const scope = useScope();
+  if (props.action) {
+    return (
+      <span className="ui-toggle-node" data-ui-path={useUiPath(props["data-ui-path"])}>
+        <ActionControl action={{ ...props.action, as: "toggle", label: props.label }} />
+      </span>
+    );
+  }
+  const binds = props.binds;
+  return (
+    <label className="ui-toggle" data-ui-path={useUiPath(props["data-ui-path"])}>
+      <input
+        type="checkbox"
+        checked={binds ? truthy(evaluate(binds, scope.values)) : false}
+        onChange={() => binds && scope.set(binds, !truthy(evaluate(binds, scope.values)))}
+      />
+      {props.label}
+    </label>
+  );
+}

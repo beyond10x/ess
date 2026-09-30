@@ -20,6 +20,7 @@ mod schema;
 mod schema_bundle;
 mod site;
 mod toolchain;
+mod ui;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,10 +43,10 @@ struct Cli {
     strict_requires: bool,
 }
 
-/// The four areas the first level of `ess` is made of.
+/// The five areas the first level of `ess` is made of.
 ///
 /// One per `crates/<area>/` directory: the command surface says what the crate tree says.
-const AREAS: &[&str] = &["specify", "generate", "verify", "infra"];
+const AREAS: &[&str] = &["specify", "generate", "verify", "infra", "ui"];
 
 /// First-level verbs that belong to no area because they read no specification. None today: the
 /// agent guidance `ess skill` used to print lives in the `ess` plugin of `beyond10x/agentplugins`.
@@ -82,6 +83,11 @@ enum Command {
     Infra {
         #[command(subcommand)]
         command: InfraAreaCommand,
+    },
+    /// Load, document and run renderer-neutral UI documents (`ess-ui/1`).
+    Ui {
+        #[command(subcommand)]
+        command: ui::Command,
     },
     /// The flat spellings of the `specify` verbs. Hidden by [`command`], never deprecated.
     #[command(flatten)]
@@ -191,6 +197,8 @@ enum GenerateAreaCommand {
     Generate(GenerateArgs),
     /// Generate a parser and process adapter from a typed CLI presentation binding.
     Cli(cli_binding::Generate),
+    /// Generate an application from an `ess-ui/1` document.
+    Ui(ui::Generate),
     /// Everything else the area offers, which is also spelled flat at the top level.
     #[command(flatten)]
     Other(GenerateCommand),
@@ -1203,7 +1211,7 @@ enum DeploymentCommand {
 /// The derive mounts every verb twice from one definition — once under its area and once as the
 /// flat spelling a pinned caller already uses — so the two cannot drift apart in arguments or in
 /// what they run. What tells them apart is this function, and only this function: a command
-/// `--help` offers is one of the four areas or something under one, and every other spelling that
+/// `--help` offers is one of the five areas or something under one, and every other spelling that
 /// still parses is a flat one, hidden rather than deprecated. `main` and the tests both ask here,
 /// so what is checked is what an adopter runs.
 ///
@@ -1292,11 +1300,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             None => generate_projections(&direct),
             Some(GenerateAreaCommand::Generate(spelled)) => generate_projections(&spelled),
             Some(GenerateAreaCommand::Cli(args)) => cli_binding::generate(&args),
+            Some(GenerateAreaCommand::Ui(args)) => Ok(ui::generate(&args)),
             Some(GenerateAreaCommand::Other(command)) => generate_area(command),
         },
         Command::FlatGenerate(command) => generate_area(command),
         Command::Verify { command } | Command::FlatVerify(command) => verify_area(command),
         Command::Infra { command } => infra_area(command),
+        Command::Ui { command } => Ok(ui::run(&command)),
         Command::FlatImport(command) => import_area(command),
     }
 }
@@ -4959,12 +4969,20 @@ mod tests {
         }
     }
 
-    /// How many leaves the four areas carry between them.
+    /// How many leaves the areas carry between them.
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 65;
-    const AREA_ONLY_LEAVES: [&[&str]; 2] = [&["specify", "cli"], &["generate", "cli"]];
+    const AREA_LEAVES: usize = 70;
+    const AREA_ONLY_LEAVES: [&[&str]; 7] = [
+        &["specify", "cli"],
+        &["generate", "cli"],
+        &["generate", "ui"],
+        &["ui", "load"],
+        &["ui", "check"],
+        &["ui", "docs"],
+        &["ui", "run"],
+    ];
 
     /// The order they are offered in is checked where it is rendered, in
     /// `tests/command_surface.rs`: `mut_subcommand` moves what it touches to the end of the list,
@@ -5000,7 +5018,7 @@ mod tests {
         assert_eq!(
             flat.len(),
             AREA_LEAVES - AREA_ONLY_LEAVES.len() - 1,
-            "The two CLI routes are area-only; `ess generate` carries its old flat arguments \
+            "The CLI and ui routes are area-only; `ess generate` carries its old flat arguments \
              on the area itself: {flat:?}"
         );
 
@@ -5016,7 +5034,13 @@ mod tests {
             let leaf = node(&command, path).expect("the path came from the tree");
 
             if AREA_ONLY_LEAVES.iter().any(|expected| path == expected) {
-                assert!(node(&command, alias).is_none(), "unexpected flat CLI alias");
+                // `ess generate ui` drops to `ess ui`, which is the `ui` area and not a spelling
+                // of the verb; every other area-only leaf drops to nothing at all.
+                let dropped_to_an_area = alias.len() == 1 && AREAS.contains(&alias[0].as_str());
+                assert!(
+                    dropped_to_an_area || node(&command, alias).is_none(),
+                    "unexpected flat alias `ess {flat_spelling}` of `ess {spelled}`"
+                );
                 continue;
             }
 

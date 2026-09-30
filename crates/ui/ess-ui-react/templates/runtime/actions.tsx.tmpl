@@ -1,0 +1,215 @@
+// Actions: run a command, open an overlay, navigate, export, upload, copy or set state.
+
+import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useUiPath } from "./core";
+import { hrefFor } from "../routes";
+import { ScopeLayer, useScope, type Scope } from "./core";
+import { dataAdapter, invalidate } from "./data";
+import { evaluate, truthy } from "./expr";
+import { isObject } from "./json";
+
+/** An action as the document declares it, with its node path. */
+export interface ActionSpec {
+  "data-ui-path": string;
+  name: string;
+  label?: string;
+  as?: "button" | "icon" | "toggle" | "choice" | "menu_item" | "link";
+  does?: string;
+  bind?: Record<string, string>;
+  opens?: string;
+  navigate?: { to: string; params?: Record<string, string> };
+  export?: { reads: string; as: string; params?: string };
+  upload?: { accept: string[]; does: string };
+  copy?: string;
+  sets?: Record<string, string>;
+  choice?: ReactNode;
+  confirm?: ReactNode;
+  confirmShow?: string;
+  confirmOpens?: string;
+  optimistic?: boolean;
+  bulk?: boolean;
+  visible?: string;
+  tone?: string;
+  icon?: string;
+}
+
+function label(action: ActionSpec): string {
+  return action.label ?? action.name.replace(/_/g, " ");
+}
+
+/** Runs an action's `does` with its bound inputs; shared by forms and confirms. */
+export async function runCommand(
+  scope: Scope,
+  command: string,
+  input: Record<string, unknown>,
+  optimistic = false,
+): Promise<boolean> {
+  try {
+    if (optimistic) {
+      scope.notify(`${command} sent`);
+    }
+    await dataAdapter().send(command, input);
+    invalidate();
+    if (!optimistic) {
+      scope.notify(`${command} done`, "success");
+    }
+    return true;
+  } catch (error) {
+    scope.notify(`${command} failed: ${error instanceof Error ? error.message : String(error)}`, "danger");
+    return false;
+  }
+}
+
+function bound(action: ActionSpec, values: Record<string, unknown>): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  for (const [name, expr] of Object.entries(action.bind ?? {})) {
+    input[name] = evaluate(expr, values);
+  }
+  return input;
+}
+
+function download(name: string, text: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function runAction(action: ActionSpec, scope: Scope, extra?: Record<string, unknown>): Promise<void> {
+  const values = scope.values;
+  if (action.does) {
+    const row = values.row;
+    // Without `bind`, a command run beside a form sends its draft, and one run on a row its id.
+    const draft = !action.bind && isObject(values.draft) ? values.draft : {};
+    const input = { ...draft, ...(isObject(row) && !action.bind ? { id: row.id } : {}), ...bound(action, values), ...extra };
+    await runCommand(scope, action.does, input, action.optimistic);
+  } else if (action.opens) {
+    const row = values.row;
+    scope.open(action.opens, isObject(row) ? { ...row } : undefined);
+  } else if (action.navigate) {
+    const params: Record<string, unknown> = {};
+    for (const [name, expr] of Object.entries(action.navigate.params ?? {})) {
+      params[name] = evaluate(expr, values);
+    }
+    scope.navigate(hrefFor(action.navigate.to, params));
+  } else if (action.export) {
+    const params = action.export.params ? evaluate(action.export.params, values) : {};
+    const result = await dataAdapter().read({
+      view: action.export.reads,
+      params: isObject(params) ? params : {},
+    });
+    const rows = result.rows;
+    const text =
+      action.export.as === "csv"
+        ? rowsToCsv(rows)
+        : JSON.stringify(rows, null, 2);
+    download(`${action.export.reads}.${action.export.as}`, text, action.export.as === "csv" ? "text/csv" : "application/octet-stream");
+  } else if (action.copy) {
+    await navigator.clipboard.writeText(String(evaluate(action.copy, values) ?? ""));
+    scope.notify("Copied", "success");
+  } else if (action.sets) {
+    for (const [path, expr] of Object.entries(action.sets)) {
+      scope.set(path, evaluate(expr, values));
+    }
+  }
+}
+
+function rowsToCsv(rows: unknown[]): string {
+  const objects = rows.filter(isObject);
+  const columns = [...new Set(objects.flatMap((row) => Object.keys(row)))];
+  const cell = (value: unknown) => `"${String(typeof value === "object" ? JSON.stringify(value) : value ?? "").replace(/"/g, '""')}"`;
+  return [columns.join(","), ...objects.map((row) => columns.map((column) => cell(row[column])).join(","))].join("\n");
+}
+
+/** One action as a control: button, icon, toggle, choice, menu item or link. */
+export function ActionControl(props: { action: ActionSpec }): ReactNode {
+  const { action } = props;
+  const scope = useScope();
+  const [pending, setPending] = useState(false);
+  if (action.visible !== undefined && !truthy(evaluate(action.visible, scope.values))) {
+    return null;
+  }
+  const start = (extra?: Record<string, unknown>) => {
+    if (action.confirmOpens) {
+      scope.open(action.confirmOpens, isObject(scope.values.row) ? { ...scope.values.row } : undefined);
+      return;
+    }
+    if (action.confirm && (action.confirmShow === undefined || truthy(evaluate(action.confirmShow, scope.values)))) {
+      setPending(true);
+      return;
+    }
+    void runAction(action, scope, extra);
+  };
+  const path = action["data-ui-path"];
+  let control: ReactNode;
+  if (action.upload) {
+    const upload = action.upload;
+    control = (
+      <label className="ui-button ui-upload" data-ui-path={useUiPath(path)}>
+        {label(action)}
+        <input
+          type="file"
+          accept={upload.accept.join(",")}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void file.text().then((text) => runCommand(scope, upload.does, { name: file.name, content: text }));
+            }
+          }}
+        />
+      </label>
+    );
+  } else if (action.as === "choice" && action.choice) {
+    control = (
+      <span className="ui-action-choice" data-ui-path={useUiPath(path)}>
+        <ScopeLayer actions={{ pick: (value: unknown) => start({ value }) }}>{action.choice}</ScopeLayer>
+      </span>
+    );
+  } else if (action.as === "toggle") {
+    const on = action.sets ? truthy(evaluate(Object.keys(action.sets)[0], scope.values)) : false;
+    control = (
+      <label className="ui-toggle" data-ui-path={useUiPath(path)}>
+        <input type="checkbox" checked={on} onChange={() => start()} />
+        {label(action)}
+      </label>
+    );
+  } else if (action.as === "link" || action.as === "menu_item") {
+    control = (
+      <a
+        href="#"
+        className={action.as === "link" ? "ui-link" : "ui-menu-item"}
+        data-ui-path={useUiPath(path)}
+        onClick={(event: { preventDefault(): void }) => {
+          event.preventDefault();
+          start();
+        }}
+      >
+        {label(action)}
+      </a>
+    );
+  } else {
+    control = (
+      <button
+        type="button"
+        className={`ui-button${action.as === "icon" ? " ui-icon-button" : ""}${action.tone ? ` ui-tone-${action.tone}` : ""}`}
+        title={label(action)}
+        aria-label={label(action)}
+        data-ui-path={useUiPath(path)}
+        onClick={() => start()}
+      >
+        {action.as === "icon" ? <span className={`ui-icon ui-icon-${action.icon ?? action.name}`} /> : label(action)}
+      </button>
+    );
+  }
+  return (
+    <>
+      {control}
+      {pending && action.confirm ? (
+        <ScopeLayer actions={{ close: () => setPending(false) }}>{action.confirm}</ScopeLayer>
+      ) : null}
+    </>
+  );
+}
+

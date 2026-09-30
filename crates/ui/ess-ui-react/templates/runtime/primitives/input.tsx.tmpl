@@ -1,0 +1,23 @@
+import type { ChangeEvent, ReactNode } from "react";
+import { useUiPath } from "../core";
+import { useScope } from "../core";
+import { evaluate } from "../expr";
+
+/** A single input bound to state or draft. */
+export function InputView(props: { "data-ui-path": string; as?: string; binds: string; placeholder?: string }): ReactNode {
+  const scope = useScope();
+  const value = evaluate(props.binds, scope.values);
+  const numeric = props.as === "number";
+  return (
+    <input
+      className="ui-input"
+      type={numeric ? "number" : props.as === "search" ? "search" : "text"}
+      placeholder={props.placeholder}
+      value={value === undefined || value === null ? "" : String(value)}
+      data-ui-path={useUiPath(props["data-ui-path"])}
+      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+        scope.set(props.binds, numeric ? Number(event.target.value) : event.target.value)
+      }
+    />
+  );
+}

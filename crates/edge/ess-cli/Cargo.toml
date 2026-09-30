@@ -42,6 +42,11 @@ infra-project.workspace = true
 ess-kubernetes.workspace = true
 ess-openapi.workspace = true
 schema-contract.workspace = true
+ess-ui.workspace = true
+ess-ui-check.workspace = true
+ess-ui-docs.workspace = true
+ess-ui-react.workspace = true
+ess-ui-tui.workspace = true
 semver.workspace = true
 fluent-uri = "0.4.1"
 # The edge owns descriptor-relative output admission, locking and same-mount publication.

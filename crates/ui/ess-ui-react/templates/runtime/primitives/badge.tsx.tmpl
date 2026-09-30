@@ -1,0 +1,30 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { display, formatValue, useScope } from "../core";
+import { evaluate } from "../expr";
+import { isObject, type Json } from "../json";
+
+/** A short value with a tone, fixed or looked up by value. */
+export function BadgeView(props: {
+  "data-ui-path": string;
+  text?: string;
+  field?: string;
+  tone?: string;
+  toneBy?: { value: string; map: Json };
+}): ReactNode {
+  const scope = useScope();
+  const value = props.field !== undefined ? display(scope.values.row, props.field) : evaluate(props.text, scope.values);
+  let tone = props.tone ?? "neutral";
+  if (props.toneBy) {
+    const key = String(evaluate(props.toneBy.value, scope.values));
+    const map = typeof props.toneBy.map === "string" ? evaluate(props.toneBy.map, scope.values) : props.toneBy.map;
+    if (isObject(map) && typeof map[key] === "string") {
+      tone = map[key] as string;
+    }
+  }
+  return (
+    <span className={`ui-badge ui-tone-${tone}`} data-ui-path={useUiPath(props["data-ui-path"])}>
+      {formatValue(value)}
+    </span>
+  );
+}

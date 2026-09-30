@@ -135,7 +135,7 @@ fn a_binding_context_change_alone_keeps_ess_diff_10_and_may_be_written_as_11() {
 /// A prefix change alone on an `ess/18` model is `/11` and every writer from `/2` to `/10`
 /// refuses it, each naming the prefix change.
 #[test]
-fn every_writer_below_11_refuses_a_prefix_change_and_12_is_unsupported() {
+fn every_writer_below_11_refuses_a_prefix_change_and_13_is_unsupported() {
     let prefix = delta(
         &variant(Some("acc_"), "account-messages"),
         &variant(Some("acc_x"), "account-messages"),
@@ -155,16 +155,16 @@ fn every_writer_below_11_refuses_a_prefix_change_and_12_is_unsupported() {
             other => panic!("ess-diff/{major}: {other:?}"),
         }
     }
-    let twelve = DeltaFormat::parse("ess-diff/12").unwrap();
-    assert!(!twelve.is_supported());
+    let thirteen = DeltaFormat::parse("ess-diff/13").unwrap();
+    assert!(!thirteen.is_supported());
     assert!(matches!(
-        prefix.to_canonical_json_for(twelve),
+        prefix.to_canonical_json_for(thirteen),
         Err(DeltaWriteRefusal::UnsupportedFormat { .. })
     ));
     let json = prefix.to_canonical_json();
-    let refusal = read(&json.replace("\"ess-diff/11\"", "\"ess-diff/12\""))
-        .expect_err("a /12 document is refused");
-    assert!(refusal.contains("ess-diff/11"), "{refusal}");
+    let refusal = read(&json.replace("\"ess-diff/11\"", "\"ess-diff/13\""))
+        .expect_err("a /13 document is refused");
+    assert!(refusal.contains("ess-diff/12"), "{refusal}");
 }
 
 /// The text rendering carries the prefix change beside the cause change, in the canonical order.

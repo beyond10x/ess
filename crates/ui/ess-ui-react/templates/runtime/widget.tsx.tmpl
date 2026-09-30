@@ -1,0 +1,20 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "./core";
+
+/** One instance of an app-defined widget, its body arranged in a row, column or grid. */
+export function WidgetBox(props: {
+  "data-ui-path"?: string;
+  widget: string;
+  arrange?: "row" | "column" | "grid";
+  children?: ReactNode;
+}): ReactNode {
+  return (
+    <div
+      className={`ui-widget ui-arrange-${props.arrange ?? "column"}`}
+      data-widget={props.widget}
+      data-ui-path={useUiPath(props["data-ui-path"])}
+    >
+      {props.children}
+    </div>
+  );
+}

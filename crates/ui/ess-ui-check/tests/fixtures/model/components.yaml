@@ -1,0 +1,16 @@
+components:
+  - component: shop-service
+    summary: Holds the stock and its audit record.
+    owns:
+      domains:
+        - shop.stock
+        - shop.audit
+    accepts:
+      commands:
+        - shop.stock.AddItem
+        - shop.audit.RecordEntry
+    publishes:
+      events:
+        - shop.stock.ItemAdded
+        - shop.audit.EntryRecorded
+    reached_by: network

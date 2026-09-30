@@ -1,0 +1,72 @@
+domain: shop.stock
+
+summary: Items on the shelves.
+
+naming:
+  wire: stock
+  display: Stock
+
+types:
+  - name: shop.stock.ItemId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: shop.stock.Item
+    identity:
+      name: item_id
+      type: shop.stock.ItemId
+    fields:
+      - name: label
+        type: String
+    lifecycle:
+      initial: Stocked
+      states: [Stocked]
+      terminal: [Stocked]
+
+actors:
+  - name: shop.stock.Clerk
+    may:
+      - shop.stock.AddItem
+    naming:
+      display: Clerk
+
+commands:
+  - name: shop.stock.AddItem
+    naming:
+      wire: add-item
+      display: Add an item
+    input:
+      - name: label
+        type: String
+    outcomes:
+      - name: added
+        creates: shop.stock.Item
+        instance: item_id
+        emits:
+          - shop.stock.ItemAdded
+        payload:
+          shop.stock.ItemAdded:
+            label: input.label
+        summary: The item is on the shelf.
+
+events:
+  - name: shop.stock.ItemAdded
+    fields:
+      - name: item_id
+        type: shop.stock.ItemId
+      - name: label
+        type: String
+
+views:
+  - name: shop.stock.Items
+    source: shop.stock.Item
+    consistency: read_your_writes
+    fields:
+      - name: item_id
+        type: shop.stock.ItemId
+      - name: label
+        type: String
+    naming:
+      wire: items
+      display: Items

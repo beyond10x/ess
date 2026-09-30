@@ -1,0 +1,86 @@
+import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, runCommand, type ActionSpec } from "../actions";
+import { useScope } from "../core";
+import { useRead } from "../data";
+import { evaluate } from "../expr";
+import { isObject } from "../json";
+
+/** Confirms a command: consequences, what refers to the subject, and an optional typed check. */
+export function ConfirmView(props: {
+  "data-ui-path"?: string;
+  body?: string;
+  does?: string;
+  references?: string;
+  consequences?: string[];
+  confirmLabel?: string;
+  danger?: boolean;
+  input?: { label: string; mustEqual?: string };
+  alternatives?: ActionSpec[];
+}): ReactNode {
+  const scope = useScope();
+  const [typed, setTyped] = useState("");
+  const params = isObject(scope.values.params) ? scope.values.params : {};
+  const references = useRead(
+    props.references ? { view: props.references, params: { id: "params.id" } } : undefined,
+    scope.values,
+    props.references !== undefined,
+  );
+  const expected = props.input?.mustEqual ? String(evaluate(props.input.mustEqual, scope.values)) : undefined;
+  const blocked = expected !== undefined && typed !== expected;
+  return (
+    <div className="ui-confirm" data-ui-path={useUiPath(props["data-ui-path"])}>
+      {props.body ? <p>{props.body}</p> : null}
+      {props.consequences && props.consequences.length > 0 ? (
+        <ul className="ui-consequences">
+          {props.consequences.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
+      {props.references && references.rows.length > 0 ? (
+        <div className="ui-references">
+          <p>Still referred to by:</p>
+          <ul>
+            {references.rows.map((row, index) => (
+              <li key={index}>{isObject(row) ? String(row.label ?? row.id) : String(row)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {props.input ? (
+        <label className="ui-form-field">
+          <span className="ui-form-label">{props.input.label}</span>
+          <input value={typed} onChange={(event: ChangeEvent<HTMLInputElement>) => setTyped(event.target.value)} />
+        </label>
+      ) : null}
+      <div className="ui-form-actions">
+        {(props.alternatives ?? []).map((action) => (
+          <ActionControl key={action.name} action={action} />
+        ))}
+        <button type="button" className="ui-button" onClick={() => scope.close()}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={`ui-button ${props.danger === false ? "ui-tone-primary" : "ui-tone-danger"}`}
+          disabled={blocked}
+          onClick={() => {
+            if (!props.does) {
+              scope.close();
+              return;
+            }
+            const row = scope.values.row;
+            void runCommand(scope, props.does, { ...params, ...(isObject(row) ? { id: row.id } : {}) }).then((ok) => {
+              if (ok) {
+                scope.close();
+              }
+            });
+          }}
+        >
+          {props.confirmLabel ?? "Confirm"}
+        </button>
+      </div>
+    </div>
+  );
+}

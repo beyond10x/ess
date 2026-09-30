@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T03:14:45Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-tui-renderer",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui-tui (49 passed incl. adversary passes 1 and 2); clippy -D warnings after a doc-comment-only patch to the adversary files; headless renders of the example",
+    "reference": "impl/ui-tui@d028140d85"
+  }
+}

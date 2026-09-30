@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T01:57:28Z",
+  "actor": "human:timo",
+  "artifact": "story:diff-classifies-error-payload-sources",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-diff 243 passed (error_payload_sources 5, outcome_flags 4, guard); ess-cli diff tests; docs/schema/generate --check; clippy; fmt-check; the reported reproduction yields one classified change",
+    "reference": "fix/diff-error-payload@309aef099"
+  }
+}

@@ -1,0 +1,38 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { formatValue, useData, useScope } from "../core";
+import type { ReadSpec } from "../data";
+import { evaluate } from "../expr";
+import { getPath, isObject } from "../json";
+
+/** One number: from an expression (a channel field), or the first row of a read. */
+export function MetricView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  from?: string;
+  match?: string;
+  window?: string;
+  format?: "number" | "duration" | "percent" | "bytes";
+  label?: string;
+}): ReactNode {
+  const scope = useScope();
+  const data = useData(props.reads);
+  let value: unknown;
+  if (props.from !== undefined) {
+    value = evaluate(props.from, scope.values);
+  }
+  if (value === undefined && data) {
+    const row = data.rows[0];
+    value = isObject(row)
+      ? props.match
+        ? getPath(row, props.match.split("."))
+        : row.value ?? Object.values(row).find((entry) => typeof entry === "number")
+      : row;
+  }
+  return (
+    <div className="ui-metric" data-ui-path={useUiPath(props["data-ui-path"])}>
+      <span className="ui-metric-value">{value === undefined ? "–" : formatValue(value, props.format)}</span>
+      {props.label ? <span className="ui-metric-label">{props.label}</span> : null}
+    </div>
+  );
+}

@@ -1,0 +1,126 @@
+// The navigation region: sections of page links, searchable, filtered by restrictions.
+
+import { createContext, useContext, useState, type ChangeEvent, type ReactNode } from "react";
+import { Link } from "react-router";
+import { hrefFor } from "../routes";
+import { useScope } from "./core";
+import { useRead } from "./data";
+import { evaluate, truthy } from "./expr";
+import { isObject } from "./json";
+
+/** A link to one page. */
+export interface NavLinkSpec {
+  page: string;
+  label: string;
+  synonyms: string[];
+  params?: Record<string, unknown>;
+}
+
+/** Entries read from a view: one link per row. */
+export interface DynamicEntries {
+  fromView: string;
+  page: string;
+  param: string;
+  label?: string;
+  synonyms: string[];
+  filter?: string;
+}
+
+/** A restriction: while `when` holds, only `sections` are shown. */
+export interface Restriction {
+  when: string;
+  sections: string[];
+}
+
+const SearchContext = createContext<{ query: string; allowed?: string[] }>({ query: "" });
+
+function matchesQuery(query: string, link: { label: string; synonyms: string[] }): boolean {
+  if (query === "") {
+    return true;
+  }
+  const needle = query.toLowerCase();
+  return [link.label, ...link.synonyms].some((text) => text.toLowerCase().includes(needle));
+}
+
+/** The navigation region. */
+export function Navigation(props: {
+  search?: boolean;
+  collapsible?: boolean;
+  restrictions: Restriction[];
+  children?: ReactNode;
+}): ReactNode {
+  const scope = useScope();
+  const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
+  const restriction = props.restrictions.find((entry) => truthy(evaluate(entry.when, scope.values)));
+  return (
+    <nav className={`ui-nav${collapsed ? " ui-collapsed" : ""}`}>
+      {props.collapsible ? (
+        <button type="button" className="ui-button ui-icon-button" aria-label="Toggle navigation" onClick={() => setCollapsed(!collapsed)}>
+          ☰
+        </button>
+      ) : null}
+      {props.search ? (
+        <input
+          type="search"
+          className="ui-nav-search"
+          placeholder="Search pages"
+          value={query}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
+        />
+      ) : null}
+      <SearchContext.Provider value={{ query, allowed: restriction?.sections }}>{props.children}</SearchContext.Provider>
+    </nav>
+  );
+}
+
+/** One navigation section: fixed links, or links read from a view. */
+export function NavSection(props: {
+  "data-ui-path": string;
+  name: string;
+  label?: string;
+  icon?: string;
+  links?: NavLinkSpec[];
+  dynamic?: DynamicEntries;
+}): ReactNode {
+  const { query, allowed } = useContext(SearchContext);
+  const scope = useScope();
+  const read = useRead(props.dynamic ? { view: props.dynamic.fromView } : undefined, scope.values);
+  if (allowed && !allowed.includes(props.name)) {
+    return null;
+  }
+  let links: NavLinkSpec[] = props.links ?? [];
+  const dynamic = props.dynamic;
+  if (dynamic) {
+    links = read.rows
+      .filter((row) => dynamic.filter === undefined || truthy(evaluate(dynamic.filter, { ...scope.values, row })))
+      .map((row) => ({
+        page: dynamic.page,
+        label: String(dynamic.label ? evaluate(dynamic.label, { ...scope.values, row }) : isObject(row) ? row.id : row),
+        synonyms: dynamic.synonyms,
+        params: { [dynamic.param]: isObject(row) ? row.id : row },
+      }));
+  }
+  const shown = links.filter((link) => matchesQuery(query, link));
+  if (shown.length === 0 && query !== "") {
+    return null;
+  }
+  return (
+    <section className="ui-nav-section" data-ui-path={props["data-ui-path"]}>
+      <h2>
+        {props.icon ? <span className={`ui-icon ui-icon-${props.icon}`} /> : null}
+        {props.label ?? props.name}
+      </h2>
+      <ul>
+        {shown.map((link) => {
+          const href = hrefFor(link.page, link.params ?? {});
+          return (
+            <li key={href}>
+              <Link to={href}>{link.label}</Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
