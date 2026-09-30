@@ -1049,7 +1049,7 @@ fn transformation_disposition(ir: &EssIr, binding: &ResolvedBinding) -> Synthesi
 /// binding one attempt at each logged occurrence — which is what `at_most_once` requires and what
 /// `at_least_once` permits — and attempts an occurrence again only for the one binding that asked,
 /// out of that binding's own held-back list: `on_failure: retry` after a declared refusal, or an
-/// `at_least_once` binding whose attempt an unmet obligation stopped ([`attempts_again`]). No
+/// `at_least_once` binding whose attempt an unmet obligation stopped (`attempts_again`). No
 /// other binding receives the occurrence twice. The `redeliver` entry point a caller invokes runs
 /// every `at_least_once` binding again and no `at_most_once` one, so a model that declares the
 /// second word gets a redelivery dispatch that leaves those bindings out. What changes besides is

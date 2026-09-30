@@ -226,6 +226,12 @@ pub enum InterfaceSchema {
         /// Element shape.
         items: Box<InterfaceSchema>,
     },
+    /// Closed tuple: exactly these items, in this order (`prefixItems` with `items: false`, or
+    /// `maxItems: 0` for none).
+    Tuple {
+        /// Item shapes, in order.
+        items: Vec<InterfaceSchema>,
+    },
     /// Closed object with explicitly typed properties.
     Object {
         /// Properties keyed deterministically by wire name.
@@ -422,6 +428,18 @@ fn schema_value(schema: &InterfaceSchema) -> Value {
         InterfaceSchema::Array { items } => {
             value.insert("type".to_owned(), Value::String("array".to_owned()));
             value.insert("items".to_owned(), schema_value(items));
+        }
+        InterfaceSchema::Tuple { items } => {
+            value.insert("type".to_owned(), Value::String("array".to_owned()));
+            if !items.is_empty() {
+                value.insert(
+                    "prefixItems".to_owned(),
+                    Value::Array(items.iter().map(schema_value).collect()),
+                );
+                value.insert("items".to_owned(), Value::Bool(false));
+                value.insert("minItems".to_owned(), Value::from(items.len()));
+            }
+            value.insert("maxItems".to_owned(), Value::from(items.len()));
         }
         InterfaceSchema::Object {
             properties,
@@ -826,7 +844,9 @@ impl Importer {
                 Some("number") => Some(InterfaceSchema::Number),
                 Some("boolean") => Some(InterfaceSchema::Boolean),
                 Some("array") => {
-                    if let Some(items) = object.get("items") {
+                    if is_tuple(object) {
+                        self.tuple_schema(object, pointer)
+                    } else if let Some(items) = object.get("items") {
                         self.schema(items, &format!("{pointer}/items"))
                             .map(|items| InterfaceSchema::Array {
                                 items: Box::new(items),
@@ -861,6 +881,14 @@ impl Importer {
                 &["type", "$schema", "format", "pattern", "enum", "const"]
             }
             Some(InterfaceSchema::Array { .. }) => &["type", "$schema", "items"],
+            Some(InterfaceSchema::Tuple { .. }) => &[
+                "type",
+                "$schema",
+                "prefixItems",
+                "items",
+                "minItems",
+                "maxItems",
+            ],
             Some(InterfaceSchema::Object { .. }) => &[
                 "type",
                 "$schema",
@@ -1009,6 +1037,48 @@ impl Importer {
             target: name.clone(),
         });
         Some(InterfaceSchema::Reference { name })
+    }
+
+    /// A closed tuple (see [`is_tuple`]): `prefixItems` followed by `items: false`, with
+    /// `minItems`/`maxItems`, where written, equal to the item count; or no items and `maxItems: 0`.
+    /// `None` when the tuple or one of its items was refused.
+    fn tuple_schema(
+        &mut self,
+        object: &Map<String, Value>,
+        pointer: &str,
+    ) -> Option<InterfaceSchema> {
+        let bound = |key: &str| object.get(key).and_then(Value::as_u64);
+        let Some(prefix) = object.get("prefixItems") else {
+            return Some(InterfaceSchema::Tuple { items: Vec::new() });
+        };
+        let Some(prefix) = prefix.as_array() else {
+            self.refusals.push(Refusal::new(
+                format!("{pointer}/prefixItems"),
+                "`prefixItems` must be an array",
+            ));
+            return None;
+        };
+        let count = u64::try_from(prefix.len()).unwrap_or(u64::MAX);
+        let closed = object.get("items") == Some(&Value::Bool(false));
+        let bounded = [bound("minItems"), bound("maxItems")]
+            .into_iter()
+            .all(|limit| limit.is_none_or(|limit| limit == count));
+        if !closed || !bounded {
+            self.refusals.push(Refusal::new(
+                pointer,
+                "a tuple must close with `items: false` and bound its length to its `prefixItems`",
+            ));
+            return None;
+        }
+        let items: Vec<Option<InterfaceSchema>> = prefix
+            .iter()
+            .enumerate()
+            .map(|(index, item)| self.schema(item, &format!("{pointer}/prefixItems/{index}")))
+            .collect();
+        items
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .map(|items| InterfaceSchema::Tuple { items })
     }
 
     fn object_schema(
@@ -1349,6 +1419,13 @@ fn pointer_unescape(value: &str) -> Option<String> {
     Some(output)
 }
 
+/// Whether an array schema is written as a tuple: it carries `prefixItems`, or it has no `items`
+/// and admits no element (`maxItems: 0`).
+fn is_tuple(object: &Map<String, Value>) -> bool {
+    object.contains_key("prefixItems")
+        || (!object.contains_key("items")
+            && object.get("maxItems").and_then(Value::as_u64) == Some(0))
+}
 #[cfg(test)]
 mod tests {
     use super::*;

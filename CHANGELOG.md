@@ -128,6 +128,9 @@
 - `ess verify diff` no longer reports `system/<system>/unclassified-changed` beside an added or
   regrouped aggregate view: `aggregation` is compared as `grouping-changed` and
   `field-aggregate-changed` and is no longer left in the residual (beyond10x/ess#256).
+- `ess import openapi` reads a closed tuple (`prefixItems` with `items: false`, or `maxItems: 0`),
+  so the contracts `ess generate` now writes, whose `published` list is one, import without
+  refusals.
 
 ## [0.46.1] — 2026-09-30
 
