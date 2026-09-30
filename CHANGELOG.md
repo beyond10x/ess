@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-09-30
+
 ### Added
 
+- `ess-ui/1`: a renderer-neutral UI document format (`schemas/ui/ess-ui.schema.yaml`) with
+  shells, pages, sections, composites, primitives, widgets, reads, commands, live channels and
+  state placement per node. `ess ui load` loads a document, `ess ui check` reports findings by
+  canonical node path (`ess-ui-check/1`, with `--model` against an ESS specification),
+  `ess ui docs` renders the format reference from its schema, `ess ui run --tui` runs a document
+  in the terminal against its fixtures, and `ess generate ui --target react` writes a Vite +
+  React + TypeScript project. Example: `examples/partner-portal/`.
 - The system crate's `SystemEvent` has `name() -> &'static str`: the qualified name the
   specification declares each variant's event under. Generated for every variant, including
   events a generated binding delivery reacts to or escalates into.
@@ -113,6 +122,12 @@
   (`billing-system/src/lib.rs`); `generated/go/gatepass` (`server/passservice.go`,
   `server/server.go`, `server/wire.go`, `server/pass-service.openapi.json`, `system/system.go`);
   `generated/go/billing` (`system/system.go`).
+
+### Fixed
+
+- `ess verify diff` no longer reports `system/<system>/unclassified-changed` beside an added or
+  regrouped aggregate view: `aggregation` is compared as `grouping-changed` and
+  `field-aggregate-changed` and is no longer left in the residual (beyond10x/ess#256).
 
 ## [0.46.1] — 2026-09-30
 

@@ -293,8 +293,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-execution-lock", 1, Some("0.21.0")),
     ("ess-execution-store", 1, Some("0.21.0")),
     ("ess-execution-evidence", 1, Some("0.21.0")),
-    ("ess-ui", 1, None),
-    ("ess-ui-check", 1, None),
+    ("ess-ui", 1, Some("0.47.0")),
+    ("ess-ui-check", 1, Some("0.47.0")),
 ];
 
 /// Checks the published documents against the source and the changelog.

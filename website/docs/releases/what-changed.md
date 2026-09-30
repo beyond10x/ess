@@ -9,6 +9,20 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.47.0 — 2026-09-30
+
+### ess-ui/1 UI documents load, check and render
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.47.0)
+
+`ess-ui/1` describes an application's pages, state and live channels without naming a renderer. `ess ui check` reports findings by node path, `ess ui run --tui` runs a document in the terminal, `ess generate ui --target react` writes a React project, and `ess ui docs` renders the format reference from its schema.
+
+### Generated servers answer with what a command published
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.47.0)
+
+The generated Rust and Go servers list the events a command published in its answer, keep request headers, and name and encode every system event. Delivery is tracked per binding, so an undeliverable event no longer blocks later requests, and 501 is declared for a committed command whose delivery failed.
+
 ## 0.46.1 — 2026-09-30
 
 ### ess verify diff classifies error payload sources and three outcome flags

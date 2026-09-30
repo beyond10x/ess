@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/ess-ui-0.47.0
+repository: ess
+publishedAt: 2026-09-30T18:00:00Z
+title: ess-ui/1 UI documents load, check and render
+summary: >-
+  `ess-ui/1` describes an application's pages, state and live channels without naming a renderer. `ess ui check` reports findings by node path, `ess ui run --tui` runs a document in the terminal, `ess generate ui --target react` writes a React project, and `ess ui docs` renders the format reference from its schema.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.47.0
+  version: 0.47.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

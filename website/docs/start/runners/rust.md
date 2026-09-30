@@ -30,7 +30,7 @@ your pin:
 
 ```toml title="Cargo.toml"
 [dev-dependencies]
-ess-conformance = { git = "https://github.com/beyond10x/ess", tag = "0.46.1" }
+ess-conformance = { git = "https://github.com/beyond10x/ess", tag = "0.47.0" }
 ```
 
 ## What your implementation provides

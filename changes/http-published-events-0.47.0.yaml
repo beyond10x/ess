@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/http-published-events-0.47.0
+repository: ess
+publishedAt: 2026-09-30T18:00:00Z
+title: Generated servers answer with what a command published
+summary: >-
+  The generated Rust and Go servers list the events a command published in its answer, keep request headers, and name and encode every system event. Delivery is tracked per binding, so an undeliverable event no longer blocks later requests, and 501 is declared for a committed command whose delivery failed.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.47.0
+  version: 0.47.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
