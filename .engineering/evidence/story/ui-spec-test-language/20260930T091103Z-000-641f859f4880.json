@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-30T09:11:03Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-test-language",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: cargo test -p ess-ui-test -p ess-ui-tui -p ess-ui-react 134 passed 0 failed; clippy; fmt; ess ui test on the example tests 7 passed"
+  }
+}
