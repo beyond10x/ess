@@ -11,7 +11,7 @@ selects nodes by their canonical node path, declares backend state as fixtures, 
 from the fixture scripts and moves a virtual clock. The same file runs headless against the
 terminal renderer and is emitted as a Playwright spec for the generated React project.
 
-```console
+```bash
 ess ui test --path ui.yaml tests/*.yaml
 ess ui test --path ui.yaml tests/*.yaml --format json
 ess ui test --path ui.yaml tests/*.yaml --playwright e2e/ui.spec.ts
