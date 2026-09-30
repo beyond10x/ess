@@ -508,8 +508,8 @@ fn links(
         return out;
     };
     let mut found = Vec::new();
-    for hint in hints(command) {
-        leaves(&hint, &mut found);
+    for hint in hints(command).iter().chain(&related_over(command, entity)) {
+        leaves(hint, &mut found);
     }
     for leaf in found.iter().filter(|leaf| reads_input(ir, entity, leaf)) {
         let Predicate::Compare {
@@ -535,6 +535,25 @@ fn links(
         }
     }
     out
+}
+
+/// Every predicate a `when_related:` branch of `command` holds of a row of `entity`, in declaration
+/// order (beyond10x/ess#271): the related row is compared with the input as a subject row is, so a
+/// link comparison over it is one [`links`] names too. Empty for every command reading no related
+/// row of `entity`, which keeps the candidates, and so the suites, it had.
+fn related_over(command: &ResolvedCommand, entity: &EntityHandle) -> Vec<Predicate> {
+    command
+        .outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.condition {
+            ResolvedCondition::Related {
+                entity: read,
+                test: ess_compiler::ir::ResolvedRelatedTest::Holds { predicate },
+                ..
+            } if read == entity => Some(predicate.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Whether any of `predicates` holds a link comparison of `command` ([`links`]): an `==` or `!=`
@@ -1267,7 +1286,34 @@ fn linked_inputs(
     entity: &EntityHandle,
     arrangement: &Arrangement,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
-    let mut inputs = inputs_for(ir, command, entity, arrangement)?;
+    let inputs = inputs_for(ir, command, entity, arrangement)?;
+    Ok(naming_owners(
+        ir,
+        command,
+        entity,
+        arrangement,
+        inputs,
+        &BTreeMap::new(),
+    ))
+}
+
+/// `inputs`, and each of them once more for every link comparison ([`links`]) on a row whose link
+/// holds an arranged owner: sent naming that owner, and — for each link in turn — naming the
+/// [`other_owner`] instead ([`linked_inputs`]). A caller offering these sends the owner each names
+/// through `Setup::bound` ([`bind_links`]); the related-row search does (beyond10x/ess#271).
+///
+/// A link input `pins` holds is already bound to an arranged owner, and is sent naming that one
+/// whatever the search chose ([`bind_pinned`]). So it is offered only on the side that owner is
+/// on: the row's own owner's token where the row was filed under the pinned owner, else the
+/// [`other_owner`]'s, which stands for the pinned owner — both differ from the row's own.
+pub(super) fn naming_owners(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    arrangement: &Arrangement,
+    mut inputs: Vec<BTreeMap<String, Node>>,
+    pins: &BTreeMap<String, super::InstanceName>,
+) -> Vec<BTreeMap<String, Node>> {
     let owned: Vec<(String, &super::InstanceName)> = links(ir, command, entity)
         .into_iter()
         .filter_map(
@@ -1278,19 +1324,23 @@ fn linked_inputs(
         )
         .collect();
     if owned.is_empty() {
-        return Ok(inputs);
+        return inputs;
     }
     let other = other_owner(ir, entity).map(|(_, name)| name);
     let mut more = Vec::new();
     for input in &inputs {
         let mut same = input.clone();
         for (sent, own) in &owned {
-            if let Some(token) = token(ir, command, sent, own) {
+            let named = match pins.get(sent) {
+                Some(held) if held != *own => other.as_ref(),
+                _ => Some(*own),
+            };
+            if let Some(token) = named.and_then(|named| token(ir, command, sent, named)) {
                 same.insert(sent.clone(), token);
             }
         }
         more.push(same.clone());
-        for (sent, _) in &owned {
+        for (sent, _) in owned.iter().filter(|(sent, _)| !pins.contains_key(sent)) {
             if let Some(token) = other
                 .as_ref()
                 .and_then(|other| token(ir, command, sent, other))
@@ -1307,7 +1357,7 @@ fn linked_inputs(
         more.into_iter()
             .filter(|input| flatten(ir, command, input).is_ok()),
     );
-    Ok(inputs)
+    inputs
 }
 
 /// [`reach_at`] over [`linked_inputs`]. Only an input `accept` takes of the row is offered.
@@ -1342,7 +1392,7 @@ fn reach_linked(
 /// ([`files_under`]): the branch then files this row under that owner, which would hold two, a
 /// state the relation says no owner reaches.
 #[allow(clippy::too_many_arguments)]
-fn bind_links(
+pub(super) fn bind_links(
     ir: &EssIr,
     command: &ResolvedCommand,
     outcome: &ResolvedOutcome,
@@ -1389,6 +1439,90 @@ fn bind_links(
             arrangement.source.extend(row.source);
         }
         *present = true;
+    }
+    Ok(bound)
+}
+
+/// The link inputs of `command` over rows of `entity` ([`links`]) that `bound` already binds to an
+/// arranged owner — the subject's own identity, or the owner of a subject being created — by field
+/// (beyond10x/ess#271). A search deciding a link comparison sends these naming that owner: choosing
+/// another would send one owner while the row was arranged against a second.
+pub(super) fn link_pins(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    bound: &BTreeMap<String, super::InstanceName>,
+) -> BTreeMap<String, super::InstanceName> {
+    links(ir, command, entity)
+        .into_iter()
+        .filter_map(|(sent, _)| Some((sent.clone(), bound.get(&sent)?.clone())))
+        .collect()
+}
+
+/// [`bind_links`] where `pins` holds link inputs already bound ([`link_pins`]): a pinned input the
+/// search chose naming the [`other_owner`] is sent naming the pinned owner instead, which differs
+/// from the row's own just as the other owner does, and the other owner is then not arranged for
+/// it. The pinned owner is given a row of `entity` of its own ([`row_under`]), as the other owner
+/// would have been, so a target asking whether the named owner holds *any* row fails. A pinned
+/// input the search chose naming the row's own owner names the pinned one only where the row was
+/// filed under it; the caller searched for such a row ([`naming_owners`]), and anything else is
+/// refused as unarranged, never sent.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn bind_pinned(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    arrangement: &mut Arrangement,
+    input: &BTreeMap<String, Node>,
+    pins: &BTreeMap<String, super::InstanceName>,
+) -> Result<BTreeMap<String, super::InstanceName>, RefusalCause> {
+    let other = other_owner(ir, entity).map(|(_, name)| name);
+    let chosen = linked(ir, command, entity, &arrangement.settled, input);
+    // The other owner is arranged only for a link no pin speaks for; its row is then named as the
+    // pinned owner's would be, so the pinned owner is given none.
+    let elsewhere = chosen
+        .iter()
+        .any(|(sent, named)| !pins.contains_key(sent) && Some(named) == other.as_ref());
+    let mut present = !elsewhere;
+    let mut bound = bind_links(
+        ir,
+        command,
+        outcome,
+        entity,
+        actors,
+        arrangement,
+        input,
+        &mut present,
+    )?;
+    let own = super::owner_of_row(ir, entity, &arrangement.settled).map(|(_, own)| own.clone());
+    // The initial state of an owner that may hold several rows: only such a one is given a row of
+    // its own beside the one the scenario reads.
+    let shared = ir
+        .owner_of(entity)
+        .filter(|owned| owned.relation.cardinality == Cardinality::Many)
+        .map(|owned| ir.entity(&owned.owner).lifecycle.initial.clone());
+    let mut given = elsewhere;
+    for (sent, held) in pins {
+        let apart = own.as_ref() != Some(held);
+        match chosen.get(sent) {
+            Some(named) if apart && Some(named) == own.as_ref() => {
+                return Err(super::related_guard::unarranged());
+            }
+            Some(named) if apart && !given && Some(named) == other.as_ref() => {
+                if let Some(row) = shared
+                    .as_ref()
+                    .and_then(|state| row_under(ir, entity, actors, held, state))
+                {
+                    arrangement.steps.extend(row.steps);
+                    arrangement.source.extend(row.source);
+                    given = true;
+                }
+            }
+            _ => {}
+        }
+        bound.insert(sent.clone(), held.clone());
     }
     Ok(bound)
 }
@@ -2447,12 +2581,48 @@ fn creations(
     actors: &BTreeMap<QualifiedName, ActorRef>,
     hints: &[Predicate],
     distinction: Distinction,
-    arranging: &[&EntityHandle],
+    (arranging, under): (&[&EntityHandle], Under<'_>),
 ) -> Result<Vec<Arrangement>, RefusalCause> {
     let required = |reason| RefusalCause::InstanceRequired {
         entity: EntityRef::from(entity),
         need: InstanceNeed::Updates,
         reason,
+    };
+    // Under an owner the scenario already holds ([`search_under`]); a creator that cannot file the
+    // row there leaves none. An owner known to hold no row yet takes one whatever the relation's
+    // cardinality; any other only under `cardinality: many`.
+    let owner = match under {
+        Some((owner, empty)) => {
+            let filed = if empty {
+                super::filed_under(ir, entity, creator, owner)
+            } else {
+                super::under_owner(ir, entity, creator, owner)
+            };
+            match filed {
+                Some(owner) => Some(owner),
+                None => return Ok(Vec::new()),
+            }
+        }
+        None => None,
+    };
+    let created = |ir: &EssIr,
+                   entity: &EntityHandle,
+                   creator: &Driver<'_>,
+                   actors: &BTreeMap<QualifiedName, ActorRef>,
+                   distinction: Distinction,
+                   arranging: &[&EntityHandle],
+                   input: Option<&BTreeMap<String, Node>>| match &owner {
+        Some(owner) => super::created_owned(
+            ir,
+            entity,
+            creator,
+            actors,
+            distinction,
+            arranging,
+            Some(owner),
+            input,
+        ),
+        None => created(ir, entity, creator, actors, distinction, arranging, input),
     };
     let mut out =
         vec![created(ir, entity, creator, actors, distinction, arranging, None).map_err(required)?];
@@ -2694,6 +2864,38 @@ pub(super) fn search_within<T>(
     distinction: Distinction,
     field: &str,
     arranging: &[&EntityHandle],
+    goal: impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
+) -> Result<(Arrangement, T), RefusalCause> {
+    search_under(
+        ir,
+        entity,
+        actors,
+        hints,
+        (distinction, field),
+        arranging,
+        None,
+        goal,
+    )
+}
+
+/// Where a search files its rows ([`search_under`]): under an owner the scenario already arranged,
+/// and whether that owner is known to hold no row of the entity yet ([`super::holds_none`]).
+pub(super) type Under<'a> = Option<(&'a super::InstanceName, bool)>;
+
+/// [`search_within`], every row created under `under` where it names an owner the scenario
+/// already arranged ([`super::under_owner`]), and not under an owner of its own: a creator that
+/// cannot file the row there — the relation holds one row per owner and the owner is not known to
+/// hold none, or the creator does not name the owner from its input — leaves no row, and the
+/// search refuses as it would for none (beyond10x/ess#271).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn search_under<T>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    hints: &[Predicate],
+    (distinction, field): (Distinction, &str),
+    arranging: &[&EntityHandle],
+    under: Under<'_>,
     mut goal: impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
     let all = ir.drivers();
@@ -2712,7 +2914,7 @@ pub(super) fn search_within<T>(
             hints,
             distinction,
             field,
-            arranging,
+            (arranging, under),
             &mut goal,
         ) {
             Ok(found) => return Ok(found),
@@ -2750,14 +2952,22 @@ fn search_from<T>(
     hints: &[Predicate],
     distinction: Distinction,
     field: &str,
-    arranging: &[&EntityHandle],
+    (arranging, under): (&[&EntityHandle], Under<'_>),
     goal: &mut impl FnMut(&Arrangement) -> Result<Option<T>, RefusalCause>,
 ) -> Result<(Arrangement, T), RefusalCause> {
     let follow = Follow::new(ir, entity, hints);
     // Whether some row held a followed counter beyond [`COUNTER_REACH`] of every literal: such rows
     // are one node, so a limit farther off is not reached, and the refusal names the bound.
     let mut beyond = false;
-    let mut level = creations(ir, entity, creator, actors, hints, distinction, arranging)?;
+    let mut level = creations(
+        ir,
+        entity,
+        creator,
+        actors,
+        hints,
+        distinction,
+        (arranging, under),
+    )?;
     let mut seen = BTreeSet::new();
     let mut first: Option<RefusalCause> = None;
     loop {

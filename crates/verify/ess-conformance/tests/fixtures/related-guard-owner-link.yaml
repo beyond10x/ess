@@ -1,0 +1,126 @@
+format: ess/18
+system: mini
+version: v1
+domain: mini.m
+summary: A start is taken only for an item the input owner owns.
+types:
+  - {name: mini.m.OwnerId, kind: newtype, of: Uuid}
+  - {name: mini.m.ItemId, kind: newtype, of: Uuid}
+  - {name: mini.m.RunId, kind: newtype, of: Uuid}
+entities:
+  - name: mini.m.Owner
+    identity: {name: owner_id, type: mini.m.OwnerId}
+    fields:
+      - {name: label, type: String}
+    relations:
+      - {name: items, kind: owns, target: mini.m.Item, cardinality: many, via: owner_id}
+    lifecycle: {initial: Active, states: [Active], terminal: [Active]}
+  - name: mini.m.Item
+    identity: {name: item_id, type: mini.m.ItemId}
+    fields:
+      - {name: owner_id, type: mini.m.OwnerId}
+      - {name: note, type: String}
+    lifecycle: {initial: Listed, states: [Listed], terminal: [Listed]}
+  - name: mini.m.Run
+    identity: {name: run_id, type: mini.m.RunId}
+    fields:
+      - {name: item_id, type: mini.m.ItemId}
+    lifecycle:
+      initial: Running
+      states: [Running, Stopped]
+      terminal: [Stopped]
+      transitions:
+        - {name: stop, from: [Running], to: Stopped}
+errors:
+  - {name: mini.m.NoItem, summary: No item carries the identity., fields: []}
+  - {name: mini.m.OtherOwner, summary: The item belongs to another owner., fields: []}
+  - {name: mini.m.NotRunning, summary: The run is not running., fields: []}
+events:
+  - name: mini.m.OwnerCreated
+    fields:
+      - {name: owner_id, type: mini.m.OwnerId}
+  - name: mini.m.ItemAdded
+    fields:
+      - {name: item_id, type: mini.m.ItemId}
+  - name: mini.m.Started
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+  - name: mini.m.RunStopped
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+actors:
+  - name: mini.m.Operator
+    may: [mini.m.CreateOwner, mini.m.AddItem, mini.m.Start, mini.m.Stop]
+commands:
+  - name: mini.m.CreateOwner
+    input:
+      - {name: label, type: String}
+    outcomes:
+      - name: created
+        creates: mini.m.Owner
+        instance: owner_id
+        emits: [mini.m.OwnerCreated]
+        payload:
+          mini.m.OwnerCreated: {owner_id: {generated: true}}
+        sets:
+          label: input.label
+  - name: mini.m.AddItem
+    input:
+      - {name: owner_id, type: mini.m.OwnerId}
+      - {name: note, type: String}
+    outcomes:
+      - name: added
+        creates: mini.m.Item
+        instance: item_id
+        emits: [mini.m.ItemAdded]
+        payload:
+          mini.m.ItemAdded: {item_id: {generated: true}}
+        sets:
+          owner_id: input.owner_id
+          note: input.note
+  - name: mini.m.Start
+    input:
+      - {name: owner_id, type: mini.m.OwnerId}
+      - {name: item_id, type: mini.m.ItemId}
+    outcomes:
+      - name: no-item
+        when_related: {via: input.item_id, exists: false}
+        error: mini.m.NoItem
+      - name: other-owner
+        when_related: {via: input.item_id, predicate: owner_id != input.owner_id}
+        error: mini.m.OtherOwner
+      - name: started
+        creates: mini.m.Run
+        instance: run_id
+        emits: [mini.m.Started]
+        payload:
+          mini.m.Started: {run_id: {generated: true}}
+        sets:
+          item_id: input.item_id
+  - name: mini.m.Stop
+    input:
+      - {name: run_id, type: mini.m.RunId}
+    outcomes:
+      - name: stopped
+        moves: mini.m.Run.stop
+        instance: run_id
+        emits: [mini.m.RunStopped]
+        payload:
+          mini.m.RunStopped: {run_id: input.run_id}
+      - name: not-running
+        wrong_state: true
+        error: mini.m.NotRunning
+views:
+  - name: mini.m.Items
+    source: mini.m.Item
+    consistency: read_your_writes
+    fields:
+      - {name: item_id, type: mini.m.ItemId}
+      - {name: owner_id, type: mini.m.OwnerId}
+      - {name: note, type: String}
+  - name: mini.m.Runs
+    source: mini.m.Run
+    consistency: read_your_writes
+    fields:
+      - {name: run_id, type: mini.m.RunId}
+      - {name: item_id, type: mini.m.ItemId}
