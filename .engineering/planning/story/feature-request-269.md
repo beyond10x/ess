@@ -49,7 +49,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: inferred
   path: docs/design/binding-delivery-guarantees.md
-revision: 25
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -78,3 +78,13 @@ Derived 2026-09-30 by `aep:story-scoper`; **cited** = read in the tree, **inferr
 - **Confidence:** medium — the syntax (outcome vs error keys), combination with `retry:`, and a format bump are undecided
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 229 on `ess-domain/src/system.rs`; 265 on `ess-synth/src/plan.rs`, `ess-conformance/src/synthesize.rs`; 266 on `ess-conformance/src/synthesize.rs`; 267 on `ess-conformance/src/synthesize/delivery_context.rs`, `ess-conformance/src/synthesize.rs`, `docs/design/binding-delivery-guarantees.md`; 268 on `ess-gen/src/asyncapi.rs`, `ess-gen/src/docs.rs`, `ess-gen/src/graph.rs`, `ess-synth/src/go/system.rs`, `ess-synth/src/rust/system.rs`, `ess-compiler/src/ir.rs`, `ess-compiler/src/resolve.rs`, `ess-domain/src/binding.rs`, `ess-conformance/src/synthesize.rs`, `docs/design/binding-delivery-guarantees.md`; 273 on `ess-conformance/src/synthesize.rs`, `ess-conformance/src/scenario.rs`
 - **Safety fact:** every consumer reads the policy through `ResolvedBinding::on_failure()` and matches `ResolvedFailure` exhaustively, so a per-refusal policy shows as compile errors, not a silent fallback; `failure.rs:237` reads `binding.retry` directly — git grep, unproven
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: escalate one refusal of a bound command and drop another. Class: gap or convenience, unconfirmed: if the refusal is benign, the existing idiom is an accepting branch with `when_subject_state: [..]` and `preserves:` in the bound command (GP:39-50), so there is no failure to route.
+
+## Decisions
+
+- **defer:** `decision-blocker:per-refusal-failure-need` asks the downstream whether direct callers must still see a refusal there. If they must, the design reuses `retry.final`'s refusal naming (by outcome or error, BC:87-89) with `except:`, not a map keyed by condition kinds such as `wrong_state`.

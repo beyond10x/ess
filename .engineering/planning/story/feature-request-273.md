@@ -33,7 +33,7 @@ scope:
   path: crates/verify/ess-conformance/tests/authored_structured_instances.rs
 - confidence: cited
   path: website/docs/guides/verify/author-scenarios.md
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 13}
 ---
@@ -67,4 +67,10 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the s
 
 ## Decisions
 
-- **Format (coordinator, 2026-09-30):** narrow `fixtures::used_by` to fixture-bearing values, so a synthesized identity expectation does not by itself raise the suite format or refuse browser replay. Identities nested in `List`/`Optional` fields are in scope only where the authored path already resolves them by position.
+- **accept, redesigned (coordinator, 2026-09-30; supersedes the `used_by` decision):** a suite that carries instance-valued `expect_event_values` is written at /18 or later (Go and TypeScript already admit it), and browser replay accepts instance-valued `expect_event_values` instead of refusing the suite (`web.rs:297`).
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: an identity field dropped from an event must fail a scenario. Class: defect. Authoring fits (the runners already resolve instances in `expect_event_values`). Red flag in the first format decision: narrowing `fixtures::used_by` would write /18-only steps under older suite headers (`ess-conformance/src/fixtures.rs:226-249`).

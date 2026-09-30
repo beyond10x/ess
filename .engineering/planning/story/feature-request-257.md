@@ -23,7 +23,7 @@ scope:
   path: crates/verify/ess-conformance/tests/aggregate_views_mutants.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 11}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 12}
@@ -56,3 +56,13 @@ Derived 2026-09-30 by `aep:story-scoper`. Every line is **cited** (read from the
 - **Confidence:** high
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 270 on `ess-conformance/src/synthesize/related.rs`; 272 on `ess-conformance/src/synthesize/aggregate.rs`, `ess-conformance/tests/aggregate_views.rs`, `docs/design/aggregate-views.md`
 - **Safety fact:** the new key kind is chosen only where the chain now falls through to ESS-SYNTH-017 (`aggregate.rs:671-676`), so every view witnessed today keeps its scenario — unproven
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: an aggregate witness for a key copied from a related row. Class: defect (synthesis only; the ESS-SYNTH-017 message was false). No authored surface.
+
+## Decisions
+
+- **accept as proposed.**

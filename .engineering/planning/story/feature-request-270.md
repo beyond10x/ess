@@ -17,7 +17,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 12}
 ---
@@ -48,3 +48,13 @@ Derived 2026-09-30 by `aep:story-scoper`. Every line is **cited** (read from the
 - **Confidence:** medium
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 229 on `ess-conformance/src/synthesize/related_guard.rs`; 257 on `ess-conformance/src/synthesize/related.rs`; 271 on `ess-conformance/src/synthesize/related_guard.rs`; 272 on `ess-conformance/src/synthesize/related_guard.rs`
 - **Safety fact:** the refusal comes from `prepare_at`'s `setup.bound.contains_key(field)` check (`related_guard.rs:536`): `related::arrange` → `point_at` already bound the input the guard's `via` reads, so `prepare_at` returns `unarranged()` before `with_row` runs — walked, not run
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: success witness when `sets:` copies from the row a `when_related` guard reads. Class: defect (synthesis only).
+
+## Decisions
+
+- **accept as proposed.**

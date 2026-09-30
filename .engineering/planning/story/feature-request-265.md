@@ -51,7 +51,7 @@ scope:
   path: docs/design/caller-values.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 26
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 25}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 26}
@@ -88,4 +88,10 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the t
 
 ## Decisions
 
-- **Actor transport (coordinator, 2026-09-30):** the served contract declares one request header, `ess-actor: <actor name>`. Authentication is the realization's; it sets the header. The generated server checks `may()` against it before the port runs. An absent or unknown actor is the same standard refusal.
+- **accept, redesigned (coordinator, 2026-09-30; supersedes the header decision):** the shell passes a typed `Caller { actor, attributes }` into `dispatch`/`handle` after authenticating; the HTTP route never reads the actor from a header; the grant check runs on that value before the port. The standard refusal is the existing 403 status with body `{"refused": "not granted", "actor": <name|null>}`, told apart from the caller-decided error envelope by its members and documented in the contract. Runners send the actor through `SemanticCommandRequest.actor`.
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: a server with no grant check must fail the suite. Class: gap. Red flag found: the first design (an `ess-actor` request header) let a client-settable header decide authorization and contradicted `docs/design/caller-values.md:86`.

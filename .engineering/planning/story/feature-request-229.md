@@ -35,7 +35,7 @@ scope:
   path: website/docs/reference/predicates.md
 - confidence: inferred
   path: website/docs/reference/spec-versions.md
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:14Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -67,3 +67,13 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the t
 - **Confidence:** high for the domain site; medium for synthesis
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 266 on `ess-conformance/src/synthesize/subject_fact.rs`; 269 on `ess-domain/src/system.rs`; 270 on `ess-conformance/src/synthesize/related_guard.rs`; 271 on `ess-conformance/src/synthesize/related_guard.rs`, `ess-conformance/src/synthesize/subject_fact.rs`; 272 on `ess-conformance/src/synthesize/related_guard.rs`, `ess-conformance/src/synthesize/subject_fact.rs`
 - **Safety fact:** the change only adds a root; an entity cannot declare a stored field named `state` (`subject_fact.rs:330-333`), so no valid document changes meaning — unproven
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: a guard on a related row's held state. Class: gap. Existing idiom: none (`unobservable_fact`). Fit: same operand as `state` in `when_subject` (#204), which was gated at a format.
+
+## Decisions
+
+- **accept, redesigned (coordinator, 2026-09-30):** `state` inside `when_related` is admitted at the next format version (ess/20), not silently at ess/18, and ess/20 is bundled with any other syntax this epic adds so the format moves once.

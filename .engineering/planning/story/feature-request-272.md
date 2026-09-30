@@ -25,7 +25,7 @@ scope:
   path: crates/verify/ess-conformance/tests/related_guard.rs
 - confidence: inferred
   path: docs/design/aggregate-views.md
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -54,3 +54,13 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the t
 - **Confidence:** medium
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 229 on `ess-conformance/src/synthesize/related_guard.rs`, `ess-conformance/src/synthesize/subject_fact.rs`; 257 on `ess-conformance/src/synthesize/aggregate.rs`, `ess-conformance/tests/aggregate_views.rs`, `docs/design/aggregate-views.md`; 266 on `ess-conformance/src/synthesize/subject_fact.rs`; 270 on `ess-conformance/src/synthesize/related_guard.rs`; 271 on `ess-conformance/src/synthesize/related_guard.rs`, `ess-conformance/src/synthesize/subject_fact.rs`
 - **Safety fact:** `reach()`'s related-guard refusal is shared by every family without a related row; the fix gives the aggregate path its own base input and leaves `reach()` as it is — unproven
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: aggregate witness when the creating command has a `when_related` guard. Class: defect (synthesis only).
+
+## Decisions
+
+- **accept as proposed.**

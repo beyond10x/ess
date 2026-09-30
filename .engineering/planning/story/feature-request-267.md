@@ -25,7 +25,7 @@ scope:
   path: docs/design/binding-delivery-guarantees.md
 - confidence: cited
   path: models/toolchain/README.md
-revision: 11
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -36,7 +36,7 @@ transitions:
 ## Acceptance
 
 - Flow and delivery scenarios arrange the bound command's entity in a state it accepts; no ESS-SYNTH-010 for them.
-- For `drop`, a scenario observes that nothing changed and nothing further was published, or the refusal states it is an inherent limit.
+- For `drop`, a scenario forces the delivery to fail and asserts that no command is invoked within the eventual window (`ExpectQuiet`).
 
 ## Origin
 
@@ -55,3 +55,13 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the t
 - **Confidence:** high for flow/delivery; medium for `drop`
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 265 on `ess-conformance/src/synthesize.rs`; 266 on `ess-conformance/src/synthesize.rs`; 268 on `ess-conformance/src/synthesize.rs`, `docs/design/binding-delivery-guarantees.md`; 269 on `ess-conformance/src/synthesize/delivery_context.rs`, `ess-conformance/src/synthesize.rs`, `docs/design/binding-delivery-guarantees.md`; 273 on `ess-conformance/src/synthesize.rs`
 - **Safety fact:** `reachable_branch` has two callers (`synthesize.rs`, `delivery_context.rs:594`), so narrowing it changes no other family — git grep, unproven
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: flow/delivery scenarios for bindings into commands with `wrong_state`. Class: defect. Fit: synthesis only. The `drop` acceptance was an either/or that could not be checked.
+
+## Decisions
+
+- **accept, tightened:** for `drop`, the scenario asserts that no command is invoked within the eventual window (`ExpectQuiet`); the "or the refusal states an inherent limit" alternative is removed from the acceptance.

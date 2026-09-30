@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -47,3 +47,13 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the t
 - **Confidence:** medium
 - **Would collide with (every in-epic pair `aep plan artifact waves` reports, 2026-09-30):** 229 on `ess-conformance/src/synthesize/subject_fact.rs`; 265 on `ess-conformance/src/synthesize.rs`; 267 on `ess-conformance/src/synthesize.rs`; 268 on `ess-conformance/src/synthesize.rs`; 269 on `ess-conformance/src/synthesize.rs`; 271 on `ess-conformance/src/synthesize/subject_fact.rs`; 272 on `ess-conformance/src/synthesize/subject_fact.rs`; 273 on `ess-conformance/src/synthesize.rs`
 - **Safety fact:** a binding-invoked command reaches route search only through `EssIr::drivers()` (`synthesize.rs:3393`, :7608), so filtering there changes arrangement and wrong-state enumeration only — unproven
+
+## Fit review
+
+Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), per `.agents/skills/assessing-external-requests/SKILL.md`.
+
+- Need: synthesized expectations that account for state-moving bindings. Class: defect, unconfirmed: not reproduced in ESS; the interpreter runs no bindings (`ess-conformance/src/interpret.rs:247-255`); whether the bound state is observed immediately or eventually is undecided.
+
+## Decisions
+
+- **defer:** `decision-blocker:bound-state-observation` blocks this story until the observation semantics are decided and a minimal ESS reproduction exists.
