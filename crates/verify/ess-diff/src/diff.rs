@@ -1070,10 +1070,18 @@ fn written_subject(subject: &ResolvedSubject) -> String {
 
 /// One determined payload field per line: which event field, and where its value comes from.
 fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
-    let mut lines = Vec::new();
-    for entry in payload {
-        let event = EventRef::from(&entry.event);
-        for field in &entry.fields {
+    payload
+        .iter()
+        .flat_map(|entry| written_fields(&EventRef::from(&entry.event).to_string(), &entry.fields))
+        .collect()
+}
+
+/// One determined field per line, under the construct it fills: which field, and where its value
+/// comes from.
+fn written_fields(owner: &str, fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String> {
+    fields
+        .iter()
+        .map(|field| {
             let source = match &field.value {
                 ess_compiler::ir::ResolvedPayloadValue::ResponseField { field, .. } => {
                     format!("response field `{field}`")
@@ -1101,10 +1109,9 @@ fn written_payload(payload: &[ResolvedPayload]) -> Vec<String> {
                 .as_ref()
                 .map(|reason| format!(" via `{reason}`"))
                 .unwrap_or_default();
-            lines.push(format!("{event}.{} <- {source}{conversion}", field.target));
-        }
-    }
-    lines
+            format!("{owner}.{} <- {source}{conversion}", field.target)
+        })
+        .collect()
 }
 
 /// The delivery context a binding declares, as the part of its cause a host binds (ess/18): the
@@ -1579,6 +1586,9 @@ fn outcome_changes(
                         before: written(&old.error),
                         after: written(&new.error),
                     });
+                }
+                if let Some(changed) = outcome_error_payload_change(old, new, name) {
+                    push(changed);
                 }
                 outcome_state_changes(old, new, name, push);
                 if old.summary != new.summary {
@@ -2270,6 +2280,27 @@ fn outcome_state_changes(
             after: new.refuses,
         });
     }
+    if old.accepts_nothing != new.accepts_nothing {
+        push(CommandChange::OutcomeAcceptsNothingChanged {
+            outcome: name.to_owned(),
+            before: old.accepts_nothing,
+            after: new.accepts_nothing,
+        });
+    }
+    if old.returns != new.returns {
+        push(CommandChange::OutcomeReturnsChanged {
+            outcome: name.to_owned(),
+            before: old.returns,
+            after: new.returns,
+        });
+    }
+    if old.decided_by_caller != new.decided_by_caller {
+        push(CommandChange::OutcomeDecidedByCallerChanged {
+            outcome: name.to_owned(),
+            before: old.decided_by_caller,
+            after: new.decided_by_caller,
+        });
+    }
 }
 
 fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
@@ -2374,31 +2405,69 @@ fn residual_command(declaration: &mut serde_json::Value) {
         .and_then(serde_json::Value::as_array_mut)
     {
         for outcome in outcomes {
-            // test_strategy is a function of condition; refs deliberately remain.
             retain_residual_owner(outcome, |outcome| {
-                remove_keys(
-                    outcome,
-                    &[
-                        "name",
-                        "condition",
-                        "subject",
-                        "test_strategy",
-                        "complete_refusal",
-                        "replays",
-                        "retains_result",
-                        "emits",
-                        "payload",
-                        "error",
-                        "refuses",
-                        "summary",
-                        "sets",
-                        "instances",
-                        "affects",
-                    ],
-                );
+                remove_keys(outcome, &OUTCOME_KEYS_ACCOUNTED);
             });
         }
     }
+}
+
+/// The `ResolvedOutcome` keys the residual leaves out, because a typed comparison reports them or
+/// they are a pure function of one that does. `refs` is deliberately absent: it stays residual.
+///
+/// [`outcome_keys_accounted`] names every field of the struct, so the two cannot drift silently.
+const OUTCOME_KEYS_ACCOUNTED: [&str; 19] = [
+    "name",
+    "condition",
+    "subject",
+    "test_strategy",
+    "complete_refusal",
+    "replays",
+    "retains_result",
+    "emits",
+    "payload",
+    "error",
+    "error_payload",
+    "refuses",
+    "accepts_nothing",
+    "returns",
+    "summary",
+    "sets",
+    "decided_by_caller",
+    "instances",
+    "affects",
+];
+
+/// How each field of an outcome reaches the delta, by exhaustive destructuring: a field added to
+/// [`ResolvedOutcome`] fails to compile here until it is given a typed comparison (and a key in
+/// [`OUTCOME_KEYS_ACCOUNTED`]) or is deliberately left to the residual, so `cargo test` fails
+/// first. Returns the fields left to the residual;
+/// `tests::every_outcome_key_is_accounted_or_residual` holds the two lists together.
+#[cfg(test)]
+fn outcome_keys_accounted(outcome: &ResolvedOutcome) -> &'static [&'static str] {
+    let ResolvedOutcome {
+        name: _,              // the key outcomes are matched by
+        condition: _,         // OutcomeConditionChanged
+        subject: _,           // OutcomeSubjectChanged
+        replays: _,           // OutcomeReplayChanged
+        retains_result: _, // derived from every outcome's `replays`: reported by OutcomeReplayChanged / OutcomeAdded / OutcomeRemoved
+        complete_refusal: _, // OutcomeObservationChanged
+        test_strategy: _,  // a pure function of the condition
+        emits: _,          // OutcomeEmitsChanged
+        payload: _,        // OutcomePayloadChanged / OutcomeResponsePayloadChanged
+        error: _,          // OutcomeErrorChanged
+        error_payload: _,  // OutcomeErrorPayload{Added,Removed,Changed}
+        refuses: _,        // OutcomeRefusesChanged
+        accepts_nothing: _, // OutcomeAcceptsNothingChanged
+        returns: _,        // OutcomeReturnsChanged
+        summary: _,        // OutcomeSummaryChanged
+        refs: _,           // residual, deliberately
+        sets: _,           // OutcomeSetsChanged
+        decided_by_caller: _, // OutcomeDecidedByCallerChanged
+        instances: _,      // OutcomeSetEffectChanged
+        affects: _,        // OutcomeSetEffectChanged
+    } = outcome;
+    &["refs"]
 }
 
 fn outcome_observations(
@@ -2460,6 +2529,44 @@ fn outcome_payload_change(
     }
 }
 
+/// An outcome's error payload sources (ess/19) declared, dropped or replaced (beyond10x/ess#253):
+/// one change per outcome, as [`outcome_payload_change`] reports an event payload.
+fn outcome_error_payload_change(
+    old: &ResolvedOutcome,
+    new: &ResolvedOutcome,
+    name: &str,
+) -> Option<CommandChange> {
+    if old.error_payload == new.error_payload {
+        return None;
+    }
+    let written = |outcome: &ResolvedOutcome| {
+        let error = outcome
+            .error
+            .as_ref()
+            .map(|handle| ErrorRef::from(handle).to_string())
+            .unwrap_or_default();
+        written_fields(&error, &outcome.error_payload)
+    };
+    let outcome = name.to_owned();
+    Some(
+        match (old.error_payload.is_empty(), new.error_payload.is_empty()) {
+            (true, _) => CommandChange::OutcomeErrorPayloadAdded {
+                outcome,
+                after: written(new),
+            },
+            (_, true) => CommandChange::OutcomeErrorPayloadRemoved {
+                outcome,
+                before: written(old),
+            },
+            _ => CommandChange::OutcomeErrorPayloadChanged {
+                outcome,
+                before: written(old),
+                after: written(new),
+            },
+        },
+    )
+}
+
 fn paging_contract(paging: &ess_domain::view::Paging) -> crate::change::PagingContract {
     crate::change::PagingContract {
         page: paging.page.clone(),
@@ -2490,4 +2597,66 @@ fn written_set_effects(outcome: &ResolvedOutcome) -> Vec<String> {
         ));
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{outcome_keys_accounted, OUTCOME_KEYS_ACCOUNTED};
+    use std::collections::BTreeSet;
+
+    /// Specifications whose outcomes, together, write every optional `ResolvedOutcome` key.
+    const MODELS: [&str; 6] = [
+        include_str!("../../../specify/ess-compiler/tests/fixtures/outcome-shapes.yaml"),
+        include_str!("../../../specify/ess-compiler/tests/fixtures/set-effects.yaml"),
+        include_str!("../../ess-conformance/tests/fixtures/error-payload-sources.yaml"),
+        include_str!("../../ess-conformance/tests/fixtures/retained-replay.yaml"),
+        "format: ess/17\nsystem: library\nversion: v1\ndomain: library.api\ncommands:\n  \
+         - name: library.api.Read\n    response:\n      - {name: value, type: Integer}\n    \
+         outcomes:\n      - {name: returned, returns: true}\n",
+        "format: ess/16\nsystem: demo\nversion: v1\ndomain: demo.order\nactors:\n  \
+         - name: demo.order.Clerk\n    attributes:\n      - {name: limit, type: Integer}\n    \
+         may: [demo.order.Check]\nerrors:\n  - name: demo.order.TooMany\ncommands:\n  \
+         - name: demo.order.Check\n    input:\n      - {name: quantity, type: Integer}\n    \
+         outcomes:\n      - name: too-many\n        when: quantity != caller.limit\n        \
+         error: demo.order.TooMany\n        summary: refused\n      - name: checked\n        \
+         accepts: nothing\n",
+    ];
+
+    /// Every key a compiled outcome writes is compared by a typed change or left to the residual
+    /// on purpose; a key in neither is a change the diff would drop silently.
+    #[test]
+    fn every_outcome_key_is_accounted_or_residual() {
+        let mut seen = BTreeSet::new();
+        for model in MODELS {
+            let raw = ess_domain::spec::RawSpecFile::parse(model).unwrap();
+            let spec = ess_domain::Specification::assemble([(
+                ess_domain::system::Source::new("model.yaml"),
+                raw,
+            )])
+            .unwrap_or_else(|errors| panic!("{errors}\n{model}"));
+            let ir = ess_compiler::resolve::compile(&spec, &ess_compiler::source::SourceMap::new())
+                .unwrap();
+            for command in ir.commands().values() {
+                for outcome in &command.outcomes {
+                    let residual = outcome_keys_accounted(outcome);
+                    let written = serde_json::to_value(outcome).unwrap();
+                    for key in written.as_object().unwrap().keys() {
+                        assert!(
+                            OUTCOME_KEYS_ACCOUNTED.contains(&key.as_str())
+                                || residual.contains(&key.as_str()),
+                            "outcome key `{key}` is neither compared nor residual"
+                        );
+                        seen.insert(key.clone());
+                    }
+                }
+            }
+        }
+        // The models exercise every key, so a key that moves out of both lists is caught here.
+        let expected: BTreeSet<String> = OUTCOME_KEYS_ACCOUNTED
+            .iter()
+            .map(|key| (*key).to_owned())
+            .collect();
+        let missing: Vec<_> = expected.difference(&seen).collect();
+        assert!(missing.is_empty(), "no model writes {missing:?}");
+    }
 }

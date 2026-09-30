@@ -26,6 +26,11 @@ The report follows these rules:
 - Ten typed construct families are compared: system header, types, entities, commands, events,
   errors, views, actors, components and bindings. Residual model changes outside those typed
   comparisons produce `unclassified-changed`; they are not silently treated as equality.
+- Every part of a command outcome is compared on its own, one change per outcome. `ess-diff/12`
+  adds the kinds for an error's `payload:` sources (`outcome-error-payload-added`,
+  `outcome-error-payload-removed`, `outcome-error-payload-changed`), `accepts: nothing`
+  (`outcome-accepts-nothing-changed`), `returns:` (`outcome-returns-changed`) and a refusal the
+  caller decides (`outcome-decided-by-caller-changed`).
 - Changes carry stable content-derived ids and a relation: widening, narrowing or changed.
   Predicate comparison uses canonical equality, not a proof that one predicate implies another.
 - Renames are not inferred. A removed declaration and an added declaration remain two changes.
@@ -33,7 +38,7 @@ The report follows these rules:
 
 `--format` accepts `text` or `json`. JSON output is **`ess-diff/2`**, as it is for this pair,
 unless the delta carries a change kind introduced later; it then takes the newest version any of its
-changes needs, up to `ess-diff/11` (see the
+changes needs, up to `ess-diff/12` (see the
 [format history](../reference/spec-versions.md#ess-diff--what-moved-between-two-revisions)). The
 library retains the frozen `/1` vocabulary and reader support; explicit legacy writing refuses
 changes outside that vocabulary. The endpoint digests identify compact compiled models, not raw YAML
