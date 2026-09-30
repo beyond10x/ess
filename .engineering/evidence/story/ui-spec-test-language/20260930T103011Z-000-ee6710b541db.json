@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T10:30:11Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-test-language",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR #263 CI, 15 of 15 at 2e31a13f7; released in 0.48.0",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36699568159"
+  }
+}

@@ -38,7 +38,7 @@ Every scope entry is `inferred`: the crates do not exist yet; each story owns on
 | 2 | ui-spec-docs-generator | impl/ui-docs | ess-ui-docs | b10x-target/ess-ui-docs | ess-ui-wave/docs | merged |
 | 2 | ui-spec-tui-renderer | impl/ui-tui | ess-ui-tui | b10x-target/ess-ui-tui | ess-ui-wave/tui | merged |
 | 2 | ui-spec-react-renderer | impl/ui-react | ess-ui-react | b10x-target/ess-ui-react | ess-ui-wave/react | merged |
-| 3 | ui-spec-test-language | impl/ui-test | ess-ui-test | b10x-target/ess-ui-test | ess-ui-wave/test | approved |
+| 3 | ui-spec-test-language | impl/ui-test | ess-ui-test | b10x-target/ess-ui-test | ess-ui-wave/test | merged in PR #263, released in 0.48.0 |
 
 Build dirs are under `$HOME/.cache/`, scratch under `$HOME/.cache/`; worktrees under the managed
 worktree root.
@@ -61,3 +61,5 @@ the integration branch for its pull request, no tag, no release.
 Operator approved all three waves in sequence, 2026-09-30.
 
 Waves 1–2 reached main in PR #255 (merge c78a0e14d); all five stories implemented.
+
+Wave 3 reached main in PR #263 (merge 5dbda40be) and shipped in 0.48.0.

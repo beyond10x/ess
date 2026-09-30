@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:generated-server-publishes-and-reads-headers
 kind: story
-status: active
+status: implemented
 title: The generated rust server answers with what a command published, names every event, and keeps request headers
 relations:
 - serves: vision:O2
 - informed_by: epic:generated-determined-behaviour
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T02:26:30Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-09-30T02:26:30Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-30T10:30:12Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1,"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 
