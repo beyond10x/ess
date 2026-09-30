@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-spec-docs-generator
 kind: story
-status: proposed
+status: active
 title: The ess-ui reference is generated from the schema as one styled page
 relations:
 - serves: vision:O2
@@ -11,9 +11,10 @@ relations:
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-docs
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T00:35:23Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T01:41:54Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

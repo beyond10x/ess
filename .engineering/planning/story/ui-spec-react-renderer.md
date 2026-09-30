@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-spec-react-renderer
 kind: story
-status: proposed
+status: active
 title: An ess-ui document generates a React application
 relations:
 - serves: vision:O2
@@ -11,9 +11,10 @@ relations:
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-react
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T00:35:24Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T01:41:54Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
