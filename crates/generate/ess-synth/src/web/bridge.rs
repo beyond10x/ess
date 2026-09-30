@@ -170,6 +170,11 @@ fn error_type(out: &mut String, bridge: &Bridge<'_>) {
          satisfied was reached — a fact about the realization, never\n    /// about the \
          request.\n    Unmet {{\n        /// The capability kind, as the plan spells \
          it.\n        capability: String,\n        /// The construct that requires it, in the \
+         specification's own spelling.\n        source: String,\n    }},\n    /// The command \
+         took effect, and delivering what it published reached an obligation\n    /// nothing \
+         has satisfied: the command is not to be run again, because its effect stands.\n    \
+         Undelivered {{\n        /// The capability kind, as the plan spells it.\n        \
+         capability: String,\n        /// The construct that requires it, in the \
          specification's own spelling.\n        source: String,\n    }},\n    /// A redelivery \
          named an occurrence the log does not hold.\n    NoSuchOccurrence(usize),\n}}\n\nimpl \
          BridgeError {{\n    /// Writes the refusal as JSON, naming the kind so a page can react \
@@ -191,12 +196,9 @@ fn error_type(out: &mut String, bridge: &Bridge<'_>) {
          &error.at);\n                json::member(out, \"expected\");\n                \
          json::push_text(out, &error.expected);\n                json::member(out, \
          \"found\");\n                json::push_text(out, &error.found);\n            }}\n            \
-         Self::Unmet {{ capability, source }} => {{\n                json::member(out, \
-         \"kind\");\n                json::push_text(out, \
-         \"unmet-obligation\");\n                json::member(out, \
-         \"capability\");\n                json::push_text(out, capability);\n                \
-         json::member(out, \"source\");\n                json::push_text(out, \
-         source);\n            }}\n            Self::NoSuchOccurrence(occurrence) => \
+         Self::Unmet {{ capability, source }} => unmet(out, capability, source, \
+         false),\n            Self::Undelivered {{ capability, source }} => unmet(out, \
+         capability, source, true),\n            Self::NoSuchOccurrence(occurrence) => \
          {{\n                json::member(out, \"kind\");\n                json::push_text(out, \
          \"no-such-occurrence\");\n                json::member(out, \
          \"occurrence\");\n                json::push_integer(out, *occurrence as \
@@ -206,7 +208,18 @@ fn error_type(out: &mut String, bridge: &Bridge<'_>) {
          From<{types}::obligation::UnmetObligation> for BridgeError {{\n    fn from(unmet: \
          {types}::obligation::UnmetObligation) -> Self {{\n        Self::Unmet {{\n            \
          capability: unmet.capability.to_owned(),\n            source: \
-         unmet.source.to_owned(),\n        }}\n    }}\n}}\n"
+         unmet.source.to_owned(),\n        }}\n    }}\n}}\n\nimpl BridgeError {{\n    /// The \
+         refusal for a command whose effect stands and whose delivery reached `unmet`.\n    \
+         fn undelivered(unmet: {types}::obligation::UnmetObligation) -> Self {{\n        \
+         Self::Undelivered {{\n            capability: unmet.capability.to_owned(),\n            \
+         source: unmet.source.to_owned(),\n        }}\n    }}\n}}\n\n/// An unmet obligation \
+         as the page reads it, with `committed` saying whether the command's\n/// effect \
+         stands.\nfn unmet(out: &mut String, capability: &str, source: &str, committed: bool) \
+         {{\n    json::member(out, \"kind\");\n    json::push_text(out, \
+         \"unmet-obligation\");\n    json::member(out, \"capability\");\n    \
+         json::push_text(out, capability);\n    json::member(out, \"source\");\n    \
+         json::push_text(out, source);\n    json::member(out, \"committed\");\n    \
+         out.push_str(if committed {{ \"true\" }} else {{ \"false\" }});\n}}\n"
     );
 }
 
@@ -329,7 +342,8 @@ fn run_method(out: &mut String, bridge: &Bridge<'_>) {
     }
     out.push_str(
         "            other => return Err(BridgeError::UnknownCommand(other.to_owned())),\n        \
-         }\n        self.pump()?;\n        Ok(out)\n    }\n",
+         }\n        // The command's effect stands whatever delivering it answers.\n        \
+         self.pump().map_err(BridgeError::undelivered)?;\n        Ok(out)\n    }\n",
     );
 }
 

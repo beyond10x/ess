@@ -72,10 +72,10 @@
 //! # `501` is the one status no branch declares
 //!
 //! Every command also declares `501`: the realization is unfinished. Either a port the command
-//! runs reported an unmet obligation, or the command's effect was committed and delivering what it
-//! published to a binding failed — the body's `refused` then begins `delivering what the command
-//! published`. A client must not retry it, because after a failed delivery a retry performs the
-//! command a second time.
+//! runs reported an unmet obligation and nothing was written, or the command's effect was committed
+//! and delivering what it published to a binding failed. The body's boolean `committed` tells the
+//! two apart: `false` for the first, `true` for the second. A client must not retry it, because
+//! after a failed delivery a retry performs the command a second time.
 //!
 //! # `external` is a `502`, not a `422`
 //!
@@ -709,22 +709,30 @@ fn responses(command: &ResolvedCommand) -> BTreeMap<String, Response> {
         http::UNFINISHED.to_owned(),
         Response {
             description: "No declared outcome: the realization is unfinished. Either a port this \
-                          command runs reported an unmet obligation, or the command's effect was \
-                          committed and delivering what this command published to a binding \
-                          failed; then `refused` begins `delivering what the command published`, \
-                          the effect and its events stand, and each binding whose delivery failed \
-                          keeps its event and is attempted again on a later delivery, while no \
-                          other binding receives it twice. Do not retry: a retry performs the \
-                          command a second time."
+                          command runs reported an unmet obligation, and nothing was written: \
+                          `committed` is `false`. Or the command's effect was committed and \
+                          delivering what this command published to a binding failed: \
+                          `committed` is `true`, the effect and its events stand, and each \
+                          binding whose delivery failed keeps its event and is attempted again \
+                          on a later delivery, while no other binding receives it twice. Do not \
+                          retry: after a failed delivery a retry performs the command a second \
+                          time."
                 .to_owned(),
             content: Some(content(json!({
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["refused"],
+                "required": ["refused", "committed"],
                 "properties": {
                     "refused": {
                         "type": "string",
                         "description": "What was left unfinished, in words.",
+                    },
+                    "committed": {
+                        "type": "boolean",
+                        "description": "`true` when the command's effect and events were \
+                                        committed and delivering what it published failed; \
+                                        `false` when an unmet obligation stopped the command \
+                                        before anything was written.",
                     },
                 },
             }))),

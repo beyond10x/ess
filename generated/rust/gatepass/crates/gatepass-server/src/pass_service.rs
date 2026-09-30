@@ -168,8 +168,9 @@ where
 ///
 /// [`entry::Refused::Unknown`] naming `name` when this surface declares no command or view
 /// by it; [`entry::Refused::Input`] when `input` is not the command's declared input (the
-/// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation, or when
-/// the command took effect and delivering what it published failed (the route's `501`).
+/// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation, and
+/// [`entry::Refused::Undelivered`] when the command took effect and delivering what it published
+/// failed (the route's `501`, with `committed` `false` and `true`).
 pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
@@ -231,7 +232,7 @@ where
     let delivered = system.pump();
     let _ = system.take_published();
     if let Err(failure) = delivered {
-        return Err(entry::Refused::Unmet(format!("delivering what the command published: {failure}")));
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
     Ok(answer_gatepass_visit_admit_visitor(&outcome))
 }
@@ -327,7 +328,7 @@ where
     let delivered = system.pump();
     let _ = system.take_published();
     if let Err(failure) = delivered {
-        return Err(entry::Refused::Unmet(format!("delivering what the command published: {failure}")));
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
     Ok(answer_gatepass_visit_register_visit(&outcome))
 }
@@ -414,7 +415,7 @@ where
     let delivered = system.pump();
     let _ = system.take_published();
     if let Err(failure) = delivered {
-        return Err(entry::Refused::Unmet(format!("delivering what the command published: {failure}")));
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
     Ok(answer_gatepass_visit_sign_out_visitor(&outcome))
 }

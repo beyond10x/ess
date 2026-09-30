@@ -206,7 +206,7 @@ Without it, every change owes the whole generated tree.
 
 `generated/openapi/invoice-service.yaml`, the path for the same command:
 
-```yaml file=generated/openapi/invoice-service.yaml lines=62-89
+```yaml file=generated/openapi/invoice-service.yaml lines=66-93
   /invoices/commands/create-invoice:
     post:
       operationId: billing.invoice.CreateInvoice

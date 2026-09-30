@@ -1742,7 +1742,7 @@ fn every_command_declares_the_unfinished_501_and_that_it_is_not_retried() {
             let schema = &unfinished["content"]["application/json"]["schema"];
             assert_eq!(
                 schema["required"],
-                serde_json::json!(["refused"]),
+                serde_json::json!(["refused", "committed"]),
                 "{path} {route}"
             );
             assert_eq!(schema["additionalProperties"], serde_json::json!(false));
@@ -1752,4 +1752,52 @@ fn every_command_declares_the_unfinished_501_and_that_it_is_not_retried() {
             "{path} has commands"
         );
     }
+}
+
+/// beyond10x/ess#260: the `501` body says whether the command's effect was committed, as a boolean
+/// every answer carries, rather than only as a prefix of `refused`.
+#[test]
+fn every_unfinished_501_declares_whether_the_effect_was_committed() {
+    let ir = billing();
+    let mut commands = 0;
+    for (path, document) in documents(&ir) {
+        let paths = document["paths"].as_object().expect("paths");
+        for (route, item) in paths {
+            let Some(post) = item.get("post") else {
+                continue;
+            };
+            commands += 1;
+            let unfinished = &post["responses"]["501"];
+            let schema = &unfinished["content"]["application/json"]["schema"];
+            let required: Vec<&str> = schema["required"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{path} {route}: `required` is a list"))
+                .iter()
+                .filter_map(Value::as_str)
+                .collect();
+            assert!(
+                required.contains(&"committed") && required.contains(&"refused"),
+                "{path} {route}: {required:?}"
+            );
+            let committed = &schema["properties"]["committed"];
+            assert_eq!(
+                committed["type"],
+                serde_json::json!("boolean"),
+                "{path} {route}: {committed}"
+            );
+            assert!(
+                committed["description"]
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty()),
+                "{path} {route}: {committed}"
+            );
+            let description = unfinished["description"].as_str().unwrap_or_default();
+            assert!(
+                description.contains("`committed` is `true`")
+                    && description.contains("`committed` is `false`"),
+                "{path} {route}: the description says what each value means: {description}"
+            );
+        }
+    }
+    assert!(commands > 0, "the billing documents declare commands");
 }
