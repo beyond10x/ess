@@ -1273,6 +1273,28 @@ ess verify conform run [OPTIONS] --target <TARGET>
 | `--allow-incomplete` |  | no |  | Explicitly retain diagnostic execution exit behavior |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 
+#### `ess verify conform report`
+
+Turn a runner's own per-scenario results into a report/2 for a suite ESS admits.
+
+For a runner outside ESS, written in any language, that executed the suite itself. ESS admits the suite (an original suite document or an `ess-conformance-input/1` carrier) and takes coverage, suite reference and policy from that admission; the runner supplies only an `ess-conformance-results/1` document with one terminal status per scenario. The report's `producer_profile` is `external-scenario-status/1` (naming `--runner` when given), so it cannot be read as a run ESS executed.
+
+Refused, writing nothing: a result for a scenario the suite does not contain, a scenario with no result, two results for one scenario, a status other than passed, failed, error or unsupported, and a `suite_digest` that is not the admitted suite's.
+
+Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
+
+```text
+ess verify conform report [OPTIONS] --suite <SUITE> --results <RESULTS> --implementation <IMPLEMENTATION> --report-out <REPORT_OUT>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--suite` | `<SUITE>` | yes |  | The suite the runner executed, exactly the bytes it was given |
+| `--results` | `<RESULTS>` | yes |  | The runner's `ess-conformance-results/1` document |
+| `--implementation` | `<IMPLEMENTATION>` | yes |  | The implementation the runner held to the suite, as the report names it |
+| `--report-out` | `<REPORT_OUT>` | yes |  | Where to write the canonical `ess-conformance-report/2` |
+| `--runner` | `<RUNNER>` | no |  | The runner that produced the results, as `<name>@<version>` |
+
 #### `ess verify conform mutate`
 
 Audit the suite with specification mutants, each replayed against a reference target.
