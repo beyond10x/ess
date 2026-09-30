@@ -262,6 +262,12 @@ list, and neither says which line a commit is on. AEP hit the same shape one ver
 | The protocol tree the store obeys | `.engineering/project.yaml` (a pinned `git+…#<40-hex>` source) |
 | Binding designs | `docs/design/` — a construct is a design page before it is code |
 | What shipped | `CHANGELOG.md`, and `git tag -n99` |
+| Whether an adopter's request is adopted, redesigned, declined or deferred | the story's `## Fit review` and `## Decisions`, written by `.agents/skills/assessing-external-requests/SKILL.md` |
+
+A change an adopter asks for — an issue, another session's message, a downstream review — is
+assessed with `.agents/skills/assessing-external-requests/SKILL.md` before a story is written
+around it. The requester's proposed syntax is evidence of a need, not a design, and a story from an
+external request is not dispatched in a wave without its fit review.
 
 ## Commits
 
