@@ -21,7 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ess_compiler::ir::{
     Driver, EntityHandle, EssIr, ResolvedAggregation, ResolvedBody, ResolvedCondition,
-    ResolvedEffect, ResolvedEntity, ResolvedPayloadValue, ResolvedTypeRef, ResolvedView,
+    ResolvedEffect, ResolvedEntity, ResolvedPayloadValue, ResolvedRelatedVia, ResolvedTypeRef,
+    ResolvedView,
 };
 use ess_domain::entity::{EntitySpec, StateName};
 use ess_domain::name::QualifiedName;
@@ -33,8 +34,8 @@ use ess_primitives::predicate::{CompareOp, Operand, Predicate};
 
 use super::{
     advance, arrange_owner, clipped, created_owned, has_subject_guards, identity_inputs, insert,
-    literal_value, reach, reachable_types, route_from, shares_owner, shows, subject_fact,
-    Arrangement, Refusal, RefusalCause,
+    literal_value, reach, reachable_types, related_guard, route_from, shares_owner, shows,
+    subject_fact, Arrangement, CommandRef, Determined, Refusal, RefusalCause,
 };
 use crate::aggregate::{evaluate, evaluate_skipping_absent, ValueKind};
 use crate::scenario::{
@@ -45,6 +46,10 @@ use crate::witness::{uuid_of, Distinction};
 
 /// The most inputs the page's pattern keeps apart: seven, with a group of nine rows.
 const MAX_INPUTS: usize = 7;
+
+/// The step between the blocks of distinctions the rows a related group key reads are arranged at:
+/// past every row the pattern numbers, so their instances and witness values are their own.
+const RELATED_ROWS: usize = 1_000;
 
 /// Every aggregate view's scenario, or the refusal that says why it has none.
 pub(super) fn aggregates(
@@ -213,6 +218,167 @@ impl Key {
     }
 }
 
+/// A field the creating command copies from the row another row references (`{related: …}` in
+/// `sets:`, beyond10x/ess#257). The scenario creates that row holding the value it wants, and
+/// points the creating command's input at it.
+#[derive(Debug, Clone, Copy)]
+struct RelatedKey<'ir> {
+    /// The creating command's input that names the referenced row.
+    via: &'ir str,
+    /// The referenced entity.
+    entity: &'ir EntityHandle,
+    /// The referenced row's field the value is copied from.
+    field: &'ir str,
+}
+
+/// The input a `creates:` branch names another row by: `input.<field>`, or a subject field the
+/// branch fills from its input unchanged.
+fn via_input<'a>(
+    via: &'a ResolvedRelatedVia,
+    mapped: &BTreeMap<&'a str, &'a str>,
+) -> Option<&'a str> {
+    match via {
+        ResolvedRelatedVia::Input { field, .. } => Some(field),
+        ResolvedRelatedVia::Subject { field, .. } => mapped.get(field.as_str()).copied(),
+    }
+}
+
+/// The branches that can create a row of `entity` from an input the scenario chooses, in the
+/// order [`EssIr::drivers`] yields them.
+fn related_creators<'ir>(ir: &'ir EssIr, entity: &EntityHandle) -> Vec<Driver<'ir>> {
+    let all = ir.drivers();
+    all.get(entity)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter(|driver| {
+            !has_subject_guards(driver.command)
+                && driver.outcome.test_strategy != ess_domain::command::TestStrategy::InjectFault
+                && !related_guard::routes(driver.command, driver.outcome)
+        })
+        .copied()
+        .collect()
+}
+
+/// The input `creator` fills the entity field `field` from, unchanged.
+fn filled_from<'ir>(creator: &Driver<'ir>, field: &str) -> Option<&'ir str> {
+    creator
+        .outcome
+        .sets
+        .iter()
+        .find_map(|set| match &set.value {
+            ResolvedPayloadValue::InputField { field: input, .. }
+                if set.target == field && set.conversion.is_none() =>
+            {
+                Some(input.as_str())
+            }
+            _ => None,
+        })
+}
+
+/// Whether `creator` may leave `field` absent: it fills it from an `Optional` input.
+fn leaves_absent(creator: &Driver<'_>, field: &str) -> bool {
+    filled_from(creator, field).is_some_and(|read| {
+        creator
+            .command
+            .input
+            .iter()
+            .any(|input| input.name == read && input.type_ref.is_optional())
+    })
+}
+
+/// How the scenario gives the field `{related: {via, field}}` fills a value of its choosing, or
+/// why it cannot. Which branch creates the related row is chosen per row, once for every field it
+/// must hold ([`arrange_related`]).
+fn related_key<'ir>(
+    ir: &'ir EssIr,
+    handle: &EntityHandle,
+    creator: &Driver<'ir>,
+    mapped: &BTreeMap<&'ir str, &'ir str>,
+    via: &'ir ResolvedRelatedVia,
+    entity: &'ir EntityHandle,
+    field: &'ir str,
+) -> Result<RelatedKey<'ir>, String> {
+    let name = &ir.entity(entity).name;
+    let via_input = via_input(via, mapped)
+        .ok_or_else(|| format!("`{via}` is not an input the creating command reads unchanged"))?;
+    if entity == handle {
+        return Err(format!(
+            "the row it reads is a `{name}`, which the view would then count"
+        ));
+    }
+    if related_guard::routes(creator.command, creator.outcome) {
+        return Err(format!(
+            "`{}` is chosen by a related row its own arrangement supplies",
+            creator.command.name
+        ));
+    }
+    if !related_creators(ir, entity)
+        .iter()
+        .any(|driver| filled_from(driver, field).is_some())
+    {
+        return Err(format!(
+            "nothing creates a `{name}` that sets `{field}` from its input"
+        ));
+    }
+    Ok(RelatedKey {
+        via: via_input,
+        entity,
+        field,
+    })
+}
+
+/// Why no arrangement here chooses the value the creating branch writes into `field`: "does not
+/// set" only where its `sets:` writes nothing there. `role` names the field in the sentence, and
+/// may end in the comma that closes a clause about it.
+fn unchosen(
+    creator: &Driver<'_>,
+    field: &str,
+    unrelated: &BTreeMap<&str, String>,
+    role: &str,
+) -> String {
+    let Some(set) = creator.outcome.sets.iter().find(|set| set.target == field) else {
+        return format!(
+            "the creating command does not set {}",
+            role.trim_end_matches(',')
+        );
+    };
+    if set.conversion.is_some() {
+        return format!(
+            "the creating command sets {role} through a conversion, whose result no arrangement \
+             here chooses"
+        );
+    }
+    let source = match &set.value {
+        ResolvedPayloadValue::RelatedField {
+            via, field: read, ..
+        } => {
+            let why = unrelated.get(field).map_or(
+                "a value read from another row is chosen only for a group key or a scoping field",
+                String::as_str,
+            );
+            return format!(
+                "the creating command copies {role} from `{{related: {{via: {via}, field: \
+                 {read}}}}}`, but {why}"
+            );
+        }
+        ResolvedPayloadValue::Literal { .. } => "a literal it cannot read as its type",
+        ResolvedPayloadValue::InputField { .. } => "its input",
+        ResolvedPayloadValue::InputOrGenerated { .. } => "an input with a fallback",
+        ResolvedPayloadValue::Generated => "`{generated: true}`",
+        ResolvedPayloadValue::Cleared => "`{cleared: true}`",
+        ResolvedPayloadValue::SubjectField { .. } => "a `{subject: …}` source",
+        ResolvedPayloadValue::Increment { .. } => "an `{increment: …}` source",
+        ResolvedPayloadValue::Struct { .. } => "a nested mapping",
+        ResolvedPayloadValue::ResponseField { .. } => "an external response",
+        ResolvedPayloadValue::CallerAttribute { .. } => "a `{caller: …}` source",
+        ResolvedPayloadValue::ChangedCount => "`{count: changed}`",
+    };
+    format!(
+        "the creating command sets {role} from {source}, whose value no arrangement here chooses"
+    )
+}
+
 /// One declared parameter bound to a scoped value: the filter reads it as `field == param.name`.
 #[derive(Debug, Clone)]
 struct Scope {
@@ -249,6 +415,12 @@ struct Plan<'ir> {
     /// The inputs a skipping aggregate reads, left out of the absent rows.
     skipping: BTreeSet<String>,
     scopes: Vec<Scope>,
+    /// The entity fields the creating branch copies from a related row whose value the scenario
+    /// chooses, by name.
+    related: BTreeMap<&'ir str, RelatedKey<'ir>>,
+    /// The group keys read from the owner the view also groups by (its link, beyond10x/ess#193),
+    /// with the position of that link in [`Self::keys`]: rows sharing an owner share their values.
+    follows_owner: BTreeMap<String, usize>,
     /// The group tuples in assignment order, labelled `A`, `B`, `C`, `B2`, …, `N1`, …
     tuples: Vec<(String, Vec<Node>)>,
     /// Whether the view is ungrouped and nothing scopes it, so it is asserted as the change its
@@ -537,6 +709,34 @@ fn scenario(
             _ => None,
         })
         .collect();
+    // The entity fields it copies from a related row, and for each either how the scenario
+    // chooses its value there or why it cannot (beyond10x/ess#257).
+    let mut related: BTreeMap<&str, RelatedKey<'_>> = BTreeMap::new();
+    let mut unrelated: BTreeMap<&str, String> = BTreeMap::new();
+    for set in creator
+        .outcome
+        .sets
+        .iter()
+        .filter(|set| set.conversion.is_none())
+    {
+        if let ResolvedPayloadValue::RelatedField {
+            via,
+            entity: other,
+            field,
+            ..
+        } = &set.value
+        {
+            match related_key(ir, handle, creator, &mapped, via, other, field) {
+                Ok(key) => {
+                    related.insert(set.target.as_str(), key);
+                }
+                Err(reason) => {
+                    unrelated.insert(set.target.as_str(), reason);
+                }
+            }
+        }
+    }
+    let chosen_by_scenario = |name: &str| mapped.contains_key(name) || related.contains_key(name);
     let fixed = |field: &str| {
         creator
             .outcome
@@ -557,7 +757,7 @@ fn scenario(
     // A group key is scoped by its present values whether or not it may be absent; its absent
     // value is a group of its own, scoped only by another key or a parameter (see `Plan::scoped_tuple`).
     let scopable_as = |name: &str, optional_admitted: bool| -> Option<Scoped> {
-        if name == entity.identity.name || name == EntitySpec::STATE || !mapped.contains_key(name) {
+        if name == entity.identity.name || name == EntitySpec::STATE || !chosen_by_scenario(name) {
             return None;
         }
         match field_type(name)? {
@@ -571,16 +771,29 @@ fn scenario(
     // Whether a created row can lack this entity field: the creating branch fills it from an
     // `Optional` input, which an invocation may leave out, and the field is itself `Optional`, so
     // the row then holds it as absent (`synthesize.rs`, `settled`).
+    // A field copied from a related row is absent where that row's field is: some branch creating
+    // the row fills it from an `Optional` input, and the field is itself `Optional`.
+    let related_absent = |name: &str| {
+        related.get(name).is_some_and(|key| {
+            ir.entity(key.entity)
+                .observable_field(key.field)
+                .is_some_and(|field| field.type_ref.is_optional())
+                && related_creators(ir, key.entity)
+                    .iter()
+                    .any(|driver| leaves_absent(driver, key.field))
+        })
+    };
     let absent_able = |name: &str| {
-        mapped.get(name).is_some_and(|read| {
+        (mapped.get(name).is_some_and(|read| {
             creator
                 .command
                 .input
                 .iter()
                 .any(|input| input.name == *read && input.type_ref.is_optional())
-        }) && entity
-            .observable_field(name)
-            .is_some_and(|field| field.type_ref.is_optional())
+        }) || related_absent(name))
+            && entity
+                .observable_field(name)
+                .is_some_and(|field| field.type_ref.is_optional())
     };
     let cannot_lack = |name: &str, role: &str| {
         unwitnessed(
@@ -655,7 +868,7 @@ fn scenario(
             Key::State(entity.lifecycle.states.iter().cloned().collect())
         } else if key == &entity.identity.name {
             Key::Fixed(Node::Null)
-        } else if mapped.contains_key(key.as_str()) {
+        } else if chosen_by_scenario(key) {
             let (_, found) = field_type(key).unwrap_or((false, Leaf::Other));
             match Ladder::of(&view.name, key, &found) {
                 Some(ladder) => Key::Walked(ladder),
@@ -671,7 +884,7 @@ fn scenario(
         } else {
             return Err(unwitnessed(
                 view,
-                format!("the creating command does not set the group key `{key}`"),
+                unchosen(creator, key, &unrelated, &format!("the group key `{key}`")),
             ));
         };
         keys.push((key.clone(), chosen));
@@ -732,9 +945,11 @@ fn scenario(
         } else if fixed(name).is_none() {
             return Err(unwitnessed(
                 view,
-                format!(
-                    "the creating command does not set `{name}`, which `{}` aggregates",
-                    field.name
+                unchosen(
+                    creator,
+                    name,
+                    &unrelated,
+                    &format!("`{name}`, which `{}` aggregates,", field.name),
                 ),
             ));
         }
@@ -824,6 +1039,19 @@ fn scenario(
         ));
     }
 
+    // Rows the view groups by a shared owner are created under one owner per link value
+    // (`arrange_and_observe`); a key read through the input that names that owner is its value.
+    let mut follows_owner = BTreeMap::new();
+    if let Some(owned) = ir.owner_of(handle).filter(|_| shares_owner(ir, handle)) {
+        let linked = mapped.get(owned.via).copied();
+        if let Some(link) = keys.iter().position(|(name, _)| name == owned.via) {
+            for (name, key) in &related {
+                if Some(key.via) == linked {
+                    follows_owner.insert((*name).to_owned(), link);
+                }
+            }
+        }
+    }
     let mut plan = Plan {
         ir,
         view,
@@ -835,6 +1063,8 @@ fn scenario(
         absent_keys,
         skipping,
         scopes,
+        related,
+        follows_owner,
         tuples: Vec::new(),
         delta,
     };
@@ -880,6 +1110,20 @@ fn assign_tuples(plan: &mut Plan<'_>) {
             .all(|(_, key)| matches!(key, Key::Scoped(_)));
     for index in 0..plan.keys.len() {
         let label = format!("B{}", index + 1);
+        // A key read from the owner the link key names holds one value per owner, so no tuple
+        // keeps B's owner under another value of it. Bₖ keeps B's value under an owner of its
+        // own instead: two owners then share the value, and a target that groups by it without
+        // the link merges them.
+        if let Some(link) = plan.follows_owner.get(&plan.keys[index].0).copied() {
+            if let Key::Scoped(kind) = plan.keys[link].1 {
+                let mut tuple = b.clone();
+                tuple[link] = plan.scoped(kind, &label);
+                if !plan.tuples.iter().any(|(_, held)| *held == tuple) {
+                    plan.tuples.push((label, tuple));
+                }
+            }
+            continue;
+        }
         let candidates: Vec<Node> = match &plan.keys[index].1 {
             Key::Scoped(_) if index == 0 && !all_scoped => continue,
             Key::Scoped(kind) => vec![plan.scoped(*kind, &label)],
@@ -899,10 +1143,18 @@ fn assign_tuples(plan: &mut Plan<'_>) {
     }
     // One `N<k>` per key that may be absent: B's tuple with that key absent, a group no other tuple
     // is, because no other tuple holds an absent value.
+    // A key read from the owner the link key names is absent under an owner of its own.
     for index in plan.absent_keys.clone() {
+        let label = format!("N{}", index + 1);
         let mut tuple = b.clone();
         tuple[index] = Node::Null;
-        plan.tuples.push((format!("N{}", index + 1), tuple));
+        if let Some(link) = plan.follows_owner.get(&plan.keys[index].0).copied() {
+            let Key::Scoped(kind) = plan.keys[link].1 else {
+                continue;
+            };
+            tuple[link] = plan.scoped(kind, &label);
+        }
+        plan.tuples.push((label, tuple));
     }
 }
 
@@ -1062,6 +1314,9 @@ struct Arranged {
     row: Row,
     arrangement: Arrangement,
     admitted: bool,
+    /// The steps that create the related rows the row reads, run before any row is created
+    /// ([`observe`]).
+    prelude: Vec<ScenarioStep>,
 }
 
 fn arrange_and_observe(
@@ -1100,20 +1355,29 @@ fn arrange_and_observe(
                 })
         });
     let mut owners: Vec<(Node, (String, Arrangement))> = Vec::new();
+    // A refuted row is not in the view, so where a key is read from its owner it is created under
+    // an owner of its own: the values that refute it need not be the shared owner's, and its owner
+    // is never shared with a later row.
+    let reads_through = |field: &str| plan.related.values().any(|key| key.via == field);
     let owner_for = |row: &Row, distinction, owners: &[(Node, (String, Arrangement))]| {
         let shared = link
             .as_ref()
             .and_then(|field| row.values.get(field))
-            .and_then(|key| owners.iter().find(|(held, _)| held == key));
+            .and_then(|key| owners.iter().find(|(held, _)| held == key))
+            .filter(|(_, (field, _))| row.admitted || !reads_through(field));
         match shared {
-            Some((_, (field, owner))) => Some((
-                field.clone(),
-                Arrangement {
-                    steps: Vec::new(),
-                    ..owner.clone()
-                },
-            )),
-            None => arrange_owner(ir, creator.outcome, plan.handle, actors, distinction, &[]),
+            Some((_, (field, owner))) => Some(Owner {
+                row: (
+                    field.clone(),
+                    Arrangement {
+                        steps: Vec::new(),
+                        ..owner.clone()
+                    },
+                ),
+                shared: true,
+            }),
+            None => arrange_owner(ir, creator.outcome, plan.handle, actors, distinction, &[])
+                .map(|row| Owner { row, shared: false }),
         }
     };
     let mut arranged = Vec::new();
@@ -1157,16 +1421,18 @@ fn arrange_and_observe(
         }?;
         if let (Some(key), Some(owner)) = (
             link.as_ref().and_then(|field| attempt.values.get(field)),
-            owner,
+            result.owner,
         ) {
-            if !owners.iter().any(|(held, _)| held == key) {
+            let own = !attempt.admitted && reads_through(&owner.0);
+            if !own && !owners.iter().any(|(held, _)| held == key) {
                 owners.push((key.clone(), owner));
             }
         }
         arranged.push(Arranged {
+            admitted: attempt.admitted,
             row: attempt,
-            arrangement: result.0,
-            admitted: result.1,
+            arrangement: result.reached,
+            prelude: result.prelude,
         });
     }
     observe(plan, &arranged, &params)
@@ -1181,10 +1447,10 @@ fn arrange_row(
     base: &BTreeMap<String, Node>,
     row: &Row,
     distinction: Distinction,
-    owner: Option<&(String, Arrangement)>,
+    owner: Option<&Owner>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     params: &BTreeMap<String, ScenarioValue>,
-) -> Result<(Arrangement, bool), RefusalCause> {
+) -> Result<Created, RefusalCause> {
     let ir = plan.ir;
     let mut input = base.clone();
     // An identity the scenario supplies (`instance:` published from `input.<field>`) is its own in
@@ -1197,6 +1463,9 @@ fn arrange_row(
         }
     }
     for (field, value) in &row.values {
+        if plan.related.contains_key(field.as_str()) {
+            continue;
+        }
         let Some(read) = mapped.get(field.as_str()) else {
             return Err(plan.unwitnessed(format!(
                 "the creating command does not set `{field}` for row `{}`",
@@ -1217,17 +1486,17 @@ fn arrange_row(
             creator.command.name, creator.outcome.name, row.label
         )));
     }
-    let start = created_owned(
-        ir,
-        plan.handle,
+    let created = create_row(
+        plan,
         creator,
-        actors,
+        mapped,
+        row,
         distinction,
-        &[],
         owner,
-        Some(&input),
-    )
-    .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)))?;
+        actors,
+        &input,
+    )?;
+    let start = &created.reached;
 
     let wanted_state =
         plan.keys
@@ -1278,8 +1547,277 @@ fn arrange_row(
             if row.admitted { "admitted" } else { "refuted" }
         ))
     })?;
-    kept_as_planned(plan, row, &start, &reached)?;
-    Ok((reached, row.admitted))
+    kept_as_planned(plan, row, start, &reached)?;
+    Ok(Created { reached, ..created })
+}
+
+/// Create `row` from `input`, after the related rows it copies keys from: the row as created, and
+/// the steps that create those related rows.
+#[allow(clippy::too_many_arguments)]
+fn create_row(
+    plan: &Plan<'_>,
+    creator: &Driver<'_>,
+    mapped: &BTreeMap<&str, &str>,
+    row: &Row,
+    distinction: Distinction,
+    owner: Option<&Owner>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+) -> Result<Created, RefusalCause> {
+    let shared = owner.filter(|owner| owner.shared).map(|owner| &owner.row);
+    let referenced = arrange_related(plan, row, distinction, actors, shared)?;
+    let prelude: Vec<ScenarioStep> = referenced
+        .iter()
+        .flat_map(|(_, row)| row.steps.iter().cloned())
+        .collect();
+    // An owner the row is created under that is the row a key is read from is that row, and is
+    // what a later row with the same owner link is created under.
+    let kept = owner.map(|owner| {
+        let (field, arrangement) = &owner.row;
+        match referenced.iter().find(|(via, _)| *via == field.as_str()) {
+            Some((_, row)) => (field.clone(), row.clone()),
+            None => (field.clone(), arrangement.clone()),
+        }
+    });
+    let owner = kept.as_ref().map(|(field, owner)| {
+        (
+            field.clone(),
+            Arrangement {
+                steps: if referenced.iter().any(|(via, _)| via == field) {
+                    Vec::new()
+                } else {
+                    owner.steps.clone()
+                },
+                ..owner.clone()
+            },
+        )
+    });
+    let mut start = created_owned(
+        plan.ir,
+        plan.handle,
+        creator,
+        actors,
+        distinction,
+        &[],
+        owner.as_ref(),
+        Some(input),
+    )
+    .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)))?;
+    for (via, row) in &referenced {
+        point_at(creator, &mut start, via, row, mapped).ok_or_else(|| {
+            plan.unwitnessed(format!(
+                "the creating command's `{via}` cannot be pointed at the row it reads"
+            ))
+        })?;
+        start.source.extend(row.source.iter().cloned());
+    }
+    Ok(Created {
+        reached: start,
+        prelude,
+        owner: kept,
+    })
+}
+
+/// The owner a row is created under, and whether an earlier row with the same owner link
+/// arranged it (its steps are then already the scenario's).
+struct Owner {
+    row: (String, Arrangement),
+    shared: bool,
+}
+
+/// One row as created, or as it reached its state.
+struct Created {
+    reached: Arrangement,
+    /// The steps that create the related rows it reads, run before any row ([`observe`]).
+    prelude: Vec<ScenarioStep>,
+    /// The owner it was created under, as a later row with the same owner link reuses it.
+    owner: Option<(String, Arrangement)>,
+}
+
+/// The values one related row must hold, by field.
+type Wanted<'a> = BTreeMap<&'a str, Node>;
+
+/// Whether `row` holds every wanted value as chosen: a value it does not keep as sent — an owner
+/// link, say — is not the scenario's choice.
+fn holds(row: &Arrangement, values: &Wanted<'_>) -> bool {
+    values.iter().all(|(field, value)| {
+        row.settled.get(*field).map(|held| &held.value)
+            == Some(&ScenarioValue::literal(value.clone()))
+    })
+}
+
+/// The related rows `row` reads its keys from, each holding the values the row copies: one per
+/// input that names one, by that input.
+///
+/// `shared` is the owner an earlier row with the same owner link was created under
+/// (beyond10x/ess#193): where its link is an input a key is read through, that owner is the row
+/// read, so rows that share an owner share its values and its group.
+fn arrange_related<'p>(
+    plan: &Plan<'p>,
+    row: &Row,
+    distinction: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    shared: Option<&(String, Arrangement)>,
+) -> Result<Vec<(&'p str, Arrangement)>, RefusalCause> {
+    let mut wanted: BTreeMap<&str, (RelatedKey<'_>, Wanted<'_>)> = BTreeMap::new();
+    for (field, value) in &row.values {
+        let Some(key) = plan.related.get(field.as_str()) else {
+            continue;
+        };
+        wanted
+            .entry(key.via)
+            .or_insert((*key, BTreeMap::new()))
+            .1
+            .insert(key.field, value.clone());
+    }
+    let mut out = Vec::new();
+    for (nth, (via, (key, values))) in wanted.into_iter().enumerate() {
+        if let Some((_, owner)) = shared.filter(|(field, _)| field == via) {
+            if !holds(owner, &values) {
+                return Err(plan.unwitnessed(format!(
+                    "row `{}` shares its `{via}` with an earlier row but not the values it copies \
+                     from it",
+                    row.label
+                )));
+            }
+            out.push((
+                via,
+                Arrangement {
+                    steps: Vec::new(),
+                    ..owner.clone()
+                },
+            ));
+            continue;
+        }
+        let at = Distinction::further(RELATED_ROWS * (nth + 1) + distinction.get());
+        out.push((
+            via,
+            arrange_referenced(plan, &key, &values, at, actors, &row.label)?,
+        ));
+    }
+    Ok(out)
+}
+
+/// A row of the entity `key` reads, created holding `values` through one branch that fills every
+/// one of them from its input — leaving out the input of a value that is absent.
+fn arrange_referenced(
+    plan: &Plan<'_>,
+    key: &RelatedKey<'_>,
+    values: &Wanted<'_>,
+    distinction: Distinction,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    label: &str,
+) -> Result<Arrangement, RefusalCause> {
+    let ir = plan.ir;
+    let name = &ir.entity(key.entity).name;
+    let refuse = || {
+        plan.unwitnessed(format!(
+            "no `{name}` can be created holding the values row `{label}` reads through `{}`",
+            key.via
+        ))
+    };
+    let creator = related_creators(ir, key.entity)
+        .into_iter()
+        .find(|driver| {
+            values.iter().all(|(field, value)| {
+                filled_from(driver, field).is_some()
+                    && (*value != Node::Null || leaves_absent(driver, field))
+            })
+        })
+        .ok_or_else(|| {
+            let fields: Vec<String> = values.keys().map(|field| format!("`{field}`")).collect();
+            plan.unwitnessed(format!(
+                "no one branch creates a `{name}` that sets {} from its input, as row `{label}` \
+                 needs",
+                fields.join(", ")
+            ))
+        })?;
+    let mut input =
+        reach(ir, creator.command, creator.outcome, distinction).map_err(|_| refuse())?;
+    for (field, value) in values {
+        let Some(read) = filled_from(&creator, field) else {
+            return Err(refuse());
+        };
+        // An absent value is an `Optional` input left out, never sent as `null`.
+        if *value == Node::Null {
+            input.remove(read);
+        } else {
+            input.insert(read.to_owned(), value.clone());
+        }
+    }
+    if !subject_fact::input_selects(ir, creator.command, creator.outcome, &input).unwrap_or(false) {
+        return Err(refuse());
+    }
+    let chain = [plan.handle];
+    let owner = arrange_owner(ir, creator.outcome, key.entity, actors, distinction, &chain);
+    let row = created_owned(
+        ir,
+        key.entity,
+        &creator,
+        actors,
+        distinction,
+        &chain,
+        owner.as_ref(),
+        Some(&input),
+    )
+    .map_err(|_| refuse())?;
+    if !holds(&row, values) {
+        return Err(refuse());
+    }
+    Ok(row)
+}
+
+/// Points the creating command's input `via` at the referenced row `row`, in the step that runs it
+/// and in what it settled: the fields it fills from `via`, and those it copies from `row`.
+fn point_at(
+    creator: &Driver<'_>,
+    start: &mut Arrangement,
+    via: &str,
+    row: &Arrangement,
+    mapped: &BTreeMap<&str, &str>,
+) -> Option<()> {
+    let command = CommandRef::new(creator.command.name.clone());
+    let pointed = ScenarioValue::instance(row.instance.clone());
+    let step = start.steps.iter_mut().rev().find_map(|step| match step {
+        ScenarioStep::ExecuteCommand {
+            command: run,
+            input,
+            ..
+        } if *run == command => Some(input),
+        _ => None,
+    })?;
+    step.insert(via.to_owned(), pointed.clone());
+    for set in creator
+        .outcome
+        .sets
+        .iter()
+        .filter(|set| set.conversion.is_none())
+    {
+        let value = match &set.value {
+            ResolvedPayloadValue::InputField { field, .. } if field == via => Some(pointed.clone()),
+            ResolvedPayloadValue::RelatedField {
+                via: read, field, ..
+            } if via_input(read, mapped) == Some(via) => {
+                row.settled.get(field).map(|held| held.value.clone())
+            }
+            _ => continue,
+        };
+        match value {
+            Some(value) => {
+                start.settled.insert(
+                    set.target.clone(),
+                    Determined {
+                        value,
+                        type_ref: set.target_type.clone(),
+                    },
+                );
+            }
+            None => {
+                start.settled.remove(&set.target);
+            }
+        }
+    }
+    Some(())
 }
 
 /// Refuse a row whose group keys or aggregate inputs the arranging moves rewrote.
@@ -1430,6 +1968,11 @@ fn observe(
         reachable_types(ir, &field.type_ref, &mut types);
     }
     source.extend(types.into_iter().map(EssSemanticRef::from));
+    // Every related row a key is read from exists before the first row reads one, so a target
+    // that copies from the row registered last or first, not the one named, copies another value.
+    for row in arranged {
+        steps.extend(row.prelude.iter().cloned());
+    }
     for row in arranged {
         steps.extend(row.arrangement.steps.iter().cloned());
         source.extend(row.arrangement.source.iter().cloned());

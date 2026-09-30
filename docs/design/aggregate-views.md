@@ -452,6 +452,20 @@ values that no other scenario of the suite produces:
 - A key is **scopable** when its unwrapped type is `String` or `Uuid` and the creating branch's
   `sets:` fills it from an input field (`ResolvedPayloadValue::InputField`, as `settled` reads it at
   `synthesize.rs:3260-3265`).
+- A key the creating branch copies from a related row (`{related: {via, field}}` in `sets:`,
+  beyond10x/ess#257) is chosen as one set from input is — scoped, or walked along its ladder —
+  where `via` is an input the branch reads unchanged and another entity has a creating branch that
+  sets `field` from its input unchanged. For each row the scenario first creates that related row
+  holding the key value it wants — through one branch that sets every field the row reads through
+  that `via`, leaving its input out for an absent value — then points `via` at it. Every related
+  row is created before the first row of the view's source, and each row reads its own, so a
+  target that copies from the row registered first or last, or groups by `via`, reports other
+  groups. Where `via` is the link to an owner the view also groups by, admitted rows sharing an
+  owner share it as their related row, and the key's Bₖ keeps B's value of the key under an owner
+  of its own (`B<k>`), so two owners share it and a target that groups without the link merges
+  them. A refuted row is created under an owner of its own. Where no such branch exists,
+  `ESS-SYNTH-017` names the related source; it says "does not set" only of a key the creating
+  branch's `sets:` does not write.
 - The scoped value for group `g` is the text `"<view>/<g>"` for `String` and
   `uuid("<view>/<g>")` for `Uuid`. `uuid` is the FNV-derived builder at `witness.rs:690-697`, seeded
   with that text.
