@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.46.1] — 2026-09-30
+
+### Fixed
+
+- `ess verify diff` classifies an outcome's error payload sources (ess/19 `payload:` keyed by the
+  error a refusal reports) instead of reporting one `system/<name>/unclassified-changed`
+  (beyond10x/ess#253). Declaring sources on an outcome is
+  `command/<command>/outcome-error-payload-added/<outcome>`, dropping them is
+  `outcome-error-payload-removed` and replacing them is `outcome-error-payload-changed`: one change
+  per outcome, each side one `<Error>.<field> <- <source>` line per determined field, related
+  `changed` as the event payload's `outcome-payload-changed` is.
+- `ess verify diff` also classifies an outcome's `accepts: nothing` (ess/15), `returns:` (ess/17)
+  and caller-decided refusal (ess/16) moving, as `outcome-accepts-nothing-changed`,
+  `outcome-returns-changed` and `outcome-decided-by-caller-changed`, `{outcome, before, after}`
+  booleans related `changed` as `outcome-refuses-changed` is. Each fell to
+  `unclassified-changed` before.
+- The new kinds need `ess-diff/12` (released in 0.46.1; `ess-diff/11` shipped in 0.42.0); writers
+  and readers of `/3` to `/11` refuse them with `unsupported_format_version`. A delta without one of
+  them keeps its format and bytes. A test now fails when a compiled outcome writes a key the diff
+  neither compares nor deliberately leaves to the residual.
+
 ## [0.46.0] — 2026-09-30
 
 ### Added

@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/diff-error-payload-0.46.1
+repository: ess
+publishedAt: 2026-09-30T18:00:00Z
+title: ess verify diff classifies error payload sources and three outcome flags
+summary: >-
+  `ess verify diff` reports an outcome's error `payload:` sources declared, dropped or replaced, and a moved `accepts: nothing`, `returns:` or caller-decided refusal, as their own changes instead of one `unclassified-changed`. The new kinds need `ess-diff/12`; a delta without them keeps its format and bytes.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.46.1
+  version: 0.46.1
+journeys: [specify]
+affectedSurfaces: [ess/docs]
