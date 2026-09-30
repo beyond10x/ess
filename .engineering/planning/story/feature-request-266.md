@@ -19,7 +19,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/existence.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -29,9 +29,9 @@ Synthesized scenarios describe the system with its bindings running: a step that
 
 ## Acceptance
 
-- After a command whose event triggers a state-moving binding, synthesized expectations read the bound state, not the pre-binding state.
-- No synthesized step sends the bound command explicitly as though the binding had not run.
-- A downstream-shaped fixture (event -> command moving state) passes against an implementation that runs its bindings, and fails against one that does not.
+- On the minimal reproduction attached to beyond10x/ess#266 (entity `Job` New→Started, `Create` emits `Created`, binding `Created -> Start`), no synthesized scenario sends `Start` to a job `Create` just made, and `Start/outcome/started` is either arranged without the binding or named in coverage.
+- No view expectation after `Create` asserts state `New`; an eventual expectation asserts `Started`.
+- A target that runs its bindings passes the suite; one that does not fails the binding flow scenario.
 
 ## Origin
 
@@ -56,4 +56,4 @@ Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), 
 
 ## Decisions
 
-- **defer:** `decision-blocker:bound-state-observation` blocks this story until the observation semantics are decided and a minimal ESS reproduction exists.
+- **accept, redesigned (coordinator, 2026-09-30; blocker cleared by a minimal reproduction):** bindings are eventual, so no synthesized step races one. Synthesis never sends a bound command explicitly to a subject a triggering step's binding will move; where every route to such a subject triggers the binding, the binding's own flow scenario is the witness and the direct scenario is named in coverage as not arrangeable without racing the binding. View expectations after a triggering step assert only what the binding leaves unchanged, or the settled state after the eventual window.

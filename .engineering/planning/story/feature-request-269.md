@@ -49,7 +49,7 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/delivery_context.rs
 - confidence: inferred
   path: docs/design/binding-delivery-guarantees.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 25, decided_on: {"recorded":{"review_outcome":1}}}
 ---
@@ -87,4 +87,4 @@ Fit review from `docs/design/review-external-requests-2026-09.md` (2026-09-30), 
 
 ## Decisions
 
-- **defer:** `decision-blocker:per-refusal-failure-need` asks the downstream whether direct callers must still see a refusal there. If they must, the design reuses `retry.final`'s refusal naming (by outcome or error, BC:87-89) with `except:`, not a map keyed by condition kinds such as `wrong_state`.
+- **accept, redesigned (coordinator, 2026-09-30; the downstream answered the blocker: direct callers must still see the refusal):** the binding's failure policy may name refusals of the bound command the way `retry.final` already does (by outcome or by error, BC:87-89), with `except:` as in `outcome_groups:`, e.g. `on_failure: {escalate: {except: [<outcome>]}, drop: [<outcome>]}`; no map keyed by condition kinds such as `wrong_state`, and no mixing of outcome names with the policy keywords. Its syntax ships in the same format version as #229 and #268.
