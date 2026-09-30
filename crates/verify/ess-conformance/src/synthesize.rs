@@ -3562,6 +3562,18 @@ fn under_owner(
     if !shares_owner(ir, entity) {
         return None;
     }
+    filed_under(ir, entity, creator, owner)
+}
+
+/// [`under_owner`] without its `cardinality: many` test: for an owner the caller knows holds no row
+/// of `entity` yet ([`holds_none`]), which a `cardinality: one` relation admits one of
+/// (beyond10x/ess#271).
+fn filed_under(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    owner: &InstanceName,
+) -> Option<(String, Arrangement)> {
     let belongs = ir.owner_of(entity)?;
     let field = creator
         .outcome
@@ -3586,6 +3598,50 @@ fn under_owner(
             unwritten: BTreeSet::new(),
         },
     ))
+}
+
+/// Whether `steps` bring `owner` into being and file no row of `entity` under it: each step
+/// sending a command that creates `entity` is read at the input its `sets:` names the owner
+/// through (beyond10x/ess#271). An owner the steps did not create may hold rows they do not show,
+/// so it is not known to hold none.
+fn holds_none(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    steps: &[ScenarioStep],
+    owner: &InstanceName,
+) -> bool {
+    let Some(belongs) = ir.owner_of(entity) else {
+        return false;
+    };
+    let all = ir.drivers();
+    let creators: Vec<(String, String)> = all
+        .get(entity)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|driver| matches!(driver.effect, ResolvedEffect::Creates))
+        .filter_map(|driver| {
+            driver.outcome.sets.iter().find_map(|set| match &set.value {
+                ResolvedPayloadValue::InputField { field, .. } if set.target == belongs.via => {
+                    Some((driver.command.name.to_string(), field.clone()))
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    let created = steps.iter().any(
+        |step| matches!(step, ScenarioStep::CaptureInstance { instance, .. } if instance == owner),
+    );
+    created
+        && !steps.iter().any(|step| match step {
+            ScenarioStep::ExecuteCommand { command, input, .. } => {
+                creators.iter().any(|(name, field)| {
+                    command.to_string() == *name
+                        && matches!(input.get(field), Some(ScenarioValue::Instance { instance })
+                            if instance == owner)
+                })
+            }
+            _ => false,
+        })
 }
 
 /// Whether an owner of `entity` may hold several of its rows: the owning relation is
@@ -3650,7 +3706,7 @@ fn created_owned(
             None,
             actors,
             distinction,
-            &bound,
+            (&bound, &steps),
             input,
             &chain,
         )
@@ -3799,7 +3855,7 @@ fn invoke(
             instance,
             actors,
             distinction,
-            bound,
+            (bound, &[]),
             None,
             arranging,
         )

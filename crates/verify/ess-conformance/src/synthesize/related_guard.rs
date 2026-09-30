@@ -285,6 +285,10 @@ fn is_absent(outcome: &ResolvedOutcome) -> bool {
 /// `distinction` is the caller's: the input searched for and the related row arranged are that
 /// witness's, so a further instance created through this command carries an identity and a related
 /// row of its own rather than the plain instance's.
+///
+/// `known` are the steps the caller ran to arrange what `bound` names: an owner they create and
+/// file no row of the related entity under is one a `cardinality: one` relation still admits a row
+/// under (beyond10x/ess#271, [`super::holds_none`]).
 // One argument per thing an arranging run is told, and the witness it is for.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn drive(
@@ -293,7 +297,10 @@ pub(super) fn drive(
     instance: Option<&crate::scenario::InstanceName>,
     actors: &BTreeMap<QualifiedName, ActorRef>,
     distinction: Distinction,
-    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
     input: Option<&BTreeMap<String, Node>>,
     arranging: &[&EntityHandle],
 ) -> Result<super::Invocation, RefusalCause> {
@@ -318,7 +325,11 @@ pub(super) fn drive(
             ir, driver, instance, actors, bound, &input,
         ));
     }
-    let (row, _, input) = with_row(
+    // An owner the caller already bound for a link input — the one `created_owned` arranged for the
+    // subject this run creates — is the owner the run is sent naming: the related row is arranged
+    // against it, never against a second owner that would replace it (beyond10x/ess#271).
+    let pins = pins(ir, driver.command, driver.outcome, entity, instance, bound);
+    let (mut row, _, input) = with_row(
         ir,
         driver.command,
         driver.outcome,
@@ -327,8 +338,20 @@ pub(super) fn drive(
         (DRIVEN, distinction, arranging),
         input,
         None,
+        (&pins, known),
+    )?;
+    let owners = subject_fact::bind_pinned(
+        ir,
+        driver.command,
+        driver.outcome,
+        entity,
+        actors,
+        &mut row,
+        &input,
+        &pins,
     )?;
     let mut bound = bound.clone();
+    bound.extend(owners);
     bound.insert(field.to_owned(), row.instance.clone());
     let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
     let mut steps = row.steps;
@@ -336,6 +359,27 @@ pub(super) fn drive(
     invocation.steps = steps;
     invocation.source.extend(row.source);
     Ok(invocation)
+}
+
+/// The link inputs over rows of `entity` ([`subject_fact::link_pins`]) the send of `outcome`
+/// already names an arranged owner through: `bound`, and the field the branch names its subject
+/// by, where `instance` is that subject — the one `super::supply` sends before anything `bound`
+/// says (beyond10x/ess#271).
+fn pins(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    outcome: &ResolvedOutcome,
+    entity: &EntityHandle,
+    instance: Option<&crate::scenario::InstanceName>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+) -> BTreeMap<String, crate::scenario::InstanceName> {
+    let mut held = bound.clone();
+    if let (Some(subject), Some(instance)) = (&outcome.subject, instance) {
+        if let ResolvedInstance::Supplied { field } = &subject.instance {
+            held.insert(field.name.clone(), instance.clone());
+        }
+    }
+    subject_fact::link_pins(ir, command, entity, &held)
 }
 
 /// A row of the related entity where its lifecycle starts, under the further witness `at`, inside
@@ -537,6 +581,7 @@ pub(super) fn prepare_at(
         return Err(unarranged());
     }
     let mut steps = Vec::new();
+    let mut pinned = BTreeMap::new();
     let input = if is_absent(outcome) {
         let mut each = without_row_each(ir, command, entity, field, distinction)?.into_iter();
         let input = each.next().ok_or_else(unarranged)?;
@@ -555,7 +600,18 @@ pub(super) fn prepare_at(
         send_each_without_row(ir, command, outcome, actors, &setup.bound, each, &mut steps);
         input
     } else {
-        let (row, first, input) = with_row(
+        // The owners the branch's own arrangement already names for a link input — its subject,
+        // or the subject's owner — are the ones it is sent naming: the related row is arranged
+        // against them, and never against a second owner the send would not name (#271).
+        pinned = pins(
+            ir,
+            command,
+            outcome,
+            entity,
+            setup.instance.as_ref(),
+            &setup.bound,
+        );
+        let (mut row, first, input) = with_row(
             ir,
             command,
             outcome,
@@ -564,7 +620,12 @@ pub(super) fn prepare_at(
             (OWN, distinction, &[]),
             None,
             goal,
+            (&pinned, &setup.steps),
         )?;
+        let owners = subject_fact::bind_pinned(
+            ir, command, outcome, entity, actors, &mut row, &input, &pinned,
+        )?;
+        setup.bound.extend(owners);
         for at in [first - 1, first + 1] {
             if at == first + 1 {
                 steps.extend(row.steps.iter().cloned());
@@ -575,23 +636,38 @@ pub(super) fn prepare_at(
                 setup.source.extend(decoy.source);
             }
         }
-        // The row's fields the guards read are observed before the command, where a view shows
-        // them: the row is a fact the scenario is about, not one it assumes.
-        let read_fields: BTreeSet<String> = predicates(command)
-            .iter()
-            .flat_map(|predicate| subject_fact::read_by(ir, entity, predicate))
-            .collect();
-        if let Ok((observed, view)) = subject_fact::observe_fields(ir, entity, &read_fields, &row) {
-            steps.extend(observed);
-            setup.source.insert(view.into());
-        }
+        observe_read(ir, command, entity, &row, &mut steps, &mut setup.source);
         setup.bound.insert(field.to_owned(), row.instance.clone());
         input
     };
-    steps.append(&mut setup.steps);
-    setup.steps = steps;
+    // The related rows go ahead of the branch's own arrangement, but for rows filed under an owner
+    // that arrangement brings into being (`pinned`): those follow it.
+    if pinned.is_empty() {
+        std::mem::swap(&mut steps, &mut setup.steps);
+    }
+    setup.steps.append(&mut steps);
     setup.source.insert(entity_ref(entity));
     Ok((setup, input))
+}
+
+/// The row's fields the guards read, observed before the command where a view shows them: the row
+/// is a fact the scenario is about, not one it assumes.
+fn observe_read(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    entity: &EntityHandle,
+    row: &Arrangement,
+    steps: &mut Vec<super::ScenarioStep>,
+    source: &mut BTreeSet<crate::scenario::EssSemanticRef>,
+) {
+    let read_fields: BTreeSet<String> = predicates(command)
+        .iter()
+        .flat_map(|predicate| subject_fact::read_by(ir, entity, predicate))
+        .collect();
+    if let Ok((observed, view)) = subject_fact::observe_fields(ir, entity, &read_fields, row) {
+        steps.extend(observed);
+        source.insert(view.into());
+    }
 }
 
 /// A row beside the one the input names, under the further witness `at`: one on which the same
@@ -763,6 +839,10 @@ fn with_row(
     (base, distinction, arranging): (usize, Distinction, &[&EntityHandle]),
     chosen: Option<&BTreeMap<String, Node>>,
     goal: Option<&Goal>,
+    (pins, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
 ) -> Result<(Arrangement, usize, BTreeMap<String, Node>), RefusalCause> {
     let guards: Vec<&Predicate> = command.outcomes.iter().filter_map(input_guard).collect();
     let predicates = predicates(command);
@@ -802,7 +882,11 @@ fn with_row(
                     inputs.extend(further);
                 }
             }
-            inputs
+            // A predicate comparing the row's link to its owner with an input naming an owner is
+            // decided only on an input naming an arranged owner: the row's own, or a second one
+            // (beyond10x/ess#271). The caller sends the owner named through `Setup::bound`, and a
+            // link input already bound (`pins`) names that owner whatever is chosen here.
+            subject_fact::naming_owners(ir, command, entity, node, inputs, pins)
         };
         Ok(inputs.into_iter().find(|input| {
             meets(node, input)
@@ -821,15 +905,15 @@ fn with_row(
                     ))
         }))
     };
-    let search = |strict: bool| {
-        subject_fact::search_within(
+    let search = |strict: bool, under: subject_fact::Under<'_>| {
+        subject_fact::search_under(
             ir,
             entity,
             actors,
             &predicates,
-            Distinction::further(first),
-            "related row",
+            (Distinction::further(first), "related row"),
             arranging,
+            under,
             |node| selecting(node, strict),
         )
     };
@@ -837,10 +921,26 @@ fn with_row(
     // a row and input that witness it element by element are searched for first
     // (`subject_fact::witnesses_elements`, beyond10x/ess#240), and the plain search runs only where
     // none does. Every other command searches once, as it always did.
-    let (row, input) = if subject_fact::has_elementwise(ir, entity, &predicates) {
-        search(true).or_else(|_| search(false))?
-    } else {
-        search(false)?
+    let elementwise = subject_fact::has_elementwise(ir, entity, &predicates);
+    let run = |under: subject_fact::Under<'_>| {
+        if elementwise {
+            search(true, under).or_else(|_| search(false, under))
+        } else {
+            search(false, under)
+        }
+    };
+    // A link input already bound to an owner (`pins`) is sent naming that owner, so the side of a
+    // link comparison where it names the row's own is reached only on a row filed under it: where
+    // the row under an owner of its own selects no branch here, it is searched for there
+    // (beyond10x/ess#271), and refused naming the first search's cause where that fails too.
+    let (row, input) = match run(None) {
+        Ok(found) => found,
+        Err(cause) => match pins.values().next() {
+            Some(held) => {
+                run(Some((held, super::holds_none(ir, entity, known, held)))).map_err(|_| cause)?
+            }
+            None => return Err(cause),
+        },
     };
     Ok((row, first, input))
 }
