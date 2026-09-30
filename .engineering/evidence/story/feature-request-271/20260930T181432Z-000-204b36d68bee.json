@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T18:14:32Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-271",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-gaps-271-pass-2",
+    "review": "review-result:adversary-gaps-271-pass-2",
+    "outcome": "fixed"
+  }
+}
