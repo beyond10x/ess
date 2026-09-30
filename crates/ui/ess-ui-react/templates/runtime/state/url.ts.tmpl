@@ -1,0 +1,36 @@
+import { useSearchParams } from "react-router";
+import { stableKey } from "../json";
+
+function decode<T>(raw: string | null, initial: T): T {
+  if (raw === null) {
+    return initial;
+  }
+  if (typeof initial === "string") {
+    return raw as T;
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return raw as T;
+  }
+}
+
+/** `store: url` — the value is a query parameter, so a link reproduces it. */
+export function useUrlState<T>(key: string, initial: T): [T, (value: T) => void] {
+  const [search, setSearch] = useSearchParams();
+  const value = decode(search.get(key), initial);
+  const set = (next: T) =>
+    setSearch(
+      (previous) => {
+        const params = new URLSearchParams(previous);
+        if (stableKey(next) === stableKey(initial) || next === "" || next === null) {
+          params.delete(key);
+        } else {
+          params.set(key, typeof next === "string" ? next : JSON.stringify(next));
+        }
+        return params;
+      },
+      { replace: true },
+    );
+  return [value, set];
+}

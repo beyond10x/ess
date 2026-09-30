@@ -1,0 +1,56 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, type ActionSpec } from "../actions";
+import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath } from "../core";
+import type { ReadSpec } from "../data";
+import { isObject } from "../json";
+
+/** A board of widgets, one per row of its read, each rendered by the widget its type names. */
+export function BoardView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  widgetBy?: string;
+  widgets: Record<string, ReactNode>;
+  itemActions?: ActionSpec[];
+  layout?: { persistedBy: string; editableBy?: string; state?: string };
+  degrades?: Record<string, string>;
+}): ReactNode {
+  const data = useData(props.reads);
+  const rows = data?.rows ?? [];
+  const stack = props.degrades?.no_free_layout === "stack";
+  const frame = useFramePath();
+  const container = props["data-ui-path"] ?? frame;
+  const scopedContainer = useUiPath(container);
+  return (
+    <div className={`ui-board${stack ? " ui-board-stack" : ""}`} data-ui-path={useUiPath(props["data-ui-path"])}>
+      {rows.map((row) => {
+        const key = rowKey(row, "widget");
+        const kind = String(display(row, props.widgetBy ?? "type"));
+        const widget = props.widgets[kind];
+        const place = isObject(row) && !stack
+          ? { gridColumn: `${Number(row.x ?? 0) + 1} / span ${Number(row.w ?? 3)}`, gridRow: `${Number(row.y ?? 0) + 1} / span ${Number(row.h ?? 2)}` }
+          : undefined;
+        return (
+          <ScopeLayer key={key} values={{ widget: row, row }}>
+            <RowPath container={container ?? ""} rowKey={key}>
+            <div
+              className="ui-board-item"
+              style={place}
+              data-ui-path={scopedContainer === undefined ? undefined : `${scopedContainer}/rows/${key}`}
+            >
+              {widget ?? <span className="ui-note">No widget for {kind}</span>}
+              {props.itemActions && props.itemActions.length > 0 ? (
+                <div className="ui-row-actions">
+                  {props.itemActions.map((action) => (
+                    <ActionControl key={action.name} action={action} />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            </RowPath>
+          </ScopeLayer>
+        );
+      })}
+    </div>
+  );
+}

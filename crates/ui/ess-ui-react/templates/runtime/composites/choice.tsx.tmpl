@@ -1,0 +1,92 @@
+import type { ChangeEvent, ReactNode } from "react";
+import { useUiPath } from "../core";
+import { useScope } from "../core";
+import { useRead, type ReadSpec } from "../data";
+import { evaluate } from "../expr";
+import { isObject, type Json } from "../json";
+
+/** One option of a choice. */
+export interface ChoiceOption {
+  value: Json;
+  label: string;
+}
+
+/** Pick one or several values, from fixed options or a read. */
+export function ChoiceView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  options?: ChoiceOption[];
+  binds?: string;
+  multiple?: boolean;
+  style?: "dropdown" | "tags" | "tree" | "grouped" | "radio" | "segmented" | "checklist";
+  creatable?: { does: string };
+  note?: string;
+  label?: string;
+}): ReactNode {
+  const scope = useScope();
+  const read = useRead(props.reads, scope.values, props.reads !== undefined);
+  const options: ChoiceOption[] = props.reads
+    ? read.rows.map((row) => ({
+        value: isObject(row) ? (row.id ?? row.value ?? null) : row,
+        label: String(isObject(row) ? (row.label ?? row.name ?? row.id) : row),
+      }))
+    : props.options ?? [];
+  const current = props.binds ? evaluate(props.binds, scope.values) : undefined;
+  const selected = (Array.isArray(current) ? current : current === undefined || current === null ? [] : [current]).map(String);
+  const pick = (value: Json) => {
+    let next: unknown = value;
+    if (props.multiple) {
+      const key = String(value);
+      next = selected.includes(key)
+        ? options.filter((option) => selected.includes(String(option.value)) && String(option.value) !== key).map((option) => option.value)
+        : [...options.filter((option) => selected.includes(String(option.value))).map((option) => option.value), value];
+    }
+    if (props.binds) {
+      scope.set(props.binds, next);
+    } else {
+      scope.pick?.(next);
+    }
+  };
+  let control: ReactNode;
+  if (props.style === "segmented" || props.style === "tags" || props.style === "checklist" || props.style === "radio" || (props.multiple && props.style !== "dropdown")) {
+    control = (
+      <div className={`ui-choice-${props.style ?? "checklist"}`} role="group" aria-label={props.label}>
+        {options.map((option) => (
+          <button
+            key={String(option.value)}
+            type="button"
+            className={`ui-chip${selected.includes(String(option.value)) ? " ui-chip-on" : ""}`}
+            aria-pressed={selected.includes(String(option.value))}
+            onClick={() => pick(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    );
+  } else {
+    control = (
+      <select
+        aria-label={props.label}
+        value={selected[0] ?? ""}
+        onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+          const option = options.find((entry) => String(entry.value) === event.target.value);
+          pick(option ? option.value : null);
+        }}
+      >
+        <option value="">{props.label ?? "—"}</option>
+        {options.map((option) => (
+          <option key={String(option.value)} value={String(option.value)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  return (
+    <div className="ui-choice" data-ui-path={useUiPath(props["data-ui-path"])}>
+      {control}
+      {props.note ? <small className="ui-note">{props.note}</small> : null}
+    </div>
+  );
+}

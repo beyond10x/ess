@@ -1,0 +1,36 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { useData } from "../core";
+import type { ReadSpec } from "../data";
+import { FieldValue, fieldLabel, type FieldSpec } from "../fields";
+import { isObject } from "../json";
+
+/** What refers to the subject: one line per referring row. */
+export function ReferencesView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  columns?: FieldSpec[];
+  navigates?: boolean;
+}): ReactNode {
+  const data = useData(props.reads);
+  const rows = data?.rows ?? [];
+  return (
+    <div className="ui-references" data-ui-path={useUiPath(props["data-ui-path"])}>
+      <ul>
+        {rows.map((row, index) => (
+          <li key={index}>
+            {props.columns && props.columns.length > 0
+              ? props.columns.map((column) => (
+                  <span key={column.name} title={fieldLabel(column)}>
+                    <FieldValue field={column} row={row} />{" "}
+                  </span>
+                ))
+              : isObject(row)
+                ? `${String(row.label ?? row.id)}${row.type ? ` (${String(row.type)})` : ""}`
+                : String(row)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

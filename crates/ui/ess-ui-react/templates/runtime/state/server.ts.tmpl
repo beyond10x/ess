@@ -1,0 +1,27 @@
+import { useScope } from "../core";
+import { truthy, evaluate } from "../expr";
+import { useRemoteState } from "./remote";
+import { storageKey } from "./storage";
+
+/** `store: server` — an ESS entity or view holds the value; `fallback` names a second store. */
+export function useServerState<T>(
+  key: string,
+  initial: T,
+  options: { scope?: string; fallback?: { when: string; store: string } } = {},
+): [T, (value: T) => void] {
+  const scope = useScope();
+  const fallback = options.fallback;
+  const useLocal =
+    fallback !== undefined && fallback.store === "local_storage" && truthy(evaluate(fallback.when, scope.values));
+  const remoteKey = options.scope ? `${options.scope}:${key}` : key;
+  return useRemoteState<T>(
+    "server",
+    useLocal ? storageKey(remoteKey, scope.values.actor) : remoteKey,
+    initial,
+    useLocal ? localArea : undefined,
+  );
+}
+
+function localArea(): Storage | undefined {
+  return typeof localStorage === "undefined" ? undefined : localStorage;
+}

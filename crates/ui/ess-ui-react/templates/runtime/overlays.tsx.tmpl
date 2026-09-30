@@ -1,0 +1,69 @@
+// Overlays: drawers, dialogs, full-screen views and popovers opened by an action.
+
+import { useState, type ReactNode } from "react";
+import { useUiPath } from "./core";
+import { FramePath, ScopeLayer, useScope } from "./core";
+import { isObject } from "./json";
+
+/** The overlays a page or shell holds, by name. */
+export type OverlayTable = Record<string, () => ReactNode>;
+
+/** Holds which of its overlays is open (one at a time) and renders it with its params. */
+export function OverlayHost(props: { overlays: OverlayTable; children?: ReactNode }): ReactNode {
+  const parent = useScope();
+  const [open, setOpen] = useState<{ name: string; params: Record<string, unknown> } | null>(null);
+  const render = open ? props.overlays[open.name] : undefined;
+  const baseParams = isObject(parent.values.params) ? parent.values.params : {};
+  return (
+    <ScopeLayer
+      actions={{
+        open: (name: string, params?: Record<string, unknown>) => {
+          if (name in props.overlays) {
+            setOpen({ name, params: params ?? {} });
+          } else {
+            parent.open(name, params);
+          }
+        },
+      }}
+    >
+      {props.children}
+      {open && render ? (
+        <ScopeLayer values={{ params: { ...baseParams, ...open.params } }} actions={{ close: () => setOpen(null) }}>
+          {render()}
+        </ScopeLayer>
+      ) : null}
+    </ScopeLayer>
+  );
+}
+
+/** The frame of one open overlay. */
+export function OverlayFrame(props: {
+  "data-ui-path": string;
+  kind: "drawer" | "dialog" | "fullscreen" | "popover";
+  title?: string;
+  children?: ReactNode;
+}): ReactNode {
+  const scope = useScope();
+  return (
+    <div className={`ui-overlay-backdrop ui-backdrop-${props.kind}`} onClick={() => scope.close()}>
+      <div
+        className={`ui-overlay ui-overlay-${props.kind}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={props.title}
+        data-ui-path={useUiPath(props["data-ui-path"])}
+        onClick={(event: { stopPropagation(): void }) => event.stopPropagation()}
+      >
+        <div className="ui-overlay-head">
+          {props.title ? <h2>{props.title}</h2> : null}
+          <button type="button" className="ui-button ui-icon-button" aria-label="Close" onClick={() => scope.close()}>
+            ×
+          </button>
+        </div>
+        <div className="ui-overlay-body">
+          <FramePath path={props["data-ui-path"]}>{props.children}</FramePath>
+        </div>
+      </div>
+    </div>
+  );
+}

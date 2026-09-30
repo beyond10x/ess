@@ -1,0 +1,88 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { display, formatValue, useData, useScope } from "../core";
+import type { ReadSpec } from "../data";
+import { evaluate } from "../expr";
+
+/** A chart drawn with plain elements: bars, lines (SVG) or, degraded, a table. */
+export function ChartView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  chart: string | { binds: string; options: string[] };
+  x?: string;
+  series?: string[];
+  degrades?: Record<string, string>;
+}): ReactNode {
+  const scope = useScope();
+  const data = useData(props.reads);
+  const rows = data?.rows ?? [];
+  const kind = typeof props.chart === "string" ? props.chart : String(evaluate(props.chart.binds, scope.values) ?? props.chart.options[0]);
+  const x = props.x ?? "x";
+  const series = props.series ?? [];
+  const numbers = rows.flatMap((row) => series.map((name) => Number(display(row, name)) || 0));
+  const max = Math.max(1, ...numbers);
+  let body: ReactNode;
+  if (kind === "table" || props.degrades?.no_charts === "table" && typeof SVGElement === "undefined") {
+    body = null;
+  } else if (kind === "line") {
+    const width = 100;
+    const step = rows.length > 1 ? width / (rows.length - 1) : width;
+    body = (
+      <svg viewBox={`0 0 ${width} 50`} className="ui-chart-svg" role="img" aria-label={series.join(", ")}>
+        {series.map((name, index) => (
+          <polyline
+            key={name}
+            className={`ui-series-${index}`}
+            fill="none"
+            points={rows.map((row, at) => `${at * step},${50 - ((Number(display(row, name)) || 0) / max) * 48}`).join(" ")}
+          />
+        ))}
+      </svg>
+    );
+  } else {
+    body = (
+      <div className="ui-bars">
+        {rows.map((row, at) => (
+          <div key={at} className="ui-bar-group">
+            {series.map((name, index) => (
+              <div
+                key={name}
+                className={`ui-bar ui-series-${index}`}
+                style={{ height: `${((Number(display(row, name)) || 0) / max) * 100}%` }}
+                title={`${name}: ${formatValue(display(row, name))}`}
+              />
+            ))}
+            <span className="ui-bar-label">{formatValue(display(row, x))}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <figure className={`ui-chart ui-chart-${kind}`} data-ui-path={useUiPath(props["data-ui-path"])}>
+      {body ?? (
+        <table className="ui-table">
+          <thead>
+            <tr>
+              <th>{x}</th>
+              {series.map((name) => (
+                <th key={name}>{name}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, at) => (
+              <tr key={at}>
+                <td>{formatValue(display(row, x))}</td>
+                {series.map((name) => (
+                  <td key={name}>{formatValue(display(row, name))}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {series.length > 0 ? <figcaption>{series.join(" · ")}</figcaption> : null}
+    </figure>
+  );
+}

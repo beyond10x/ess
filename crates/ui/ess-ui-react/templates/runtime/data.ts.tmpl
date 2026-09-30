@@ -1,0 +1,336 @@
+// Reads, commands and server-held state go through one `DataAdapter`. The default answers
+// every read from the document's fixtures; `setDataAdapter(httpAdapter(base))` swaps in a real
+// backend without touching a page.
+
+import { useEffect, useState } from "react";
+import { fixtures, type FixtureView } from "../fixtures";
+import { evaluate } from "./expr";
+import { getPath, isObject, stableKey, type Json, type JsonObject } from "./json";
+
+/** A read as a section or composite declares it. */
+export interface ReadSpec {
+  view: string;
+  params?: Record<string, string>;
+  paging?: string;
+  debounce?: number;
+  refresh?: string;
+}
+
+/** A read with its params evaluated. */
+export interface ReadRequest {
+  view: string;
+  params: Record<string, unknown>;
+  paging?: string;
+}
+
+/** What a read returns. */
+export interface ReadResult {
+  rows: Json[];
+  total?: number;
+}
+
+/** A read or command the backend refused; `status` 403 renders as forbidden. */
+export class DataError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+/** The backend seam: every read, command and server-held state goes through it. */
+export interface DataAdapter {
+  read(request: ReadRequest): Promise<ReadResult>;
+  send(command: string, input: Record<string, unknown>): Promise<Json>;
+  loadState(store: "server" | "server_session", key: string): Promise<Json | undefined>;
+  saveState(store: "server" | "server_session", key: string, value: Json): Promise<void>;
+}
+
+const LATENCY_MS = 120;
+
+function delay<T>(value: T): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY_MS));
+}
+
+function fixtureView(view: string, params: Record<string, unknown>, depth = 0): FixtureView | undefined {
+  const direct = fixtures.views[view];
+  if (direct !== undefined) {
+    return direct;
+  }
+  const derived = fixtures.derived[view];
+  if (derived === undefined || depth > 8) {
+    return undefined;
+  }
+  if ("same_as" in derived) {
+    return fixtureView(derived.same_as, params, depth + 1);
+  }
+  const source = fixtureView(derived.by_id_from, params, depth + 1);
+  if (source === undefined) {
+    return undefined;
+  }
+  const wanted = params[derived.key] ?? params.id;
+  const rows = source.rows.filter((row) => isObject(row) && String(row[derived.key]) === String(wanted));
+  return { rows: rows.length > 0 ? rows : source.rows.slice(0, 1) };
+}
+
+function matchesParams(row: Json, params: Record<string, unknown>): boolean {
+  if (!isObject(row)) {
+    return true;
+  }
+  for (const [name, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    if (name === "q" || name === "search") {
+      const text = Object.values(row).map((entry) => JSON.stringify(entry)).join(" ").toLowerCase();
+      if (!text.includes(String(value).toLowerCase())) {
+        return false;
+      }
+      continue;
+    }
+    if (!(name in row)) {
+      continue;
+    }
+    const field = row[name];
+    const wanted = Array.isArray(value) ? value : [value];
+    if (wanted.length === 0) {
+      continue;
+    }
+    const have = Array.isArray(field) ? field : [field];
+    if (!have.some((entry) => wanted.some((want) => String(want) === String(entry)))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** The default adapter: reads answered from fixtures, commands and state kept in memory. */
+export const fixtureAdapter: DataAdapter = {
+  read(request) {
+    const view = fixtureView(request.view, request.params);
+    if (view === undefined) {
+      return Promise.reject(new DataError(`no fixture answers ${request.view}`, 404));
+    }
+    let rows = view.rows.filter((row) => matchesParams(row, request.params));
+    const sort = request.params.sort;
+    if (isObject(sort) && typeof sort.by === "string") {
+      const by = sort.by;
+      const direction = sort.dir === "desc" ? -1 : 1;
+      rows = [...rows].sort((a, b) =>
+        stableKey(getPath(a, [by])) < stableKey(getPath(b, [by])) ? -direction : direction,
+      );
+    }
+    const total = rows.length;
+    if (request.paging === "server" || request.paging === "cursor") {
+      const size = Number(request.params.size ?? 25) || 25;
+      const page = Number(request.params.page ?? 1) || 1;
+      rows = rows.slice((page - 1) * size, page * size);
+    }
+    return delay({ rows, total: view.total ?? total });
+  },
+  send(command, input) {
+    return delay({ command, accepted: true, input: input as JsonObject });
+  },
+  loadState(store, key) {
+    return delay(memoryState.get(`${store}:${key}`));
+  },
+  saveState(store, key, value) {
+    memoryState.set(`${store}:${key}`, value);
+    return delay(undefined);
+  },
+};
+
+const memoryState = new Map<string, Json>();
+
+async function answer(response: Response): Promise<Json> {
+  if (!response.ok) {
+    throw new DataError(`${response.status} ${response.statusText}`, response.status);
+  }
+  return (await response.json()) as Json;
+}
+
+/** An adapter for a backend serving `GET /views/<view>`, `POST /commands/<command>` and `/state`. */
+export function httpAdapter(base: string): DataAdapter {
+  return {
+    async read(request) {
+      const query = new URLSearchParams({ params: JSON.stringify(request.params) });
+      if (request.paging) {
+        query.set("paging", request.paging);
+      }
+      const body = await answer(await fetch(`${base}/views/${request.view}?${query}`));
+      if (isObject(body) && Array.isArray(body.rows)) {
+        return { rows: body.rows, total: typeof body.total === "number" ? body.total : undefined };
+      }
+      return { rows: Array.isArray(body) ? body : [body] };
+    },
+    async send(command, input) {
+      return answer(
+        await fetch(`${base}/commands/${command}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        }),
+      );
+    },
+    async loadState(store, key) {
+      const response = await fetch(`${base}/state/${store}/${encodeURIComponent(key)}`);
+      return response.status === 404 ? undefined : answer(response);
+    },
+    async saveState(store, key, value) {
+      await answer(
+        await fetch(`${base}/state/${store}/${encodeURIComponent(key)}`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(value),
+        }),
+      );
+    },
+  };
+}
+
+let current: DataAdapter = fixtureAdapter;
+let version = 0;
+const listeners = new Set<() => void>();
+
+/** Replaces the adapter every read and command uses. */
+export function setDataAdapter(adapter: DataAdapter): void {
+  current = adapter;
+  invalidate();
+}
+
+/** The adapter in use. */
+export function dataAdapter(): DataAdapter {
+  return current;
+}
+
+/** Marks every read stale, so mounted sections read again (after a command). */
+export function invalidate(): void {
+  version += 1;
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+function useVersion(): number {
+  const [seen, setSeen] = useState(version);
+  useEffect(() => {
+    const listener = () => setSeen(version);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+  return seen;
+}
+
+/** Where a read is in its lifecycle. */
+export type ReadStatus = "idle" | "loading" | "refreshing" | "ready" | "failed" | "forbidden";
+
+/** A read's state as a section renders it. */
+export interface ReadState {
+  status: ReadStatus;
+  rows: Json[];
+  total?: number;
+  error?: string;
+  params: Record<string, unknown>;
+  stale?: boolean;
+  newCount?: number;
+  refetch(): void;
+}
+
+/** Evaluates a read's params against the scope. */
+export function evaluateParams(
+  spec: ReadSpec | undefined,
+  values: Record<string, unknown>,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const [name, expr] of Object.entries(spec?.params ?? {})) {
+    params[name] = evaluate(expr, values);
+  }
+  return params;
+}
+
+/** Runs a read while `enabled`, again when its params change or a command invalidates it. */
+export function useRead(
+  spec: ReadSpec | undefined,
+  values: Record<string, unknown>,
+  enabled = true,
+): ReadState {
+  const params = evaluateParams(spec, values);
+  const key = spec ? `${spec.view}|${stableKey(params)}` : "";
+  const seen = useVersion();
+  const [nonce, setNonce] = useState(0);
+  const [state, setState] = useState<Omit<ReadState, "refetch" | "params">>({
+    status: spec && enabled ? "loading" : "idle",
+    rows: [],
+  });
+  useEffect(() => {
+    if (!spec || !enabled) {
+      return;
+    }
+    let live = true;
+    setState((previous) => ({
+      ...previous,
+      status: previous.status === "ready" ? "refreshing" : "loading",
+    }));
+    const start = () =>
+      current
+        .read({ view: spec.view, params, paging: spec.paging })
+        .then((result) => {
+          if (live) {
+            setState({ status: "ready", rows: result.rows, total: result.total ?? result.rows.length });
+          }
+        })
+        .catch((error: unknown) => {
+          if (live) {
+            const status = error instanceof DataError && error.status === 403 ? "forbidden" : "failed";
+            setState({ status, rows: [], error: error instanceof Error ? error.message : String(error) });
+          }
+        });
+    const timer = setTimeout(start, spec.debounce ?? 0);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled, seen, nonce]);
+  return { ...state, params, refetch: () => setNonce((value) => value + 1) };
+}
+
+/** The signed-in actor, as `actor.<field>` reads it. */
+export interface Actor {
+  signed_in: boolean;
+  user_id?: string;
+  account_id?: string;
+  roles: string[];
+  may(command: string): boolean;
+  [field: string]: unknown;
+}
+
+const anonymous: Actor = { signed_in: false, roles: [], may: () => false };
+
+/** Resolves the actor: from the session view when `from_session`, anonymous otherwise. */
+export function useActor(source: "from_session" | "anonymous"): { actor: Actor; ready: boolean } {
+  const read = useRead(source === "from_session" ? { view: "session.Me" } : undefined, {});
+  if (source !== "from_session") {
+    return { actor: anonymous, ready: true };
+  }
+  const row = read.rows[0];
+  if (read.status !== "ready" || !isObject(row)) {
+    return { actor: anonymous, ready: read.status === "failed" || read.status === "forbidden" };
+  }
+  const roles = Array.isArray(row.roles) ? row.roles.map(String) : [];
+  const organization = row.organization;
+  return {
+    ready: true,
+    actor: {
+      ...row,
+      signed_in: true,
+      user_id: typeof row.id === "string" ? row.id : undefined,
+      account_id: isObject(organization) && typeof organization.id === "string" ? organization.id : undefined,
+      roles,
+      may: () => true,
+    },
+  };
+}

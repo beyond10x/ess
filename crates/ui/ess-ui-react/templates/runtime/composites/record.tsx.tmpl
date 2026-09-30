@@ -1,0 +1,53 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, type ActionSpec } from "../actions";
+import { ScopeLayer, useData, useScope } from "../core";
+import type { ReadSpec } from "../data";
+import { evaluate, truthy } from "../expr";
+import { FieldValue, Tabs, fieldLabel, type FieldSpec, type TabSpec } from "../fields";
+
+/** One row shown as labelled fields. */
+export function RecordView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  fields?: FieldSpec[];
+  tabs?: TabSpec[];
+  item?: ReactNode;
+  actions?: ActionSpec[];
+}): ReactNode {
+  const scope = useScope();
+  const data = useData(props.reads);
+  const row = data ? data.rows[0] : scope.values.row;
+  const list = (fields: FieldSpec[]) => (
+    <dl className="ui-record-fields">
+      {fields
+        .filter((field) => field.visible === undefined || truthy(evaluate(field.visible, scope.values)))
+        .map((field) => (
+          <div key={field.name}>
+            <dt>{fieldLabel(field)}</dt>
+            <dd>
+              <FieldValue field={field} row={row} />
+            </dd>
+          </div>
+        ))}
+    </dl>
+  );
+  return (
+    <ScopeLayer values={{ row }}>
+      <div className="ui-record" data-ui-path={useUiPath(props["data-ui-path"])}>
+        {props.fields && props.fields.length > 0 ? list(props.fields) : null}
+        {props.tabs && props.tabs.length > 0 ? (
+          <Tabs tabs={props.tabs} panel={(tab) => (tab.fields ? list(tab.fields) : tab.content)} />
+        ) : null}
+        {props.item ? <div className="ui-item">{props.item}</div> : null}
+        {props.actions && props.actions.length > 0 ? (
+          <div className="ui-record-actions">
+            {props.actions.map((action) => (
+              <ActionControl key={action.name} action={action} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </ScopeLayer>
+  );
+}

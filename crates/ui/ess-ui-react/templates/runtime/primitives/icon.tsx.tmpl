@@ -1,0 +1,15 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+
+/** A named icon with its accessible label. */
+export function IconView(props: { "data-ui-path": string; icon: string; tone?: string; label: string }): ReactNode {
+  return (
+    <span
+      className={`ui-icon ui-icon-${props.icon} ui-tone-${props.tone ?? "neutral"}`}
+      role="img"
+      aria-label={props.label}
+      title={props.label}
+      data-ui-path={useUiPath(props["data-ui-path"])}
+    />
+  );
+}
