@@ -4,7 +4,7 @@
 //! [`ess_ui_docs::run`], [`ess_ui_tui::run`] and [`ess_ui_react::run`] — so what the command does
 //! is what that crate does, and what it prints on a refusal is that crate's message verbatim.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Subcommand, ValueEnum};
@@ -65,10 +65,16 @@ pub(crate) fn run(command: &Command) -> ExitCode {
             Ok(summary) => success(&summary.to_string()),
             Err(error) => refusal(&format!("{}: {}", error.path(), error.message())),
         },
-        Command::Check(args) => match ess_ui_check::run(args) {
-            Ok(code) => code,
-            Err(error) => refusal(&error.to_string()),
-        },
+        Command::Check(args) => {
+            let checked = match args.model.as_deref().map(model).transpose() {
+                Ok(model) => ess_ui_check::run_with_model(args, model.as_ref()),
+                Err(error) => return refusal(&format!("{error:#}")),
+            };
+            match checked {
+                Ok(code) => code,
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
         Command::Docs(args) => match ess_ui_docs::run(args) {
             Ok(summary) => success(&summary),
             Err(error) => refusal(&error.problems().join("\n")),
@@ -101,4 +107,37 @@ fn success(summary: &str) -> ExitCode {
 fn refusal(message: &str) -> ExitCode {
     eprintln!("{message}");
     ExitCode::from(1)
+}
+
+/// The `--model` of `ess ui check`, resolved the way `ess specify validate --path` resolves a
+/// specification: a directory through its `ess-inputs.yaml` when it has one, and a path naming
+/// that manifest as its directory (beyond10x/ess#262).
+fn model(path: &Path) -> anyhow::Result<ess_ui_check::Model> {
+    let path = if path
+        .file_name()
+        .is_some_and(|name| name == "ess-inputs.yaml")
+    {
+        path.parent().unwrap_or(path)
+    } else {
+        path
+    };
+    let base = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
+    let sources: Vec<(String, String)> =
+        crate::input_discovery::acquire(path, crate::input_discovery::Kind::Specification)?
+            .into_iter()
+            .map(|input| {
+                let label = input
+                    .origin
+                    .strip_prefix(base)
+                    .unwrap_or(&input.origin)
+                    .display()
+                    .to_string();
+                (label, input.text)
+            })
+            .collect();
+    Ok(ess_ui_check::model_from_sources(&sources, path)?)
 }

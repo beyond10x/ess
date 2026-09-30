@@ -33,6 +33,12 @@
   newer one's (beyond10x/ess#261). `ESS_TOOLCHAIN_QUIET=1` silences it; stdout is the delegated
   release's alone.
 
+### Fixed
+
+- `ess ui check --model <dir>` reads the specification through the directory's
+  `ess-inputs.yaml`, as `ess specify validate --path <dir>` does, instead of every YAML file
+  below it; `--model <dir>/ess-inputs.yaml` means its directory (beyond10x/ess#262).
+
 ## [0.47.0] — 2026-09-30
 
 ### Added

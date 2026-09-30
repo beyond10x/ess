@@ -66,6 +66,17 @@ pub fn load_model(path: &Path) -> Result<Model, CheckError> {
         labels.push(label);
         texts.push(text);
     }
+    let sources: Vec<(String, String)> = labels.into_iter().zip(texts).collect();
+    model_from_sources(&sources, path)
+}
+
+/// Compiles an ESS specification from `(label, text)` sources already selected — as a caller that
+/// resolves a directory through its `ess-inputs.yaml` has them. `shown` names the model in a
+/// refusal.
+pub fn model_from_sources(sources: &[(String, String)], shown: &Path) -> Result<Model, CheckError> {
+    let labels: Vec<String> = sources.iter().map(|(label, _)| label.clone()).collect();
+    let texts: Vec<String> = sources.iter().map(|(_, text)| text.clone()).collect();
+    let path = shown;
     let every: Vec<&str> = texts.iter().map(String::as_str).collect();
     let mut parsed = Vec::new();
     let mut sources = SourceMap::new();
