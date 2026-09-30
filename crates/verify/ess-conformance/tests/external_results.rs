@@ -306,3 +306,28 @@ fn a_released_suite_twenty_six_is_admitted_and_reported() {
     assert_eq!(wire["counts"]["passed"], 3);
     assert_eq!(report.execution_status(), CountStatus::Passed);
 }
+
+#[test]
+fn a_library_consumer_reads_the_producer_profile_and_the_runner() {
+    use ess_conformance::counts::ProducerProfile;
+    let suite = original(&document(&["a"]));
+    let supplied = results(&[("a", "passed")]);
+    let named = report(&suite, &supplied, Some("acme-runner@1.4.0")).unwrap();
+    assert_eq!(named.producer_profile(), ProducerProfile::External);
+    assert_eq!(
+        named.runner().map(ToString::to_string).as_deref(),
+        Some("acme-runner@1.4.0")
+    );
+    let unnamed = report(&suite, &supplied, None).unwrap();
+    assert_eq!(unnamed.producer_profile(), ProducerProfile::External);
+    assert!(unnamed.runner().is_none());
+    let admitted = AdmittedSuite::from_json(&suite).unwrap();
+    let read = CountReport::from_json(&named.to_canonical_json().unwrap(), &admitted).unwrap();
+    assert_eq!(read.producer_profile(), ProducerProfile::External);
+    assert_eq!(read.runner().map(Runner::name), Some("acme-runner"));
+    let mut own: Value = serde_json::from_str(&named.to_canonical_json().unwrap()).unwrap();
+    own["producer_profile"] = json!("rust-scenario-status/1");
+    let own = CountReport::from_json(&own.to_string(), &admitted).unwrap();
+    assert_eq!(own.producer_profile(), ProducerProfile::Rust);
+    assert!(own.runner().is_none());
+}

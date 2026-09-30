@@ -458,6 +458,41 @@ fn t06_complete_rust_go_and_filtered_reports_qualify_only_their_exact_selection(
     assert!(f.calls().is_empty());
 }
 #[test]
+fn t06_supplied_results_qualify_and_say_ess_executed_nothing() {
+    let f = Fixture::new();
+    for (profile, supplier) in [
+        (
+            "external-scenario-status/1;runner=acme-runner@1.4.0",
+            "acme-runner@1.4.0",
+        ),
+        ("external-scenario-status/1", "an external runner"),
+    ] {
+        let raw = report_value(&f.input, "passed", profile).to_string();
+        assert_eq!(
+            CountReport::from_json(&raw, f.input.selected())
+                .unwrap()
+                .conformance_status(),
+            CountStatus::Passed
+        );
+        f.write("report.json", &raw);
+        let out = f.qualify("check-conformance", false).output().unwrap();
+        let err = success(&out);
+        let line = format!(
+            "conformance: passed (results supplied by {supplier}; ESS executed nothing) for the supplied exact declared selection"
+        );
+        assert!(err.contains(&line), "missing {line}: {err}");
+        assert!(
+            !err.contains("conformance: passed for"),
+            "supplied results printed as an ESS run: {err}"
+        );
+    }
+    let raw = report_value(&f.input, "passed", "rust-scenario-status/1").to_string();
+    f.write("report.json", &raw);
+    let err = success(&f.qualify("check-conformance", false).output().unwrap());
+    assert!(!err.contains("results supplied by"), "{err}");
+    assert!(f.calls().is_empty());
+}
+#[test]
 fn t07_original_suite_pairing_and_full_model_identity_refuse_substitution() {
     let f = Fixture::new();
     f.write(

@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use ess_conformance::{
+    counts::ProducerProfile,
     coverage::{AdmittedInput, Scope},
     AdmittedSuite, CountReport, CountStatus, SuiteProvenance,
 };
@@ -126,7 +127,7 @@ fn check_pin(raw: &str, pin: Option<&Digest>, label: &str) -> Result<()> {
 
 pub(super) struct Qualified {
     inputs: Inputs,
-    _report: CountReport,
+    report: CountReport,
 }
 impl Inputs {
     pub(super) fn qualify(
@@ -178,7 +179,7 @@ impl Inputs {
         }
         Ok(Qualified {
             inputs: self,
-            _report: report,
+            report,
         })
     }
 }
@@ -195,7 +196,7 @@ impl Qualified {
     ) -> Result<()> {
         let selected = self.inputs.input.selected();
         let provenance = &selected.suite().provenance;
-        eprintln!("conformance: passed for the supplied exact declared selection");
+        eprintln!("{}", conformance_line(&self.report));
         eprintln!("selected suite: {}", selected.digest());
         eprintln!(
             "selection: {}",
@@ -231,6 +232,23 @@ impl Qualified {
             runtime.semantic_digest()
         );
         Ok(())
+    }
+}
+
+/// The qualification line; supplied results say who supplied them and that ESS ran nothing.
+fn conformance_line(report: &CountReport) -> String {
+    match report.producer_profile() {
+        ProducerProfile::External => {
+            let supplier = report
+                .runner()
+                .map_or_else(|| "an external runner".to_owned(), ToString::to_string);
+            format!(
+                "conformance: passed (results supplied by {supplier}; ESS executed nothing) for the supplied exact declared selection"
+            )
+        }
+        ProducerProfile::Rust | ProducerProfile::Go => {
+            "conformance: passed for the supplied exact declared selection".to_owned()
+        }
     }
 }
 

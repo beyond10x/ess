@@ -416,6 +416,15 @@ impl CountReport {
     pub fn completed_at(&self) -> u64 {
         self.0.completed_at
     }
+    /// Who produced the outcomes: [`ProducerProfile::External`] means a runner outside ESS
+    /// supplied them and ESS executed nothing.
+    pub fn producer_profile(&self) -> ProducerProfile {
+        self.0.producer_profile.kind
+    }
+    /// The runner the report names, only ever for [`ProducerProfile::External`].
+    pub fn runner(&self) -> Option<&Runner> {
+        self.0.producer_profile.runner.as_ref()
+    }
 }
 fn execution(profile: ProducerProfile, c: &ScenarioCounts) -> Result<CountStatus, AdmissionError> {
     if (matches!(profile, ProducerProfile::Rust | ProducerProfile::External) && c.skipped != 0)

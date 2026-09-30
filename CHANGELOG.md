@@ -9,21 +9,29 @@
   per-scenario results of a runner outside ESS, in any language. ESS admits the suite (an original
   suite of any admitted format, or an `ess-conformance-input/1` carrier) and takes coverage, the suite
   reference and policy from that admission, so the report qualifies exactly as one from ESS's own
-  run would. Exit 0 when written, 2 when refused.
+  run would, including a suite that nests as deep as `conform run --suite` admits. Exit 0 when
+  written, 2 when refused.
 - `ess-conformance-results/1` (unreleased) is the results document: closed `format`, exact u64
   `completed_at`, optional `suite_digest` and `results: [{scenario_id, status, message?}]`, where
   `status` is `passed`, `failed`, `error` or `unsupported`. The command refuses the whole document,
   naming every offending entry, for a result for a scenario outside the suite, a scenario with no
   result, two results for one scenario, any other status, and a `suite_digest` that is not the
-  admitted suite's. Nothing is written on a refusal. `message` is read and not carried into the
-  report.
+  admitted suite's. An entry refused for its own structure (an unknown field, say) still counts as
+  the result for the scenario it names, so that scenario is not also reported as having none.
+  Nothing is written on a refusal. `message` is read and not carried into the report.
 - report/2 `producer_profile` gains `external-scenario-status/1`, or
   `external-scenario-status/1;runner=<name>@<version>`, for supplied results. It follows the Rust
   category rules (`skipped` unavailable) and says that ESS executed nothing. ESS's own report/2
   reader admits it; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1`
   refuses it. `aep plan artifact evidence --from` admits it from aep 0.66.0; aep 0.65.0 and earlier refuse it.
+- `ess generate release check-conformance`, `publish-conformance` and `publish` still qualify a
+  passed report with this profile, and say so: `conformance: passed (results supplied by
+  <name>@<version>; ESS executed nothing) for the supplied exact declared selection`, or `by an
+  external runner` when the report names none.
 - Library: `ess_conformance::results` (`report`, `admit_suite`, `ExternalResults`, `Runner`,
   `RESULTS_FORMAT`) and `CountReport::from_external`. `ProducerProfile` gains `External`.
+  `CountReport::producer_profile()` and `CountReport::runner()` tell supplied results from an ESS
+  run.
 
 ### Changed
 

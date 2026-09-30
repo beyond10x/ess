@@ -140,14 +140,58 @@ fn envelope<'a>(
 }
 
 /// One entry, with every refusal it carries; `None` only when a refusal is already recorded.
+///
+/// An entry that names a scenario as text counts as that scenario's result whatever else it is
+/// refused for, so its scenario is never also reported as having no result.
 fn result(
     entry: &Json,
     known: &BTreeMap<String, &ScenarioId>,
     seen: &mut BTreeSet<String>,
 ) -> Result<Option<ExternalResult>, AdmissionError> {
-    let fields = entry.closed(&["scenario_id", "status"], &["message"])?;
-    let named = fields["scenario_id"].text()?;
+    let object = entry.object()?;
     let mut issues = Vec::new();
+    let named = object.get("scenario_id").map(Json::text).transpose();
+    let fields = match entry.closed(&["scenario_id", "status"], &["message"]) {
+        Ok(fields) => Some(fields),
+        Err(error) => {
+            issues.extend(error.issues);
+            None
+        }
+    };
+    let named = match named {
+        Ok(Some(named)) => named,
+        Ok(None) => return Err(AdmissionError { issues }),
+        Err(error) => {
+            issues.extend(error.issues);
+            return Err(AdmissionError { issues });
+        }
+    };
+    let scenario = if let Some(&scenario) = known.get(named) {
+        if !seen.insert(named.to_owned()) {
+            issues.extend(
+                object["scenario_id"]
+                    .error(
+                        "DuplicateResult",
+                        format!("{named} has more than one result"),
+                    )
+                    .issues,
+            );
+        }
+        Some(scenario)
+    } else {
+        issues.extend(
+            object["scenario_id"]
+                .error(
+                    "UnknownScenario",
+                    format!("{named} is not a scenario of the admitted suite"),
+                )
+                .issues,
+        );
+        None
+    };
+    let Some(fields) = fields else {
+        return Err(AdmissionError { issues });
+    };
     let status = match fields["status"].text() {
         Ok("passed") => Some(Status::Passed),
         Ok("failed") => Some(Status::Failed),
@@ -177,29 +221,6 @@ fn result(
             issues.extend(error.issues);
             None
         }
-    };
-    let scenario = if let Some(&scenario) = known.get(named) {
-        if !seen.insert(named.to_owned()) {
-            issues.extend(
-                fields["scenario_id"]
-                    .error(
-                        "DuplicateResult",
-                        format!("{named} has more than one result"),
-                    )
-                    .issues,
-            );
-        }
-        Some(scenario)
-    } else {
-        issues.extend(
-            fields["scenario_id"]
-                .error(
-                    "UnknownScenario",
-                    format!("{named} is not a scenario of the admitted suite"),
-                )
-                .issues,
-        );
-        None
     };
     if !issues.is_empty() {
         return Err(AdmissionError { issues });
@@ -272,16 +293,21 @@ pub(crate) fn implementation(name: &str) -> Result<(), AdmissionError> {
 /// Admit a suite as `ess verify conform run --suite` or `--suite-input` would.
 ///
 /// An `ess-conformance-input/1` carrier (it has a top-level `format`) yields its selected suite;
-/// any other document is admitted as an original suite.
+/// any other document is admitted as an original suite. Only the top-level keys are read to tell
+/// them apart; every structural limit is left to the admission that follows.
 pub fn admit_suite(text: &str) -> Result<AdmittedSuite, AdmissionError> {
-    let carrier = Json::parse(text, "$suite")?
-        .object()
-        .is_ok_and(|fields| fields.contains_key("format"));
-    if carrier {
+    if carries_format(text) {
         Ok(AdmittedInput::from_json(text)?.selected().clone())
     } else {
         AdmittedSuite::from_json(text)
     }
+}
+
+/// Whether the document is an object with a top-level `format` key. Values are skipped as raw
+/// JSON, so no nesting depth is imposed here that `AdmittedSuite::from_json` would not impose.
+fn carries_format(text: &str) -> bool {
+    serde_json::from_str::<BTreeMap<String, Box<serde_json::value::RawValue>>>(text)
+        .is_ok_and(|fields| fields.contains_key("format"))
 }
 
 /// Suite bytes and results bytes to report/2: the library behind `ess verify conform report`.
