@@ -38,6 +38,7 @@ tasks:
         --package ess-realization
         --package ess-service-contract
         --package ess-synth
+        --package ess-ui
         --package ess-xtask
         --package gatepass-realization
         --package infra-analyze

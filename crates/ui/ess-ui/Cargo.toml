@@ -1,0 +1,19 @@
+[package]
+name = "ess-ui"
+description = "ess-ui/1: a renderer-neutral UI document loaded into typed Rust, with shorthands, page kinds and widgets expanded and every node addressed by its canonical path."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+# The document and its schema are YAML, read with the reader the rest of the workspace already
+# uses. Nothing here writes YAML back, so serde_yaml's quoting heuristics never reach a byte this
+# crate produces.
+serde.workspace = true
+serde_yaml.workspace = true
+
+[lints]
+workspace = true
