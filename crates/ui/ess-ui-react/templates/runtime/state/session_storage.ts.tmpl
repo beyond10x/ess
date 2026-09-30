@@ -1,0 +1,6 @@
+import { useStorage } from "./storage";
+
+/** `store: session_storage` — survives a reload of this tab, not a new tab. */
+export function useSessionStorageState<T>(key: string, initial: T): [T, (value: T) => void] {
+  return useStorage(() => (typeof sessionStorage === "undefined" ? undefined : sessionStorage), key, initial);
+}

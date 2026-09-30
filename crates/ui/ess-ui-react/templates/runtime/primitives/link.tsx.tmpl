@@ -1,0 +1,33 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { Link } from "react-router";
+import { hrefFor } from "../../routes";
+import { formatValue, useScope } from "../core";
+import { evaluate } from "../expr";
+
+/** A link to a page of this app, or to an external address. */
+export function LinkView(props: {
+  "data-ui-path": string;
+  text: string;
+  to?: { page: string; params?: Record<string, string> };
+  href?: string;
+}): ReactNode {
+  const scope = useScope();
+  const text = formatValue(evaluate(props.text, scope.values));
+  if (props.to) {
+    const params: Record<string, unknown> = {};
+    for (const [name, expr] of Object.entries(props.to.params ?? {})) {
+      params[name] = evaluate(expr, scope.values);
+    }
+    return (
+      <span className="ui-link" data-ui-path={useUiPath(props["data-ui-path"])}>
+        <Link to={hrefFor(props.to.page, params)}>{text}</Link>
+      </span>
+    );
+  }
+  return (
+    <a className="ui-link" href={String(evaluate(props.href, scope.values) ?? "#")} data-ui-path={useUiPath(props["data-ui-path"])}>
+      {text}
+    </a>
+  );
+}

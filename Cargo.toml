@@ -17,6 +17,12 @@ members = [
     "crates/generate/ess-deployment",
     "crates/generate/ess-cli-project",
     "crates/generate/ess-entity-runtime",
+    # ui — renderer-neutral UI documents (ess-ui/1).
+    "crates/ui/ess-ui",
+    "crates/ui/ess-ui-check",
+    "crates/ui/ess-ui-docs",
+    "crates/ui/ess-ui-react",
+    "crates/ui/ess-ui-tui",
     # verify — an implementation is measured against the specification.
     "crates/verify/ess-conformance",
     "crates/verify/ess-diff",
@@ -72,6 +78,11 @@ infra-analyze = { path = "crates/infra/infra-analyze", version = "0.46.1" }
 infra-spec = { path = "crates/infra/infra-spec", version = "0.46.1" }
 infra-project = { path = "crates/infra/infra-project", version = "0.46.1" }
 schema-contract = { path = "crates/generate/schema-contract", version = "0.46.1" }
+ess-ui = { path = "crates/ui/ess-ui", version = "0.46.1" }
+ess-ui-check = { path = "crates/ui/ess-ui-check", version = "0.46.1" }
+ess-ui-docs = { path = "crates/ui/ess-ui-docs", version = "0.46.1" }
+ess-ui-react = { path = "crates/ui/ess-ui-react", version = "0.46.1" }
+ess-ui-tui = { path = "crates/ui/ess-ui-tui", version = "0.46.1" }
 semver = { version = "1", features = ["serde"] }
 
 serde = { version = "1", features = ["derive"] }

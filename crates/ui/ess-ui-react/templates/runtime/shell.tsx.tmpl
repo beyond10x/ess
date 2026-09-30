@@ -1,0 +1,201 @@
+// Shells: the frame around pages, its regions, guards and preloads.
+
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useLocation } from "react-router";
+import { hrefFor, pageAt } from "../routes";
+import { useNotices, useScope } from "./core";
+import { dataAdapter, invalidate } from "./data";
+import { evaluate, truthy } from "./expr";
+
+/** The frame of one shell. */
+export function ShellFrame(props: { "data-ui-path": string; children?: ReactNode }): ReactNode {
+  return (
+    <div className="ui-shell" data-ui-path={props["data-ui-path"]}>
+      {props.children}
+    </div>
+  );
+}
+
+/** One region of a shell. */
+export function Region(props: {
+  "data-ui-path": string;
+  kind: string;
+  visible?: string;
+  children?: ReactNode;
+}): ReactNode {
+  const scope = useScope();
+  if (props.visible !== undefined && !truthy(evaluate(props.visible, scope.values))) {
+    return null;
+  }
+  return (
+    <div className={`ui-region ui-region-${props.kind}`} data-ui-path={props["data-ui-path"]}>
+      {props.children}
+    </div>
+  );
+}
+
+/** A guard: when its condition holds, redirect, refuse or set shell state. */
+export interface GuardSpec {
+  name: string;
+  when: string;
+  redirect?: { page: string; params?: Record<string, string> };
+  refuse?: string;
+  set?: Record<string, string>;
+}
+
+/** Runs the shell's guards once the actor is known; returns a refusal to show instead. */
+export function useGuards(guards: GuardSpec[]): string | undefined {
+  const scope = useScope();
+  const location = useLocation();
+  const ready = scope.values.actor_ready === true;
+  let refusal: string | undefined;
+  for (const guard of guards) {
+    if (guard.refuse && ready && truthy(evaluate(guard.when, scope.values))) {
+      refusal = guard.refuse;
+    }
+  }
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    for (const guard of guards) {
+      if (!truthy(evaluate(guard.when, scope.values))) {
+        continue;
+      }
+      if (guard.redirect) {
+        const params: Record<string, unknown> = {};
+        for (const [name, expr] of Object.entries(guard.redirect.params ?? {})) {
+          params[name] = evaluate(expr, scope.values);
+        }
+        scope.navigate(hrefFor(guard.redirect.page, params));
+        return;
+      }
+      for (const [path, expr] of Object.entries(guard.set ?? {})) {
+        scope.set(path, evaluate(expr, scope.values));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, location.pathname, location.search]);
+  return refusal;
+}
+
+/** Reads the preload views before, beside or instead of the first page. */
+export function usePreload(
+  views: { view: string; params?: Record<string, string> }[],
+  policy: "before_first_page" | "in_background" | "on_demand",
+  exceptOn: string[],
+): boolean {
+  const scope = useScope();
+  const location = useLocation();
+  const page = pageAt(location.pathname);
+  const skip = policy === "on_demand" || (page !== undefined && exceptOn.includes(page));
+  const [done, setDone] = useState(skip || policy !== "before_first_page");
+  useEffect(() => {
+    if (skip) {
+      return;
+    }
+    const reads = views.map((entry) => {
+      const params: Record<string, unknown> = {};
+      for (const [name, expr] of Object.entries(entry.params ?? {})) {
+        params[name] = evaluate(expr, scope.values);
+      }
+      return dataAdapter().read({ view: entry.view, params }).catch(() => undefined);
+    });
+    void Promise.all(reads).then(() => setDone(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skip]);
+  return done;
+}
+
+/** The notifications region. */
+export function Notifications(): ReactNode {
+  const notices = useNotices();
+  return (
+    <ul className="ui-notifications" aria-live="polite">
+      {notices.map((notice) => (
+        <li key={notice.id} className={`ui-notice ui-tone-${notice.tone}`}>
+          {notice.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** An entry of the account menu region's `actions` prop. */
+export interface MenuEntry {
+  name: string;
+  label?: string;
+  opens?: string;
+  does?: string;
+}
+
+/** The account menu region: the actor's name and the menu's entries. */
+export function AccountMenu(props: { actions: MenuEntry[] }): ReactNode {
+  const scope = useScope();
+  const [open, setOpen] = useState(false);
+  const actor = scope.values.actor as { name?: unknown } | undefined;
+  return (
+    <div className="ui-account">
+      <button type="button" className="ui-button" onClick={() => setOpen(!open)}>
+        {typeof actor?.name === "string" ? actor.name : "Account"}
+      </button>
+      {open ? (
+        <ul className="ui-menu">
+          {props.actions.map((entry) => (
+            <li key={entry.name}>
+              <button
+                type="button"
+                className="ui-menu-item"
+                onClick={() => {
+                  setOpen(false);
+                  if (entry.opens) {
+                    scope.open(entry.opens);
+                  } else if (entry.does) {
+                    void dataAdapter()
+                      .send(entry.does, {})
+                      .then(() => {
+                        invalidate();
+                        scope.notify(`${entry.does} done`, "success");
+                      });
+                  }
+                }}
+              >
+                {entry.label ?? entry.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** The assistant region: a prompt sent as one of its commands. */
+export function Assistant(props: { does: string[] }): ReactNode {
+  const scope = useScope();
+  const [text, setText] = useState("");
+  const command = props.does[0];
+  return (
+    <form
+      className="ui-assistant"
+      onSubmit={(event: { preventDefault(): void }) => {
+        event.preventDefault();
+        if (command && text) {
+          void dataAdapter()
+            .send(command, { prompt: text })
+            .then(() => {
+              invalidate();
+              scope.notify(`${command} sent`, "success");
+            });
+          setText("");
+        }
+      }}
+    >
+      <input
+        value={text}
+        placeholder="Ask…"
+        onChange={(event: ChangeEvent<HTMLInputElement>) => setText(event.target.value)}
+      />
+    </form>
+  );
+}

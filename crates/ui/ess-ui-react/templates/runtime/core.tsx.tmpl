@@ -1,0 +1,553 @@
+// The scope expressions read, the page and section frames, layouts and section lifecycle.
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useActor, useRead, type ReadSpec, type ReadState } from "./data";
+import { assignable, evaluate, truthy } from "./expr";
+import { getPath, setPath, stableKey, type Json } from "./json";
+
+export type { Json } from "./json";
+
+/** A notification shown in the notifications region. */
+export interface Notice {
+  id: number;
+  message: string;
+  tone: "info" | "success" | "danger";
+}
+
+/** What expressions read and what actions do, layered from the app down to a row. */
+export interface Scope {
+  values: Record<string, unknown>;
+  set(path: string, value: unknown): void;
+  open(overlay: string, params?: Record<string, unknown>): void;
+  close(): void;
+  notify(message: string, tone?: Notice["tone"]): void;
+  navigate(href: string): void;
+  pick?: (value: unknown) => void;
+}
+
+const rootScope: Scope = {
+  values: {},
+  set: (path) => console.warn(`nothing holds ${path}`),
+  open: (overlay) => console.warn(`no overlay ${overlay} here`),
+  close: () => undefined,
+  notify: (message) => console.info(message),
+  navigate: () => undefined,
+};
+
+const ScopeContext = createContext<Scope>(rootScope);
+
+/** The scope at this point of the tree. */
+export function useScope(): Scope {
+  return useContext(ScopeContext);
+}
+
+/** Evaluates an expression in the current scope. */
+export function useValue(expr: string | undefined): unknown {
+  return evaluate(expr, useScope().values);
+}
+
+type Setter = (value: never) => void;
+
+/**
+ * Adds values and setters to the scope. A root that both layers hold (`state`) is merged; a
+ * setter is found by the longest registered prefix of the path set.
+ */
+export function ScopeLayer(props: {
+  values?: Record<string, unknown>;
+  setters?: Record<string, Setter>;
+  actions?: Partial<Omit<Scope, "values" | "set">>;
+  children?: ReactNode;
+}): ReactNode {
+  const parent = useScope();
+  const values: Record<string, unknown> = { ...parent.values };
+  for (const [root, value] of Object.entries(props.values ?? {})) {
+    const inherited = parent.values[root];
+    values[root] =
+      root === "state" && inherited && typeof inherited === "object" && value && typeof value === "object"
+        ? { ...(inherited as object), ...(value as object) }
+        : value;
+  }
+  const setters = props.setters ?? {};
+  const scope: Scope = {
+    ...parent,
+    ...props.actions,
+    values,
+    set(path, next) {
+      const segments = assignable(path) ?? path.split(".");
+      for (let length = segments.length; length > 0; length -= 1) {
+        const prefix = segments.slice(0, length).join(".");
+        const setter = setters[prefix] as ((value: unknown) => void) | undefined;
+        if (setter) {
+          const rest = segments.slice(length);
+          setter(rest.length === 0 ? next : setPath(getPath(values, segments.slice(0, length)), rest, next));
+          return;
+        }
+      }
+      parent.set(path, next);
+    },
+  };
+  return <ScopeContext.Provider value={scope}>{props.children}</ScopeContext.Provider>;
+}
+
+const NoticeContext = createContext<Notice[]>([]);
+
+/** The notifications raised so far. */
+export function useNotices(): Notice[] {
+  return useContext(NoticeContext);
+}
+
+/** The application root: actor, url query, navigation and notifications in scope. */
+export function AppRoot(props: {
+  actor: "from_session" | "anonymous";
+  children?: ReactNode;
+}): ReactNode {
+  const { actor, ready } = useActor(props.actor);
+  const [search] = useSearchParams();
+  const navigate = useNavigate();
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const counter = useRef(0);
+  const query: Record<string, string> = {};
+  search.forEach((value, key) => {
+    query[key] = value;
+  });
+  return (
+    <NoticeContext.Provider value={notices}>
+      <ScopeLayer
+        values={{ actor, actor_ready: ready, url: { query } }}
+        actions={{
+          navigate: (href: string) => {
+            void navigate(href);
+          },
+          notify: (message: string, tone: Notice["tone"] = "info") => {
+            counter.current += 1;
+            const id = counter.current;
+            setNotices((list) => [...list.slice(-4), { id, message, tone }]);
+            setTimeout(() => setNotices((list) => list.filter((notice) => notice.id !== id)), 5000);
+          },
+        }}
+      >
+        {props.children}
+      </ScopeLayer>
+    </NoticeContext.Provider>
+  );
+}
+
+/** The page's path params. */
+export function usePageParams(): Record<string, string | undefined> {
+  return { ...useParams() };
+}
+
+/** Renders its children only while `when` holds. */
+export function Visible(props: { when: string; children?: ReactNode }): ReactNode {
+  return truthy(useValue(props.when)) ? <>{props.children}</> : null;
+}
+
+/** What a section reports to its page: its rows' total, its read params and its selection. */
+export interface SectionInfo {
+  total?: number;
+  params?: Record<string, unknown>;
+  selection?: unknown;
+}
+
+const RegistryContext = createContext<(name: string, info: SectionInfo) => void>(() => undefined);
+
+/** Reports this section's info to the page, when it changed. */
+export function useReport(name: string | undefined, info: SectionInfo): void {
+  const report = useContext(RegistryContext);
+  const key = stableKey(info);
+  useEffect(() => {
+    if (name) {
+      report(name, info);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, key]);
+}
+
+// ── runtime node paths ───────────────────────────────────────────────────────────────────
+// A section or overlay frame carries its node's path; the composite inside carries none and
+// learns it from the frame. Rows of a collection (or board, or graph) are addressed as
+// `<collection>/rows/<row key>` (NodePath.syntax.containers), and a node repeated in every row
+// (a column, a row action, an item) is addressed under its row, so no path renders twice.
+
+const FramePathContext = createContext<string | undefined>(undefined);
+
+/** Makes `path` the enclosing frame's path for the composite inside. */
+export function FramePath(props: { path: string; children?: ReactNode }): ReactNode {
+  return <FramePathContext.Provider value={props.path}>{props.children}</FramePathContext.Provider>;
+}
+
+/** The path of the enclosing section or overlay frame. */
+export function useFramePath(): string | undefined {
+  return useContext(FramePathContext);
+}
+
+/** A row being rendered: the (unscoped) path of its container and its row key. */
+interface RowAddress {
+  container: string;
+  key: string;
+}
+
+const RowContext = createContext<RowAddress[]>([]);
+
+/** The row key: the `match` field (from `live.match`), else `id`; never a list index. */
+export function rowKey(row: unknown, match?: string): string {
+  const field = match ?? "id";
+  if (row !== null && typeof row === "object" && !Array.isArray(row)) {
+    const value = (row as Record<string, unknown>)[field];
+    if (value !== undefined && value !== null) {
+      return String(value);
+    }
+  }
+  // No key field: the row's content addresses it, so the same row keeps its path when others
+  // are inserted before it.
+  return encodeURIComponent(stableKey(row));
+}
+
+/** Renders `children` as the row `key` of the container at `container`. */
+export function RowPath(props: { container: string; rowKey: string; children?: ReactNode }): ReactNode {
+  const outer = useContext(RowContext);
+  return (
+    <RowContext.Provider value={[...outer, { container: props.container, key: props.rowKey }]}>
+      {props.children}
+    </RowContext.Provider>
+  );
+}
+
+/** `path` as rendered here: every enclosing row puts `rows/<key>` after its container. */
+export function scopePath(path: string, rows: RowAddress[]): string {
+  let scoped = path;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const { container, key } = rows[index];
+    if (scoped.startsWith(`${container}/`)) {
+      scoped = `${container}/rows/${key}/${scoped.slice(container.length + 1)}`;
+    }
+  }
+  return scoped;
+}
+
+/** The path a node renders `data-ui-path` with, scoped to the rows it is rendered in. */
+export function useUiPath(path: string | undefined): string | undefined {
+  const rows = useContext(RowContext);
+  return path === undefined ? undefined : scopePath(path, rows);
+}
+
+const SectionNameContext = createContext<string | undefined>(undefined);
+
+/** The name of the enclosing section. */
+export function useSectionName(): string | undefined {
+  return useContext(SectionNameContext);
+}
+
+/** A page: its frame, and the registry sections report totals, params and selections to. */
+export function PageFrame(props: {
+  "data-ui-path": string;
+  title?: string;
+  profile?: string;
+  children?: ReactNode;
+}): ReactNode {
+  const [sections, setSections] = useState<Record<string, SectionInfo>>({});
+  const report = (name: string, info: SectionInfo) =>
+    setSections((previous) => {
+      const merged: SectionInfo = { ...previous[name] };
+      for (const [key, value] of Object.entries(info) as [keyof SectionInfo, unknown][]) {
+        if (value !== undefined) {
+          (merged as Record<string, unknown>)[key] = value;
+        }
+      }
+      return stableKey(previous[name]) === stableKey(merged) ? previous : { ...previous, [name]: merged };
+    });
+  return (
+    <RegistryContext.Provider value={report}>
+      <ScopeLayer values={{ section: sections, same_as: (name: string) => sections[name]?.params }}>
+        <main className="ui-page" data-ui-path={props["data-ui-path"]} data-profile={props.profile}>
+          {props.children}
+        </main>
+      </ScopeLayer>
+    </RegistryContext.Provider>
+  );
+}
+
+/** Sections one under another. */
+export function StackLayout(props: { children?: ReactNode }): ReactNode {
+  return <div className="ui-layout-stack">{props.children}</div>;
+}
+
+/** Sections in named columns. */
+export function ColumnsLayout(props: { children?: ReactNode }): ReactNode {
+  return <div className="ui-layout-columns">{props.children}</div>;
+}
+
+/** One column of a columns layout. */
+export function LayoutColumn(props: {
+  "data-ui-path": string;
+  width?: string;
+  children?: ReactNode;
+}): ReactNode {
+  return (
+    <div className={`ui-column ui-column-${props.width ?? "normal"}`} data-ui-path={props["data-ui-path"]}>
+      {props.children}
+    </div>
+  );
+}
+
+/** Sections placed on a grid of named areas. */
+export function AreasLayout(props: { grid: string[][]; areas: Record<string, ReactNode> }): ReactNode {
+  const template = props.grid.map((row) => `"${row.join(" ")}"`).join(" ");
+  const columns = Math.max(1, ...props.grid.map((row) => row.length));
+  return (
+    <div
+      className="ui-layout-areas"
+      style={{ gridTemplateAreas: template, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+    >
+      {Object.entries(props.areas).map(([area, content]) => (
+        <div key={area} className="ui-area" style={{ gridArea: area }}>
+          {content}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** When a section's read starts: at once, when scrolled into view, or on request. */
+export function useLoadTrigger(load: "eager" | "on_visible" | "on_demand" = "eager"): [boolean, () => void] {
+  const [active, setActive] = useState(load === "eager");
+  return [active, () => setActive(true)];
+}
+
+/** How each lifecycle state of a section renders. */
+export interface SectionStates {
+  loading?: "skeleton" | "spinner" | "none";
+  refreshing?: "keep_rows" | "skeleton";
+  empty?: { message: string };
+  failed?: { message?: string; retry?: boolean };
+  forbidden?: { message?: string };
+  stale?: { mark: "badge" | "dim" | "both" };
+}
+
+const DataContext = createContext<ReadState | undefined>(undefined);
+
+/** The rows of the enclosing section, or of the composite's own read when it has one. */
+export function useData(reads: ReadSpec | undefined): ReadState | undefined {
+  const scope = useScope();
+  const own = useRead(reads, scope.values, reads !== undefined);
+  const section = useContext(DataContext);
+  return reads !== undefined ? own : section;
+}
+
+function Skeleton(props: { style: "skeleton" | "spinner" | "none" }): ReactNode {
+  if (props.style === "none") {
+    return null;
+  }
+  return props.style === "spinner" ? (
+    <div className="ui-spinner" role="status" aria-label="Loading" />
+  ) : (
+    <div className="ui-skeleton" role="status" aria-label="Loading">
+      <div />
+      <div />
+      <div />
+    </div>
+  );
+}
+
+/** A section: its read's lifecycle (loading, refreshing, empty, failed, forbidden, stale). */
+export function SectionFrame(props: {
+  "data-ui-path": string;
+  name: string;
+  data?: ReadState;
+  states?: SectionStates;
+  load?: "eager" | "on_visible" | "on_demand";
+  onActivate?: () => void;
+  active?: boolean;
+  emptyAction?: ReactNode;
+  degrades?: Record<string, string>;
+  profile?: string;
+  children?: ReactNode;
+}): ReactNode {
+  const { data, states = {} } = props;
+  const ref = useRef<HTMLElement | null>(null);
+  const { onActivate, active, load } = props;
+  useEffect(() => {
+    if (load !== "on_visible" || active || !onActivate || !ref.current) {
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        onActivate();
+        observer.disconnect();
+      }
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [load, active, onActivate]);
+  useReport(props.name, { total: data?.total, params: data?.params });
+  const mark = data?.stale ? states.stale?.mark ?? "badge" : undefined;
+  let body: ReactNode = props.children;
+  if (load === "on_demand" && !active) {
+    body = (
+      <button type="button" className="ui-button" onClick={() => onActivate?.()}>
+        Load
+      </button>
+    );
+  } else if (data && (data.status === "loading" || data.status === "idle")) {
+    body = <Skeleton style={states.loading ?? "skeleton"} />;
+  } else if (data && data.status === "refreshing" && states.refreshing === "skeleton") {
+    body = <Skeleton style="skeleton" />;
+  } else if (data && data.status === "failed") {
+    body = (
+      <div className="ui-state ui-state-failed" role="alert">
+        <p>{states.failed?.message ?? "Could not load."}</p>
+        {states.failed?.retry !== false ? (
+          <button type="button" className="ui-button" onClick={() => data.refetch()}>
+            Retry
+          </button>
+        ) : null}
+      </div>
+    );
+  } else if (data && data.status === "forbidden") {
+    body = <div className="ui-state ui-state-forbidden">{states.forbidden?.message ?? "You may not see this."}</div>;
+  } else if (data && data.status === "ready" && data.rows.length === 0 && states.empty) {
+    body = (
+      <div className="ui-state ui-state-empty">
+        <p>{states.empty.message}</p>
+        {props.emptyAction}
+      </div>
+    );
+  }
+  return (
+    <FramePath path={props["data-ui-path"]}>
+    <SectionNameContext.Provider value={props.name}>
+      <DataContext.Provider value={data}>
+        <section
+          ref={ref}
+          className={`ui-section${mark === "dim" || mark === "both" ? " ui-dim" : ""}`}
+          data-ui-path={props["data-ui-path"]}
+          data-status={data?.status ?? "ready"}
+          data-profile={props.profile}
+        >
+          {mark === "badge" || mark === "both" ? <span className="ui-stale-badge">stale</span> : null}
+          {data?.newCount ? <span className="ui-new-count">{data.newCount} new</span> : null}
+          {body}
+        </section>
+      </DataContext.Provider>
+    </SectionNameContext.Provider>
+    </FramePath>
+  );
+}
+
+/** A link to another page. */
+export interface PageLink {
+  label: string;
+  href: string;
+}
+
+/** The page header: title, total, actions, switch links, live channels, metrics and help. */
+export function HeaderFrame(props: {
+  "data-ui-path": string;
+  title?: string;
+  total?: string;
+  filters?: string;
+  switchTo?: PageLink[];
+  live?: string[];
+  help?: { text?: string; link?: string };
+  actions?: ReactNode;
+  metrics?: ReactNode;
+}): ReactNode {
+  const scope = useScope();
+  const sections = (scope.values.section ?? {}) as Record<string, SectionInfo>;
+  const total = props.total ? sections[props.total]?.total : undefined;
+  return (
+    <header className="ui-header" data-ui-path={props["data-ui-path"]}>
+      <div className="ui-header-title">
+        {props.title ? <h1>{props.title}</h1> : null}
+        {total !== undefined ? <span className="ui-total">{total}</span> : null}
+        {(props.live ?? []).map((channel) => (
+          <span key={channel} className="ui-live" data-lifecycle={String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting")}>
+            {channel}: {String(getPath(scope.values.channel, [channel, "lifecycle"]) ?? "connecting")}
+          </span>
+        ))}
+      </div>
+      {props.switchTo && props.switchTo.length > 0 ? (
+        <nav className="ui-switch">
+          {props.switchTo.map((link) => (
+            <a key={link.href} href={link.href} onClick={(event: MouseEvent) => { event.preventDefault(); scope.navigate(link.href); }}>
+              {link.label}
+            </a>
+          ))}
+        </nav>
+      ) : null}
+      {props.metrics ? <div className="ui-header-metrics">{props.metrics}</div> : null}
+      {props.help ? (
+        <p className="ui-help">
+          {props.help.text}
+          {props.help.link ? (
+            <>
+              {" "}
+              <a href={props.help.link} target="_blank" rel="noreferrer">
+                More
+              </a>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      <div className="ui-header-actions">{props.actions}</div>
+    </header>
+  );
+}
+
+/** Formats a value for display. */
+export function formatValue(value: unknown, format?: string, currency?: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value === "number") {
+    switch (format) {
+      case "currency":
+        return new Intl.NumberFormat(undefined, {
+          style: "currency",
+          currency: typeof currency === "string" ? currency : "EUR",
+        }).format(value);
+      case "percent":
+        return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
+      case "duration":
+        return `${value}s`;
+      case "bytes":
+        return `${new Intl.NumberFormat().format(value)} B`;
+      default:
+        return new Intl.NumberFormat().format(value);
+    }
+  }
+  if (typeof value === "string" && (format === "date" || format === "time")) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return format === "date" ? date.toLocaleDateString() : date.toLocaleString();
+    }
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => formatValue(entry, format, currency)).join(", ");
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.amount === "number") {
+      return formatValue(record.amount, "currency", record.currency);
+    }
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/** Resolves a row field or an expression to display. */
+export function display(row: unknown, field: string): unknown {
+  return getPath(row, field.split("."));
+}
+
+/** A JSON value typed for a read's params and rows. */
+export type Row = Json;

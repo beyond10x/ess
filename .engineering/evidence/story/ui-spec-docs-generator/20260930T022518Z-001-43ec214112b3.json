@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T02:25:18Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-docs-generator",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui-docs (49 passed incl. adversary passes 1 and 2); clippy; the committed Markdown equals a fresh render",
+    "reference": "impl/ui-docs@cb1a1cace"
+  }
+}

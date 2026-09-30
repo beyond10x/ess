@@ -1,0 +1,12 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+
+/** A rule between siblings. */
+export function DividerView(props: { "data-ui-path": string; orientation?: string }): ReactNode {
+  return (
+    <hr
+      className={`ui-divider ui-divider-${props.orientation ?? "horizontal"}`}
+      data-ui-path={useUiPath(props["data-ui-path"])}
+    />
+  );
+}

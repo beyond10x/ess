@@ -259,6 +259,7 @@ fn the_sidebar_has_the_adopter_categories_in_order_collapsed() {
             "reference/cli",
             "reference/diagnostics",
             "reference/formats",
+            "reference/ess-ui",
             "reference/spec-versions",
             "reference/predicates",
             "reference/glossary",

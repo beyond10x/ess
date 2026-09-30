@@ -20,8 +20,9 @@ use std::{fs, str};
 ///
 /// `specify` carries an authored system to a validated IR, `generate` turns that IR into
 /// artifacts, `verify` compares an implementation against it, `infra` is the separate bounded
-/// context over an observed cluster, and `edge` is the binary and the repository's own tooling.
-const AREAS: &[&str] = &["specify", "generate", "verify", "infra", "edge"];
+/// context over an observed cluster, `ui` reads renderer-neutral UI documents (`ess-ui/1`), and
+/// `edge` is the binary and the repository's own tooling.
+const AREAS: &[&str] = &["specify", "generate", "verify", "infra", "ui", "edge"];
 
 /// Root-relative directory prefixes the path scan does not read.
 ///

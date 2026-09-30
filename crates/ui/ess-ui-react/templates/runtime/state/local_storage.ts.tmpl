@@ -1,0 +1,6 @@
+import { useStorage } from "./storage";
+
+/** `store: local_storage` — survives reloads and new tabs on this browser. */
+export function useLocalStorageState<T>(key: string, initial: T): [T, (value: T) => void] {
+  return useStorage(() => (typeof localStorage === "undefined" ? undefined : localStorage), key, initial);
+}

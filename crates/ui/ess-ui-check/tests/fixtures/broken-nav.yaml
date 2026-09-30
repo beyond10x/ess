@@ -1,0 +1,12 @@
+format: ess-ui/1
+app: t
+model: t.system
+placement_profile: fat
+fixtures: {index: fixture-index.yaml}
+shells:
+  app: {regions: {main: {kind: page_outlet}}}
+navigation:
+  home: ghost
+  sections: [{name: all, pages: [p]}]
+pages:
+  p: {kind: detail_page, title: P, sections: [{name: summary, reads: t.ById}]}

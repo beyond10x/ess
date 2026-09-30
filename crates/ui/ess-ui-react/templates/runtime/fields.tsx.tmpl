@@ -1,0 +1,214 @@
+// Fields: a column or record field displayed, or a form field edited.
+
+import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useUiPath } from "./core";
+import { display, formatValue, ScopeLayer, useScope } from "./core";
+import { evaluate, truthy } from "./expr";
+
+/** A field as the document declares it, with its node path. */
+export interface FieldSpec {
+  "data-ui-path": string;
+  field: string;
+  name: string;
+  label?: string;
+  as?: string;
+  sortable?: boolean;
+  visible?: string;
+  binds?: string;
+  note?: string;
+  choice?: ReactNode;
+}
+
+/** The heading of a field. */
+export function fieldLabel(field: FieldSpec): string {
+  return field.label ?? field.name.replace(/_/g, " ");
+}
+
+/** Whether a field is shown in the current scope. */
+export function useFieldVisible(field: FieldSpec): boolean {
+  const scope = useScope();
+  return field.visible === undefined || truthy(evaluate(field.visible, scope.values));
+}
+
+/** A field's value in a row, rendered by its `as`. */
+export function FieldValue(props: { field: FieldSpec; row: unknown }): ReactNode {
+  const { field } = props;
+  const value = display(props.row, field.field);
+  let content: ReactNode;
+  switch (field.as) {
+    case "badge":
+    case "choice":
+      content = <span className={`ui-badge ui-badge-${String(value)}`}>{formatValue(value)}</span>;
+      break;
+    case "tags":
+      content = (Array.isArray(value) ? value : []).map((tag) => (
+        <span key={String(tag)} className="ui-tag">
+          {String(tag)}
+        </span>
+      ));
+      break;
+    case "json":
+      content = <pre className="ui-json">{JSON.stringify(value, null, 2)}</pre>;
+      break;
+    case "secret":
+      content = "••••••••";
+      break;
+    default:
+      content = formatValue(value, field.as);
+  }
+  return (
+    <span className={`ui-field ui-field-${field.as ?? "text"}`} data-ui-path={useUiPath(field["data-ui-path"])}>
+      {content}
+    </span>
+  );
+}
+
+/** A field edited in a form; it writes to `binds`, or to `draft.<field>`. */
+export function FieldInput(props: { field: FieldSpec }): ReactNode {
+  const { field } = props;
+  const scope = useScope();
+  const visible = useFieldVisible(field);
+  if (!visible) {
+    return null;
+  }
+  const target = field.binds ?? `draft.${field.field}`;
+  const value = evaluate(target, scope.values);
+  const set = (next: unknown) => scope.set(target, next);
+  const text = value === undefined || value === null || typeof value === "object" ? "" : String(value);
+  let control: ReactNode;
+  switch (field.as) {
+    case "choice":
+      control = field.choice ? (
+        <ScopeLayer actions={{ pick: (next: unknown) => set(next) }}>{field.choice}</ScopeLayer>
+      ) : (
+        <input value={text} onChange={(event: ChangeEvent<HTMLInputElement>) => set(event.target.value)} />
+      );
+      break;
+    case "number":
+      control = (
+        <input
+          type="number"
+          value={text}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            set(event.target.value === "" ? null : Number(event.target.value))
+          }
+        />
+      );
+      break;
+    case "date":
+    case "time":
+      control = (
+        <input
+          type={field.as === "date" ? "date" : "datetime-local"}
+          value={text}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => set(event.target.value)}
+        />
+      );
+      break;
+    case "toggle":
+      control = (
+        <input
+          type="checkbox"
+          checked={truthy(value)}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => set(event.target.checked)}
+        />
+      );
+      break;
+    case "secret":
+      control = (
+        <input type="password" value={text} onChange={(event: ChangeEvent<HTMLInputElement>) => set(event.target.value)} />
+      );
+      break;
+    case "rich_text":
+    case "json":
+      control = (
+        <textarea
+          rows={field.as === "json" ? 6 : 4}
+          value={field.as === "json" && typeof value === "object" ? JSON.stringify(value, null, 2) : text}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => set(event.target.value)}
+        />
+      );
+      break;
+    case "tags":
+      control = (
+        <input
+          value={Array.isArray(value) ? value.join(", ") : text}
+          placeholder="comma, separated"
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            set(
+              event.target.value
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter((tag) => tag.length > 0),
+            )
+          }
+        />
+      );
+      break;
+    case "file":
+      control = (
+        <input
+          type="file"
+          onChange={(event: ChangeEvent<HTMLInputElement>) => set(event.target.files?.[0]?.name ?? null)}
+        />
+      );
+      break;
+    default:
+      control = (
+        <input
+          type={field.as === "search" ? "search" : "text"}
+          value={text}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => set(event.target.value)}
+        />
+      );
+  }
+  return (
+    <label className="ui-form-field" data-ui-path={useUiPath(field["data-ui-path"])}>
+      <span className="ui-form-label">{fieldLabel(field)}</span>
+      {control}
+      {field.note ? <small className="ui-note">{field.note}</small> : null}
+    </label>
+  );
+}
+
+/** A tab of a record or form. */
+export interface TabSpec {
+  "data-ui-path": string;
+  name: string;
+  label?: string;
+  visible?: string;
+  fields?: FieldSpec[];
+  content?: ReactNode;
+}
+
+/** Tabs: one panel shown at a time. */
+export function Tabs(props: { tabs: TabSpec[]; panel: (tab: TabSpec) => ReactNode }): ReactNode {
+  const scope = useScope();
+  const shown = props.tabs.filter((tab) => tab.visible === undefined || truthy(evaluate(tab.visible, scope.values)));
+  const [active, setActive] = useState(shown[0]?.name);
+  const current = shown.find((tab) => tab.name === active) ?? shown[0];
+  return (
+    <div className="ui-tabs">
+      <div role="tablist">
+        {shown.map((tab) => (
+          <button
+            key={tab.name}
+            type="button"
+            role="tab"
+            aria-selected={tab.name === current?.name}
+            className="ui-tab"
+            onClick={() => setActive(tab.name)}
+          >
+            {tab.label ?? tab.name}
+          </button>
+        ))}
+      </div>
+      {current ? (
+        <div role="tabpanel" data-ui-path={useUiPath(current["data-ui-path"])}>
+          {props.panel(current)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+

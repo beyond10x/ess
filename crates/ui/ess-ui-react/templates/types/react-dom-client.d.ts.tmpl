@@ -1,0 +1,8 @@
+// Minimal offline declaration of react-dom/client; see types/react.d.ts.
+import type { ReactNode } from "react";
+
+export interface Root {
+  render(node: ReactNode): void;
+  unmount(): void;
+}
+export function createRoot(container: Element): Root;

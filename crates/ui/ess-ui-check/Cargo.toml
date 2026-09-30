@@ -1,0 +1,21 @@
+[package]
+name = "ess-ui-check"
+description = "Every check an ess-ui/1 document is held to — the schema's checks.list and, with a model, the ESS views, commands, events and grants it names — reported by canonical node path."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-ui = { path = "../ess-ui" }
+ess-domain.workspace = true
+ess-compiler.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+[lints]
+workspace = true

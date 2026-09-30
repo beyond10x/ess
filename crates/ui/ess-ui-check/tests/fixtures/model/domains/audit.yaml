@@ -1,0 +1,65 @@
+domain: shop.audit
+
+summary: A record of who looked at what; no actor is granted any of it.
+
+naming:
+  wire: audit
+  display: Audit
+
+types:
+  - name: shop.audit.EntryId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: shop.audit.Entry
+    identity:
+      name: entry_id
+      type: shop.audit.EntryId
+    fields:
+      - name: note
+        type: String
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+commands:
+  - name: shop.audit.RecordEntry
+    naming:
+      wire: record-entry
+      display: Record an entry
+    input:
+      - name: note
+        type: String
+    outcomes:
+      - name: recorded
+        creates: shop.audit.Entry
+        instance: entry_id
+        emits:
+          - shop.audit.EntryRecorded
+        payload:
+          shop.audit.EntryRecorded:
+            note: input.note
+        summary: The entry is recorded.
+
+events:
+  - name: shop.audit.EntryRecorded
+    fields:
+      - name: entry_id
+        type: shop.audit.EntryId
+      - name: note
+        type: String
+
+views:
+  - name: shop.audit.Entries
+    source: shop.audit.Entry
+    consistency: read_your_writes
+    fields:
+      - name: entry_id
+        type: shop.audit.EntryId
+      - name: note
+        type: String
+    naming:
+      wire: entries
+      display: Entries

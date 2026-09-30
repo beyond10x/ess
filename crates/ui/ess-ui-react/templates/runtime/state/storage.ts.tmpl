@@ -1,0 +1,53 @@
+import { useState } from "react";
+import { useScope } from "../core";
+import { isObject } from "../json";
+
+/**
+ * The Web Storage key of a state: the schema keys session and local storage by
+ * `[origin, actor.user_id, actor.account_id]`. The origin is the storage area's own; the actor
+ * is added here, as a JSON array so that no id, whatever it contains, can make two actors share
+ * a key.
+ */
+export function storageKey(key: string, actor: unknown): string {
+  const user = isObject(actor) && typeof actor.user_id === "string" ? actor.user_id : null;
+  const account = isObject(actor) && typeof actor.account_id === "string" ? actor.account_id : null;
+  return JSON.stringify([key, user, account]);
+}
+
+/** The value stored under `key`, or `initial` when nothing is. */
+export function loadStored<T>(area: Storage | undefined, key: string, initial: T): T {
+  try {
+    const raw = area?.getItem(key);
+    return raw === null || raw === undefined ? initial : (JSON.parse(raw) as T);
+  } catch {
+    return initial;
+  }
+}
+
+/**
+ * A value kept in a Web Storage area under the state's key for the current actor, as JSON.
+ * The value is held together with the key it was read under; a render whose actor key differs
+ * reads the new actor's value (or `initial`) during that render, so no render ever returns the
+ * previous actor's value.
+ */
+export function useStorage<T>(area: () => Storage | undefined, key: string, initial: T): [T, (value: T) => void] {
+  const actorKey = storageKey(key, useScope().values.actor);
+  const [held, setHeld] = useState<{ key: string; value: T }>(() => ({
+    key: actorKey,
+    value: loadStored(area(), actorKey, initial),
+  }));
+  let value = held.value;
+  if (held.key !== actorKey) {
+    value = loadStored(area(), actorKey, initial);
+    setHeld({ key: actorKey, value });
+  }
+  const set = (next: T) => {
+    setHeld({ key: actorKey, value: next });
+    try {
+      area()?.setItem(actorKey, JSON.stringify(next));
+    } catch {
+      // A full or unavailable storage area keeps the value in memory only.
+    }
+  };
+  return [value, set];
+}

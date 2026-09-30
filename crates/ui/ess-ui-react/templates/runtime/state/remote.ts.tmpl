@@ -1,0 +1,56 @@
+import { useEffect, useState } from "react";
+import { dataAdapter } from "../data";
+import type { Json } from "../json";
+import { loadStored } from "./storage";
+
+/**
+ * Server-held state, loaded once per key and saved on every change through the data adapter;
+ * with `local`, held in that storage area instead (a `fallback`). The value is held with its
+ * key: a render under a new key starts from what that key holds, or `initial`, never from the
+ * previous key's value.
+ */
+export function useRemoteState<T>(
+  store: "server" | "server_session",
+  key: string,
+  initial: T,
+  local?: () => Storage | undefined,
+): [T, (value: T) => void] {
+  const source = local ? "local" : "remote";
+  const heldKey = `${source}:${key}`;
+  const [held, setHeld] = useState<{ key: string; value: T }>(() => ({
+    key: heldKey,
+    value: local ? loadStored(local(), key, initial) : initial,
+  }));
+  let value = held.value;
+  if (held.key !== heldKey) {
+    value = local ? loadStored(local(), key, initial) : initial;
+    setHeld({ key: heldKey, value });
+  }
+  useEffect(() => {
+    if (local) {
+      return;
+    }
+    let live = true;
+    void dataAdapter()
+      .loadState(store, key)
+      .then((loaded) => {
+        if (live && loaded !== undefined) {
+          setHeld({ key: heldKey, value: loaded as T });
+        }
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, heldKey]);
+  const set = (next: T) => {
+    setHeld({ key: heldKey, value: next });
+    const area = local?.();
+    if (area) {
+      area.setItem(key, JSON.stringify(next));
+    } else {
+      void dataAdapter().saveState(store, key, next as Json);
+    }
+  };
+  return [value, set];
+}
