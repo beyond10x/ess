@@ -24,7 +24,7 @@
 //! | [`SystemChange`] | `EssIr::{version, summary}` — `system` is the refusal, and `naming` is a field no document can set |
 //! | [`TypeChange`] | `ResolvedType::{body, naming, reading}`, and `body` down to every arm of `ResolvedBody` |
 //! | [`EntityChange`] | `ResolvedEntity::{domain, identity, fields, lifecycle, invariants, naming}` — `state_type` is derived from the name, and the lifecycle's *state set* is the synthesised `<Entity>.State` enum, which the type family already reports variant by variant |
-//! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming}`, and each outcome down to `ResolvedOutcome::{condition, subject, emits, payload, error, summary}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`), so comparing it would report one edit twice |
+//! | [`CommandChange`] | `ResolvedCommand::{domain, input, outcomes, naming}`, and each outcome down to `ResolvedOutcome::{condition, subject, replays, complete_refusal, emits, payload, error, error_payload, refuses, accepts_nothing, returns, summary, sets, decided_by_caller, instances, affects}` — `test_strategy` is a pure function of the condition (`OutcomeCondition::test_strategy`) and `retains_result` of every outcome's `replays`, so comparing either would report one edit twice; `refs` stays residual |
 //! | [`EventChange`] | `ResolvedEvent::{domain, fields, naming}` |
 //! | [`ErrorChange`] | `ResolvedError::{domain, summary, fields, naming}` |
 //! | [`ViewChange`] | `ResolvedView::{domain, source, fields, filter, consistency, naming}` — `assertion_style` is a pure function of the consistency (`Consistency::assertion_style`) |
@@ -401,6 +401,7 @@ impl SemanticChange {
                     | BindingChange::ContextFieldSummaryChanged { .. },
                 ..
             } => 10,
+            Self::Command { changed, .. } if changed.is_diff_12() => 12,
             Self::Type { changed, .. } if changed.is_prefix() => 11,
             Self::View {
                 changed: ViewChange::PagingChanged { .. },
@@ -2263,6 +2264,61 @@ pub enum CommandChange {
         /// What it determines.
         after: Vec<String>,
     },
+    /// A branch declares where its reported error's fields come from (ess/19 error `payload:`),
+    /// and did not before. Only an `ess-diff/12` delta carries it (beyond10x/ess#253).
+    OutcomeErrorPayloadAdded {
+        /// Which branch.
+        outcome: String,
+        /// What it determines, one line per error field.
+        after: Vec<String>,
+    },
+    /// A branch no longer declares any source for its reported error's fields. `ess-diff/12`.
+    OutcomeErrorPayloadRemoved {
+        /// Which branch.
+        outcome: String,
+        /// What it determined, one line per error field.
+        before: Vec<String>,
+    },
+    /// Which of its reported error's fields a branch determines, or from what, differs.
+    /// `ess-diff/12`.
+    OutcomeErrorPayloadChanged {
+        /// Which branch.
+        outcome: String,
+        /// What it determined, one line per error field.
+        before: Vec<String>,
+        /// What it determines.
+        after: Vec<String>,
+    },
+    /// Whether a branch accepts a request and changes nothing observable (ess/15
+    /// `accepts: nothing`) moved. `ess-diff/12`.
+    OutcomeAcceptsNothingChanged {
+        /// Which branch.
+        outcome: String,
+        /// Whether it accepted nothing.
+        before: bool,
+        /// Whether it accepts nothing.
+        after: bool,
+    },
+    /// Whether a branch returns the command's typed response (ess/17 `returns:`) moved.
+    /// `ess-diff/12`.
+    OutcomeReturnsChanged {
+        /// Which branch.
+        outcome: String,
+        /// Whether it returned the response.
+        before: bool,
+        /// Whether it returns the response.
+        after: bool,
+    },
+    /// Whether the authenticated caller decides a branch (ess/16), so a refusal answers as
+    /// forbidden rather than as a bad request, moved. `ess-diff/12`.
+    OutcomeDecidedByCallerChanged {
+        /// Which branch.
+        outcome: String,
+        /// Whether the caller decided it.
+        before: bool,
+        /// Whether the caller decides it.
+        after: bool,
+    },
     /// The error a branch reports differs.
     OutcomeErrorChanged {
         /// Which branch.
@@ -2370,6 +2426,12 @@ impl CommandChange {
             Self::OutcomeSubjectChanged { .. } => "outcome-subject-changed",
             Self::OutcomeEmitsChanged { .. } => "outcome-emits-changed",
             Self::OutcomePayloadChanged { .. } => "outcome-payload-changed",
+            Self::OutcomeErrorPayloadAdded { .. } => "outcome-error-payload-added",
+            Self::OutcomeErrorPayloadRemoved { .. } => "outcome-error-payload-removed",
+            Self::OutcomeErrorPayloadChanged { .. } => "outcome-error-payload-changed",
+            Self::OutcomeAcceptsNothingChanged { .. } => "outcome-accepts-nothing-changed",
+            Self::OutcomeReturnsChanged { .. } => "outcome-returns-changed",
+            Self::OutcomeDecidedByCallerChanged { .. } => "outcome-decided-by-caller-changed",
             Self::OutcomeErrorChanged { .. } => "outcome-error-changed",
             Self::OutcomeSummaryChanged { .. } => "outcome-summary-changed",
             Self::OutcomeOrderChanged { .. } => "outcome-order-changed",
@@ -2401,6 +2463,12 @@ impl CommandChange {
             | Self::OutcomeEmitsChanged { outcome, .. }
             | Self::OutcomePayloadChanged { outcome, .. }
             | Self::OutcomeResponsePayloadChanged { outcome, .. }
+            | Self::OutcomeErrorPayloadAdded { outcome, .. }
+            | Self::OutcomeErrorPayloadRemoved { outcome, .. }
+            | Self::OutcomeErrorPayloadChanged { outcome, .. }
+            | Self::OutcomeAcceptsNothingChanged { outcome, .. }
+            | Self::OutcomeReturnsChanged { outcome, .. }
+            | Self::OutcomeDecidedByCallerChanged { outcome, .. }
             | Self::OutcomeErrorChanged { outcome, .. }
             | Self::OutcomeSummaryChanged { outcome, .. } => Some(outcome.clone()),
             _ => None,
@@ -2412,6 +2480,68 @@ impl CommandChange {
     /// branch's condition, which is exactly the proof this slice refuses to attempt.
     pub const fn relation(&self) -> SemanticRelation {
         SemanticRelation::Changed
+    }
+
+    /// Whether this is `ess-diff/12` vocabulary — an error payload change or an outcome flag
+    /// (`accepts: nothing`, `returns:`, caller-decided) that moved: `ess-diff/11` shipped in 0.42.0
+    /// without them.
+    const fn is_diff_12(&self) -> bool {
+        matches!(
+            self,
+            Self::OutcomeErrorPayloadAdded { .. }
+                | Self::OutcomeErrorPayloadRemoved { .. }
+                | Self::OutcomeErrorPayloadChanged { .. }
+                | Self::OutcomeAcceptsNothingChanged { .. }
+                | Self::OutcomeReturnsChanged { .. }
+                | Self::OutcomeDecidedByCallerChanged { .. }
+        )
+    }
+
+    /// The clause for an outcome flag or error payload change, and empty for every other change.
+    fn flag_clause(&self) -> String {
+        let (outcome, flag, before, after) = match self {
+            Self::OutcomeAcceptsNothingChanged {
+                outcome,
+                before,
+                after,
+            } => (outcome, "accepts nothing", before, after),
+            Self::OutcomeReturnsChanged {
+                outcome,
+                before,
+                after,
+            } => (outcome, "returns the response", before, after),
+            Self::OutcomeDecidedByCallerChanged {
+                outcome,
+                before,
+                after,
+            } => (outcome, "decided by the caller", before, after),
+            _ => return self.error_payload_clause(),
+        };
+        format!("outcome `{outcome}` {flag} {before} → {after}")
+    }
+
+    /// The clause for an error payload change, and empty for every other change.
+    fn error_payload_clause(&self) -> String {
+        match self {
+            Self::OutcomeErrorPayloadAdded { outcome, after } => format!(
+                "outcome `{outcome}` determines error payload [{}], determined none",
+                after.join(", ")
+            ),
+            Self::OutcomeErrorPayloadRemoved { outcome, before } => format!(
+                "outcome `{outcome}` determines no error payload, determined [{}]",
+                before.join(", ")
+            ),
+            Self::OutcomeErrorPayloadChanged {
+                outcome,
+                before,
+                after,
+            } => format!(
+                "outcome `{outcome}` determines error payload [{}], determined [{}]",
+                after.join(", "),
+                before.join(", ")
+            ),
+            _ => String::new(),
+        }
     }
 
     /// The clause for [`Self::OutcomeSetEffectChanged`], and empty for every other change.
@@ -2543,6 +2673,8 @@ impl CommandChange {
                 optional(before.as_ref()),
                 optional(after.as_ref())
             ),
+            // The `ess-diff/12` outcome kinds: error payload sources and outcome flags.
+            _ => self.flag_clause(),
         }
     }
 }
