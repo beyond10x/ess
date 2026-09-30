@@ -1848,6 +1848,13 @@ pub struct Outcome {
     pub payload: BTreeMap<QualifiedName, BTreeMap<String, PayloadSource>>,
     /// The error this outcome reports, from the domain's declared error vocabulary.
     pub error: Option<QualifiedName>,
+    /// Where the fields of [`Self::error`] come from, keyed by the error's field (ess/19,
+    /// `story:error-payload-sources`).
+    ///
+    /// Written as the `payload:` block keyed by the error, and taking the sources an event payload
+    /// takes. Sparse, as an event's is: a field with no source here is carried as none, as every
+    /// error field was before `ess/19`.
+    pub error_payload: BTreeMap<String, PayloadSource>,
     /// Whether a [`WrongState`](OutcomeCondition::WrongState) branch refuses or accepts.
     ///
     /// `true` on every other kind of outcome and read by nothing there. On a wrong-state branch it
@@ -1887,6 +1894,7 @@ impl Outcome {
             replays: None,
             emits,
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: None,
             refuses: true,
             accepts_nothing: false,
@@ -1907,6 +1915,7 @@ impl Outcome {
             replays: None,
             emits,
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: None,
             refuses: true,
             accepts_nothing: false,
@@ -1931,6 +1940,7 @@ impl Outcome {
             replays: None,
             emits: Vec::new(),
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: Some(error),
             refuses: true,
             accepts_nothing: false,
@@ -2408,6 +2418,30 @@ impl CommandSpec {
         location: &ConstructRef,
     ) -> ValidationErrors {
         let mut errors = ValidationErrors::new();
+        if let Some(error) = &outcome.error {
+            for (target, source) in &outcome.error_payload {
+                let PayloadSource::InputField { field } = source else {
+                    continue;
+                };
+                if !inputs.contains(field.as_str()) {
+                    errors.push(
+                        ValidationError::at(
+                            location
+                                .clone()
+                                .key("payload")
+                                .named(error.to_string())
+                                .named(target),
+                            ValidationCode::UndeclaredReference,
+                            format!(
+                                "`{source}` reads `{field}`, which `{}` does not declare as input",
+                                self.name
+                            ),
+                        )
+                        .with_hint(format!("declared input: {}", join(inputs.iter()))),
+                    );
+                }
+            }
+        }
         for (event, fields) in &outcome.payload {
             if !outcome.emits.contains(event) {
                 errors.push(
@@ -2420,7 +2454,12 @@ impl CommandSpec {
                             outcome.name
                         ),
                     )
-                    .with_hint(if outcome.emits.is_empty() {
+                    .with_hint(if let Some(error) = &outcome.error {
+                        format!(
+                            "this branch reports `{error}`; a block keyed `{error}` says where \
+                             that error's fields come from (ess/19)"
+                        )
+                    } else if outcome.emits.is_empty() {
                         "this branch emits nothing; a refusal has no payload to determine"
                             .to_owned()
                     } else {
@@ -3107,6 +3146,56 @@ fn check_payload_entry(
     errors
 }
 
+/// The format and vocabulary half of an outcome's error payload (ess/19,
+/// `story:error-payload-sources`): an earlier header refuses the block by name, and a refusal has
+/// no response to read. The fields and types are checked by `value_expression::validate`.
+fn error_payload_contract(
+    format: crate::system::FormatVersion,
+    outcome: &Outcome,
+    at: &ConstructRef,
+) -> ValidationErrors {
+    let mut errors = ValidationErrors::new();
+    let Some(error) = outcome
+        .error
+        .as_ref()
+        .filter(|_| !outcome.error_payload.is_empty())
+    else {
+        return errors;
+    };
+    if format.major() < crate::system::FormatVersion::V19.major() {
+        errors.push(
+            ValidationError::at(
+                at.clone().key("payload").named(error.to_string()),
+                ValidationCode::UnsupportedFormatVersion,
+                format!("`payload:` for the error `{error}` requires specification format ess/19"),
+            )
+            .with_hint("declare `format: ess/19`"),
+        );
+    }
+    for (field, source) in &outcome.error_payload {
+        if matches!(source, PayloadSource::ResponseField { .. }) {
+            errors.push(
+                ValidationError::at(
+                    at.clone()
+                        .key("payload")
+                        .named(error.to_string())
+                        .named(field),
+                    ValidationCode::ConflictingDeclaration,
+                    format!(
+                        "`{error}.{field}` reads the command's response, and a branch reporting \
+                         an error returns none"
+                    ),
+                )
+                .with_hint(
+                    "fill it from the input, a literal, the row the refusal is answered for, the \
+                     caller or `{generated: true}`",
+                ),
+            );
+        }
+    }
+    errors
+}
+
 /// Admit response vocabulary and the source-version-specific emitted payload completeness rule.
 pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> ValidationErrors {
     let mut errors = ValidationErrors::new();
@@ -3171,6 +3260,7 @@ pub(crate) fn validate_response_contracts(spec: &crate::Specification) -> Valida
                     ));
                 }
             }
+            errors.extend(error_payload_contract(spec.system().format, outcome, &at));
             for (event, fields) in &outcome.payload {
                 for (field, source) in fields {
                     if !modern
@@ -4856,7 +4946,9 @@ pub struct RawOutcome {
     /// Where the emitted events' payload fields come from, for the fields the author determines.
     ///
     /// Keyed by emitted event, then by that event's field, and sparse on both levels — see
-    /// [`PayloadSource`] for why an absent field is a statement rather than an omission.
+    /// [`PayloadSource`] for why an absent field is a statement rather than an omission. From
+    /// `ess/19` a block keyed by the error the outcome reports says where that error's fields come
+    /// from ([`Outcome::error_payload`]).
     #[serde(default, skip_serializing_if = "PayloadDeclaration::is_empty")]
     pub payload: PayloadDeclaration,
     /// Which fields of the subject this outcome sets, and from where.
@@ -5273,8 +5365,19 @@ impl TryFrom<RawOutcome> for Outcome {
                  the state already held is answered by the default branch beside it",
             ));
         }
+        let mut payload = keyed_payload(&raw.name, raw.payload)?;
+        // The block keyed by the error this branch reports is that error's (ess/19,
+        // `story:error-payload-sources`); every other block stays an event's, and one about an
+        // event the branch does not emit is refused where it always was.
+        let error_payload = raw
+            .error
+            .as_ref()
+            .filter(|error| !raw.emits.contains(error))
+            .and_then(|error| payload.remove(error))
+            .unwrap_or_default();
         Ok(Self {
-            payload: keyed_payload(&raw.name, raw.payload)?,
+            payload,
+            error_payload,
             sets: keyed_sets(&raw.name, raw.sets)?,
             name: raw.name,
             condition,
@@ -5645,6 +5748,13 @@ impl From<Outcome> for RawOutcome {
             outcome
                 .payload
                 .into_iter()
+                .chain(
+                    outcome
+                        .error
+                        .clone()
+                        .filter(|_| !outcome.error_payload.is_empty())
+                        .map(|error| (error, outcome.error_payload)),
+                )
                 .map(|(event, fields)| {
                     (
                         event,
@@ -5963,6 +6073,7 @@ outcomes:
                 subject: None,
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
+                error_payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
@@ -6011,6 +6122,7 @@ outcomes:
             subject: None,
             emits: vec![name("billing.invoice.InvoiceCreated")],
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
@@ -6049,6 +6161,7 @@ outcomes:
                 subject: None,
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
+                error_payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
@@ -6080,6 +6193,7 @@ outcomes:
             subject: None,
             emits: Vec::new(),
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
@@ -6142,6 +6256,7 @@ outcomes:
             subject: None,
             emits: Vec::new(),
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error,
             refuses: false,
             accepts_nothing: false,
@@ -6223,6 +6338,7 @@ outcomes:
             subject: None,
             emits: Vec::new(),
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: None,
             refuses: false,
             accepts_nothing: false,
@@ -6269,6 +6385,7 @@ outcomes:
                 subject: None,
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
+                error_payload: BTreeMap::new(),
                 error: None,
                 refuses: true,
                 accepts_nothing: false,
@@ -6453,6 +6570,7 @@ outcomes:
                 subject: None,
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
+                error_payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
@@ -6489,6 +6607,7 @@ outcomes:
                 subject: None,
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
+                error_payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.AmountTooLarge")),
                 refuses: true,
                 accepts_nothing: false,
@@ -6614,6 +6733,7 @@ outcomes:
             subject: None,
             emits: Vec::new(),
             payload: BTreeMap::new(),
+            error_payload: BTreeMap::new(),
             error: Some(name("billing.invoice.InvalidAmount")),
             refuses: true,
             accepts_nothing: false,
@@ -6936,6 +7056,7 @@ outcomes:
                 )),
                 emits: Vec::new(),
                 payload: BTreeMap::new(),
+                error_payload: BTreeMap::new(),
                 error: Some(name("billing.invoice.InvalidAmount")),
                 refuses: true,
                 accepts_nothing: false,
@@ -7066,6 +7187,7 @@ outcomes:
                     subject: None,
                     emits: Vec::new(),
                     payload: BTreeMap::new(),
+                    error_payload: BTreeMap::new(),
                     error: Some(name("billing.invoice.InvalidAmount")),
                     refuses: true,
                     accepts_nothing: false,

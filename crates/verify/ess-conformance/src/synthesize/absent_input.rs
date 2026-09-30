@@ -62,10 +62,8 @@ fn scenario(
         ScenarioStep::ExpectOutcome {
             outcome: branch.clone(),
         },
-        ScenarioStep::ExpectError {
-            error: named.clone(),
-            fields: BTreeMap::new(),
-        },
+        // Sent without input and read before any row, so only a literal source is compared.
+        super::expect_error(ir, declared, error, &BTreeMap::new(), &BTreeMap::new()),
     ];
     let mut source: BTreeSet<EssSemanticRef> = BTreeSet::new();
     source.insert(command_ref.into());

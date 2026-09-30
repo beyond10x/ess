@@ -499,22 +499,17 @@ fn expected_obligations() -> Vec<(Capability, ImplementationObligation)> {
                 source: "contract.local.Run".to_owned(),
             },
             ImplementationObligation {
-                reason: ObligationReason::External {
-                    cause: "an upstream authority rejects the request".to_owned(),
+                // Since 0.46 the plan names the construct that keeps a behaviour owed; an
+                // external branch alone no longer does
+                // (`story:generated-behaviour-for-declared-commands`).
+                reason: ObligationReason::Undetermined {
+                    construct: "a typed response (`response:`)".to_owned(),
                 },
                 contract: "given `contract.local.Run` input, decide and enact exactly one outcome — `completed` otherwise, creates `contract.local.Child`, emits `contract.local.PrivateEmission`, emits `contract.local.First`, emits `contract.local.Second`; `rejected` externally decided (an upstream authority rejects the request), error `contract.local.Rejected`".to_owned(),
             },
         ),
-        (
-            Capability {
-                kind: CapabilityKind::ViewQuery,
-                source: "contract.local.ChildById".to_owned(),
-            },
-            ImplementationObligation {
-                reason: ObligationReason::ProjectionMaintenance,
-                contract: "a query answering `contract.local.ChildById` with rows projected from `contract.local.Child` at `read_your_writes` consistency".to_owned(),
-            },
-        ),
+        // `contract.local.ChildById` projects its entity's own fields, so since 0.46 its query is
+        // generated and owed no longer (`story:generated-view-queries`).
         (
             Capability {
                 kind: CapabilityKind::Conversion,
@@ -558,7 +553,7 @@ fn expected_refusals() -> Vec<(Capability, SynthesisRefusal)> {
             SynthesisRefusal {
                 reason: RefusalReason::NeedsCallerIdentity,
                 stage: RefusalStage::Planning,
-                detail: "may invoke `contract.local.Admin`, `contract.local.Run`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling".to_owned(),
+                detail: "may invoke `contract.local.Admin`, `contract.local.Run`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry".to_owned(),
             },
         ),
         (
@@ -579,7 +574,6 @@ fn is_explicitly_non_generated(planned: &ess_synth::PlannedCapability) -> bool {
     matches!(
         (planned.capability.kind, planned.capability.source.as_str()),
         (CapabilityKind::CommandBehavior, "contract.local.Run")
-            | (CapabilityKind::ViewQuery, "contract.local.ChildById")
             | (
                 CapabilityKind::Conversion,
                 "contract.local.Shared -> contract.foreign.ForeignPayload"

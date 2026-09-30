@@ -84,6 +84,18 @@ impl Response {
     }
 }
 
+/// The answer for what a construct's shared path produced: the declared outcome at the status
+/// the contract declares for its branch, or the refusal at the status this surface gives it.
+///
+/// The one place a [`crate::entry::Refused`] becomes a status, so a route and `handle` refuse
+/// with the same words.
+pub fn answer(result: Result<(u16, String), crate::entry::Refused>) -> Response {
+    match result {
+        Ok((status, body)) => Response::new(status, JSON, body),
+        Err(refused) => Response::refusal(refused.status(), &refused.to_string()),
+    }
+}
+
 /// The answer for a path this surface holds under a different method.
 pub fn method_not_allowed(allowed: &str) -> Response {
     Response::refusal(

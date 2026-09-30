@@ -90,11 +90,7 @@
       "kind": "command_behavior",
       "source": "gatepass.visit.AdmitVisitor",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "unspecified_algorithm"
-        },
-        "contract": "given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields"
+        "disposition": "generated"
       }
     },
     {
@@ -110,7 +106,8 @@
       "disposition": {
         "disposition": "obligation",
         "reason": {
-          "class": "unspecified_algorithm"
+          "class": "undetermined",
+          "construct": "`creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered`"
         },
         "contract": "given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength`"
       }
@@ -126,11 +123,7 @@
       "kind": "command_behavior",
       "source": "gatepass.visit.SignOutVisitor",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "unspecified_algorithm"
-        },
-        "contract": "given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields"
+        "disposition": "generated"
       }
     },
     {
@@ -179,11 +172,7 @@
       "kind": "view_query",
       "source": "gatepass.visit.ExpectedVisits",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "projection_maintenance"
-        },
-        "contract": "a query answering `gatepass.visit.ExpectedVisits` with rows projected from `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected`"
+        "disposition": "generated"
       }
     },
     {
@@ -197,11 +186,7 @@
       "kind": "view_query",
       "source": "gatepass.visit.VisitById",
       "disposition": {
-        "disposition": "obligation",
-        "reason": {
-          "class": "projection_maintenance"
-        },
-        "contract": "a query answering `gatepass.visit.VisitById` with rows projected from `gatepass.visit.Visit` at `eventual` consistency"
+        "disposition": "generated"
       }
     },
     {
@@ -211,7 +196,7 @@
         "disposition": "refused",
         "reason": "needs_caller_identity",
         "stage": "planning",
-        "detail": "may invoke `gatepass.visit.AdmitVisitor`, `gatepass.visit.RegisterVisit`, `gatepass.visit.SignOutVisitor`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling"
+        "detail": "may invoke `gatepass.visit.AdmitVisitor`, `gatepass.visit.RegisterVisit`, `gatepass.visit.SignOutVisitor`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry"
       }
     },
     {
@@ -221,7 +206,7 @@
         "disposition": "refused",
         "reason": "needs_caller_identity",
         "stage": "planning",
-        "detail": "observes only; it may invoke no command; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling"
+        "detail": "observes only; it may invoke no command; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry"
       }
     },
     {

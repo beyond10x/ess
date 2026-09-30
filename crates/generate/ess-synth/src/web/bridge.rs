@@ -544,6 +544,21 @@ fn unrealized(out: &mut String, bridge: &Bridge<'_>) {
                 continue;
             }
             let input = port::types_path(layout, types, declared);
+            if bridge.plan.is_generated(
+                crate::plan::CapabilityKind::CommandBehavior,
+                &declared.to_string(),
+            ) {
+                // The behaviour is generated, over storage and context ports nobody has linked:
+                // refused naming what is missing, not the behaviour, which is not owed.
+                let _ = write!(
+                    out,
+                    "\nimpl {trait_path} for Unrealized {{\n    fn {method}(&mut self, _input: \
+                     {input}) -> Result<{input}Outcome, {types}::obligation::UnmetObligation> \
+                     {{\n        Err({types}::obligation::UnmetObligation {{ capability: \
+                     \"behaviour ports\", source: \"{declared}\" }})\n    }}\n}}\n"
+                );
+                continue;
+            }
             let _ = write!(
                 out,
                 "\nimpl {trait_path} for Unrealized {{\n    fn {method}(&mut self, input: \
@@ -563,6 +578,21 @@ fn unrealized(out: &mut String, bridge: &Bridge<'_>) {
                     continue;
                 }
                 let row = port::types_path(layout, types, declared);
+                if bridge.plan.is_generated(
+                    crate::plan::CapabilityKind::ViewQuery,
+                    &declared.to_string(),
+                ) {
+                    // The query is generated, over a storage port nobody has linked: refused
+                    // naming what is missing, not the query, which is not owed.
+                    let _ = write!(
+                        out,
+                        "\nimpl {trait_path} for Unrealized {{\n    fn {method}(&self) -> \
+                         Result<Vec<{row}>, {types}::obligation::UnmetObligation> {{\n        \
+                         Err({types}::obligation::UnmetObligation {{ capability: \"query \
+                         ports\", source: \"{declared}\" }})\n    }}\n}}\n"
+                    );
+                    continue;
+                }
                 let _ = write!(
                     out,
                     "\nimpl {trait_path} for Unrealized {{\n    fn {method}(&self) -> \

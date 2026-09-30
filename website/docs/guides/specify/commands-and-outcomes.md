@@ -1,7 +1,7 @@
 ---
 title: Commands and outcomes
 sidebar_position: 4
-description: Wrong-state answers, unknown instances, empty requests, selection by existence or filter, deletion, creation states, outcomes that change nothing, ambient preconditions and event value sources.
+description: Wrong-state answers, unknown instances, empty requests, selection by existence or filter, deletion, creation states, outcomes that change nothing, ambient preconditions, and the value sources of events and errors.
 ---
 
 # Commands and outcomes
@@ -331,3 +331,35 @@ A command may declare a closed typed `response` record and map one of its fields
 retains its historical literal meaning. Input mappings keep their existing spelling.
 Missing fields, unknown response members and incompatible types are refused. Conformance
 checks compare mapped values with the actual response from the same command invocation.
+
+## An error's fields can have a declared source
+
+From `format: ess/19`, an outcome that reports an error may say what fills the error's fields, in a
+`payload:` block keyed by the error, the same way it does for an event:
+
+```yaml
+- name: too-many
+  when: quantity > 10
+  error: demo.order.TooMany
+  payload:
+    demo.order.TooMany: {requested: input.quantity, limit: 10, reason: Quantity}
+- name: already-closed
+  wrong_state: true
+  error: demo.order.AlreadyClosed
+  payload:
+    demo.order.AlreadyClosed: {order_id: input.order_id, quantity: {subject: quantity}}
+```
+
+A field takes the sources an event field takes: an input field, a literal, `{subject: …}`,
+`{caller: …}` or `{generated: true}`. `{subject: …}` reads the row the refusal is answered for, so
+it is refused on a refusal that reads no row, such as an input-guarded one on a command that
+creates. A field the error does not declare, and a source of another type than the field, are
+refused as they are on an event; `{cleared}` and a response field are refused on an error. A field
+needs no line: without one, the implementation fills it, as before `ess/19`. The conformance suite
+compares each field that has a source, except a generated one, which is the implementation's to
+choose. Earlier formats refuse the block as `unsupported_format_version`. The
+[fixture](https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/tests/fixtures/error-payload-sources.yaml)
+covers every refusal position.
+
+A sourced error field is also what lets synthesis generate a refusal; see
+[Synthesize code from a specification](../synthesize.md#generated-behaviour-over-ports-you-provide).

@@ -100,6 +100,15 @@ pub struct SynthesisScope {
     /// release tag, which rewrites every synthesised tree whenever the tag moves and the trees do
     /// not.
     pub profile: String,
+    /// The output layout, when it is not the default workspace: `crate` for the Rust target's
+    /// single crate (`--layout crate`).
+    ///
+    /// Absent for the default, so a tree laid out as a workspace keeps the bytes it always had. It
+    /// says nothing about any disposition — every layout carries the same capabilities — and is
+    /// here so the plan's regenerate command rewrites the tree it sits in, not a differently
+    /// shaped one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<String>,
 }
 
 impl SynthesisScope {
@@ -108,6 +117,7 @@ impl SynthesisScope {
     fn component_skeletons() -> Self {
         Self {
             profile: "component-skeletons".to_owned(),
+            layout: None,
         }
     }
 }
@@ -242,6 +252,13 @@ pub enum ObligationReason {
     /// Keeping a projection current at its declared consistency is a storage decision the
     /// specification deliberately does not take.
     ProjectionMaintenance,
+    /// A command whose outcomes, or a view whose rows, the specification does not fully determine:
+    /// the construct named is the first one generated code cannot express, and it keeps the whole
+    /// behaviour or query owed.
+    Undetermined {
+        /// The construct, and the branch it sits on.
+        construct: String,
+    },
 }
 
 impl ObligationReason {
@@ -255,6 +272,7 @@ impl ObligationReason {
             Self::ProjectionMaintenance => {
                 "how the projection is kept current is a storage decision".to_owned()
             }
+            Self::Undetermined { construct } => format!("kept an obligation by {construct}"),
         }
     }
 }
@@ -292,9 +310,11 @@ pub enum RefusalStage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RefusalReason {
-    /// The capability is about who may call, and types carry no caller identity. Deliberately not
-    /// an obligation: deriving anything grant-shaped from a plan is the second grant path
-    /// invariant 6 exists to forbid.
+    /// The capability is about who may call, and types carry no caller identity. What is refused
+    /// is *enforcement*: the declared grants themselves are generated as data (0.46,
+    /// `story:actor-grants-as-data`), so the caller that knows who is calling enforces a generated
+    /// table rather than a hand-copied one. Deliberately not an obligation: a stub the implementor
+    /// fills with grant checks would be a second grant path beside that table.
     NeedsCallerIdentity,
     /// Delivery lands on the component that accepts the command, and the specification does not
     /// declare exactly one. Deliberately not an obligation and never a choice: picking an acceptor
@@ -457,17 +477,33 @@ impl SynthesisPlan {
         json
     }
 
+    /// The command that rewrites the tree this plan sits in: [`REGENERATE`], plus the layout when
+    /// it is not the default.
+    pub fn regenerate(&self) -> String {
+        match &self.scope.layout {
+            Some(layout) => format!("{REGENERATE} --layout {layout}"),
+            None => REGENERATE.to_owned(),
+        }
+    }
+
     /// The plan as Markdown, for the person deciding whether to trust the generated half.
     ///
     /// Language-neutral, like everything else in the plan: which files a target writes and how it
     /// spells an identifier are that target's facts, recorded in that target's output.
     pub fn to_markdown(&self) -> String {
-        let mut out = self.provenance.html_comment_for(REGENERATE);
+        let regenerate = self.regenerate();
+        let mut out = self.provenance.html_comment_for(&regenerate);
         let counts = self.counts();
+        let layout = self
+            .scope
+            .layout
+            .as_ref()
+            .map(|layout| format!(", laid out as `{layout}`"))
+            .unwrap_or_default();
         let _ = write!(
             out,
-            "# Synthesis plan — {} {}\n\nScope: `{}`, planned by `ess-synth`. Regenerate with \
-             `{REGENERATE}`.\n\n{} capabilities: **{} generated**, **{} obligations**, **{} \
+            "# Synthesis plan — {} {}\n\nScope: `{}`{layout}, planned by `ess-synth`. Regenerate \
+             with `{regenerate}`.\n\n{} capabilities: **{} generated**, **{} obligations**, **{} \
              refused**. An obligation is yours to implement against its contract; a refusal is a \
              fact about this synthesis scope, not about the specification.\n",
             self.provenance.system,
@@ -479,6 +515,7 @@ impl SynthesisPlan {
             counts.refused,
         );
         self.markdown_generated(&mut out);
+        self.markdown_ports(&mut out);
         self.markdown_obligations(&mut out);
         self.markdown_refusals(&mut out);
         out
@@ -497,6 +534,33 @@ impl SynthesisPlan {
                 );
             }
         }
+    }
+
+    /// The ports a generated command behaviour or view query reads and writes through, named as
+    /// the implementor's to provide — present only where the plan generates one of them, so a plan
+    /// that generates neither reads as it did before behaviour was generated.
+    fn markdown_ports(&self, out: &mut String) {
+        let reads_ports = self.generated().any(|capability| {
+            matches!(
+                capability.kind,
+                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
+            )
+        });
+        if !reads_ports {
+            return;
+        }
+        out.push_str(
+            "\n## Ports — yours to provide\n\nWhat the specification fully determines is generated; \
+             what it cannot determine is an obligation. A generated command behaviour or view query \
+             reads and writes through the ports below, and they are yours to provide: synthesis \
+             generates each port's contract and never an implementation of one, so where instances \
+             live stays your decision.\n\n| port | what it answers |\n| --- | --- |\n| storage | one \
+             per entity a generated behaviour or query reads or writes: the instance stored under an \
+             identity; storing, replacing and removing one; and every stored instance, in the order \
+             the store keeps them |\n| context | where a generated behaviour asks it: the caller's \
+             attributes, every identity and value the specification says the implementation \
+             assigns, and whether each `external:` branch is taken |\n",
+        );
     }
 
     /// The obligations table: the typed list of exactly what remains.
@@ -571,7 +635,9 @@ fn plan_entities(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     }
 }
 
-/// A command's contract is generated; its behaviour is owed.
+/// A command's contract is generated. Its behaviour is generated where every outcome is one the
+/// specification fully determines ([`crate::determined`]); otherwise the whole behaviour is owed,
+/// naming the construct that kept it an obligation.
 fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     for command in ir.commands().values() {
         capabilities.push(PlannedCapability {
@@ -586,31 +652,20 @@ fn plan_commands(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 kind: CapabilityKind::CommandBehavior,
                 source: command.name.to_string(),
             },
-            disposition: SynthesisDisposition::Obligation(ImplementationObligation {
-                reason: behavior_reason(command),
-                contract: behavior_contract(ir, command),
-            }),
+            disposition: match crate::determined::command(ir, command) {
+                Ok(()) => SynthesisDisposition::Generated,
+                Err(construct) => SynthesisDisposition::Obligation(ImplementationObligation {
+                    reason: ObligationReason::Undetermined { construct },
+                    contract: behavior_contract(ir, command),
+                }),
+            },
         });
     }
 }
 
-/// External when any outcome is: the specification itself says the input cannot decide it.
-fn behavior_reason(command: &ResolvedCommand) -> ObligationReason {
-    for outcome in &command.outcomes {
-        if let ResolvedCondition::External { cause }
-        | ResolvedCondition::ExternalWhen { cause, .. } = &outcome.condition
-        {
-            return ObligationReason::External {
-                cause: cause.clone(),
-            };
-        }
-    }
-    ObligationReason::UnspecifiedAlgorithm
-}
-
 /// The behaviour's contract, phrased against the model: the input, and every declared outcome with
 /// what taking it entails.
-fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String {
+pub(crate) fn behavior_contract(ir: &EssIr, command: &ResolvedCommand) -> String {
     let unknown = ess_gen::unknown_instance::unknown_instance_answer(ir, command);
     let mut branches = Vec::new();
     for outcome in &command.outcomes {
@@ -768,7 +823,9 @@ fn plan_errors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     }
 }
 
-/// A view's row type is generated; serving it is owed.
+/// A view's row type is generated. Its query is generated where the specification fully
+/// determines every row it answers ([`crate::view_query`]); otherwise serving it is owed, naming the
+/// construct that kept it an obligation.
 fn plan_views(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     for view in ir.views().values() {
         capabilities.push(PlannedCapability {
@@ -783,16 +840,19 @@ fn plan_views(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 kind: CapabilityKind::ViewQuery,
                 source: view.name.to_string(),
             },
-            disposition: SynthesisDisposition::Obligation(ImplementationObligation {
-                reason: ObligationReason::ProjectionMaintenance,
-                contract: view_contract(view),
-            }),
+            disposition: match crate::view_query::view(ir, view) {
+                Ok(()) => SynthesisDisposition::Generated,
+                Err(construct) => SynthesisDisposition::Obligation(ImplementationObligation {
+                    reason: ObligationReason::Undetermined { construct },
+                    contract: view_contract(view),
+                }),
+            },
         });
     }
 }
 
 /// The query's contract: what rows, of what, how fresh.
-fn view_contract(view: &ResolvedView) -> String {
+pub(crate) fn view_contract(view: &ResolvedView) -> String {
     let mut contract = format!(
         "a query answering `{}` with rows projected from `{}` at `{}` consistency",
         view.name,
@@ -871,8 +931,13 @@ pub(crate) fn mechanical_conversion<'a>(
     (from_inner == to_inner).then_some((from, to))
 }
 
-/// Grants are refused, not owed: deriving anything grant-shaped from this plan would be a second
-/// grant path (review H8, and the wave's own decision on design §28).
+/// Enforcing a grant is refused, not owed; the grant itself is generated as data.
+///
+/// One capability with one disposition, because the half a reader must not miss is the refused
+/// one: no generated code checks who is calling. The row says in the same breath that the grant is
+/// available as data — the declared actors and the qualified commands each may invoke — so the
+/// caller enforces a generated table. A separate "generated" row would split one fact across two
+/// tables and give every target a capability to cover that only restates the refusal's detail.
 fn plan_actors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
     for actor in ir.actors().values() {
         let grants = if actor.may.is_empty() {
@@ -897,7 +962,9 @@ fn plan_actors(ir: &EssIr, capabilities: &mut Vec<PlannedCapability>) {
                 reason: RefusalReason::NeedsCallerIdentity,
                 stage: RefusalStage::Planning,
                 detail: format!(
-                    "{grants}; {}, and enforcement belongs to the layer that knows who is calling",
+                    "{grants}; generated as data, not enforced: the grant is available as the \
+                     declared actors and the qualified commands each may invoke, and enforcement \
+                     stays with the caller, because {}",
                     RefusalReason::NeedsCallerIdentity.describes()
                 ),
             }),

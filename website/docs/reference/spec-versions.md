@@ -55,6 +55,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/16` | [0.38.0][r38] | `input_absent:`, `existing_instance:`, actor `attributes:`, view `paging:`, bounded retry, `instances:` and `affects:`. |
 | `ess/17` | [0.39.0][r39] | `returns: true` on an outcome. |
 | `ess/18` | [0.41.0][r41] | Several states in `when_subject_state:`, `state` in `when_subject`, `when_related:`, and a binding's delivery context. |
+| `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
 
 The paragraphs below give each version's rules.
 
@@ -194,6 +195,21 @@ predicate: …}`, a guard over the row of another entity whose identity the inpu
 An event binding may declare `when.context_fields`, a typed record separate from the payload, and
 `when.context_authority`, the external channel whose authority binds it, and read a field as
 `context.<field>` in `mapping:` (beyond10x/ess#195).
+
+`ess/19`, introduced in [0.46.0][r46]. It collects the new authored
+constructs of that release; each is refused under an earlier header with
+`unsupported_format_version`, and a model without them keeps its bytes and compiled digest. An
+outcome that reports an error may say where the error's fields come from, with a `payload:` block
+keyed by the error: `payload: {orders.TooMany: {requested: input.quantity, limit: 10}}`. Each
+field takes the sources an event payload takes — an input, a literal, `{subject: …}`,
+`{caller: …}`, `{generated: true}` — and is checked the same way: a field the error does not
+declare is `undeclared_reference`, and a source of another type is `type_mismatch`.
+`{subject: …}` reads the row the refusal is answered for, so it is admitted on `wrong_state:` and
+on a branch selected by a held state or a stored field, and refused on an input-guarded refusal
+and on `unknown_instance:`, which answer before any row is read. A field with no source is
+carried as none, as before. The conformance interpreter carries the declared fields, a
+synthesized suite compares every one whose value a scenario determines, and the Rust target
+generates a behaviour whose every error field has a source or is read from the held row.
 
 ## `ess-diff/` — what moved between two revisions
 
@@ -532,3 +548,4 @@ published release that carries them.
 [r41]: https://github.com/beyond10x/ess/releases/tag/0.41.0
 [r42]: https://github.com/beyond10x/ess/releases/tag/0.42.0
 [r43]: https://github.com/beyond10x/ess/releases/tag/0.43.0
+[r46]: https://github.com/beyond10x/ess/releases/tag/0.46.0

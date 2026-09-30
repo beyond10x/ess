@@ -1,0 +1,98 @@
+format: ess/19
+system: demo
+version: v1
+domain: demo.order
+
+summary: >-
+  Refusals whose errors say where each of their fields comes from: the input, a literal and the
+  row the refusal is answered for.
+
+types:
+  - {name: demo.order.OrderId, kind: newtype, of: Uuid}
+  - {name: demo.order.Reason, kind: enum, variants: [Quantity, Stock]}
+
+entities:
+  - name: demo.order.Order
+    identity: {name: order_id, type: demo.order.OrderId}
+    fields:
+      - {name: quantity, type: Integer}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: [Closed]
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+
+errors:
+  - name: demo.order.TooMany
+    summary: More items than one order holds.
+    fields:
+      - {name: requested, type: Integer}
+      - {name: limit, type: Integer}
+      - {name: reason, type: demo.order.Reason}
+  - name: demo.order.NoSuchOrder
+    summary: No order carries the identity.
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+  - name: demo.order.AlreadyClosed
+    summary: The order is closed.
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: quantity, type: Integer}
+
+events:
+  - name: demo.order.OrderPlaced
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: quantity, type: Integer}
+  - name: demo.order.OrderClosed
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+
+commands:
+  - name: demo.order.PlaceOrder
+    input:
+      - {name: quantity, type: Integer}
+    outcomes:
+      - name: too-many
+        when: quantity > 10
+        error: demo.order.TooMany
+        payload:
+          demo.order.TooMany: {requested: input.quantity, limit: 10, reason: Quantity}
+      - name: placed
+        creates: demo.order.Order
+        instance: order_id
+        sets: {quantity: input.quantity}
+        emits: [demo.order.OrderPlaced]
+        payload:
+          demo.order.OrderPlaced: {order_id: {generated: true}, quantity: input.quantity}
+
+  - name: demo.order.CloseOrder
+    input:
+      - {name: order_id, type: demo.order.OrderId}
+    outcomes:
+      - name: closed
+        moves: demo.order.Order.close
+        instance: order_id
+        emits: [demo.order.OrderClosed]
+        payload:
+          demo.order.OrderClosed: {order_id: input.order_id}
+      - name: no-such-order
+        unknown_instance: true
+        error: demo.order.NoSuchOrder
+        payload:
+          demo.order.NoSuchOrder: {order_id: input.order_id}
+      - name: already-closed
+        wrong_state: true
+        error: demo.order.AlreadyClosed
+        payload:
+          demo.order.AlreadyClosed: {order_id: input.order_id, quantity: {subject: quantity}}
+
+views:
+  - name: demo.order.Orders
+    source: demo.order.Order
+    consistency: read_your_writes
+    fields:
+      - {name: order_id, type: demo.order.OrderId}
+      - {name: state, type: demo.order.Order.State}
+      - {name: quantity, type: Integer}

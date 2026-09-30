@@ -68,7 +68,7 @@ $ cat create-only.json
 $ ess verify conform select --suite target/coverage-suite.json --ids create-only.json \
     --out target/create-only.json
 $ ess verify conform run --target billing --suite-input target/create-only.json --report-format 2
-billing v3 against billing-reference 0.45.0 — passed
+billing v3 against billing-reference 0.46.0 — passed
   passed billing.invoice.CreateInvoice/outcome/accepted
   passed billing.invoice.CreateInvoice/outcome/rejected
   2 scenarios: 2 passed, 0 failed, 0 error, 0 unsupported

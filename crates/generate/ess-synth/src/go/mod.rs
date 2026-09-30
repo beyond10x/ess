@@ -429,9 +429,22 @@ fn assert_bijection(
         .iter()
         .map(|(capability, _)| capability.clone())
         .collect();
+    // A command behaviour or view query the plan marks generated is one this target owes as a
+    // seam: it is stubbed rather than covered, and `TARGET.md` names the weakening.
+    let weakened: BTreeSet<Capability> = plan
+        .generated()
+        .filter(|capability| {
+            matches!(
+                capability.kind,
+                CapabilityKind::CommandBehavior | CapabilityKind::ViewQuery
+            )
+        })
+        .filter(|capability| !refused.contains(capability))
+        .cloned()
+        .collect();
     let planned: BTreeSet<Capability> = plan
         .generated()
-        .filter(|capability| !refused.contains(capability))
+        .filter(|capability| !refused.contains(capability) && !weakened.contains(capability))
         .cloned()
         .collect();
     assert_eq!(
@@ -444,6 +457,7 @@ fn assert_bijection(
         .obligations()
         .map(|(capability, _)| capability.clone())
         .filter(|capability| !refused.contains(capability))
+        .chain(weakened)
         .collect();
     assert_eq!(
         stubbed, &owed,
@@ -456,7 +470,11 @@ fn assert_bijection(
 /// `true` when the module needs the refusal type at all: something is owed, or there is an
 /// interaction layer whose ports return one.
 fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
-    plan.obligations().next().is_some() || !ir.components().is_empty() || !ir.bindings().is_empty()
+    plan.obligations().next().is_some()
+        || !ir.components().is_empty()
+        || !ir.bindings().is_empty()
+        || crate::determined::any_generated(ir)
+        || crate::view_query::any_generated(ir)
 }
 
 /// What this target emits with a weaker guarantee than the first target's, stated once per rule.
@@ -466,10 +484,12 @@ fn wants_obligations(ir: &EssIr, plan: &SynthesisPlan) -> bool {
 /// reader has to act on. Each rule names the capability kinds it touches, so the parity question —
 /// *what is different about my command contracts* — is still answerable from the table.
 ///
-/// Two rows are conditional on the specification declaring a served surface at all, because a
-/// weakening naming a capability kind this module has no instance of is a row a reader has to check
-/// and then discard. Everything else here is a fact about Go and holds whatever the specification
-/// says.
+/// Two rows are conditional on the specification declaring a served surface at all, one on it
+/// declaring an actor, and one on some command's behaviour being generated, because a weakening
+/// naming a capability kind this module has no instance of is a row a reader has to check and then
+/// discard. Everything else here is a fact about Go and holds whatever the specification says.
+// One row per weakening, stated where a reader compares them.
+#[allow(clippy::too_many_lines)]
 fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
     let serves = !http::served(ir, refusals).is_empty();
     let mut exhaustive_affects = vec![
@@ -561,7 +581,47 @@ fn weakenings(ir: &EssIr, refusals: &TargetRefusals) -> Vec<TargetWeakening> {
             affects: vec![CapabilityKind::ComponentTransport],
         });
     }
+    out.extend(grant_table_weakening(ir));
+    if crate::determined::any_generated(ir) {
+        out.push(TargetWeakening {
+            guarantee: "a command behaviour the specification fully determines is generated, \
+                        over storage and context ports"
+                .to_owned(),
+            instead: "this target does not generate command behaviour yet: each one the plan \
+                      marks generated keeps its behaviour seam here, owed, with the same contract \
+                      and a stub refusing it, exactly as an obligation"
+                .to_owned(),
+            affects: vec![CapabilityKind::CommandBehavior],
+        });
+    }
+    if crate::view_query::any_generated(ir) {
+        out.push(TargetWeakening {
+            guarantee: "a view query the specification fully determines is generated, over a \
+                        storage port that lists an entity's rows"
+                .to_owned(),
+            instead: "this target does not generate view queries yet: each one the plan marks \
+                      generated keeps its query seam here, owed, with the same contract and a \
+                      stub refusing it, exactly as an obligation"
+                .to_owned(),
+            affects: vec![CapabilityKind::ViewQuery],
+        });
+    }
     out
+}
+
+/// The first target's types crate carries every actor's grants as data; this one does not.
+fn grant_table_weakening(ir: &EssIr) -> Option<TargetWeakening> {
+    (!ir.actors().is_empty()).then(|| TargetWeakening {
+        guarantee: "an actor's declared grants are available as generated data: every declared \
+                    actor and the qualified commands it may invoke"
+            .to_owned(),
+        instead: "this target emits no grant table, so a Go caller enforcing a grant copies the \
+                  `may` lists from the plan's `actor grants` rows. Enforcement itself is refused \
+                  in every target, the first included; what is weaker here is only where the \
+                  data a caller enforces comes from"
+            .to_owned(),
+        affects: vec![CapabilityKind::ActorGrants],
+    })
 }
 
 /// The module file at the generated root.

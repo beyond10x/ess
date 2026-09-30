@@ -1,4 +1,7 @@
-//! Structural synthesis: from a resolved specification to a plan, and from the plan to code.
+//! Synthesis: from a resolved specification to a plan, and from the plan to code.
+//!
+//! What the specification fully determines is generated; what it cannot determine is an
+//! obligation. Storage is a port the implementor provides, never a generated store.
 //!
 //! # The hinge, and the seam
 //!
@@ -43,6 +46,7 @@
 mod accessor_output;
 mod alias;
 pub mod clap;
+pub(crate) mod determined;
 pub(crate) mod existence;
 mod failure;
 pub mod go;
@@ -51,6 +55,7 @@ pub mod plan;
 pub mod rust;
 mod selection;
 pub(crate) mod set_effects;
+pub(crate) mod view_query;
 pub mod web;
 
 pub(crate) use alias::code_aliases;
@@ -122,6 +127,92 @@ impl Target {
         }
     }
 }
+
+/// How the Rust target lays its output out.
+///
+/// The workspace is the default and the first target's original shape: a types crate, one crate
+/// per component, a system crate and a server crate, so one component can be taken alone. The
+/// single crate is for an adopter that never deploys a component alone: the same code, one crate
+/// at the output root, its HTTP surface behind a `server` Cargo feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OutputLayout {
+    /// A Cargo workspace of crates under `crates/`.
+    #[default]
+    Workspace,
+    /// One crate at the output root.
+    Crate,
+}
+
+impl OutputLayout {
+    /// The name the command line spells it with.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Workspace => "workspace",
+            Self::Crate => "crate",
+        }
+    }
+}
+
+/// A layout the chosen target does not emit.
+///
+/// A usage error rather than a fact about the model: it is decided before anything is planned,
+/// and it carries no plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutRefusal {
+    target: &'static str,
+    layout: &'static str,
+}
+
+impl LayoutRefusal {
+    /// The target that refused.
+    pub fn target(&self) -> &'static str {
+        self.target
+    }
+
+    /// The layout it refused.
+    pub fn layout(&self) -> &'static str {
+        self.layout
+    }
+}
+
+impl std::fmt::Display for LayoutRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "the `{}` target has no `{}` layout: `--layout {}` is an option of the `rust` target \
+             only, and `{}` emits its workspace layout",
+            self.target, self.layout, self.layout, self.target
+        )
+    }
+}
+
+impl std::error::Error for LayoutRefusal {}
+
+/// Why [`synthesize_laid_out`] produced nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SynthesisFailure {
+    /// The target does not emit the requested layout; nothing was planned.
+    Layout(LayoutRefusal),
+    /// The target cannot represent the source.
+    Target(TargetFailure),
+}
+
+impl From<TargetFailure> for SynthesisFailure {
+    fn from(failure: TargetFailure) -> Self {
+        Self::Target(failure)
+    }
+}
+
+impl std::fmt::Display for SynthesisFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Layout(refusal) => refusal.fmt(formatter),
+            Self::Target(failure) => failure.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for SynthesisFailure {}
 
 /// Everything one synthesis produced: the plan, every file, and what the target could not carry.
 pub struct Synthesis {
@@ -288,7 +379,40 @@ pub fn synthesize(ir: &EssIr) -> Result<Synthesis, TargetFailure> {
 /// that target refused. That is a defect in this crate, not in any specification, and shipping it
 /// would make `PLAN.md` a lie about the tree beside it.
 pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFailure> {
-    let plan = SynthesisPlan::of(ir);
+    emit(ir, target, OutputLayout::Workspace)
+}
+
+/// [`synthesize_for`], with the Rust target's output laid out as chosen.
+///
+/// [`OutputLayout::Workspace`] is exactly [`synthesize_for`]. [`OutputLayout::Crate`] is a Rust
+/// target option; every other target refuses it before anything is planned. The plan names a
+/// non-default layout, in `plan.json`'s scope and in the command `PLAN.md` says rewrites the tree,
+/// so the tree can be regenerated as it was laid out.
+///
+/// # Errors
+///
+/// [`SynthesisFailure::Layout`] when the target does not emit the layout;
+/// [`SynthesisFailure::Target`] as [`synthesize_for`] fails.
+pub fn synthesize_laid_out(
+    ir: &EssIr,
+    target: Target,
+    layout: OutputLayout,
+) -> Result<Synthesis, SynthesisFailure> {
+    if layout != OutputLayout::Workspace && target != Target::Rust {
+        return Err(SynthesisFailure::Layout(LayoutRefusal {
+            target: target.name(),
+            layout: layout.name(),
+        }));
+    }
+    Ok(emit(ir, target, layout)?)
+}
+
+/// Both stages, for a target and a layout the target emits.
+fn emit(ir: &EssIr, target: Target, layout: OutputLayout) -> Result<Synthesis, TargetFailure> {
+    let mut plan = SynthesisPlan::of(ir);
+    if layout != OutputLayout::Workspace {
+        plan.scope.layout = Some(layout.name().to_owned());
+    }
     failure::binary64(ir, &plan, target)?;
     failure::input_absent(ir, &plan, target)?;
     existence::refuse(ir, &plan, target)?;
@@ -306,7 +430,11 @@ pub fn synthesize_for(ir: &EssIr, target: Target) -> Result<Synthesis, TargetFai
     );
     let report = match target {
         Target::Rust => {
-            for artifact in rust::workspace(ir, &plan)? {
+            let emitted = match layout {
+                OutputLayout::Workspace => rust::workspace(ir, &plan)?,
+                OutputLayout::Crate => rust::single_crate(ir, &plan)?,
+            };
+            for artifact in emitted {
                 insert(&mut artifacts, artifact);
             }
             None

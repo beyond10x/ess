@@ -86,8 +86,8 @@ pub struct VisitorName(pub String);
 /// The identity and every declared field. The state is deliberately not one: inside the domain it
 /// is carried by the type parameter of [`Visit<S>`], and at a boundary by [`VisitSnapshot::state`].
 ///
-/// Every value satisfies `deposit.amount >= 0` — declared here, enforced by whatever behaviour constructs one.
-/// Every value satisfies `expected_minutes > 0` — declared here, enforced by whatever behaviour constructs one.
+/// Every value satisfies `deposit.amount >= 0` — checked by [`VisitData::broken_invariant`].
+/// Every value satisfies `expected_minutes > 0` — checked by [`VisitData::broken_invariant`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisitData {
     /// The identity: `visit_id` — `gatepass.visit.VisitId`.
@@ -112,6 +112,25 @@ pub struct VisitData {
     pub badge: Option<Badge>,
     /// `on_watchlist` — `Boolean`.
     pub on_watchlist: bool,
+}
+
+impl VisitData {
+    /// The first declared invariant of `gatepass.visit.Visit` this value breaks, as the specification declares it,
+    /// or `None` when it breaks none.
+    ///
+    /// An invariant is broken only when it is false of this value. One that reads something
+    /// absent — an empty `Optional`, a list position past the end, or `state`, which this
+    /// type does not hold — decides nothing, as the conformance interpreter reads it.
+    pub fn broken_invariant(&self) -> Option<&'static str> {
+        use crate::primitives::invariant as iv;
+        if iv::broken(iv::compare(iv::Fact::number(&self.deposit.amount.0), iv::Op::Ge, iv::Fact::number("0"), false, true)) {
+            return Some("deposit.amount >= 0");
+        }
+        if iv::broken(iv::compare(Some(iv::Fact::integer(self.expected_minutes)), iv::Op::Gt, iv::Fact::number("0"), false, true)) {
+            return Some("expected_minutes > 0");
+        }
+        None
+    }
 }
 
 /// The states of `gatepass.visit.Visit`, at the type level.
@@ -460,8 +479,8 @@ pub struct VisitStateConflict {
 /// Expected visits — one row of the view `gatepass.visit.ExpectedVisits`.
 ///
 /// Projects `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected`.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpectedVisits {
     /// `visit_id` — `gatepass.visit.VisitId`.
@@ -477,8 +496,8 @@ pub struct ExpectedVisits {
 /// Visit by id — one row of the view `gatepass.visit.VisitById`.
 ///
 /// Projects `gatepass.visit.Visit` at `eventual` consistency.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VisitById {
     /// `visit_id` — `gatepass.visit.VisitId`.
@@ -495,28 +514,26 @@ pub struct VisitById {
     pub badge: Option<Badge>,
 }
 
-/// What this bounded context owes its implementor, as typed seams.
+/// What this bounded context owes its implementor, and the seams of what is generated.
 ///
-/// One trait per obligation in the synthesis plan, each carrying the plan's own contract.
-/// [`Unimplemented`](obligations::Unimplemented) satisfies every trait by refusing in the type system, so the workspace builds —
-/// and says exactly what it cannot yet do — before a line is hand-written.
+/// One trait per obligation in the synthesis plan, each carrying the plan's own contract, and one
+/// per generated behaviour, which [`Generated`](crate::behaviour::Generated) implements.
+/// [`Unimplemented`](obligations::Unimplemented) satisfies every owed trait by refusing in the type system.
 pub mod obligations {
-    /// The behaviour `gatepass.visit.AdmitVisitor` — an implementation obligation.
+    /// The behaviour `gatepass.visit.AdmitVisitor` — generated.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
-    ///
-    /// Contract: given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
     pub trait AdmitVisitorBehavior {
         /// Decides and enacts exactly one declared outcome of `gatepass.visit.AdmitVisitor`.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn admit_visitor(&mut self, input: super::AdmitVisitor) -> Result<super::AdmitVisitorOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `gatepass.visit.RegisterVisit` — an implementation obligation.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
+    /// Why it is not generated: kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered`.
     ///
     /// Contract: given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength`.
     pub trait RegisterVisitBehavior {
@@ -527,42 +544,36 @@ pub mod obligations {
         fn register_visit(&mut self, input: super::RegisterVisit) -> Result<super::RegisterVisitOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The behaviour `gatepass.visit.SignOutVisitor` — an implementation obligation.
+    /// The behaviour `gatepass.visit.SignOutVisitor` — generated.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
-    ///
-    /// Contract: given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
     pub trait SignOutVisitorBehavior {
         /// Decides and enacts exactly one declared outcome of `gatepass.visit.SignOutVisitor`.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn sign_out_visitor(&mut self, input: super::SignOutVisitor) -> Result<super::SignOutVisitorOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `gatepass.visit.ExpectedVisits` — an implementation obligation.
+    /// The query `gatepass.visit.ExpectedVisits` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `gatepass.visit.ExpectedVisits` with rows projected from `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected`.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait ExpectedVisitsQuery {
         /// Serves `gatepass.visit.ExpectedVisits` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn expected_visits(&self) -> Result<Vec<super::ExpectedVisits>, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `gatepass.visit.VisitById` — an implementation obligation.
+    /// The query `gatepass.visit.VisitById` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `gatepass.visit.VisitById` with rows projected from `gatepass.visit.Visit` at `eventual` consistency.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait VisitByIdQuery {
         /// Serves `gatepass.visit.VisitById` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn visit_by_id(&self) -> Result<Vec<super::VisitById>, crate::obligation::UnmetObligation>;
     }
 
@@ -572,33 +583,9 @@ pub mod obligations {
     /// value — so a workspace built on this stub compiles and reports its own gaps.
     pub struct Unimplemented;
 
-    impl AdmitVisitorBehavior for Unimplemented {
-        fn admit_visitor(&mut self, _input: super::AdmitVisitor) -> Result<super::AdmitVisitorOutcome, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.AdmitVisitor" })
-        }
-    }
-
     impl RegisterVisitBehavior for Unimplemented {
         fn register_visit(&mut self, _input: super::RegisterVisit) -> Result<super::RegisterVisitOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.RegisterVisit" })
-        }
-    }
-
-    impl SignOutVisitorBehavior for Unimplemented {
-        fn sign_out_visitor(&mut self, _input: super::SignOutVisitor) -> Result<super::SignOutVisitorOutcome, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "gatepass.visit.SignOutVisitor" })
-        }
-    }
-
-    impl ExpectedVisitsQuery for Unimplemented {
-        fn expected_visits(&self) -> Result<Vec<super::ExpectedVisits>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "gatepass.visit.ExpectedVisits" })
-        }
-    }
-
-    impl VisitByIdQuery for Unimplemented {
-        fn visit_by_id(&self) -> Result<Vec<super::VisitById>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "gatepass.visit.VisitById" })
         }
     }
 }

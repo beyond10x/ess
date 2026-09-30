@@ -1,0 +1,25 @@
+components:
+  - component: desk-service
+    summary: Holds every ticket of one help desk.
+    owns:
+      domains:
+        - desk.ticket
+    accepts:
+      commands:
+        - desk.ticket.OpenTicket
+        - desk.ticket.CloseTicket
+        - desk.ticket.ReopenTicket
+        - desk.ticket.Reprioritize
+        - desk.ticket.Comment
+        - desk.ticket.DeleteTicket
+        - desk.ticket.Escalate
+    publishes:
+      events:
+        - desk.ticket.TicketOpened
+        - desk.ticket.TicketClosed
+        - desk.ticket.TicketReopened
+        - desk.ticket.TicketReprioritized
+        - desk.ticket.TicketCommented
+        - desk.ticket.TicketDeleted
+        - desk.ticket.Escalated
+    reached_by: network

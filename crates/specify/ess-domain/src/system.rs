@@ -51,7 +51,7 @@ use crate::types::{NamedType, TypeBody, TypeRef, TypeRegistry};
 
 /// Specification format major versions this build implements.
 pub const SUPPORTED_FORMATS: &[u32] = &[
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 ];
 
 /// `true` when this build implements `format`.
@@ -109,6 +109,9 @@ impl FormatVersion {
     /// Constructs of the 0.41 defect round (beyond10x/ess#195, #201, #204, #211), collected for
     /// one release.
     pub const V18: Self = Self(18);
+    /// Constructs of the 0.46 generated-behaviour round: `payload:` sources for the fields of the
+    /// error an outcome reports (`story:error-payload-sources`).
+    pub const V19: Self = Self(19);
 
     /// How a format version is written.
     pub const PREFIX: &'static str = "ess/";

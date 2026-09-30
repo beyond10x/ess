@@ -29,9 +29,12 @@
 //! (AGENTS.md § Dependencies).
 
 mod accessor;
+mod actor;
+pub(crate) mod behaviour;
 mod entity;
 pub(crate) mod feasibility;
 pub(crate) mod http;
+mod invariant;
 pub(crate) mod items;
 pub(crate) mod json;
 pub(crate) mod layout;
@@ -40,6 +43,7 @@ mod obligation;
 pub(crate) mod port;
 mod reading;
 mod selection;
+pub(crate) mod single;
 pub(crate) mod system;
 pub(crate) mod wire;
 
@@ -101,14 +105,42 @@ impl Emit<'_> {
 /// If what was emitted is not exactly what the plan marks generated — a defect in this crate, and
 /// the one lie the plan document must never be allowed to tell.
 pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    Ok(emitted(ir, plan, false)?.1)
+}
+
+/// The same code as [`workspace`], laid out as one crate at the generated root
+/// (`--layout crate`); the folding is in the private `single` module.
+///
+/// # Errors
+///
+/// As [`workspace`].
+///
+/// # Panics
+///
+/// As [`workspace`], and if a workspace file has no place in the single crate.
+pub fn single_crate(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+) -> Result<Vec<Artifact>, crate::TargetFailure> {
+    let (layout, artifacts) = emitted(ir, plan, true)?;
+    Ok(single::relayout(ir, plan, &layout, artifacts))
+}
+
+/// The workspace's artifacts, from the allocation for the layout they will land in.
+fn emitted(
+    ir: &EssIr,
+    plan: &SynthesisPlan,
+    single_crate: bool,
+) -> Result<(Layout, Vec<Artifact>), crate::TargetFailure> {
     crate::failure::binary64(ir, plan, crate::Target::Rust)?;
     crate::failure::input_absent(ir, plan, crate::Target::Rust)?;
     crate::existence::refuse(ir, plan, crate::Target::Rust)?;
     crate::set_effects::refuse(ir, plan, crate::Target::Rust)?;
     crate::paging::refuse(ir, plan, crate::Target::Rust)?;
     crate::failure::retry_bound(ir, plan, crate::Target::Rust)?;
-    let layout = feasibility::checked(ir, plan, crate::Target::Rust)?;
+    let layout = feasibility::checked_shaped(ir, plan, crate::Target::Rust, single_crate)?;
     accessor::preflight(ir, plan, &layout)?;
+    invariant::preflight(ir, plan, &layout)?;
     let provenance = &plan.provenance;
 
     let mut covered: BTreeSet<Capability> = BTreeSet::new();
@@ -133,6 +165,14 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
         ));
     }
     artifacts.extend(obligation_module);
+    artifacts.extend(actor::module(ir, &layout, provenance));
+    artifacts.extend(behaviour::module(
+        ir,
+        plan,
+        &layout,
+        provenance,
+        &mut covered,
+    ));
     let domains: Vec<QualifiedName> = layout.modules().map(|(domain, _)| domain.clone()).collect();
     for domain in &domains {
         artifacts.push(domain_module(
@@ -178,7 +218,7 @@ pub fn workspace(ir: &EssIr, plan: &SynthesisPlan) -> Result<Vec<Artifact>, crat
          ess-synth, and shipping it would break the promise that every owed capability is visible \
          twice — in the plan, and as a typed refusal in the workspace"
     );
-    Ok(artifacts)
+    Ok((layout, artifacts))
 }
 
 /// One enum variant name per event of a set, collision-free by rule rather than by luck.
@@ -305,6 +345,12 @@ fn lib_module(
     if with_obligation_module {
         modules.push("obligation".to_owned());
     }
+    if actor::used(ir) {
+        modules.push(actor::MODULE.to_owned());
+    }
+    if behaviour::used(ir) {
+        modules.push("behaviour".to_owned());
+    }
     modules.sort();
     for module in modules {
         let _ = writeln!(out, "pub mod {module};");
@@ -324,6 +370,7 @@ fn primitives_module(ir: &EssIr, layout: &Layout, provenance: &Provenance) -> Ar
     let mut out = provenance.commented_for("//", REGENERATE);
     out.push_str(PRIMITIVES);
     out.push_str(&reading::helpers(ir));
+    out.push_str(invariant::runtime(ir));
     Artifact::new(
         format!("crates/{}/src/primitives.rs", layout.package()),
         out,
@@ -345,7 +392,7 @@ const PRIMITIVES: &str = r"
 ///
 /// Never a float: money does not round the way a float does. Equality and order are over the
 /// rendering, so `1.5` and `1.50` are different values here; arithmetic is deliberately absent,
-/// because what a decimal *does* is behaviour, and behaviour is not synthesised.
+/// because the specification declares no operation on a decimal, so there is none to generate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Decimal(pub String);
 

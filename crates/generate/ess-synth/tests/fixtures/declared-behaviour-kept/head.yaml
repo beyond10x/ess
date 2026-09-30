@@ -1,0 +1,72 @@
+format: ess/18
+system: kept
+version: v1
+domain: kept.shop
+types:
+  - {name: kept.shop.ShopId, kind: newtype, of: Uuid}
+  - {name: kept.shop.OrderId, kind: newtype, of: Uuid}
+entities:
+  - name: kept.shop.Shop
+    identity: {name: shop_id, type: kept.shop.ShopId}
+    fields:
+      - {name: region, type: String}
+    lifecycle: {initial: Open, states: [Open], terminal: [Open], transitions: []}
+  - name: kept.shop.Order
+    identity: {name: order_id, type: kept.shop.OrderId}
+    fields:
+      - {name: shop_id, type: kept.shop.ShopId}
+      - {name: quantity, type: Integer}
+      - {name: region, type: Optional<String>}
+    lifecycle:
+      initial: Placed
+      states: [Placed, Shipped]
+      terminal: [Shipped]
+      transitions:
+        - {name: ship, from: [Placed], to: Shipped}
+events:
+  - name: kept.shop.ShopOpened
+    fields: [{name: shop_id, type: kept.shop.ShopId}]
+  - name: kept.shop.OrderPlaced
+    fields: [{name: order_id, type: kept.shop.OrderId}]
+  - name: kept.shop.OrderShipped
+    fields: [{name: order_id, type: kept.shop.OrderId}]
+errors:
+  - name: kept.shop.NoShop
+  - name: kept.shop.Refused
+  - name: kept.shop.Conflict
+  - name: kept.shop.TooMany
+    fields: [{name: limit, type: Integer}]
+commands:
+  - name: kept.shop.OpenShop
+    input: [{name: region, type: String}]
+    outcomes:
+      - name: opened
+        creates: kept.shop.Shop
+        instance: shop_id
+        sets: {region: input.region}
+        emits: [kept.shop.ShopOpened]
+        payload:
+          kept.shop.ShopOpened: {shop_id: {generated: true}}
+  - name: kept.shop.StockOrder
+    input:
+      - {name: shop_id, type: kept.shop.ShopId}
+      - {name: quantity, type: Integer}
+    outcomes:
+      - name: stocked
+        creates: kept.shop.Order
+        instance: order_id
+        sets: {shop_id: input.shop_id, quantity: input.quantity}
+        emits: [kept.shop.OrderPlaced]
+        payload:
+          kept.shop.OrderPlaced: {order_id: {generated: true}}
+  - name: kept.shop.ShipOrder
+    input: [{name: order_id, type: kept.shop.OrderId}]
+    outcomes:
+      - name: shipped
+        moves: kept.shop.Order.ship
+        instance: order_id
+        emits: [kept.shop.OrderShipped]
+        payload:
+          kept.shop.OrderShipped: {order_id: input.order_id}
+      - {name: no-such-order, unknown_instance: true, error: kept.shop.Conflict}
+      - {name: already-shipped, wrong_state: true, error: kept.shop.Conflict}

@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.46.0 — 2026-09-30
+
+### The Rust target generates what the specification fully determines
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.46.0)
+
+`ess generate synthesize --target rust` generates the command behaviours, view queries and invariant checks the specification fully determines, over storage and context ports you provide. Actor grants arrive as data, the server gains a transport-free `handle`, `--layout crate` writes one crate, and `ess/19` gives an error's fields their sources.
+
 ## 0.45.0 — 2026-09-29
 
 ### The Go, web and clap synthesis targets represent Json

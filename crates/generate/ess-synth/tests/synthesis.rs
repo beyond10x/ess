@@ -145,8 +145,11 @@ fn the_billing_plan_counts_are_pinned() {
     let plan = SynthesisPlan::of(&billing());
     let counts = plan.counts();
     assert_eq!(plan.capabilities.len(), 48, "capabilities in total");
-    assert_eq!(counts.generated, 36, "generated capabilities");
-    assert_eq!(counts.obligations, 8, "obligations");
+    // 0.46: `IssueInvoice`, `CancelInvoice` and `SendEmail` are fully declared, so their behaviours
+    // moved from obligation to generated (`story:generated-behaviour-for-declared-commands`), and
+    // the query of the fully declared view `InvoiceById` (`story:generated-view-queries`).
+    assert_eq!(counts.generated, 40, "generated capabilities");
+    assert_eq!(counts.obligations, 4, "obligations");
     assert_eq!(counts.refused, 4, "refusals");
 }
 
@@ -210,29 +213,22 @@ fn every_construct_of_the_specification_appears_in_the_plan() {
 }
 
 #[test]
-fn send_email_behaviour_is_owed_with_the_specifications_own_cause() {
-    // The no-guessing rule at its sharpest: the spec says the `failed` outcome is decided by the
-    // provider, so the behaviour cannot be generated — and the reason must carry the author's own
-    // words, not a paraphrase the planner invented.
-    let plan = SynthesisPlan::of(&billing());
-    let disposition = plan
-        .disposition_of(CapabilityKind::CommandBehavior, "billing.email.SendEmail")
-        .expect("SendEmail has a behaviour capability");
-    let SynthesisDisposition::Obligation(obligation) = disposition else {
-        panic!("SendEmail's behaviour must be an obligation, not {disposition:?}");
-    };
-    let ObligationReason::External { cause } = &obligation.reason else {
-        panic!(
-            "SendEmail's behaviour is externally decided, not {:?}",
-            obligation.reason
-        );
-    };
-    assert_eq!(cause, "the provider rejects the recipient address");
+fn send_email_behaviour_is_generated_and_asks_the_context_for_the_providers_answer() {
+    // Until 0.46 the `failed` outcome, decided by the provider, kept the whole behaviour owed. The
+    // specification determines everything else about it, so the behaviour is generated and the
+    // one thing it cannot decide — whether the provider rejects the address — is the context
+    // port's answer to that named branch (`story:generated-behaviour-for-declared-commands`).
+    let ir = billing();
+    let plan = SynthesisPlan::of(&ir);
+    assert_eq!(
+        plan.disposition_of(CapabilityKind::CommandBehavior, "billing.email.SendEmail"),
+        Some(&SynthesisDisposition::Generated)
+    );
+    let synthesis = synthesize(&ir).expect("the fixture has a realizable target");
+    let behaviour = artifact(&synthesis, "crates/billing-types/src/behaviour.rs");
     assert!(
-        obligation.contract.contains("`failed`")
-            && obligation.contract.contains("billing.email.Undeliverable"),
-        "the contract names the refusal branch and its error: {}",
-        obligation.contract
+        behaviour.contains("self.ports.external(\"billing.email.SendEmail\", \"failed\")"),
+        "{behaviour}"
     );
 }
 
@@ -728,7 +724,9 @@ fn the_plans_obligations_and_the_workspaces_stubs_are_the_same_list() {
         })
         .collect();
     owed.sort();
-    assert_eq!(owed.len(), 8, "the billing plan owes eight capabilities");
+    // Four since 0.46: three of the eight were command behaviours the specification determines, and
+    // one the query of a view it determines.
+    assert_eq!(owed.len(), 4, "the billing plan owes four capabilities");
     assert_eq!(
         stubs, owed,
         "the generated stubs are not exactly the plan's obligations"

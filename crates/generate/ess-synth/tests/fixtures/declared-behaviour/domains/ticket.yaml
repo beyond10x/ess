@@ -1,0 +1,306 @@
+domain: desk.ticket
+
+summary: Opening, closing, reopening and escalating help-desk tickets.
+
+types:
+  - {name: desk.ticket.TicketId, kind: newtype, of: Uuid}
+  - {name: desk.ticket.AgentId, kind: newtype, of: Uuid}
+  - {name: desk.ticket.TicketRef, kind: newtype, of: Uuid}
+  - {name: desk.ticket.EscalationId, kind: newtype, of: Uuid}
+  - {name: desk.ticket.Title, kind: newtype, of: String}
+  - {name: desk.ticket.Priority, kind: enum, variants: [Low, High]}
+
+entities:
+  - name: desk.ticket.Ticket
+    identity: {name: ticket_id, type: desk.ticket.TicketId}
+    fields:
+      - {name: title, type: desk.ticket.Title}
+      - {name: priority, type: desk.ticket.Priority}
+      - {name: estimate, type: Integer}
+      - {name: opened_by, type: desk.ticket.AgentId}
+      - {name: reopen_count, type: Integer}
+      - {name: ticket_ref, type: desk.ticket.TicketRef}
+      - {name: note, type: Optional<String>}
+    lifecycle:
+      initial: Open
+      states: [Open, Closed]
+      terminal: []
+      transitions:
+        - {name: close, from: [Open], to: Closed}
+        - {name: reopen, from: [Closed], to: Open}
+
+actors:
+  - name: desk.ticket.Agent
+    attributes:
+      - {name: agent_id, type: desk.ticket.AgentId}
+    may:
+      - desk.ticket.OpenTicket
+      - desk.ticket.CloseTicket
+      - desk.ticket.ReopenTicket
+      - desk.ticket.Reprioritize
+      - desk.ticket.Comment
+      - desk.ticket.DeleteTicket
+      - desk.ticket.Escalate
+
+errors:
+  - name: desk.ticket.NegativeEstimate
+    summary: The estimate is below zero.
+    fields:
+      - {name: estimate, type: Integer}
+      - {name: minimum, type: Integer}
+  - name: desk.ticket.TicketNotFound
+    summary: No ticket carries the identity.
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+  - name: desk.ticket.TicketStateConflict
+    summary: The ticket is not in a state this command acts from.
+    fields:
+      - {name: state, type: desk.ticket.Ticket.State}
+      - {name: ticket_id, type: desk.ticket.TicketId}
+  - name: desk.ticket.NotYours
+    summary: The caller did not open the ticket.
+    fields:
+      - {name: caller, type: desk.ticket.AgentId}
+      - {name: opened_by, type: desk.ticket.AgentId}
+  - name: desk.ticket.TicketIsClosed
+    summary: A closed ticket takes no comment.
+    fields:
+      - {name: title, type: desk.ticket.Title}
+      - {name: priority, type: desk.ticket.Priority}
+  - name: desk.ticket.PagerRefused
+    summary: The pager refused the page.
+    fields:
+      - {name: reason, type: String}
+  - name: desk.ticket.Throttled
+    summary: The pager throttles urgent pages.
+    fields:
+      - {name: page_id, type: desk.ticket.EscalationId}
+
+events:
+  - name: desk.ticket.TicketOpened
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: title, type: desk.ticket.Title}
+      - {name: opened_by, type: desk.ticket.AgentId}
+  - name: desk.ticket.TicketClosed
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: title, type: desk.ticket.Title}
+  - name: desk.ticket.TicketReopened
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: reopen_count, type: Integer}
+  - name: desk.ticket.TicketReprioritized
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: priority, type: desk.ticket.Priority}
+  - name: desk.ticket.TicketCommented
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: note, type: String}
+  - name: desk.ticket.TicketDeleted
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+  - name: desk.ticket.Escalated
+    fields:
+      - {name: escalation_id, type: desk.ticket.EscalationId}
+      - {name: reason, type: String}
+
+commands:
+  - name: desk.ticket.OpenTicket
+    input:
+      - {name: title, type: desk.ticket.Title}
+      - {name: priority, type: desk.ticket.Priority}
+      - {name: estimate, type: Integer}
+      - {name: note, type: Optional<String>}
+    outcomes:
+      - name: negative-estimate
+        when: estimate < 0
+        error: desk.ticket.NegativeEstimate
+        payload:
+          desk.ticket.NegativeEstimate: {estimate: input.estimate, minimum: 0}
+      - name: opened
+        creates: desk.ticket.Ticket
+        instance: ticket_id
+        sets:
+          title: input.title
+          priority: input.priority
+          estimate: input.estimate
+          opened_by: {caller: agent_id}
+          reopen_count: "0"
+          ticket_ref: {generated: true}
+          note: input.note
+        emits: [desk.ticket.TicketOpened]
+        payload:
+          desk.ticket.TicketOpened:
+            ticket_id: {generated: true}
+            title: input.title
+            opened_by: {caller: agent_id}
+
+  - name: desk.ticket.CloseTicket
+    input:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+    outcomes:
+      - name: closed
+        moves: desk.ticket.Ticket.close
+        instance: ticket_id
+        emits: [desk.ticket.TicketClosed]
+        payload:
+          desk.ticket.TicketClosed:
+            ticket_id: input.ticket_id
+            title: {subject: title}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+      - name: already-closed
+        wrong_state: true
+        error: desk.ticket.TicketStateConflict
+        payload:
+          desk.ticket.TicketStateConflict: {ticket_id: input.ticket_id}
+
+  - name: desk.ticket.ReopenTicket
+    input:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+    outcomes:
+      - name: reopened
+        moves: desk.ticket.Ticket.reopen
+        instance: ticket_id
+        sets:
+          reopen_count: {increment: 1}
+          note: {cleared: true}
+        emits: [desk.ticket.TicketReopened]
+        payload:
+          desk.ticket.TicketReopened:
+            ticket_id: input.ticket_id
+            reopen_count: {subject: reopen_count}
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+      - name: not-closed
+        wrong_state: true
+        error: desk.ticket.TicketStateConflict
+        payload:
+          desk.ticket.TicketStateConflict: {ticket_id: input.ticket_id}
+
+  - name: desk.ticket.Reprioritize
+    input:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: priority, type: desk.ticket.Priority}
+    outcomes:
+      - name: forbidden
+        when_subject: {predicate: opened_by != caller.agent_id}
+        error: desk.ticket.NotYours
+        payload:
+          desk.ticket.NotYours: {caller: {caller: agent_id}, opened_by: {subject: opened_by}}
+      - name: kept-high
+        when_subject: {field: priority, equals: High}
+        updates: desk.ticket.Ticket
+        instance: ticket_id
+        emits: [desk.ticket.TicketReprioritized]
+        payload:
+          desk.ticket.TicketReprioritized:
+            ticket_id: input.ticket_id
+            priority: {subject: priority}
+      - name: reprioritized
+        updates: desk.ticket.Ticket
+        instance: ticket_id
+        sets:
+          priority: input.priority
+        emits: [desk.ticket.TicketReprioritized]
+        payload:
+          desk.ticket.TicketReprioritized:
+            ticket_id: input.ticket_id
+            priority: input.priority
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+
+  - name: desk.ticket.Comment
+    input:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: text, type: String}
+    outcomes:
+      - name: refused-closed
+        when_subject_state: Closed
+        error: desk.ticket.TicketIsClosed
+        payload:
+          desk.ticket.TicketIsClosed: {title: {subject: title}, priority: {subject: priority}}
+      - name: commented
+        updates: desk.ticket.Ticket
+        instance: ticket_id
+        sets:
+          note: input.text
+        emits: [desk.ticket.TicketCommented]
+        payload:
+          desk.ticket.TicketCommented:
+            ticket_id: input.ticket_id
+            note: input.text
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+
+  - name: desk.ticket.DeleteTicket
+    input:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+    outcomes:
+      - name: deleted
+        deletes: desk.ticket.Ticket
+        instance: ticket_id
+        emits: [desk.ticket.TicketDeleted]
+        payload:
+          desk.ticket.TicketDeleted:
+            ticket_id: input.ticket_id
+      - name: no-such-ticket
+        unknown_instance: true
+        error: desk.ticket.TicketNotFound
+        payload:
+          desk.ticket.TicketNotFound: {ticket_id: input.ticket_id}
+
+  - name: desk.ticket.Escalate
+    input:
+      - {name: reason, type: String}
+      - {name: urgent, type: Boolean}
+    outcomes:
+      - name: pager-refused
+        external: the pager refuses the page
+        error: desk.ticket.PagerRefused
+        payload:
+          desk.ticket.PagerRefused: {reason: input.reason}
+      - name: throttled
+        external: the pager throttles urgent pages
+        when: urgent == true
+        error: desk.ticket.Throttled
+        payload:
+          desk.ticket.Throttled: {page_id: {generated: true}}
+      - name: quiet
+        when: urgent == false
+        accepts: nothing
+      - name: escalated
+        emits: [desk.ticket.Escalated]
+        payload:
+          desk.ticket.Escalated:
+            escalation_id: {generated: true}
+            reason: input.reason
+
+views:
+  - name: desk.ticket.Tickets
+    source: desk.ticket.Ticket
+    consistency: read_your_writes
+    fields:
+      - {name: ticket_id, type: desk.ticket.TicketId}
+      - {name: state, type: desk.ticket.Ticket.State}
+      - {name: title, type: desk.ticket.Title}
+      - {name: priority, type: desk.ticket.Priority}
+      - {name: estimate, type: Integer}
+      - {name: opened_by, type: desk.ticket.AgentId}
+      - {name: reopen_count, type: Integer}
+      - {name: ticket_ref, type: desk.ticket.TicketRef}
+      - {name: note, type: Optional<String>}

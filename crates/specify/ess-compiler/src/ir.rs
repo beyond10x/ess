@@ -884,6 +884,14 @@ pub struct ResolvedOutcome {
     /// The error it reports, if it reports one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorHandle>,
+    /// Which of that error's fields this branch determines, and from what (ess/19,
+    /// `story:error-payload-sources`), in the error's declaration order.
+    ///
+    /// The relation [`Self::payload`] holds for an emitted event, pointed at the reported error. A
+    /// field with no entry is carried as none, as every error field was before `ess/19`; an outcome
+    /// declaring none leaves the key out of the document, so its IR keeps its bytes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub error_payload: Vec<ResolvedPayloadField>,
     /// Whether a [`WrongState`](ResolvedCondition::WrongState) branch refuses or accepts.
     ///
     /// `true` everywhere else and read by nothing there. Carried rather than derived from `error`

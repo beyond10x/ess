@@ -33,7 +33,10 @@ use crate::email::{EmailControl, EmailRealization};
 use crate::escalation::EscalationRealization;
 use crate::invoice::{InvoiceRealization, SharedInvoices};
 
-/// Every obligation the billing plan owes, as `(capability, source)` in the stubs' own spelling.
+/// Every obligation the billing plan owes, as `(capability, source)` in the stubs' own spelling,
+/// and every command behaviour and view query the plan generates that this realization supplies by
+/// hand in place of the generated `behaviour::Generated` — its `…Behavior` or `…Query` seam is still
+/// one slot to fill.
 ///
 /// Held equal to `generated/rust/billing/plan.json` by
 /// `the_linkers_obligation_list_is_exactly_the_plans`, so a specification change that moves an
@@ -607,7 +610,15 @@ mod tests {
             .as_array()
             .expect("the plan lists capabilities")
             .iter()
-            .filter(|capability| capability["disposition"]["disposition"] == "obligation")
+            .filter(|capability| {
+                // A generated command behaviour or view query keeps its `…Behavior` or `…Query`
+                // seam, which this realization fills by hand; every other generated capability
+                // has no seam.
+                capability["disposition"]["disposition"] == "obligation"
+                    || ((capability["kind"] == "command_behavior"
+                        || capability["kind"] == "view_query")
+                        && capability["disposition"]["disposition"] == "generated")
+            })
             .map(|capability| {
                 let kind = match capability["kind"].as_str().expect("a capability kind") {
                     "command_behavior" => "command behaviour",

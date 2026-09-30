@@ -10,8 +10,8 @@ ESS is experimental and standalone.
 
 ## Latest release
 
-Latest published release observed on 29 September 2026:
-[0.45.0](https://github.com/beyond10x/ess/releases/tag/0.45.0). Its release record lists archives
+Latest published release observed on 30 September 2026:
+[0.46.0](https://github.com/beyond10x/ess/releases/tag/0.46.0). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset
 list: it does not claim that the archives were downloaded, their checksums verified, or the binary
 installed or run.
@@ -20,11 +20,11 @@ The last five releases:
 
 | Release | What it added |
 |---|---|
+| 0.46.0 | `generate synthesize --target rust` generates the command behaviours, view queries and invariant checks the specification fully determines, over storage and context ports; actor grants as data; a transport-free `handle` on the generated server; `--layout crate`; source format `ess/19` (sources for an error's fields) |
 | 0.45.0 | `generate synthesize --target go`, `web` and `clap` represent `Json`, so no code target refuses it any more |
 | 0.44.0 | `generate synthesize --target rust` represents `Json` as the types crate's `json::Value`; generated CLI and diagnostics references, executable Start here tutorials and task-sized guides in the public docs |
 | 0.43.0 | suites `ess-conformance/32` and `/33` (instance references inside lists, maps, structs and unions); `ESS-AUTHOR-037`, which refuses an authored act claiming an external answer it does not state; an input-guarded refusal beside held-state branches; synthesis and explorer fixes |
 | 0.42.0 | `ess-diff/11` (newtype prefix changes); mutation report and manifest `/3`, which score unkillable mutants apart |
-| 0.41.0 | source format `ess/18` (state-scoped refusals, `state` in a `when_subject` predicate, guards over a related row, a binding's delivery context); suites `/30` and `/31`; `ess-diff/10`; mutation report and manifest `/2` |
 
 [Format version history](../reference/spec-versions.md) says what every format version changed and
 which release introduced it, and the
@@ -64,7 +64,7 @@ this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.45.0` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.46.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|
@@ -79,7 +79,7 @@ The source checkout’s workspace version is `0.45.0` and includes separately do
 | Kubernetes import | Sanitized observation bundle or explicit live context to infrastructure IR | The live scanner is the credential edge. A fixed category list and empty `coverage_gaps` do not prove complete observation. [import/redaction owner](https://github.com/beyond10x/ess/blob/main/crates/infra/ess-kubernetes/src/lib.rs). |
 | Kubernetes projection | Intent plus observed IR to patches, new objects and obligations | No apply operation; unstated decisions remain obligations and unsupported conditions may refuse. [projection/refusal tests](https://github.com/beyond10x/ess/blob/main/crates/infra/infra-project/tests/projection.rs). |
 | BuildKit and Helm projection | Checked build IR to Dockerfile/Bake inputs; runtime IR to a configuration-neutral Helm chart | These projections neither execute BuildKit nor apply a chart or establish live resource availability. [deployment projection tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-deployment/tests/deployment.rs). |
-| Structural synthesis | `rust`, `go`, `web`, `clap` | Generated structure plus obligations/refusals, not business behavior. All four full targets refuse modeled Binary64; separate structural data libraries have their own support boundary. [feasibility tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/feasibility.rs) and [synthesis guide](../guides/synthesize.md). |
+| Structural synthesis | `rust`, `go`, `web`, `clap` | Generated structure plus obligations/refusals; `rust` also generates the command behaviours and view queries the specification fully determines, over implementor-provided storage and context ports. All four full targets refuse modeled Binary64; separate structural data libraries have their own support boundary. [feasibility tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/feasibility.rs) and [synthesis guide](../guides/synthesize.md). |
 | Clap synthesis | Command grammar, completion support and handler seams receiving `clap::ArgMatches`; generated `clap` and `clap_complete` 4 dependencies | No additional type layer or implemented command behavior. [Clap emitter](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/src/clap/mod.rs) and [handler tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/clap.rs). |
 | Typed CLI presentation | `specify cli` validates `ess-cli/1` to `ess-cli-plan/1`; `generate cli` emits a Rust/Clap package, help, Bash completion and reference with `ess-cli-artifacts/1` and `ess-cli-generation/1`; `--check` compares generated bytes | Typed inputs, results and declared errors remain model-owned; unsupported types and invariants refuse. Process context is separate from payloads. Application behavior requires `Handler`, dynamic native validation requires `DynamicValidator`, and the generated default handler is unavailable. [binding admission tests](https://github.com/beyond10x/ess/blob/main/crates/specify/ess-cli-contract/tests/binding.rs) and [projection and process tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-cli-project/tests/projection.rs). |
 | Conformance targets | `billing`, `oracle-fixture`, `interpreted` | Built-in reference implementations. A production adapter must establish its own execution boundary; these targets do not prove independent deployment. |

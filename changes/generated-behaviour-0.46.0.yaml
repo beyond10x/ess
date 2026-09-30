@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/generated-behaviour-0.46.0
+repository: ess
+publishedAt: 2026-09-30T12:00:00Z
+title: The Rust target generates what the specification fully determines
+summary: >-
+  `ess generate synthesize --target rust` generates the command behaviours, view queries and invariant checks the specification fully determines, over storage and context ports you provide. Actor grants arrive as data, the server gains a transport-free `handle`, `--layout crate` writes one crate, and `ess/19` gives an error's fields their sources.
+kind: capability
+impact: significant
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.46.0
+  version: 0.46.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]

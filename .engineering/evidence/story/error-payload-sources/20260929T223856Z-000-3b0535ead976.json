@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-29T22:38:56Z",
+  "actor": "human:timo",
+  "artifact": "story:error-payload-sources",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "unit gates: ess-domain 1079, ess-compiler 231, ess-conformance 1903, ess-synth 277 passed; schema/diagnostics/cli-reference/generate --check; docs; clippy; fmt-check",
+    "reference": "impl/046-errpayload@748febb11"
+  }
+}

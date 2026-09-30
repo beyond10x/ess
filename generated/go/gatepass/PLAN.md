@@ -8,7 +8,7 @@
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-29 capabilities: **22 generated**, **5 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+29 capabilities: **26 generated**, **1 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -25,31 +25,40 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `gatepass.visit.VisitorName` |
 | entity lifecycle | `gatepass.visit.Visit` |
 | command contract | `gatepass.visit.AdmitVisitor` |
+| command behaviour | `gatepass.visit.AdmitVisitor` |
 | command contract | `gatepass.visit.RegisterVisit` |
 | command contract | `gatepass.visit.SignOutVisitor` |
+| command behaviour | `gatepass.visit.SignOutVisitor` |
 | event type | `gatepass.visit.VisitRegistered` |
 | event type | `gatepass.visit.VisitorAdmitted` |
 | event type | `gatepass.visit.VisitorDeparted` |
 | error type | `gatepass.visit.InvalidVisitLength` |
 | error type | `gatepass.visit.VisitStateConflict` |
 | view type | `gatepass.visit.ExpectedVisits` |
+| view query | `gatepass.visit.ExpectedVisits` |
 | view type | `gatepass.visit.VisitById` |
+| view query | `gatepass.visit.VisitById` |
 | component port | `pass-service` |
 | component transport | `pass-service` |
+
+## Ports — yours to provide
+
+What the specification fully determines is generated; what it cannot determine is an obligation. A generated command behaviour or view query reads and writes through the ports below, and they are yours to provide: synthesis generates each port's contract and never an implementation of one, so where instances live stays your decision.
+
+| port | what it answers |
+| --- | --- |
+| storage | one per entity a generated behaviour or query reads or writes: the instance stored under an identity; storing, replacing and removing one; and every stored instance, in the order the store keeps them |
+| context | where a generated behaviour asks it: the caller's attributes, every identity and value the specification says the implementation assigns, and whether each `external:` branch is taken |
 
 ## Obligations — yours to implement
 
 | capability | source | why not generated | contract |
 | --- | --- | --- | --- |
-| command behaviour | `gatepass.visit.AdmitVisitor` | the contract is declared; the algorithm is not | given `gatepass.visit.AdmitVisitor` input, decide and enact exactly one outcome — `admitted` otherwise, takes `arrive` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorAdmitted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields |
-| command behaviour | `gatepass.visit.RegisterVisit` | the contract is declared; the algorithm is not | given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength` |
-| command behaviour | `gatepass.visit.SignOutVisitor` | the contract is declared; the algorithm is not | given `gatepass.visit.SignOutVisitor` input, decide and enact exactly one outcome — `signed-out` otherwise, takes `depart` of `gatepass.visit.Visit`, emits `gatepass.visit.VisitorDeparted`; `wrong-state` from a state no declared move starts in, error `gatepass.visit.VisitStateConflict`, and for an instance no record carries, without the error's fields |
-| view query | `gatepass.visit.ExpectedVisits` | how the projection is kept current is a storage decision | a query answering `gatepass.visit.ExpectedVisits` with rows projected from `gatepass.visit.Visit` at `read_your_writes` consistency, containing instances where `state == Expected` |
-| view query | `gatepass.visit.VisitById` | how the projection is kept current is a storage decision | a query answering `gatepass.visit.VisitById` with rows projected from `gatepass.visit.Visit` at `eventual` consistency |
+| command behaviour | `gatepass.visit.RegisterVisit` | kept an obligation by `creates:` leaving the required field `visitor` of `gatepass.visit.Visit` undetermined, in `registered` | given `gatepass.visit.RegisterVisit` input, decide and enact exactly one outcome — `registered` when `expected_minutes > 0`, creates `gatepass.visit.Visit`, emits `gatepass.visit.VisitRegistered`; `refused` otherwise, error `gatepass.visit.InvalidVisitLength` |
 
 ## Refused — not represented by this synthesis
 
 | capability | source | stage | why |
 | --- | --- | --- | --- |
-| actor grants | `gatepass.visit.Receptionist` | planning | may invoke `gatepass.visit.AdmitVisitor`, `gatepass.visit.RegisterVisit`, `gatepass.visit.SignOutVisitor`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling |
-| actor grants | `gatepass.visit.SecurityAuditor` | planning | observes only; it may invoke no command; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling |
+| actor grants | `gatepass.visit.Receptionist` | planning | may invoke `gatepass.visit.AdmitVisitor`, `gatepass.visit.RegisterVisit`, `gatepass.visit.SignOutVisitor`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
+| actor grants | `gatepass.visit.SecurityAuditor` | planning | observes only; it may invoke no command; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |

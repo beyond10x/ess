@@ -6,6 +6,7 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.46.0](#the-rust-target-generates-what-the-specification-fully-determines) | The Rust target generates what the specification fully determines | capability | significant |
 | [0.45.0](#the-go-web-and-clap-synthesis-targets-represent-json) | The Go, web and clap synthesis targets represent Json | capability | significant |
 | [0.44.0](#the-rust-synthesis-target-represents-json-and-the-public-docs-are-rebuilt) | The Rust synthesis target represents Json, and the public docs are rebuilt | capability | significant |
 | [0.43.0](#instance-references-inside-structured-values-one-refusal-precedence-and-unstated-external-answers-refused) | Instance references inside structured values, one refusal precedence and unstated external answers refused | capability | significant |
@@ -39,6 +40,14 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.46.0 — 2026-09-30
+
+### The Rust target generates what the specification fully determines
+
+capability · significant impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.46.0)
+
+`ess generate synthesize --target rust` generates the command behaviours, view queries and invariant checks the specification fully determines, over storage and context ports you provide. Actor grants arrive as data, the server gains a transport-free `handle`, `--layout crate` writes one crate, and `ess/19` gives an error's fields their sources.
 
 ## 0.45.0 — 2026-09-29
 

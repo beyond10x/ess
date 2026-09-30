@@ -2,7 +2,8 @@
 //!
 //! `docs/design/aggregate-views.md`, "Projections": the plan's `ViewQuery` obligation, the Rust and
 //! Go row types' doc comments, and the web catalog and page render the grouping and each
-//! aggregate. The row structs are unchanged — the owed query computes the aggregate.
+//! aggregate. The row structs are unchanged — the query computes the aggregate: generated where
+//! the view is fully declared, owed otherwise.
 use ess_compiler::{ir::EssIr, resolve::compile, source::SourceMap};
 use ess_domain::{spec::RawSpecFile, system::Source, Specification};
 use ess_synth::{synthesize_for, SynthesisPlan, Target};
@@ -31,16 +32,19 @@ fn emitted(target: Target) -> String {
 
 #[test]
 fn the_plan_contract_names_the_grouping_and_every_aggregate() {
-    let plan = SynthesisPlan::of(&ir()).to_markdown();
-    assert!(
-        plan.contains(
-            "containing instances where `state == Completed`, grouped by `agent_id`, computing \
-             `distinct_callers = count_distinct(caller)`, `longest_wait = max(wait_seconds)`, \
-             `mean_talk = avg(talk_seconds)`, `sessions = count()`, `talk_seconds = \
-             sum(talk_seconds)`"
+    // `TalkTimeByAgent` is fully declared, so its query is generated
+    // (`story:generated-view-queries`) and the plan owes no contract for it; `QueueTotals` reads a
+    // parameter, which the generated query does not receive, so its query is still owed and its
+    // contract names the one row it computes.
+    let planned = SynthesisPlan::of(&ir());
+    assert_eq!(
+        planned.disposition_of(
+            ess_synth::CapabilityKind::ViewQuery,
+            "metrics.session.TalkTimeByAgent"
         ),
-        "{plan}"
+        Some(&ess_synth::SynthesisDisposition::Generated)
     );
+    let plan = planned.to_markdown();
     assert!(
         plan.contains(
             ", one row, computing `longest_wait = max(wait_seconds)`, `sessions = count()`"
@@ -54,7 +58,7 @@ fn the_rust_and_go_row_types_carry_the_grouping_line() {
     let rust = emitted(Target::Rust);
     assert!(
         rust.contains(
-            "/// Grouped by `agent_id`, `channel`; one row per group holding at least one instance.\n/// Serving it"
+            "/// Grouped by `agent_id`, `channel`; one row per group holding at least one instance.\n/// The specification fully determines every row"
         ),
         "{rust}"
     );

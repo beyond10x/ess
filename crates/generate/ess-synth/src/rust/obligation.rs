@@ -40,7 +40,8 @@ pub(super) fn obligation_module(
 ) -> Option<Artifact> {
     let needed = plan.obligations().next().is_some()
         || !ir.components().is_empty()
-        || !ir.bindings().is_empty();
+        || !ir.bindings().is_empty()
+        || super::behaviour::used(ir);
     if !needed {
         return None;
     }
@@ -159,13 +160,31 @@ pub(super) fn domain_obligations(
         return;
     }
 
-    out.push_str(
-        "\n/// What this bounded context owes its implementor, as typed seams.\n///\n/// One \
-         trait per obligation in the synthesis plan, each carrying the plan's own contract.\n/// \
-         [`Unimplemented`](obligations::Unimplemented) satisfies every trait by refusing in the \
-         type system, so the workspace builds —\n/// and says exactly what it cannot yet do — \
-         before a line is hand-written.\npub mod obligations {\n",
-    );
+    let generated = traits.iter().any(|spec| spec.obligation.is_none());
+    let owed = traits.iter().any(|spec| spec.obligation.is_some());
+    if generated {
+        out.push_str(
+            "\n/// What this bounded context owes its implementor, and the seams of what is \
+             generated.\n///\n/// One trait per obligation in the synthesis plan, each carrying \
+             the plan's own contract, and one\n/// per generated behaviour, which \
+             [`Generated`](crate::behaviour::Generated) implements.",
+        );
+        if owed {
+            out.push_str(
+                "\n/// [`Unimplemented`](obligations::Unimplemented) satisfies every owed trait \
+                 by refusing in the type system.",
+            );
+        }
+        out.push_str("\npub mod obligations {\n");
+    } else {
+        out.push_str(
+            "\n/// What this bounded context owes its implementor, as typed seams.\n///\n/// One \
+             trait per obligation in the synthesis plan, each carrying the plan's own \
+             contract.\n/// [`Unimplemented`](obligations::Unimplemented) satisfies every trait by \
+             refusing in the type system, so the workspace builds —\n/// and says exactly what it \
+             cannot yet do — before a line is hand-written.\npub mod obligations {\n",
+        );
+    }
     render_traits(out, &traits);
     render_stubs(out, &traits, stubbed);
     out.push_str("}\n");
@@ -179,15 +198,20 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
             continue;
         }
         let source = command.name.to_string();
-        let Some(obligation) = plan.obligation_of(CapabilityKind::CommandBehavior, &source) else {
+        let obligation = plan.obligation_of(CapabilityKind::CommandBehavior, &source);
+        if obligation.is_none() && !plan.is_generated(CapabilityKind::CommandBehavior, &source) {
             continue;
-        };
+        }
         let type_name = emit.layout.type_name(&command.name);
         traits.push(TraitStub {
             kind: CapabilityKind::CommandBehavior,
             source: source.clone(),
-            heading: format!("The behaviour `{source}` — an implementation obligation."),
-            obligation: obligation.clone(),
+            heading: if obligation.is_some() {
+                format!("The behaviour `{source}` — an implementation obligation.")
+            } else {
+                format!("The behaviour `{source}` — generated.")
+            },
+            obligation: obligation.cloned(),
             trait_name: format!("{type_name}Behavior"),
             method_doc: format!("Decides and enacts exactly one declared outcome of `{source}`."),
             method: name::value_ident(&type_name),
@@ -204,15 +228,20 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
             continue;
         }
         let source = view.name.to_string();
-        let Some(obligation) = plan.obligation_of(CapabilityKind::ViewQuery, &source) else {
+        let obligation = plan.obligation_of(CapabilityKind::ViewQuery, &source);
+        if obligation.is_none() && !plan.is_generated(CapabilityKind::ViewQuery, &source) {
             continue;
-        };
+        }
         let type_name = emit.layout.type_name(&view.name);
         traits.push(TraitStub {
             kind: CapabilityKind::ViewQuery,
             source: source.clone(),
-            heading: format!("The query `{source}` — an implementation obligation."),
-            obligation: obligation.clone(),
+            heading: if obligation.is_some() {
+                format!("The query `{source}` — an implementation obligation.")
+            } else {
+                format!("The query `{source}` — generated.")
+            },
+            obligation: obligation.cloned(),
             trait_name: format!("{type_name}Query"),
             method_doc: format!("Serves `{source}` rows at the view's declared consistency."),
             method: name::value_ident(&type_name),
@@ -224,7 +253,8 @@ fn owed_by_domain(emit: &Emit<'_>, plan: &SynthesisPlan) -> Vec<TraitStub> {
     traits
 }
 
-/// The trait half of the `obligations` module: one seam per owed capability.
+/// The trait half of the `obligations` module: one seam per owed capability, and the same seam for
+/// each generated behaviour, which `crate::behaviour::Generated` implements.
 fn render_traits(out: &mut String, traits: &[TraitStub]) {
     for spec in traits {
         let argument = spec
@@ -232,38 +262,59 @@ fn render_traits(out: &mut String, traits: &[TraitStub]) {
             .as_ref()
             .map(|(ident, of)| format!(", {ident}: {of}"))
             .unwrap_or_default();
+        let (why, refusal) = match &spec.obligation {
+            Some(obligation) => (
+                format!(
+                    "Why it is not generated: {}.\n    ///\n    /// Contract: {}.",
+                    obligation.reason.describes(),
+                    obligation.contract
+                ),
+                "`Err` is the typed refusal of an obligation nothing has satisfied; a \
+                 satisfying\n        /// implementation never returns it.",
+            ),
+            None if spec.kind == CapabilityKind::ViewQuery => (
+                "The specification fully determines it: [`crate::behaviour::Generated`] \
+                 implements it\n    /// over the storage port. Implement it yourself to replace \
+                 that query."
+                    .to_owned(),
+                "`Err` is the typed refusal of a row whose declared type cannot hold its value.",
+            ),
+            None => (
+                "The specification fully determines it: [`crate::behaviour::Generated`] \
+                 implements it\n    /// over the storage and context ports. Implement it \
+                 yourself to replace that behaviour."
+                    .to_owned(),
+                "`Err` is the typed refusal of a request the model declares no outcome for.",
+            ),
+        };
         let _ = writeln!(
             out,
-            "    /// {}\n    ///\n    /// Why it is not generated: {}.\n    ///\n    /// \
-             Contract: {}.\n    pub trait {} {{\n        /// {}\n        ///\n        /// `Err` \
-             is the typed refusal of an obligation nothing has satisfied; a satisfying\n        \
-             /// implementation never returns it.\n        fn {}({}{argument}) -> Result<{}, \
-             {UNMET}>;\n    }}\n",
-            spec.heading,
-            spec.obligation.reason.describes(),
-            spec.obligation.contract,
-            spec.trait_name,
-            spec.method_doc,
-            spec.method,
-            spec.receiver,
-            spec.answer,
+            "    /// {}\n    ///\n    /// {why}\n    pub trait {} {{\n        /// {}\n        \
+             ///\n        /// {refusal}\n        fn {}({}{argument}) -> Result<{}, {UNMET}>;\n    \
+             }}\n",
+            spec.heading, spec.trait_name, spec.method_doc, spec.method, spec.receiver, spec.answer,
         );
     }
 }
 
-/// The stub half of the `obligations` module: `Unimplemented`, refusing each seam by value.
+/// The stub half of the `obligations` module: `Unimplemented`, refusing each owed seam by value.
+///
+/// A generated behaviour has no stub: nothing about it is owed.
 fn render_stubs(
     out: &mut String,
     traits: &[TraitStub],
     stubbed: &mut std::collections::BTreeSet<crate::plan::Capability>,
 ) {
+    if traits.iter().all(|spec| spec.obligation.is_none()) {
+        return;
+    }
     out.push_str(
         "    /// Every obligation of this bounded context, refused in the type system.\n    \
          ///\n    /// Each method returns the typed refusal naming what is owed — never a panic, \
          never a guessed\n    /// value — so a workspace built on this stub compiles and reports \
          its own gaps.\n    pub struct Unimplemented;\n",
     );
-    for spec in traits {
+    for spec in traits.iter().filter(|spec| spec.obligation.is_some()) {
         record(stubbed, spec.kind, &spec.source);
         let argument = spec
             .argument
@@ -293,8 +344,8 @@ struct TraitStub {
     source: String,
     /// The trait's one-line heading.
     heading: String,
-    /// The plan's own entry, quoted on the trait.
-    obligation: ImplementationObligation,
+    /// The plan's own entry, quoted on the trait; `None` for a generated behaviour.
+    obligation: Option<ImplementationObligation>,
     /// The trait's name.
     trait_name: String,
     /// The method's one-line doc.

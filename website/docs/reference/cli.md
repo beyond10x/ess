@@ -677,6 +677,7 @@ ess generate synthesize [OPTIONS]
 |---|---|---|---|---|
 | `--path` | `<PATH>` | no | `.` | One ESS file, or a directory with `ess-inputs.yaml` or `system.yaml` |
 | `--target` | `<TARGET>` | no | `rust` | One of `rust`, `go`, `web`, `clap`. |
+| `--layout` | `<LAYOUT>` | no | `workspace` | How the `rust` target lays its output out: a workspace of crates, or one crate at `--out` with its HTTP surface behind a `server` Cargo feature. Other targets refuse `crate`. One of `workspace`, `crate`. |
 | `--out` | `<OUT>` | no |  |  |
 | `--format` | `<FORMAT>` | no | `text` | One of `text`, `yaml`, `json`. |
 

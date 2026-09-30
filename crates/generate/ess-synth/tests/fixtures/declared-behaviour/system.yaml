@@ -1,0 +1,10 @@
+format: ess/19
+system: desk
+version: v1
+
+summary: >-
+  A help desk whose every command is fully declared, so synthesis generates each behaviour over
+  storage and context ports and an in-memory port implementation runs the synthesized suite.
+
+domains:
+  - desk.ticket
