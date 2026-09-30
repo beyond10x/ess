@@ -7,6 +7,7 @@ title: A union can carry its tag beside its variant's fields
 relations:
 - serves: vision:O2
 - informed_by: epic:ess-ui-renderer-neutral-ui
+- depends_on: story:acceptance-runs-as-toolchain-scenarios
 revision: 1
 ---
 ## Outcome
