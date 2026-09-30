@@ -145,7 +145,8 @@ impl Player {
     }
 }
 
-/// `500ms`, `12s`, `5m`, `1h`.
+/// `500ms`, `12s`, `5m`, `1h`. `None` when the text is not of that form or its value does not fit
+/// a `Duration` in seconds.
 pub fn parse_duration(text: &str) -> Option<Duration> {
     let text = text.trim();
     let split = text.find(|c: char| !c.is_ascii_digit())?;
@@ -154,8 +155,8 @@ pub fn parse_duration(text: &str) -> Option<Duration> {
     match unit {
         "ms" => Some(Duration::from_millis(number)),
         "s" => Some(Duration::from_secs(number)),
-        "m" => Some(Duration::from_secs(number * 60)),
-        "h" => Some(Duration::from_secs(number * 3600)),
+        "m" => number.checked_mul(60).map(Duration::from_secs),
+        "h" => number.checked_mul(3600).map(Duration::from_secs),
         _ => None,
     }
 }

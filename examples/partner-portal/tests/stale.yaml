@@ -1,0 +1,20 @@
+format: ess-ui-test/1
+document: ../ui.yaml
+tests:
+  - name: a stale channel marks its section until it is live again
+    steps:
+      - open: overview
+      - expect: {at: pages/overview/sections/kpis, state: ready}
+      - play: {channel: metrics, lifecycle: stale}
+      - expect: {at: pages/overview/sections/kpis, state: stale}
+      - play: {channel: metrics, lifecycle: live}
+      - expect: {at: pages/overview/sections/kpis, state: ready}
+
+  - name: stale_after marks a channel that stays reconnecting
+    steps:
+      - open: overview
+      - play: {channel: metrics, lifecycle: reconnecting}
+      - advance: 29s
+      - expect: {at: pages/overview/sections/kpis, state: ready}
+      - advance: 1s
+      - expect: {at: pages/overview/sections/kpis, state: stale}

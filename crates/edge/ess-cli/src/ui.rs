@@ -1,7 +1,7 @@
 //! `ess ui` and `ess generate ui`: the `crates/ui/` entry points, mounted on the command line.
 //!
 //! Each command is a thin shell over one crate's own entry point — [`ess_ui::check`], [`ess_ui_check::run`],
-//! [`ess_ui_docs::run`], [`ess_ui_tui::run`] and [`ess_ui_react::run`] — so what the command does
+//! [`ess_ui_docs::run`], [`ess_ui_tui::run`], [`ess_ui_test::run`] and [`ess_ui_react::run`] — so what the command does
 //! is what that crate does, and what it prints on a refusal is that crate's message verbatim.
 
 use std::path::PathBuf;
@@ -21,6 +21,9 @@ pub(crate) enum Command {
     Docs(ess_ui_docs::DocsArgs),
     /// Run an `ess-ui/1` document, answering reads from its fixtures.
     Run(Run),
+    /// Run `ess-ui-test/1` tests headless against the terminal renderer, or with `--playwright`
+    /// write them as a Playwright spec for the generated React project. Exits 1 when a test fails.
+    Test(ess_ui_test::TestArgs),
 }
 
 /// What `ess ui load` loads.
@@ -80,6 +83,10 @@ pub(crate) fn run(command: &Command) -> ExitCode {
                 Err(error) => refusal(&error.to_string()),
             }
         }
+        Command::Test(args) => match ess_ui_test::run(args) {
+            Ok(code) => code,
+            Err(error) => refusal(&error.to_string()),
+        },
     }
 }
 

@@ -38,7 +38,7 @@ use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-pub use app::{App, Lifecycle, Options};
+pub use app::{App, Lifecycle, Options, Region};
 pub use data::{DataAdapter, FixtureAdapter, ReadRequest, ReadResult};
 pub use profile::{Plan, Refusal, RendererProfile, TUI};
 

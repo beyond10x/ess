@@ -1,0 +1,13 @@
+format: ess-ui-test/1
+document: ../ui.yaml
+tests:
+  - name: a live ticket lands in the filtered list
+    steps:
+      - open: tickets.list
+      - type: {at: pages/tickets.list/sections/filters, text: sandbox}
+      - expect: {at: pages/tickets.list/sections/list, state: empty}
+      # tickets.yaml opens tk-07 at 25s, together with the looped tk-06, which the filter drops.
+      - play: {event: tickets.TicketOpened, with: {id: tk-07}}
+      - advance: 500ms
+      - expect: {at: pages/tickets.list/sections/list, rows: [tk-07]}
+      - expect: {at: pages/tickets.list/sections/list/rows/tk-07, text: Need a sandbox}

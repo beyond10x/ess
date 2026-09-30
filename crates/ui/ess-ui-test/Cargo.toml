@@ -1,0 +1,24 @@
+[package]
+name = "ess-ui-test"
+description = "ess-ui-test/1: UI behaviour tests that select nodes by canonical node path, run headless against the terminal renderer and emitted as a Playwright spec for the generated React project."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-ui = { path = "../ess-ui" }
+ess-ui-tui = { path = "../ess-ui-tui" }
+ess-ui-react = { path = "../ess-ui-react" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+# The version ess-ui-tui draws with: the runner renders its screen into ratatui's test backend.
+ratatui = { version = "=0.29.0", default-features = false }
+tempfile = "3.27"
+
+[lints]
+workspace = true
