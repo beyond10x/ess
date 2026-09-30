@@ -152,7 +152,7 @@ hint. The [specification guide](../guides/write-a-specification.md) covers the r
 
 ```shell-session ess-tutorial
 $ ess generate --path . --kind openapi --out generated
-openapi/task-service.yaml — 10755 byte(s)
+openapi/task-service.yaml — 13128 byte(s)
 1 artifact(s), written to generated
 ```
 

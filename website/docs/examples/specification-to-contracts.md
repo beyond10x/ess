@@ -224,7 +224,7 @@ Without it, every change owes the whole generated tree.
               $ref: '#/components/schemas/billing.invoice.CreateInvoice.Input'
       responses:
         '202':
-          description: 'Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:

@@ -934,11 +934,12 @@ fn post(port: u16, path: &str, body: &str) -> (u16, serde_json::Value) {
 }
 
 /// What both surfaces must answer for a visit nobody registered: the declared `wrong-state`
-/// branch and its error, and no payload, because such a visit is in no state.
+/// branch and its error, nothing published, and no payload, because such a visit is in no state.
 fn assert_unknown_visit_is_wrong_state(language: &str, port: u16) {
     let unknown = r#"{"visit_id":"00000000-0000-4000-8000-0000000000ff"}"#;
     let expected = serde_json::json!({
         "outcome": "wrong-state",
+        "published": [],
         "error": VISIT_STATE_CONFLICT,
     });
     for path in [
