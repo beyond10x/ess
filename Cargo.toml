@@ -19,6 +19,7 @@ members = [
     "crates/generate/ess-entity-runtime",
     # ui — renderer-neutral UI documents (ess-ui/1).
     "crates/ui/ess-ui",
+    "crates/ui/ess-ui-tui",
     # verify — an implementation is measured against the specification.
     "crates/verify/ess-conformance",
     "crates/verify/ess-diff",
