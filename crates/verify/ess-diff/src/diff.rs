@@ -2336,6 +2336,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
             residual_fields(declaration, "params");
             remove_keys(
                 declaration,
+                // `aggregation` is `grouping-changed` / `field-aggregate-changed` (ess#256).
                 &[
                     "source",
                     "filter",
@@ -2343,6 +2344,7 @@ fn residual_construct(declaration: &mut serde_json::Value, family: &str) {
                     "paging",
                     "consistency",
                     "assertion_style",
+                    "aggregation",
                 ],
             );
         }
