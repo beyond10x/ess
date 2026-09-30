@@ -222,7 +222,7 @@ downstream complains, and one task in the gate is the only thing that knows.
 The ESS agent plugin lives in `beyond10x/agentplugins` (`plugins/ess/`), with every other Beyond10x
 plugin. Its `agentplugins-check tools` runs every command the plugin spells against the newest ESS
 release and validates its syntax example with it, daily and on each of its pull requests, so a verb
-renamed or removed here turns that check red there. The first level of `ess` is the four areas and
+renamed or removed here turns that check red there. The first level of `ess` is the five areas and
 nothing else (`TOOLS` in `crates/edge/ess-cli/src/main.rs` is empty).
 
 **Reading a failed `Gate` without the log.** The Actions log endpoint redirects to a zip and

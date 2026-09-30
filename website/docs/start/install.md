@@ -134,9 +134,10 @@ From now on, any `ess` run in `tasks` or below it runs 0.46.0 from the cache, wh
 on your `PATH`, until you move the pin. `ess specify toolchain which` prints the release that would
 run and why.
 
-The first level of `ess` is four areas: `specify` (write and resolve a specification), `generate`
-(turn it into artifacts), `verify` (hold an implementation or a later revision to it) and `infra`
-(read an observed cluster). `ess <area> --help` lists what each holds, and the
+The first level of `ess` is five areas: `specify` (write and resolve a specification), `generate`
+(turn it into artifacts), `verify` (hold an implementation or a later revision to it), `infra`
+(read an observed cluster) and `ui` (load, document and run an `ess-ui/1` document).
+`ess <area> --help` lists what each holds, and the
 [CLI reference](../reference/cli.md) describes every command.
 
 Next: [Write your first specification](./first-specification.md).

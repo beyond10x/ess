@@ -77,6 +77,10 @@ infra-analyze = { path = "crates/infra/infra-analyze", version = "0.46.0" }
 infra-spec = { path = "crates/infra/infra-spec", version = "0.46.0" }
 infra-project = { path = "crates/infra/infra-project", version = "0.46.0" }
 schema-contract = { path = "crates/generate/schema-contract", version = "0.46.0" }
+ess-ui = { path = "crates/ui/ess-ui", version = "0.46.0" }
+ess-ui-docs = { path = "crates/ui/ess-ui-docs", version = "0.46.0" }
+ess-ui-react = { path = "crates/ui/ess-ui-react", version = "0.46.0" }
+ess-ui-tui = { path = "crates/ui/ess-ui-tui", version = "0.46.0" }
 semver = { version = "1", features = ["serde"] }
 
 serde = { version = "1", features = ["derive"] }

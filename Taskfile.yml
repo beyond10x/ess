@@ -39,6 +39,9 @@ tasks:
         --package ess-service-contract
         --package ess-synth
         --package ess-ui
+        --package ess-ui-docs
+        --package ess-ui-react
+        --package ess-ui-tui
         --package ess-xtask
         --package gatepass-realization
         --package infra-analyze

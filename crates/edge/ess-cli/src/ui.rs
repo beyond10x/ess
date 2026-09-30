@@ -1,0 +1,97 @@
+//! `ess ui` and `ess generate ui`: the `crates/ui/` entry points, mounted on the command line.
+//!
+//! Each command is a thin shell over one crate's own entry point — [`ess_ui::check`],
+//! [`ess_ui_docs::run`], [`ess_ui_tui::run`] and [`ess_ui_react::run`] — so what the command does
+//! is what that crate does, and what it prints on a refusal is that crate's message verbatim.
+
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Subcommand, ValueEnum};
+
+/// `ess ui`: renderer-neutral UI documents (`ess-ui/1`) — `crates/ui/`.
+#[derive(Debug, Subcommand)]
+pub(crate) enum Command {
+    /// Load an `ess-ui/1` document and print what it holds, or name the node that refuses it.
+    Load(Load),
+    /// Render the `ess-ui/1` reference from its schema, as HTML or Markdown.
+    Docs(ess_ui_docs::DocsArgs),
+    /// Run an `ess-ui/1` document, answering reads from its fixtures.
+    Run(Run),
+}
+
+/// What `ess ui load` loads.
+#[derive(Debug, clap::Args)]
+pub(crate) struct Load {
+    /// The `ess-ui/1` document to load.
+    #[arg(long)]
+    path: PathBuf,
+}
+
+/// Which renderer `ess ui run` runs the document in, and the document.
+#[derive(Debug, clap::Args)]
+pub(crate) struct Run {
+    /// Run in the terminal; the only renderer this command offers so far, so it must be named.
+    #[arg(long, required = true)]
+    tui: bool,
+    #[command(flatten)]
+    document: ess_ui_tui::TuiArgs,
+}
+
+/// `ess generate ui`: an `ess-ui/1` document becomes an application.
+#[derive(Debug, clap::Args)]
+pub(crate) struct Generate {
+    /// What to generate.
+    #[arg(long, value_enum)]
+    target: Target,
+    #[command(flatten)]
+    react: ess_ui_react::ReactArgs,
+}
+
+/// The applications `ess generate ui` generates.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Target {
+    /// A Vite + React + TypeScript project.
+    React,
+}
+
+/// Runs an `ess ui` command.
+pub(crate) fn run(command: &Command) -> ExitCode {
+    match command {
+        Command::Load(load) => match ess_ui::check(&load.path) {
+            Ok(summary) => success(&summary.to_string()),
+            Err(error) => refusal(&format!("{}: {}", error.path(), error.message())),
+        },
+        Command::Docs(args) => match ess_ui_docs::run(args) {
+            Ok(summary) => success(&summary),
+            Err(error) => refusal(&error.problems().join("\n")),
+        },
+        Command::Run(run) => {
+            debug_assert!(run.tui, "clap requires `--tui`");
+            match ess_ui_tui::run(&run.document) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => refusal(&error.to_string()),
+            }
+        }
+    }
+}
+
+/// Runs `ess generate ui`.
+pub(crate) fn generate(arguments: &Generate) -> ExitCode {
+    match arguments.target {
+        Target::React => match ess_ui_react::run(&arguments.react) {
+            Ok(summary) => success(&summary),
+            Err(error) => refusal(&error.to_string()),
+        },
+    }
+}
+
+fn success(summary: &str) -> ExitCode {
+    println!("{summary}");
+    ExitCode::SUCCESS
+}
+
+fn refusal(message: &str) -> ExitCode {
+    eprintln!("{message}");
+    ExitCode::from(1)
+}
