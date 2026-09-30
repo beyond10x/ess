@@ -21,6 +21,7 @@ members = [
     "crates/ui/ess-ui",
     "crates/ui/ess-ui-docs",
     "crates/ui/ess-ui-react",
+    "crates/ui/ess-ui-tui",
     # verify — an implementation is measured against the specification.
     "crates/verify/ess-conformance",
     "crates/verify/ess-diff",
