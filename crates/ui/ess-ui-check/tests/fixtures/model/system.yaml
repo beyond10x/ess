@@ -1,0 +1,9 @@
+# The smallest model an `ess-ui/1` document is checked against: two bounded contexts, one whose
+# commands an actor is granted and one whose commands nobody is.
+format: ess/1
+system: shop
+version: v1
+
+domains:
+  - shop.stock
+  - shop.audit
