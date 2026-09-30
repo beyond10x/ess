@@ -47,17 +47,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/billing.invoice.CancelInvoice.wrong-state.Response'
         '501':
-          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command''s effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.'
           content:
             application/json:
               schema:
                 additionalProperties: false
                 properties:
+                  committed:
+                    description: '`true` when the command''s effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.'
+                    type: boolean
                   refused:
                     description: What was left unfinished, in words.
                     type: string
                 required:
                 - refused
+                - committed
                 type: object
   /invoices/commands/create-invoice:
     post:
@@ -88,17 +92,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/billing.invoice.CreateInvoice.rejected.Response'
         '501':
-          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command''s effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.'
           content:
             application/json:
               schema:
                 additionalProperties: false
                 properties:
+                  committed:
+                    description: '`true` when the command''s effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.'
+                    type: boolean
                   refused:
                     description: What was left unfinished, in words.
                     type: string
                 required:
                 - refused
+                - committed
                 type: object
   /invoices/commands/issue-invoice:
     post:
@@ -127,17 +135,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/billing.invoice.IssueInvoice.wrong-state.Response'
         '501':
-          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command''s effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.'
           content:
             application/json:
               schema:
                 additionalProperties: false
                 properties:
+                  committed:
+                    description: '`true` when the command''s effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.'
+                    type: boolean
                   refused:
                     description: What was left unfinished, in words.
                     type: string
                 required:
                 - refused
+                - committed
                 type: object
   /invoices/commands/pay-invoice:
     post:
@@ -172,17 +184,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/billing.invoice.PayInvoice.rejected.Response'
         '501':
-          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command''s effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.'
           content:
             application/json:
               schema:
                 additionalProperties: false
                 properties:
+                  committed:
+                    description: '`true` when the command''s effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.'
+                    type: boolean
                   refused:
                     description: What was left unfinished, in words.
                     type: string
                 required:
                 - refused
+                - committed
                 type: object
 components:
   schemas:

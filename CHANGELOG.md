@@ -35,6 +35,24 @@
 
 ### Changed
 
+- A served `501` says whether the command's effect was committed, in a boolean `committed` member
+  every `501` body now carries (beyond10x/ess#260). An unmet obligation, where nothing was written,
+  answers `{"refused": …, "committed": false}`; a committed command whose delivery to a binding
+  failed answers `{"refused": "delivering what the command published: …", "committed": true}`,
+  with the same words as before. The contract's `501` schema declares `committed` (boolean,
+  required) for every command. The generated Rust and Go servers answer the same members, and a
+  served view's `501` carries `committed: false`.
+- **Breaking for a Rust shell that matches every variant of the server's `entry::Refused`
+  without a wildcard arm**: the committed case is a new variant, `Refused::Undelivered(String)`,
+  where 0.47.0 answered `Refused::Unmet`. Add an `Undelivered` arm. A shell that matched
+  `Refused::Unmet(detail)` and tested `detail` for the prefix `delivering what the command
+  published` no longer sees that case under `Unmet`; match `Refused::Undelivered`, or call
+  `Refused::committed()`. A shell that only calls `status()` or `to_string()` is unaffected: both
+  answer as before. `http::Response::from(&Refused)` renders a refusal as served, `committed`
+  included.
+- The web bridge's `unmet-obligation` refusal carries `committed` the same way, and a command
+  whose delivery failed after it took effect is the new `BridgeError::Undelivered` (the same
+  `kind`); a `match` over every `BridgeError` variant without a wildcard arm needs one more arm.
 - A newer `ess` delegating to the release an `ess-inputs.yaml` pins (`requires: ess X.Y.Z`) now
   prints its one-line `note: ess … is the dispatcher; delegating to ess …` on stderr for every
   command, not only `--version`, so output written by the pinned release is not taken for the

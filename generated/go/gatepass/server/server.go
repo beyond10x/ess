@@ -80,6 +80,18 @@ func refusal(status int, detail string) response {
 	return rendered(status, map[string]any{"refused": detail})
 }
 
+// unfinished is the 501 the contract declares: the realization is unfinished.
+//
+// Its body is refusal's with one more member, committed: true when the command's effect and
+// events were committed and delivering what it published failed, and false when an unmet
+// obligation stopped it before anything was written.
+func unfinished(detail string, committed bool) response {
+	return rendered(501, struct {
+		Refused   string `json:"refused"`
+		Committed bool   `json:"committed"`
+	}{detail, committed})
+}
+
 // methodNotAllowed is the answer for a path this surface holds under a different method.
 func methodNotAllowed(allowed string) response {
 	return refusal(405, fmt.Sprintf("this path answers `%s`, and the contract declares no other method for it", allowed))
