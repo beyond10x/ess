@@ -483,6 +483,7 @@ dependencies = [
  "ess-ui-check",
  "ess-ui-docs",
  "ess-ui-react",
+ "ess-ui-test",
  "ess-ui-tui",
  "flate2",
  "fluent-uri",
@@ -752,6 +753,21 @@ dependencies = [
  "ess-ui",
  "serde_json",
  "serde_yaml",
+]
+
+[[package]]
+name = "ess-ui-test"
+version = "0.47.0"
+dependencies = [
+ "clap",
+ "ess-ui",
+ "ess-ui-react",
+ "ess-ui-tui",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
 ]
 
 [[package]]

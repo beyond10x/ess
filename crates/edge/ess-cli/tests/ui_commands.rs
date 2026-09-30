@@ -202,7 +202,7 @@ fn the_ui_area_offers_load_docs_and_run() {
         .filter(|line| line.starts_with("  ") && !line.starts_with("   "))
         .filter_map(|line| line.split_whitespace().next())
         .collect();
-    assert_eq!(offered, ["load", "check", "docs", "run"], "{help}");
+    assert_eq!(offered, ["load", "check", "docs", "run", "test"], "{help}");
 }
 
 #[test]
@@ -314,4 +314,29 @@ fn ui_check_model_reads_a_directory_through_its_ess_inputs() {
             model.display()
         );
     }
+}
+
+#[test]
+fn ui_test_runs_the_example_tests() {
+    let output = ess(&[
+        "ui",
+        "test",
+        "--path",
+        EXAMPLE,
+        "examples/partner-portal/tests/partners-list.yaml",
+        "examples/partner-portal/tests/live.yaml",
+        "examples/partner-portal/tests/stale.yaml",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is JSON");
+    assert_eq!(report["format"], "ess-ui-test-report/1");
+    let tests = report["tests"].as_array().expect("a tests list");
+    assert!(!tests.is_empty());
+    assert!(
+        tests.iter().all(|test| test["status"] == "passed"),
+        "{tests:#?}"
+    );
 }

@@ -1556,4 +1556,19 @@ ess ui run [OPTIONS] --tui --path <PATH>
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to run |
 | `--fixtures` | `<FIXTURES>` | no |  | A fixture directory replacing the one the document names |
 
+#### `ess ui test`
+
+Run `ess-ui-test/1` tests headless against the terminal renderer, or with `--playwright` write them as a Playwright spec for the generated React project. Exits 1 when a test fails
+
+```text
+ess ui test [OPTIONS] --path <PATH> <TESTS>...
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `<TESTS>`… |  | yes |  | `ess-ui-test/1` files |
+| `--path` | `<PATH>` | yes |  | The `ess-ui/1` document under test; every test file must name it |
+| `--format` | `<FORMAT>` | no | `text` | Report format. One of `text`, `json`. |
+| `--playwright` | `<OUT>` | no |  | Write the tests as a Playwright spec for the generated React project to this file, instead of running them |
+
 [ess-cli-end]: #

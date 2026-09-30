@@ -78,6 +78,7 @@ const sidebars: SidebarsConfig = {
         'reference/diagnostics',
         'reference/formats',
         'reference/ess-ui',
+        'reference/ess-ui-test',
         'reference/spec-versions',
         'reference/predicates',
         'reference/glossary',

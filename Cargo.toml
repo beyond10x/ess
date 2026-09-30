@@ -23,6 +23,7 @@ members = [
     "crates/ui/ess-ui-docs",
     "crates/ui/ess-ui-react",
     "crates/ui/ess-ui-tui",
+    "crates/ui/ess-ui-test",
     # verify — an implementation is measured against the specification.
     "crates/verify/ess-conformance",
     "crates/verify/ess-diff",
@@ -83,6 +84,7 @@ ess-ui-check = { path = "crates/ui/ess-ui-check", version = "0.47.0" }
 ess-ui-docs = { path = "crates/ui/ess-ui-docs", version = "0.47.0" }
 ess-ui-react = { path = "crates/ui/ess-ui-react", version = "0.47.0" }
 ess-ui-tui = { path = "crates/ui/ess-ui-tui", version = "0.47.0" }
+ess-ui-test = { path = "crates/ui/ess-ui-test", version = "0.47.0" }
 semver = { version = "1", features = ["serde"] }
 
 serde = { version = "1", features = ["derive"] }

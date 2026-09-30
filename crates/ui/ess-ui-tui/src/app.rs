@@ -45,6 +45,43 @@ impl Options {
     }
 }
 
+/// Where a node was drawn on the last frame ([`App::regions`]).
+///
+/// Recorded are the page header and its actions, every drawn section box, the children of a
+/// section, the open overlay, and for a collection that is a section's or an overlay's body: its
+/// column headers (a table's only), each drawn row line, each cell of a row (not for cards, a
+/// list or a tree with an `item`, whose cells the generated React project does not render) and
+/// each row action a row offers. A node not listed was not drawn on its own cells (or not drawn
+/// at all).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Region {
+    /// The node's canonical path (`ess_ui::NodePath`); a row and the cells inside it are scoped as
+    /// `<collection>/rows/<key>` and `<collection>/rows/<key>/columns/<column>`, the path the
+    /// generated React project renders as `data-ui-path`.
+    pub path: String,
+    /// The row key (the section's `live.match` field, else `id`), for a row and its cells.
+    pub row: Option<String>,
+    /// The screen cells the node occupies.
+    pub area: ratatui::layout::Rect,
+    /// The node's whole text where the screen may cut it or does not show it: a row's cells, a
+    /// cell's value, a column's label, an action's label. `None`: the text is what `area` shows.
+    pub text: Option<String>,
+}
+
+/// A node's place inside a list of lines, before the list is placed on the screen.
+#[derive(Debug, Clone)]
+pub(crate) struct Mark {
+    pub path: String,
+    pub row: Option<String>,
+    pub line: usize,
+    pub height: usize,
+    pub x: usize,
+    /// `None`: to the right edge.
+    pub width: Option<usize>,
+    /// [`Region::text`].
+    pub text: Option<String>,
+}
+
 /// The lifecycle state a section is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lifecycle {
@@ -179,6 +216,10 @@ pub struct App {
     deferred: Vec<(String, Value)>,
     signed_out: bool,
     quit: bool,
+    /// Marks of the lines being drawn, not yet placed on the screen.
+    pub(crate) marks: std::cell::RefCell<Vec<Mark>>,
+    /// What the last frame drew where.
+    pub(crate) regions: std::cell::RefCell<Vec<Region>>,
 }
 
 impl App {
@@ -242,6 +283,8 @@ impl App {
             deferred: Vec::new(),
             signed_out: false,
             quit: false,
+            marks: std::cell::RefCell::default(),
+            regions: std::cell::RefCell::default(),
         };
         app.go(&home, BTreeMap::new(), true);
         Ok(app)
@@ -295,6 +338,12 @@ impl App {
                 _ => None,
             })
             .unwrap_or_default()
+    }
+
+    /// Where the last [`App::draw`] drew each node it records ([`Region`]), in drawing order.
+    /// Empty before the first draw. Read-only: drawing again replaces it.
+    pub fn regions(&self) -> Vec<Region> {
+        self.regions.borrow().clone()
     }
 
     /// The lifecycle state of a section of the page shown.

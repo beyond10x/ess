@@ -24,7 +24,7 @@ use ess_ui::{
 
 use crate::app::{
     bar_items, board_rows, columns_of, form_fields, graph_collection, references_collection, App,
-    BarItem, Ctx, Focus, Lifecycle, Prompt, ReadState,
+    BarItem, Ctx, Focus, Lifecycle, Mark, Prompt, ReadState, Region,
 };
 use crate::expr::{display, truthy};
 
@@ -51,9 +51,82 @@ struct Place<'a> {
     ctx: Ctx<'a>,
     focused: bool,
     width: usize,
+    /// Whether a collection drawn right here records its rows and cells ([`crate::Region`]): only
+    /// a section's or an overlay's own body, whose lines are placed as they are.
+    record: bool,
+}
+
+/// A section's lines, ready to be placed.
+struct SectionBlock {
+    index: usize,
+    path: String,
+    title: String,
+    lines: Vec<Line<'static>>,
+    marks: Vec<Mark>,
+}
+
+/// The cells inside a bordered block.
+fn inner(area: Rect) -> Rect {
+    Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    }
 }
 
 impl App {
+    fn mark(&self, mark: Mark) {
+        self.marks.borrow_mut().push(mark);
+    }
+
+    fn take_marks(&self) -> Vec<Mark> {
+        std::mem::take(&mut *self.marks.borrow_mut())
+    }
+
+    fn region(&self, path: String, row: Option<String>, area: Rect, text: Option<String>) {
+        self.regions.borrow_mut().push(Region {
+            path,
+            row,
+            area,
+            text,
+        });
+    }
+
+    /// Places `marks`, made against lines drawn from the top left of `area`, on the screen;
+    /// what falls outside `area` was not drawn and is dropped.
+    fn place_marks(&self, marks: Vec<Mark>, area: Rect) {
+        for mark in marks {
+            let (Ok(line), Ok(x)) = (u16::try_from(mark.line), u16::try_from(mark.x)) else {
+                continue;
+            };
+            if line >= area.height || x >= area.width {
+                continue;
+            }
+            let height = u16::try_from(mark.height)
+                .unwrap_or(u16::MAX)
+                .min(area.height - line);
+            let width = mark
+                .width
+                .map_or(u16::MAX, |width| u16::try_from(width).unwrap_or(u16::MAX))
+                .min(area.width - x);
+            if height == 0 || width == 0 {
+                continue;
+            }
+            self.region(
+                mark.path,
+                mark.row,
+                Rect {
+                    x: area.x + x,
+                    y: area.y + line,
+                    width,
+                    height,
+                },
+                mark.text,
+            );
+        }
+    }
+
     /// Renders the screen into a `width` × `height` test backend and returns its text, one line
     /// per row with trailing blanks trimmed.
     pub fn render_text(&self, width: u16, height: u16) -> String {
@@ -76,6 +149,8 @@ impl App {
 
     /// Draws the whole screen.
     pub fn draw(&self, frame: &mut Frame<'_>) {
+        self.regions.borrow_mut().clear();
+        self.marks.borrow_mut().clear();
         let [top, body, status, hints] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Min(1),
@@ -205,17 +280,25 @@ impl App {
     }
 
     fn draw_outlet(&self, frame: &mut Frame<'_>, area: Rect) {
+        self.marks.borrow_mut().clear();
         let header = self.header_lines(area.width as usize);
         let header_height = u16::try_from(header.len())
             .unwrap_or(u16::MAX)
             .min(area.height);
-        frame.render_widget(
-            Paragraph::new(header),
-            Rect {
-                height: header_height,
-                ..area
-            },
-        );
+        let header_area = Rect {
+            height: header_height,
+            ..area
+        };
+        if self.page_def().header.is_some() {
+            self.region(
+                format!("{}/header", self.page_path()),
+                None,
+                header_area,
+                None,
+            );
+        }
+        self.place_marks(self.take_marks(), header_area);
+        frame.render_widget(Paragraph::new(header), header_area);
         let mut rest = Rect {
             y: area.y + header_height,
             height: area.height - header_height,
@@ -223,37 +306,47 @@ impl App {
         };
         let width = rest.width.saturating_sub(2) as usize;
         let sections = self.visible_sections();
-        let blocks: Vec<(usize, String, Vec<Line<'static>>)> = sections
+        let blocks: Vec<SectionBlock> = sections
             .iter()
             .map(|(index, section)| {
+                self.marks.borrow_mut().clear();
                 let (title, lines) = self.section_lines(section, *index, width);
-                (*index, title, lines)
+                SectionBlock {
+                    index: *index,
+                    path: self.section_path(&section.name).to_string(),
+                    title,
+                    lines,
+                    marks: self.take_marks(),
+                }
             })
             .collect();
         let heights: Vec<u16> = blocks
             .iter()
-            .map(|(_, _, lines)| u16::try_from(lines.len() + 2).unwrap_or(u16::MAX))
+            .map(|block| u16::try_from(block.lines.len() + 2).unwrap_or(u16::MAX))
             .collect();
         let focused = blocks
             .iter()
-            .position(|(index, _, _)| Focus::Section(*index) == self.focus)
+            .position(|block| Focus::Section(block.index) == self.focus)
             .unwrap_or(0);
         let mut start = 0;
         while start < focused && heights[start..=focused].iter().sum::<u16>() > rest.height {
             start += 1;
         }
-        for ((index, title, lines), height) in blocks.into_iter().zip(heights).skip(start) {
+        for (section, height) in blocks.into_iter().zip(heights).skip(start) {
             if rest.height < 3 {
                 break;
             }
             let height = height.min(rest.height);
-            let block = Block::bordered().title(title);
-            let block = if Focus::Section(index) == self.focus {
+            let block = Block::bordered().title(section.title);
+            let block = if Focus::Section(section.index) == self.focus {
                 block.border_style(bold())
             } else {
                 block
             };
-            frame.render_widget(Paragraph::new(lines).block(block), Rect { height, ..rest });
+            let drawn = Rect { height, ..rest };
+            self.region(section.path, None, drawn, None);
+            self.place_marks(section.marks, inner(drawn));
+            frame.render_widget(Paragraph::new(section.lines).block(block), drawn);
             rest.y += height;
             rest.height -= height;
         }
@@ -299,6 +392,7 @@ impl App {
                 ctx,
                 focused: false,
                 width,
+                record: false,
             };
             let spans: Vec<Span<'static>> = header
                 .metrics
@@ -322,6 +416,19 @@ impl App {
                     )
                 })
                 .collect();
+            let mut x = 0;
+            for (action, label) in header.actions.iter().zip(&labels) {
+                self.mark(Mark {
+                    path: format!("{}/header/actions/{}", self.page_path(), action.name),
+                    row: None,
+                    line: lines.len(),
+                    height: 1,
+                    x,
+                    width: Some(label.width()),
+                    text: Some(browser_label(action)),
+                });
+                x += label.width() + 1;
+            }
             lines.push(Line::styled(
                 format!("{} (: to run)", labels.join(" ")),
                 dim(),
@@ -451,10 +558,23 @@ impl App {
                     },
                     focused: Focus::Section(index) == self.focus,
                     width,
+                    record: true,
                 };
                 let mut lines = self.body_lines(&section.body, &place);
                 for child in &section.children {
-                    lines.extend(self.node_lines(child, &place));
+                    let drawn = self.node_lines(child, &place);
+                    if let Some(name) = &child.common.name {
+                        self.mark(Mark {
+                            path: format!("{path}/children/{name}"),
+                            row: None,
+                            line: lines.len(),
+                            height: drawn.len(),
+                            x: 0,
+                            width: None,
+                            text: None,
+                        });
+                    }
+                    lines.extend(drawn);
                 }
                 lines
             }
@@ -496,9 +616,17 @@ impl App {
             },
             focused: true,
             width: area.width.saturating_sub(2) as usize,
+            record: true,
         };
         let mut lines = vec![Line::styled(title.clone(), bold()), Line::raw("")];
+        self.marks.borrow_mut().clear();
         lines.extend(self.body_lines(&overlay.body, &place));
+        let mut marks = self.take_marks();
+        for mark in &mut marks {
+            mark.line += 2;
+        }
+        self.region(open.path.to_string(), None, area, None);
+        self.place_marks(marks, inner(area));
         frame.render_widget(Clear, area);
         frame.render_widget(
             Paragraph::new(lines).block(
@@ -560,6 +688,7 @@ impl App {
         };
         let inner = Place {
             path: &path,
+            record: false,
             ..*place
         };
         self.body_lines(&node.body, &inner)
@@ -603,7 +732,9 @@ impl App {
     #[allow(clippy::too_many_lines)] // one arm per composite kind
     fn composite_lines(&self, composite: &Composite, place: &Place<'_>) -> Vec<Line<'static>> {
         match composite {
-            Composite::Collection(collection) => self.collection_lines(collection, place),
+            Composite::Collection(collection) => {
+                self.collection_lines(collection, place, Some("row_actions"))
+            }
             Composite::Record(record) => {
                 let request = record
                     .reads
@@ -641,6 +772,7 @@ impl App {
                         row: Some(&row),
                         ..place.ctx
                     },
+                    record: false,
                     ..*place
                 };
                 for node in &record.item {
@@ -684,6 +816,7 @@ impl App {
                             path: &path,
                             ui: "board-widget",
                             focused: false,
+                            record: false,
                             ..*place
                         };
                         lines.extend(self.body_lines(&node.body, &inner));
@@ -701,7 +834,11 @@ impl App {
                     .iter()
                     .map(|node| Line::from(flatten(self.node_lines(node, place))))
                     .collect();
-                lines.extend(self.collection_lines(&collection, place));
+                let before = self.marks.borrow().len();
+                lines.extend(self.collection_lines(&collection, place, None));
+                for mark in self.marks.borrow_mut().iter_mut().skip(before) {
+                    mark.line += editor.toolbar.len();
+                }
                 lines
             }
             Composite::RichText(text) => {
@@ -740,7 +877,60 @@ impl App {
                 lines
             }
             Composite::References(references) => {
-                self.collection_lines(&references_collection(references), place)
+                self.collection_lines(&references_collection(references), place, None)
+            }
+        }
+    }
+
+    /// Records each row action a recorded row offers at `<rows>/<key>/<segment>/<name>`, carrying
+    /// the label its control shows in the generated React project, which renders the actions on
+    /// every row. The cursor row's actions are placed on their entry in the hint line drawn at
+    /// `hint_line` ([`App::action_hint`]); another row's, which the terminal offers once its
+    /// row has the cursor, on that row's line.
+    #[allow(clippy::too_many_arguments)]
+    fn mark_row_actions(
+        &self,
+        actions: &[ess_ui::Action],
+        rows_path: &str,
+        segment: &str,
+        recorded: &[(String, usize, &Value)],
+        cursor_key: Option<&str>,
+        hint_line: usize,
+        place: &Place<'_>,
+    ) {
+        for (key, line, row) in recorded {
+            let ctx = Ctx {
+                row: Some(row),
+                ..place.ctx
+            };
+            // Where each keyed action's label starts in the hint: `<key> <label>`, joined by ` · `.
+            let mut hinted = std::collections::BTreeMap::new();
+            if cursor_key == Some(key.as_str()) {
+                let mut x = 0;
+                for (letter, action) in self.action_keys(actions, &ctx) {
+                    let shown = action.label.clone().unwrap_or_else(|| action.name.clone());
+                    let start = x + letter.len_utf8() + 1;
+                    hinted.insert(action.name.clone(), (start, shown.width()));
+                    x = start + shown.width() + " · ".width();
+                }
+            }
+            for action in actions {
+                if !self.visible(action.visible.as_ref().map(|expr| expr.0.as_str()), &ctx) {
+                    continue;
+                }
+                let (line, x, width) = match hinted.get(&action.name) {
+                    Some((x, width)) => (hint_line, *x, Some(*width)),
+                    None => (*line, 0, None),
+                };
+                self.mark(Mark {
+                    path: format!("{rows_path}/{key}/{segment}/{}", action.name),
+                    row: Some(key.clone()),
+                    line,
+                    height: 1,
+                    x,
+                    width,
+                    text: Some(browser_label(action)),
+                });
             }
         }
     }
@@ -762,11 +952,14 @@ impl App {
         vec![Line::styled(hint.join(" · "), dim())]
     }
 
+    /// A collection's lines. `row_actions_at` is the path segment the document lists the row
+    /// actions under (`row_actions` for a collection); `None` records no row action.
     #[allow(clippy::too_many_lines)] // header, rows, detail strip, expansion and footer
     fn collection_lines(
         &self,
         collection: &ess_ui::Collection,
         place: &Place<'_>,
+        row_actions_at: Option<&str>,
     ) -> Vec<Line<'static>> {
         let Some(reads) = &collection.reads else {
             return vec![Line::styled("(no reads)", dim())];
@@ -793,6 +986,14 @@ impl App {
             collection.style,
             Some(ess_ui::CollectionStyle::Cards | ess_ui::CollectionStyle::List)
         );
+        // The generated React project renders column headers for a table only, and a row's cells
+        // for cards, a list or a tree only when the collection has no `item`: a node it renders
+        // no element for is not recorded here either.
+        let table = matches!(
+            collection.style,
+            None | Some(ess_ui::CollectionStyle::Table)
+        );
+        let record_cells = table || collection.item.is_empty();
         let mut lines = Vec::new();
         let widths: Vec<usize> = columns
             .iter()
@@ -805,15 +1006,61 @@ impl App {
                     .min(28)
             })
             .collect();
+        // Recorded paths: the collection's, and its columns' where the document declares them.
+        let container = place.path.to_string();
+        let column_path = |field: &Field| match &collection.columns {
+            Some(ess_ui::Columns::Fixed(_)) => Some(format!("columns/{}", field.name)),
+            Some(ess_ui::Columns::Selectable(_)) => Some(format!("columns/all/{}", field.name)),
+            _ => None,
+        };
+        let key_field = place
+            .ctx
+            .section
+            .and_then(|name| {
+                self.page_def()
+                    .sections
+                    .iter()
+                    .find(|section| section.name == name)
+            })
+            .and_then(|section| section.live.as_ref())
+            .and_then(|live| live.match_field.clone())
+            .unwrap_or_else(|| "id".to_owned());
+        // Where each column starts in a table line: after the two-cell selection mark, columns
+        // are padded to their width and separated by two cells.
+        let starts: Vec<usize> = widths
+            .iter()
+            .scan(2, |x, width| {
+                let start = *x;
+                *x += width + 2;
+                Some(start)
+            })
+            .collect();
         if !cards {
             let header: Vec<String> = columns
                 .iter()
                 .zip(&widths)
                 .map(|(field, width)| pad(&label_of(field), *width))
                 .collect();
+            if place.record && table {
+                for ((field, width), x) in columns.iter().zip(&widths).zip(&starts) {
+                    if let Some(column) = column_path(field) {
+                        self.mark(Mark {
+                            path: format!("{container}/{column}"),
+                            row: None,
+                            line: lines.len(),
+                            height: 1,
+                            x: *x,
+                            width: Some(*width),
+                            text: Some(browser_field_label(field)),
+                        });
+                    }
+                }
+            }
             lines.push(Line::styled(format!("  {}", header.join("  ")), bold()));
         }
         let mut group = None;
+        // Each recorded row: its key, its line and its data.
+        let mut recorded: Vec<(String, usize, &Value)> = Vec::new();
         for (index, row) in rows.iter().enumerate() {
             if let Some(by) = &collection.group_by {
                 let current = display(&row[by.as_str()]);
@@ -841,6 +1088,58 @@ impl App {
             } else {
                 Style::default()
             };
+            if place.record {
+                let key = display(&row[key_field.as_str()]);
+                // The row's and each cell's whole text: the screen cuts a cell at its column's
+                // width and a line at the box's, the generated React project does not.
+                let whole = if cards {
+                    text.clone()
+                } else {
+                    columns
+                        .iter()
+                        .map(|field| cell(field, row))
+                        .collect::<Vec<_>>()
+                        .join("  ")
+                };
+                self.mark(Mark {
+                    path: format!("{container}/rows/{key}"),
+                    row: Some(key.clone()),
+                    line: lines.len(),
+                    height: 1,
+                    x: 0,
+                    width: None,
+                    text: Some(whole),
+                });
+                recorded.push((key.clone(), lines.len(), row));
+                let mut x = 2;
+                for (field, (width, start)) in columns.iter().zip(widths.iter().zip(&starts)) {
+                    let shown = cell(field, row);
+                    let (at, cells) = if cards {
+                        if shown.is_empty() {
+                            continue;
+                        }
+                        let at = x;
+                        x += shown.width() + " · ".width();
+                        (at, shown.width())
+                    } else {
+                        (*start, *width)
+                    };
+                    if !record_cells {
+                        continue;
+                    }
+                    if let Some(column) = column_path(field) {
+                        self.mark(Mark {
+                            path: format!("{container}/rows/{key}/{column}"),
+                            row: Some(key.clone()),
+                            line: lines.len(),
+                            height: 1,
+                            x: at,
+                            width: Some(cells),
+                            text: Some(shown),
+                        });
+                    }
+                }
+            }
             lines.push(Line::styled(
                 truncate(&format!("{mark}{text}"), place.width),
                 style,
@@ -851,6 +1150,7 @@ impl App {
         if row.is_some() {
             let inner = Place {
                 ctx: row_ctx,
+                record: false,
                 ..*place
             };
             if !collection.item.is_empty() {
@@ -903,6 +1203,20 @@ impl App {
             footer.push("J/K move".into());
         }
         lines.push(Line::styled(footer.join(" · "), dim()));
+        if let Some(segment) = row_actions_at {
+            let cursor_key = rows
+                .get(cursor)
+                .map(|row| display(&row[key_field.as_str()]));
+            self.mark_row_actions(
+                &collection.row_actions,
+                &format!("{container}/rows"),
+                segment,
+                &recorded,
+                cursor_key.as_deref(),
+                lines.len(),
+                place,
+            );
+        }
         lines.extend(self.action_hint(&collection.row_actions, &row_ctx));
         let bulk = crate::app::bulk_keys(&collection.bulk_actions);
         if !bulk.is_empty() {
@@ -924,6 +1238,15 @@ impl App {
         }
         lines
     }
+}
+
+/// The label an action's control shows in the generated React project: its `label`, else its name
+/// with `_` read as a space.
+fn browser_label(action: &ess_ui::Action) -> String {
+    action
+        .label
+        .clone()
+        .unwrap_or_else(|| action.name.replace('_', " "))
 }
 
 /// One cell of a row, drawn by the field's `as`.
@@ -1057,6 +1380,7 @@ impl App {
                     draft: Some(&draft),
                     ..place.ctx
                 },
+                record: false,
                 ..*place
             };
             lines.extend(self.node_lines(part, &draft_ctx));
@@ -1529,6 +1853,15 @@ fn flatten(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
 
 fn label_of(field: &Field) -> String {
     field.label.clone().unwrap_or_else(|| field.field.clone())
+}
+
+/// The heading a column shows in the generated React project: its `label`, else its name with
+/// `_` read as a space.
+fn browser_field_label(field: &Field) -> String {
+    field
+        .label
+        .clone()
+        .unwrap_or_else(|| field.name.replace('_', " "))
 }
 
 fn labelled(field: &Field, value: &str) -> Line<'static> {
