@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T02:25:18Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-docs-generator",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:adversary-ui-docs-pass-2",
+    "review": "review-result:adversary-ui-docs-pass-2",
+    "outcome": "fixed"
+  }
+}

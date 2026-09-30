@@ -1,0 +1,17 @@
+[package]
+name = "ess-ui-docs"
+description = "The ess-ui/1 reference, generated from schemas/ui/ess-ui.schema.yaml as one self-contained HTML page and as Markdown for the documentation site."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+clap.workspace = true
+ess-ui = { path = "../ess-ui" }
+serde_yaml.workspace = true
+
+[lints]
+workspace = true

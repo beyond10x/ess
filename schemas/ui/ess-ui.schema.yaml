@@ -53,10 +53,10 @@ expressions:
   summary: Binding expressions — the values of fields typed `expr`.
   doc: Expressions connect a node to state and data. They are short paths plus a few operators; a renderer evaluates them, a validator resolves every path.
   forms:
-    - {form: "state.<name>",             note: page, section or overlay state}
-    - {form: "params.<name>",            note: path params of the page, or values passed to an overlay}
-    - {form: "args.<name>",              note: a widget parameter, inside the widget's body}
-    - {form: "row.<field>",              note: the current row of a collection, record or board}
+    - {form: "state.<name>",             note: "page, section or overlay state"}
+    - {form: "params.<name>",            note: "path params of the page, or values passed to an overlay"}
+    - {form: "args.<name>",              note: "a widget parameter, inside the widget's body"}
+    - {form: "row.<field>",              note: "the current row of a collection, record or board"}
     - {form: "selection.<field>",        note: the selected row(s) of the section}
     - {form: "draft.<field>",            note: the unsaved input of the enclosing form}
     - {form: "section.<name>.selection", note: another section's selection}
@@ -72,7 +72,7 @@ expressions:
 unmapped_marker:
   summary: How a retrofit marks a value it could not determine.
   pattern: "^UNMAPPED: .+$"
-  accepted_by: {types: [string, expr, name, duration, "{enum: …}", "{ref: …}"], note: a field of any other type (boolean, a number, a record, a list or a map) refuses the marker}
+  accepted_by: {types: [string, expr, name, duration, "{enum: …}", "{ref: …}"], note: "a field of any other type (boolean, a number, a record, a list or a map) refuses the marker"}
   at_reads: a marker written as a `reads` or `loads` is no read at all; the node records it in its `unmapped` list
   validator: {action: report, severity: warning}
   renderer: {action: treat_as_absent}
@@ -123,20 +123,20 @@ shorthands:
     layout: {merge: replace}
 
 groups:
-  - {name: document,   order: 1, title: The document,                summary: Root, naming, node addressing and shared types.}
-  - {name: navigation, order: 2, title: Shell and navigation,        summary: The application frame and how pages are reached.}
-  - {name: pages,      order: 3, title: Pages and sections,          summary: Routes, layouts, page templates, and the section as the unit of loading.}
-  - {name: composites, order: 4, title: Composites, widgets and primitives, summary: The composite union, header and overlay, app-defined widgets, the 9 primitives, and renderer fallbacks.}
-  - {name: data,       order: 5, title: Reads, actions and fixtures, summary: How the UI reads ESS views, runs ESS commands, and runs without a backend.}
-  - {name: live,       order: 6, title: Live data,                   summary: Channels and how sections apply their events.}
-  - {name: state,      order: 7, title: State placement,             summary: Where every piece of UI state lives, and how a profile moves it.}
+  - {name: document,   order: 1, title: "The document", summary: "Root, naming, node addressing and shared types."}
+  - {name: navigation, order: 2, title: "Shell and navigation", summary: "The application frame and how pages are reached."}
+  - {name: pages,      order: 3, title: "Pages and sections", summary: "Routes, layouts, page templates, and the section as the unit of loading."}
+  - {name: composites, order: 4, title: "Composites, widgets and primitives", summary: "The composite union, header and overlay, app-defined widgets, the 9 primitives, and renderer fallbacks."}
+  - {name: data,       order: 5, title: "Reads, actions and fixtures", summary: "How the UI reads ESS views, runs ESS commands, and runs without a backend."}
+  - {name: live,       order: 6, title: "Live data", summary: "Channels and how sections apply their events."}
+  - {name: state,      order: 7, title: "State placement", summary: "Where every piece of UI state lives, and how a profile moves it."}
 
 layers:
   - {name: shell,     contains: [page],                         note: "application frame: regions, preload, guards, navigation"}
   - {name: page,      contains: [section, overlay],             note: one route; owns page state and layout}
   - {name: section,   contains: [composite, widget, primitive], note: a region with its own read and lifecycle}
   - {name: composite, contains: [composite, widget, primitive], note: one member of the composite union}
-  - {name: widget,    contains: [composite, widget, primitive], note: an app-defined composite; may not contain itself, directly or indirectly}
+  - {name: widget,    contains: [composite, widget, primitive], note: "an app-defined composite; may not contain itself, directly or indirectly"}
   - {name: primitive, contains: [],                             note: one of 9 renderer-neutral leaves}
 
 # ════════════════════════════════════════════════════════════════════════════════════════════
@@ -159,7 +159,7 @@ constructs:
       format:             {type: {const: ess-ui/1}, required: true, note: format marker}
       app:                {type: name, required: true, note: root of every fully qualified name}
       title:              {type: string, note: human title of the application}
-      model:              {type: string, required: true, note: the ESS system that views, commands and events resolve against}
+      model:              {type: string, required: true, note: "the ESS system that views, commands and events resolve against"}
       actor:              {type: {enum: [from_session, anonymous]}, default: from_session, note: whose grants decide what is visible}
       placement_profile:  {type: {enum: [thin, fat, hybrid]}, required: true, note: default state placement for the whole document}
       placement_defaults: {type: {map: {key: StateClass, value: Store}}, note: overrides entries of the profile's default table}
@@ -194,7 +194,7 @@ constructs:
       window, an enum of stages. ESS entity ids (PartnerId, UserId) are not redeclared; they
       resolve in the model.
     fields:
-      "(value)": {type: {one_of: [primitive, constructor, named_type]}, note: "a primitive name, a constructor map, or a capitalized named type"}
+      "(value)": {type: {one_of: [string, {map: {key: name, value: json}}]}, note: "a primitive name, a constructor map, or a capitalized named type"}
     example:
       Money:       {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}
       DealStage:   {enum: [lead, qualified, proposal, won, lost]}
@@ -305,8 +305,8 @@ constructs:
     doc: Guards express sign-in requirements and link-borne state. Evaluated in order; the first whose `when` holds decides. Business permissions belong in actor grants.
     fields:
       name: {type: name, required: true, note: node name among the shell's guards}
-      when: {type: expr, required: true, note: condition over actor, url and page}
-      then: {type: {one_of: [{record: {redirect: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, {record: {refuse: string}}, {record: {set: {map: {key: expr, value: expr}}}}]}, required: true, note: redirect, refuse with a message, or set shell state}
+      when: {type: expr, required: true, note: "condition over actor, url and page"}
+      then: {type: {one_of: [{record: {redirect: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, {record: {refuse: string}}, {record: {set: {map: {key: expr, value: expr}}}}]}, required: true, note: "redirect, refuse with a message, or set shell state"}
     example: {name: invite_link, when: url.query.invite, then: {set: {shell.invite_token: url.query.invite}}}
 
   Navigation:
@@ -399,10 +399,10 @@ constructs:
       params:    {type: {map: {key: name, value: Type}}, note: path parameters (always in the URL)}
       aliases:   {type: {list: string}, note: legacy route paths}
       switch_to: {type: {list: {ref: page}}, note: sibling pages offered in the header}
-      visible:   {type: expr, note: extra condition beyond grants, such as a feature flag}
+      visible:   {type: expr, note: "extra condition beyond grants, such as a feature flag"}
       layout:    {type: PageLayout, default: stack, note: how sections are arranged}
       state:     {type: {map: {key: name, value: {optional: State}}}, note: page state}
-      header:    {type: header, note: title, total, actions, live status}
+      header:    {type: header, note: "title, total, actions, live status"}
       sections:  {type: {list: Section}, required: true, note: "regions of the page, named, in declaration order; merged with the kind's by name"}
       overlays:  {type: {map: {key: name, value: {optional: overlay}}}, note: drawers and dialogs of the page (unordered)}
       profile:   {type: {enum: [thin, fat]}, note: placement for this page in a hybrid document}
@@ -532,7 +532,7 @@ constructs:
       state:      {type: {map: {key: name, value: State}}, note: state local to the section}
       children:   {type: {list: Node}, note: extra named nodes rendered after the composite}
       profile:    {type: {enum: [thin, fat]}, note: placement for this section in a hybrid document}
-      degrades:   {type: {map: {key: Capability, value: name}}, note: fallbacks for renderers lacking a capability}
+      degrades:   {type: Degrades, note: fallbacks for renderers lacking a capability}
       unmapped:   {type: {list: string}, note: gaps found by a retrofit}
     lifecycle:
       states: [idle, loading, ready, empty, refreshing, stale, failed, forbidden]
@@ -549,7 +549,7 @@ constructs:
         - {from: failed,         to: loading,    on: retry}
       invariants:
         - {id: first_paint, rule: shell and page skeleton render before any read}
-        - {id: stale_marked, rule: a stale value is marked stale, never shown as current}
+        - {id: stale_marked, rule: "a stale value is marked stale, never shown as current"}
     example:
       name: list
       component: collection
@@ -586,13 +586,13 @@ constructs:
       columns:      {type: {one_of: [{list: Field}, {record: {binds: expr, all: {list: Field}}}, string]}, note: "fixed columns, user-selectable columns, or an UNMAPPED string"}
       sort:         {type: {record: {by: name, dir: {optional: {enum: [asc, desc]}}, allowed: {list: name}, mode: {optional: {enum: [server, client]}}}}, note: default and allowed sort}
       style:        {type: {enum: [table, cards, list, tree]}, default: table, note: presentation hint}
-      selection:    {type: {one_of: [{enum: [none, single, multiple]}, {record: {mode: {enum: [single, multiple]}, enabled: expr}}]}, default: none, note: row selection, optionally only in a mode}
+      selection:    {type: {one_of: [{enum: [none, single, multiple]}, {record: {mode: {enum: [single, multiple]}, enabled: expr}}]}, default: none, note: "row selection, optionally only in a mode"}
       row_actions:  {type: {list: Action}, note: actions per row}
       bulk_actions: {type: {list: Action}, note: actions on the selection}
       actions:      {type: {list: Action}, note: actions on the whole collection}
       expand:       {type: Node, note: detail shown when a row expands}
       item:         {type: {list: Node}, note: "nested named nodes per row, in order"}
-      reorder:      {type: {record: {does: {ref: command}, endpoint: {optional: string}}}, note: drag to reorder, saved by a command}
+      reorder:      {type: {record: {does: {ref: command}, endpoint: {optional: string}}}, note: "drag to reorder, saved by a command"}
       group_by:     {type: name, note: field rows are grouped under}
     example:
       component: collection
@@ -703,7 +703,7 @@ constructs:
       title:   {type: {one_of: [string, {const: from_page}]}, note: header title}
       total:   {type: {ref: section}, note: section whose total is shown}
       actions: {type: {list: Action}, note: primary actions}
-      switch:  {type: {list: name}, note: pages from switch_to, or modes of this page}
+      switch:  {type: {list: name}, note: "pages from switch_to, or modes of this page"}
       filters: {type: {ref: section}, note: filter bar rendered in the header}
       live:    {type: {list: {ref: channel}}, note: channels whose lifecycle is shown}
       metrics: {type: {list: Node}, note: "headline metrics, named, in order"}
@@ -779,7 +779,7 @@ constructs:
     doc: A renderer without charts shows the series as a table (degrade no_charts).
     fields:
       reads:  {type: Reads, required: true, note: the series}
-      chart:  {type: {one_of: [{enum: [line, bar, doughnut, pie, polar, single_number, list, table]}, {record: {binds: expr, options: {list: string}}}]}, required: true, note: chart kind, fixed or chosen by data}
+      chart:  {type: {one_of: [{enum: [line, bar, doughnut, pie, polar, single_number, list, table]}, {record: {binds: expr, options: {list: string}}}]}, required: true, note: "chart kind, fixed or chosen by data"}
       x:      {type: name, note: x-axis field}
       series: {type: {list: name}, note: y fields}
     example: {component: chart, chart: bar, reads: {view: deals.StageTotals, params: {window: state.window}}, x: stage, series: [count, value], degrades: {no_charts: table}}
@@ -882,7 +882,7 @@ constructs:
     fields:
       component: {type: {ref: widget}, required: true, note: the widget used}
       args:      {type: {map: {key: name, value: json}}, note: "one entry per param: an expression, or a literal such as a map"}
-      name:      {type: name, note: node name, required inside lists}
+      name:      {type: name, note: "node name, required inside lists"}
       visible:   {type: expr, note: shows the instance only when true}
       body:      {type: {list: Node}, note: "written by expansion, never by an author: the widget body with args substituted"}
     expansion:
@@ -929,7 +929,7 @@ constructs:
       name:    {type: name, required: true, note: node name}
       label:   {type: string, note: tab text}
       visible: {type: expr, note: shows the tab only when true}
-      fields:  {type: {one_of: [{list: Field}, string]}, note: fields in the tab, or an UNMAPPED string}
+      fields:  {type: {one_of: [{list: Field}, string]}, note: "fields in the tab, or an UNMAPPED string"}
       form:    {type: {one_of: [Node, Action]}, note: nested node or an action}
     example: {name: schedule, label: Schedule, fields: [{field: close_date, as: date}]}
 
@@ -968,10 +968,10 @@ constructs:
       - {accepts: {ref: composite_kind}, expands_to: {component: $value}}
     fields:
       component: {type: {ref: composite_kind}, required: true, note: kind of the nested composite}
-      name:      {type: name, note: node name, required inside lists}
+      name:      {type: name, note: "node name, required inside lists"}
       state:     {type: {map: {key: name, value: State}}, note: state local to this composite}
       visible:   {type: expr, note: shows the composite only when true}
-      degrades:  {type: {map: {key: Capability, value: name}}, note: fallbacks for this composite}
+      degrades:  {type: Degrades, note: fallbacks for this composite}
       unmapped:  {type: {list: string}, note: gaps found by a retrofit}
     example: {component: metric, from: channel.metrics.open_deals, label: Open deals}
 
@@ -1013,7 +1013,7 @@ constructs:
       the constructs text, badge, icon, button, link, input, toggle, image and divider.
     fields:
       primitive: {type: {enum: [text, badge, icon, button, link, input, toggle, image, divider]}, required: true, note: kind of primitive}
-      name:      {type: name, note: node name, required inside lists}
+      name:      {type: name, note: "node name, required inside lists"}
       visible:   {type: expr, note: shows the primitive only when true}
     tone: {enum: [neutral, info, success, warning, danger]}
     example: {name: hint, primitive: text, text: "Tip: drop a CSV here to import partners", style: caption}
@@ -1170,13 +1170,13 @@ constructs:
     fields:
       name:       {type: name, note: "node name among sibling actions; derived when absent, except for a `copy` action, whose expression is no name"}
       does:       {type: {ref: command}, note: ESS command to run}
-      bind:       {type: {map: {key: name, value: expr}}, note: command input from row, selection or state}
+      bind:       {type: {map: {key: name, value: expr}}, note: "command input from row, selection or state"}
       opens:      {type: {ref: overlay}, note: overlay to open}
       navigate:   {type: {record: {to: {ref: page}, params: {optional: {map: {key: name, value: expr}}}}}, note: page to go to}
       export:     {type: {record: {reads: {ref: view}, as: {enum: [csv, json, zip, png]}, params: {optional: expr}}}, note: download a view}
       upload:     {type: {record: {accept: {list: string}, does: {ref: command}}}, note: file picker feeding a command}
       copy:       {type: expr, note: value copied to the clipboard}
-      sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: UI state change only, never business data}
+      sets:       {type: {map: {key: expr, value: {one_of: [expr, {const: toggle}]}}}, note: "UI state change only, never business data"}
       label:      {type: string, note: button or menu text}
       as:         {type: {enum: [button, icon, toggle, choice, menu_item, link]}, default: button, note: presentation hint}
       choice:     {type: Node, note: options for as choice}
@@ -1203,7 +1203,7 @@ constructs:
       read itself.
     fields:
       dir:     {type: string, note: fixture directory relative to the document}
-      index:   {type: string, note: file holding views, derived and scripts}
+      index:   {type: string, note: "file holding views, derived and scripts"}
       views:   {type: {map: {key: {ref: view}, value: string}}, note: view to fixture file}
       derived: {type: {map: {key: {ref: view}, value: {one_of: [{record: {by_id_from: {ref: view}, key: name}}, {record: {same_as: {ref: view}}}]}}}, note: views answered from another fixture}
       scripts: {type: {map: {key: {ref: channel}, value: string}}, note: channel to event script file}
@@ -1230,7 +1230,7 @@ constructs:
       (an activity feed). `resume` says what happens after a reconnect. The connection
       lifecycle is UI state, and a stale value is marked. Scope is decided by the ESS model.
     transport_choice:
-      - {declared: direction server_to_client, renderer_picks: SSE, or long polling where SSE is unavailable}
+      - {declared: direction server_to_client, renderer_picks: "SSE, or long polling where SSE is unavailable"}
       - {declared: direction both, renderer_picks: WebSocket}
       - {declared: no channel and a read with refresh, renderer_picks: polling}
     fields:
@@ -1295,7 +1295,7 @@ constructs:
       pinned:    {type: boolean, default: false, note: no profile may move it}
       default:   {type: json, note: initial value}
       scope:     {type: {one_of: [{enum: [tab, device, session, user, account]}, string]}, default: {by_store: {memory: tab, url: tab, session_storage: tab, local_storage: device, server_session: session, server: user}}, note: sharing (string only for an UNMAPPED marker)}
-      sensitive: {type: boolean, default: false, note: forbids url, session_storage and local_storage}
+      sensitive: {type: boolean, default: false, note: "forbids url, session_storage and local_storage"}
       ttl:       {type: duration, note: expiry}
       clear_on:  {type: {list: {enum: [signout, account_switch, submit, close]}}, default: [signout, account_switch], note: events that clear it}
       fallback:  {type: {record: {when: expr, store: Store}}, note: second placement used when the condition holds}
@@ -1452,7 +1452,7 @@ constructs:
 # Lowering, traceability, checks
 # ════════════════════════════════════════════════════════════════════════════════════════════
 lowering:
-  - {construct: "reads (view, params)",        lowers_to: ESS view with params, filter and paging}
+  - {construct: "reads (view, params)",        lowers_to: "ESS view with params, filter and paging"}
   - {construct: reads placeholder,              lowers_to: nothing until bound; reported as a warning}
   - {construct: does,                           lowers_to: "ESS command; the form is its input, refusals are its typed errors"}
   - {construct: visibility and shown actions,   lowers_to: actor grants}
