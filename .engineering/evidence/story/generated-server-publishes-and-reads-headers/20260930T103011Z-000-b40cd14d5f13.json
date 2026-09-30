@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T10:30:11Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-server-publishes-and-reads-headers",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "PR #259 CI, 15 of 15; released in 0.47.0",
+    "reference": "https://github.com/beyond10x/ess/actions/runs/36681698194"
+  }
+}
