@@ -51,7 +51,7 @@ scope:
   path: docs/design/caller-values.md
 - confidence: cited
   path: website/docs/guides/synthesize.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:15Z", actor: "human:timo", revision: 25}
 - {from: "proposed", to: "active", at: "2026-09-30T13:04:17Z", actor: "human:timo", revision: 26}
@@ -89,6 +89,8 @@ Derived 2026-09-30 by `aep:story-scoper` on 1bd946d6b; **cited** = read in the t
 ## Decisions
 
 - **accept, redesigned (coordinator, 2026-09-30; supersedes the header decision):** the shell passes a typed `Caller { actor, attributes }` into `dispatch`/`handle` after authenticating; the HTTP route never reads the actor from a header; the grant check runs on that value before the port. The standard refusal is the existing 403 status with body `{"refused": "not granted", "actor": <name|null>}`, told apart from the caller-decided error envelope by its members and documented in the contract. Runners send the actor through `SemanticCommandRequest.actor`.
+
+- **Scope of the synthesized refusal (coordinator, 2026-09-30):** `<command>/grant/denied` is synthesized only where the model serves a component (`reached_by: network`), matching the plan, which marks grant enforcement generated only there and the caller's job otherwise. Synthesizing it for every model that declares actors moved those suites to /26, which the default `ess verify conform run` refuses without `--report-format 2`, so every such adopter would have broken. Coverage names the in-process case.
 
 ## Fit review
 
