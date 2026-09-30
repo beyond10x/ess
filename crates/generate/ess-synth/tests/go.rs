@@ -544,13 +544,17 @@ fn an_owed_transformation_and_a_retry_policy_are_emitted_the_way_the_binding_dec
         !system.contains("func RelayOnFired(event"),
         "and no transformation is generated beside it"
     );
+    // The retry is held for the binding that asked, not for every binding the event reaches: the
+    // pump never delivers an occurrence again to a binding that already ran.
     assert!(
-        system.contains("s.retries = append(s.retries, SystemEventFired{Event: event})"),
+        system.contains("s.heldRelayOnFired = append(s.heldRelayOnFired, event)"),
         "`on_failure: retry` holds the event for the next pump:\n{system}"
     );
     assert!(
-        system.contains("retrying := s.retries")
-            && system.contains("for _, held := range retrying {"),
+        system.contains("heldRelayOnFired := s.heldRelayOnFired")
+            && system.contains(
+                "for _, event := range heldRelayOnFired {\n\t\ts.attemptRelayOnFired(event)\n\t}"
+            ),
         "and the next pump makes one more attempt, which is the redelivery this transport provides"
     );
 }

@@ -9,7 +9,7 @@ info:
   description: |-
     The HTTP surface of `invoice-service`, one of the components of `billing` v3.
 
-    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport; they are not returned here.
+    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport, and the `published` property of every response body lists them too, in publication order.
   version: v3
   x-ess-provenance:
     system: billing
@@ -35,7 +35,7 @@ paths:
               $ref: '#/components/schemas/billing.invoice.CancelInvoice.Input'
       responses:
         '202':
-          description: 'Outcome `cancelled`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `cancelled`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:
@@ -46,6 +46,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/billing.invoice.CancelInvoice.wrong-state.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                type: object
   /invoices/commands/create-invoice:
     post:
       operationId: billing.invoice.CreateInvoice
@@ -63,7 +76,7 @@ paths:
               $ref: '#/components/schemas/billing.invoice.CreateInvoice.Input'
       responses:
         '202':
-          description: 'Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:
@@ -74,6 +87,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/billing.invoice.CreateInvoice.rejected.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                type: object
   /invoices/commands/issue-invoice:
     post:
       operationId: billing.invoice.IssueInvoice
@@ -89,7 +115,7 @@ paths:
               $ref: '#/components/schemas/billing.invoice.IssueInvoice.Input'
       responses:
         '202':
-          description: 'Outcome `issued`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `issued`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:
@@ -100,6 +126,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/billing.invoice.IssueInvoice.wrong-state.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                type: object
   /invoices/commands/pay-invoice:
     post:
       operationId: billing.invoice.PayInvoice
@@ -115,7 +154,7 @@ paths:
               $ref: '#/components/schemas/billing.invoice.PayInvoice.Input'
       responses:
         '202':
-          description: 'Outcome `settled`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `settled`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:
@@ -132,6 +171,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/billing.invoice.PayInvoice.rejected.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                type: object
 components:
   schemas:
     billing.invoice.AccountId:
@@ -154,13 +206,32 @@ components:
       additionalProperties: false
     billing.invoice.CancelInvoice.cancelled.Response:
       additionalProperties: false
-      description: The invoice is cancelled, from Draft or from Issued. Taken when no other outcome's condition matched. A `billing.invoice.Invoice` has moved to `Cancelled`, along `cancel`. The instance is the one `invoice_id` names. Emits `InvoiceCancelled`, published to consumers rather than returned here.
+      description: The invoice is cancelled, from Draft or from Issued. Taken when no other outcome's condition matched. A `billing.invoice.Invoice` has moved to `Cancelled`, along `cancel`. The instance is the one `invoice_id` names. Emits `InvoiceCancelled`, published to consumers and listed under `published`.
       properties:
         outcome:
           const: cancelled
           description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: billing.invoice.InvoiceCancelled
+                type: string
+              payload:
+                $ref: '#/components/schemas/billing.invoice.InvoiceCancelled.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
       required:
       - outcome
+      - published
       type: object
     billing.invoice.CancelInvoice.wrong-state.Response:
       additionalProperties: false
@@ -175,8 +246,13 @@ components:
           description: Which declared outcome the command took.
         payload:
           $ref: '#/components/schemas/billing.invoice.InvoiceStateConflict.Error'
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          maxItems: 0
+          type: array
       required:
       - outcome
+      - published
       - error
       type: object
     billing.invoice.CreateInvoice.Input:
@@ -198,13 +274,32 @@ components:
       additionalProperties: false
     billing.invoice.CreateInvoice.accepted.Response:
       additionalProperties: false
-      description: The invoice is created in Draft. Taken when `amount.amount > 0` holds of the input. A `billing.invoice.Invoice` now exists, in `Draft`. Its identity is published as `invoice_id` on `billing.invoice.InvoiceCreated`. Emits `InvoiceCreated`, published to consumers rather than returned here.
+      description: The invoice is created in Draft. Taken when `amount.amount > 0` holds of the input. A `billing.invoice.Invoice` now exists, in `Draft`. Its identity is published as `invoice_id` on `billing.invoice.InvoiceCreated`. Emits `InvoiceCreated`, published to consumers and listed under `published`.
       properties:
         outcome:
           const: accepted
           description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: billing.invoice.InvoiceCreated
+                type: string
+              payload:
+                $ref: '#/components/schemas/billing.invoice.InvoiceCreated.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
       required:
       - outcome
+      - published
       type: object
     billing.invoice.CreateInvoice.rejected.Response:
       additionalProperties: false
@@ -219,8 +314,13 @@ components:
           description: Which declared outcome the command took.
         payload:
           $ref: '#/components/schemas/billing.invoice.InvalidAmount.Error'
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          maxItems: 0
+          type: array
       required:
       - outcome
+      - published
       - error
       - payload
       type: object
@@ -251,6 +351,37 @@ components:
       - Draft
       - Issued
       - Paid
+    billing.invoice.InvoiceCancelled.Event:
+      title: InvoiceCancelled payload
+      x-ess-name: billing.invoice.InvoiceCancelled
+      x-ess-kind: event-payload
+      type: object
+      properties:
+        invoice_id:
+          $ref: '#/components/schemas/billing.invoice.InvoiceId'
+      required:
+      - invoice_id
+      additionalProperties: false
+    billing.invoice.InvoiceCreated.Event:
+      title: InvoiceCreated payload
+      x-ess-name: billing.invoice.InvoiceCreated
+      x-ess-kind: event-payload
+      type: object
+      properties:
+        invoice_id:
+          $ref: '#/components/schemas/billing.invoice.InvoiceId'
+        account_id:
+          $ref: '#/components/schemas/billing.invoice.AccountId'
+        customer_email:
+          $ref: '#/components/schemas/billing.invoice.Email'
+        amount:
+          $ref: '#/components/schemas/billing.invoice.Money'
+      required:
+      - invoice_id
+      - account_id
+      - customer_email
+      - amount
+      additionalProperties: false
     billing.invoice.InvoiceId:
       title: InvoiceId
       x-ess-name: billing.invoice.InvoiceId
@@ -258,6 +389,31 @@ components:
       type: string
       format: uuid
       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+    billing.invoice.InvoiceIssued.Event:
+      title: InvoiceIssued payload
+      x-ess-name: billing.invoice.InvoiceIssued
+      x-ess-kind: event-payload
+      type: object
+      properties:
+        invoice_id:
+          $ref: '#/components/schemas/billing.invoice.InvoiceId'
+      required:
+      - invoice_id
+      additionalProperties: false
+    billing.invoice.InvoicePaid.Event:
+      title: InvoicePaid payload
+      x-ess-name: billing.invoice.InvoicePaid
+      x-ess-kind: event-payload
+      type: object
+      properties:
+        invoice_id:
+          $ref: '#/components/schemas/billing.invoice.InvoiceId'
+        amount:
+          $ref: '#/components/schemas/billing.invoice.Money'
+      required:
+      - invoice_id
+      - amount
+      additionalProperties: false
     billing.invoice.InvoiceStateConflict.Error:
       title: InvoiceStateConflict payload
       description: The invoice is not in a state this command acts from, so nothing moved.
@@ -283,13 +439,32 @@ components:
       additionalProperties: false
     billing.invoice.IssueInvoice.issued.Response:
       additionalProperties: false
-      description: The invoice leaves Draft and is now Issued. Taken when no other outcome's condition matched. A `billing.invoice.Invoice` has moved to `Issued`, along `issue`. The instance is the one `invoice_id` names. Emits `InvoiceIssued`, published to consumers rather than returned here.
+      description: The invoice leaves Draft and is now Issued. Taken when no other outcome's condition matched. A `billing.invoice.Invoice` has moved to `Issued`, along `issue`. The instance is the one `invoice_id` names. Emits `InvoiceIssued`, published to consumers and listed under `published`.
       properties:
         outcome:
           const: issued
           description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: billing.invoice.InvoiceIssued
+                type: string
+              payload:
+                $ref: '#/components/schemas/billing.invoice.InvoiceIssued.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
       required:
       - outcome
+      - published
       type: object
     billing.invoice.IssueInvoice.wrong-state.Response:
       additionalProperties: false
@@ -304,8 +479,13 @@ components:
           description: Which declared outcome the command took.
         payload:
           $ref: '#/components/schemas/billing.invoice.InvoiceStateConflict.Error'
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          maxItems: 0
+          type: array
       required:
       - outcome
+      - published
       - error
       type: object
     billing.invoice.Money:
@@ -353,20 +533,44 @@ components:
           description: Which declared outcome the command took.
         payload:
           $ref: '#/components/schemas/billing.invoice.InvalidAmount.Error'
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          maxItems: 0
+          type: array
       required:
       - outcome
+      - published
       - error
       - payload
       type: object
     billing.invoice.PayInvoice.settled.Response:
       additionalProperties: false
-      description: The payment is accepted and the invoice becomes Paid. Taken when `amount.amount > 0` holds of the input. A `billing.invoice.Invoice` has moved to `Paid`, along `settle`. The instance is the one `invoice_id` names. Emits `InvoicePaid`, published to consumers rather than returned here.
+      description: The payment is accepted and the invoice becomes Paid. Taken when `amount.amount > 0` holds of the input. A `billing.invoice.Invoice` has moved to `Paid`, along `settle`. The instance is the one `invoice_id` names. Emits `InvoicePaid`, published to consumers and listed under `published`.
       properties:
         outcome:
           const: settled
           description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: billing.invoice.InvoicePaid
+                type: string
+              payload:
+                $ref: '#/components/schemas/billing.invoice.InvoicePaid.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
       required:
       - outcome
+      - published
       type: object
     billing.invoice.PayInvoice.wrong-state.Response:
       additionalProperties: false
@@ -381,8 +585,13 @@ components:
           description: Which declared outcome the command took.
         payload:
           $ref: '#/components/schemas/billing.invoice.InvoiceStateConflict.Error'
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          maxItems: 0
+          type: array
       required:
       - outcome
+      - published
       - error
       type: object
 x-ess-entities:

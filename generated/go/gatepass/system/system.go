@@ -99,13 +99,19 @@ func (s *System) Published() []SystemEvent {
 	return s.published
 }
 
-// Pump delivers until quiescent: collects every component's outbox onto the log, then delivers
-// each logged event to every binding that reacts to it — at least once each, which is the
-// guarantee the specification declares.
-//
-// The result carries the first unmet obligation that delivery could not route around; the log
-// keeps everything already published. A specification whose bindings feed each other without
-// end will not quiesce, and this pump will not pretend otherwise.
+// TakePublished takes every event the pump has already delivered off the log, in publication
+// order. A long-running shell calls it after each Pump, or the log holds every event the
+// process ever published. Events the pump has not yet delivered stay on the log, so the next
+// Pump still delivers them.
+func (s *System) TakePublished() []SystemEvent {
+	delivered := append([]SystemEvent(nil), s.published[:s.cursor]...)
+	s.published = append([]SystemEvent(nil), s.published[s.cursor:]...)
+	s.cursor = 0
+	return delivered
+}
+
+// Pump delivers until quiescent: collects every component's outbox onto the log. No binding
+// reacts to anything this specification publishes, so collecting is the whole delivery.
 func (s *System) Pump() *obligation.UnmetObligation {
 	for {
 		s.collect()

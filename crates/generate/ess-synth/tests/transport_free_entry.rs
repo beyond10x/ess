@@ -183,6 +183,7 @@ fn main() {
         let request = http::Request {
             method: (*method).to_owned(),
             path: (*path).to_owned(),
+            headers: vec![("authorization".to_owned(), "Bearer entry".to_owned())],
             body,
         };
         let answered = surface::dispatch(&mut system, &request);
@@ -320,14 +321,15 @@ fn every_command_and_view_is_driven_by_name_without_a_socket() {
 /// What the harness prints: each case's verdict, the HTTP status the same input is served with,
 /// and the served body; then the unknown name, as the typed error renders it.
 const EXPECTED: &str = concat!(
-    "desk.tickets.OpenTicket ok 202 {\"outcome\":\"opened\"}\n",
-    "desk.tickets.OpenTicket ok 502 {\"outcome\":\"duplicate\",\"error\":\"desk.tickets.Duplicate\",\
+    "desk.tickets.OpenTicket ok 202 {\"outcome\":\"opened\",\"published\":[{\"event\":\
+     \"desk.tickets.Opened\",\"payload\":{\"id\":\"t1\",\"title\":\"printer\"}}]}\n",
+    "desk.tickets.OpenTicket ok 502 {\"outcome\":\"duplicate\",\"published\":[],\"error\":\"desk.tickets.Duplicate\",\
      \"payload\":{\"id\":\"t1\"}}\n",
     "desk.tickets.OpenTicket refused 400 {\"refused\":\"body.title: expected a value, found \
      nothing\"}\n",
     "desk.tickets.OpenTicket refused 400 {\"refused\":\"body: expected an object, found an \
      array\"}\n",
-    "desk.tickets.Ping ok 502 {\"outcome\":\"busy\",\"error\":\"desk.tickets.Busy\"}\n",
+    "desk.tickets.Ping ok 502 {\"outcome\":\"busy\",\"published\":[],\"error\":\"desk.tickets.Busy\"}\n",
     "desk.tickets.Ping refused 501 {\"refused\":\"unmet obligation: command_behavior \
      `desk.tickets.Ping` — see PLAN.md\"}\n",
     "desk.tickets.Tickets ok 200 {\"rows\":[{\"id\":\"t1\",\"title\":\"printer\"}]}\n",

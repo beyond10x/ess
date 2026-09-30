@@ -663,16 +663,16 @@ fn components_and_system(
             &binding.name.to_string(),
         ) || binding.escalation.is_some()
     });
-    let has_retry = delivered.iter().any(|binding| {
-        matches!(
-            binding.on_failure(),
-            ess_compiler::ir::ResolvedFailure::Retry
-        )
-    });
+    // Every binding the pump may attempt again keeps its own held-back list, taken with
+    // `core::mem::take` at the start of each pump.
+    let holding: Vec<_> = delivered
+        .iter()
+        .filter(|binding| crate::plan::holds_back(binding))
+        .collect();
     // Each component is a system dependency. The implicit standard prelude is a real generated
     // reference too: a dependency named std replaces it before any explicit path is resolved.
     inventory.helper("system dependencies", "std", &owner);
-    if has_retry {
+    if !holding.is_empty() {
         inventory.helper("system dependencies", "core", &owner);
     }
     for fixed in ["published", "cursor"] {
@@ -690,8 +690,13 @@ fn components_and_system(
             "obligation parameter",
         );
     }
-    if has_retry {
-        inventory.symbol("system fields", "retries", &owner, "system field");
+    for binding in &holding {
+        inventory.symbol(
+            "system fields",
+            &format!("held_{}", name::value_ident(&binding.name.to_string())),
+            &binding.name.to_string(),
+            "held-back list",
+        );
     }
     component_scopes(inventory, ir, layout);
     let mut events: BTreeSet<_> = ir

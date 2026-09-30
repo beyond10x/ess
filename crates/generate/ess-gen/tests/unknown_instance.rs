@@ -146,7 +146,7 @@ fn the_contract_makes_payload_optional_exactly_where_the_second_spelling_exists(
     let with = close_wrong_state(&ir(DOORS));
     assert_eq!(
         with["required"],
-        serde_json::json!(["outcome", "error"]),
+        serde_json::json!(["outcome", "published", "error"]),
         "an unknown door is answered without a payload, so the contract may not require one"
     );
     assert!(
@@ -179,6 +179,6 @@ fn a_describing_error_on_a_command_that_cannot_meet_an_unknown_instance_keeps_pa
         serde_json::from_str(&ess_gen::openapi::json(&ir, component)).expect("JSON");
     assert_eq!(
         document["components"]["schemas"]["doors.core.Inspect.refused.Response"]["required"],
-        serde_json::json!(["outcome", "error", "payload"])
+        serde_json::json!(["outcome", "published", "error", "payload"])
     );
 }

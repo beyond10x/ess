@@ -17,7 +17,11 @@ pub enum Refused {
     Unknown(String),
     /// The input is not the command's declared input; the route answers this `400`.
     Input(String),
-    /// A port reported an unmet obligation; the route answers this `501`.
+    /// The realization is unfinished; the route answers this `501`, which the contract declares.
+    ///
+    /// Either a port reported an unmet obligation, or the command's effect was committed and
+    /// delivering what it published failed (the detail then begins `delivering what the command
+    /// published`). Not to be retried: after a failed delivery a retry performs the command twice.
     Unmet(String),
 }
 

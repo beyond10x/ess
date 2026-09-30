@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 )
 
 // The media type every answer derived from the model carries.
@@ -37,6 +38,15 @@ const mediaMarkdown = "text/markdown; charset=utf-8"
 // anyone can stop by saying a large number. A megabyte is far past any command input this model
 // can describe.
 const maxBody = 1048576
+
+// serving is held from reading a request's input to rendering its answer, so one request at a time
+// runs a port, pumps and takes from the system's log.
+//
+// net/http answers every connection on its own goroutine, and the system is one value: its log, its
+// delivery cursor and every component's outbox are shared, and so is whatever the realization
+// behind the ports keeps. One lock for every surface in this package, because two components served
+// from one process share one system.
+var serving sync.Mutex
 
 // response is one answer: a status, a media type and a body.
 type response struct {

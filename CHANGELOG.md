@@ -2,6 +2,118 @@
 
 ## [Unreleased]
 
+### Added
+
+- The system crate's `SystemEvent` has `name() -> &'static str`: the qualified name the
+  specification declares each variant's event under. Generated for every variant, including
+  events a generated binding delivery reacts to or escalates into.
+- Where a component is `reached_by: network`, the server's `wire` module has
+  `encode_system_event(&SystemEvent) -> String`, covering every `SystemEvent` variant and writing
+  `{"event": "<qualified name>", "payload": {…}}` — the same envelope a command's answer lists a
+  published event in. In `--layout crate` it is `server::wire::encode_system_event`, behind the
+  `server` feature. A runner names and encodes what the system's log carries without keeping an
+  event table of its own.
+- `System::take_published() -> Vec<SystemEvent>` (Rust) and `System.TakePublished()` (Go) take
+  every event the pump has already delivered off the log. A pump returns with every logged event
+  delivered — a binding whose attempt stopped holds the event in its own held-back list, not on
+  the log — and events published since the last pump stay for the next one. Where a binding's
+  delivery is generated, `take_invocations()` / `TakeInvocations()`
+  take the record of what the bindings invoked. A shell that pumps itself calls them to keep a
+  long-running process bounded.
+- `server::http::Request` has `headers: Vec<(String, String)>`: every request header in arrival
+  order, the name lower-cased and the value trimmed, a repeated name kept twice. Routing does not
+  read them; a shell reads `authorization` there to authenticate the caller before `dispatch`.
+  `http::read` keeps at most `http::MAX_HEADERS` (100) headers and answers `431` beyond that.
+- The Go target's server package has an `encodeEvent…` encoder for every generated event.
+
+### Changed
+
+- Every surface that answers a command now answers with `published`: every event the outcome
+  published, in publication order, each `{"event": "<qualified name>", "payload": {…}}`. That is
+  the Rust HTTP surface, each surface's transport-free `handle`, and the Go HTTP surface; the web
+  bridge's `run` already listed them in that shape. The created identity of a creating command is
+  in its event's payload. An outcome that publishes nothing answers `"published": []`. The other
+  members (`outcome`, `error`, `payload`) are unchanged. Before this the Rust and Go servers'
+  answers never carried the events; only the component-level `wire::encode_outcome_*` listed them.
+- The OpenAPI projection declares it. Every command response schema requires `published`: one
+  `prefixItems` entry per event the branch emits, in emit order, each `{event: <const qualified
+  name>, payload: {$ref: <Event>.Event}}`, with `items: false`, so the same events in another
+  order or one of them twice is not the branch's answer; a branch that emits nothing has at most
+  zero items. Each emitted event's payload schema is added to `components.schemas` as
+  `<qualified name>.Event`. The wording "published to consumers rather than returned here" is
+  replaced: the events are published to consumers and listed under `published`.
+- **`501` now has two meanings, and the contract declares it.** Every command operation in the
+  OpenAPI projection, and in the contract a generated server serves, gains a `501` response
+  (`{"refused": <text>}`): the realization is unfinished. Either a port the command runs reported
+  an unmet obligation — as before — or, new, the command's effect was committed and delivering what
+  *this* command published to a binding failed; then `refused` begins `delivering what the command
+  published`, and each binding whose delivery failed keeps its event and is attempted again on a
+  later pump, while no other binding receives it twice. An event an earlier command left
+  undelivered never makes a later command's answer `501`. A client must not retry a `501`:
+  after a failed delivery a retry performs the command a second time. The Rust and Go servers,
+  and `handle`'s `entry::Refused::Unmet`, answer it the same way. The response-status set of every
+  command grows by `501`, so a client generated from an earlier document sees a new status.
+- **This is a wire change for existing clients.** Every command answer gains a required member,
+  also for models whose commands publish nothing. A client that reads members by name is
+  unaffected. A client generated from or validating against an earlier OpenAPI document, whose
+  response schemas are `additionalProperties: false`, rejects the new answers until it is
+  regenerated from the new document.
+- The served dispatch — the HTTP route and `handle`, Rust and Go — pumps after every command, so
+  every binding reacting to what it published is delivered before the answer, and then takes the
+  delivered events and the binding record off the system. A long-running generated server no
+  longer grows its log, its binding record or a component's outbox with every request. An
+  in-process caller that read `System::published()` after `dispatch` or `handle` now finds it
+  empty: the command's events are in the answer, and events a binding's command published in turn
+  were delivered and taken. The log is taken whatever the pump answered. When delivering this
+  command's events fails the command's effect stands and the answer is the unmet obligation
+  (`501`, `entry::Refused::Unmet`); the binding that failed holds the event for a later pump.
+- The served functions (`serve`, `dispatch`, `handle`) are bounded by what `System::pump` needs —
+  each component's behaviours by its own port, and the system's obligations where it has any —
+  instead of every component's behaviours by the served component's port.
+- **Breaking for a caller that builds a `Request`: `server::http::Request` gains the public
+  field `headers: Vec<(String, String)>`.** A shell that builds a `Request` with a struct literal
+  (to call `dispatch` without a socket) no longer compiles until it supplies `headers` (for
+  example `headers: Vec::new()`). A shell that only receives `Request`s from `http::read` is
+  unaffected.
+- A command whose contract requires no body — one with no input, or whose every input field is
+  optional — is answered for a `POST` with no body or an empty (whitespace-only) body, as its
+  input `{}`, by the Rust and the Go server alike. Before, such a request was refused `400` "the
+  body is not JSON" although the contract declares no required `requestBody`. The document and
+  the servers read that fact from one function, `ess_gen::http::body_required`.
+- The generated Go server answers one request at a time against the system: the served dispatch
+  holds one package-level lock from reading the input through the port call, `Pump` and
+  `TakePublished`. `net/http` serves each connection on its own goroutine, and concurrent commands
+  on one shared log could livelock `Pump` or race the realization's state. Requests still read
+  their bodies concurrently.
+- The pump — Rust `System::pump`, Go `System.Pump` — tracks delivery per binding, with a
+  held-back list per binding. Every binding reacting to an event gets one attempt at it, and the
+  pump passes the event once each has had its attempt, so an event that keeps failing no longer
+  blocks every event after it. A binding whose attempt an unmet obligation stopped holds the event
+  in its own held-back list when it declares `at_least_once`; so does a declared refusal its
+  `on_failure: retry` answers, which before held the event for every binding. Each pump attempts
+  the held events again for their own binding alone, after the events published since; one that
+  fails again stays held and does not fail the pump. `pump`'s `Err` / `Pump`'s result is the first
+  failure among the events it delivered for the first time — what was published since the last
+  pump and what delivering that published — so a served answer is `501` only when delivering its
+  own command's events failed. Before, an unmet obligation stopped the whole pump at the event:
+  every later pump stopped there again, every later served command was answered `501`, and the
+  bindings beside the failing one either lost the event or were delivered it again.
+- The pump never delivers an occurrence again to a binding that already ran. An `at_most_once`
+  binding runs once per occurrence: its stopped attempt is reported and not repeated, unless its
+  own `on_failure: retry` puts the attempt back, and `redeliver` / `Redeliver` — which runs every
+  `at_least_once` binding again — leaves it out. A failed selection ends that binding's attempt,
+  not the event's: the other reacting bindings still run, and it is not held back, because its
+  policy was applied.
+- The web bridge runs the same Rust pump after every command, so it too keeps answering after an
+  event that keeps failing: the command whose event stuck is refused `unmet-obligation`, and
+  every command after it comes back with its own outcome.
+- Regenerated: `generated/openapi/invoice-service.yaml`, `generated/openapi/email-service.yaml`;
+  `generated/rust/gatepass` (`gatepass-server`: `entry.rs`, `http.rs`, `pass_service.rs`,
+  `wire.rs`, `pass-service.openapi.json`; `gatepass-system/src/lib.rs`); `generated/rust/billing`
+  (`billing-system/src/lib.rs`); `generated/go/gatepass` (`server/passservice.go`,
+  `server/server.go`, `server/wire.go`, `server/pass-service.openapi.json`, `system/system.go`);
+  `generated/go/billing` (`system/system.go`).
+
 ## [0.46.0] — 2026-09-30
 
 ### Added

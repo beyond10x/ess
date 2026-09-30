@@ -198,6 +198,8 @@ type System struct {
 	published []SystemEvent
 	// cursor is how far the pump has delivered.
 	cursor int
+	// heldNotifyOnInvoiceCreated holds what `notify-on-invoice-created` is to attempt again on the next Pump, for it alone.
+	heldNotifyOnInvoiceCreated []invoice.InvoiceCreated
 }
 
 // NewSystem assembles the system from its components and the owed obligations.
@@ -218,31 +220,58 @@ func (s *System) Published() []SystemEvent {
 	return s.published
 }
 
+// TakePublished takes every event the pump has already delivered off the log, in publication
+// order. A long-running shell calls it after each Pump, or the log holds every event the
+// process ever published. Events the pump has not yet delivered stay on the log, so the next
+// Pump still delivers them.
+func (s *System) TakePublished() []SystemEvent {
+	delivered := append([]SystemEvent(nil), s.published[:s.cursor]...)
+	s.published = append([]SystemEvent(nil), s.published[s.cursor:]...)
+	s.cursor = 0
+	return delivered
+}
+
 // Invocations is every command a binding invoked so far, in invocation order, with what it
 // passed.
 func (s *System) Invocations() []BindingInvocation {
 	return s.invocations
 }
 
-// Pump delivers until quiescent: collects every component's outbox onto the log, then delivers
-// each logged event to every binding that reacts to it — at least once each, which is the
-// guarantee the specification declares.
+// TakeInvocations takes the record of every command a binding invoked so far, in invocation
+// order: TakePublished's counterpart for the same long-running shell.
+func (s *System) TakeInvocations() []BindingInvocation {
+	taken := s.invocations
+	s.invocations = nil
+	return taken
+}
+
+// Pump delivers until quiescent: collects every component's outbox onto the log, then gives each
+// binding that reacts to a logged event one attempt at it, and passes the event once every one
+// of them has had its attempt.
 //
-// The result carries the first unmet obligation that delivery could not route around; the log
-// keeps everything already published. A specification whose bindings feed each other without
-// end will not quiesce, and this pump will not pretend otherwise.
+// Delivery is tracked per binding. A binding whose attempt an unmet obligation stopped, and
+// which permits a second run, holds the event in its own held-back list; so does a declared
+// refusal its `on_failure: retry` answers. The next Pump attempts each held event again for
+// that binding alone, after the events published since, and no other binding receives it
+// twice.
+//
+// The result carries the first failure among the events this Pump delivered for the first
+// time: what was published since the last Pump, and what delivering it published in turn. A
+// held-back attempt that fails again stays held and is not this Pump's answer, so an event
+// that keeps failing never fails the Pump for what is published after it. A specification
+// whose bindings feed each other without end will not quiesce, and this pump will not
+// pretend otherwise.
 func (s *System) Pump() *obligation.UnmetObligation {
-	for {
-		s.collect()
-		if s.cursor == len(s.published) {
-			return nil
-		}
-		event := s.published[s.cursor]
-		s.cursor++
-		if unmet := s.deliver(event); unmet != nil {
-			return unmet
-		}
+	heldNotifyOnInvoiceCreated := s.heldNotifyOnInvoiceCreated
+	s.heldNotifyOnInvoiceCreated = nil
+	delivered := s.drain()
+	// Each held-back event, attempted again for its own binding alone. What that publishes is
+	// delivered like anything else; an attempt that stops again is held again.
+	for _, event := range heldNotifyOnInvoiceCreated {
+		s.attemptNotifyOnInvoiceCreated(event)
 	}
+	s.drain()
+	return delivered
 }
 
 // Redeliver delivers one already-published occurrence to every binding that reacts to it,
@@ -250,12 +279,30 @@ func (s *System) Pump() *obligation.UnmetObligation {
 //
 // The duplicate a delivery guarantee of at least once explicitly permits: the occurrence is
 // not published a second time — a second occurrence would be a different claim — but every
-// reacting binding runs again, and what that causes lands on the log as usual.
+// binding that permits it runs again, and what that causes lands on the log as usual.
 func (s *System) Redeliver(event SystemEvent) *obligation.UnmetObligation {
 	if unmet := s.deliver(event); unmet != nil {
 		return unmet
 	}
 	return s.Pump()
+}
+
+// drain delivers every logged event the cursor has not passed yet, collecting as it goes: each
+// reacting binding gets one attempt, and the cursor passes the event once all of them have
+// had it. The result is the first attempt that failed.
+func (s *System) drain() *obligation.UnmetObligation {
+	var failed *obligation.UnmetObligation
+	for {
+		s.collect()
+		if s.cursor == len(s.published) {
+			return failed
+		}
+		event := s.published[s.cursor]
+		if unmet := s.deliver(event); unmet != nil && failed == nil {
+			failed = unmet
+		}
+		s.cursor++
+	}
 }
 
 // collect moves every component's outbox onto the log, in component order.
@@ -272,20 +319,25 @@ func (s *System) collect() {
 	}
 }
 
-// deliver delivers one logged event to every binding that reacts to it.
+// deliver gives every binding that reacts to one logged event its attempt at it.
+//
+// Each binding's attempt is its own: one that stops holds the event in that binding's held-back
+// list where it may run again, and the bindings beside it still run. The result is the first
+// attempt that failed.
 func (s *System) deliver(event SystemEvent) *obligation.UnmetObligation {
+	var failed *obligation.UnmetObligation
 	switch value := event.(type) {
 	case SystemEventDeliveryEscalated:
 	case SystemEventEmailSent:
 	case SystemEventInvoiceCancelled:
 	case SystemEventInvoiceCreated:
-		if unmet := s.deliverNotifyOnInvoiceCreated(value.Event); unmet != nil {
-			return unmet
+		if unmet := s.attemptNotifyOnInvoiceCreated(value.Event); unmet != nil && failed == nil {
+			failed = unmet
 		}
 	case SystemEventInvoiceIssued:
 	case SystemEventInvoicePaid:
 	}
-	return nil
+	return failed
 }
 
 // deliverNotifyOnInvoiceCreated delivers one `billing.invoice.InvoiceCreated` to `notify-on-invoice-created`: transform, record the invocation, invoke the
@@ -312,4 +364,15 @@ func (s *System) deliverNotifyOnInvoiceCreated(event invoice.InvoiceCreated) *ob
 		s.published = append(s.published, SystemEventDeliveryEscalated{Event: escalation})
 	}
 	return nil
+}
+
+// attemptNotifyOnInvoiceCreated makes one attempt of `notify-on-invoice-created` at one `billing.invoice.InvoiceCreated`, held back for the next
+// Pump when an unmet obligation stopped it: `at_least_once` permits running it again, for this
+// binding alone.
+func (s *System) attemptNotifyOnInvoiceCreated(event invoice.InvoiceCreated) *obligation.UnmetObligation {
+	unmet := s.deliverNotifyOnInvoiceCreated(event)
+	if unmet != nil {
+		s.heldNotifyOnInvoiceCreated = append(s.heldNotifyOnInvoiceCreated, event)
+	}
+	return unmet
 }

@@ -464,6 +464,30 @@ func decodeGatepassVisitVisitorName(value any, at string) (visit.VisitorName, er
 	return visit.NewVisitorName(held0), nil
 }
 
+// encodeEventGatepassVisitVisitRegistered writes the event `gatepass.visit.VisitRegistered` as JSON.
+func encodeEventGatepassVisitVisitRegistered(value visit.VisitRegistered) any {
+	out := map[string]any{}
+	out["visit_id"] = encodeGatepassVisitVisitId(value.VisitId)
+	out["visitor"] = encodeGatepassVisitVisitorName(value.Visitor)
+	out["building"] = encodeGatepassVisitBuilding(value.Building)
+	return out
+}
+
+// encodeEventGatepassVisitVisitorAdmitted writes the event `gatepass.visit.VisitorAdmitted` as JSON.
+func encodeEventGatepassVisitVisitorAdmitted(value visit.VisitorAdmitted) any {
+	out := map[string]any{}
+	out["visit_id"] = encodeGatepassVisitVisitId(value.VisitId)
+	out["badge"] = encodeGatepassVisitBadge(value.Badge)
+	return out
+}
+
+// encodeEventGatepassVisitVisitorDeparted writes the event `gatepass.visit.VisitorDeparted` as JSON.
+func encodeEventGatepassVisitVisitorDeparted(value visit.VisitorDeparted) any {
+	out := map[string]any{}
+	out["visit_id"] = encodeGatepassVisitVisitId(value.VisitId)
+	return out
+}
+
 // encodeErrorGatepassVisitInvalidVisitLength writes the declared error `gatepass.visit.InvalidVisitLength` as JSON.
 func encodeErrorGatepassVisitInvalidVisitLength(value visit.InvalidVisitLength) any {
 	out := map[string]any{}

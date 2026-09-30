@@ -155,9 +155,10 @@ pub(super) fn server_crate(
         Artifact::new(
             format!("crates/{package}/src/wire.rs"),
             format!(
-                "{}{}",
+                "{}{}{}",
                 provenance.commented_for("//", REGENERATE),
-                wire::module(&server)
+                wire::module(&server),
+                system_event_encoder(&server)
             ),
         ),
         Artifact::new(
@@ -186,6 +187,43 @@ pub(super) fn server_crate(
         ));
     }
     artifacts
+}
+
+/// `encode_system_event`: any event on the system's log, as the envelope a served answer lists it
+/// in — `{"event": <qualified name>, "payload": {…}}` — so a runner encodes what the log carries
+/// without a table of its own.
+///
+/// It lives in the server's `wire` module rather than the system crate because the encoders it
+/// calls do, and the system crate has no JSON in it; in the single-crate layout that puts it
+/// behind the `server` feature with the rest of the wire.
+fn system_event_encoder(server: &Server<'_>) -> String {
+    let system_crate = Layout::crate_ident(server.layout.system_package());
+    let variants = system::system_event_variants(server.ir, server.plan, server.layout);
+    let mut out = format!(
+        "\n/// Writes any event on the system's log as JSON: its qualified name and its \
+         payload,\n/// `{{\"event\": …, \"payload\": {{…}}}}`, the envelope a command's answer \
+         lists it in.\npub fn encode_system_event(value: &{system_crate}::SystemEvent) -> String \
+         {{\n"
+    );
+    if variants.is_empty() {
+        out.push_str("    match *value {}\n}\n");
+        return out;
+    }
+    out.push_str(
+        "    let mut out = String::from(\"{\");\n    json::member(&mut out, \"event\");\n    \
+         json::push_text(&mut out, value.name());\n    json::member(&mut out, \"payload\");\n    \
+         match value {\n",
+    );
+    for (event, variant) in &variants {
+        let _ = writeln!(
+            out,
+            "        {system_crate}::SystemEvent::{variant}(event) => \
+             encode_event_{}(event, &mut out),",
+            wire::ident(event.name())
+        );
+    }
+    out.push_str("    }\n    out.push('}');\n    out\n}\n");
+    out
 }
 
 /// The server crate's manifest: the types crate, every component crate and the system crate, by
@@ -290,7 +328,7 @@ fn surface_module(
     route_table(&mut out, &routes, ir);
     startup(&mut out, server, component, &routes, siblings);
     serve_function(&mut out, server, component);
-    dispatch(&mut out, server, component, &routes);
+    dispatch(&mut out, server, &routes);
     entry_point(&mut out, server, component, &routes);
     handlers(&mut out, server, component, &routes);
 
@@ -538,32 +576,25 @@ fn serve_function(out: &mut String, server: &Server<'_>, component: &ResolvedCom
          {system_crate}::System{angled}, address: &str) -> std::io::Result<()>\n",
         component.name
     );
-    out.push_str(&where_clause(server, component));
+    out.push_str(&where_clause(server));
     out.push_str(SERVE_BODY);
 }
 
-/// The `where` clause every function over the system carries: each component's behaviours bound
-/// by the ports this surface calls. Empty when the system is not generic.
-fn where_clause(server: &Server<'_>, component: &ResolvedComponent) -> String {
-    let generics = system::components_generics(server.ir);
-    if generics.is_empty() {
+/// The `where` clause every function over the system carries: the bounds `System::pump` carries,
+/// because every command this surface runs is pumped before it is answered. Empty when the system
+/// is not generic.
+fn where_clause(server: &Server<'_>) -> String {
+    let bounds = system::pump_bounds(
+        server.ir,
+        server.plan,
+        server.layout,
+        &Layout::crate_ident(server.layout.package()),
+        &Layout::crate_ident(server.layout.system_package()),
+    );
+    if bounds.is_empty() {
         return String::new();
     }
-    let bounds = super::port::bound_list(
-        server.ir,
-        server.layout,
-        component,
-        &Layout::crate_ident(server.layout.package()),
-    );
-    let mut out = String::from("where\n");
-    for generic in &generics {
-        if bounds.is_empty() {
-            let _ = writeln!(out, "    {generic}: Sized,");
-        } else {
-            let _ = writeln!(out, "    {generic}: {},", bounds.join(" + "));
-        }
-    }
-    out
+    format!("where\n{}\n", bounds.join("\n"))
 }
 
 /// The listener's body, which no specification changes.
@@ -597,12 +628,7 @@ fn generic_list(server: &Server<'_>) -> String {
 }
 
 /// The route match: one arm per path, and one arm for everything else.
-fn dispatch(
-    out: &mut String,
-    server: &Server<'_>,
-    component: &ResolvedComponent,
-    routes: &[http::Route<'_>],
-) {
+fn dispatch(out: &mut String, server: &Server<'_>, routes: &[http::Route<'_>]) {
     let ir = server.ir;
     let system_crate = Layout::crate_ident(server.layout.system_package());
     let angled = generic_list(server);
@@ -618,7 +644,7 @@ fn dispatch(
          dispatch{angled}(system: &mut {system_crate}::System{angled}, request: \
          &http::Request) -> http::Response\n"
     );
-    out.push_str(&where_clause(server, component));
+    out.push_str(&where_clause(server));
     out.push_str("{\n    match request.path.as_str() {\n");
     for (method, path, _, _) in table(routes, ir) {
         let _ = writeln!(
@@ -704,12 +730,13 @@ fn entry_point(
          [`entry::Refused::Unknown`] naming `name` when this surface declares no command or \
          view\n/// by it; [`entry::Refused::Input`] when `input` is not the command's declared \
          input (the\n/// route's `400`); [`entry::Refused::Unmet`] when the port reports an \
-         unmet obligation (the\n/// route's `501`).\npub fn handle{angled}({system}: &mut \
+         unmet obligation, or when\n/// the command took effect and delivering what it \
+         published failed (the route's `501`).\npub fn handle{angled}({system}: &mut \
          {system_crate}::System{angled}, name: &str, {input}: json::Value) -> \
          Result<json::Value, entry::Refused>\n",
         component.name
     );
-    out.push_str(&where_clause(server, component));
+    out.push_str(&where_clause(server));
     if routes.is_empty() {
         out.push_str("{\n    Err(entry::Refused::Unknown(name.to_owned()))\n}\n");
         return;
@@ -770,7 +797,7 @@ fn command_handler(
     let layout = server.layout;
     let system_crate = Layout::crate_ident(layout.system_package());
     let angled = generic_list(server);
-    let bounds = where_clause(server, component);
+    let bounds = where_clause(server);
     let ident = wire::ident(&command.name);
     let run = runner_ident(&command.name);
     let field = name::value_ident(&component.name.to_string());
@@ -783,6 +810,7 @@ fn command_handler(
             &command.name
         )
     );
+    let settle = settle(server);
 
     let _ = write!(
         out,
@@ -792,7 +820,11 @@ fn command_handler(
         command.name
     );
     out.push_str(&bounds);
-    out.push_str(READ_BODY);
+    out.push_str(if ess_gen::http::body_required(command) {
+        READ_BODY
+    } else {
+        READ_OPTIONAL_BODY
+    });
     let _ = write!(out, "    http::answer({run}(system, &value))\n}}\n");
 
     // The transport-free half, which the route above and `handle` both call.
@@ -817,14 +849,54 @@ fn command_handler(
             return Err(entry::Refused::Input(format!(\"{{error}}\")));
         }}
     }};
-    match system.{field}.{method}(input) {{
-        Ok(outcome) => Ok(answer_{ident}(&outcome)),
-        Err(unmet) => Err(entry::Refused::Unmet(format!(\"{{unmet}}\"))),
-    }}
+    let outcome = match system.{field}.{method}(input) {{
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!(\"{{unmet}}\"))),
+    }};
+{settle}    Ok(answer_{ident}(&outcome))
 }}
 "
     );
     outcome_renderer(out, server, command, &ident, &outcome_type);
+}
+
+/// What a served command does between its port answering and the answer being rendered: pump, so
+/// every binding that reacts to what it published is delivered first, then take the delivered
+/// events (and the record of what the bindings invoked) off the system, so a long-running server
+/// holds nothing from one request to the next.
+///
+/// The answer's `published` is rendered from the outcome, which carries exactly the events the
+/// component's port pushed onto its outbox for this command — the first entries the pump collected
+/// onto the log. Events a binding's command published in turn were delivered and are taken with
+/// them; they are not this command's answer.
+///
+/// The pump answers only for the events it delivered for the first time — this command's, and
+/// what delivering them published — and returns with every one of them delivered: a binding whose
+/// attempt stopped holds its event in its own held-back list, and an earlier event that keeps
+/// failing is attempted again there without failing this pump. So the log is taken whatever the
+/// pump answered, and the answer is `501` only when delivering what *this* command published
+/// failed; the command's own effect stands either way.
+fn settle(server: &Server<'_>) -> String {
+    let failure = if system::pump_fails_with_transport(server.ir) {
+        "{failure:?}"
+    } else {
+        "{failure}"
+    };
+    let mut out = String::from(
+        "    // Deliver what this command published to every binding that reacts to it, then take \
+         it\n    // off the log: a long-running server keeps nothing from one request to the \
+         next.\n    let delivered = system.pump();\n    let _ = system.take_published();\n",
+    );
+    if system::has_deliveries(server.ir, server.plan) {
+        out.push_str("    let _ = system.take_invocations();\n");
+    }
+    let _ = write!(
+        out,
+        "    if let Err(failure) = delivered {{\n        return \
+         Err(entry::Refused::Unmet(format!(\"delivering what the command published: \
+         {failure}\")));\n    }}\n"
+    );
+    out
 }
 
 /// The outcome renderer, whose statuses and body shape are the contract's own.
@@ -836,26 +908,40 @@ fn outcome_renderer(
     outcome_type: &str,
 ) {
     let ir = server.ir;
+    let domain = ir.domain(&command.domain).name.clone();
+    let emit = super::Emit {
+        ir,
+        layout: server.layout,
+        domain: &domain,
+    };
     let _ = write!(
         out,
-        "\n/// One declared outcome of `{}`, as the contract publishes it: the branch that was \
-         taken,\n/// the declared error where there is one, and that error's own payload — with \
-         the status the\n/// contract declares for that branch.\nfn answer_{ident}(outcome: \
-         &{outcome_type}) -> (u16, String) {{\n    let mut body = String::from(\"{{\");\n    let \
-         status = match outcome {{\n",
+        "\n/// One declared outcome of `{}`: the branch that was taken, every event it published \
+         in\n/// publication order, the declared error where there is one, and that error's own \
+         payload —\n/// with the status the contract declares for that branch.\nfn \
+         answer_{ident}(outcome: &{outcome_type}) -> (u16, String) {{\n    \
+         let mut body = String::from(\"{{\");\n    let status = match outcome {{\n",
         command.name
     );
     for outcome in &command.outcomes {
         let variant = name::pascal(outcome.name.as_str());
-        // The error is bound only where its payload is rendered: an error without fields has
-        // nothing to render, and a binding nothing reads is a warning in every consumer's build.
-        let pattern = match &outcome.error {
-            Some(handle) if !ir.error(handle).fields.is_empty() => {
-                format!("{outcome_type}::{variant} {{ error, .. }}")
-            }
-            Some(_) => format!("{outcome_type}::{variant} {{ .. }}"),
-            None if carries(server, outcome) => format!("{outcome_type}::{variant} {{ .. }}"),
-            None => format!("{outcome_type}::{variant}"),
+        let carried = super::items::outcome_event_fields(&emit, outcome);
+        // Every published event is bound, because `published` renders each; the error is bound
+        // only where its payload is rendered: an error without fields has nothing to render, and a
+        // binding nothing reads is a warning in every consumer's build.
+        let mut bindings: Vec<String> = carried.iter().map(|field| field.field.clone()).collect();
+        if matches!(&outcome.error, Some(handle) if !ir.error(handle).fields.is_empty()) {
+            bindings.push("error".to_owned());
+        }
+        let pattern = if !bindings.is_empty() {
+            format!(
+                "{outcome_type}::{variant} {{ {}, .. }}",
+                bindings.join(", ")
+            )
+        } else if outcome.error.is_some() || carries(server, outcome) {
+            format!("{outcome_type}::{variant} {{ .. }}")
+        } else {
+            format!("{outcome_type}::{variant}")
         };
         let _ = writeln!(out, "        {pattern} => {{");
         let _ = writeln!(
@@ -864,6 +950,7 @@ fn outcome_renderer(
              json::push_text(&mut body, {:?});",
             outcome.name.as_str()
         );
+        wire::published_list(out, &SERVED, &carried);
         if let Some(handle) = &outcome.error {
             let declared = ir.error(handle);
             let _ = writeln!(
@@ -887,9 +974,18 @@ fn outcome_renderer(
     out.push_str("    };\n    body.push('}');\n    (status, body)\n}\n");
 }
 
+/// Where a served answer's `published` list is written: the handler's own `body`, through the
+/// `wire` module's encoders.
+const SERVED: wire::Buffer = wire::Buffer {
+    receiver: "body",
+    argument: "&mut body",
+    encoders: "wire::",
+};
+
 /// The served answer for an instance no record carries, where the command has that spelling: the
-/// declared branch, status and error, and no payload — an instance that does not exist has nothing
-/// for the error's fields to describe (`docs/design/unknown-instance-seams.md`).
+/// declared branch, status and error, nothing published, and no payload — an instance that does
+/// not exist has nothing for the error's fields to describe
+/// (`docs/design/unknown-instance-seams.md`).
 fn unknown_instance_arm(
     out: &mut String,
     ir: &ess_compiler::EssIr,
@@ -907,6 +1003,7 @@ fn unknown_instance_arm(
             out,
             "        {outcome_type}::{} => {{\n            json::member(&mut body, \
              \"outcome\");\n            json::push_text(&mut body, {:?});\n            \
+             json::member(&mut body, \"published\");\n            body.push_str(\"[]\");\n            \
              json::member(&mut body, \"error\");\n            json::push_text(&mut body, \
              {:?});\n            {}\n        }}",
             super::items::unknown_instance_variant(declared),
@@ -946,7 +1043,7 @@ fn view_handler(
         view.name,
         view.consistency.as_str()
     );
-    out.push_str(&where_clause(server, component));
+    out.push_str(&where_clause(server));
     let _ = write!(
         out,
         "{{
@@ -989,6 +1086,29 @@ const READ_BODY: &str = r#"{
     };
 "#;
 
+/// [`READ_BODY`] for a command whose contract requires no body (`ess_gen::http::body_required`):
+/// no body, or one of only whitespace, is the input `{}`.
+const READ_OPTIONAL_BODY: &str = r#"{
+    let text = match std::str::from_utf8(body) {
+        Ok(text) => text,
+        Err(error) => {
+            return http::Response::refusal(400, &format!("the body is not UTF-8: {error}"));
+        }
+    };
+    // The contract declares no required body for this command, so a request without one is
+    // its input with nothing in it.
+    let value = if text.trim().is_empty() {
+        json::Value::Object(Vec::new())
+    } else {
+        match json::parse(text) {
+            Ok(value) => value,
+            Err(error) => {
+                return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
+            }
+        }
+    };
+"#;
+
 /// The body of the emitted `http` module: HTTP/1.1, as much of it as this surface needs.
 const HTTP: &str = r#"
 //! HTTP/1.1, as much of it as a synthesised surface needs and no more.
@@ -1011,6 +1131,13 @@ use std::io::{BufRead, Read, Write};
 /// can describe.
 pub const MAX_BODY: usize = 1_048_576;
 
+/// The most headers this surface keeps from one request.
+///
+/// Every header is kept for the caller ([`Request::headers`]), so a request that sent headers
+/// without end would be memory without end. A hundred is far past what a client and a proxy add
+/// together.
+pub const MAX_HEADERS: usize = 100;
+
 /// The media type every answer derived from the model carries.
 pub const JSON: &str = "application/json";
 
@@ -1031,6 +1158,12 @@ pub struct Request {
     /// dropped rather than refused, because a caller that appends one has not made a different
     /// request.
     pub path: String,
+    /// Every header, in the order it arrived: the name lower-cased, the value trimmed.
+    ///
+    /// Kept for the caller rather than read here: the model declares no header, so routing never
+    /// looks at one, and a shell that authenticates the caller before a surface's `dispatch`
+    /// reads `authorization` from this list. A name that arrives twice is kept twice.
+    pub headers: Vec<(String, String)>,
     /// The body: exactly the `Content-Length` bytes the caller announced.
     pub body: Vec<u8>,
 }
@@ -1133,6 +1266,7 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
 
     let mut length = 0_usize;
     let mut chunked = false;
+    let mut headers = Vec::new();
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -1172,6 +1306,16 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
         } else if name == "transfer-encoding" && value.eq_ignore_ascii_case("chunked") {
             chunked = true;
         }
+        if headers.len() == MAX_HEADERS {
+            return Err(Response::refusal(
+                431,
+                &format!(
+                    "the request carries more than {MAX_HEADERS} headers, which is all this \
+                     surface keeps"
+                ),
+            ));
+        }
+        headers.push((name, value.to_owned()));
     }
     if chunked {
         return Err(Response::refusal(
@@ -1192,7 +1336,12 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
             &format!("the body was shorter than `Content-Length` announced: {error}"),
         ));
     }
-    Ok(Request { method, path, body })
+    Ok(Request {
+        method,
+        path,
+        headers,
+        body,
+    })
 }
 
 /// Writes one answer, and lets the connection close behind it.
@@ -1228,6 +1377,7 @@ pub fn reason(status: u16) -> &'static str {
         411 => "Length Required",
         413 => "Content Too Large",
         422 => "Unprocessable Content",
+        431 => "Request Header Fields Too Large",
         501 => "Not Implemented",
         502 => "Bad Gateway",
         _ => "Unknown",
@@ -1252,7 +1402,11 @@ pub enum Refused {
     Unknown(String),
     /// The input is not the command's declared input; the route answers this `400`.
     Input(String),
-    /// A port reported an unmet obligation; the route answers this `501`.
+    /// The realization is unfinished; the route answers this `501`, which the contract declares.
+    ///
+    /// Either a port reported an unmet obligation, or the command's effect was committed and
+    /// delivering what it published failed (the detail then begins `delivering what the command
+    /// published`). Not to be retried: after a failed delivery a retry performs the command twice.
     Unmet(String),
 }
 

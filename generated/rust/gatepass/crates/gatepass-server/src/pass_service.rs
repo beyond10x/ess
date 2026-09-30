@@ -168,8 +168,8 @@ where
 ///
 /// [`entry::Refused::Unknown`] naming `name` when this surface declares no command or view
 /// by it; [`entry::Refused::Input`] when `input` is not the command's declared input (the
-/// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation (the
-/// route's `501`).
+/// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation, or when
+/// the command took effect and delivering what it published failed (the route's `501`).
 pub fn handle<PassServiceBehaviors>(system: &mut gatepass_system::System<PassServiceBehaviors>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
@@ -222,26 +222,46 @@ where
             return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.pass_service.admit_visitor(input) {
-        Ok(outcome) => Ok(answer_gatepass_visit_admit_visitor(&outcome)),
-        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
+    let outcome = match system.pass_service.admit_visitor(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Unmet(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_gatepass_visit_admit_visitor(&outcome))
 }
 
-/// One declared outcome of `gatepass.visit.AdmitVisitor`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload — with the status the
-/// contract declares for that branch.
+/// One declared outcome of `gatepass.visit.AdmitVisitor`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
 fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVisitorOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        gatepass_types::visit::AdmitVisitorOutcome::Admitted { .. } => {
+        gatepass_types::visit::AdmitVisitorOutcome::Admitted { visitor_admitted, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "admitted");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "gatepass.visit.VisitorAdmitted");
+            json::member(&mut body, "payload");
+            wire::encode_event_gatepass_visit_visitor_admitted(visitor_admitted, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         gatepass_types::visit::AdmitVisitorOutcome::WrongState { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
             json::member(&mut body, "payload");
@@ -251,6 +271,8 @@ fn answer_gatepass_visit_admit_visitor(outcome: &gatepass_types::visit::AdmitVis
         gatepass_types::visit::AdmitVisitorOutcome::WrongStateUnknownInstance => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push_str("[]");
             json::member(&mut body, "error");
             json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
             409
@@ -296,26 +318,46 @@ where
             return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.pass_service.register_visit(input) {
-        Ok(outcome) => Ok(answer_gatepass_visit_register_visit(&outcome)),
-        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
+    let outcome = match system.pass_service.register_visit(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Unmet(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_gatepass_visit_register_visit(&outcome))
 }
 
-/// One declared outcome of `gatepass.visit.RegisterVisit`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload — with the status the
-/// contract declares for that branch.
+/// One declared outcome of `gatepass.visit.RegisterVisit`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
 fn answer_gatepass_visit_register_visit(outcome: &gatepass_types::visit::RegisterVisitOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        gatepass_types::visit::RegisterVisitOutcome::Registered { .. } => {
+        gatepass_types::visit::RegisterVisitOutcome::Registered { visit_registered, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "registered");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "gatepass.visit.VisitRegistered");
+            json::member(&mut body, "payload");
+            wire::encode_event_gatepass_visit_visit_registered(visit_registered, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         gatepass_types::visit::RegisterVisitOutcome::Refused { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "refused");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "gatepass.visit.InvalidVisitLength");
             json::member(&mut body, "payload");
@@ -363,26 +405,46 @@ where
             return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.pass_service.sign_out_visitor(input) {
-        Ok(outcome) => Ok(answer_gatepass_visit_sign_out_visitor(&outcome)),
-        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
+    let outcome = match system.pass_service.sign_out_visitor(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Unmet(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_gatepass_visit_sign_out_visitor(&outcome))
 }
 
-/// One declared outcome of `gatepass.visit.SignOutVisitor`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload — with the status the
-/// contract declares for that branch.
+/// One declared outcome of `gatepass.visit.SignOutVisitor`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
 fn answer_gatepass_visit_sign_out_visitor(outcome: &gatepass_types::visit::SignOutVisitorOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        gatepass_types::visit::SignOutVisitorOutcome::SignedOut { .. } => {
+        gatepass_types::visit::SignOutVisitorOutcome::SignedOut { visitor_departed, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "signed-out");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "gatepass.visit.VisitorDeparted");
+            json::member(&mut body, "payload");
+            wire::encode_event_gatepass_visit_visitor_departed(visitor_departed, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         gatepass_types::visit::SignOutVisitorOutcome::WrongState { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
             json::member(&mut body, "payload");
@@ -392,6 +454,8 @@ fn answer_gatepass_visit_sign_out_visitor(outcome: &gatepass_types::visit::SignO
         gatepass_types::visit::SignOutVisitorOutcome::WrongStateUnknownInstance => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push_str("[]");
             json::member(&mut body, "error");
             json::push_text(&mut body, "gatepass.visit.VisitStateConflict");
             409

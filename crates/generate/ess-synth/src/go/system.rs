@@ -3,14 +3,19 @@
 //! Semantically identical to the Rust emitter's system crate, and it has to be: the transport is
 //! *derived* from the model — a binding's delivery word says how many times the command may run,
 //! and the component surfaces say who publishes what and who accepts what — so both targets are
-//! writing down the same conclusion. One delivery per occurrence is what `at_most_once` requires
-//! and what `at_least_once` permits, so the two words select the same dispatch here.
-//! Published events land on an append-only log, a pump delivers each to every binding that
-//! reacts to it, the binding's `on_failure:` answers a **declared refusal** (`escalate`
-//! publishes the declared event through its obligation, `retry`
-//! holds the event for the next pump, `drop` gives up silently), and an unmet obligation
-//! propagates instead of being routed into the policy — a workspace being unfinished is not a
-//! delivery failing.
+//! writing down the same conclusion. One attempt per reacting binding per occurrence is what
+//! `at_most_once` requires and what `at_least_once` permits, so the two words select the same
+//! dispatch here. Published events land on an append-only log, a pump gives each binding that
+//! reacts to one its attempt, the binding's `on_failure:` answers a **declared refusal**
+//! (`escalate` publishes the declared event through its obligation, `retry` holds the event for
+//! this binding alone until the next pump, `drop` gives up silently), and an unmet obligation
+//! ends that binding's attempt instead of being routed into the policy — a workspace being
+//! unfinished is not a delivery failing. An `at_least_once` binding whose attempt it stopped
+//! holds the event in its own held-back list, and the next pump attempts it again for that
+//! binding alone. The pump never delivers an occurrence again to a binding that already ran, so
+//! an `at_most_once` binding runs once per occurrence unless its own `retry` puts the attempt
+//! back; `Redeliver`, which a caller invokes, runs every `at_least_once` binding again and no
+//! `at_most_once` one.
 //!
 //! Two things are shaped by Go rather than by the model, both deliberate:
 //!
@@ -120,10 +125,11 @@ pub(super) fn system_package(
     // declares `at_most_once` too.
     let transport = if crate::plan::declares_single_attempt(ir) {
         "// The transport is derived from the specification, not chosen: this model declares more \
-         than\n// one delivery guarantee, and the pump delivers each published event to each \
-         reacting\n// binding exactly once — which is what `at_most_once` requires and what \
-         `at_least_once`\n// permits. Published events land on an append-only log, which is the \
-         system's observable\n// record, and so is the record of what each binding invoked."
+         than\n// one delivery guarantee, and the pump gives each reacting binding one attempt at \
+         each\n// published event — which is what `at_most_once` requires and what \
+         `at_least_once`\n// permits — attempting it again only for the one binding that asked. \
+         Published events land\n// on an append-only log, which is the system's observable \
+         record, and so is the record of\n// what each binding invoked."
     } else {
         "// The transport is derived from the specification, not chosen: `at_least_once` is the \
          only\n// delivery guarantee the model declares, so published events land on an \
@@ -638,7 +644,6 @@ fn assembled(
     // Which of the system's obligations the pump actually calls: those of the bindings it
     // delivers.
     let mut used: Vec<&Owed> = Vec::new();
-    let mut retries = false;
     for delivery in deliveries {
         let source = delivery.binding.name.to_string();
         for spec in owed {
@@ -652,20 +657,76 @@ fn assembled(
                 }
             }
         }
-        if matches!(delivery.binding.on_failure(), ResolvedFailure::Retry) {
-            retries = true;
-        }
     }
     let with_obligations = !used.is_empty();
 
     obligations_interface(out, emit, &used, with_obligations);
-    system_struct(out, emit, components, deliveries, with_obligations, retries);
+    system_struct(out, emit, components, deliveries, with_obligations);
     constructor(out, emit, components, with_obligations);
     observers(out, emit, deliveries);
-    pump(out, emit, components, deliveries, retries);
+    pump(out, emit, components, deliveries);
     for delivery in deliveries {
         delivery_method(out, emit, delivery);
+        attempt_method(out, emit, delivery);
     }
+}
+
+/// The event a binding reacts to.
+fn trigger<'a>(delivery: &Delivery<'a>) -> &'a EventHandle {
+    delivery
+        .binding
+        .cause
+        .event()
+        .expect("generated event capability")
+}
+
+/// The field holding a binding's held-back occurrences.
+fn held_field(delivery: &Delivery<'_>) -> String {
+    format!("held{}", name::exported(&delivery.binding.name.to_string()))
+}
+
+/// The method that makes one binding's attempt at one occurrence: `attempt…` where a stopped
+/// attempt is held back for the next pump, the bare delivery where it is not.
+fn attempt_call(delivery: &Delivery<'_>) -> String {
+    if crate::plan::attempts_again(delivery.binding) {
+        format!(
+            "attempt{}",
+            name::exported(&delivery.binding.name.to_string())
+        )
+    } else {
+        delivery_name(delivery)
+    }
+}
+
+/// One attempt of a binding that may run again, holding the occurrence back when an unmet
+/// obligation stopped it.
+fn attempt_method(out: &mut String, emit: &Emit<'_>, delivery: &Delivery<'_>) {
+    if !crate::plan::attempts_again(delivery.binding) {
+        return;
+    }
+    let system = emit.layout.system_name("System");
+    let unmet = transport_failure(emit);
+    let source = delivery.binding.name.to_string();
+    let event = trigger(delivery);
+    let stopped = if unmet == "*TransportFailure" {
+        // A failed selection is a delivery that ran to its end, its policy applied.
+        "unmet != nil && unmet.Selection == nil"
+    } else {
+        "unmet != nil"
+    };
+    let _ = writeln!(
+        out,
+        "\n// {} makes one attempt of `{source}` at one `{event}`, held back for the next\n// \
+         Pump when an unmet obligation stopped it: `at_least_once` permits running it again, for \
+         this\n// binding alone.\nfunc (s *{system}) {}(event {}) {unmet} {{\n\tunmet := \
+         s.{}(event)\n\tif {stopped} {{\n\t\ts.{field} = append(s.{field}, event)\n\t}}\n\treturn \
+         unmet\n}}",
+        attempt_call(delivery),
+        attempt_call(delivery),
+        emit.reference(event.name()),
+        delivery_name(delivery),
+        field = held_field(delivery),
+    );
 }
 
 /// The bundle of seams the pump calls, where it calls any.
@@ -696,7 +757,6 @@ fn system_struct(
     components: &[&ResolvedComponent],
     deliveries: &[Delivery<'_>],
     with_obligations: bool,
-    retries: bool,
 ) {
     let system = emit.layout.system_name("System");
     let obligations = emit.layout.system_name("Obligations");
@@ -743,11 +803,18 @@ fn system_struct(
         "\t// published is the log, in publication order.\n\tpublished []{event}\n\t// cursor is \
          how far the pump has delivered.\n\tcursor int"
     );
-    if retries {
+    for delivery in deliveries
+        .iter()
+        .filter(|delivery| crate::plan::holds_back(delivery.binding))
+    {
         let _ = writeln!(
             out,
-            "\t// retries holds what a declared refusal asked to be delivered again.\n\tretries \
-             []{event}"
+            "\t// {} holds what `{}` is to attempt again on the next Pump, for it alone.\n\t{} \
+             []{}",
+            held_field(delivery),
+            delivery.binding.name,
+            held_field(delivery),
+            emit.reference(trigger(delivery).name())
         );
     }
     out.push_str("}\n");
@@ -826,6 +893,16 @@ fn observers(out: &mut String, emit: &Emit<'_>, deliveries: &[Delivery<'_>]) {
          observable\n// record.\nfunc (s *{system}) Published() []{event} {{\n\treturn \
          s.published\n}}"
     );
+    let _ = writeln!(
+        out,
+        "\n// TakePublished takes every event the pump has already delivered off the log, in \
+         publication\n// order. A long-running shell calls it after each Pump, or the log holds \
+         every event the\n// process ever published. Events the pump has not yet delivered stay \
+         on the log, so the next\n// Pump still delivers them.\nfunc (s *{system}) \
+         TakePublished() []{event} {{\n\tdelivered := append([]{event}(nil), \
+         s.published[:s.cursor]...)\n\ts.published = append([]{event}(nil), \
+         s.published[s.cursor:]...)\n\ts.cursor = 0\n\treturn delivered\n}}"
+    );
     if !deliveries.is_empty() {
         let _ = writeln!(
             out,
@@ -833,55 +910,69 @@ fn observers(out: &mut String, emit: &Emit<'_>, deliveries: &[Delivery<'_>]) {
              with what it\n// passed.\nfunc (s *{system}) Invocations() []{invocation} \
              {{\n\treturn s.invocations\n}}"
         );
+        let _ = writeln!(
+            out,
+            "\n// TakeInvocations takes the record of every command a binding invoked so far, in \
+             invocation\n// order: TakePublished's counterpart for the same long-running \
+             shell.\nfunc (s *{system}) TakeInvocations() []{invocation} {{\n\ttaken := \
+             s.invocations\n\ts.invocations = nil\n\treturn taken\n}}"
+        );
     }
 }
 
-/// The pump: collection, delivery, redelivery, and the held-back attempts a retry policy asks for.
+/// The pump: collection, delivery per binding, redelivery, and the held-back attempts.
 fn pump(
     out: &mut String,
     emit: &Emit<'_>,
     components: &[&ResolvedComponent],
     deliveries: &[Delivery<'_>],
-    retries: bool,
 ) {
     let system = emit.layout.system_name("System");
     let event = emit.layout.system_name("SystemEvent");
     let unmet = transport_failure(emit);
 
-    let _ = writeln!(
-        out,
-        "\n// Pump delivers until quiescent: collects every component's outbox onto the log, then \
-         delivers\n// each logged event to every binding that reacts to it — at least once each, \
-         which is the\n// guarantee the specification declares.\n//\n// The result carries the \
-         first unmet obligation that delivery could not route around; the log\n// keeps everything \
-         already published. A specification whose bindings feed each other without\n// end will not \
-         quiesce, and this pump will not pretend otherwise.\nfunc (s *{system}) Pump() {unmet} {{"
-    );
-    if retries {
-        out.push_str(
-            "\t// Held-back deliveries first: one more attempt per pump is the redelivery\n\t// \
-             schedule this transport provides.\n\tretrying := s.retries\n\ts.retries = nil\n\tfor \
-             _, held := range retrying {\n\t\tif unmet := s.deliver(held); unmet != nil \
-             {\n\t\t\treturn unmet\n\t\t}\n\t}\n",
-        );
-    }
-    out.push_str("\tfor {\n\t\ts.collect()\n\t\tif s.cursor == len(s.published) {\n\t\t\treturn nil\n\t\t}\n");
     if deliveries.is_empty() {
-        out.push_str("\t\ts.cursor++\n\t}\n}\n");
+        let _ = writeln!(
+            out,
+            "\n// Pump delivers until quiescent: collects every component's outbox onto the log. \
+             No binding\n// reacts to anything this specification publishes, so collecting is the \
+             whole delivery.\nfunc (s *{system}) Pump() {unmet} {{\n\tfor {{\n\t\ts.collect()\n\t\t\
+             if s.cursor == len(s.published) {{\n\t\t\treturn nil\n\t\t}}\n\t\ts.cursor++\n\t}}\n}}"
+        );
     } else {
-        out.push_str(
-            "\t\tevent := s.published[s.cursor]\n\t\ts.cursor++\n\t\tif unmet := \
-             s.deliver(event); unmet != nil {\n\t\t\treturn unmet\n\t\t}\n\t}\n}\n",
+        pump_method(out, emit, deliveries);
+        let (who, dispatch) = if crate::plan::declares_single_attempt(emit.ir) {
+            (
+                "every binding that reacts to it\n// and declares `at_least_once`, again, then \
+                 pumps until quiescent. An `at_most_once` binding\n// declared one attempt and no \
+                 redelivery, so it does not run again.",
+                "redeliverOccurrence",
+            )
+        } else {
+            (
+                "every binding that reacts to it,\n// again, then pumps until quiescent.",
+                "deliver",
+            )
+        };
+        let _ = writeln!(
+            out,
+            "\n// Redeliver delivers one already-published occurrence to {who}\n//\n// The \
+             duplicate a delivery guarantee of at least once explicitly permits: the occurrence \
+             is\n// not published a second time — a second occurrence would be a different claim \
+             — but every\n// binding that permits it runs again, and what that causes lands on \
+             the log as usual.\nfunc (s *{system}) Redeliver(event {event}) {unmet} {{\n\tif \
+             unmet := s.{dispatch}(event); unmet != nil {{\n\t\treturn unmet\n\t}}\n\treturn \
+             s.Pump()\n}}"
         );
         let _ = writeln!(
             out,
-            "\n// Redeliver delivers one already-published occurrence to every binding that reacts \
-             to it,\n// again, then pumps until quiescent.\n//\n// The duplicate a delivery \
-             guarantee of at least once explicitly permits: the occurrence is\n// not published a \
-             second time — a second occurrence would be a different claim — but every\n// reacting \
-             binding runs again, and what that causes lands on the log as usual.\nfunc (s \
-             *{system}) Redeliver(event {event}) {unmet} {{\n\tif unmet := s.deliver(event); unmet \
-             != nil {{\n\t\treturn unmet\n\t}}\n\treturn s.Pump()\n}}"
+            "\n// drain delivers every logged event the cursor has not passed yet, collecting as \
+             it goes: each\n// reacting binding gets one attempt, and the cursor passes the event \
+             once all of them have\n// had it. The result is the first attempt that \
+             failed.\nfunc (s *{system}) drain() {unmet} {{\n\tvar failed {unmet}\n\tfor {{\n\t\t\
+             s.collect()\n\t\tif s.cursor == len(s.published) {{\n\t\t\treturn failed\n\t\t}}\n\t\t\
+             event := s.published[s.cursor]\n\t\tif unmet := s.deliver(event); unmet != nil && \
+             failed == nil {{\n\t\t\tfailed = unmet\n\t\t}}\n\t\ts.cursor++\n\t}}\n}}"
         );
     }
 
@@ -905,35 +996,122 @@ fn pump(
     if deliveries.is_empty() {
         return;
     }
+    let every: Vec<&Delivery<'_>> = deliveries.iter().collect();
+    dispatch_method(
+        out,
+        emit,
+        "deliver",
+        "// deliver gives every binding that reacts to one logged event its attempt at it.\n//\n// \
+         Each binding's attempt is its own: one that stops holds the event in that binding's \
+         held-back\n// list where it may run again, and the bindings beside it still run. The \
+         result is the first\n// attempt that failed.\n",
+        &every,
+    );
+    if crate::plan::declares_single_attempt(emit.ir) {
+        let again: Vec<&Delivery<'_>> = deliveries
+            .iter()
+            .filter(|delivery| crate::plan::attempts_again(delivery.binding))
+            .collect();
+        dispatch_method(
+            out,
+            emit,
+            "redeliverOccurrence",
+            "// redeliverOccurrence gives one occurrence again to every binding that reacts to it \
+             and\n// declares `at_least_once`. An `at_most_once` binding declared one attempt and \
+             no redelivery,\n// so it is left out.\n",
+            &again,
+        );
+    }
+}
+
+/// `Pump` where a binding reacts: this pump's own events first, then every held-back attempt.
+fn pump_method(out: &mut String, emit: &Emit<'_>, deliveries: &[Delivery<'_>]) {
+    let system = emit.layout.system_name("System");
+    let unmet = transport_failure(emit);
     let _ = writeln!(
         out,
-        "\n// deliver delivers one logged event to every binding that reacts to it.\nfunc (s \
-         *{system}) deliver(event {event}) {unmet} {{\n\tswitch value := event.(type) {{"
+        "\n// Pump delivers until quiescent: collects every component's outbox onto the log, then \
+         gives each\n// binding that reacts to a logged event one attempt at it, and passes the \
+         event once every one\n// of them has had its attempt.\n//\n// Delivery is tracked per \
+         binding. A binding whose attempt an unmet obligation stopped, and\n// which permits a \
+         second run, holds the event in its own held-back list; so does a declared\n// refusal \
+         its `on_failure: retry` answers. The next Pump attempts each held event again for\n// \
+         that binding alone, after the events published since, and no other binding receives \
+         it\n// twice.\n//\n// The result carries the first failure among the events this Pump \
+         delivered for the first\n// time: what was published since the last Pump, and what \
+         delivering it published in turn. A\n// held-back attempt that fails again stays held and \
+         is not this Pump's answer, so an event\n// that keeps failing never fails the Pump for \
+         what is published after it. A specification\n// whose bindings feed each other without \
+         end will not quiesce, and this pump will not\n// pretend otherwise.\nfunc (s *{system}) \
+         Pump() {unmet} {{"
+    );
+    let holding: Vec<&Delivery<'_>> = deliveries
+        .iter()
+        .filter(|delivery| crate::plan::holds_back(delivery.binding))
+        .collect();
+    if holding.is_empty() {
+        out.push_str("\treturn s.drain()\n}\n");
+        return;
+    }
+    for delivery in &holding {
+        let field = held_field(delivery);
+        let _ = writeln!(out, "\t{field} := s.{field}\n\ts.{field} = nil");
+    }
+    out.push_str(
+        "\tdelivered := s.drain()\n\t// Each held-back event, attempted again for its own binding \
+         alone. What that publishes is\n\t// delivered like anything else; an attempt that stops \
+         again is held again.\n",
+    );
+    for delivery in &holding {
+        let _ = writeln!(
+            out,
+            "\tfor _, event := range {} {{\n\t\ts.{}(event)\n\t}}",
+            held_field(delivery),
+            attempt_call(delivery)
+        );
+    }
+    out.push_str("\ts.drain()\n\treturn delivered\n}\n");
+}
+
+/// One dispatch over the log's events: each reacting binding among `deliveries` gets its attempt,
+/// and the first failure is the answer once they all have.
+fn dispatch_method(
+    out: &mut String,
+    emit: &Emit<'_>,
+    function: &str,
+    doc: &str,
+    deliveries: &[&Delivery<'_>],
+) {
+    let system = emit.layout.system_name("System");
+    let event = emit.layout.system_name("SystemEvent");
+    let unmet = transport_failure(emit);
+    let _ = writeln!(
+        out,
+        "\n{doc}func (s *{system}) {function}(event {event}) {unmet} {{"
+    );
+    if deliveries.is_empty() {
+        out.push_str("\treturn nil\n}\n");
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "\tvar failed {unmet}\n\tswitch value := event.(type) {{"
     );
     for logged in emit.layout.system_events() {
-        let reacting: Vec<&Delivery<'_>> = deliveries
-            .iter()
-            .filter(|delivery| {
-                delivery
-                    .binding
-                    .cause
-                    .event()
-                    .expect("generated event capability")
-                    .name()
-                    == logged.name()
-            })
-            .collect();
         let _ = writeln!(out, "\tcase {}:", emit.layout.system_event(logged.name()));
-        for delivery in reacting {
+        for delivery in deliveries
+            .iter()
+            .filter(|delivery| trigger(delivery).name() == logged.name())
+        {
             let _ = writeln!(
                 out,
-                "\t\tif unmet := s.{}(value.Event); unmet != nil {{\n\t\t\treturn \
-                 unmet\n\t\t}}",
-                delivery_name(delivery)
+                "\t\tif unmet := s.{}(value.Event); unmet != nil && failed == nil {{\n\t\t\tfailed \
+                 = unmet\n\t\t}}",
+                attempt_call(delivery)
             );
         }
     }
-    out.push_str("\t}\n\treturn nil\n}\n");
+    out.push_str("\t}\n\treturn failed\n}\n");
 }
 
 /// One binding's delivery, as its own method.
@@ -1108,15 +1286,9 @@ fn failure_policy(
             let _ = writeln!(
                 out,
                 "\t\t// The declared refusal is the failure the policy names: hold the event for \
-                 the\n\t\t// next pump, which is one more at-least-once \
-                 attempt.\n\t\ts.retries = append(s.retries, {}{{Event: event}})",
-                emit.layout.system_event(
-                    binding
-                        .cause
-                        .event()
-                        .expect("generated event capability")
-                        .name()
-                )
+                 this\n\t\t// binding alone, and the next pump makes one more \
+                 attempt.\n\t\ts.held{held} = append(s.held{held}, event)",
+                held = name::exported(&source)
             );
             out.push_str("\t}\n\treturn nil\n}\n");
         }
@@ -1197,14 +1369,8 @@ fn selection_failure_policy(
         ResolvedFailure::Retry => {
             let _ = writeln!(
                 out,
-                "s.retries = append(s.retries, {}{{Event: event}})",
-                emit.layout.system_event(
-                    binding
-                        .cause
-                        .event()
-                        .expect("selection is event-only")
-                        .name()
-                )
+                "s.held{held} = append(s.held{held}, event)",
+                held = name::exported(source)
             );
         }
         ResolvedFailure::BoundedRetry { .. } => unreachable!("refused by `failure::retry_bound`"),

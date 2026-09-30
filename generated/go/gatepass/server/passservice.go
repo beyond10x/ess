@@ -104,6 +104,10 @@ func dispatchPassService(system *system.System, request *http.Request) response 
 	if refused != nil {
 		return *refused
 	}
+	// Held from the port call through Pump and TakePublished: the system is shared by
+	// every connection.
+	serving.Lock()
+	defer serving.Unlock()
 	switch request.URL.Path {
 	case "/docs":
 		if request.Method != "GET" {
@@ -161,26 +165,39 @@ func serveGatepassVisitAdmitVisitor(system *system.System, body []byte) response
 	if unmet != nil {
 		return refusal(501, unmet.Error())
 	}
+	// Deliver what this command published to every binding that reacts to it, then take it
+	// off the log: a long-running server keeps nothing from one request to the next. Pump answers
+	// only for what this command published, and returns with all of it delivered.
+	failure := system.Pump()
+	system.TakePublished()
+	if failure != nil {
+		return refusal(501, "delivering what the command published: "+failure.Error())
+	}
 	return answerGatepassVisitAdmitVisitor(outcome)
 }
 
 // answerGatepassVisitAdmitVisitor renders one declared outcome of `gatepass.visit.AdmitVisitor` as the contract publishes it: the
-// branch that was taken, the declared error where there is one, and that error's own
-// payload.
+// branch that was taken, every event it published in publication order, the declared
+// error where there is one, and that error's own payload.
 func answerGatepassVisitAdmitVisitor(outcome visit.AdmitVisitorOutcome) response {
 	body := map[string]any{}
 	switch taken := outcome.(type) {
 	case visit.AdmitVisitorOutcomeAdmitted:
 		body["outcome"] = "admitted"
+		body["published"] = []any{
+			map[string]any{"event": "gatepass.visit.VisitorAdmitted", "payload": encodeEventGatepassVisitVisitorAdmitted(taken.VisitorAdmitted)},
+		}
 		_ = taken
 		return rendered(202, body)
 	case visit.AdmitVisitorOutcomeWrongState:
 		body["outcome"] = "wrong-state"
+		body["published"] = []any{}
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		body["payload"] = encodeErrorGatepassVisitVisitStateConflict(taken.Error)
 		return rendered(409, body)
 	case visit.AdmitVisitorOutcomeWrongStateUnknownInstance:
 		body["outcome"] = "wrong-state"
+		body["published"] = []any{}
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		return rendered(409, body)
 	}
@@ -207,21 +224,33 @@ func serveGatepassVisitRegisterVisit(system *system.System, body []byte) respons
 	if unmet != nil {
 		return refusal(501, unmet.Error())
 	}
+	// Deliver what this command published to every binding that reacts to it, then take it
+	// off the log: a long-running server keeps nothing from one request to the next. Pump answers
+	// only for what this command published, and returns with all of it delivered.
+	failure := system.Pump()
+	system.TakePublished()
+	if failure != nil {
+		return refusal(501, "delivering what the command published: "+failure.Error())
+	}
 	return answerGatepassVisitRegisterVisit(outcome)
 }
 
 // answerGatepassVisitRegisterVisit renders one declared outcome of `gatepass.visit.RegisterVisit` as the contract publishes it: the
-// branch that was taken, the declared error where there is one, and that error's own
-// payload.
+// branch that was taken, every event it published in publication order, the declared
+// error where there is one, and that error's own payload.
 func answerGatepassVisitRegisterVisit(outcome visit.RegisterVisitOutcome) response {
 	body := map[string]any{}
 	switch taken := outcome.(type) {
 	case visit.RegisterVisitOutcomeRegistered:
 		body["outcome"] = "registered"
+		body["published"] = []any{
+			map[string]any{"event": "gatepass.visit.VisitRegistered", "payload": encodeEventGatepassVisitVisitRegistered(taken.VisitRegistered)},
+		}
 		_ = taken
 		return rendered(202, body)
 	case visit.RegisterVisitOutcomeRefused:
 		body["outcome"] = "refused"
+		body["published"] = []any{}
 		body["error"] = "gatepass.visit.InvalidVisitLength"
 		body["payload"] = encodeErrorGatepassVisitInvalidVisitLength(taken.Error)
 		return rendered(422, body)
@@ -249,26 +278,39 @@ func serveGatepassVisitSignOutVisitor(system *system.System, body []byte) respon
 	if unmet != nil {
 		return refusal(501, unmet.Error())
 	}
+	// Deliver what this command published to every binding that reacts to it, then take it
+	// off the log: a long-running server keeps nothing from one request to the next. Pump answers
+	// only for what this command published, and returns with all of it delivered.
+	failure := system.Pump()
+	system.TakePublished()
+	if failure != nil {
+		return refusal(501, "delivering what the command published: "+failure.Error())
+	}
 	return answerGatepassVisitSignOutVisitor(outcome)
 }
 
 // answerGatepassVisitSignOutVisitor renders one declared outcome of `gatepass.visit.SignOutVisitor` as the contract publishes it: the
-// branch that was taken, the declared error where there is one, and that error's own
-// payload.
+// branch that was taken, every event it published in publication order, the declared
+// error where there is one, and that error's own payload.
 func answerGatepassVisitSignOutVisitor(outcome visit.SignOutVisitorOutcome) response {
 	body := map[string]any{}
 	switch taken := outcome.(type) {
 	case visit.SignOutVisitorOutcomeSignedOut:
 		body["outcome"] = "signed-out"
+		body["published"] = []any{
+			map[string]any{"event": "gatepass.visit.VisitorDeparted", "payload": encodeEventGatepassVisitVisitorDeparted(taken.VisitorDeparted)},
+		}
 		_ = taken
 		return rendered(202, body)
 	case visit.SignOutVisitorOutcomeWrongState:
 		body["outcome"] = "wrong-state"
+		body["published"] = []any{}
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		body["payload"] = encodeErrorGatepassVisitVisitStateConflict(taken.Error)
 		return rendered(409, body)
 	case visit.SignOutVisitorOutcomeWrongStateUnknownInstance:
 		body["outcome"] = "wrong-state"
+		body["published"] = []any{}
 		body["error"] = "gatepass.visit.VisitStateConflict"
 		return rendered(409, body)
 	}
