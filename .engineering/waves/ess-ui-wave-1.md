@@ -37,7 +37,7 @@ Every scope entry is `inferred`: the crates do not exist yet; each story owns on
 | 2 | ui-spec-checks | impl/ui-checks | ess-ui-checks | b10x-target/ess-ui-checks | ess-ui-wave/checks | approved |
 | 2 | ui-spec-docs-generator | impl/ui-docs | ess-ui-docs | b10x-target/ess-ui-docs | ess-ui-wave/docs | merged |
 | 2 | ui-spec-tui-renderer | impl/ui-tui | ess-ui-tui | b10x-target/ess-ui-tui | ess-ui-wave/tui | dispatched |
-| 2 | ui-spec-react-renderer | impl/ui-react | ess-ui-react | b10x-target/ess-ui-react | ess-ui-wave/react | dispatched |
+| 2 | ui-spec-react-renderer | impl/ui-react | ess-ui-react | b10x-target/ess-ui-react | ess-ui-wave/react | merged |
 | 3 | ui-spec-test-language | impl/ui-test | ess-ui-test | b10x-target/ess-ui-test | ess-ui-wave/test | approved |
 
 Build dirs are under `$HOME/.cache/`, scratch under `$HOME/.cache/`; worktrees under the managed

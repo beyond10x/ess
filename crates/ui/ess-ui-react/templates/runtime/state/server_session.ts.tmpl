@@ -1,0 +1,6 @@
+import { useRemoteState } from "./remote";
+
+/** `store: server_session` — held by the server for this login session (credentials). */
+export function useServerSessionState<T>(key: string, initial: T): [T, (value: T) => void] {
+  return useRemoteState<T>("server_session", key, initial);
+}

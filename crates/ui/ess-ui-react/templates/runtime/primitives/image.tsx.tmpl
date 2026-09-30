@@ -1,0 +1,19 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { useScope } from "../core";
+import { evaluate } from "../expr";
+
+/** An image from an expression. */
+export function ImageView(props: { "data-ui-path": string; src: string; alt: string; fit?: string }): ReactNode {
+  const scope = useScope();
+  const src = evaluate(props.src, scope.values);
+  return (
+    <img
+      className="ui-image"
+      src={typeof src === "string" ? src : ""}
+      alt={props.alt}
+      style={{ objectFit: props.fit ?? "contain" }}
+      data-ui-path={useUiPath(props["data-ui-path"])}
+    />
+  );
+}

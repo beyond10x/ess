@@ -1,0 +1,6 @@
+// Minimal offline declaration of the automatic JSX runtime; see types/react.d.ts.
+import type { ReactElement } from "react";
+
+export { Fragment } from "react";
+export function jsx(type: unknown, props: unknown, key?: string): ReactElement;
+export function jsxs(type: unknown, props: unknown, key?: string): ReactElement;

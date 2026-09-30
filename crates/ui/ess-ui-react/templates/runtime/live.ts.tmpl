@@ -1,0 +1,517 @@
+// Live channels. By default each channel plays its fixture script in a loop (`fixturePlayer`);
+// `useNetworkChannels(base)` switches to server-sent events for one-way channels and a WebSocket
+// for both-way ones.
+
+import { useEffect, useRef, useState } from "react";
+import { channels } from "../channels";
+import { fixtures } from "../fixtures";
+import type { ReadState } from "./data";
+import { evaluate, truthy } from "./expr";
+import { getPath, isObject, stableKey, type Json } from "./json";
+
+/** A channel's connection state as the user sees it. */
+export type Lifecycle = "connecting" | "loading" | "live" | "reconnecting" | "stale" | "closed";
+
+/** A channel as the document declares it. */
+export interface ChannelSpec {
+  name: string;
+  direction: "server_to_client" | "both";
+  transport: "sse" | "websocket";
+  delivery: "latest_value" | "every_event";
+  resume: "from_last_seen" | "refetch";
+  events: string[];
+  view?: string;
+  sends: string[];
+  scope?: string;
+  sessionPer?: string;
+  lifecycle: string[];
+  reconnect?: { from: number; to: number };
+  staleAfter?: number;
+  fields: Record<string, string>;
+}
+
+/** One delivered event. */
+export interface ChannelEvent {
+  event: string;
+  payload: Json;
+}
+
+/** Where a channel's events come from. */
+export interface ChannelSource {
+  start(onEvent: (event: ChannelEvent) => void, onLifecycle: (lifecycle: Lifecycle) => void): () => void;
+  send?(command: string, input: Json): void;
+}
+
+/** Plays a channel's fixture script: each entry at its offset, the whole script in a loop.
+ * A script recorded for one session (`session: {<per>: <value>}`) plays only into that session. */
+export function fixturePlayer(spec: ChannelSpec, session?: unknown): ChannelSource {
+  return {
+    start(onEvent, onLifecycle) {
+      const script = fixtures.scripts[spec.name];
+      const per = spec.sessionPer;
+      const recorded = script && per !== undefined && isObject(script.session) ? script.session[per] : undefined;
+      if (!script || (recorded !== undefined && String(recorded) !== String(session))) {
+        onLifecycle("live");
+        return () => undefined;
+      }
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      const period = Math.max(1000, ...script.events.map((entry) => entry.at)) + 1000;
+      let stopped = false;
+      const round = () => {
+        if (stopped) {
+          return;
+        }
+        for (const entry of script.events) {
+          timers.push(
+            setTimeout(() => {
+              if (entry.lifecycle) {
+                onLifecycle(entry.lifecycle as Lifecycle);
+              } else if (entry.event) {
+                onEvent({ event: entry.event, payload: entry.payload ?? null });
+              }
+            }, entry.at),
+          );
+        }
+        if (script.loop) {
+          timers.push(setTimeout(round, period));
+        }
+      };
+      onLifecycle("live");
+      round();
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+      };
+    },
+  };
+}
+
+function backoff(spec: ChannelSpec, attempt: number): number {
+  const from = spec.reconnect?.from ?? 1000;
+  const to = spec.reconnect?.to ?? 30000;
+  return Math.min(to, from * 2 ** attempt);
+}
+
+/** `url` with `params` set in its query, built with URLSearchParams (never a second `?`). */
+export function withQuery(url: string, params: Record<string, string | undefined>): string {
+  const at = url.indexOf("?");
+  const path = at < 0 ? url : url.slice(0, at);
+  const query = new URLSearchParams(at < 0 ? "" : url.slice(at + 1));
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      query.set(name, value);
+    }
+  }
+  const text = query.toString();
+  return text ? `${path}?${text}` : path;
+}
+
+/** The cursor a `resume: from_last_seen` reconnect sends: the last event id seen. */
+function cursor(spec: ChannelSpec, lastId: string | undefined): Record<string, string | undefined> {
+  return { last_event_id: spec.resume === "from_last_seen" ? lastId : undefined };
+}
+
+/** A server-sent events client for a one-way channel. */
+export function sseClient(spec: ChannelSpec, url: string): ChannelSource {
+  return {
+    start(onEvent, onLifecycle) {
+      let source: EventSource | undefined;
+      let attempt = 0;
+      let lastId: string | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let stopped = false;
+      const connect = () => {
+        onLifecycle(attempt === 0 ? "connecting" : "reconnecting");
+        source = new EventSource(withQuery(url, cursor(spec, lastId)));
+        source.onopen = () => {
+          attempt = 0;
+          onLifecycle("live");
+        };
+        source.onmessage = (message: MessageEvent) => {
+          lastId = message.lastEventId || lastId;
+          const data = JSON.parse(String(message.data)) as Json;
+          const event = isObject(data) && typeof data.event === "string" ? data.event : spec.view ?? spec.name;
+          onEvent({ event, payload: isObject(data) && "payload" in data ? data.payload : data });
+        };
+        source.onerror = () => {
+          source?.close();
+          if (!stopped) {
+            onLifecycle("reconnecting");
+            timer = setTimeout(connect, backoff(spec, attempt));
+            attempt += 1;
+          }
+        };
+      };
+      connect();
+      return () => {
+        stopped = true;
+        source?.close();
+        if (timer) {
+          clearTimeout(timer);
+        }
+        onLifecycle("closed");
+      };
+    },
+  };
+}
+
+/** A WebSocket client for a both-way channel; `from_last_seen` reconnects carry the cursor. */
+export function webSocketClient(spec: ChannelSpec, url: string): ChannelSource {
+  let socket: WebSocket | undefined;
+  return {
+    start(onEvent, onLifecycle) {
+      let attempt = 0;
+      let lastId: string | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let stopped = false;
+      const connect = () => {
+        onLifecycle(attempt === 0 ? "connecting" : "reconnecting");
+        socket = new WebSocket(withQuery(url, cursor(spec, lastId)));
+        socket.onopen = () => {
+          attempt = 0;
+          onLifecycle("live");
+        };
+        socket.onmessage = (message: MessageEvent) => {
+          const data = JSON.parse(String(message.data)) as Json;
+          if (isObject(data) && typeof data.event === "string") {
+            const id = data.id ?? (isObject(data.payload) ? data.payload.id : undefined);
+            if (typeof id === "string" || typeof id === "number") {
+              lastId = String(id);
+            }
+            onEvent({ event: data.event, payload: data.payload ?? null });
+          }
+        };
+        socket.onclose = () => {
+          if (!stopped) {
+            onLifecycle("reconnecting");
+            timer = setTimeout(connect, backoff(spec, attempt));
+            attempt += 1;
+          }
+        };
+      };
+      connect();
+      return () => {
+        stopped = true;
+        socket?.close();
+        if (timer) {
+          clearTimeout(timer);
+        }
+        onLifecycle("closed");
+      };
+    },
+    send(command, input) {
+      socket?.send(JSON.stringify({ command, input }));
+    },
+  };
+}
+
+let networkBase: string | undefined;
+
+/** Switches every channel from its fixture player to the network, served under `base`. */
+export function useNetworkChannels(base: string): void {
+  networkBase = base;
+}
+
+function sourceFor(spec: ChannelSpec, session: unknown): ChannelSource {
+  if (networkBase === undefined) {
+    return fixturePlayer(spec, session);
+  }
+  const url = withQuery(`${networkBase}/channels/${spec.name}`, {
+    ...(spec.sessionPer !== undefined ? { [spec.sessionPer]: String(session ?? "") } : {}),
+  });
+  return spec.transport === "websocket" ? webSocketClient(spec, url.replace(/^http/, "ws")) : sseClient(spec, url);
+}
+
+type Listener = (event: ChannelEvent) => void;
+
+interface Running {
+  key: string;
+  spec: ChannelSpec;
+  lifecycle: Lifecycle;
+  latest?: ChannelEvent;
+  listeners: Set<Listener>;
+  watchers: Set<() => void>;
+  /** Called when the channel is live again after an interruption and `resume` is `refetch`. */
+  resumers: Set<() => void>;
+  stop: () => void;
+  source: ChannelSource;
+  lastLive: number;
+  staleTimer?: ReturnType<typeof setTimeout>;
+}
+
+const running = new Map<string, Running>();
+
+/** One running instance per channel, and per session value for a `session: {per}` channel. */
+function instanceKey(spec: ChannelSpec, session: unknown): string {
+  return spec.sessionPer === undefined ? spec.name : `${spec.name}|${stableKey(session ?? null)}`;
+}
+
+function acquire(name: string, session: unknown): Running | undefined {
+  const spec = channels[name];
+  if (!spec) {
+    return undefined;
+  }
+  const key = instanceKey(spec, session);
+  const existing = running.get(key);
+  if (existing) {
+    return existing;
+  }
+  const source = sourceFor(spec, session);
+  const entry: Running = {
+    key,
+    spec,
+    lifecycle: "connecting",
+    listeners: new Set(),
+    watchers: new Set(),
+    resumers: new Set(),
+    stop: () => undefined,
+    source,
+    lastLive: Date.now(),
+  };
+  running.set(key, entry);
+  const notify = () => entry.watchers.forEach((watcher) => watcher());
+  const stop = source.start(
+    (event) => {
+      entry.latest = event;
+      entry.listeners.forEach((listener) => listener(event));
+      notify();
+    },
+    (lifecycle) => {
+      const wasDown = entry.lifecycle === "reconnecting" || entry.lifecycle === "stale";
+      if (entry.lifecycle === "stale" && (lifecycle === "reconnecting" || lifecycle === "connecting")) {
+        // A failed retry does not make a stale channel less stale: only live (or closed) leaves it.
+        return;
+      }
+      entry.lifecycle = lifecycle;
+      if (entry.staleTimer) {
+        clearTimeout(entry.staleTimer);
+        entry.staleTimer = undefined;
+      }
+      if (lifecycle === "live") {
+        entry.lastLive = Date.now();
+        if (wasDown && entry.spec.resume === "refetch") {
+          entry.resumers.forEach((resume) => resume());
+        }
+      } else if (lifecycle === "reconnecting" && entry.spec.staleAfter !== undefined) {
+        // `stale_after`: down time, measured from the last live moment, after which fed
+        // sections are stale — whatever the transport reports.
+        const remaining = Math.max(0, entry.spec.staleAfter - (Date.now() - entry.lastLive));
+        entry.staleTimer = setTimeout(() => {
+          if (entry.lifecycle === "reconnecting") {
+            entry.lifecycle = "stale";
+            notify();
+          }
+        }, remaining);
+      }
+      notify();
+    },
+  );
+  entry.stop = () => {
+    if (entry.staleTimer) {
+      clearTimeout(entry.staleTimer);
+    }
+    stop();
+  };
+  return entry;
+}
+
+function release(entry: Running): void {
+  if (entry.listeners.size === 0 && entry.watchers.size === 0 && entry.resumers.size === 0) {
+    entry.stop();
+    running.delete(entry.key);
+  }
+}
+
+/** Sends a command over a both-way channel (its instance for `session`, if it has sessions). */
+export function sendOnChannel(name: string, command: string, input: Json, session?: unknown): void {
+  const spec = channels[name];
+  if (spec) {
+    running.get(instanceKey(spec, session))?.source.send?.(command, input);
+  }
+}
+
+function fieldsOf(spec: ChannelSpec, entry: Running): Record<string, unknown> {
+  const payload = entry.latest?.payload;
+  const values: Record<string, unknown> = { lifecycle: entry.lifecycle };
+  for (const [field, source] of Object.entries(spec.fields)) {
+    values[field] = /^[A-Za-z_][A-Za-z0-9_.]*$/.test(source) ? getPath(payload, source.split(".")) : undefined;
+  }
+  return values;
+}
+
+/**
+ * Keeps the named channels running while mounted; returns `channel.<name>.<field>` values.
+ * `sessions` gives the session value of each `session: {per}` channel.
+ */
+export function useChannels(
+  names: string[],
+  sessions: Record<string, unknown> = {},
+): Record<string, Record<string, unknown>> {
+  const [, setTick] = useState(0);
+  const key = `${names.join(",")}|${stableKey(sessions)}`;
+  useEffect(() => {
+    const held: [Running, () => void][] = [];
+    for (const name of names) {
+      const entry = acquire(name, sessions[name]);
+      if (entry) {
+        const watcher = () => setTick((tick) => tick + 1);
+        entry.watchers.add(watcher);
+        held.push([entry, watcher]);
+      }
+    }
+    return () => {
+      for (const [entry, watcher] of held) {
+        entry.watchers.delete(watcher);
+        release(entry);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  const values: Record<string, Record<string, unknown>> = {};
+  for (const name of names) {
+    const spec = channels[name];
+    const entry = spec ? running.get(instanceKey(spec, sessions[name])) : undefined;
+    values[name] = entry && spec ? fieldsOf(spec, entry) : { lifecycle: "connecting" };
+  }
+  return values;
+}
+
+/** How a section applies a channel's events to its rows. */
+export interface LiveSpec {
+  channel: string;
+  on?: string[];
+  effect: "patch_row" | "insert_or_patch" | "insert_top" | "remove_row" | "replace" | "refetch";
+  match?: string;
+  onlyIf?: string;
+  coalesce?: number;
+  whenPagedAway?: "count_new" | "ignore" | "insert";
+  maxRows?: number;
+}
+
+function matches(row: Json, params: Record<string, unknown>): boolean {
+  if (!isObject(row)) {
+    return true;
+  }
+  return Object.entries(params).every(([name, value]) => {
+    if (!(name in row) || value === undefined || value === null || value === "") {
+      return true;
+    }
+    const wanted = Array.isArray(value) ? value : [value];
+    return wanted.length === 0 || wanted.some((entry) => String(entry) === String(row[name]));
+  });
+}
+
+function apply(rows: Json[], event: ChannelEvent, spec: LiveSpec): Json[] {
+  const key = spec.match ?? "id";
+  const payload = event.payload;
+  const id = isObject(payload) ? payload[key] : undefined;
+  const index = rows.findIndex((row) => isObject(row) && id !== undefined && row[key] === id);
+  switch (spec.effect) {
+    case "insert_top": {
+      const next = [payload, ...rows];
+      return spec.maxRows ? next.slice(0, spec.maxRows) : next;
+    }
+    case "insert_or_patch":
+      if (index < 0) {
+        return [payload, ...rows];
+      }
+      return rows.map((row, at) => (at === index && isObject(row) && isObject(payload) ? { ...row, ...payload } : row));
+    case "patch_row":
+      return rows.map((row, at) => (at === index && isObject(row) && isObject(payload) ? { ...row, ...payload } : row));
+    case "remove_row":
+      return rows.filter((_, at) => at !== index);
+    case "replace":
+      return [payload];
+    default:
+      return rows;
+  }
+}
+
+/** A read with a channel's events applied, and stale while the channel is not live. */
+export function useLive(read: ReadState, spec: LiveSpec, session?: unknown): ReadState {
+  const [rows, setRows] = useState<Json[] | null>(null);
+  const [newCount, setNewCount] = useState(0);
+  const channelValues = useChannels([spec.channel], { [spec.channel]: session });
+  const sessionKey = stableKey(session ?? null);
+  const lifecycle = channelValues[spec.channel]?.lifecycle as Lifecycle | undefined;
+  const base = useRef(read.rows);
+  const pending = useRef<ChannelEvent[]>([]);
+  const readKey = stableKey(read.rows);
+  useEffect(() => {
+    base.current = read.rows;
+    setRows(null);
+    setNewCount(0);
+  }, [readKey]);
+  const paramsRef = useRef(read.params);
+  paramsRef.current = read.params;
+  const refetch = useRef(read.refetch);
+  refetch.current = read.refetch;
+  useEffect(() => {
+    const entry = acquire(spec.channel, session);
+    if (!entry) {
+      return;
+    }
+    const resume = () => refetch.current();
+    entry.resumers.add(resume);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const flush = () => {
+      timer = undefined;
+      const events = pending.current;
+      pending.current = [];
+      const pagedAway = Number(paramsRef.current.page ?? 1) > 1;
+      if (pagedAway && spec.whenPagedAway === "count_new") {
+        setNewCount((count) => count + events.length);
+        return;
+      }
+      if (pagedAway && spec.whenPagedAway === "ignore") {
+        return;
+      }
+      if (spec.effect === "refetch") {
+        refetch.current();
+        return;
+      }
+      setRows((current) => events.reduce((acc, event) => apply(acc, event, spec), current ?? base.current));
+    };
+    const listener: Listener = (event) => {
+      if (spec.on && spec.on.length > 0 && !spec.on.includes(event.event)) {
+        return;
+      }
+      if (
+        spec.onlyIf &&
+        !truthy(
+          evaluate(spec.onlyIf, {
+            row: event.payload,
+            params: paramsRef.current,
+            matches: () => matches(event.payload, paramsRef.current),
+          }),
+        )
+      ) {
+        return;
+      }
+      pending.current.push(event);
+      if (spec.coalesce) {
+        timer = timer ?? setTimeout(flush, spec.coalesce);
+      } else {
+        flush();
+      }
+    };
+    entry.listeners.add(listener);
+    return () => {
+      entry.listeners.delete(listener);
+      entry.resumers.delete(resume);
+      if (timer) {
+        clearTimeout(timer);
+      }
+      release(entry);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec.channel, sessionKey]);
+  // With `stale_after`, a reconnect turns the rows stale once the down time passes it (the
+  // registry's timer, or a transport or fixture script reporting `stale`); without it, any
+  // interruption does.
+  const stale =
+    lifecycle === "stale" ||
+    lifecycle === "closed" ||
+    (lifecycle === "reconnecting" && channels[spec.channel]?.staleAfter === undefined);
+  return { ...read, rows: rows ?? read.rows, stale, newCount };
+}

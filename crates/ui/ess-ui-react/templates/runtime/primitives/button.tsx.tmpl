@@ -1,0 +1,18 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, type ActionSpec } from "../actions";
+
+/** A button that runs its action. */
+export function ButtonView(props: {
+  "data-ui-path": string;
+  label: string;
+  action: ActionSpec;
+  tone?: string;
+  icon?: string;
+}): ReactNode {
+  return (
+    <span className="ui-button-node" data-ui-path={useUiPath(props["data-ui-path"])}>
+      <ActionControl action={{ ...props.action, label: props.label, tone: props.tone, icon: props.icon }} />
+    </span>
+  );
+}

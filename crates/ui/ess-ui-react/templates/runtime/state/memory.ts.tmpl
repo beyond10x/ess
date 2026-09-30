@@ -1,0 +1,7 @@
+import { useState } from "react";
+
+/** `store: memory` — the component instance holds the value; it is gone on unmount. */
+export function useMemoryState<T>(_key: string, initial: T): [T, (value: T) => void] {
+  const [value, setValue] = useState<T>(initial);
+  return [value, (next: T) => setValue(() => next)];
+}

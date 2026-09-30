@@ -1,0 +1,18 @@
+[package]
+name = "ess-ui-react"
+description = "Generates a Vite + React + TypeScript application from an ess-ui/1 document: routing, shells, one component per page and section, state placement, overlays, fixtures and live channels."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ess-ui = { path = "../ess-ui" }
+clap.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+[lints]
+workspace = true

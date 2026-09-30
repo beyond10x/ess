@@ -1,0 +1,23 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { display, formatValue, useScope } from "../core";
+import { evaluate } from "../expr";
+
+/** Text: an expression, or a field of the current row. */
+export function TextView(props: {
+  "data-ui-path": string;
+  text?: string;
+  field?: string;
+  style?: "body" | "caption" | "heading" | "mono";
+  format?: string;
+  currency?: string;
+}): ReactNode {
+  const scope = useScope();
+  const value = props.field !== undefined ? display(scope.values.row, props.field) : evaluate(props.text, scope.values);
+  const currency = props.currency !== undefined ? evaluate(props.currency, scope.values) : undefined;
+  return (
+    <span className={`ui-text ui-text-${props.style ?? "body"}`} data-ui-path={useUiPath(props["data-ui-path"])}>
+      {formatValue(value, props.format, currency)}
+    </span>
+  );
+}

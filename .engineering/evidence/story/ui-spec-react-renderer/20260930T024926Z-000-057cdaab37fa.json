@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T02:49:26Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-spec-react-renderer",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p ess-ui-react (38 passed incl. adversary passes 1 and 2; coordinator supplied the page state local in the F8 harness); clippy; tsc offline on the generated example",
+    "reference": "impl/ui-react@12b6835890"
+  }
+}

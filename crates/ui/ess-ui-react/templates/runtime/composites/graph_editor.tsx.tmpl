@@ -1,0 +1,73 @@
+import type { ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, type ActionSpec } from "../actions";
+import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useScope } from "../core";
+import type { ReadSpec } from "../data";
+import { isObject, type Json } from "../json";
+
+/** A graph of nodes and edges from one read, edited as a whole. */
+export function GraphEditorView(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  nodes?: { kindBy: string; opens?: string };
+  edges?: { from: string; to: string; kindBy?: string };
+  nodeActions?: ActionSpec[];
+  edgeActions?: ActionSpec[];
+  toolbar?: ReactNode;
+  degrades?: Record<string, string>;
+}): ReactNode {
+  const scope = useScope();
+  const data = useData(props.reads);
+  const rows = data?.rows ?? [];
+  const edgeSpec = props.edges;
+  const isEdge = (row: Json) =>
+    edgeSpec !== undefined && isObject(row) && row[edgeSpec.from] !== undefined && row[edgeSpec.from] !== null && row[edgeSpec.to] !== undefined;
+  const nodes = rows.filter((row) => !isEdge(row));
+  const edges = rows.filter(isEdge);
+  const label = (row: Json) => String(isObject(row) ? (row.label ?? row.name ?? row.id) : row);
+  const frame = useFramePath();
+  const container = props["data-ui-path"] ?? frame;
+  const scopedContainer = useUiPath(container);
+  const rowPath = (row: Json) => (scopedContainer === undefined ? undefined : `${scopedContainer}/rows/${rowKey(row)}`);
+  const byId = new Map(nodes.map((row) => [isObject(row) ? String(row.id) : label(row), row]));
+  return (
+    <div className="ui-graph" data-ui-path={useUiPath(props["data-ui-path"])}>
+      {props.toolbar ? <div className="ui-toolbar">{props.toolbar}</div> : null}
+      <ul className="ui-graph-nodes">
+        {nodes.map((row) => (
+          <ScopeLayer key={rowKey(row)} values={{ row }}>
+            <RowPath container={container ?? ""} rowKey={rowKey(row)}>
+            <li
+              data-ui-path={rowPath(row)}
+              className={`ui-graph-node ui-kind-${String(display(row, props.nodes?.kindBy ?? "kind"))}`}
+              onDoubleClick={() => props.nodes?.opens && scope.open(props.nodes.opens, isObject(row) ? { ...row } : {})}
+            >
+              <strong>{label(row)}</strong>
+              <span className="ui-note">{String(display(row, props.nodes?.kindBy ?? "kind"))}</span>
+              {(props.nodeActions ?? []).map((action) => (
+                <ActionControl key={action.name} action={action} />
+              ))}
+            </li>
+            </RowPath>
+          </ScopeLayer>
+        ))}
+      </ul>
+      <ul className="ui-graph-edges">
+        {edges.map((row) => (
+          <ScopeLayer key={rowKey(row)} values={{ row }}>
+            <RowPath container={container ?? ""} rowKey={rowKey(row)}>
+            <li className="ui-graph-edge" data-ui-path={rowPath(row)}>
+              {label(byId.get(String(display(row, edgeSpec?.from ?? "from"))) ?? null)} →{" "}
+              {label(byId.get(String(display(row, edgeSpec?.to ?? "to"))) ?? null)}
+              {edgeSpec?.kindBy ? <span className="ui-badge">{String(display(row, edgeSpec.kindBy))}</span> : null}
+              {(props.edgeActions ?? []).map((action) => (
+                <ActionControl key={action.name} action={action} />
+              ))}
+            </li>
+            </RowPath>
+          </ScopeLayer>
+        ))}
+      </ul>
+    </div>
+  );
+}

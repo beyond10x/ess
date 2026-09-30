@@ -1,0 +1,250 @@
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, runCommand, type ActionSpec } from "../actions";
+import { RowPath, ScopeLayer, display, rowKey, useData, useFramePath, useReport, useScope, useSectionName } from "../core";
+import type { ReadSpec } from "../data";
+import { evaluate, truthy } from "../expr";
+import { FieldValue, fieldLabel, type FieldSpec } from "../fields";
+import { isObject, stableKey, type Json } from "../json";
+
+/** Rows of one read as a table, cards, a list or a tree. */
+export function Collection(props: {
+  "data-ui-path"?: string;
+  reads?: ReadSpec;
+  columns?: FieldSpec[];
+  columnsBind?: string;
+  sort?: { by: string; dir?: "asc" | "desc"; allowed: string[]; mode?: "server" | "client" };
+  style?: "table" | "cards" | "list" | "tree";
+  selection?: "none" | "single" | "multiple";
+  selectionEnabled?: string;
+  selectionState?: string;
+  rowActions?: ActionSpec[];
+  bulkActions?: ActionSpec[];
+  actions?: ActionSpec[];
+  expand?: ReactNode;
+  item?: ReactNode;
+  reorder?: { does: string };
+  /** The field that keys rows (`live.match`); `id` when absent. */
+  rowKey?: string;
+  groupBy?: string;
+  degrades?: Record<string, string>;
+}): ReactNode {
+  const scope = useScope();
+  // Rows are addressed under the collection's path, or under its frame's when it carries none.
+  const frame = useFramePath();
+  const container = props["data-ui-path"] ?? frame;
+  const scopedContainer = useUiPath(container);
+  const rowPath = (key: string) => (scopedContainer === undefined ? undefined : `${scopedContainer}/rows/${key}`);
+  const data = useData(props.reads);
+  const section = useSectionName();
+  const [selected, setSelected] = useState<Json[]>([]);
+  const [focused, setFocused] = useState<Json | undefined>(undefined);
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
+  const [clientSort, setClientSort] = useState<{ by: string; dir: "asc" | "desc" } | undefined>(
+    props.sort ? { by: props.sort.by, dir: props.sort.dir ?? "asc" } : undefined,
+  );
+  useReport(section, { selection: props.selection === "multiple" ? selected : focused });
+  const selectionState = props.selectionState;
+  useEffect(() => {
+    if (selectionState) {
+      scope.set(selectionState, selected.map((row) => (isObject(row) && row.id !== undefined ? row.id : row)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionState, stableKey(selected)]);
+  const selectionOn =
+    props.selection !== undefined &&
+    props.selection !== "none" &&
+    (props.selectionEnabled === undefined || truthy(evaluate(props.selectionEnabled, scope.values)));
+  let rows: Json[] = data?.rows ?? [];
+  if (clientSort && props.sort?.mode !== "server") {
+    const { by, dir } = clientSort;
+    rows = [...rows].sort((a, b) => {
+      const left = stableKey(display(a, by));
+      const right = stableKey(display(b, by));
+      return (left < right ? -1 : left > right ? 1 : 0) * (dir === "desc" ? -1 : 1);
+    });
+  }
+  const columns = (props.columns ?? []).filter(
+    (column) => column.visible === undefined || truthy(evaluate(column.visible, scope.values)),
+  );
+  const toggleSort = (field: string) => {
+    const next = { by: field, dir: clientSort?.by === field && clientSort.dir === "asc" ? "desc" as const : "asc" as const };
+    setClientSort(next);
+    if (props.sort?.mode === "server") {
+      scope.set("state.sort", next);
+    }
+  };
+  const move = (row: Json, delta: number) => {
+    if (props.reorder && isObject(row)) {
+      void runCommand(scope, props.reorder.does, { id: row.id, delta });
+    }
+  };
+  const renderRow = (row: Json) => {
+    const key = rowKey(row, props.rowKey);
+    const isSelected = selected.some((entry) => stableKey(entry) === stableKey(row));
+    const cells = columns.map((column) => (
+      <td key={column.name}>
+        <FieldValue field={column} row={row} />
+      </td>
+    ));
+    const extras = (
+      <>
+        {props.item ? <div className="ui-item">{props.item}</div> : null}
+        {props.rowActions && props.rowActions.length > 0 ? (
+          <span className="ui-row-actions">
+            {props.rowActions.map((action) => (
+              <ActionControl key={action.name} action={action} />
+            ))}
+          </span>
+        ) : null}
+        {props.reorder && props.degrades?.no_drag === "move_buttons" ? (
+          <span className="ui-move">
+            <button type="button" className="ui-button" onClick={() => move(row, -1)}>
+              ↑
+            </button>
+            <button type="button" className="ui-button" onClick={() => move(row, 1)}>
+              ↓
+            </button>
+          </span>
+        ) : null}
+      </>
+    );
+    const select = selectionOn ? (
+      <input
+        type={props.selection === "single" ? "radio" : "checkbox"}
+        checked={isSelected}
+        aria-label="Select row"
+        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+          setSelected((list) =>
+            props.selection === "single"
+              ? [row]
+              : event.target.checked
+                ? [...list, row]
+                : list.filter((entry) => stableKey(entry) !== stableKey(row)),
+          )
+        }
+      />
+    ) : null;
+    const onFocus = () => {
+      setFocused(row);
+      if (props.expand) {
+        setExpanded(expanded === key ? undefined : key);
+      }
+    };
+    const content =
+      props.style === "cards" || props.style === "list" || props.style === "tree" ? (
+        <li
+          key={key}
+          data-ui-path={rowPath(key)}
+          className={`ui-row ui-${props.style === "cards" ? "card" : "list-item"}${focused === row ? " ui-focused" : ""}`}
+          onClick={onFocus}
+        >
+          {select}
+          {props.item ? null : (
+            <dl>
+              {columns.map((column) => (
+                <div key={column.name}>
+                  <dt>{fieldLabel(column)}</dt>
+                  <dd>
+                    <FieldValue field={column} row={row} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {extras}
+          {expanded === key ? <div className="ui-expand">{props.expand}</div> : null}
+        </li>
+      ) : (
+        <tr key={key} data-ui-path={rowPath(key)} className={`ui-row${focused === row ? " ui-focused" : ""}`} onClick={onFocus}>
+          {selectionOn ? <td>{select}</td> : null}
+          {cells}
+          <td>
+            {extras}
+            {expanded === key ? <div className="ui-expand">{props.expand}</div> : null}
+          </td>
+        </tr>
+      );
+    return (
+      <ScopeLayer key={key} values={{ row }}>
+        {container === undefined ? content : (
+          <RowPath container={container} rowKey={key}>
+            {content}
+          </RowPath>
+        )}
+      </ScopeLayer>
+    );
+  };
+  const groups: [string, Json[]][] = props.groupBy
+    ? [...new Set(rows.map((row) => String(display(row, props.groupBy as string))))].map((group) => [
+        group,
+        rows.filter((row) => String(display(row, props.groupBy as string)) === group),
+      ])
+    : [["", rows]];
+  const list = (entries: Json[]) =>
+    props.style === "cards" || props.style === "list" || props.style === "tree" ? (
+      <ul className={`ui-collection-${props.style}`}>{entries.map(renderRow)}</ul>
+    ) : (
+      <table className="ui-table">
+        <thead>
+          <tr>
+            {selectionOn ? <th /> : null}
+            {columns.map((column) => (
+              <th key={column.name}>
+                {column.sortable ? (
+                  <button type="button" className="ui-sort" onClick={() => toggleSort(column.field)}>
+                    {fieldLabel(column)}
+                    {clientSort?.by === column.field ? (clientSort.dir === "asc" ? " ▲" : " ▼") : ""}
+                  </button>
+                ) : (
+                  fieldLabel(column)
+                )}
+              </th>
+            ))}
+            <th />
+          </tr>
+        </thead>
+        <tbody>{entries.map(renderRow)}</tbody>
+      </table>
+    );
+  return (
+    <div className={`ui-collection ui-collection-style-${props.style ?? "table"}`} data-ui-path={useUiPath(props["data-ui-path"])}>
+      {(props.actions && props.actions.length > 0) || (selectionOn && props.bulkActions && props.bulkActions.length > 0) ? (
+        <div className="ui-collection-actions">
+          {(props.actions ?? []).map((action) => (
+            <ActionControl key={action.name} action={action} />
+          ))}
+          {selectionOn && selected.length > 0 ? (
+            <ScopeLayer values={{ selection: selected }}>
+              {(props.bulkActions ?? []).map((action) => (
+                <ActionControl key={action.name} action={action} />
+              ))}
+            </ScopeLayer>
+          ) : null}
+        </div>
+      ) : null}
+      {groups.map(([group, entries]) => (
+        <div key={group} className="ui-group">
+          {props.groupBy ? <h3>{group}</h3> : null}
+          {list(entries)}
+        </div>
+      ))}
+      {data && data.total !== undefined && data.total > rows.length && data.params.page !== undefined ? (
+        <div className="ui-pager">
+          <button
+            type="button"
+            className="ui-button"
+            disabled={Number(data.params.page) <= 1}
+            onClick={() => scope.set("state.page", Number(data.params.page) - 1)}
+          >
+            Previous
+          </button>
+          <span>Page {String(data.params.page)}</span>
+          <button type="button" className="ui-button" onClick={() => scope.set("state.page", Number(data.params.page) + 1)}>
+            Next
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}

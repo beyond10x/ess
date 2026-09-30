@@ -11,7 +11,7 @@ relations:
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-tui
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T00:35:23Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T02:13:30Z", actor: "human:timo", revision: 4}
@@ -28,6 +28,8 @@ Any `ess-ui/1` document runs as a terminal application, reading fixtures instead
   close), section lifecycle states (loading, empty, failed, stale) and live updates played from a
   fixture event script.
 - Capabilities the TUI lacks are declared in its renderer profile and handled by the document's
-  `degrades`; a document without the needed `degrades` is refused with the failing node's path.
+  `degrades`, which follow the schema: a capability the TUI lacks uses the document's degrade or,
+  where none is written, the capability's first fallback; a document is refused, naming the failing
+  node's path, only where the degrade says `refuse` or no fallback exists.
 - A test drives the example application headless (ratatui test backend): opens a page, filters a
   collection, plays one live event and asserts the rendered buffer.

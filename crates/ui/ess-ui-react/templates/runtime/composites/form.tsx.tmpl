@@ -1,0 +1,145 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useUiPath } from "../core";
+import { ActionControl, runCommand, type ActionSpec } from "../actions";
+import { ScopeLayer, useScope } from "../core";
+import { useRead, type ReadSpec } from "../data";
+import { FieldInput, Tabs, type FieldSpec, type TabSpec } from "../fields";
+import { isObject } from "../json";
+
+/** A group of form fields with its own save behaviour. */
+export interface GroupSpec {
+  "data-ui-path": string;
+  name: string;
+  label?: string;
+  fields: FieldSpec[];
+  save?: string;
+  does?: string;
+  actions?: ActionSpec[];
+}
+
+/** A form over `draft`: fields, groups, tabs and parts, submitted as its command. */
+export function FormView(props: {
+  "data-ui-path"?: string;
+  does: string;
+  loads?: ReadSpec;
+  fields?: FieldSpec[];
+  groups?: GroupSpec[];
+  tabs?: TabSpec[];
+  parts?: ReactNode;
+  actions?: ActionSpec[];
+  result?: ReactNode;
+  record?: ReactNode;
+  submit?: { label?: string; closes?: boolean; auto?: boolean };
+  save?: "on_submit" | "on_change" | "on_blur";
+  variantBy?: { field: string; forms: Record<string, string> };
+  localDraft?: boolean;
+  children?: ReactNode;
+}): ReactNode {
+  const outer = useScope();
+  const [local, setLocal] = useState<Record<string, unknown>>({});
+  const body = (
+    <FormBody {...props} />
+  );
+  if (props.localDraft || !isObject(outer.values.draft)) {
+    return (
+      <ScopeLayer values={{ draft: local }} setters={{ draft: setLocal }}>
+        {body}
+      </ScopeLayer>
+    );
+  }
+  return body;
+}
+
+function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
+  const scope = useScope();
+  const loaded = useRead(props.loads, scope.values, props.loads !== undefined);
+  const [sent, setSent] = useState(false);
+  const draft = isObject(scope.values.draft) ? scope.values.draft : {};
+  const prefilled = useRef(false);
+  useEffect(() => {
+    const row = loaded.rows[0];
+    if (!prefilled.current && loaded.status === "ready" && isObject(row)) {
+      prefilled.current = true;
+      scope.set("draft", { ...row, ...draft });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded.status]);
+  const params = isObject(scope.values.params) ? scope.values.params : {};
+  const submit = async (command: string) => {
+    const ok = await runCommand(scope, command, { ...params, ...draft });
+    if (ok) {
+      setSent(true);
+      if (props.submit?.closes !== false) {
+        scope.close();
+      }
+    }
+  };
+  const variant = props.variantBy ? String(draft[props.variantBy.field] ?? "") : undefined;
+  return (
+    <form
+      className="ui-form"
+      data-ui-path={useUiPath(props["data-ui-path"])}
+      data-variant={variant}
+      onSubmit={(event: { preventDefault(): void }) => {
+        event.preventDefault();
+        void submit(props.does);
+      }}
+    >
+      {props.loads && loaded.status === "loading" ? <div className="ui-skeleton" role="status" /> : null}
+      {(props.fields ?? []).map((field) => (
+        <FieldInput key={field.name} field={field} />
+      ))}
+      {(props.groups ?? []).map((group) => (
+        <fieldset key={group.name} className="ui-form-group" data-ui-path={useUiPath(group["data-ui-path"])}>
+          {group.label ? <legend>{group.label}</legend> : null}
+          <ScopeLayer
+            setters={
+              group.save === "on_change"
+                ? {
+                    draft: (next: unknown) => {
+                      scope.set("draft", next);
+                      void runCommand(scope, group.does ?? props.does, { ...params, ...(isObject(next) ? next : {}) }, true);
+                    },
+                  }
+                : {}
+            }
+          >
+            {group.fields.map((field) => (
+              <FieldInput key={field.name} field={field} />
+            ))}
+          </ScopeLayer>
+          {group.does && group.save !== "on_change" ? (
+            <button type="button" className="ui-button" onClick={() => void submit(group.does as string)}>
+              Save {group.label ?? group.name}
+            </button>
+          ) : null}
+          {(group.actions ?? []).map((action) => (
+            <ActionControl key={action.name} action={action} />
+          ))}
+        </fieldset>
+      ))}
+      {props.tabs && props.tabs.length > 0 ? (
+        <Tabs
+          tabs={props.tabs}
+          panel={(tab) =>
+            tab.fields ? tab.fields.map((field) => <FieldInput key={field.name} field={field} />) : tab.content
+          }
+        />
+      ) : null}
+      {props.parts}
+      {props.children}
+      <div className="ui-form-actions">
+        {(props.actions ?? []).map((action) => (
+          <ActionControl key={action.name} action={action} />
+        ))}
+        {props.submit?.auto ? null : (
+          <button type="submit" className="ui-button ui-tone-primary">
+            {props.submit?.label ?? "Save"}
+          </button>
+        )}
+      </div>
+      {sent && props.result ? <div className="ui-form-result">{props.result}</div> : null}
+      {props.record}
+    </form>
+  );
+}
