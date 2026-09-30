@@ -1044,17 +1044,38 @@ fn transformation_disposition(ir: &EssIr, binding: &ResolvedBinding) -> Synthesi
 
 /// Whether any binding in this model declares `delivery: at_most_once`.
 ///
-/// The one question the emitted transport's *description* turns on. The dispatch itself does not
-/// change: the generated pump delivers each logged occurrence to each reacting binding exactly once
-/// — which is what `at_most_once` requires and what `at_least_once` permits — and the only things
-/// in the emitted tree that deliver an occurrence a second time are `on_failure: retry`, which
-/// holds the event for the next pump, and the `redeliver` entry point a caller invokes. What does
-/// change is a package doc calling `at_least_once` "the only delivery guarantee the model
-/// declares", which is false about a model that declares the other word.
+/// The question the emitted transport's *description* turns on, and the one that decides whether
+/// the caller's `redeliver` needs a dispatch of its own. The generated pump gives each reacting
+/// binding one attempt at each logged occurrence — which is what `at_most_once` requires and what
+/// `at_least_once` permits — and attempts an occurrence again only for the one binding that asked,
+/// out of that binding's own held-back list: `on_failure: retry` after a declared refusal, or an
+/// `at_least_once` binding whose attempt an unmet obligation stopped (`attempts_again`). No
+/// other binding receives the occurrence twice. The `redeliver` entry point a caller invokes runs
+/// every `at_least_once` binding again and no `at_most_once` one, so a model that declares the
+/// second word gets a redelivery dispatch that leaves those bindings out. What changes besides is
+/// a package doc calling `at_least_once` "the only delivery guarantee the model declares", which
+/// is false about a model that declares the other word.
 pub fn declares_single_attempt(ir: &EssIr) -> bool {
     ir.bindings()
         .values()
         .any(|binding| matches!(binding.delivery, ess_domain::binding::Delivery::AtMostOnce))
+}
+
+/// Whether the pump attempts an occurrence again for this binding when an unmet obligation stopped
+/// its attempt.
+///
+/// `at_least_once` permits a second run, so the occurrence is held back for this binding alone and
+/// the next pump attempts it again. `at_most_once` promised one attempt and no redelivery
+/// (`ess_domain::binding::Delivery::AtMostOnce`), so its stopped attempt is reported and not
+/// repeated; what losing it costs is its `on_failure`'s to say.
+pub(crate) fn attempts_again(binding: &ResolvedBinding) -> bool {
+    matches!(binding.delivery, ess_domain::binding::Delivery::AtLeastOnce)
+}
+
+/// Whether the generated system keeps a held-back list for this binding: it attempts again after
+/// an unmet obligation ([`attempts_again`]), or its declared refusal is answered with `retry`.
+pub(crate) fn holds_back(binding: &ResolvedBinding) -> bool {
+    attempts_again(binding) || matches!(binding.on_failure(), ResolvedFailure::Retry)
 }
 
 /// The delivery: the one transport this scope holds, generated onto the one declared acceptor.

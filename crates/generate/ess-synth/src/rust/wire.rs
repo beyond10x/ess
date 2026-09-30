@@ -435,23 +435,7 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
              {:?});",
             outcome.name.as_str()
         );
-        out.push_str("            json::member(out, \"published\");\n            out.push('[');\n");
-        for (position, field) in carried.iter().enumerate() {
-            if position > 0 {
-                out.push_str("            out.push(',');\n");
-            }
-            let _ = writeln!(
-                out,
-                "            out.push('{{');\n            json::member(out, \"event\");\n            \
-                 json::push_text(out, {:?});\n            json::member(out, \
-                 \"payload\");\n            encode_event_{}({}, out);\n            \
-                 out.push('}}');",
-                field.event.name().to_string(),
-                ident(field.event.name()),
-                field.field
-            );
-        }
-        out.push_str("            out.push(']');\n");
+        published_list(out, &Buffer::OWN, &carried);
         if let Some(error) = &outcome.error {
             let _ = writeln!(
                 out,
@@ -488,6 +472,63 @@ fn outcome_encoder(out: &mut String, surface: &dyn Surface, command: &ResolvedCo
         );
     }
     out.push_str("    }\n    out.push('}');\n}\n");
+}
+
+/// Where an emitted `published` list is written, as the emitted code spells it.
+pub(crate) struct Buffer {
+    /// The `String` being written, as a receiver (`out`, `body`).
+    pub receiver: &'static str,
+    /// The same `String` as a `&mut String` argument (`out`, `&mut body`).
+    pub argument: &'static str,
+    /// The path to this module's encoders from where the list is written (`""`, `"wire::"`).
+    pub encoders: &'static str,
+}
+
+impl Buffer {
+    /// Inside this module, writing into its `out: &mut String`.
+    pub(crate) const OWN: Self = Self {
+        receiver: "out",
+        argument: "out",
+        encoders: "",
+    };
+}
+
+/// The `published` member of an answer: every event the outcome carries, in publication order,
+/// each as `{"event": <qualified name>, "payload": {…}}`.
+///
+/// One renderer for the outcome encoder here and the served answer in `http.rs`, so what a
+/// command published reads the same on every surface that reports it. The order is the order of
+/// [`outcome_event_fields`], which is the order the component's port pushes them onto its outbox.
+pub(crate) fn published_list(
+    out: &mut String,
+    buffer: &Buffer,
+    carried: &[super::items::OutcomeEventField<'_>],
+) {
+    let Buffer {
+        receiver,
+        argument,
+        encoders,
+    } = buffer;
+    let _ = writeln!(
+        out,
+        "            json::member({argument}, \"published\");\n            {receiver}.push('[');"
+    );
+    for (position, field) in carried.iter().enumerate() {
+        if position > 0 {
+            let _ = writeln!(out, "            {receiver}.push(',');");
+        }
+        let _ = writeln!(
+            out,
+            "            {receiver}.push('{{');\n            json::member({argument}, \
+             \"event\");\n            json::push_text({argument}, {:?});\n            \
+             json::member({argument}, \"payload\");\n            \
+             {encoders}encode_event_{}({}, {argument});\n            {receiver}.push('}}');",
+            field.event.name().to_string(),
+            ident(field.event.name()),
+            field.field
+        );
+    }
+    let _ = writeln!(out, "            {receiver}.push(']');");
 }
 
 // ---- the two walkers ------------------------------------------------------------------------------

@@ -617,3 +617,19 @@ pub fn encode_outcome_gatepass_visit_sign_out_visitor(value: &gatepass_types::vi
     }
     out.push('}');
 }
+
+/// Writes any event on the system's log as JSON: its qualified name and its payload,
+/// `{"event": …, "payload": {…}}`, the envelope a command's answer lists it in.
+pub fn encode_system_event(value: &gatepass_system::SystemEvent) -> String {
+    let mut out = String::from("{");
+    json::member(&mut out, "event");
+    json::push_text(&mut out, value.name());
+    json::member(&mut out, "payload");
+    match value {
+        gatepass_system::SystemEvent::VisitRegistered(event) => encode_event_gatepass_visit_visit_registered(event, &mut out),
+        gatepass_system::SystemEvent::VisitorAdmitted(event) => encode_event_gatepass_visit_visitor_admitted(event, &mut out),
+        gatepass_system::SystemEvent::VisitorDeparted(event) => encode_event_gatepass_visit_visitor_departed(event, &mut out),
+    }
+    out.push('}');
+    out
+}

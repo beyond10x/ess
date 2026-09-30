@@ -9,7 +9,7 @@ info:
   description: |-
     The HTTP surface of `email-service`, one of the components of `billing` v3.
 
-    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport; they are not returned here.
+    Every path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport, and the `published` property of every response body lists them too, in publication order.
   version: v3
   x-ess-provenance:
     system: billing
@@ -43,11 +43,24 @@ paths:
               $ref: '#/components/schemas/billing.email.SendEmail.Input'
       responses:
         '202':
-          description: 'Outcome `sent`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `sent`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/billing.email.SendEmail.sent.Response'
+        '501':
+          description: 'No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, or the command''s effect was committed and delivering what this command published to a binding failed; then `refused` begins `delivering what the command published`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: a retry performs the command a second time.'
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                properties:
+                  refused:
+                    description: What was left unfinished, in words.
+                    type: string
+                required:
+                - refused
+                type: object
         '502':
           description: 'Outcome `failed`: something outside the request refused. The input was acceptable, so the caller has nothing to correct and a retry is meaningful.'
           content:
@@ -61,6 +74,27 @@ components:
       x-ess-name: billing.email.EmailAddress
       x-ess-kind: newtype
       type: string
+    billing.email.EmailSent.Event:
+      title: EmailSent payload
+      x-ess-name: billing.email.EmailSent
+      x-ess-kind: event-payload
+      type: object
+      properties:
+        message_id:
+          $ref: '#/components/schemas/billing.email.MessageId'
+        recipient:
+          $ref: '#/components/schemas/billing.email.EmailAddress'
+      required:
+      - message_id
+      - recipient
+      additionalProperties: false
+    billing.email.MessageId:
+      title: MessageId
+      x-ess-name: billing.email.MessageId
+      x-ess-kind: newtype
+      type: string
+      format: uuid
+      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
     billing.email.SendEmail.Input:
       title: SendEmail input
       x-ess-name: billing.email.SendEmail
@@ -86,19 +120,43 @@ components:
         outcome:
           const: failed
           description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          maxItems: 0
+          type: array
       required:
       - outcome
+      - published
       - error
       type: object
     billing.email.SendEmail.sent.Response:
       additionalProperties: false
-      description: Taken when no other outcome's condition matched. Emits `EmailSent`, published to consumers rather than returned here.
+      description: Taken when no other outcome's condition matched. Emits `EmailSent`, published to consumers and listed under `published`.
       properties:
         outcome:
           const: sent
           description: Which declared outcome the command took.
+        published:
+          description: 'Every event this branch published, in publication order: its qualified name and its payload.'
+          items: false
+          maxItems: 1
+          minItems: 1
+          prefixItems:
+          - additionalProperties: false
+            properties:
+              event:
+                const: billing.email.EmailSent
+                type: string
+              payload:
+                $ref: '#/components/schemas/billing.email.EmailSent.Event'
+            required:
+            - event
+            - payload
+            type: object
+          type: array
       required:
       - outcome
+      - published
       type: object
     billing.email.TemplateId:
       title: TemplateId

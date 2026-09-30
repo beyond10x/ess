@@ -206,7 +206,7 @@ Without it, every change owes the whole generated tree.
 
 `generated/openapi/invoice-service.yaml`, the path for the same command:
 
-```yaml file=generated/openapi/invoice-service.yaml lines=49-76
+```yaml file=generated/openapi/invoice-service.yaml lines=62-89
   /invoices/commands/create-invoice:
     post:
       operationId: billing.invoice.CreateInvoice
@@ -224,7 +224,7 @@ Without it, every change owes the whole generated tree.
               $ref: '#/components/schemas/billing.invoice.CreateInvoice.Input'
       responses:
         '202':
-          description: 'Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.'
+          description: 'Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.'
           content:
             application/json:
               schema:

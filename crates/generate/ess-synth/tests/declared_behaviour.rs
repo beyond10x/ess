@@ -21,7 +21,7 @@ use ess_compiler::ir::EssIr;
 use ess_compiler::resolve::compile_locating;
 use ess_compiler::source::SourceMap;
 use ess_conformance::report::Status;
-use ess_conformance::scenario::{CommandRef, ErrorRef, EventRef, OutcomeRef};
+use ess_conformance::scenario::{CommandRef, ErrorRef, EventRef, OutcomeRef, ScenarioStep};
 use ess_conformance::target::{
     ConformanceTarget, DeclaredErrorValue, EventObservationRequest, ExternalOutcomeControl,
     ImplementationIdentity, ObservedEvent, RedeliveryRequest, ScenarioContext,
@@ -665,10 +665,11 @@ path = \"src/main.rs\"
 [dependencies]
 ";
 
-/// The workspace layout's dependencies: three of its crates, by path.
+/// The workspace layout's dependencies: four of its crates, by path.
 const WORKSPACE_DEPENDENCIES: &str = "desk-types = { path = \"../desk/crates/desk-types\" }
 desk-server = { path = \"../desk/crates/desk-server\" }
 desk-service = { path = \"../desk/crates/desk-service\" }
+desk-system = { path = \"../desk/crates/desk-system\" }
 ";
 
 /// The single-crate layout's one dependency, with its HTTP surface switched on.
@@ -700,7 +701,7 @@ fn the_generated_behaviours_build_with_warnings_denied_and_pass_their_own_suite(
 /// `story:single-crate-rust-layout`: the same fixture, laid out as one crate, passes the same
 /// suite through the same harness once its `server` feature is on. Only the harness's paths into
 /// the generated code differ: `desk_types::` is the crate root, the component's port is under
-/// `ports::`, and the HTTP surface under `server::`.
+/// `ports::`, the system under `system::`, and the HTTP surface under `server::`.
 #[test]
 fn the_single_crate_layout_passes_the_same_suite_with_its_server_feature() {
     let ir = compile_directory(&fixture_root());
@@ -708,6 +709,7 @@ fn the_single_crate_layout_passes_the_same_suite_with_its_server_feature() {
         .expect("the fixture synthesizes as one crate");
     let harness = harness_source()
         .replace("desk_server::", "desk::server::")
+        .replace("desk_system::", "desk::system::")
         .replace("desk_service::", "desk::ports::desk_service::")
         .replace("desk_types::", "desk::");
     run_suite(
@@ -758,9 +760,96 @@ fn run_suite(
         "the harness builds against the generated ports:\n{log}"
     );
 
+    let binary = target.join("debug/harness");
+    let through_port = run_through(ir, &binary, &["port".to_owned()], "the component's port");
+    assert_every_event_named_and_encoded(ir, &through_port);
+    drop(through_port);
+    // `story:generated-server-publishes-and-reads-headers`: the same suite through the generated
+    // HTTP dispatcher, reading what each command published from the served answer alone, with
+    // nothing left on the log or in an outbox after any answer.
+    let mut served = vec!["served".to_owned()];
+    served.extend(route_table(ir));
+    let through_server = run_through(ir, &binary, &served, "the generated HTTP surface");
+    assert_headers_read(&through_server);
+    drop(through_server);
+    drop(scratch);
+}
+
+/// The route table as `name method path` triples, from the mapping the server's routes come from.
+fn route_table(ir: &EssIr) -> Vec<String> {
+    let mut table = Vec::new();
+    for component in ir.components().values() {
+        for route in ess_gen::http::routes(ir, component) {
+            let name = match route.serves {
+                ess_gen::http::Served::Command(handle) => ir.command(handle).name.to_string(),
+                ess_gen::http::Served::View(handle) => ir.view(handle).name.to_string(),
+            };
+            table.extend([name, route.method.as_str().to_owned(), route.path]);
+        }
+    }
+    table
+}
+
+/// Every event the system took off its log over the port run was named by `SystemEvent::name` and
+/// encoded by `wire::encode_system_event`; together they cover every event the model publishes.
+fn assert_every_event_named_and_encoded(ir: &EssIr, target: &Harnessed) {
+    let declared: std::collections::BTreeSet<String> = ir
+        .components()
+        .values()
+        .flat_map(|component| component.publishes.iter())
+        .map(|event| event.name().to_string())
+        .collect();
+    let seen = target.logged.borrow().clone();
+    assert_eq!(
+        seen, declared,
+        "every `SystemEvent` variant was named and encoded"
+    );
+    let suite = ess_conformance::synthesize(ir).suite;
+    let steps = || {
+        suite
+            .scenarios
+            .values()
+            .flat_map(|scenario| &scenario.steps)
+    };
+    let captures = steps()
+        .filter(|step| matches!(step, ScenarioStep::CaptureInstance { .. }))
+        .count();
+    let expectations = steps()
+        .filter(|step| matches!(step, ScenarioStep::ExpectEvent { .. }))
+        .count();
+    assert!(
+        captures > 0 && expectations > 0,
+        "the suite holds a created identity and an expected event: {captures} captures, \
+         {expectations} event expectations"
+    );
+    eprintln!("the suite: {captures} captured identities, {expectations} expected events");
+}
+
+/// `server::http::Request` keeps the headers a real socket delivered, in arrival order, names
+/// lower-cased and values trimmed; the query string still leaves the path.
+fn assert_headers_read(target: &Harnessed) {
+    let answer = target.ask(&serde_json::json!({"op": "headers"}));
+    assert_eq!(
+        answer,
+        serde_json::json!({
+            "method": "POST",
+            "path": "/tickets/commands/open-ticket",
+            "headers": [
+                ["host", "desk.example"],
+                ["authorization", "Bearer token-1"],
+                ["x-request-id", "abc-123"],
+                ["content-length", "2"],
+            ],
+            "bounded": 431,
+        })
+    );
+}
+
+/// Runs the suite the specification synthesizes against one harness process.
+fn run_through(ir: &EssIr, binary: &Path, arguments: &[String], through: &str) -> Harnessed {
     let suite = ess_conformance::synthesize(ir).suite;
     let admitted = AdmittedSuite::from_suite(&suite).unwrap_or_else(|error| panic!("{error}"));
-    let target = Harnessed::start(&target.join("debug/harness"), ir);
+    let target = Harnessed::start(binary, arguments, ir);
     let report = Runner::for_suite(&suite)
         .run_admitted(&admitted, &target)
         .into_report();
@@ -772,20 +861,19 @@ fn run_suite(
         .collect();
     assert!(
         failed.is_empty(),
-        "{} of {} scenarios did not pass:\n{}",
+        "{} of {} scenarios did not pass through {through}:\n{}",
         failed.len(),
         report.scenarios.len(),
         failed.join("\n")
     );
     eprintln!(
-        "{} of {} scenarios passed against the generated behaviours",
+        "{} of {} scenarios passed against the generated behaviours, through {through}",
         report.scenarios.len(),
         suite.scenarios.len()
     );
     assert_eq!(report.scenarios.len(), suite.scenarios.len());
     assert!(report.scenarios.len() >= 21, "{}", report.scenarios.len());
-    drop(target);
-    drop(scratch);
+    target
 }
 
 // ---- the adapter: the suite's requests, over the harness's line protocol ----------------------
@@ -799,11 +887,14 @@ struct Harnessed {
     forced: RefCell<Option<OutcomeRef>>,
     sequence: RefCell<u64>,
     optional_fields: BTreeMap<String, Vec<String>>,
+    /// Every event name the system log carried on a served run.
+    logged: RefCell<std::collections::BTreeSet<String>>,
 }
 
 impl Harnessed {
-    fn start(binary: &Path, ir: &EssIr) -> Self {
+    fn start(binary: &Path, arguments: &[String], ir: &EssIr) -> Self {
         let mut child = Command::new(binary)
+            .args(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -835,6 +926,7 @@ impl Harnessed {
             forced: RefCell::default(),
             sequence: RefCell::new(0),
             optional_fields,
+            logged: RefCell::default(),
         }
     }
 
@@ -852,6 +944,78 @@ impl Harnessed {
             eprintln!("> {request}\n< {}", line.trim_end());
         }
         serde_json::from_str(&line).unwrap_or_else(|error| panic!("`{line}`: {error}"))
+    }
+
+    /// A harness answer, held to what each path promises and read back as the port path words it.
+    ///
+    /// The port path answers the outcome beside `log`: every event the system pumped and took off
+    /// its log (`take_published`), each named by `SystemEvent::name` and encoded by
+    /// `wire::encode_system_event`. The outcome's `published` must be that log exactly — the same
+    /// events, in publication order, byte for byte the same payloads — and each name must be the
+    /// one its encoding carries.
+    ///
+    /// The served path answers the served body beside `kept`: what the dispatch left on the log
+    /// and in the component's outbox, which must be nothing. Its body carries `outcome`,
+    /// `published`, and the declared `error` and its `payload`.
+    fn served(
+        &self,
+        observation: &str,
+        answer: serde_json::Value,
+    ) -> Result<serde_json::Value, TargetError> {
+        let Some(status) = answer.get("status").and_then(serde_json::Value::as_u64) else {
+            if answer.get("failure").is_some() {
+                return Ok(answer);
+            }
+            let body = answer["answer"].clone();
+            if body.get("undeclared").is_some() {
+                return Ok(body);
+            }
+            let log = answer["log"].as_array().cloned().unwrap_or_default();
+            let encoded: Vec<serde_json::Value> =
+                log.iter().map(|entry| entry["encoded"].clone()).collect();
+            for entry in &log {
+                assert_eq!(
+                    entry["name"], entry["encoded"]["event"],
+                    "`SystemEvent::name` and `encode_system_event` name one event: {answer}"
+                );
+                self.logged.borrow_mut().insert(
+                    entry["name"]
+                        .as_str()
+                        .expect("a logged event has a name")
+                        .to_owned(),
+                );
+            }
+            assert_eq!(
+                body.get("published"),
+                Some(&serde_json::Value::Array(encoded)),
+                "the outcome lists exactly what the system published: {answer}"
+            );
+            return Ok(body);
+        };
+        assert_eq!(
+            answer["kept"],
+            serde_json::json!(0),
+            "the served dispatch keeps nothing on the log or in an outbox: {answer}"
+        );
+        if status == 501 {
+            return Ok(serde_json::json!({"undeclared": answer["answer"]["refused"]}));
+        }
+        let body = &answer["answer"];
+        if body.get("outcome").is_none() {
+            return Err(failure(observation, &answer));
+        }
+        let mut read = serde_json::json!({
+            "outcome": body["outcome"],
+            "published": body["published"],
+        });
+        if let Some(error) = body.get("error") {
+            let mut refusal = serde_json::json!({"error": error});
+            if let Some(payload) = body.get("payload") {
+                refusal["payload"] = payload.clone();
+            }
+            read["refusal"] = refusal;
+        }
+        Ok(read)
     }
 
     fn tick(&self) -> u64 {
@@ -939,13 +1103,16 @@ impl ConformanceTarget for Harnessed {
                 .map(|(name, value)| (name.clone(), json_of(value)))
                 .collect::<serde_json::Map<_, _>>()
         });
+        let body = serde_json::Value::Object(input.clone()).to_string();
         let answer = self.ask(&serde_json::json!({
             "op": "command",
             "command": request.command.to_string(),
             "input": input,
+            "body": body,
             "caller": caller,
             "force": force,
         }));
+        let answer = self.served(&observation, answer)?;
         if answer.get("undeclared").is_some() {
             return Ok(SemanticCommandResult::undeclared());
         }
@@ -1019,6 +1186,10 @@ impl ConformanceTarget for Harnessed {
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         let observation = format!("reading `{}`", request.view);
         let answer = self.ask(&serde_json::json!({"op": "view", "view": request.view.to_string()}));
+        let answer = match answer.get("status") {
+            Some(_) => answer["answer"].clone(),
+            None => answer,
+        };
         let Some(rows) = answer["rows"].as_array() else {
             return Err(failure(&observation, &answer));
         };

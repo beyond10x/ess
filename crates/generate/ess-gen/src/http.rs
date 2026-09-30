@@ -90,6 +90,33 @@ pub const NO_INPUT: &str = "400";
 /// request and the record are fine, and the same request from the record's own agent is accepted.
 pub const FORBIDDEN: &str = "403";
 
+/// The command could not be carried through because the realization is unfinished: a port it runs
+/// reported an unmet obligation, or the command's effect was committed and delivering what it
+/// published to a binding failed.
+///
+/// Not a declared outcome, so no branch maps to it; every served command can answer it, so the
+/// contract declares it on every command. A client must not retry it: after a failed delivery the
+/// effect and its events stand, and a retry would perform the command twice.
+pub const UNFINISHED: &str = "501";
+
+/// Whether a request for `command` must carry a body.
+///
+/// The one answer for the document that declares the `requestBody` and the servers that read it.
+/// A command with no input declares no body at all, and one whose every field is optional declares
+/// a body that is not required, so a `POST` with an empty body is that command's input, `{}`. An
+/// `input_absent:` branch (ess/16) declares the answer for a request with no body, so the body is
+/// not required even where its fields are.
+pub fn body_required(command: &ess_compiler::ir::ResolvedCommand) -> bool {
+    command
+        .input
+        .iter()
+        .any(|field| !field.type_ref.is_optional())
+        && !command
+            .outcomes
+            .iter()
+            .any(|outcome| outcome.condition == ResolvedCondition::InputAbsent)
+}
+
 /// Which status one declared outcome is.
 ///
 /// The whole mapping, in one place, so that "which HTTP status does this refusal get" has exactly

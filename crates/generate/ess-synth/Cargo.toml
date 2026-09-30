@@ -23,6 +23,9 @@ serde_json.workspace = true
 # Only `tests/declared_behaviour.rs`: the suite a specification synthesizes, run against the
 # behaviours this crate generates for it.
 ess-conformance.workspace = true
+# Only `tests/served_publication.rs`: a served answer validated against the contract the same server
+# serves. Same version and spelling as `ess-gen`'s, with no retriever: every `$ref` there is local.
+jsonschema = { version = "0.52.1", default-features = false }
 
 [lints]
 workspace = true

@@ -171,11 +171,16 @@ fn go_exports_the_underscore_field_and_repairs_the_collision_it_makes() {
 fn go_wire_code_reads_and_writes_the_repaired_member() {
     let go = emitted(ORDERS, Target::Go);
     let wire = artifact(&go, "server/wire.go");
-    // The struct, the error and the command input each hold `_url` as `Url` and `url` as `Url_`.
+    // The struct, the event, the error and the command input each hold `_url` as `Url` and `url`
+    // as `Url_`. The event's encoder is the one a command's `published` list is written with.
     assert_eq!(
         wire.matches("out[\"url\"] = value.Url_\n").count(),
-        2,
-        "the struct and the error encoders write `url` from `Url_`:\n{wire}"
+        3,
+        "the struct, the event and the error encoders write `url` from `Url_`:\n{wire}"
+    );
+    assert!(
+        wire.contains("func encodeEventDemoOrdersLinked("),
+        "the published event has its encoder:\n{wire}"
     );
     assert!(
         !wire.contains("out[\"url\"] = value.Url\n"),

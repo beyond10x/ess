@@ -738,8 +738,9 @@ fn each_declared_outcome_is_its_own_response_and_no_status_is_invented() {
 
     assert_eq!(
         responses.keys().cloned().collect::<Vec<String>>(),
-        vec!["202".to_owned(), "422".to_owned()],
-        "two declared outcomes, two statuses, and nothing else"
+        vec!["202".to_owned(), "422".to_owned(), "501".to_owned()],
+        "two declared outcomes, two statuses, and nothing else but the unfinished-realization 501 \
+         every served command can answer"
     );
 }
 
@@ -773,7 +774,7 @@ fn a_refusal_the_input_decides_carries_the_declared_error_payload() {
     );
     assert_eq!(
         body["required"],
-        serde_json::json!(["outcome", "error", "payload"])
+        serde_json::json!(["outcome", "published", "error", "payload"])
     );
 
     let payload = &schemas["billing.invoice.InvalidAmount.Error"];
@@ -800,8 +801,14 @@ fn a_refusal_the_subjects_state_decides_is_a_conflict_and_not_a_bad_request() {
 
     assert_eq!(
         responses.keys().cloned().collect::<Vec<String>>(),
-        vec!["202".to_owned(), "409".to_owned(), "422".to_owned()],
-        "three declared outcomes, three statuses: the move, the wrong state and the bad amount"
+        vec![
+            "202".to_owned(),
+            "409".to_owned(),
+            "422".to_owned(),
+            "501".to_owned()
+        ],
+        "three declared outcomes, three statuses: the move, the wrong state and the bad amount, \
+         and the unfinished-realization 501"
     );
 
     let conflict = &responses["409"];
@@ -832,12 +839,12 @@ fn a_refusal_the_subjects_state_decides_is_a_conflict_and_not_a_bad_request() {
         .expect("responses");
     assert_eq!(
         issued.keys().cloned().collect::<Vec<String>>(),
-        vec!["202".to_owned(), "409".to_owned()]
+        vec!["202".to_owned(), "409".to_owned(), "501".to_owned()]
     );
 }
 
 #[test]
-fn an_outcome_that_emits_says_so_without_claiming_to_return_the_events() {
+fn an_outcome_that_emits_names_its_events_and_lists_them_under_published() {
     let ir = billing();
     let document = document(&ir, "invoice-service");
     let accepted =
@@ -856,9 +863,42 @@ fn an_outcome_that_emits_says_so_without_claiming_to_return_the_events() {
         accepted["properties"]
             .as_object()
             .expect("properties")
-            .len(),
-        1,
-        "the body says which branch ran and nothing more"
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>(),
+        vec!["outcome".to_owned(), "published".to_owned()],
+        "the body says which branch ran and what it published, and nothing more"
+    );
+    assert_eq!(
+        accepted["required"],
+        serde_json::json!(["outcome", "published"])
+    );
+    let published = &accepted["properties"]["published"];
+    assert_eq!(published["type"], "array");
+    assert_eq!(
+        (&published["minItems"], &published["maxItems"]),
+        (&serde_json::json!(1), &serde_json::json!(1))
+    );
+    assert_eq!(
+        published["items"],
+        serde_json::json!(false),
+        "nothing follows the emitted events"
+    );
+    assert_eq!(
+        published["prefixItems"][0]["properties"]["event"]["const"],
+        "billing.invoice.InvoiceCreated"
+    );
+    assert_eq!(
+        published["prefixItems"][0]["properties"]["payload"]["$ref"],
+        "#/components/schemas/billing.invoice.InvoiceCreated.Event"
+    );
+    assert!(
+        document["components"]["schemas"]["billing.invoice.InvoiceCreated.Event"].is_object(),
+        "the event's payload schema is in the document the reference points into"
+    );
+    assert!(
+        !description.contains("rather than returned here"),
+        "the description no longer says the events are not returned: {description}"
     );
 }
 
@@ -875,7 +915,7 @@ fn an_external_outcome_is_an_upstream_failure_and_not_a_validation_refusal() {
 
     assert_eq!(
         responses.keys().cloned().collect::<Vec<String>>(),
-        vec!["202".to_owned(), "502".to_owned()],
+        vec!["202".to_owned(), "501".to_owned(), "502".to_owned()],
     );
 
     let body = &document["components"]["schemas"]["billing.email.SendEmail.failed.Response"];
@@ -1675,6 +1715,41 @@ fn the_document_a_server_hands_out_is_the_committed_one_in_the_other_dialect() {
             served, committed,
             "the served contract and the committed one are the same document for `{}`",
             component.name
+        );
+    }
+}
+
+/// Every command declares the `501` a served surface answers when the realization is unfinished,
+/// and says a client must not retry it: after a failed delivery the effect already stands.
+#[test]
+fn every_command_declares_the_unfinished_501_and_that_it_is_not_retried() {
+    let ir = billing();
+    for (path, document) in documents(&ir) {
+        let paths = document["paths"].as_object().expect("paths");
+        let mut commands = 0;
+        for (route, item) in paths {
+            let Some(post) = item.get("post") else {
+                continue;
+            };
+            commands += 1;
+            let unfinished = &post["responses"]["501"];
+            let description = unfinished["description"].as_str().unwrap_or_default();
+            assert!(
+                description.contains("effect was committed")
+                    && description.contains("Do not retry"),
+                "{path} {route}: {description}"
+            );
+            let schema = &unfinished["content"]["application/json"]["schema"];
+            assert_eq!(
+                schema["required"],
+                serde_json::json!(["refused"]),
+                "{path} {route}"
+            );
+            assert_eq!(schema["additionalProperties"], serde_json::json!(false));
+        }
+        assert!(
+            commands > 0 || !path.contains("invoice"),
+            "{path} has commands"
         );
     }
 }

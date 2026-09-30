@@ -23,6 +23,13 @@ use std::io::{BufRead, Read, Write};
 /// can describe.
 pub const MAX_BODY: usize = 1_048_576;
 
+/// The most headers this surface keeps from one request.
+///
+/// Every header is kept for the caller ([`Request::headers`]), so a request that sent headers
+/// without end would be memory without end. A hundred is far past what a client and a proxy add
+/// together.
+pub const MAX_HEADERS: usize = 100;
+
 /// The media type every answer derived from the model carries.
 pub const JSON: &str = "application/json";
 
@@ -43,6 +50,12 @@ pub struct Request {
     /// dropped rather than refused, because a caller that appends one has not made a different
     /// request.
     pub path: String,
+    /// Every header, in the order it arrived: the name lower-cased, the value trimmed.
+    ///
+    /// Kept for the caller rather than read here: the model declares no header, so routing never
+    /// looks at one, and a shell that authenticates the caller before a surface's `dispatch`
+    /// reads `authorization` from this list. A name that arrives twice is kept twice.
+    pub headers: Vec<(String, String)>,
     /// The body: exactly the `Content-Length` bytes the caller announced.
     pub body: Vec<u8>,
 }
@@ -145,6 +158,7 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
 
     let mut length = 0_usize;
     let mut chunked = false;
+    let mut headers = Vec::new();
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -184,6 +198,16 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
         } else if name == "transfer-encoding" && value.eq_ignore_ascii_case("chunked") {
             chunked = true;
         }
+        if headers.len() == MAX_HEADERS {
+            return Err(Response::refusal(
+                431,
+                &format!(
+                    "the request carries more than {MAX_HEADERS} headers, which is all this \
+                     surface keeps"
+                ),
+            ));
+        }
+        headers.push((name, value.to_owned()));
     }
     if chunked {
         return Err(Response::refusal(
@@ -204,7 +228,12 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
             &format!("the body was shorter than `Content-Length` announced: {error}"),
         ));
     }
-    Ok(Request { method, path, body })
+    Ok(Request {
+        method,
+        path,
+        headers,
+        body,
+    })
 }
 
 /// Writes one answer, and lets the connection close behind it.
@@ -240,6 +269,7 @@ pub fn reason(status: u16) -> &'static str {
         411 => "Length Required",
         413 => "Content Too Large",
         422 => "Unprocessable Content",
+        431 => "Request Header Fields Too Large",
         501 => "Not Implemented",
         502 => "Bad Gateway",
         _ => "Unknown",

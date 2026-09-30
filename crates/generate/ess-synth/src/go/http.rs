@@ -30,8 +30,8 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use ess_compiler::ir::{
-    EssIr, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedError, ResolvedField,
-    ResolvedType, ResolvedTypeRef, ResolvedView,
+    EssIr, ResolvedBody, ResolvedCommand, ResolvedComponent, ResolvedError, ResolvedEvent,
+    ResolvedField, ResolvedOutcome, ResolvedType, ResolvedTypeRef, ResolvedView,
 };
 use ess_domain::component::Reach;
 use ess_domain::name::QualifiedName;
@@ -79,6 +79,13 @@ pub(super) fn server_package(
     }
     let package = layout.server();
     let provenance = &plan.provenance;
+    // The system records what its bindings invoked exactly where it delivers any binding, which is
+    // the condition `system.rs` emits `Invocations` and `TakeInvocations` under.
+    let records_invocations = ir.bindings().values().any(|binding| {
+        let source = binding.name.to_string();
+        plan.is_generated(CapabilityKind::BindingDelivery, &source)
+            && !refusals.refuses_kind(CapabilityKind::BindingDelivery, &source)
+    });
     let mut artifacts = vec![
         helpers_file(ir, layout, package, provenance),
         wire_file(ir, plan, layout, refusals, package, provenance),
@@ -96,7 +103,7 @@ pub(super) fn server_package(
             package,
             component,
             &components,
-            provenance,
+            records_invocations,
         ));
         artifacts.push(Artifact::new(
             format!("{}/{}.openapi.json", package.dir, component.name),
@@ -128,6 +135,7 @@ fn helpers_file(
     emit.import("io");
     emit.import("net/http");
     emit.import("strconv");
+    emit.import("sync");
     if super::json::used(ir) {
         return emit.file(
             provenance,
@@ -176,6 +184,11 @@ fn wire_file(
         if presents(CapabilityKind::DomainType, &declared.name) {
             type_encoder(&mut body, &emit, declared);
             type_decoder(&mut body, &emit, declared);
+        }
+    }
+    for event in ir.events().values() {
+        if presents(CapabilityKind::EventType, &event.name) {
+            event_encoder(&mut body, &emit, event);
         }
     }
     for error in ir.errors().values() {
@@ -380,6 +393,17 @@ fn variant_list<T: AsRef<str>>(variants: &[T]) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     )
+}
+
+/// One event's encoder, for the `published` list a command's answer carries.
+fn event_encoder(out: &mut String, emit: &Emit<'_>, event: &ResolvedEvent) {
+    record_encoder(
+        out,
+        &format!("encodeEvent{}", ident(&event.name)),
+        &emit.reference(&event.name),
+        &format!("the event `{}`", event.name),
+        &event.fields,
+    );
 }
 
 /// One declared error's encoder.
@@ -805,8 +829,9 @@ fn surface_file(
     package: &Package,
     component: &ResolvedComponent,
     served: &[&ResolvedComponent],
-    provenance: &Provenance,
+    records_invocations: bool,
 ) -> Artifact {
+    let provenance = &plan.provenance;
     let emit = Emit::new(ir, layout, package, None);
     emit.import_blank("embed");
     emit.import("encoding/json");
@@ -852,6 +877,7 @@ fn surface_file(
                     component,
                     ir.command(handle),
                     &system,
+                    records_invocations,
                 );
             }
             Served::View(handle) => {
@@ -902,7 +928,9 @@ fn dispatch(
          and neither should be: both are facts about a transport rather than\n// about any \
          command.\nfunc dispatch{exported}(system *{system}, request *http.Request) response \
          {{\n\tbody, refused := readBody(request)\n\tif refused != nil {{\n\t\treturn \
-         *refused\n\t}}\n\tswitch request.URL.Path {{\n"
+         *refused\n\t}}\n\t// Held from the port call through Pump and TakePublished: the system \
+         is shared by\n\t// every connection.\n\tserving.Lock()\n\tdefer \
+         serving.Unlock()\n\tswitch request.URL.Path {{\n"
     );
     for (method, path, _, _) in rows {
         let _ = writeln!(
@@ -1084,6 +1112,28 @@ fn startup_lines(
     )
 }
 
+/// The `published` member of one branch's answer: every event the branch carries, in publication
+/// order, as `{"event": <qualified name>, "payload": {…}}` — the list the Rust surface and the
+/// contract spell the same way.
+fn published_list(out: &mut String, emit: &Emit<'_>, outcome: &ResolvedOutcome) {
+    let carried = super::items::outcome_event_fields(emit, outcome);
+    out.push_str("\t\tbody[\"published\"] = []any{");
+    for field in &carried {
+        let _ = write!(
+            out,
+            "\n\t\t\tmap[string]any{{\"event\": {:?}, \"payload\": encodeEvent{}(taken.{})}},",
+            field.event.name().to_string(),
+            ident(field.event.name()),
+            field.field
+        );
+    }
+    out.push_str(if carried.is_empty() {
+        "}\n"
+    } else {
+        "\n\t\t}\n"
+    });
+}
+
 /// One accepted command: body in, declared outcome out, at the status the contract publishes.
 fn command_handler(
     out: &mut String,
@@ -1092,30 +1142,52 @@ fn command_handler(
     component: &ResolvedComponent,
     command: &ResolvedCommand,
     system: &str,
+    records_invocations: bool,
 ) {
     let function = ident(&command.name);
     let field = name::exported(&component.name.to_string());
     let method = layout.declared(&command.name);
+    let read = if ess_gen::http::body_required(command) {
+        "\tvalue, refused := readJSON(body)\n\tif refused != nil {\n\t\treturn *refused\n\t}\n"
+            .to_owned()
+    } else {
+        emit.import("bytes");
+        "\t// The contract declares no required body for this command, so a request without one \
+         is\n\t// its input with nothing in it.\n\tvar value any = map[string]any{}\n\tif \
+         len(bytes.TrimSpace(body)) != 0 {\n\t\tread, refused := readJSON(body)\n\t\tif refused \
+         != nil {\n\t\t\treturn *refused\n\t\t}\n\t\tvalue = read\n\t}\n"
+            .to_owned()
+    };
     let _ = write!(
         out,
         "\n// serve{function} answers `POST` `{}`: reads the declared input, runs the port, \
          answers the\n// declared outcome.\nfunc serve{function}(system *{system}, body []byte) \
-         response {{\n\tvalue, refused := readJSON(body)\n\tif refused != nil {{\n\t\treturn \
-         *refused\n\t}}\n\tinput, err := decodeCommand{function}(value, \"body\")\n\tif err != nil \
+         response {{\n{read}\tinput, err := decodeCommand{function}(value, \"body\")\n\tif err != nil \
          {{\n\t\t// 400 and not 422: this is a body the schema decides, which is the \
          difference\n\t\t// between fixing a value and fixing a serialiser.\n\t\treturn \
          refusal(400, err.Error())\n\t}}\n\toutcome, unmet := \
          system.{field}.{method}(input)\n\tif unmet != nil {{\n\t\treturn refusal(501, \
-         unmet.Error())\n\t}}\n\treturn answer{function}(outcome)\n}}\n",
-        command.name
+         unmet.Error())\n\t}}\n\t// Deliver what this command published to every binding that reacts to it, then \
+         take it\n\t// off the log: a long-running server keeps nothing from one request to the \
+         next. Pump answers\n\t// only for what this command published, and returns with all of \
+         it delivered.\n\tfailure := system.Pump()\n\tsystem.TakePublished()\n{invocations}\tif \
+         failure != nil {{\n\t\treturn refusal(501, \"delivering what the command published: \
+         \"+failure.Error())\n\t}}\n\treturn answer{function}(outcome)\n}}\n",
+        command.name,
+        invocations = if records_invocations {
+            "\tsystem.TakeInvocations()\n"
+        } else {
+            ""
+        },
     );
 
     let outcome_type = emit.reference_outcome(&command.name);
     let _ = write!(
         out,
         "\n// answer{function} renders one declared outcome of `{}` as the contract publishes it: \
-         the\n// branch that was taken, the declared error where there is one, and that error's \
-         own\n// payload.\nfunc answer{function}(outcome {outcome_type}) response {{\n\tbody := \
+         the\n// branch that was taken, every event it published in publication order, the \
+         declared\n// error where there is one, and that error's own payload.\nfunc \
+         answer{function}(outcome {outcome_type}) response {{\n\tbody := \
          map[string]any{{}}\n\tswitch taken := outcome.(type) {{\n",
         command.name
     );
@@ -1126,6 +1198,7 @@ fn command_handler(
             emit.reference_outcome_variant(&command.name, outcome.name.as_str())
         );
         let _ = writeln!(out, "\t\tbody[\"outcome\"] = {:?}", outcome.name.as_str());
+        published_list(out, emit, outcome);
         if let Some(handle) = &outcome.error {
             let declared = emit.ir.error(handle);
             let _ = writeln!(
@@ -1148,8 +1221,9 @@ fn command_handler(
         let _ = writeln!(out, "\t\treturn rendered({}, body)", http::status(outcome));
     }
     if let Some(declared) = ess_gen::unknown_instance::unknown_instance_answer(emit.ir, command) {
-        // The declared branch, status and error, and no payload: an instance that does not exist
-        // has nothing for the error's fields to describe (`docs/design/unknown-instance-seams.md`).
+        // The declared branch, status and error, nothing published, and no payload: an instance
+        // that does not exist has nothing for the error's fields to describe
+        // (`docs/design/unknown-instance-seams.md`).
         let error = emit.ir.error(
             declared
                 .error
@@ -1158,8 +1232,8 @@ fn command_handler(
         );
         let _ = writeln!(
             out,
-            "\tcase {}:\n\t\tbody[\"outcome\"] = {:?}\n\t\tbody[\"error\"] = {}\n\t\treturn \
-             rendered({}, body)",
+            "\tcase {}:\n\t\tbody[\"outcome\"] = {:?}\n\t\tbody[\"published\"] = \
+             []any{{}}\n\t\tbody[\"error\"] = {}\n\t\treturn rendered({}, body)",
             emit.reference_unknown_instance_variant(&command.name),
             declared.name.as_str(),
             serde_json::to_string(&error.wire_code()).expect("a string always serializes"),
@@ -1432,6 +1506,15 @@ const mediaMarkdown = "text/markdown; charset=utf-8"
 // anyone can stop by saying a large number. A megabyte is far past any command input this model
 // can describe.
 const maxBody = 1048576
+
+// serving is held from reading a request's input to rendering its answer, so one request at a time
+// runs a port, pumps and takes from the system's log.
+//
+// net/http answers every connection on its own goroutine, and the system is one value: its log, its
+// delivery cursor and every component's outbox are shared, and so is whatever the realization
+// behind the ports keeps. One lock for every surface in this package, because two components served
+// from one process share one system.
+var serving sync.Mutex
 
 // response is one answer: a status, a media type and a body.
 type response struct {

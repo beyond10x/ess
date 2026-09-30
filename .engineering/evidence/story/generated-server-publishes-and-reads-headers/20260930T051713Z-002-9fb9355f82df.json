@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T05:17:13Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-server-publishes-and-reads-headers",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: cargo test --locked -p ess-gen -p ess-synth 583 passed 0 failed; clippy; generate --check",
+    "reference": "impl/http-published-events@bd2a6b7bab"
+  }
+}

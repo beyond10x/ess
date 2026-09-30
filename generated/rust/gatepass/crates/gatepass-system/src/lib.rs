@@ -27,6 +27,17 @@ pub enum SystemEvent {
     VisitorDeparted(gatepass_types::visit::VisitorDeparted),
 }
 
+impl SystemEvent {
+    /// The qualified name the specification declares this event under.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::VisitRegistered(_) => "gatepass.visit.VisitRegistered",
+            Self::VisitorAdmitted(_) => "gatepass.visit.VisitorAdmitted",
+            Self::VisitorDeparted(_) => "gatepass.visit.VisitorDeparted",
+        }
+    }
+}
+
 impl From<pass_service::PublishedEvent> for SystemEvent {
     fn from(event: pass_service::PublishedEvent) -> Self {
         match event {
@@ -63,19 +74,27 @@ impl<PassServiceBehaviors> System<PassServiceBehaviors> {
     pub fn published(&self) -> &[SystemEvent] {
         &self.published
     }
+
+    /// Takes every event the pump has already delivered off the log, in publication order.
+    ///
+    /// A long-running shell calls this after each `pump`, or the log holds every event the
+    /// process ever published. A `pump` returns with every logged event delivered: each
+    /// reacting binding has had its attempt, and a binding whose attempt stopped holds the event in
+    /// its own held-back list, not on the log. Events published since the last `pump` stay on the
+    /// log, so the next `pump` still delivers them; taking never skips a binding.
+    pub fn take_published(&mut self) -> Vec<SystemEvent> {
+        let delivered: Vec<SystemEvent> = self.published.drain(..self.cursor).collect();
+        self.cursor = 0;
+        delivered
+    }
 }
 
 impl<PassServiceBehaviors> System<PassServiceBehaviors>
 where
     PassServiceBehaviors: gatepass_types::visit::obligations::AdmitVisitorBehavior + gatepass_types::visit::obligations::RegisterVisitBehavior + gatepass_types::visit::obligations::SignOutVisitorBehavior + gatepass_types::visit::obligations::ExpectedVisitsQuery + gatepass_types::visit::obligations::VisitByIdQuery,
 {
-    /// Delivers until quiescent: collects every component's outbox onto the log, then delivers
-    /// each logged event to every binding that reacts to it — at least once each, which is the
-    /// guarantee the specification declares.
-    ///
-    /// `Err` carries the first unmet obligation that delivery could not route around; the log
-    /// keeps everything already published. A specification whose bindings feed each other
-    /// without end will not quiesce, and this pump will not pretend otherwise.
+    /// Delivers until quiescent: collects every component's outbox onto the log. No binding
+    /// reacts to anything this specification publishes, so collecting is the whole delivery.
     pub fn pump(&mut self) -> Result<(), gatepass_types::obligation::UnmetObligation> {
         loop {
             self.collect();

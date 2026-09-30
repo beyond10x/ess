@@ -63,10 +63,19 @@
 //! * `payload` — the [`ResolvedError`]'s own fields, when it declares any. An error that carries
 //!   nothing gets no `payload`, rather than an empty object that looks like a mistake.
 //!
-//! Events are *not* in the response. An outcome emits events, and over HTTP those reach consumers
-//! through the event transport — the response says which branch ran, and the description names the
-//! events, because claiming they are returned here would be a claim about a transport the
-//! specification has not chosen.
+//! * `published` — every event the branch published, in the order it emits them, each
+//!   `{"event": <qualified name>, "payload": {…}}`: `prefixItems` in emit order and `items: false`,
+//!   so the same events in another order, or one of them twice, is not this branch's answer. The
+//!   events also reach consumers through the event transport; the answer lists them so the caller
+//!   learns what its command caused, including a created identity.
+//!
+//! # `501` is the one status no branch declares
+//!
+//! Every command also declares `501`: the realization is unfinished. Either a port the command
+//! runs reported an unmet obligation, or the command's effect was committed and delivering what it
+//! published to a binding failed — the body's `refused` then begins `delivering what the command
+//! published`. A client must not retry it, because after a failed delivery a retry performs the
+//! command a second time.
 //!
 //! # `external` is a `502`, not a `422`
 //!
@@ -190,8 +199,8 @@ use std::collections::BTreeMap;
 
 use ess_compiler::ir::{
     CommandHandle, EssIr, ResolvedActor, ResolvedCommand, ResolvedComponent, ResolvedCondition,
-    ResolvedEffect, ResolvedError, ResolvedOutcome, ResolvedTypeRef, ResolvedView, TypeHandle,
-    ViewHandle,
+    ResolvedEffect, ResolvedError, ResolvedEvent, ResolvedOutcome, ResolvedTypeRef, ResolvedView,
+    TypeHandle, ViewHandle,
 };
 use ess_domain::binding::Delivery;
 use ess_domain::component::Reach;
@@ -219,6 +228,9 @@ const IDEMPOTENCY_KEY: &str = "Idempotency-Key";
 
 /// The response property naming which declared branch was taken.
 const OUTCOME: &str = "outcome";
+
+/// The response property listing what the branch published.
+const PUBLISHED: &str = "published";
 
 /// The keyword a reference is spelt under, in every dialect this crate emits.
 const REFERENCE: &str = "$ref";
@@ -378,8 +390,8 @@ fn description(ir: &EssIr, component: &ResolvedComponent) -> String {
          does not invent one. A status code is the outcome the specification declares — 202 for a \
          branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided \
          outside the request — and the `outcome` property of every response body names the branch. \
-         Events emitted by a branch are published to consumers through the event transport; they \
-         are not returned here.",
+         Events emitted by a branch are published to consumers through the event transport, and \
+         the `published` property of every response body lists them too, in publication order.",
     );
     if component.reached_by == Reach::Network {
         text.push_str(
@@ -632,28 +644,21 @@ fn request_body(command: &ResolvedCommand) -> Option<RequestBody> {
     }
     Some(RequestBody {
         description: format!("The input `{}` declares.", command.name),
-        // An `input_absent:` branch (ess/16) declares the answer for a request with no body, so the
-        // body is not required even where its fields are.
-        required: command
-            .input
-            .iter()
-            .any(|field| !field.type_ref.is_optional())
-            && !command
-                .outcomes
-                .iter()
-                .any(|outcome| outcome.condition == ResolvedCondition::InputAbsent),
+        // One answer for this document and every server that reads the body.
+        required: http::body_required(command),
         content: content(json!({"$ref": reference(&format!("{}.Input", command.name))})),
     })
 }
 
-/// One response per status the command's outcomes reach.
+/// One response per status the command's outcomes reach, and the `501` every served command can
+/// answer.
 fn responses(command: &ResolvedCommand) -> BTreeMap<String, Response> {
     let mut grouped: BTreeMap<&'static str, Vec<&ResolvedOutcome>> = BTreeMap::new();
     for outcome in &command.outcomes {
         grouped.entry(status(outcome)).or_default().push(outcome);
     }
 
-    grouped
+    let mut out: BTreeMap<String, Response> = grouped
         .into_iter()
         .map(|(status, outcomes)| {
             let names: Vec<String> = outcomes
@@ -699,7 +704,33 @@ fn responses(command: &ResolvedCommand) -> BTreeMap<String, Response> {
                 },
             )
         })
-        .collect()
+        .collect();
+    out.insert(
+        http::UNFINISHED.to_owned(),
+        Response {
+            description: "No declared outcome: the realization is unfinished. Either a port this \
+                          command runs reported an unmet obligation, or the command's effect was \
+                          committed and delivering what this command published to a binding \
+                          failed; then `refused` begins `delivering what the command published`, \
+                          the effect and its events stand, and each binding whose delivery failed \
+                          keeps its event and is attempted again on a later delivery, while no \
+                          other binding receives it twice. Do not retry: a retry performs the \
+                          command a second time."
+                .to_owned(),
+            content: Some(content(json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["refused"],
+                "properties": {
+                    "refused": {
+                        "type": "string",
+                        "description": "What was left unfinished, in words.",
+                    },
+                },
+            }))),
+        },
+    );
+    out
 }
 
 /// What a status means here, for the response's required description.
@@ -727,7 +758,7 @@ fn meaning(status: &str) -> &'static str {
         }
         _ => {
             "the branch the specification declares for this input. Events this branch emits are \
-             published to consumers, not returned here."
+             published to consumers and listed under `published`."
         }
     }
 }
@@ -763,6 +794,14 @@ fn schemas(ir: &EssIr, component: &ResolvedComponent) -> BTreeMap<String, Fragme
                 response_key(command, outcome),
                 written(outcome_schema(ir, command, outcome)),
             );
+            for handle in &outcome.emits {
+                let event = ir.event(handle);
+                out.insert(
+                    event_key(event),
+                    embedded(&types::message(&Message::of_event(event))),
+                );
+                roots.extend(types::field_leaves(&event.fields));
+            }
             if let Some(error) = &outcome.error {
                 let declared = ir.error(error);
                 if !declared.fields.is_empty() {
@@ -901,6 +940,8 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
             "description": "Which declared outcome the command took.",
         }),
     );
+    required.push(Value::String(PUBLISHED.to_owned()));
+    properties.insert(PUBLISHED.to_owned(), published_schema(ir, outcome, unknown));
 
     if let Some(handle) = &outcome.error {
         let declared = ir.error(handle);
@@ -951,6 +992,61 @@ fn outcome_schema(ir: &EssIr, command: &ResolvedCommand, outcome: &ResolvedOutco
         schema["x-ess-replays"] = json!({"command": command.name, "outcome": replay.origin});
     }
     schema
+}
+
+/// The `published` property of one outcome's response body: the events the branch published, in
+/// publication order, each as `{"event": <qualified name>, "payload": {…}}`.
+///
+/// One item per emit, in emit order, and nothing after them (`prefixItems`, `items: false`); none for
+/// a branch that emits nothing, and none for the unknown-instance answer, which published nothing
+/// because nothing happened. Every surface that answers a command — the served Rust and Go
+/// applications, the transport-free `handle`, the web bridge — writes this list, so the contract
+/// declares it rather than leaving each of them to contradict `additionalProperties: false`.
+fn published_schema(ir: &EssIr, outcome: &ResolvedOutcome, unknown: bool) -> Value {
+    let description = "Every event this branch published, in publication order: its qualified \
+                       name and its payload.";
+    if outcome.emits.is_empty() {
+        return json!({"type": "array", "description": description, "maxItems": 0});
+    }
+    let entry = |event: &ResolvedEvent| {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["event", "payload"],
+            "properties": {
+                "event": {"const": event.name.to_string(), "type": "string"},
+                "payload": {"$ref": reference(&event_key(event))},
+            },
+        })
+    };
+    // One entry per emit, in emit order, and nothing after them: the list is ordered, so the same
+    // events in another order, or one event twice, is not this branch's answer.
+    let entries: Vec<Value> = outcome
+        .emits
+        .iter()
+        .map(|handle| entry(ir.event(handle)))
+        .collect();
+    let count = entries.len();
+    json!({
+        "type": "array",
+        "description": if unknown {
+            format!(
+                "{description} Empty for an instance no record carries, because nothing happened \
+                 to it."
+            )
+        } else {
+            description.to_owned()
+        },
+        "prefixItems": entries,
+        "items": false,
+        "minItems": if unknown { 0 } else { count },
+        "maxItems": count,
+    })
+}
+
+/// The `components.schemas` key for one event's payload.
+fn event_key(event: &ResolvedEvent) -> String {
+    format!("{}.Event", event.name)
 }
 
 /// What decides one outcome, as the sentence its `OpenAPI` description opens with.
@@ -1090,7 +1186,7 @@ fn outcome_description(ir: &EssIr, outcome: &ResolvedOutcome) -> String {
             })
             .collect();
         parts.push(format!(
-            "Emits {}, published to consumers rather than returned here.",
+            "Emits {}, published to consumers and listed under `published`.",
             list(&events)
         ));
     }

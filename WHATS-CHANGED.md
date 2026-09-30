@@ -6,6 +6,8 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.47.0](#ess-ui1-ui-documents-load-check-and-render) | ess-ui/1 UI documents load, check and render | capability | notable |
+| [0.47.0](#generated-servers-answer-with-what-a-command-published) | Generated servers answer with what a command published | capability | notable |
 | [0.46.1](#ess-verify-diff-classifies-error-payload-sources-and-three-outcome-flags) | ess verify diff classifies error payload sources and three outcome flags | capability | notable |
 | [0.46.0](#the-rust-target-generates-what-the-specification-fully-determines) | The Rust target generates what the specification fully determines | capability | significant |
 | [0.45.0](#the-go-web-and-clap-synthesis-targets-represent-json) | The Go, web and clap synthesis targets represent Json | capability | significant |
@@ -41,6 +43,20 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.47.0 — 2026-09-30
+
+### ess-ui/1 UI documents load, check and render
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.47.0)
+
+`ess-ui/1` describes an application's pages, state and live channels without naming a renderer. `ess ui check` reports findings by node path, `ess ui run --tui` runs a document in the terminal, `ess generate ui --target react` writes a React project, and `ess ui docs` renders the format reference from its schema.
+
+### Generated servers answer with what a command published
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.47.0)
+
+The generated Rust and Go servers list the events a command published in its answer, keep request headers, and name and encode every system event. Delivery is tracked per binding, so an undeliverable event no longer blocks later requests, and 501 is declared for a committed command whose delivery failed.
 
 ## 0.46.1 — 2026-09-30
 
