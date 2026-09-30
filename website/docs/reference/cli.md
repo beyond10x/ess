@@ -362,7 +362,9 @@ is under `ess generate project kubernetes`. Their arguments are listed under
 
 An `ess-ui/1` document ([reference](ess-ui.md)) describes an application's pages, state and
 channels without naming a renderer. `ess ui load` loads one and prints how many pages and addressed
-nodes it holds, or exits `1` naming the node that refuses it. `ess ui docs` renders the `ess-ui/1`
+nodes it holds, or exits `1` naming the node that refuses it. `ess ui check` runs every check the
+schema declares and, with `--model`, checks the document's views, commands and events against an
+ESS specification; each finding names its node path, and any error exits `1`. `ess ui docs` renders the `ess-ui/1`
 reference from its schema, and `--check` fails when a written copy is stale. `ess ui run --tui`
 runs a document in the terminal against its fixtures. `ess generate ui --target react` writes a
 Vite + React + TypeScript project from one. None of these has a flat spelling. Their arguments are
@@ -1485,6 +1487,21 @@ ess ui load [OPTIONS] --path <PATH>
 | Argument | Value | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to load |
+
+#### `ess ui check`
+
+Check an `ess-ui/1` document, and with `--model` its references into an ESS model; each finding is named by node path. Exits 1 when any finding is an error
+
+```text
+ess ui check [OPTIONS] --path <PATH>
+```
+
+| Argument | Value | Required | Default | Description |
+|---|---|---|---|---|
+| `--path` | `<PATH>` | yes |  | The `ess-ui/1` document to check |
+| `--model` | `<MODEL>` | no |  | An ESS specification (one file, or a directory with `system.yaml`) the document's views, commands and events must exist in |
+| `--format` | `<FORMAT>` | no | `text` | Output rendering. One of `text`, `json`. |
+| `--lacks` | `<CAPABILITY>`… | no |  | A capability the target renderer lacks (repeatable), such as `no_file_upload` |
 
 #### `ess ui docs`
 

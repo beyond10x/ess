@@ -4973,12 +4973,13 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 69;
-    const AREA_ONLY_LEAVES: [&[&str]; 6] = [
+    const AREA_LEAVES: usize = 70;
+    const AREA_ONLY_LEAVES: [&[&str]; 7] = [
         &["specify", "cli"],
         &["generate", "cli"],
         &["generate", "ui"],
         &["ui", "load"],
+        &["ui", "check"],
         &["ui", "docs"],
         &["ui", "run"],
     ];

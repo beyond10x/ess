@@ -1,6 +1,6 @@
 //! `ess ui` and `ess generate ui`: the `crates/ui/` entry points, mounted on the command line.
 //!
-//! Each command is a thin shell over one crate's own entry point — [`ess_ui::check`],
+//! Each command is a thin shell over one crate's own entry point — [`ess_ui::check`], [`ess_ui_check::run`],
 //! [`ess_ui_docs::run`], [`ess_ui_tui::run`] and [`ess_ui_react::run`] — so what the command does
 //! is what that crate does, and what it prints on a refusal is that crate's message verbatim.
 
@@ -14,6 +14,9 @@ use clap::{Subcommand, ValueEnum};
 pub(crate) enum Command {
     /// Load an `ess-ui/1` document and print what it holds, or name the node that refuses it.
     Load(Load),
+    /// Check an `ess-ui/1` document, and with `--model` its references into an ESS model; each
+    /// finding is named by node path. Exits 1 when any finding is an error.
+    Check(ess_ui_check::CheckArgs),
     /// Render the `ess-ui/1` reference from its schema, as HTML or Markdown.
     Docs(ess_ui_docs::DocsArgs),
     /// Run an `ess-ui/1` document, answering reads from its fixtures.
@@ -61,6 +64,10 @@ pub(crate) fn run(command: &Command) -> ExitCode {
         Command::Load(load) => match ess_ui::check(&load.path) {
             Ok(summary) => success(&summary.to_string()),
             Err(error) => refusal(&format!("{}: {}", error.path(), error.message())),
+        },
+        Command::Check(args) => match ess_ui_check::run(args) {
+            Ok(code) => code,
+            Err(error) => refusal(&error.to_string()),
         },
         Command::Docs(args) => match ess_ui_docs::run(args) {
             Ok(summary) => success(&summary),

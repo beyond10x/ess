@@ -202,5 +202,48 @@ fn the_ui_area_offers_load_docs_and_run() {
         .filter(|line| line.starts_with("  ") && !line.starts_with("   "))
         .filter_map(|line| line.split_whitespace().next())
         .collect();
-    assert_eq!(offered, ["load", "docs", "run"], "{help}");
+    assert_eq!(offered, ["load", "check", "docs", "run"], "{help}");
+}
+
+#[test]
+fn ui_check_passes_the_example_with_only_its_placeholder_warning() {
+    let output = ess(&["ui", "check", "--path", EXAMPLE, "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is JSON");
+    assert_eq!(report["format"], "ess-ui-check/1");
+    let findings = report["findings"].as_array().expect("a findings list");
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding["severity"] == "warning"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn ui_check_exits_1_naming_the_node_of_an_error() {
+    let output = ess(&[
+        "ui",
+        "check",
+        "--path",
+        "crates/ui/ess-ui-check/tests/fixtures/broken-nav.yaml",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(output.status.code(), Some(1), "{}", text(&output.stderr));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is JSON");
+    let errors: Vec<&serde_json::Value> = report["findings"]
+        .as_array()
+        .expect("a findings list")
+        .iter()
+        .filter(|finding| finding["severity"] == "error")
+        .collect();
+    assert!(
+        errors.iter().any(|finding| finding["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("navigation"))),
+        "{errors:?}"
+    );
 }

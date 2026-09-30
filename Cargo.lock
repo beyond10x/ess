@@ -480,6 +480,7 @@ dependencies = [
  "ess-realization",
  "ess-synth",
  "ess-ui",
+ "ess-ui-check",
  "ess-ui-docs",
  "ess-ui-react",
  "ess-ui-tui",
@@ -722,7 +723,7 @@ dependencies = [
 
 [[package]]
 name = "ess-ui-check"
-version = "0.46.0"
+version = "0.46.1"
 dependencies = [
  "clap",
  "ess-compiler",

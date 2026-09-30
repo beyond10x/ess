@@ -39,6 +39,7 @@ tasks:
         --package ess-service-contract
         --package ess-synth
         --package ess-ui
+        --package ess-ui-check
         --package ess-ui-docs
         --package ess-ui-react
         --package ess-ui-tui

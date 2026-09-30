@@ -79,6 +79,7 @@ infra-spec = { path = "crates/infra/infra-spec", version = "0.46.1" }
 infra-project = { path = "crates/infra/infra-project", version = "0.46.1" }
 schema-contract = { path = "crates/generate/schema-contract", version = "0.46.1" }
 ess-ui = { path = "crates/ui/ess-ui", version = "0.46.1" }
+ess-ui-check = { path = "crates/ui/ess-ui-check", version = "0.46.1" }
 ess-ui-docs = { path = "crates/ui/ess-ui-docs", version = "0.46.1" }
 ess-ui-react = { path = "crates/ui/ess-ui-react", version = "0.46.1" }
 ess-ui-tui = { path = "crates/ui/ess-ui-tui", version = "0.46.1" }
