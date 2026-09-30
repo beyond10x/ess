@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-spec-tui-renderer
 kind: story
-status: proposed
+status: active
 title: Any ess-ui document runs as a terminal application from fixtures
 relations:
 - serves: vision:O2
@@ -11,9 +11,10 @@ relations:
 scope:
 - confidence: inferred
   path: crates/ui/ess-ui-tui
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T00:35:23Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T02:13:30Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
