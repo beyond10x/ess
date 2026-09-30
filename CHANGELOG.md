@@ -2,8 +2,19 @@
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-09-30
+
 ### Added
 
+- `ess ui test --path <document> <tests…> [--format text|json] [--playwright <out>]` runs
+  `ess-ui-test/1` files: tests that open pages, select nodes by canonical node path (row key for
+  collection items), type, choose, act, page, expect text, rows and section state, play live
+  events, advance time and expect commands, with per-test fixtures. They run headless against
+  the terminal renderer and write `ess-ui-test-report/1` (exit 1 on a failure); `--playwright`
+  writes a Playwright spec for the generated React project from the same file, selecting
+  `[data-ui-path]`, where every step the terminal refuses is `test.fixme` with the same reason.
+  `ess-ui-tui` gains a read-only `App::regions()`; generated React column headers carry their
+  column's `data-ui-path`. Example tests: `examples/partner-portal/tests/`.
 - `ess verify conform report --suite <suite.json> --results <results.json> --implementation <name>
   --report-out <path> [--runner <name>@<version>]` writes an `ess-conformance-report/2` from the
   per-scenario results of a runner outside ESS, in any language. ESS admits the suite (an original

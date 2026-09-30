@@ -219,7 +219,7 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-impact", 2, Some("0.1.0")),
     ("ess-impact", 3, Some("0.19.0")),
     ("ess-conformance-run", 2, Some("0.20.0")),
-    ("ess-conformance-results", 1, None),
+    ("ess-conformance-results", 1, Some("0.48.0")),
     ("ess-target-failure", 1, Some("0.19.0")),
     ("ess-target-failure", 2, Some("0.20.0")),
     ("ess-target-failure", 3, Some("0.23.0")),
@@ -296,8 +296,8 @@ const FORMAT_RELEASES: &[(&str, u32, Option<&str>)] = &[
     ("ess-execution-evidence", 1, Some("0.21.0")),
     ("ess-ui", 1, Some("0.47.0")),
     ("ess-ui-check", 1, Some("0.47.0")),
-    ("ess-ui-test", 1, None),
-    ("ess-ui-test-report", 1, None),
+    ("ess-ui-test", 1, Some("0.48.0")),
+    ("ess-ui-test-report", 1, Some("0.48.0")),
 ];
 
 /// Checks the published documents against the source and the changelog.

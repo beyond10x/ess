@@ -6,6 +6,9 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 
 | Release | Change | Kind | Impact |
 |---|---|---|---|
+| [0.48.0](#an-outside-runners-results-become-a-conformance-report) | An outside runner's results become a conformance report | capability | notable |
+| [0.48.0](#a-served-501-says-whether-the-effect-was-committed) | A served 501 says whether the effect was committed | capability | notable |
+| [0.48.0](#ess-ui-test-runs-ui-tests-by-node-path) | ess ui test runs UI tests by node path | capability | notable |
 | [0.47.0](#ess-ui1-ui-documents-load-check-and-render) | ess-ui/1 UI documents load, check and render | capability | notable |
 | [0.47.0](#generated-servers-answer-with-what-a-command-published) | Generated servers answer with what a command published | capability | notable |
 | [0.46.1](#ess-verify-diff-classifies-error-payload-sources-and-three-outcome-flags) | ess verify diff classifies error payload sources and three outcome flags | capability | notable |
@@ -43,6 +46,26 @@ Generated from `changes/*.yaml` by `cargo xtask whats-changed`. Edit a fragment,
 | [0.16.0](#an-authored-scenario-can-claim-a-length-of-time-and-a-target-has-to-answer-for-it) | An authored scenario can claim a length of time, and a target has to answer for it | capability | significant |
 | [0.14.0](#a-component-can-declare-a-command-line-surface-and-ess-synthesizes-its-parser) | A component can declare a command-line surface, and ESS synthesizes its parser | capability | significant |
 | [0.1.0](#ess-becomes-a-standalone-executable-specification-toolchain) | ESS becomes a standalone executable specification toolchain | migration | significant |
+
+## 0.48.0 — 2026-09-30
+
+### An outside runner's results become a conformance report
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.48.0)
+
+`ess verify conform report` turns a runner's per-scenario results into an `ess-conformance-report/2` whose producer profile says the results were supplied and ESS executed nothing; aep 0.66.0 records it as evidence.
+
+### A served 501 says whether the effect was committed
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.48.0)
+
+Every served `501` carries `committed`: false for an unmet obligation, true when the command took effect and delivering what it published failed. Rust shells gain `Refused::Undelivered`.
+
+### ess ui test runs UI tests by node path
+
+capability · notable impact · [release notes](https://github.com/beyond10x/ess/releases/tag/0.48.0)
+
+`ess ui test` runs `ess-ui-test/1` tests, which select nodes by their document path, headless against the terminal renderer, and writes a Playwright spec for the generated React project from the same file.
 
 ## 0.47.0 — 2026-09-30
 
