@@ -187,7 +187,7 @@ The closed object has the following fields; all are required. Unknown fields, un
 | --- | --- |
 | format | Exactly ess-conformance-report/2 |
 | specification, spec_digest, implementation | Existing label/model-digest/implementation meanings; spec_digest stays the existing 64-hex model digest |
-| producer_profile | rust-scenario-status/1 or go-scenario-status/1, preserving the execution rules above; not a compiler build version |
+| producer_profile | rust-scenario-status/1 or go-scenario-status/1, preserving the execution rules above; not a compiler build version. external-scenario-status/1, optionally `external-scenario-status/1;runner=<name>@<version>`, marks results a runner outside ESS supplied through `ess verify conform report` (ess-conformance-results/1); it follows the Rust rules |
 | suite | SuiteReference for the exact document executed |
 | execution_status | passed, failed or inconclusive, derived solely by the selected producer profile |
 | counts | Exactly total, passed, failed, error, unsupported, skipped; nonnegative u64 |

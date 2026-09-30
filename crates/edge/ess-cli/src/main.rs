@@ -620,6 +620,37 @@ enum ConformCommand {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// Turn a runner's own per-scenario results into a report/2 for a suite ESS admits.
+    ///
+    /// For a runner outside ESS, written in any language, that executed the suite itself. ESS
+    /// admits the suite (an original suite document or an `ess-conformance-input/1` carrier) and
+    /// takes coverage, suite reference and policy from that admission; the runner supplies only an
+    /// `ess-conformance-results/1` document with one terminal status per scenario. The report's
+    /// `producer_profile` is `external-scenario-status/1` (naming `--runner` when given), so it
+    /// cannot be read as a run ESS executed.
+    ///
+    /// Refused, writing nothing: a result for a scenario the suite does not contain, a scenario
+    /// with no result, two results for one scenario, a status other than passed, failed, error or
+    /// unsupported, and a `suite_digest` that is not the admitted suite's.
+    ///
+    /// Exit 0: the report was written, whatever its verdict. Exit 2: an input was refused.
+    Report {
+        /// The suite the runner executed, exactly the bytes it was given.
+        #[arg(long)]
+        suite: PathBuf,
+        /// The runner's `ess-conformance-results/1` document.
+        #[arg(long)]
+        results: PathBuf,
+        /// The implementation the runner held to the suite, as the report names it.
+        #[arg(long)]
+        implementation: String,
+        /// Where to write the canonical `ess-conformance-report/2`.
+        #[arg(long)]
+        report_out: PathBuf,
+        /// The runner that produced the results, as `<name>@<version>`.
+        #[arg(long)]
+        runner: Option<String>,
+    },
     /// Audit the suite with specification mutants, each replayed against a reference target.
     ///
     /// Derives mutants from the specification — one altering edit each — synthesizes a fresh
@@ -3125,6 +3156,19 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             out,
         } => coverage::select(suite.as_deref(), suite_input.as_deref(), &ids, &out),
         command @ ConformCommand::Run { .. } => conform_run(command),
+        ConformCommand::Report {
+            suite,
+            results,
+            implementation,
+            report_out,
+            runner,
+        } => Ok(conform_report(
+            &suite,
+            &results,
+            &implementation,
+            &report_out,
+            runner.as_deref(),
+        )),
         command @ ConformCommand::Mutate { .. } => conform_mutate_mode(command),
         ConformCommand::CheckHistory {
             path,
@@ -3140,6 +3184,62 @@ fn conform(command: ConformCommand) -> Result<ExitCode> {
             output,
         } => Ok(import_history(&path, &log, &adapter, output.as_deref())),
     }
+}
+
+/// `ess verify conform report`: 0 written, 2 refused.
+fn conform_report(
+    suite: &Path,
+    results: &Path,
+    implementation: &str,
+    report_out: &Path,
+    runner: Option<&str>,
+) -> ExitCode {
+    const REFUSED: u8 = 2;
+    let read = |path: &Path| {
+        fs::read_to_string(path).map_err(|error| {
+            eprintln!(
+                "conform-report.unreadable: reading {}: {error}",
+                path.display()
+            );
+        })
+    };
+    let (Ok(suite_text), Ok(results_text)) = (read(suite), read(results)) else {
+        return ExitCode::from(REFUSED);
+    };
+    let written =
+        ess_conformance::results::report(&suite_text, &results_text, implementation, runner)
+            .and_then(|report| Ok((report.to_canonical_json()?, report)));
+    let (text, report) = match written {
+        Ok(written) => written,
+        Err(refusal) => {
+            eprintln!(
+                "{} was refused against {}: {refusal}",
+                results.display(),
+                suite.display()
+            );
+            return ExitCode::from(REFUSED);
+        }
+    };
+    if let Err(error) = fs::write(report_out, text) {
+        eprintln!(
+            "conform-report.unwritable: writing {}: {error}",
+            report_out.display()
+        );
+        return ExitCode::from(REFUSED);
+    }
+    let verdict = match report.conformance_status() {
+        ess_conformance::CountStatus::Passed => "passed",
+        ess_conformance::CountStatus::Failed => "failed",
+        ess_conformance::CountStatus::Inconclusive => "inconclusive",
+    };
+    let counts = report.counts();
+    println!(
+        "{}: conformance {verdict}, {} of {} passed",
+        report_out.display(),
+        counts.passed,
+        counts.total
+    );
+    ExitCode::SUCCESS
 }
 
 /// `ess verify conform import-history`: 0 written, 2 refused.
@@ -4973,7 +5073,7 @@ mod tests {
     ///
     /// Written down on purpose. A verb added to the tree and to no area would otherwise be
     /// counted by the enumeration it is missing from and pass every case below.
-    const AREA_LEAVES: usize = 70;
+    const AREA_LEAVES: usize = 71;
     const AREA_ONLY_LEAVES: [&[&str]; 7] = [
         &["specify", "cli"],
         &["generate", "cli"],

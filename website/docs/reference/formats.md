@@ -308,6 +308,7 @@ format's canonical digest profile or provide remote attachment proof. See the
 | Go `format: ess-conformance-report/1` | Same claims, Go failed/skipped vocabulary | Generated Go writer; current Rust admission accommodates its non-pass vocabulary. Indented JSON+LF, signed int64 `completed_at`; no cross-producer byte/range equivalence is implied. [Source][go-report] |
 | Default detailed `ConformanceReport`: **unversioned** | Suite provenance, implementation, run/scenario identities | Detailed CLI JSON/YAML is distinct from standalone `--report-out` JSON. Serialize-only; pretty canonical JSON, no report-file or exact-suite hash. [Source][detailed-report] |
 | Opt-in `ess-conformance-report/2` and `ess-conformance-run/2` | Exact original suite/1–17 bytes, producer profile and five outcome categories | Separate standalone and detailed surfaces with paired readers. Sorted UTF-8 object keys, two-space JSON plus LF, exact unsigned u64 counts/timestamps. Ordinary coverage remains unknown; complete nonempty suite/5, /7, /9, /11, /13, /15 or /17 selection can qualify. Suites /6 to /9 arrived in 0.23.0. [Count contracts][count-report] |
+| `format: ess-conformance-results/1` | One terminal status per scenario of a suite ESS admits, and optionally that suite's `sha256-json-bytes/1` digest | Unreleased. Read by `ess verify conform report`, which writes report/2 from it. Closed `format`, exact u64 `completed_at`, optional `suite_digest` and `results` of `{scenario_id, status, message?}`; `status` is `passed`, `failed`, `error` or `unsupported`. Refused: a result for a scenario outside the suite, a scenario with no result, two results for one scenario, any other status, a `suite_digest` that is not the admitted suite's. The report's `producer_profile` is `external-scenario-status/1`, or `external-scenario-status/1;runner=<name>@<version>`, with Rust category rules. [Source][results] |
 | Opt-in `provenance.suite_version: ess-conformance/5` | Model/contract provenance and complete declared selection inventory | Closed original-byte admission retains source ownership, known outside IDs and every refusal occurrence. Explicit selections require exact parent input. [Coverage contract][coverage] |
 | `provenance.suite_version: ess-conformance/6` or `ess-conformance/7` | Existing provenance; /7 also carries declared coverage | Added in 0.23.0. Conditional accessor, entity setup, selection, periodic and clock-observation vocabulary: /6 is ordinary, /7 retains the /5 coverage and exact-parent contract. Execution requires existing report/2; report/1 refuses before target callbacks. Existing /4 and /5 bytes remain unchanged. [Accessor observation](../guides/verify/author-scenarios.md#observe-bounded-binding-accessors) |
 | `provenance.suite_version: ess-conformance/8` or `ess-conformance/9` | Existing provenance; /9 also carries declared coverage | Added in 0.23.0. Typed command-response observations compare an invocation's actual response with its emitted event payload. Structured text predicates requiring lossless literal decoding also select these versions. /8 is ordinary; /9 retains exact-parent coverage lineage. Rust and generated Go require report/2; older suite envelopes refuse the new vocabulary before execution. Browser execution retains explicit refusals for unsupported steps. |
@@ -502,6 +503,13 @@ an extended suite requires explicit report/2. Suites /5 to /13 with report/1 ref
 output destination or with allow-incomplete. Report/1 keeps its historical non-pass aggregate and
 does not establish exact suite-byte identity. [Coverage workflow](../guides/verify/runners.md#opt-into-declared-coverage).
 
+A runner outside ESS reports through `ess-conformance-results/1` rather than by writing report/2
+itself. `ess verify conform report` admits the suite the runner executed and takes coverage, the
+suite reference and policy from that admission, so the report it writes qualifies exactly as one
+ESS's own run would. Its `producer_profile`, `external-scenario-status/1`, says that ESS executed
+nothing; a reader that admits only `rust-scenario-status/1` and `go-scenario-status/1` refuses it.
+`message` is read and not carried into the report.
+
 `ess-conformance-input/1` has exactly `format`, original selected `suite_json` and nearest-first
 `parent_suites` strings. Every explicit child needs its complete original parent chain. The selected
 inner string is hashed, never the carrier or the reduced execution DTO; all surviving definitions,
@@ -583,6 +591,7 @@ A format catalog alone does not establish an installed external consumer upgrade
 [infra-project]: https://github.com/beyond10x/ess/blob/main/crates/infra/infra-project/src/project.rs
 
 [count-report]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/counts.rs
+[results]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/results.rs
 [coverage]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/coverage.rs
 [coverage-replay]: https://github.com/beyond10x/ess/blob/main/crates/verify/ess-conformance/src/web_replay.rs
 
