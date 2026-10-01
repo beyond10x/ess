@@ -491,7 +491,7 @@ const OTHER_OWNER: Distinction = Distinction::further(super::MAX_CANDIDATES + 1)
 /// under. Neither side is a value the specification spells — the owner is the instance the
 /// arrangement created, and the caller names one — so the input is sent as an arranged instance:
 /// the row's own owner, or a second one arranged beside it ([`linked_inputs`]).
-fn links(
+pub(super) fn links(
     ir: &EssIr,
     command: &ResolvedCommand,
     entity: &EntityHandle,
@@ -618,7 +618,7 @@ fn naming_owner(
 /// The value an input field naming `instance` is chosen at while the search decides a link
 /// comparison: a token of the instance at the field's type, which no two instances share. It is
 /// never sent — [`prepare`] sends the instance itself in its place, through `Setup::bound`.
-fn token(
+pub(super) fn token(
     ir: &EssIr,
     command: &ResolvedCommand,
     field: &str,
