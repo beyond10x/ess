@@ -302,7 +302,7 @@ jobs:
           # and `@types/node` is what makes the typecheck a typecheck rather than `--noCheck`.
           # Versions are the ones the sources were measured green against, not floating ranges;
           # a prettier major decides formatting and a TypeScript major decides what typechecks.
-          npm install --global typescript@6.0.3 prettier@3.8.1
+          npm install --global typescript@6.0.3 prettier@3.8.1 esbuild@0.28.2
           # Outside the checkout on purpose: a `node_modules` inside it is a tree the gate did
           # not start with. The test resolves this path first, ahead of either in-tree location.
           npm install --prefix "$RUNNER_TEMP/ess-types" @types/node@26.3.0

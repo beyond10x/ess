@@ -304,7 +304,9 @@ A path that names no node is not a refusal: it fails in both renderers.
 `--playwright <out>` writes the same tests as a Playwright spec for the project
 `ess generate ui --target react` generates. Every node is `page.locator('[data-ui-path="<path>"]')`,
 with row paths exactly as the test file writes them. The page clock is installed at zero before the
-page loads, and `advance` and `play` become `page.clock.runFor(…)`.
+page loads, and `advance` and `play` become `page.clock.runFor(…)`. `page.goto` opens a page by
+its path, so the spec's `baseURL` is the generated project served by `npm run dev` or
+`npm run preview`, which answer every page path with `www/index.html`.
 
 | Step | In the spec |
 |---|---|

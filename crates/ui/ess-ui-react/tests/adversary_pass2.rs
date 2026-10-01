@@ -147,15 +147,6 @@ function jsx(type, props, key) { return { type, props: props || {}, key: key ===
 module.exports = { jsx, jsxs: jsx, Fragment: React.Fragment };
 "#;
 
-const ROUTER_STUB: &str = r#""use strict";
-const h = (globalThis.__router = globalThis.__router || { search: new URLSearchParams(), params: {} });
-exports.useSearchParams = () => [h.search, (next) => { h.search = typeof next === "function" ? next(h.search) : next; }];
-exports.useParams = () => h.params;
-exports.useNavigate = () => () => undefined;
-exports.useLocation = () => ({ pathname: "/", search: "", hash: "" });
-for (const name of ["BrowserRouter", "Routes", "Route", "Navigate", "Link", "Outlet"]) exports[name] = () => null;
-"#;
-
 /// Shared by every runtime script: fake timers and clock, Web Storage areas, the scope context.
 const PRELUDE: &str = r#""use strict";
 const assert = require("assert");
@@ -201,14 +192,6 @@ fn build_runtime(project: &Path, modules: &[&str]) {
     );
     write(&project.join("node_modules/react/index.js"), REACT_STUB);
     write(&project.join("node_modules/react/jsx-runtime.js"), JSX_STUB);
-    write(
-        &project.join("node_modules/react-router/package.json"),
-        r#"{"name":"react-router","main":"index.js","type":"commonjs"}"#,
-    );
-    write(
-        &project.join("node_modules/react-router/index.js"),
-        ROUTER_STUB,
-    );
     let files: Vec<String> = modules.iter().map(|m| format!("\"src/{m}\"")).collect();
     write(
         &project.join("tsconfig.adv.json"),

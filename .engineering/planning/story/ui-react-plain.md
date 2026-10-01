@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-react-plain
 kind: story
-status: active
+status: implemented
 title: 'ess generate ui --target react emits plain React: react and react-dom only, generated routing, one esbuild step'
 refs:
 - provider: github
@@ -21,10 +21,11 @@ scope:
   path: website/docs/reference/cli.md
 - confidence: cited
   path: website/docs/reference/ess-ui-test.md
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:49Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:49Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-01T21:21:55Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":7}}}
 ---
 ## Outcome
 
