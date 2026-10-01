@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-276
 kind: story
-status: draft
+status: active
 title: Declarations added or removed leave no residual in the diff
 tags:
 - feature-request
@@ -12,7 +12,13 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+scope:
+- confidence: cited
+  path: crates/verify/ess-diff/src/diff.rs
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-01T06:31:25Z", actor: "human:timo", revision: 6}
+- {from: "proposed", to: "active", at: "2026-10-01T06:31:54Z", actor: "human:timo", revision: 7}
 ---
 ## Outcome
 
@@ -20,8 +26,8 @@ revision: 1
 
 ## Acceptance
 
-- An added actor with `attributes`, and an added view with an `aggregation`, each produce only `<family>/<name>/added` (no `system/<system>/unclassified-changed`).
-- An actor whose `attributes` change on both sides produces a classified change, or the residual names `attributes` explicitly.
+- For every family (types, entities, commands, events, errors, views, actors, bindings, components), a declaration added or removed on one side produces only `<family>/<name>/added|removed`, never `system/<system>/unclassified-changed`; one test per family, including an added actor with `attributes`.
+- An `attributes` edit on an actor present on both sides still reports `unclassified-changed` (whole obligations apply); no new change kind and no `ess-diff` format bump.
 
 ## Origin
 
@@ -33,4 +39,14 @@ Per `.agents/skills/assessing-external-requests/SKILL.md`: class defect, diff on
 
 ## Decisions
 
-- **accept**, fixed for the class (declarations on one side leave the residual), not for one key.
+- **accept, fixed for the class** (coordinator, 2026-10-01): one-side declarations leave the residual. Classifying `attributes` edits would need new change kinds and `ess-diff/13`; the least-surface answer keeps them `unclassified-changed`, which is conservative. A later story may classify them if an adopter needs finer obligations.
+
+## Scope
+
+Derived 2026-10-01 by `aep:story-scoper`; **cited** = read in the tree, **inferred** = a reading. Coordinator-owned at merge, not scope entries: `CHANGELOG.md`, `changes/`, derived outputs.
+
+- **Already done:** the added-view-with-`aggregation` case (#256, `be1e58b3fa`; `crates/verify/ess-diff/tests/aggregate_view_added.rs`) — cited
+- **Files:** `crates/verify/ess-diff/src/diff.rs` — cited: `residual_construct` strips only `may` from actors (:2351), so `attributes` stays; `residual` (:2069) and its one comparison (:123) take one revision, so the class fix needs the other side's key set
+- **Confidence:** high for the defect site
+- **Would collide with:** 268 on `ess-diff/src/diff.rs` (inferred on 268's side)
+- **Safety fact:** every `*_changes` already emits `Added`/`Removed` for a key in one map only (`diff.rs:820-821`, `keys` :140), so dropping one-side declarations from the residual hides no unclassified content — unproven for the other eight families; a test per family is part of the acceptance

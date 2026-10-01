@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-278
 kind: story
-status: draft
+status: proposed
 title: An input guard beside a stored-field guard on one branch is synthesized
 tags:
 - feature-request
@@ -12,7 +12,14 @@ refs:
 relations:
 - serves: vision:O2
 - decomposes: epic:downstream-reported-gaps
-revision: 1
+scope:
+- confidence: cited
+  path: crates/verify/ess-conformance/src/synthesize/subject_fact.rs
+- confidence: inferred
+  path: docs/design/input-guard-overlap-precedence.md
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-01T06:31:26Z", actor: "human:timo", revision: 5}
 ---
 ## Outcome
 
@@ -34,3 +41,14 @@ Per `.agents/skills/assessing-external-requests/SKILL.md`: class defect (synthes
 ## Decisions
 
 - **accept** (coordinator, 2026-09-30).
+
+## Scope
+
+Derived 2026-10-01 by `aep:story-scoper`; **cited** = read in the tree, **inferred** = a reading. Coordinator-owned at merge, not scope entries: `CHANGELOG.md`, `changes/`, derived outputs.
+
+- **Files:** `crates/verify/ess-conformance/src/synthesize/subject_fact.rs` — cited: `selects` (:1610) needs exactly one selected branch (~:1664); with `result == Healthy` both `held-for-promotion` and `promoted` are selected, so neither is picked (ESS-SYNTH-003). `refusal_input` (:1787) / `refusal_unsatisfied` (~:1925) refute every sibling's input guard, including one equal to `own`, which renders `c and none of: c, …`
+- **Symbols:** `selects`, `refusal_input`, `refusal_unsatisfied`, `input_selects` (:1682, same single-pick rule) — cited
+- **Also likely:** `synthesize.rs` `rendered` (:5050) builds the `none of:` text, expected untouched; `docs/design/input-guard-overlap-precedence.md:87` — inferred
+- **Confidence:** medium
+- **Would collide with:** 229, 266, 271 (merged), 272 (`input_selects`, the same function) on `subject_fact.rs`
+- **Safety fact:** `selects` returns `None` today whenever more than one branch is selected; taking the first declared changes only inputs refused now — unproven
