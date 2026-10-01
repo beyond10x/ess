@@ -87,7 +87,17 @@ Recovery uses the recorded operation, so it does not require the original model 
 commit it restores the actual previous files, including prior edits or missing owned files.
 After commit it keeps the complete new result and finishes cleanup. Recovery can itself be
 repeated after interruption. Preserve `.ess-output` and any reported recovery files until
-recovery finishes; copying or deleting the state directory is not an ownership transfer.
+recovery finishes; copying or deleting the state directory alone is not an ownership transfer.
+
+What does carry ownership is the whole generated tree: a clone of a repository that commits its
+output with `.ess-output`, a second worktree, a moved checkout, CI, or a copy of the complete
+output directory. Generation there keeps the recorded owners, so it still replaces only the files
+those owners wrote. A regeneration that changes nothing writes nothing, `.ess-output/state.json`
+included, whatever umask the checkout was made with; the first one that does write records the
+new location. If files the state records have different bytes in the new location, generation
+refuses and prints the way back: move those files aside, remove `.ess-output`, adopt each
+named owner from a fresh reference, then regenerate. An output root with an interrupted operation refuses in any other location
+and names the root it was recorded at; recover it there before copying, committing or moving it.
 
 This contract applies to cooperating ESS writers on one local mounted filesystem on Linux or
 macOS, with controlled parent directories. Each file replacement is atomic; readers can see

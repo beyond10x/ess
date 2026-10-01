@@ -366,12 +366,16 @@ fn read_state(root: &File, path: &Path, mount: &Mount) -> Result<Option<(File, P
         matches!(image, Image::File { .. }),
         "missing published output-state checkpoint"
     );
-    let payload = state::decode(&bytes.context("missing output-state bytes")?)?;
-    ensure!(
-        payload.root == NativePath::absolute(path)?
-            && payload.directory == filesystem::identity(root)?,
-        "output-state root binding or directory identity mismatch"
-    );
+    let mut payload = state::decode(&bytes.context("missing output-state bytes")?)?;
+    let binding = NativePath::absolute(path)?;
+    let identity = filesystem::identity(root)?;
+    if payload.root != binding || payload.directory != identity {
+        relocate(&payload, root, path, mount)?;
+        // Bound in memory only: the next checkpoint an operation writes anyway records it, so
+        // a regeneration that changes nothing leaves a committed state byte-identical (ess#306).
+        payload.root = binding;
+        payload.directory = identity;
+    }
     let tx = match &payload.checkpoint {
         Checkpoint::Idle { .. } => None,
         _ => Some(transaction(&payload)?),
@@ -414,6 +418,136 @@ fn read_state(root: &File, path: &Path, mount: &Mount) -> Result<Option<(File, P
         }
     }
     Ok(Some((directory, payload)))
+}
+
+/// Admit a checkpoint recorded for another root (a clone, a second worktree, a moved checkout)
+/// only when it is settled and every owned file present here still has its recorded bytes. An
+/// in-flight transaction is recovered only where it was recorded; a ledger carried without its
+/// files is not an ownership transfer.
+fn relocate(payload: &Payload, root: &File, path: &Path, mount: &Mount) -> Result<()> {
+    let recorded = Path::new("/").join(payload.root.path()?);
+    let ledger = match &payload.checkpoint {
+        Checkpoint::Idle { ledger } => ledger,
+        _ if recorded == path => {
+            let tx = transaction(payload)?;
+            let touched = tx
+                .changes
+                .iter()
+                .filter(|c| {
+                    matches!(c.before, Image::File { .. }) || matches!(c.after, Image::File { .. })
+                })
+                .map(|c| c.path.output())
+                .collect::<Result<Vec<_>>>()?;
+            bail!(
+                "output-state directory identity mismatch: {} was replaced by a copy while a \
+                 generated-output operation was in progress, so that operation cannot be \
+                 recovered here; remove {} and enroll the root again. {}",
+                path.display(),
+                path.join(state::RESERVED).display(),
+                adoption_route(path, &tx.before, &touched)?
+            );
+        }
+        _ => bail!(
+            "output-state root binding mismatch: pending generated output was recorded at {}; \
+             recover it there with `ess generate output recover --ownership-root {}` before \
+             copying or moving it",
+            recorded.display(),
+            recorded.display()
+        ),
+    };
+    let mut differing = Vec::new();
+    for (relative, (_, data)) in ledger.files() {
+        let output = relative.output()?;
+        if !owned_bytes_match(root, &output, mount, &data)? {
+            differing.push(output);
+        }
+    }
+    ensure!(
+        differing.is_empty(),
+        "output state at {} was recorded for {}, and owned files here differ from the recorded \
+         bytes; copying `{}` alone is not an ownership transfer. {}",
+        path.display(),
+        recorded.display(),
+        state::RESERVED,
+        adoption_route(path, ledger, &differing)?
+    );
+    Ok(())
+}
+
+/// Whether an owned path holds its recorded bytes or is absent. Mode is not compared, since
+/// checkouts apply different umasks. A symlinked or non-directory parent refuses or differs, as
+/// it does for publication.
+fn owned_bytes_match(root: &File, output: &Path, mount: &Mount, data: &FileData) -> Result<bool> {
+    filesystem::aliases(root, output, mount)?;
+    for ancestor in output
+        .ancestors()
+        .skip(1)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        match filesystem::image(root, ancestor, mount)?.0 {
+            Image::Directory { .. } => {}
+            Image::Absent => return Ok(true),
+            Image::File { .. } => return Ok(false),
+        }
+    }
+    Ok(match filesystem::image(root, output, mount)?.0 {
+        Image::Absent => true,
+        Image::File { data: actual } => {
+            actual.length == data.length && actual.digest == data.digest
+        }
+        Image::Directory { .. } => false,
+    })
+}
+
+/// The steps that enroll a root again, naming the files in the way and the recorded owners.
+fn adoption_route(path: &Path, ledger: &Ledger, files: &[PathBuf]) -> Result<String> {
+    const SHOWN: usize = 10;
+    let mut listed = files
+        .iter()
+        .take(SHOWN)
+        .map(|f| f.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if files.len() > SHOWN {
+        listed = format!("{listed} and {} more", files.len() - SHOWN);
+    }
+    let owners = ledger
+        .owners
+        .iter()
+        .map(|o| {
+            let family = serde_json::to_value(o.key.family)?;
+            let family = family.as_str().context("owner family name")?;
+            Ok(if o.key.family.standalone() {
+                format!(
+                    "`--owner {family} --file {}`",
+                    o.key.location.path()?.display()
+                )
+            } else {
+                format!("`--owner {family}`")
+            })
+        })
+        .collect::<Result<Vec<_>>>()?
+        .join(", ");
+    let state = path.join(state::RESERVED);
+    let aside = if files.is_empty() {
+        String::new()
+    } else {
+        format!("Move these files aside, or delete them if they are generated: {listed}. ")
+    };
+    Ok(format!(
+        "{aside}Remove {}. Run `ess generate output adopt --ownership-root {} --from <fresh \
+         reference> --owner <family>` once per recorded owner: {}. Then regenerate.",
+        state.display(),
+        path.display(),
+        if owners.is_empty() {
+            "none recorded".to_owned()
+        } else {
+            owners
+        }
+    ))
 }
 
 struct Session<'a> {
@@ -658,7 +792,16 @@ fn plan(
                 ensure!(matches!(current,Image::Absent) || (matches!(current,Image::Directory{..}) && ledger.directories.iter().any(|d|d.path==path)),"unowned output destination: {}; adopt exact generated reference bytes explicitly",path.output()?.display());
             }
             let mode = match current {
-                Image::File { data } => data.mode,
+                // Unchanged recorded bytes keep their recorded mode: another checkout's umask
+                // is not a change to publish (ess#306).
+                Image::File { data } => old_files
+                    .get(&path)
+                    .filter(|(_, recorded)| {
+                        recorded.length == data.length
+                            && recorded.digest == data.digest
+                            && FileData::of(&bytes, data.mode) == data
+                    })
+                    .map_or(data.mode, |(_, recorded)| recorded.mode),
                 _ => 0o644,
             };
             files.push(OwnedFile {
@@ -757,7 +900,15 @@ fn plan(
     for path in affected {
         let before = inspect(&path)?;
         let after_image = if let Some((_, data)) = after_files.get(&path) {
-            Image::File { data: data.clone() }
+            match &before {
+                // A ledger-only mode difference (above) leaves the file itself untouched.
+                Image::File { data: actual }
+                    if actual.length == data.length && actual.digest == data.digest =>
+                {
+                    before.clone()
+                }
+                _ => Image::File { data: data.clone() },
+            }
         } else if let Some(directory) = after.directories.iter().find(|d| d.path == path) {
             Image::Directory {
                 mode: directory.mode,
