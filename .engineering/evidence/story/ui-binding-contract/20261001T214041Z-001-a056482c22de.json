@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-01T21:40:41Z",
+  "actor": "human:timo",
+  "artifact": "story:ui-binding-contract",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo test -p ess-ui -p ess-ui-check, every target green at a0e5b09bdc; clippy -D warnings and fmt clean",
+    "reference": "a0e5b09bdc"
+  }
+}
