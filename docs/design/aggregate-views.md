@@ -466,6 +466,31 @@ values that no other scenario of the suite produces:
   them. A refuted row is created under an owner of its own. Where no such branch exists,
   `ESS-SYNTH-017` names the related source; it says "does not set" only of a key the creating
   branch's `sets:` does not write.
+- Where the field such a key reads is the related row's own link to its owner, the value is an
+  owner's identity, which the arrangement creates and the pattern cannot choose (beyond10x/ess#272).
+  Each value the pattern gives the key then stands for one owner, created before any related row,
+  and every related row given that value is filed under it: rows given one value share an owner and
+  a group, and the group's key is asserted as that owner's identity, which only this scenario
+  created.
+- A creating command with a `when_related:` guard on a sibling branch (beyond10x/ess#272) creates
+  every row with the row its guard reads arranged first and the guard's input pointed at it, as its
+  outcome scenarios arrange it (#211, #270, #271); the row is created only where that row, crossed
+  with the row's input, selects the creating branch. Where the group key is the one read through
+  the guard's own input (above), that related row is the guard's row. An input a guard predicate
+  compares with the related row's link to its owner (`study_id != input.study_id`) always names
+  an arranged owner, and the related row is filed under it: the owner the guard's row was filed
+  under, where the plan arranged that row for a copied key; one owner per value, as above, where a
+  group key is filled from the input; and, where the view does not read the input (a key on
+  another input, or no key), two owners — the first row under one and every other under the
+  second — so a target counting one owner's rows alone reports fewer. Several inputs compared
+  with the link all name the one owner. Where the row's own owner link is filled from one of them,
+  its owner is the one named; a row owned through another input keeps its own owner beside it.
+  Rows given one value of a key filled from the guard's own input (`sample_id`) share one related
+  row where they name one owner, so a group holds several rows and a target counting groups
+  rather than rows fails. A field filled from a compared input that is a scope or an aggregate
+  input, two group keys filled from compared inputs, and an absent value of such a key are
+  refused naming why. The guard's refusal branches are witnessed by their own scenarios, not by
+  this one.
 - The scoped value for group `g` is the text `"<view>/<g>"` for `String` and
   `uuid("<view>/<g>")` for `Uuid`. `uuid` is the FNV-derived builder at `witness.rs:690-697`, seeded
   with that text.
