@@ -257,6 +257,42 @@ possible answer beside whatever the declarations after it select; then the defau
 after the answer is never evaluated, so an optional it reads may be absent; a guard read before it
 that the input cannot decide is `Undecidable`.
 
+### An optional input's absence in a boundary row (beyond10x/ess#280)
+
+```yaml
+outcomes:
+  - {name: provider-not-allowed, when: {scope: Budget, provider: {exists: true}}, error: demo.InvalidScope}
+  - {name: provider-missing, when: {scope: Provider, provider: {exists: false}}, error: demo.InvalidScope}
+  - {name: set, creates: demo.Quota}
+```
+
+Every witness search chose the right inputs. `boundaries` then sent each boundary row by writing
+its fields over the input the scenario had already sent, and a field the row left out kept the
+sent input's value. The default's row `{scope: Budget}`, with `provider` absent and so refuting
+`provider-not-allowed`, went out as `{scope: Budget, provider: "provider"}` and required `set`. The
+same merge sent one `any:` refusal over both guards `{kind: Repair, repair_of: "repair_of"}`, an
+input its own guard refutes. A field the row leaves out is now removed from what is sent.
+
+**Synthesis checks its own output for this.** `precedence_contradictions` reads the finished suite
+the way `unwitnessed_overlaps` does. It checks every `execute_command` step followed by an
+`expect_outcome` and refuses the scenario (`ESS-SYNTH-019`, `PrecedenceContradicted`, a drift alarm)
+in either of two cases:
+
+- an earlier branch claims the input: an input-guarded refusal answered before the required branch
+  (`sibling_refusals`), or an accepting `when:` branch declared before it (`earlier_accepting_branches`);
+- the required branch's own `when:` refutes the input.
+
+The scenario is withdrawn, and the refusal names the required branch, the branch taken first, its
+guard and the input.
+
+Only literals are read. A guard is not decided where it reads a field sent as a reference to an
+arranged row, or anything but the command's input, such as a caller attribute or a quantifier's
+binder: `defined()` would read either as absent. On a command guarded by a related row,
+`existing_instance:` and the `exists: false` branch answer first, so a step requiring them is not
+checked. `tests/enum_presence_guard.rs` runs the check over every `examples/` and `models/` system and
+every single-document `.yaml` fixture under a crate's `tests/fixtures/` that compiles (79), and none
+carries such a step.
+
 ## Entity Runtime
 
 Entity Runtime selects the first branch whose guard holds. The lowering in
