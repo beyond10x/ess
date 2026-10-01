@@ -32,3 +32,7 @@ types:
       - {name: operation, type: String}
       - {name: schema, type: String}
       - {name: payload, type: String}
+  - name: demo.Invalid
+    kind: struct
+    fields:
+      - {name: detail, type: 'Optional<String>'}
