@@ -56,6 +56,7 @@ constructs keeps its bytes and its compiled digest under the older header.
 | `ess/17` | [0.39.0][r39] | `returns: true` on an outcome. |
 | `ess/18` | [0.41.0][r41] | Several states in `when_subject_state:`, `state` in `when_subject`, `when_related:`, and a binding's delivery context. |
 | `ess/19` | [0.46.0][r46] | `payload:` sources for the fields of the error an outcome reports. |
+| `ess/20` | Unreleased | `state`, the related row's held lifecycle state, in a `when_related:` predicate. |
 
 The paragraphs below give each version's rules.
 
@@ -210,6 +211,21 @@ and on `unknown_instance:`, which answer before any row is read. A field with no
 carried as none, as before. The conformance interpreter carries the declared fields, a
 synthesized suite compares every one whose value a scenario determines, and the Rust target
 generates a behaviour whose every error field has a source or is read from the held row.
+
+`ess/20` is unreleased: in the current source and no release yet. It collects the new authored
+constructs of the next release; each is refused under an earlier header with
+`unsupported_format_version`, and a model without them keeps its bytes and compiled digest. A
+`when_related:` predicate may read the related row's held lifecycle state as `state`, as a
+`when_subject` predicate reads the addressed subject's from `ess/18`:
+`when_related: {via: input.candidate, predicate: state != Accepted}` (beyond10x/ess#229). The
+path is typed by the related entity's lifecycle, so a state it does not declare is refused, and
+it enters the same related-row × input partition as the row's stored fields. An entity cannot
+declare a stored field named `state`, so no document that validated before changes meaning.
+Under `ess/18` and `ess/19` the path is refused with `unsupported_format_version` naming
+`ess/20`, not as an unobservable fact. A synthesized suite witnesses the guard on a related row
+in a state that selects each side, between decoy rows in the other. Where the move that brings that row
+into a state reads a related row of the same entity, synthesis arranges that row one level deep,
+fresh in its initial state, from `ess/20` only; an earlier document synthesizes the suite it did.
 
 ## `ess-diff/` — what moved between two revisions
 

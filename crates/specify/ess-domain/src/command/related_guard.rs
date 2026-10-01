@@ -6,7 +6,8 @@
 //! * `{via: input.<field>, exists: false}` is taken when no row of the entity whose identity
 //!   `<field>` carries exists;
 //! * `{via: input.<field>, predicate: <p>}` is taken when that row exists and `<p>` — over the row's
-//!   declared stored fields and, as in a `when_subject` predicate, the input under `input.` — holds.
+//!   declared stored fields, from `ess/20` its held lifecycle state as `state` (beyond10x/ess#229),
+//!   and, as in a `when_subject` predicate, the input under `input.` — holds.
 //!
 //! One hop, and only by identity: the row is the one whose identity is the input's value, so the
 //! entity is the one `<field>`'s type is the identity of ([`super::related_value::referenced_entity`],
@@ -553,8 +554,22 @@ fn entity_or_refusal<'a>(
     }
 }
 
-/// The expression checker, over the related entity's declared stored fields and the command's input
-/// under `input.` — the environment a `when_subject` predicate is checked in, for another row.
+/// Whether the document's format reads the related row's held state as `state` (ess/20,
+/// beyond10x/ess#229). Below it the path is refused with the format it needs.
+fn admits_state(types: &TypeRegistry) -> bool {
+    super::subject_fact::admits_state_from(types, crate::system::FormatVersion::V20)
+}
+
+/// The fields a `when_related` predicate reads: the related entity's stored fields and, from
+/// `ess/20`, its held state as `state`, typed by its lifecycle — the list a `when_subject`
+/// predicate reads from `ess/18` (beyond10x/ess#204), for another row.
+fn readable_fields(entity: &EntitySpec, types: &TypeRegistry) -> Vec<crate::types::Field> {
+    super::subject_fact::readable_fields(entity, admits_state(types))
+}
+
+/// The expression checker, over the related entity's declared stored fields — from `ess/20` with
+/// its held state as `state` — and the command's input under `input.`: the environment a
+/// `when_subject` predicate is checked in, for another row.
 fn check(
     command: &CommandSpec,
     entity: &EntitySpec,
@@ -564,7 +579,20 @@ fn check(
 ) -> ValidationErrors {
     let owner = site.render();
     let mut errors = ValidationErrors::new();
-    let mut environment = DomainEnvironment::new(types, &entity.fields);
+    if super::subject_fact::reads_state(predicate) && !admits_state(types) {
+        errors.push(
+            ValidationError::at(
+                site.clone(),
+                ValidationCode::UnsupportedFormatVersion,
+                "reading the related row's held lifecycle state as `state` in a `when_related` \
+                 predicate requires specification format ess/20",
+            )
+            .with_hint("declare `format: ess/20`"),
+        );
+        return errors;
+    }
+    let readable = readable_fields(entity, types);
+    let mut environment = DomainEnvironment::new(types, &readable);
     let reads_input = !entity
         .fields
         .iter()
@@ -590,7 +618,8 @@ fn check(
                 )
                 .expect("writing to a String");
                 diagnostic.hint = Some(format!(
-                    "stored fields: {}; the input is read as `input.<field>`",
+                    "stored fields: {}; the input is read as `input.<field>`, and the held \
+                     lifecycle state as `state` (ess/20)",
                     super::join(entity.fields.iter().map(|field| &field.name))
                 ));
             }
@@ -639,8 +668,9 @@ fn validate_partition(
         })
         .collect();
     let default = command.default_outcome();
+    let readable = readable_fields(entity, types);
     let Some(cases) = super::finite::analyze_with_fields(
-        &DomainEnvironment::new(types, &entity.fields),
+        &DomainEnvironment::new(types, &readable),
         &DomainEnvironment::new(types, &command.input),
         &guards,
     ) else {

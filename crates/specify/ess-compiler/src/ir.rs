@@ -2198,6 +2198,11 @@ pub struct EssIr {
     /// bytes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     preconditions: Vec<ResolvedPrecondition>,
+    /// The specification format the document declares, which `ess-domain` validated it under:
+    /// a consumer whose behaviour a format admits reads it here. Not serialized, so a model
+    /// keeps its bytes and compiled digest under any header.
+    #[serde(skip)]
+    format: ess_domain::system::FormatVersion,
 }
 
 /// One ambient command invocation, with its command and actor resolved (ess/15,
@@ -2240,6 +2245,7 @@ pub(crate) struct EssIrParts {
     pub(crate) components: BTreeMap<ComponentName, ResolvedComponent>,
     pub(crate) workloads: BTreeMap<ComponentName, ResolvedWorkload>,
     pub(crate) preconditions: Vec<ResolvedPrecondition>,
+    pub(crate) format: ess_domain::system::FormatVersion,
 }
 
 impl EssIr {
@@ -2263,6 +2269,7 @@ impl EssIr {
             components: parts.components,
             workloads: parts.workloads,
             preconditions: parts.preconditions,
+            format: parts.format,
         }
     }
 
@@ -2351,6 +2358,11 @@ impl EssIr {
     /// The ambient command invocations every scenario runs inside, in order (ess/15).
     pub fn preconditions(&self) -> &[ResolvedPrecondition] {
         &self.preconditions
+    }
+    /// The specification format the document declares (`ess/N`): what it may mean is what that
+    /// format admits, as `ess-domain` validated it.
+    pub fn format(&self) -> ess_domain::system::FormatVersion {
+        self.format
     }
 
     /// Every relation carried by a field of `entity`, keyed by that field's name.

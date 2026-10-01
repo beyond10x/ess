@@ -1,0 +1,101 @@
+format: ess/20
+system: demo
+version: v1
+domain: demo.release
+summary: A release is published only for a candidate in state Accepted.
+types:
+  - {name: demo.release.ReleaseId, kind: newtype, of: Uuid}
+  - {name: demo.release.CandidateId, kind: newtype, of: Uuid}
+entities:
+  - name: demo.release.Candidate
+    identity: {name: candidate_id, type: demo.release.CandidateId}
+    fields: []
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Accepted]
+      terminal: [Accepted]
+      transitions:
+        - {name: accept, from: [Proposed], to: Accepted}
+  - name: demo.release.Release
+    identity: {name: release_id, type: demo.release.ReleaseId}
+    fields: []
+    lifecycle:
+      initial: Draft
+      states: [Draft, Published]
+      terminal: [Published]
+      transitions:
+        - {name: publish, from: [Draft], to: Published}
+errors:
+  - {name: demo.release.NoCandidate, summary: No candidate carries that identity., fields: []}
+  - {name: demo.release.CandidateNotAccepted, summary: The candidate is not accepted., fields: []}
+events:
+  - name: demo.release.CandidateProposed
+    fields: [{name: candidate_id, type: demo.release.CandidateId}]
+  - name: demo.release.CandidateAccepted
+    fields: [{name: candidate_id, type: demo.release.CandidateId}]
+  - name: demo.release.ReleaseDrafted
+    fields: [{name: release_id, type: demo.release.ReleaseId}]
+  - name: demo.release.ReleasePublished
+    fields: [{name: release_id, type: demo.release.ReleaseId}]
+actors:
+  - name: demo.release.Maintainer
+    may:
+      - demo.release.ProposeCandidate
+      - demo.release.AcceptCandidate
+      - demo.release.DraftRelease
+      - demo.release.PublishRelease
+commands:
+  - name: demo.release.ProposeCandidate
+    input: []
+    outcomes:
+      - name: proposed
+        creates: demo.release.Candidate
+        instance: candidate_id
+        emits: [demo.release.CandidateProposed]
+        payload: {demo.release.CandidateProposed: {candidate_id: {generated: true}}}
+  - name: demo.release.AcceptCandidate
+    input:
+      - {name: candidate_id, type: demo.release.CandidateId}
+    outcomes:
+      - name: accepted
+        moves: demo.release.Candidate.accept
+        instance: candidate_id
+        emits: [demo.release.CandidateAccepted]
+        payload: {demo.release.CandidateAccepted: {candidate_id: input.candidate_id}}
+  - name: demo.release.DraftRelease
+    input: []
+    outcomes:
+      - name: drafted
+        creates: demo.release.Release
+        instance: release_id
+        emits: [demo.release.ReleaseDrafted]
+        payload: {demo.release.ReleaseDrafted: {release_id: {generated: true}}}
+  - name: demo.release.PublishRelease
+    input:
+      - {name: release_id, type: demo.release.ReleaseId}
+      - {name: candidate, type: demo.release.CandidateId}
+    outcomes:
+      - name: no-candidate
+        when_related: {via: input.candidate, exists: false}
+        error: demo.release.NoCandidate
+      - name: not-accepted
+        when_related: {via: input.candidate, predicate: state != Accepted}
+        error: demo.release.CandidateNotAccepted
+      - name: published
+        moves: demo.release.Release.publish
+        instance: release_id
+        emits: [demo.release.ReleasePublished]
+        payload: {demo.release.ReleasePublished: {release_id: input.release_id}}
+views:
+  - name: demo.release.Candidates
+    source: demo.release.Candidate
+    consistency: read_your_writes
+    fields:
+      - {name: candidate_id, type: demo.release.CandidateId}
+      - {name: state, type: demo.release.Candidate.State}
+  - name: demo.release.Releases
+    source: demo.release.Release
+    consistency: read_your_writes
+    fields:
+      - {name: release_id, type: demo.release.ReleaseId}
+      - {name: state, type: demo.release.Release.State}

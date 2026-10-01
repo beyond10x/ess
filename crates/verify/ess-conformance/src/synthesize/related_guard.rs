@@ -50,6 +50,10 @@ const BLOCK: usize = 27_720;
 const OWN: usize = 5;
 const DRIVEN: usize = 7;
 
+/// The block a related row of an entity already being arranged is created in, one level deep
+/// ([`nested`]): apart from both, so it names no row a scenario or a driver arranges.
+const NESTED: usize = 9;
+
 /// The distinction the related row of the `distinction`th witness is arranged at, in block `base`:
 /// four apart, so no row and no decoy either side of it (one away) is another witness's, and every
 /// further instance a driver arranges reads a related row of its own (beyond10x/ess#211).
@@ -99,6 +103,18 @@ pub(super) fn owner_is_related(
                 && set.conversion.is_none()
                 && matches!(&set.value, ResolvedPayloadValue::InputField { field, .. } if field == via.field())
         })
+}
+
+/// Whether the document's format arranges a related row of an entity already being arranged, one
+/// level deep ([`nested`]): from `ess/20`, the format whose `state` operand in `when_related` needs
+/// it (beyond10x/ess#229). Below it such a run stops, as it did before that format existed.
+pub(super) fn nests(ir: &EssIr) -> bool {
+    ir.format().major() >= ess_domain::system::FormatVersion::V20.major()
+}
+
+/// Whether this command's related guards read a row of `entity`.
+pub(super) fn reads_entity(command: &ResolvedCommand, entity: &EntityHandle) -> bool {
+    read(command).is_some_and(|(_, related)| related == entity)
 }
 
 /// Whether any branch of this command reads a related row.
@@ -309,9 +325,14 @@ pub(super) fn drive(
     let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
         matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == field)
     });
-    if names_subject || bound.contains_key(field) || arranging.contains(&entity) {
+    // Below `ess/20` a related row of an entity already being arranged stops the run, before
+    // any branch is looked at, as it always did: a document without an `ess/20` construct
+    // synthesizes the suite it did (beyond10x/ess#229, adversary pass 2).
+    if names_subject || bound.contains_key(field) || (!nests(ir) && arranging.contains(&entity)) {
         return Err(unarranged());
     }
+    // From `ess/20`, a missing row arranges nothing, so the `exists: false` branch is sent
+    // whatever is being arranged around it: no row of `entity` is created, and nothing recurses.
     if is_absent(driver.outcome) {
         let input = match input {
             Some(chosen) => {
@@ -325,6 +346,23 @@ pub(super) fn drive(
         return Ok(super::invoke_with(
             ir, driver, instance, actors, bound, &input,
         ));
+    }
+    // A related row of an entity already being arranged — the mover that brings a candidate to
+    // `Accepted` reading a parent candidate — is arranged one level deep, where it rests in its
+    // initial state, and never searched for along its lifecycle (beyond10x/ess#229, adversary pass
+    // 1).
+    // Reached from `ess/20` only: below it the run stopped above.
+    if arranging.contains(&entity) {
+        return nested(
+            ir,
+            driver,
+            instance,
+            actors,
+            distinction,
+            bound,
+            input,
+            arranging,
+        );
     }
     // An owner the caller already bound for a link input — the one `created_owned` arranged for the
     // subject this run creates — is the owner the run is sent naming: the related row is arranged
@@ -353,6 +391,92 @@ pub(super) fn drive(
     )?;
     let mut bound = bound.clone();
     bound.extend(owners);
+    bound.insert(field.to_owned(), row.instance.clone());
+    let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
+    let mut steps = row.steps;
+    steps.append(&mut invocation.steps);
+    invocation.steps = steps;
+    invocation.source.extend(row.source);
+    Ok(invocation)
+}
+
+/// [`drive`] where the related row is of an entity `arranging` already names: one level deep, a
+/// fresh row where its lifecycle starts, and the run sent only where that row selects its branch.
+///
+/// A row searched for along its lifecycle would be moved by the same commands that are arranging
+/// the outer row, and could need a related row of its own again, without end; the initial state
+/// needs no move. Inside that nested row's own arrangement the entity is named twice, and a
+/// further related row of it is refused, naming why. Where the fresh row does not select the
+/// branch — "accept only below an accepted parent" — the refusal says so: the row the guard needs
+/// is one this bound does not arrange.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+fn nested(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    chosen: Option<&BTreeMap<String, Node>>,
+    arranging: &[&EntityHandle],
+) -> Result<super::Invocation, RefusalCause> {
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let field = via.field();
+    let refused = |why: &str, tried: usize| RefusalCause::GuardUnsatisfiable {
+        predicate: format!(
+            "a related row of `{}` for `input.{field}` of `{}`, inside an arrangement of `{}`: \
+             {why}",
+            entity.name(),
+            driver.command.name,
+            entity.name()
+        ),
+        tried,
+    };
+    if arranging.iter().filter(|held| **held == entity).count() > 1 {
+        return Err(refused(
+            "already nested once; a related row of an entity being arranged is arranged one \
+             level deep only",
+            0,
+        ));
+    }
+    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+    let row = row_at(ir, entity, actors, block_start(NESTED, distinction), &chain)
+        .ok_or_else(|| refused("no row of it can be created where its lifecycle starts", 0))?;
+    let inputs = if let Some(chosen) = chosen {
+        vec![chosen.clone()]
+    } else {
+        let predicates = predicates(driver.command);
+        let grounded = subject_fact::grounded(ir, entity, &row.settled, &predicates);
+        let mut searched: Vec<&Predicate> = driver
+            .command
+            .outcomes
+            .iter()
+            .filter_map(input_guard)
+            .collect();
+        searched.extend(grounded.iter());
+        candidates(ir, driver.command, &searched, distinction).map_err(RefusalCause::NoWitness)?
+    };
+    let tried = inputs.len();
+    let input = inputs
+        .into_iter()
+        .find(|input| {
+            selects(ir, driver.command, entity, Some(&row), input)
+                .ok()
+                .flatten()
+                .is_some_and(|branch| branch.name == driver.outcome.name)
+        })
+        .ok_or_else(|| {
+            refused(
+                &format!(
+                    "a fresh row in state `{}` does not select `{}`, and a row in any other state \
+                     would be moved by the arrangement it is nested in",
+                    row.state, driver.outcome.name
+                ),
+                tried,
+            )
+        })?;
+    let mut bound = bound.clone();
     bound.insert(field.to_owned(), row.instance.clone());
     let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
     let mut steps = row.steps;

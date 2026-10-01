@@ -2968,6 +2968,7 @@ fn search_from<T>(
         distinction,
         (arranging, under),
     )?;
+    let mut nested = false;
     let mut seen = BTreeSet::new();
     let mut first: Option<RefusalCause> = None;
     loop {
@@ -3033,9 +3034,12 @@ fn search_from<T>(
                 {
                     continue;
                 }
-                next.extend(successors(
-                    ir, entity, driver, node, actors, hints, arranging, &follow,
-                ));
+                let moved = successors(ir, entity, driver, node, actors, hints, arranging, &follow);
+                // A move reading a related row of this entity, which left no row: the one-level
+                // bound on such a row ([`super::related_guard`]) is what stopped it (#229).
+                nested |=
+                    moved.is_empty() && super::related_guard::reads_entity(driver.command, entity);
+                next.extend(moved);
             }
         }
         level = next;
@@ -3049,17 +3053,31 @@ fn search_from<T>(
             &hints.iter().collect::<Vec<_>>(),
             format!(
                 "`{entity}` stored {field} selecting this branch, over the rows {} bounded \
-                 arrangements left{}",
+                 arrangements left{}{}",
                 seen.len(),
                 if beyond {
                     format!("; {}", beyond_reach(&follow.names()))
                 } else {
                     String::new()
-                }
+                },
+                nested_bound(entity, nested && super::related_guard::nests(ir)),
             ),
             seen.len(),
         )
     }))
+}
+
+/// What a search says where a move toward the goal read a related row of the searched entity
+/// itself and left no row: the one-level bound on such a row stopped it (beyond10x/ess#229).
+fn nested_bound(entity: &EntityHandle, nested: bool) -> String {
+    if nested {
+        format!(
+            "; a move toward it reads a related row of `{entity}` itself, which is arranged one \
+             level deep and only where its lifecycle starts"
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// The first input that selects `outcome` for the row `arrangement` holds.
