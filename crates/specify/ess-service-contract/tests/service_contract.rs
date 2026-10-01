@@ -544,30 +544,19 @@ fn expected_obligations() -> Vec<(Capability, ImplementationObligation)> {
 }
 
 fn expected_refusals() -> Vec<(Capability, SynthesisRefusal)> {
-    vec![
-        (
-            Capability {
-                kind: CapabilityKind::ActorGrants,
-                source: "contract.local.Operator".to_owned(),
-            },
-            SynthesisRefusal {
-                reason: RefusalReason::NeedsCallerIdentity,
-                stage: RefusalStage::Planning,
-                detail: "may invoke `contract.local.Admin`, `contract.local.Run`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry".to_owned(),
-            },
-        ),
-        (
-            Capability {
-                kind: CapabilityKind::Workload,
-                source: "local-service".to_owned(),
-            },
-            SynthesisRefusal {
-                reason: RefusalReason::TopologyDeferred,
-                stage: RefusalStage::Planning,
-                detail: "requires at least 2 replica(s); topology synthesis is deferred with its design".to_owned(),
-            },
-        ),
-    ]
+    vec![(
+        Capability {
+            kind: CapabilityKind::Workload,
+            source: "local-service".to_owned(),
+        },
+        SynthesisRefusal {
+            reason: RefusalReason::TopologyDeferred,
+            stage: RefusalStage::Planning,
+            detail:
+                "requires at least 2 replica(s); topology synthesis is deferred with its design"
+                    .to_owned(),
+        },
+    )]
 }
 
 fn is_explicitly_non_generated(planned: &ess_synth::PlannedCapability) -> bool {
@@ -578,7 +567,6 @@ fn is_explicitly_non_generated(planned: &ess_synth::PlannedCapability) -> bool {
                 CapabilityKind::Conversion,
                 "contract.local.Shared -> contract.foreign.ForeignPayload"
             )
-            | (CapabilityKind::ActorGrants, "contract.local.Operator")
             | (
                 CapabilityKind::BindingTransformation | CapabilityKind::BindingEscalation,
                 "react-public"
