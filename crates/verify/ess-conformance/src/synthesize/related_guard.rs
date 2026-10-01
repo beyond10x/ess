@@ -316,7 +316,8 @@ pub(super) fn drive(
         let input = match input {
             Some(chosen) => {
                 let mut chosen = chosen.clone();
-                chosen.insert(field.to_owned(), fresh_identity(ir, driver.command, field)?);
+                let fresh = fresh_identity(ir, driver.command, field, Some(&chosen))?;
+                chosen.insert(field.to_owned(), fresh);
                 chosen
             }
             None => without_row(ir, driver.command, entity, field, distinction)?,
@@ -764,7 +765,7 @@ fn without_row_each(
     field: &str,
     distinction: Distinction,
 ) -> Result<Vec<BTreeMap<String, Node>>, RefusalCause> {
-    let fresh = fresh_identity(ir, command, field)?;
+    let fresh = fresh_identity(ir, command, field, None)?;
     let refusals = command
         .outcomes
         .iter()
@@ -976,7 +977,7 @@ pub(super) fn point_at_missing(
     input: &mut BTreeMap<String, Node>,
 ) -> Result<(), RefusalCause> {
     let (via, _) = read(command).ok_or_else(unarranged)?;
-    let fresh = fresh_identity(ir, command, via.field())?;
+    let fresh = fresh_identity(ir, command, via.field(), Some(&*input))?;
     input.insert(via.field().to_owned(), fresh);
     Ok(())
 }

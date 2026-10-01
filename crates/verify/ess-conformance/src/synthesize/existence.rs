@@ -94,15 +94,16 @@ pub(super) enum Fresh {
 }
 
 impl Fresh {
+    fn slot(self) -> usize {
+        match self {
+            Self::Created => 0,
+            Self::CreatedAgain => 1,
+            Self::Stored(nth) => 2 + nth.min(FRESH_SLOTS - 3),
+        }
+    }
+
     fn distinction(self) -> Distinction {
-        Distinction::further(
-            FRESH_BASE
-                + match self {
-                    Self::Created => 0,
-                    Self::CreatedAgain => 1,
-                    Self::Stored(nth) => 2 + nth.min(FRESH_SLOTS - 3),
-                },
-        )
+        Distinction::further(FRESH_BASE + self.slot())
     }
 }
 
@@ -119,11 +120,17 @@ fn creates_beside_existing(command: &ResolvedCommand, outcome: &ResolvedOutcome)
 /// The value of the identity field at `fresh`'s witness, refused where the type has too few values
 /// to keep it apart from every witness an arrangement, the unknown-identity scenario or another
 /// call of this module sends.
+///
+/// Where that value would change the branch `input` takes — a guard reads the identity — the
+/// slot's own value inside the guards is taken instead ([`super::guided_identity`]), after the one
+/// the unknown-identity scenario takes, and the scenario is refused where the guards leave none
+/// (beyond10x/ess#275).
 fn identity_at(
     ir: &EssIr,
     command: &ResolvedCommand,
     field: &str,
     fresh: Fresh,
+    input: &BTreeMap<String, Node>,
 ) -> Result<Node, RefusalCause> {
     let value = |distinction: Distinction| {
         candidates(ir, command, &[], distinction)
@@ -150,6 +157,10 @@ fn identity_at(
     };
     let at = fresh.distinction();
     let mine = value(at)?.ok_or_else(unfresh)?;
+    if !super::keeps_branch(ir, command, input, field, &mine) {
+        return super::guided_identity(ir, command, field, input, 1 + fresh.slot())
+            .ok_or_else(|| super::unguided(command, field));
+    }
     let taken = (0..=MAX_CANDIDATES)
         .map(Distinction::further)
         .chain([Distinction::UNKNOWN])
@@ -186,7 +197,8 @@ pub(super) fn fresh_created(
         } else {
             Fresh::Created
         };
-        input.insert(field.to_owned(), identity_at(ir, command, field, fresh)?);
+        let identity = identity_at(ir, command, field, fresh, &input)?;
+        input.insert(field.to_owned(), identity);
     }
     Ok(input)
 }
@@ -805,8 +817,8 @@ fn segment(
     let subject = creating.subject.as_ref().ok_or_else(no_error)?;
     let error = declared.error.as_ref().ok_or_else(no_error)?;
     let at = fresh.distinction();
-    let identity = identity_at(ir, command, field, fresh)?;
     let mut first = creating_input(ir, command, creating, at)?;
+    let identity = identity_at(ir, command, field, fresh, &first)?;
     first.insert(field.to_owned(), identity.clone());
     let mut second = second;
     second.insert(field.to_owned(), identity);

@@ -39,11 +39,11 @@ use ess_primitives::facts::{FactPath, FactValue};
 use ess_primitives::node::Node;
 use ess_primitives::predicate::{Operand, Predicate};
 
-use super::{synthesize_plain, Synthesis};
+use super::{synthesize_plain, Note, Synthesis};
 use crate::scenario::{
     ConformanceScenario, ScenarioId, ScenarioStep, ScenarioValue, ViewExpectation,
 };
-use crate::witness::{candidates, Distinction};
+use crate::witness::{candidates, Distinction, MAX_CANDIDATES};
 
 /// How far the two callers' values sit from the plain witness: past every further instance an
 /// arrangement numbers, and short of [`Distinction::UNKNOWN`], so no input witness shares one.
@@ -51,6 +51,15 @@ const FIRST: usize = 1 << 18;
 
 /// The suffix a swapped run's instances are renamed with, so they bind apart from the first run's.
 const SWAPPED: &str = "swapped";
+
+/// The first witness a swapped run's caller-supplied identities are drawn from: between the
+/// callers' own values and [`Distinction::UNKNOWN`], past every further instance an arrangement
+/// numbers (beyond10x/ess#275).
+const SWAPPED_IDENTITY: usize = 1 << 19;
+
+/// How many further witnesses one swapped identity may try before the scenario keeps its first run
+/// only: a type with fewer values than the suite sends identities runs out.
+const SWAPPED_TRIES: usize = 64;
 
 /// Whether any actor of the model declares an attribute its credential carries.
 pub(super) fn uses(ir: &EssIr) -> bool {
@@ -156,10 +165,11 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
     let reading = reading(ir, &callers);
     let mut whole = run(ir, &callers, &|_| Who::First);
     let swapped = run(ir, &callers, &|_| Who::Second);
+    let mut identities = Identities::of(ir, whole.suite.scenarios.values());
     for (id, scenario) in &mut whole.suite.scenarios {
         if sends_any(scenario, &reading) {
             if let Some(again) = swapped.suite.scenarios.get(id) {
-                append(ir, scenario, again);
+                append(ir, (id, scenario), again, &mut identities, &mut whole.notes);
             }
         }
     }
@@ -178,7 +188,14 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
                 continue;
             }
             if let Some(again) = back.suite.scenarios.get(&id) {
-                append(ir, &mut scenario, again);
+                identities.take(&scenario.steps);
+                append(
+                    ir,
+                    (&id, &mut scenario),
+                    again,
+                    &mut identities,
+                    &mut whole.notes,
+                );
             }
             whole
                 .refusals
@@ -449,8 +466,16 @@ fn about(id: &ScenarioId, command: &QualifiedName) -> bool {
 }
 
 /// `again`'s steps after `scenario`'s own, with every instance and instant it binds renamed apart
-/// from the first run's, where both runs can share one scenario.
-fn append(ir: &EssIr, scenario: &mut ConformanceScenario, again: &ConformanceScenario) {
+/// from the first run's and every caller-supplied identity it sends drawn afresh, where both runs
+/// can share one scenario. A swapped run left out because no fresh identity could be drawn for it
+/// is named in `notes`, as an obligation the suite does not hold.
+fn append(
+    ir: &EssIr,
+    (id, scenario): (&ScenarioId, &mut ConformanceScenario),
+    again: &ConformanceScenario,
+    identities: &mut Identities<'_>,
+    notes: &mut Vec<Note>,
+) {
     let once = |steps: &[ScenarioStep]| {
         steps.iter().any(|step| {
             matches!(
@@ -465,10 +490,22 @@ fn append(ir: &EssIr, scenario: &mut ConformanceScenario, again: &ConformanceSce
     if once(&scenario.steps) || once(&again.steps) || reads_every_row(ir, &again.steps) {
         return;
     }
+    let drawn = match identities.drawn(&scenario.steps, &again.steps) {
+        Ok(drawn) => drawn,
+        Err(Exhausted { input, type_ref }) => {
+            notes.push(Note::UnswappedCallers {
+                scenario: id.clone(),
+                input,
+                type_ref,
+            });
+            return;
+        }
+    };
     let Ok(mut value) = serde_json::to_value(&again.steps) else {
         return;
     };
     rename(&mut value);
+    redraw(&mut value, &identities.keys, &drawn);
     let Some(value) = recaptured(ir, value) else {
         return;
     };
@@ -629,6 +666,356 @@ fn replace_observed(value: &mut serde_json::Value, captured: &BTreeMap<(String, 
             .iter_mut()
             .for_each(|inner| replace_observed(inner, captured)),
         _ => {}
+    }
+}
+
+/// The caller-supplied identities of the suite, and the fresh ones swapped runs are given
+/// (beyond10x/ess#275).
+///
+/// A swapped run is synthesized from the same witnesses as the first run, so it sends the same
+/// literal for an input that becomes a created identity; appended to the first run, it would send
+/// that identity a second time and still expect the creation, which an `existing_instance:`
+/// refusal answers instead. Each such literal is replaced, throughout the swapped run, by a value
+/// no scenario sends and no other swapped run was given, so the run stays consistent with itself —
+/// a refusal that sends its own run's stored identity again still sends it, an event field or a
+/// stored field that copies it expects the copy — and apart from every other row a target the
+/// scenarios share may hold.
+struct Identities<'a> {
+    ir: &'a EssIr,
+    /// Every command creating an identity from input, by name, with the inputs that become it.
+    creating: BTreeMap<String, (&'a ResolvedCommand, BTreeSet<String>)>,
+    /// Every declared field, input, event field and view column of an identity input's type, and
+    /// every name the model copies an identity under whatever its type ([`derived`]): where a
+    /// serialized run may carry a copy of an identity that is not text (see [`redraw`]).
+    keys: BTreeSet<String>,
+    /// Every identity a scenario sends or a swapped run was given, serialized.
+    taken: BTreeSet<String>,
+    /// The next witness past [`SWAPPED_IDENTITY`] to try.
+    next: usize,
+}
+
+/// Why a swapped run could not be given a fresh identity: the input and its type.
+struct Exhausted {
+    input: String,
+    type_ref: String,
+}
+
+impl<'a> Identities<'a> {
+    fn of<'s>(ir: &'a EssIr, scenarios: impl IntoIterator<Item = &'s ConformanceScenario>) -> Self {
+        let mut creating = BTreeMap::new();
+        let mut types = BTreeSet::new();
+        for command in ir.commands().values() {
+            let fields = super::identity_inputs(command);
+            if fields.is_empty() {
+                continue;
+            }
+            types.extend(
+                command
+                    .input
+                    .iter()
+                    .filter(|input| fields.contains(&input.name))
+                    .map(|input| input.type_ref.to_string()),
+            );
+            creating.insert(command.name.to_string(), (command, fields));
+        }
+        let declared = ir
+            .commands()
+            .values()
+            .flat_map(|command| &command.input)
+            .chain(ir.events().values().flat_map(|event| &event.fields))
+            .chain(
+                ir.entities()
+                    .values()
+                    .flat_map(|entity| std::iter::once(&entity.identity).chain(&entity.fields)),
+            )
+            .chain(
+                ir.views()
+                    .values()
+                    .flat_map(|view| view.fields.iter().chain(&view.params)),
+            );
+        let mut keys: BTreeSet<String> = declared
+            .filter(|field| types.contains(&field.type_ref.to_string()))
+            .map(|field| field.name.clone())
+            .collect();
+        keys.extend(derived(ir, &creating));
+        let mut identities = Self {
+            ir,
+            creating,
+            keys,
+            taken: BTreeSet::new(),
+            next: 0,
+        };
+        for scenario in scenarios {
+            identities.take(&scenario.steps);
+        }
+        identities
+    }
+
+    /// Every caller-supplied identity `steps` send as a literal.
+    fn sent<'s>(&self, steps: &'s [ScenarioStep]) -> Vec<Sent<'a, 's>> {
+        let mut sent = Vec::new();
+        for step in steps {
+            let ScenarioStep::ExecuteCommand { command, input, .. } = step else {
+                continue;
+            };
+            let Some((creating, fields)) = self.creating.get(&command.to_string()) else {
+                continue;
+            };
+            let literals: BTreeMap<String, Node> = input
+                .iter()
+                .filter_map(|(name, value)| match value {
+                    ScenarioValue::Literal { value } => Some((name.clone(), value.clone())),
+                    _ => None,
+                })
+                .collect();
+            for (name, value) in input {
+                if let ScenarioValue::Literal { value } = value {
+                    if fields.contains(name) {
+                        sent.push(Sent {
+                            command: creating,
+                            field: name,
+                            value,
+                            input: literals.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        sent
+    }
+
+    /// Records every caller-supplied identity `steps` send as taken.
+    fn take(&mut self, steps: &[ScenarioStep]) {
+        let keys: Vec<String> = self
+            .sent(steps)
+            .into_iter()
+            .map(|sent| key(sent.value))
+            .collect();
+        self.taken.extend(keys);
+    }
+
+    /// A fresh value for every caller-supplied identity `again` sends, by the serialized value it
+    /// replaces; [`Exhausted`] where the type has too few values to keep one apart from every
+    /// identity taken, in which case the scenario keeps its first run only.
+    fn drawn(
+        &mut self,
+        first: &[ScenarioStep],
+        again: &[ScenarioStep],
+    ) -> Result<BTreeMap<String, serde_json::Value>, Exhausted> {
+        let mut drawn = BTreeMap::new();
+        let sent = self.sent(again);
+        let mut avoid: BTreeSet<String> = self
+            .sent(first)
+            .iter()
+            .chain(&sent)
+            .map(|sent| key(sent.value))
+            .collect();
+        for one in &sent {
+            let old = key(one.value);
+            if drawn.contains_key(&old) {
+                continue;
+            }
+            let (command, field) = (one.command, one.field);
+            let exhausted = || Exhausted {
+                input: field.to_owned(),
+                type_ref: command
+                    .input
+                    .iter()
+                    .find(|input| input.name == field)
+                    .map(|input| input.type_ref.to_string())
+                    .unwrap_or_default(),
+            };
+            // Every step of the run sending this identity, each of which must take the branch it
+            // took with the old one.
+            let sending: Vec<&Sent<'_, '_>> = sent
+                .iter()
+                .filter(|other| key(other.value) == old)
+                .collect();
+            let fresh = self
+                .draw(command, field, &avoid, &sending)
+                .ok_or_else(exhausted)?;
+            let new = key(&fresh);
+            avoid.insert(new.clone());
+            self.taken.insert(new);
+            drawn.insert(old, serde_json::to_value(&fresh).map_err(|_| exhausted())?);
+        }
+        Ok(drawn)
+    }
+
+    /// The first value of `field` that no identity taken or in `avoid` carries and that every step
+    /// in `sending` takes its branch with ([`super::keeps_branch`]): far witnesses first, past every
+    /// witness an arrangement numbers, then the near ones a bounded type's witnesses are spread
+    /// over — the witness builder answers every far distance of a narrow range with one value —
+    /// then the values inside the guards that read it ([`super::guided_values`]), where a far
+    /// witness would take another branch.
+    fn draw(
+        &mut self,
+        command: &ResolvedCommand,
+        field: &str,
+        avoid: &BTreeSet<String>,
+        sending: &[&Sent<'_, '_>],
+    ) -> Option<Node> {
+        let far: Vec<Distinction> = (0..SWAPPED_TRIES)
+            .map(|offset| Distinction::further(SWAPPED_IDENTITY + self.next + offset))
+            .collect();
+        self.next += SWAPPED_TRIES;
+        let near = (0..=MAX_CANDIDATES).map(Distinction::further);
+        let witnesses = far.into_iter().chain(near).filter_map(|at| {
+            candidates(self.ir, command, &[], at)
+                .ok()
+                .and_then(|inputs| inputs.into_iter().next())
+                .and_then(|mut input| input.remove(field))
+        });
+        let guided = super::guided_values(self.ir, command, field);
+        for value in witnesses.chain(guided) {
+            let at = key(&value);
+            if self.taken.contains(&at) || avoid.contains(&at) {
+                continue;
+            }
+            if sending.iter().all(|sent| {
+                super::keeps_branch(self.ir, sent.command, &sent.input, sent.field, &value)
+            }) {
+                return Some(value);
+            }
+        }
+        None
+    }
+}
+
+/// One caller-supplied identity a step sends as a literal: the command, the input, the value, and
+/// every literal input of the step, against which a fresh value must keep the branch.
+struct Sent<'a, 's> {
+    command: &'a ResolvedCommand,
+    field: &'s str,
+    value: &'s Node,
+    input: BTreeMap<String, Node>,
+}
+
+/// Every name the model copies a caller-supplied identity under, by where its value comes from
+/// rather than by the type it lands at (beyond10x/ess#275): an event field or a stored field a
+/// creating branch sets from the identity input — through a declared conversion into a plain
+/// `Integer`, or into an `Optional` of the identity's type — and, transitively, an event field or
+/// a stored field any branch sets from such a stored field. A view shows a stored field under its
+/// own name, so the stored names cover the view rows too.
+fn derived(
+    ir: &EssIr,
+    creating: &BTreeMap<String, (&ResolvedCommand, BTreeSet<String>)>,
+) -> BTreeSet<String> {
+    fn copies(
+        entry: &ResolvedPayloadField,
+        from_input: &BTreeSet<String>,
+        from_stored: &BTreeSet<String>,
+        found: &mut BTreeSet<String>,
+    ) {
+        match &entry.value {
+            ResolvedPayloadValue::InputField { field, .. }
+            | ResolvedPayloadValue::InputOrGenerated { field, .. }
+                if from_input.contains(field) =>
+            {
+                found.insert(entry.target.clone());
+            }
+            ResolvedPayloadValue::SubjectField { field, .. } if from_stored.contains(field) => {
+                found.insert(entry.target.clone());
+            }
+            ResolvedPayloadValue::Struct { fields } => {
+                for leaf in fields {
+                    copies(leaf, from_input, from_stored, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let entries = |command: &ResolvedCommand| -> Vec<ResolvedPayloadField> {
+        command
+            .outcomes
+            .iter()
+            .flat_map(|outcome| {
+                outcome
+                    .payload
+                    .iter()
+                    .flat_map(|payload| payload.fields.iter())
+                    .chain(&outcome.sets)
+            })
+            .cloned()
+            .collect()
+    };
+    let mut found = BTreeSet::new();
+    for (command, fields) in creating.values() {
+        for entry in entries(command) {
+            copies(&entry, fields, &BTreeSet::new(), &mut found);
+        }
+    }
+    let none = BTreeSet::new();
+    loop {
+        let before = found.len();
+        let stored = found.clone();
+        for command in ir.commands().values() {
+            for entry in entries(command) {
+                copies(&entry, &none, &stored, &mut found);
+            }
+        }
+        if found.len() == before {
+            return found;
+        }
+    }
+}
+
+/// A value, serialized, as the set of taken identities holds it.
+fn key(value: &Node) -> String {
+    serde_json::to_string(value).unwrap_or_default()
+}
+
+/// `value` with every identity `drawn` names replaced by its fresh value, wherever the serialized
+/// run carries it: in an input, an event payload, a view row or an expectation.
+///
+/// Every identity replaced is a witness the suite chose for that input alone, so a text equal to it
+/// anywhere in the run is that identity, under whatever name the model copies it — an event field
+/// that echoes it, a stored field a view shows, another command's input. A number or a Boolean is
+/// not so particular (a count, a position or another input may equal it), so one is replaced only
+/// under a name `keys` declares at an identity input's type.
+fn redraw(
+    value: &mut serde_json::Value,
+    keys: &BTreeSet<String>,
+    drawn: &BTreeMap<String, serde_json::Value>,
+) {
+    if drawn.is_empty() {
+        return;
+    }
+    redraw_under(value, false, keys, drawn);
+}
+
+/// [`redraw`] of `value`, which a name in `keys` holds where `typed`.
+fn redraw_under(
+    value: &mut serde_json::Value,
+    typed: bool,
+    keys: &BTreeSet<String>,
+    drawn: &BTreeMap<String, serde_json::Value>,
+) {
+    match value {
+        serde_json::Value::Object(map) => {
+            // A literal scenario value is the value it wraps, under the name that holds it.
+            let literal = map.get("kind").and_then(serde_json::Value::as_str) == Some("literal");
+            for (name, inner) in map.iter_mut() {
+                let typed = keys.contains(name) || (literal && typed && name == "value");
+                redraw_under(inner, typed, keys, drawn);
+            }
+        }
+        serde_json::Value::Array(items) => items
+            .iter_mut()
+            .for_each(|inner| redraw_under(inner, typed, keys, drawn)),
+        serde_json::Value::String(_) => {
+            if let Some(new) = drawn.get(&value.to_string()) {
+                *value = new.clone();
+            }
+        }
+        serde_json::Value::Number(_) | serde_json::Value::Bool(_) => {
+            if typed {
+                if let Some(new) = drawn.get(&value.to_string()) {
+                    *value = new.clone();
+                }
+            }
+        }
+        serde_json::Value::Null => {}
     }
 }
 
