@@ -1899,7 +1899,7 @@ impl App {
                     let Body::Composite(Composite::Choice(choice)) = &node.body else {
                         return;
                     };
-                    let options = self.choice_options(choice, &ctx);
+                    let options = self.choice_options(choice, None, &ctx);
                     if options.is_empty() {
                         return;
                     }
@@ -1978,10 +1978,12 @@ impl App {
         Vec::new()
     }
 
-    /// The options of a choice: `(value, label)`.
+    /// The options of a choice: `(value, label)`. A row's value is its `field` key when the
+    /// choice belongs to a form field and the row carries one, else its `id`, else the row.
     pub(crate) fn choice_options(
         &self,
         choice: &ess_ui::Choice,
+        field: Option<&str>,
         ctx: &Ctx<'_>,
     ) -> Vec<(Value, String)> {
         if !choice.options.is_empty() {
@@ -2001,7 +2003,11 @@ impl App {
                     .rows
                     .iter()
                     .map(|row| {
-                        let value = row.get("id").cloned().unwrap_or_else(|| row.clone());
+                        let value = field
+                            .and_then(|field| row.get(field))
+                            .or_else(|| row.get("id"))
+                            .cloned()
+                            .unwrap_or_else(|| row.clone());
                         let label = row
                             .get("label")
                             .or_else(|| row.get("name"))
@@ -2124,7 +2130,7 @@ impl App {
                 else {
                     return;
                 };
-                let options = self.choice_options(choice, ctx);
+                let options = self.choice_options(choice, Some(&field.field), ctx);
                 if options.is_empty() {
                     return;
                 }
