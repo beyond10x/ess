@@ -729,6 +729,32 @@ fn an_unbound_required_view_param_is_an_error() {
 }
 
 #[test]
+fn a_confirm_referencing_a_view_with_a_required_param_is_not_an_error() {
+    // A confirm's `references` has no `params:` slot; the confirm's context may supply them, and
+    // the specification does not say how, so nothing is reported unbound there.
+    let text = doc(&[
+        ("model", "shop"),
+        (
+            "pages",
+            "{p: {kind: detail_page, title: P, sections: [{name: summary, reads: stock.Items}], \
+             overlays: {sure: {kind: dialog, component: confirm, does: stock.AddItem, \
+             references: stock.Labelled}}}}",
+        ),
+    ]);
+    let report = report_with(&text, Some(&param_model()), &Options::default());
+    assert!(
+        tripped(&report, "view_in_model").is_empty(),
+        "the reference resolves: {:#?}",
+        report.findings
+    );
+    assert!(
+        tripped(&report, "read_params").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
 fn a_model_that_does_not_compile_is_refused() {
     let error = load_model(&crate_dir().join("tests/fixtures/no-such-model"))
         .expect_err("a missing model is refused");

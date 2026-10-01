@@ -37,7 +37,7 @@ use ess_ui::{
     Reads,
 };
 
-use crate::walk::{composite_reads, in_declaration, is_section, section_of};
+use crate::walk::{composite_reads, in_declaration, is_section, page_of, section_of};
 use crate::{CheckError, Sink};
 
 /// A compiled ESS model, indexed by the names a document can use.
@@ -272,7 +272,7 @@ impl Model {
             match named.kind {
                 Kind::Event(event) => self.event_ref(sink, &named.at, event),
                 Kind::Command(command) => self.command_ref(sink, &named.at, command),
-                Kind::View { name, read, body } => {
+                Kind::View { name, bound, body } => {
                     let Some((qualified, view)) = self.view(name) else {
                         self.view_ref(sink, &named.at, name);
                         continue;
@@ -282,11 +282,9 @@ impl Model {
                             self.readable(sink, &section, &qualified, &view.domain);
                         }
                     }
-                    // A read with no `params:` slot (a menu, an export, a channel, references,
-                    // completions) binds none, so a required parameter is unbound there too.
-                    let none = BTreeMap::new();
-                    let bound = read.map_or(&none, |read| read.params);
-                    read_params(sink, &named.at, &qualified, view, bound);
+                    if let Some(params) = bound_params(document, &named.node, bound) {
+                        read_params(sink, &named.at, &qualified, view, params);
+                    }
                 }
             }
         }
@@ -311,6 +309,40 @@ impl Model {
                 ),
             );
         }
+    }
+}
+
+/// No parameter at all: what a read with no `params:` slot binds.
+static NONE: BTreeMap<String, Expr> = BTreeMap::new();
+
+/// The parameters a view named at `node` is bound with, when the document states them: a read's
+/// `params:` map; nothing, for a menu's `from_view` and an export without `params:`; and for an
+/// export's `params: same_as(<section>)`, that section's read's map. `None` where the document
+/// does not say — any other export expression, a channel's view, a confirm's references, a
+/// completion — so no parameter is reported unbound there.
+fn bound_params<'a>(
+    document: &'a Document,
+    node: &NodePath,
+    bound: Bound<'a>,
+) -> Option<&'a BTreeMap<String, Expr>> {
+    match bound {
+        Bound::Read(read) => Some(read.params),
+        Bound::Nothing | Bound::Export(None) => Some(&NONE),
+        Bound::Export(Some(expr)) => {
+            let section = expr
+                .0
+                .trim()
+                .strip_prefix("same_as(")?
+                .strip_suffix(')')?
+                .trim();
+            let (_, page) = page_of(document, node)?;
+            let section = page.sections.iter().find(|found| found.name == section)?;
+            let Body::Composite(composite) = &section.body else {
+                return None;
+            };
+            composite_reads(composite).map(|(_, reads)| &reads.params)
+        }
+        Bound::Elsewhere => None,
     }
 }
 
@@ -404,13 +436,37 @@ struct Named<'a> {
 enum Kind<'a> {
     View {
         name: &'a str,
-        /// The read's parameters and paging, where the name is written in a read that has them.
-        read: Option<Read<'a>>,
+        /// What binds the view's parameters where the name is written.
+        bound: Bound<'a>,
         /// `true` for the composite read of a body, which is what a section shows.
         body: bool,
     },
     Command(&'a str),
     Event(&'a str),
+}
+
+/// What binds a view's parameters where the document names the view.
+#[derive(Clone, Copy)]
+enum Bound<'a> {
+    /// A `params:` map written beside the view, with the read's paging: a section's, a
+    /// composite's, a preload's and an action's `loads`.
+    Read(Read<'a>),
+    /// No `params:` slot, so nothing: a dynamic menu's `from_view`.
+    Nothing,
+    /// An export's `params:` expression, when it has one.
+    Export(Option<&'a Expr>),
+    /// Something the document does not state may supply them — a channel's session, a confirm's
+    /// context, a completion's input — so an unbound parameter is not reported there.
+    Elsewhere,
+}
+
+impl<'a> Bound<'a> {
+    fn paging(self) -> Option<&'a Paging> {
+        match self {
+            Self::Read(read) => read.paging,
+            Self::Nothing | Self::Export(_) | Self::Elsewhere => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -456,7 +512,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                         path.child("preload"),
                         Kind::View {
                             name: &view.view,
-                            read: Some(read),
+                            bound: Bound::Read(read),
                             body: false,
                         },
                     );
@@ -464,7 +520,10 @@ fn names(document: &Document) -> Vec<Named<'_>> {
             }
             NodeRef::NavSection(section) => {
                 if let NavPages::Dynamic(entries) = &section.pages {
-                    push(path.child("pages"), view(&entries.from_view));
+                    push(
+                        path.child("pages"),
+                        view(&entries.from_view, Bound::Nothing),
+                    );
                 }
             }
             NodeRef::Channel(channel) => {
@@ -475,7 +534,9 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                             push(carries.clone(), Kind::Event(event));
                         }
                     }
-                    Carries::View(live_view) => push(carries, view(&live_view.view)),
+                    Carries::View(live_view) => {
+                        push(carries, view(&live_view.view, Bound::Elsewhere));
+                    }
                 }
                 for command in &channel.sends {
                     push(path.child("sends"), Kind::Command(command));
@@ -499,7 +560,10 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                     push(path.clone(), Kind::Command(&upload.does));
                 }
                 if let Some(export) = &action.export {
-                    push(path.clone(), view(&export.reads));
+                    push(
+                        path.clone(),
+                        view(&export.reads, Bound::Export(export.params.as_ref())),
+                    );
                 }
                 if let Some(reads) = &action.loads {
                     if let Some(name) = &reads.view {
@@ -507,7 +571,7 @@ fn names(document: &Document) -> Vec<Named<'_>> {
                             path.child("loads"),
                             Kind::View {
                                 name,
-                                read: Some(Read::of(reads)),
+                                bound: Bound::Read(Read::of(reads)),
                                 body: false,
                             },
                         );
@@ -525,11 +589,11 @@ fn names(document: &Document) -> Vec<Named<'_>> {
     out
 }
 
-/// A view name written where no parameter or paging goes with it.
-fn view(name: &str) -> Kind<'_> {
+/// A view name written outside a body's composite read, its parameters bound as `bound` says.
+fn view<'a>(name: &'a str, bound: Bound<'a>) -> Kind<'a> {
     Kind::View {
         name,
-        read: None,
+        bound,
         body: false,
     }
 }
@@ -544,7 +608,7 @@ fn body_names<'a>(path: &NodePath, body: &'a Body, push: &mut impl FnMut(NodePat
                 path.child(key),
                 Kind::View {
                     name,
-                    read: Some(Read::of(reads)),
+                    bound: Bound::Read(Read::of(reads)),
                     body: true,
                 },
             );
@@ -575,7 +639,7 @@ fn body_names<'a>(path: &NodePath, body: &'a Body, push: &mut impl FnMut(NodePat
         _ => Vec::new(),
     };
     for name in views {
-        push(path.clone(), view(name));
+        push(path.clone(), view(name, Bound::Elsewhere));
     }
 }
 
@@ -671,7 +735,7 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
                     .commands
                     .insert(qualified, route.clone());
             }
-            Kind::View { name, read, .. } => {
+            Kind::View { name, bound, .. } => {
                 let Some((qualified, _)) = model.view(name) else {
                     refuse(
                         &named.at,
@@ -683,7 +747,7 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
                     refuse(&named.at, unserved("view", &qualified));
                     continue;
                 };
-                let unreadable = read_refusals(&served, &qualified, read);
+                let unreadable = read_refusals(&served, &qualified, bound);
                 if unreadable.is_empty() {
                     binding.names.insert(name.to_owned(), qualified.clone());
                     binding
@@ -711,7 +775,7 @@ pub fn binding(document: &Document, sources: &[(String, String)]) -> Result<Bind
 
 /// Why a served view cannot be read as `read` reads it: a view the model pages, a read paged by
 /// anything but the renderer, and each declared parameter no query string carries.
-fn read_refusals(served: &Surface, qualified: &str, read: Option<Read<'_>>) -> Vec<String> {
+fn read_refusals(served: &Surface, qualified: &str, bound: Bound<'_>) -> Vec<String> {
     let mut refusals = Vec::new();
     if served.paged.contains(qualified) {
         refusals.push(format!(
@@ -719,7 +783,7 @@ fn read_refusals(served: &Surface, qualified: &str, read: Option<Read<'_>>) -> V
              paged view (`ess-synth/src/paging.rs`): no served surface answers it"
         ));
     }
-    if let Some(paged) = read.and_then(|read| read.paging).and_then(server_paged) {
+    if let Some(paged) = bound.paging().and_then(server_paged) {
         refusals.push(format!(
             "this read of `{qualified}` is paged by `{paged}`, and no served surface pages a \
              view: every code target refuses paging. Page it in the renderer (`paging: client`) \
