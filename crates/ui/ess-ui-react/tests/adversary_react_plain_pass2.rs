@@ -57,7 +57,8 @@ pages:
 
 fn legacy(name: &str) -> PathBuf {
     let out = scratch(name);
-    let doc = ess_ui::load_str(LEGACY).unwrap_or_else(|error| panic!("the document loads: {error}"));
+    let doc =
+        ess_ui::load_str(LEGACY).unwrap_or_else(|error| panic!("the document loads: {error}"));
     ess_ui_react::generate(&doc, &root(), &out).unwrap_or_else(|error| panic!("{error}"));
     compile(&out, &["routes.ts"]);
     out
