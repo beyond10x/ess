@@ -933,6 +933,7 @@ impl RefusalCause {
     }
 
     /// What would have to change for the construct to be testable.
+    #[allow(clippy::too_many_lines)]
     pub fn hint(&self) -> &'static str {
         match self {
             // A gap in what a view lets a scenario observe is repaired by declaring a view, not by
@@ -1163,6 +1164,7 @@ crate::authored::diagnostic_catalogue! {
 }
 
 impl fmt::Display for RefusalCause {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NoWitness(gap) => write!(f, "no witness: {gap}"),

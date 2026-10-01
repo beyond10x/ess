@@ -446,8 +446,13 @@ fn issue_280_both_refusals_are_witnessed_and_set_avoids_their_inputs() {
         }
         let scope = input.get("scope").and_then(Node::as_text);
         let provider = !matches!(input.get("provider"), None | Some(Node::Null));
+        let refused = match scope {
+            Some("Budget") => provider,
+            Some("Provider") => !provider,
+            _ => false,
+        };
         assert!(
-            !(scope == Some("Budget") && provider) && !(scope == Some("Provider") && !provider),
+            !refused,
             "{scenario} requires `set` at {input:?}, which a refusal claims"
         );
     }

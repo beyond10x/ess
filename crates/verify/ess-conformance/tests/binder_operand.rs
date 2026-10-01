@@ -21,8 +21,17 @@ const QUOTED: &str = r#"{"forall": {"in": "tags", "as": "tag", "that": {"forall"
 const SHORTHAND: &str = r#"{"forall": {"in": "tags", "as": "tag", "that": {"forall": {"in": "banned", "as": "b", "that": {"tag": "b"}}}}}"#;
 const OUT_OF_SCOPE: &str = r#"{"all": [{"forall": {"in": "banned", "as": "b", "that": "b != x"}}, {"forall": {"in": "tags", "as": "tag", "that": "tag != b"}}]}"#;
 
+/// A case: its name, the predicate, the two lists it reads, and the expected truth.
+type Vector = (
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    &'static [&'static str],
+    Truth,
+);
+
 /// The vectors `fixtures/binder-operand.go` and `predicate.test.ts` answer too.
-const VECTORS: &[(&str, &str, &[&str], &[&str], Truth)] = &[
+const VECTORS: &[Vector] = &[
     ("disjoint lists", DISJOINT, &["x", "y"], &["z"], Truth::True),
     ("a shared item", DISJOINT, &["x"], &["x"], Truth::False),
     (
