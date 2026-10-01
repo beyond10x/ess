@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-304
 kind: story
-status: draft
+status: archived
 title: 'when_related through an Optional input: an absent reference takes the not-found branch instead of skipping the guard'
 tags:
 - feature-request
@@ -13,6 +13,8 @@ relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
 revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-10-01T20:12:06Z", actor: "human:timo", revision: 2}
 ---
 ## Outcome
 
@@ -31,7 +33,3 @@ beyond10x/ess#304, reported downstream on 0.48.0.
 ## Fit review
 
 Pending. Likely accept as a defect: the not-found branch should not answer an absent Optional.
-
-## Ownership
-
-- Handed to the uilab session (epic on branch `plan/ess-ui-live-apps`, operator-approved), 2026-10-01. The downstream-gaps coordinator no longer edits this story.

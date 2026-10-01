@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T20:11:33Z",
+  "actor": "human:timo",
+  "artifact": "story:related-guard-behaviour",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "plan revision after round 2, verified by the coordinator",
+    "reference": "review-result:ui-live-apps-design-round-2#finding-2",
+    "review": "review-result:ui-live-apps-design-round-2",
+    "outcome": "fixed"
+  }
+}

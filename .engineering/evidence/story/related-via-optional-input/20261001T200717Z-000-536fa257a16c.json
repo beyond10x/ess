@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T20:07:17Z",
+  "actor": "human:timo",
+  "artifact": "story:related-via-optional-input",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "plan revision after round 1",
+    "reference": "review-result:ui-live-apps-acceptance-round-1#finding-6",
+    "review": "review-result:ui-live-apps-acceptance-round-1",
+    "outcome": "fixed"
+  }
+}
