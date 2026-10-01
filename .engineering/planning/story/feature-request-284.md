@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 ## Outcome
 
@@ -28,4 +28,16 @@ beyond10x/ess#284, reported downstream on 0.48.0.
 
 ## Fit review
 
-Pending.
+Per `.agents/skills/assessing-external-requests/SKILL.md` (coordinator, 2026-10-01).
+
+- Need: `ess ui check` refuses a page binding a command its actor is not granted. Class: defect (a check the tool already implies). No authored surface changes.
+
+## Decisions
+
+- **accept as proposed.**
+
+## Reconciliation
+
+Backlog reconciliation (coordinator, 2026-10-01).
+
+- UI spec: lower priority than every base-spec story (operator, 2026-10-01).

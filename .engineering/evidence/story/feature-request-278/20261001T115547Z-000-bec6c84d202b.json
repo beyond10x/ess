@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T11:55:47Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-278",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: 278, 229 lanes green; unit gate 2023 passed 0 failed"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-270
 kind: story
-status: proposed
+status: active
 title: A related sets value beside a when_related guard witnesses success
 tags:
 - feature-request
@@ -17,9 +17,10 @@ scope:
   path: crates/verify/ess-conformance/src/synthesize/related.rs
 - confidence: inferred
   path: crates/verify/ess-conformance/src/synthesize/related_guard.rs
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:04:16Z", actor: "human:timo", revision: 12}
+- {from: "proposed", to: "active", at: "2026-10-01T11:17:35Z", actor: "human:timo", revision: 15, decided_on: {"recorded":{"review_outcome":2,"verification":1}}}
 ---
 ## Outcome
 

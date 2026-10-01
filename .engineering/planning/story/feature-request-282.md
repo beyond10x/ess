@@ -12,7 +12,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 4
 ---
 ## Outcome
 
@@ -29,4 +29,10 @@ beyond10x/ess#282, reported downstream on 0.48.0.
 
 ## Fit review
 
-Pending (`.agents/skills/assessing-external-requests/SKILL.md`).
+Per `.agents/skills/assessing-external-requests/SKILL.md` (coordinator, 2026-10-01).
+
+- Need: a command refusing on a related row's fields beside its own `wrong_state`. Class: gap. Existing idiom: none; the precedence order (`docs/design/cross-record-and-stored-field-guards.md#the-precedence-order`) has no step for a `when_related` predicate refusal, which is why ESS-COMMAND-004 refuses the pair. Fit: adding one step to that single order, not a per-command declaration.
+
+## Decisions
+
+- **accept, redesigned:** no author-declared precedence. The order gains one step: a `when_related` predicate refusal answers after the held state (step 4) and before accepting branches (step 5), so the addressed row's own lifecycle answers first. Admitted from ess/21 only (ess/20 ships alone in 0.49.0; this bundles with family F); validation, synthesis and the interpreter follow the order, and the design doc states it.
