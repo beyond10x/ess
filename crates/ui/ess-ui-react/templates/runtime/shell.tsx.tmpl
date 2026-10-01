@@ -1,7 +1,7 @@
 // Shells: the frame around pages, its regions, guards and preloads.
 
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
-import { useLocation } from "react-router";
+import { useLocation } from "./router";
 import { hrefFor, pageAt } from "../routes";
 import { useNotices, useScope } from "./core";
 import { dataAdapter, invalidate } from "./data";

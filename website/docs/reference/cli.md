@@ -371,8 +371,10 @@ schema declares and, with `--model`, checks the document's views, commands and e
 ESS specification; each finding names its node path, and any error exits `1`. `ess ui docs` renders the `ess-ui/1`
 reference from its schema, and `--check` fails when a written copy is stale. `ess ui run --tui`
 runs a document in the terminal against its fixtures. `ess generate ui --target react` writes a
-Vite + React + TypeScript project from one. None of these has a flat spelling. Their arguments are
-listed under [`ess ui`](#ess-ui) and [`ess generate ui`](#ess-generate-ui) in the command reference.
+React + TypeScript project from one whose only runtime dependencies are `react` and `react-dom`,
+with its routing generated into it and one esbuild step to build it. None of these has a flat
+spelling. Their arguments are listed under [`ess ui`](#ess-ui) and
+[`ess generate ui`](#ess-generate-ui) in the command reference.
 
 ## Command reference
 
