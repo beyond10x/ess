@@ -307,7 +307,13 @@ fn related_key<'ir>(
             "the row it reads is a `{name}`, which the view would then count"
         ));
     }
-    if related_guard::routes(creator.command, creator.outcome) {
+    // The row a related guard on the creating command reads is the one arranged here where the key
+    // is read through the same input from the same entity: the scenario creates it holding the
+    // value it wants, and the guard is decided on it ([`related_guard::drive_on`],
+    // beyond10x/ess#272). Any other row of the guard's would be a second one the input names.
+    if related_guard::routes(creator.command, creator.outcome)
+        && related_guard::reads(creator.command) != Some((via_input, entity))
+    {
         return Err(format!(
             "`{}` is chosen by a related row its own arrangement supplies",
             creator.command.name
@@ -418,6 +424,18 @@ struct Plan<'ir> {
     /// The entity fields the creating branch copies from a related row whose value the scenario
     /// chooses, by name.
     related: BTreeMap<&'ir str, RelatedKey<'ir>>,
+    /// The input the creating branch's related guard compares with the related row's link to that
+    /// row's owner, where it has one (beyond10x/ess#272): see [`GuardLink`].
+    guard_link: Option<GuardLink>,
+    /// The owners the related rows a key is read from are filed under, where the field read is
+    /// that row's link to its owner: one per related entity and value the pattern gives it, in the
+    /// order first given ([`related_owners`]).
+    related_owners: Vec<(EntityHandle, Node, Arrangement)>,
+    /// The group key filled from the input the creating branch's related guard reads its row
+    /// through ([`via_key`]).
+    via_key: Option<String>,
+    /// The owners [`GuardLink`] inputs name, one per slot ([`guard_owners`]).
+    guard_owners: Vec<(Node, Arrangement)>,
     /// The group keys read from the owner the view also groups by (its link, beyond10x/ess#193),
     /// with the position of that link in [`Self::keys`]: rows sharing an owner share their values.
     follows_owner: BTreeMap<String, usize>,
@@ -426,6 +444,56 @@ struct Plan<'ir> {
     /// Whether the view is ungrouped and nothing scopes it, so it is asserted as the change its
     /// rows make ([`observe_change`]).
     delta: bool,
+}
+
+/// An input of the creating command that a `when_related:` predicate compares with the related
+/// row's link to its owner (`study_id != input.study_id`, beyond10x/ess#272).
+///
+/// The branch creating the rows is selected only where the input names the owner the related row
+/// was filed under, and that owner is an instance the arrangement creates, never a value the
+/// pattern can choose. So the input always names an arranged owner, and the related row is filed
+/// under it:
+///
+/// * where the related row is one the plan arranges itself (a key copied from it, #257), the
+///   input names the owner that row was filed under ([`create_row`]);
+/// * where a group key is filled from the input, each value the pattern gives the key stands for
+///   one owner, arranged once and shared by every row given that value, and the row holds the
+///   owner's identity, which this scenario alone created and so scopes its group as the planned
+///   value would have;
+/// * otherwise the view does not read the input, and the rows are spread over two owners, the
+///   first row (or the rows sharing the first related row) under one and every other under the
+///   second, so a target counting one owner's rows alone counts fewer ([`guard_slots`]).
+///
+/// Outside the first case the related row is arranged under the owner named
+/// ([`related_guard::drive`] pins it, beyond10x/ess#271); where the row's own owner link is filled
+/// from one of the inputs, the owner it is created under is the one named. Several inputs compared
+/// with the same link all name the one owner.
+#[derive(Debug, Clone)]
+struct GuardLink {
+    /// The creating command's inputs the predicates compare, in name order.
+    inputs: Vec<String>,
+    /// The entity that owns the related row, which the inputs name.
+    owner: EntityHandle,
+    /// The group key filled from one of the inputs, where there is one.
+    key: Option<String>,
+    /// Whether the row's own owner link is filled from one of the inputs: the owner it is created
+    /// under is then the one they name.
+    own: bool,
+    /// The fields copied from the related row the guard reads ([`RelatedKey`]): a row given a value
+    /// of one has that row arranged by the plan itself ([`arrange_related`]).
+    read_by: Vec<String>,
+}
+
+/// The distinction the owners [`GuardLink`] inputs name are arranged at, one apart per value: past
+/// every block the related rows a key is read from are numbered in.
+const GUARD_OWNERS: usize = 100 * RELATED_ROWS;
+
+/// What `row`'s [`GuardLink`] inputs name, and the related row it shares with an earlier row given
+/// the same value of the guard's input ([`Plan::via_key`]).
+#[derive(Default)]
+struct RowGuard {
+    owner: Option<super::InstanceName>,
+    related: Option<Arrangement>,
 }
 
 /// Whether a function changes, when rows are added, by an amount those rows alone decide.
@@ -889,6 +957,15 @@ fn scenario(
         };
         keys.push((key.clone(), chosen));
     }
+    let guard_link = guard_link(
+        ir,
+        handle,
+        creator,
+        &mapped,
+        &aggregation.group_by,
+        &related,
+    )
+    .map_err(|reason| unwitnessed(view, reason))?;
     // An ungrouped view with no parameter is over every row of its source, so only the change its
     // own rows make is the scenario's to assert — and only a `count` or a `sum` changes by an
     // amount those rows alone decide (`docs/design/aggregate-views.md`, "Scoping").
@@ -1052,6 +1129,30 @@ fn scenario(
             }
         }
     }
+    // An input the guard compares with the related row's owner link names an owner, so a field
+    // filled from it holds no value the pattern chose: not a scope's, nor an aggregate input's.
+    if let Some(link) = &guard_link {
+        let chosen = |field: &str| {
+            scopes.iter().any(|scope| scope.field == field)
+                || inputs.iter().any(|(name, _)| name == field)
+        };
+        if let Some((field, read)) = mapped
+            .iter()
+            .find(|(field, read)| link.inputs.iter().any(|held| held == *read) && chosen(field))
+        {
+            return Err(unwitnessed(
+                view,
+                format!(
+                    "`{field}` is filled from `input.{read}`, which `{}/{}` is selected on only \
+                     where it names the `{}` its related row is filed under, so no value the \
+                     pattern chooses for `{field}` reaches it",
+                    creator.command.name,
+                    creator.outcome.name,
+                    ir.entity(&link.owner).name
+                ),
+            ));
+        }
+    }
     let mut plan = Plan {
         ir,
         view,
@@ -1064,12 +1165,18 @@ fn scenario(
         skipping,
         scopes,
         related,
+        guard_link,
+        related_owners: Vec::new(),
+        via_key: via_key(creator, &mapped, &aggregation.group_by),
+        guard_owners: Vec::new(),
         follows_owner,
         tuples: Vec::new(),
         delta,
     };
     assign_tuples(&mut plan);
     let rows = rows(&plan, &inputs, m);
+    plan.related_owners = related_owners(&plan, &rows, actors)?;
+    plan.guard_owners = guard_owners(&plan, &rows, actors)?;
     arrange_and_observe(&plan, creator, &mapped, rows, actors)
 }
 
@@ -1309,6 +1416,203 @@ fn rows(plan: &Plan<'_>, inputs: &[(String, Ladder)], m: usize) -> Vec<Row> {
     out
 }
 
+/// The input the rows start from, before the pattern sets their values.
+///
+/// A creating command guarded by a related row (`when_related:` on a sibling branch,
+/// beyond10x/ess#272) is reached by no input alone: [`reach`] refuses it, because the row decides
+/// the branch. Each row's related row is arranged where the row is created ([`create_row`], through
+/// [`related_guard::drive`]), and the input it is sent with is checked there against that row; here
+/// it is only the plain witness the pattern's values are written over.
+fn base_input(
+    ir: &EssIr,
+    creator: &Driver<'_>,
+    distinction: Distinction,
+) -> Result<BTreeMap<String, Node>, RefusalCause> {
+    if related_guard::routes(creator.command, creator.outcome) {
+        related_guard::plain_input(ir, creator.command, distinction)
+    } else {
+        reach(ir, creator.command, creator.outcome, distinction)
+    }
+}
+
+/// The inputs `creator`'s related guard compares with the related row's link to its owner
+/// ([`GuardLink`]): `None` for every creator without a related guard, and for one whose guard
+/// compares no input with that link. Refused, with the reason, where two group keys are filled
+/// from them: the pattern gives two keys values of their own, and the inputs must name one owner.
+fn guard_link(
+    ir: &EssIr,
+    handle: &EntityHandle,
+    creator: &Driver<'_>,
+    mapped: &BTreeMap<&str, &str>,
+    group_by: &[String],
+    related: &BTreeMap<&str, RelatedKey<'_>>,
+) -> Result<Option<GuardLink>, String> {
+    if !related_guard::routes(creator.command, creator.outcome) {
+        return Ok(None);
+    }
+    let Some((via, read)) = related_guard::reads(creator.command) else {
+        return Ok(None);
+    };
+    let Some(belongs) = ir.owner_of(read) else {
+        return Ok(None);
+    };
+    let inputs: Vec<String> = subject_fact::links(ir, creator.command, read)
+        .into_iter()
+        .map(|(sent, _)| sent)
+        .collect::<BTreeSet<String>>()
+        .into_iter()
+        .collect();
+    if inputs.is_empty() {
+        return Ok(None);
+    }
+    let keys: Vec<&String> = group_by
+        .iter()
+        .filter(|key| {
+            mapped
+                .get(key.as_str())
+                .is_some_and(|input| inputs.iter().any(|held| held == input))
+        })
+        .collect();
+    if let [first, second, ..] = keys.as_slice() {
+        return Err(format!(
+            "the group keys `{first}` and `{second}` are filled from inputs `{}` compares with \
+             the link of the `{}` it reads to its owner: the pattern gives each key values of its \
+             own, and every such input must name the one owner that row is filed under",
+            creator.command.name,
+            ir.entity(read).name
+        ));
+    }
+    let own = !owner_is_guarded(ir, creator)
+        && ir
+            .owner_of(handle)
+            .and_then(|owned| mapped.get(owned.via))
+            .is_some_and(|input| inputs.iter().any(|held| held == input));
+    Ok(Some(GuardLink {
+        read_by: related
+            .iter()
+            .filter(|(_, key)| key.via == via)
+            .map(|(field, _)| (*field).to_owned())
+            .collect(),
+        inputs,
+        owner: belongs.owner.clone(),
+        key: keys.first().map(|key| (*key).clone()),
+        own,
+    }))
+}
+
+/// The group key filled, unchanged, from the input `creator`'s related guard reads the row
+/// through, where there is one (beyond10x/ess#272): rows given one value of it share one related
+/// row, so a group of several rows reads one row, as a group sharing an owner does.
+fn via_key(
+    creator: &Driver<'_>,
+    mapped: &BTreeMap<&str, &str>,
+    group_by: &[String],
+) -> Option<String> {
+    if !related_guard::routes(creator.command, creator.outcome) {
+        return None;
+    }
+    let (via, _) = related_guard::reads(creator.command)?;
+    group_by
+        .iter()
+        .find(|key| mapped.get(key.as_str()) == Some(&via))
+        .cloned()
+}
+
+/// Which owner each row's [`GuardLink`] inputs name, by row: a key's value where one is filled
+/// from them, else one of two slots — the first row, or the rows sharing the first related row
+/// ([`via_key`]), in the first and every other row in the second. `None` where the plan has no
+/// link, where the row's own owner is the one named, and where the row reads a related row the
+/// plan arranges itself. A key left absent is refused: the inputs must name an owner.
+fn guard_slots(plan: &Plan<'_>, rows: &[Row]) -> Result<Vec<Option<Node>>, RefusalCause> {
+    let Some(link) = plan.guard_link.as_ref().filter(|link| !link.own) else {
+        return Ok(vec![None; rows.len()]);
+    };
+    let owner_name = &plan.ir.entity(&link.owner).name;
+    let first_via = plan
+        .via_key
+        .as_ref()
+        .and_then(|key| rows.first().and_then(|row| row.values.get(key)));
+    let mut out = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        if link
+            .read_by
+            .iter()
+            .any(|field| row.values.contains_key(field))
+        {
+            out.push(None);
+            continue;
+        }
+        let slot = if let Some(key) = &link.key {
+            match row.values.get(key) {
+                Some(value) if *value != Node::Null => value.clone(),
+                _ => {
+                    return Err(plan.unwitnessed(format!(
+                        "row `{}` leaves the group key `{key}` absent, but the creating branch is \
+                         selected only where the input filling it names the `{owner_name}` its \
+                         related row is filed under",
+                        row.label
+                    )))
+                }
+            }
+        } else {
+            let first = match (&plan.via_key, first_via) {
+                (Some(key), Some(value)) => row.values.get(key) == Some(value),
+                _ => index == 0,
+            };
+            Node::Text(if first { "first" } else { "second" }.to_owned())
+        };
+        out.push(Some(slot));
+    }
+    Ok(out)
+}
+
+/// One owner per slot [`guard_slots`] gives a row, arranged where its lifecycle starts, in the
+/// order first given. They are created before any row ([`observe`]).
+fn guard_owners(
+    plan: &Plan<'_>,
+    rows: &[Row],
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Vec<(Node, Arrangement)>, RefusalCause> {
+    let mut out: Vec<(Node, Arrangement)> = Vec::new();
+    let Some(link) = &plan.guard_link else {
+        return Ok(out);
+    };
+    let ir = plan.ir;
+    let initial = ir.entity(&link.owner).lifecycle.initial.clone();
+    for (slot, row) in guard_slots(plan, rows)?.into_iter().zip(rows) {
+        let Some(slot) = slot else { continue };
+        if out.iter().any(|(held, _)| *held == slot) {
+            continue;
+        }
+        let owner = super::arrange_first(
+            ir,
+            &link.owner,
+            std::slice::from_ref(&initial),
+            actors,
+            Distinction::further(GUARD_OWNERS + out.len()),
+            &[plan.handle],
+        )
+        .map_err(|cause| {
+            plan.unwitnessed(format!(
+                "no `{}` can be arranged for `input.{}` of row `{}` to name: {cause}",
+                ir.entity(&link.owner).name,
+                link.inputs.join("`, `input."),
+                row.label
+            ))
+        })?;
+        out.push((slot, owner));
+    }
+    Ok(out)
+}
+
+/// Whether the row a related guard on `creator` reads is also the owner a row is created under
+/// ([`related_guard::owner_is_related`]): it is then arranged once, as the related row, and not
+/// first as an owner, which would bind the input the guard is pointed through.
+fn owner_is_guarded(ir: &EssIr, creator: &Driver<'_>) -> bool {
+    related_guard::routes(creator.command, creator.outcome)
+        && related_guard::owner_is_related(ir, creator.command, creator.outcome)
+}
+
 /// One arranged row: what the steps left, and what the filter says of it.
 struct Arranged {
     row: Row,
@@ -1327,7 +1631,7 @@ fn arrange_and_observe(
     actors: &BTreeMap<QualifiedName, ActorRef>,
 ) -> Result<ConformanceScenario, RefusalCause> {
     let ir = plan.ir;
-    let base = reach(ir, creator.command, creator.outcome, Distinction::PLAIN).map_err(|_| {
+    let base = base_input(ir, creator, Distinction::PLAIN).map_err(|_| {
         plan.unwitnessed(format!(
             "no input reaches `{}/{}`, which creates the rows",
             creator.command.name, creator.outcome.name
@@ -1380,23 +1684,31 @@ fn arrange_and_observe(
                 .map(|row| Owner { row, shared: false }),
         }
     };
+    let slots = guard_slots(plan, &rows)?;
+    let mut shared: Shared = Vec::new();
     let mut arranged = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
         let distinction = Distinction::further(index + 1);
         let mut attempt = row.clone();
-        let owner = owner_for(&attempt, distinction, &owners);
-        let result = match arrange_row(
-            plan,
-            creator,
-            mapped,
-            &base,
-            &attempt,
-            distinction,
-            owner.as_ref(),
-            actors,
-            &params,
-        ) {
-            Ok(done) => Ok(done),
+        let owner =
+            owner_for(&attempt, distinction, &owners).filter(|_| !owner_is_guarded(ir, creator));
+        let slot = slots[index].as_ref();
+        let guard = row_guard(plan, &attempt, owner.as_ref(), slot, &shared);
+        let arrange = |attempt: &Row| {
+            arrange_row(
+                plan,
+                creator,
+                mapped,
+                &base,
+                attempt,
+                distinction,
+                (owner.as_ref(), &guard),
+                actors,
+                &params,
+            )
+        };
+        let result = match arrange(&attempt) {
+            Ok(done) => done,
             // A refuted row of a parameter-scoped filter that no state refutes is moved out of the
             // scope the query binds.
             Err(_) if !attempt.admitted && !plan.scopes.is_empty() => {
@@ -1405,20 +1717,10 @@ fn arrange_and_observe(
                         .values
                         .insert(scope.field.clone(), plan.scoped(scope.kind, "out"));
                 }
-                arrange_row(
-                    plan,
-                    creator,
-                    mapped,
-                    &base,
-                    &attempt,
-                    distinction,
-                    owner.as_ref(),
-                    actors,
-                    &params,
-                )
+                arrange(&attempt)?
             }
-            Err(error) => Err(error),
-        }?;
+            Err(error) => return Err(error),
+        };
         if let (Some(key), Some(owner)) = (
             link.as_ref().and_then(|field| attempt.values.get(field)),
             result.owner,
@@ -1428,6 +1730,7 @@ fn arrange_and_observe(
                 owners.push((key.clone(), owner));
             }
         }
+        share_related(plan, &attempt, &guard, result.guard_row, &mut shared);
         arranged.push(Arranged {
             admitted: attempt.admitted,
             row: attempt,
@@ -1436,6 +1739,113 @@ fn arrange_and_observe(
         });
     }
     observe(plan, &arranged, &params)
+}
+
+/// What `row`'s [`GuardLink`] inputs name and the related row it shares ([`RowGuard`]): the owner
+/// the row is created under, where its own owner link is filled from one of the inputs; else the
+/// owner its slot stands for ([`guard_slots`]). The related row is the one an earlier row given
+/// the same value of [`Plan::via_key`] was started on.
+fn row_guard(
+    plan: &Plan<'_>,
+    row: &Row,
+    found: Option<&Owner>,
+    slot: Option<&Node>,
+    shared: &Shared,
+) -> RowGuard {
+    let owner = match &plan.guard_link {
+        Some(link) if link.own => found
+            .filter(|owner| link.inputs.contains(&owner.row.0))
+            .map(|owner| owner.row.1.instance.clone()),
+        Some(_) => slot.and_then(|slot| {
+            plan.guard_owners
+                .iter()
+                .find(|(held, _)| held == slot)
+                .map(|(_, owner)| owner.instance.clone())
+        }),
+        None => None,
+    };
+    let related = plan
+        .via_key
+        .as_ref()
+        .and_then(|key| row.values.get(key))
+        .and_then(|value| {
+            shared
+                .iter()
+                .find(|(held, named, _)| held == value && *named == owner)
+        })
+        .map(|(_, _, related)| related.clone());
+    RowGuard { owner, related }
+}
+
+/// The related rows rows are started on, each with the value of [`Plan::via_key`] it was given and
+/// the owner its [`GuardLink`] inputs named.
+type Shared = Vec<(Node, Option<super::InstanceName>, Arrangement)>;
+
+/// Keeps the related row `row` was started on for the later rows given the same value of
+/// [`Plan::via_key`] whose inputs name the same owner. A row naming another owner is started on a
+/// row of its own: the one shared is filed under the owner the first named, and would select
+/// another branch.
+fn share_related(
+    plan: &Plan<'_>,
+    row: &Row,
+    guard: &RowGuard,
+    related: Option<Arrangement>,
+    shared: &mut Shared,
+) {
+    let (Some(value), Some(related)) = (
+        plan.via_key.as_ref().and_then(|key| row.values.get(key)),
+        related,
+    ) else {
+        return;
+    };
+    if !shared
+        .iter()
+        .any(|(held, named, _)| held == value && *named == guard.owner)
+    {
+        shared.push((value.clone(), guard.owner.clone(), related));
+    }
+}
+
+/// Points every [`GuardLink`] input at the owner `named`: the owner's token is what the guard is
+/// decided on, and the owner itself is what is sent (`Setup::bound`, [`create_from`]).
+fn name_guard_owner(
+    plan: &Plan<'_>,
+    creator: &Driver<'_>,
+    row: &Row,
+    named: Option<&super::InstanceName>,
+    input: &mut BTreeMap<String, Node>,
+) -> Result<(), RefusalCause> {
+    let (Some(link), Some(named)) = (&plan.guard_link, named) else {
+        return Ok(());
+    };
+    for sent in &link.inputs {
+        let token =
+            subject_fact::token(plan.ir, creator.command, sent, named).ok_or_else(|| {
+                plan.unwitnessed(format!(
+                "`input.{sent}` cannot name the `{}` row `{}` is arranged under: its type holds \
+                 no token of an instance",
+                plan.ir.entity(&link.owner).name,
+                row.label
+            ))
+            })?;
+        input.insert(sent.clone(), token);
+    }
+    Ok(())
+}
+
+/// `bound`, with every [`GuardLink`] input naming `named`.
+fn naming_guard_owner(
+    plan: &Plan<'_>,
+    bound: &BTreeMap<String, super::InstanceName>,
+    named: Option<&super::InstanceName>,
+) -> BTreeMap<String, super::InstanceName> {
+    let mut bound = bound.clone();
+    if let (Some(link), Some(named)) = (&plan.guard_link, named) {
+        for sent in &link.inputs {
+            bound.insert(sent.clone(), named.clone());
+        }
+    }
+    bound
 }
 
 /// Create one row with its pattern values and drive it to a state its filter truth needs.
@@ -1447,7 +1857,7 @@ fn arrange_row(
     base: &BTreeMap<String, Node>,
     row: &Row,
     distinction: Distinction,
-    owner: Option<&Owner>,
+    (owner, guard): (Option<&Owner>, &RowGuard),
     actors: &BTreeMap<QualifiedName, ActorRef>,
     params: &BTreeMap<String, ScenarioValue>,
 ) -> Result<Created, RefusalCause> {
@@ -1455,7 +1865,7 @@ fn arrange_row(
     let mut input = base.clone();
     // An identity the scenario supplies (`instance:` published from `input.<field>`) is its own in
     // every row: the witness at this row's distinction, never the base row's again.
-    if let Ok(distinct) = reach(ir, creator.command, creator.outcome, distinction) {
+    if let Ok(distinct) = base_input(ir, creator, distinction) {
         for field in identity_inputs(creator.command) {
             if let Some(value) = distinct.get(&field) {
                 input.insert(field, value.clone());
@@ -1480,6 +1890,7 @@ fn arrange_row(
             input.insert((*read).to_owned(), value.clone());
         }
     }
+    name_guard_owner(plan, creator, row, guard.owner.as_ref(), &mut input)?;
     if !subject_fact::input_selects(ir, creator.command, creator.outcome, &input).unwrap_or(false) {
         return Err(plan.unwitnessed(format!(
             "`{}/{}` is not selected by the input row `{}` needs",
@@ -1492,7 +1903,7 @@ fn arrange_row(
         mapped,
         row,
         distinction,
-        owner,
+        (owner, guard),
         actors,
         &input,
     )?;
@@ -1560,7 +1971,7 @@ fn create_row(
     mapped: &BTreeMap<&str, &str>,
     row: &Row,
     distinction: Distinction,
-    owner: Option<&Owner>,
+    (owner, guard): (Option<&Owner>, &RowGuard),
     actors: &BTreeMap<QualifiedName, ActorRef>,
     input: &BTreeMap<String, Node>,
 ) -> Result<Created, RefusalCause> {
@@ -1592,17 +2003,16 @@ fn create_row(
             },
         )
     });
-    let mut start = created_owned(
-        plan.ir,
-        plan.handle,
+    let (mut start, guard_row) = create_from(
+        plan,
         creator,
-        actors,
+        row,
         distinction,
-        &[],
-        owner.as_ref(),
-        Some(input),
-    )
-    .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)))?;
+        (owner.as_ref(), guard),
+        actors,
+        input,
+        &referenced,
+    )?;
     for (via, row) in &referenced {
         point_at(creator, &mut start, via, row, mapped).ok_or_else(|| {
             plan.unwitnessed(format!(
@@ -1615,7 +2025,128 @@ fn create_row(
         reached: start,
         prelude,
         owner: kept,
+        guard_row,
     })
+}
+
+/// The creating command run for `row` with `input`, under `owner`, and the related row it was
+/// started on where later rows share it ([`Plan::via_key`]).
+///
+/// A command with a related guard (beyond10x/ess#272) is sent with the row the guard reads
+/// arranged first, and its [`GuardLink`] inputs naming the owner that row is filed under: the one
+/// among `referenced` the guard's input names, where the plan arranged it to copy a key from — the
+/// inputs then name the owner that row was filed under —, else the row an earlier row given the
+/// same value of the guard's input was started on, and otherwise one [`related_guard::drive`]
+/// arranges under the owner `guard` names. Where none selects the creating branch, the refusal
+/// says why.
+#[allow(clippy::too_many_arguments)]
+fn create_from(
+    plan: &Plan<'_>,
+    creator: &Driver<'_>,
+    row: &Row,
+    distinction: Distinction,
+    (owner, guard): (Option<&(String, Arrangement)>, &RowGuard),
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    input: &BTreeMap<String, Node>,
+    referenced: &[(&str, Arrangement)],
+) -> Result<(Arrangement, Option<Arrangement>), RefusalCause> {
+    let ir = plan.ir;
+    let cannot = |why: &dyn std::fmt::Display| {
+        plan.unwitnessed(format!("row `{}` cannot be created: {why}", row.label))
+    };
+    let Some((via, read)) = related_guard::reads(creator.command)
+        .filter(|_| related_guard::routes(creator.command, creator.outcome))
+    else {
+        return created_owned(
+            ir,
+            plan.handle,
+            creator,
+            actors,
+            distinction,
+            &[],
+            owner,
+            Some(input),
+        )
+        .map(|created| (created, None))
+        .map_err(|_| plan.unwitnessed(format!("row `{}` cannot be created", row.label)));
+    };
+    let mut input = input.clone();
+    let mut named = guard.owner.clone();
+    let related = match referenced.iter().find(|(named, _)| *named == via) {
+        Some((_, related)) => {
+            if let Some(link) = &plan.guard_link {
+                let filed = ir
+                    .owner_of(read)
+                    .and_then(|owned| related.settled.get(owned.via))
+                    .and_then(|held| match &held.value {
+                        ScenarioValue::Instance { instance } => Some(instance.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        cannot(&format!(
+                            "the `{}` it reads is filed under no arranged `{}` for `input.{}` to \
+                             name",
+                            ir.entity(read).name,
+                            ir.entity(&link.owner).name,
+                            link.inputs.join("`, `input.")
+                        ))
+                    })?;
+                name_guard_owner(plan, creator, row, Some(&filed), &mut input)?;
+                named = Some(filed);
+            }
+            Some(related)
+        }
+        None => guard.related.as_ref(),
+    };
+    if let Some(related) = related {
+        let created =
+            super::created_by(ir, plan.handle, creator, distinction, owner, |bound, _| {
+                let bound = naming_guard_owner(plan, bound, named.as_ref());
+                related_guard::drive_on(ir, creator, actors, &bound, related, &input)
+            })
+            .map_err(|cause| cannot(&cause))?;
+        return Ok((created, None));
+    }
+    let sharing = plan
+        .via_key
+        .as_ref()
+        .is_some_and(|key| row.values.contains_key(key));
+    let mut kept = None;
+    let created = super::created_by(
+        ir,
+        plan.handle,
+        creator,
+        distinction,
+        owner,
+        |bound, steps| {
+            let bound = naming_guard_owner(plan, bound, named.as_ref());
+            if sharing {
+                let (invocation, related) = related_guard::drive_sharing(
+                    ir,
+                    creator,
+                    actors,
+                    distinction,
+                    (&bound, steps),
+                    &input,
+                    &[plan.handle],
+                )?;
+                kept = Some(related);
+                return Ok(invocation);
+            }
+            related_guard::drive(
+                ir,
+                creator,
+                None,
+                actors,
+                distinction,
+                (&bound, steps),
+                Some(&input),
+                &[plan.handle],
+            )
+        },
+    )
+    .map_err(|cause| cannot(&cause))?;
+    Ok((created, kept))
 }
 
 /// The owner a row is created under, and whether an earlier row with the same owner link
@@ -1632,6 +2163,8 @@ struct Created {
     prelude: Vec<ScenarioStep>,
     /// The owner it was created under, as a later row with the same owner link reuses it.
     owner: Option<(String, Arrangement)>,
+    /// The related row it was started on, for later rows sharing it ([`Plan::via_key`]).
+    guard_row: Option<Arrangement>,
 }
 
 /// The values one related row must hold, by field.
@@ -1698,6 +2231,70 @@ fn arrange_related<'p>(
     Ok(out)
 }
 
+/// The distinction the owners of [`related_owners`] are arranged at, one apart per owner.
+const RELATED_OWNERS: usize = 200 * RELATED_ROWS;
+
+/// The link to its owner of the entity a key is read from, where that link is the field read: the
+/// value is then an owner's identity, which the arrangement creates and the pattern cannot choose.
+fn owner_link<'ir>(ir: &'ir EssIr, key: &RelatedKey<'_>) -> Option<&'ir str> {
+    ir.owner_of(key.entity)
+        .map(|owned| owned.via)
+        .filter(|via| *via == key.field)
+}
+
+/// One owner per related entity and value the pattern gives a key read from that entity's link to
+/// its owner (beyond10x/ess#272): each value stands for the owner, arranged once where its
+/// lifecycle starts, and every related row given that value is filed under it — so rows given one
+/// value hold one owner and fall in one group, and rows given another hold another. The owners are
+/// created first ([`observe`]), before any related row.
+fn related_owners(
+    plan: &Plan<'_>,
+    rows: &[Row],
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+) -> Result<Vec<(EntityHandle, Node, Arrangement)>, RefusalCause> {
+    let ir = plan.ir;
+    let mut out: Vec<(EntityHandle, Node, Arrangement)> = Vec::new();
+    for row in rows {
+        for (field, value) in &row.values {
+            let Some(key) = plan.related.get(field.as_str()) else {
+                continue;
+            };
+            if *value == Node::Null || owner_link(ir, key).is_none() {
+                continue;
+            }
+            if out
+                .iter()
+                .any(|(entity, held, _)| entity == key.entity && held == value)
+            {
+                continue;
+            }
+            let Some(belongs) = ir.owner_of(key.entity) else {
+                continue;
+            };
+            let initial = ir.entity(&belongs.owner).lifecycle.initial.clone();
+            let owner = super::arrange_first(
+                ir,
+                &belongs.owner,
+                std::slice::from_ref(&initial),
+                actors,
+                Distinction::further(RELATED_OWNERS + out.len()),
+                &[plan.handle, key.entity],
+            )
+            .map_err(|_| {
+                plan.unwitnessed(format!(
+                    "no `{}` can be arranged for the `{}` row `{}` reads its `{field}` from to be \
+                     filed under",
+                    ir.entity(&belongs.owner).name,
+                    ir.entity(key.entity).name,
+                    row.label
+                ))
+            })?;
+            out.push((key.entity.clone(), value.clone(), owner));
+        }
+    }
+    Ok(out)
+}
+
 /// A row of the entity `key` reads, created holding `values` through one branch that fills every
 /// one of them from its input — leaving out the input of a value that is absent.
 fn arrange_referenced(
@@ -1749,7 +2346,35 @@ fn arrange_referenced(
         return Err(refuse());
     }
     let chain = [plan.handle];
-    let owner = arrange_owner(ir, creator.outcome, key.entity, actors, distinction, &chain);
+    // Where the value read is the row's link to its owner, the row is filed under the owner that
+    // value stands for ([`related_owners`]), which an earlier step created.
+    let mut values = values.clone();
+    let filed = match owner_link(ir, key).and_then(|via| Some((via, values.remove(via)?))) {
+        Some((via, value)) if value != Node::Null => {
+            let (_, _, owner) = plan
+                .related_owners
+                .iter()
+                .find(|(entity, held, _)| entity == key.entity && *held == value)
+                .ok_or_else(refuse)?;
+            let read = filled_from(&creator, via).ok_or_else(refuse)?;
+            Some((
+                read.to_owned(),
+                Arrangement {
+                    steps: Vec::new(),
+                    ..owner.clone()
+                },
+            ))
+        }
+        Some((via, value)) => {
+            values.insert(via, value);
+            None
+        }
+        None => None,
+    };
+    let owner = match &filed {
+        Some(_) => filed.clone(),
+        None => arrange_owner(ir, creator.outcome, key.entity, actors, distinction, &chain),
+    };
     let row = created_owned(
         ir,
         key.entity,
@@ -1761,7 +2386,13 @@ fn arrange_referenced(
         Some(&input),
     )
     .map_err(|_| refuse())?;
-    if !holds(&row, values) {
+    let under = filed.as_ref().is_none_or(|(_, owner)| {
+        owner_link(ir, key).is_some_and(|via| {
+            row.settled.get(via).map(|held| &held.value)
+                == Some(&ScenarioValue::instance(owner.instance.clone()))
+        })
+    });
+    if !under || !holds(&row, &values) {
         return Err(refuse());
     }
     Ok(row)
@@ -1951,6 +2582,24 @@ fn groups(plan: &Plan<'_>, arranged: &[Arranged]) -> Result<Vec<Group>, RefusalC
     Ok(groups)
 }
 
+/// The steps run before any row: the owners [`GuardLink`] inputs name and the owners related rows
+/// are filed under, then every related row a key is read from.
+fn first_steps(
+    plan: &Plan<'_>,
+    arranged: &[Arranged],
+    steps: &mut Vec<ScenarioStep>,
+    source: &mut BTreeSet<EssSemanticRef>,
+) {
+    let owners = plan.guard_owners.iter().map(|(_, owner)| owner);
+    for owner in owners.chain(plan.related_owners.iter().map(|(_, _, owner)| owner)) {
+        steps.extend(owner.steps.iter().cloned());
+        source.extend(owner.source.iter().cloned());
+    }
+    for row in arranged {
+        steps.extend(row.prelude.iter().cloned());
+    }
+}
+
 fn observe(
     plan: &Plan<'_>,
     arranged: &[Arranged],
@@ -1970,9 +2619,8 @@ fn observe(
     source.extend(types.into_iter().map(EssSemanticRef::from));
     // Every related row a key is read from exists before the first row reads one, so a target
     // that copies from the row registered last or first, not the one named, copies another value.
-    for row in arranged {
-        steps.extend(row.prelude.iter().cloned());
-    }
+    // The owners those rows are filed under exist before any of them.
+    first_steps(plan, arranged, &mut steps, &mut source);
     for row in arranged {
         steps.extend(row.arrangement.steps.iter().cloned());
         source.extend(row.arrangement.source.iter().cloned());

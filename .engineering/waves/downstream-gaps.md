@@ -55,3 +55,13 @@ Closed or merged by the reconciliation:
 - #229 follow-up counts and #228 go into family F B.
 - #281 item 2 is declined with the idiom `{name: board, remove: true}`.
 - Filed from the review: #288 and #289.
+
+## Wave w2 (integrate/gaps-w2, from 0.49.0 at f86180f30)
+
+Release on merge (operator, 2026-10-01: release often). Units edit disjoint files.
+
+| unit | branch | tree | build dir | status |
+|---|---|---|---|---|
+| feature-request-272 | impl/gaps-272 | gaps-272 | b10x-target/gaps-272 | merged |
+| feature-request-287 | impl/gaps-287 | gaps-287 | b10x-target/gaps-287 | dispatched |
+| feature-request-306 | impl/gaps-306 | gaps-306 | b10x-target/gaps-306 | dispatched |

@@ -151,6 +151,13 @@ pub(super) fn unarranged() -> RefusalCause {
     }
 }
 
+/// The input field the command's related guards read and the entity whose row it names, for an
+/// arrangement outside this module that chooses the row's surroundings (an aggregate view's rows,
+/// beyond10x/ess#272).
+pub(super) fn reads(command: &ResolvedCommand) -> Option<(&str, &EntityHandle)> {
+    read(command).map(|(via, entity)| (via.field(), entity))
+}
+
 /// The input field the command's related guards read and the entity whose row it names.
 fn read(command: &ResolvedCommand) -> Option<(&ResolvedRelatedVia, &EntityHandle)> {
     command
@@ -372,6 +379,81 @@ pub(super) fn drive(
     // An owner the caller already bound for a link input — the one `created_owned` arranged for the
     // subject this run creates — is the owner the run is sent naming: the related row is arranged
     // against it, never against a second owner that would replace it (beyond10x/ess#271).
+    searched(
+        ir,
+        driver,
+        instance,
+        actors,
+        distinction,
+        (bound, known),
+        input,
+        arranging,
+    )
+    .map(|(invocation, _)| invocation)
+}
+
+/// [`drive`] for a creating branch an aggregate view's rows are created through, where rows given
+/// one value of the input the guard reads share one related row (beyond10x/ess#272): the run, and
+/// the related row it arranged — its steps already the run's — for [`drive_on`] to send a later
+/// row against. Refused where [`drive`] would not search for the row: a branch sent naming its
+/// own subject or a bound row through the guard's input, the `exists: false` branch, and a related
+/// row of an entity `arranging` names.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn drive_sharing(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
+    input: &BTreeMap<String, Node>,
+    arranging: &[&EntityHandle],
+) -> Result<(super::Invocation, Arrangement), RefusalCause> {
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let names_subject = driver.outcome.subject.as_ref().is_some_and(|subject| {
+        matches!(&subject.instance, ResolvedInstance::Supplied { field: named } if named.name == via.field())
+    });
+    if names_subject
+        || bound.contains_key(via.field())
+        || is_absent(driver.outcome)
+        || arranging.contains(&entity)
+    {
+        return Err(unarranged());
+    }
+    searched(
+        ir,
+        driver,
+        None,
+        actors,
+        distinction,
+        (bound, known),
+        Some(input),
+        arranging,
+    )
+}
+
+/// The tail of [`drive`]: the related row searched for and arranged, the run sent naming it, and
+/// that row with its steps moved into the run's.
+// One argument per thing an arranging run is told, as [`drive`] takes them.
+#[allow(clippy::too_many_arguments)]
+fn searched(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    instance: Option<&crate::scenario::InstanceName>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    distinction: Distinction,
+    (bound, known): (
+        &BTreeMap<String, crate::scenario::InstanceName>,
+        &[super::ScenarioStep],
+    ),
+    input: Option<&BTreeMap<String, Node>>,
+    arranging: &[&EntityHandle],
+) -> Result<(super::Invocation, Arrangement), RefusalCause> {
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let field = via.field();
     let pins = pins(ir, driver.command, driver.outcome, entity, instance, bound);
     let (mut row, _, input) = with_row(
         ir,
@@ -398,11 +480,44 @@ pub(super) fn drive(
     bound.extend(owners);
     bound.insert(field.to_owned(), row.instance.clone());
     let mut invocation = super::invoke_with(ir, driver, instance, actors, &bound, &input);
-    let mut steps = row.steps;
+    let mut steps = std::mem::take(&mut row.steps);
     steps.append(&mut invocation.steps);
     invocation.steps = steps;
-    invocation.source.extend(row.source);
-    Ok(invocation)
+    invocation.source.extend(row.source.iter().cloned());
+    Ok((invocation, row))
+}
+
+/// [`drive`] on a related row the caller arranged itself, holding values it chose — an aggregate
+/// view's row copying its group key from the row its guard reads (beyond10x/ess#272): `input` sent
+/// as it is but for the field the guard reads, which names `row`. Refused where that row, crossed
+/// with `input`, does not select `driver`'s branch, rather than sent for a branch it does not reach.
+/// The row's own steps are the caller's to run, before this one.
+pub(super) fn drive_on(
+    ir: &EssIr,
+    driver: &super::Driver<'_>,
+    actors: &BTreeMap<QualifiedName, ActorRef>,
+    bound: &BTreeMap<String, crate::scenario::InstanceName>,
+    row: &Arrangement,
+    input: &BTreeMap<String, Node>,
+) -> Result<super::Invocation, RefusalCause> {
+    let (via, entity) = read(driver.command).ok_or_else(unarranged)?;
+    let field = via.field();
+    let selected = selects(ir, driver.command, entity, Some(row), input)?;
+    if selected.is_none_or(|branch| branch.name != driver.outcome.name) {
+        return Err(RefusalCause::GuardUnsatisfiable {
+            predicate: format!(
+                "the row of `{}` the arrangement named for `input.{field}` of `{}` does not \
+                 select `{}`",
+                entity.name(),
+                driver.command.name,
+                driver.outcome.name
+            ),
+            tried: 1,
+        });
+    }
+    let mut bound = bound.clone();
+    bound.insert(field.to_owned(), row.instance.clone());
+    Ok(super::invoke_with(ir, driver, None, actors, &bound, input))
 }
 
 /// [`drive`] where the related row is of an entity `arranging` already names: one level deep, a

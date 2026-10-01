@@ -9,6 +9,14 @@ What each ESS release is worth to somebody using it: what became possible, how m
 
 This page is generated from the change records kept in the repository. A release with no entry here added nothing somebody using ESS would act on.
 
+## 0.50.0 — 2026-10-01
+
+### Synthesis witnesses an aggregate over rows a when_related-guarded command creates
+
+capability · notable impact · [release post](https://beyond10x.github.io/ess/releases/aggregates-over-related-guards) · [release notes](https://github.com/beyond10x/ess/releases/tag/0.50.0)
+
+An aggregate view whose creating command has a `when_related` guard gets its `<view>/aggregate` scenario instead of ESS-SYNTH-017: each row's related row is arranged, owner-linked guard inputs name an arranged owner, and a group key read from a related row's owner link holds one owner per value.
+
 ## 0.49.0 — 2026-10-01
 
 ### Generated servers enforce actor grants

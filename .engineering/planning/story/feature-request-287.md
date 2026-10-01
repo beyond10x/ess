@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:feature-request-287
 kind: story
-status: draft
+status: active
 title: A singleton entity can be declared and synthesized
 tags:
 - feature-request
@@ -12,7 +12,10 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 3
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-01T16:38:14Z", actor: "human:timo", revision: 5}
+- {from: "proposed", to: "active", at: "2026-10-01T16:38:15Z", actor: "human:timo", revision: 6}
 ---
 ## Outcome
 
@@ -44,3 +47,7 @@ Per `.agents/skills/assessing-external-requests/SKILL.md` (fit review 2026-10-01
 - **accept, redesigned:** no `singleton:` key. An identity whose type has one value (a one-variant enum) synthesizes: existence scenarios arrange the one row, a second create is witnessed as `existing_instance`, and the caller-swapped run keeps the first run with a note. Synthesis only, no format change. Check the String-guard idiom on 0.49.0 (#275) first, and reply to the requester with it as the interim answer.
 
 - Coordinator (2026-10-01): decided as above.
+
+## Evidence
+
+- Evidence 2026-10-01 (requester, ess 0.49.0): the String-guard idiom is **not** enough. A String identity accepting only one value, plus `existing_instance`, still refuses 7 branches with ESS-SYNTH-001; a one-value enum refuses 5. The coordinator's earlier inference that #275 covers it was wrong. The decided fix stands, raised to priority 1.

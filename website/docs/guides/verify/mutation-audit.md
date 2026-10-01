@@ -102,7 +102,7 @@ score the reports:
 
 ```shell-session
 $ ess verify conform mutate --collect target/mutants
-mutation audit of billing v3 against billing-reference 0.49.0: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s))
+mutation audit of billing v3 against billing-reference 0.50.0: 4 mutant(s), 3 killed, 0 survived, 1 inconclusive, 0 stillborn, 0 unwitnessed, 0 equivalent (baseline: 32 scenario(s), 0 refusal(s))
 inconclusive guard-negate/billing.invoice.CreateInvoice/accepted: `when: amount.amount > 0` becomes `when: not (amount.amount > 0)`
 killed guard-boundary/billing.invoice.CreateInvoice/accepted/0: `amount.amount > 0` becomes `amount.amount >= 0` — by billing.invoice.CreateInvoice/outcome/accepted (1 in total); …
 …

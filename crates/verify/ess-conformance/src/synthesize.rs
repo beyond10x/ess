@@ -3832,6 +3832,48 @@ fn created_owned(
     owner: Option<&(String, Arrangement)>,
     input: Option<&BTreeMap<String, Node>>,
 ) -> Result<Arrangement, Unreachable> {
+    created_by(ir, entity, creator, distinction, owner, |bound, steps| {
+        // Mid-arrangement of `entity`: a creator that needs a related row of an entity already
+        // being arranged stops there (ess/18).
+        let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
+        if related_guard::routes(creator.command, creator.outcome) {
+            related_guard::drive(
+                ir,
+                creator,
+                None,
+                actors,
+                distinction,
+                (bound, steps),
+                input,
+                &chain,
+            )
+            .map_err(|_| Unreachable::Unwitnessable {
+                outcome: OutcomeRef::new(
+                    CommandRef::new(creator.command.name.clone()),
+                    creator.outcome.name.clone(),
+                ),
+            })
+        } else {
+            Ok(match input {
+                Some(input) => invoke_with(ir, creator, None, actors, bound, input),
+                None => invoke(ir, creator, None, None, actors, distinction, bound, &chain)?,
+            })
+        }
+    })
+}
+
+/// [`created_owned`] with the creating run left to `run`, which is told what the owner binds and
+/// the steps that arranged it: one new instance of `entity`, captured from the event the creating
+/// branch emits. An aggregate view's rows are created through it on a related row the scenario
+/// arranged itself (beyond10x/ess#272).
+fn created_by<E>(
+    ir: &EssIr,
+    entity: &EntityHandle,
+    creator: &Driver<'_>,
+    distinction: Distinction,
+    owner: Option<&(String, Arrangement)>,
+    run: impl FnOnce(&BTreeMap<String, InstanceName>, &[ScenarioStep]) -> Result<Invocation, E>,
+) -> Result<Arrangement, E> {
     let instance = instance_name(&ir.entity(entity).name, distinction);
     let mut steps = Vec::new();
     let mut source = BTreeSet::new();
@@ -3848,32 +3890,7 @@ fn created_owned(
     };
 
     let mut settled = BTreeMap::new();
-    // Mid-arrangement of `entity`: a creator that needs a related row of an entity already being
-    // arranged stops there (ess/18).
-    let chain: Vec<&EntityHandle> = arranging.iter().copied().chain([entity]).collect();
-    let created = if related_guard::routes(creator.command, creator.outcome) {
-        related_guard::drive(
-            ir,
-            creator,
-            None,
-            actors,
-            distinction,
-            (&bound, &steps),
-            input,
-            &chain,
-        )
-        .map_err(|_| Unreachable::Unwitnessable {
-            outcome: OutcomeRef::new(
-                CommandRef::new(creator.command.name.clone()),
-                creator.outcome.name.clone(),
-            ),
-        })?
-    } else {
-        match input {
-            Some(input) => invoke_with(ir, creator, None, actors, &bound, input),
-            None => invoke(ir, creator, None, None, actors, distinction, &bound, &chain)?,
-        }
-    };
+    let created = run(&bound, &steps)?;
     steps.extend(created.steps);
     source.extend(created.source);
     absorb(&mut settled, creator.outcome, created.settled);

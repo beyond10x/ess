@@ -11,7 +11,7 @@ ESS is experimental and standalone.
 ## Latest release
 
 Latest published release observed on 1 October 2026:
-[0.49.0](https://github.com/beyond10x/ess/releases/tag/0.49.0). Its release record lists archives
+[0.50.0](https://github.com/beyond10x/ess/releases/tag/0.50.0). Its release record lists archives
 for Linux and macOS on x86-64 and ARM64, plus SHA256SUMS. This is a dated observation of the asset
 list: it does not claim that the archives were downloaded, their checksums verified, or the binary
 installed or run.
@@ -20,11 +20,11 @@ The last five releases:
 
 | Release | What it added |
 |---|---|
+| 0.50.0 | Synthesis witnesses an aggregate view whose creating command has a `when_related` guard, instead of refusing it with ESS-SYNTH-017 |
 | 0.49.0 | Generated Rust and Go servers enforce actor grants: they take the authenticated caller and answer `403 not granted` before a command runs, and served suites add `grant/denied` and `grant/admitted` scenarios; source format `ess/20` (a related row's lifecycle `state` in `when_related`); synthesis witnesses copies from a related row, `when_related` over an `owns` via field and overlapping `when:` branches; `verify diff` leaves no residual for a one-sided declaration |
 | 0.48.0 | `ess ui test` runs `ess-ui-test/1` tests headless and emits a Playwright spec from the same file; `verify conform report` turns an outside runner's per-scenario results into a report/2 that says ESS executed nothing; a served `501` carries `committed`; `ess ui check --model <dir>` reads `ess-inputs.yaml`; a delegating `ess` names the release it runs on every command |
 | 0.47.0 | The generated Rust and Go servers answer with the events a command published, keep request headers and name and encode every system event, and bindings are delivered per binding; `ess-ui/1` UI documents load, check, render as a terminal application or a React project and document themselves (`ess ui`, `ess generate ui`); `verify diff` no longer reports an added or regrouped aggregate view as `unclassified-changed` |
 | 0.46.1 | `verify diff` classifies an outcome's error `payload:` sources and its `accepts: nothing`, `returns:` and caller-decided refusal moving, in `ess-diff/12`, instead of reporting `unclassified-changed` |
-| 0.46.0 | `generate synthesize --target rust` generates the command behaviours, view queries and invariant checks the specification fully determines, over storage and context ports; actor grants as data; a transport-free `handle` on the generated server; `--layout crate`; source format `ess/19` (sources for an error's fields) |
 
 [Format version history](../reference/spec-versions.md) says what every format version changed and
 which release introduced it, and the
@@ -64,7 +64,7 @@ this complete maintained block. It does not verify remote release records.
 
 [ess-source-support-begin]: #
 
-The source checkout’s workspace version is `0.49.0` and includes separately documented unreleased changes.
+The source checkout’s workspace version is `0.50.0` and includes separately documented unreleased changes.
 
 | Capability | Current source | Limits and evidence |
 |---|---|---|

@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T18:37:28Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-272",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: 272/257/270/271 lanes green; requester models 0 refusals"
+  }
+}

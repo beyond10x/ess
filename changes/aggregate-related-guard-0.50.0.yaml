@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/aggregate-related-guard-0.50.0
+repository: ess
+publishedAt: 2026-10-01T22:00:00Z
+title: Synthesis witnesses an aggregate over rows a when_related-guarded command creates
+summary: >-
+  An aggregate view whose creating command has a `when_related` guard gets its `<view>/aggregate` scenario instead of ESS-SYNTH-017: each row's related row is arranged, owner-linked guard inputs name an arranged owner, and a group key read from a related row's owner link holds one owner per value.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.50.0
+  version: 0.50.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
