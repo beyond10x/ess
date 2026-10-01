@@ -378,3 +378,138 @@ fn issue_211_two_branches_one_related_row_selects_are_conflicting() {
         "{errors}"
     );
 }
+
+// ---- the related row's held state (beyond10x/ess#229, `ess/20`) ------------------------------
+
+/// A move guarded by the held state of another entity's row: a release is published only for a
+/// candidate in state `Accepted`.
+pub const RELEASE: &str =
+    include_str!("../../../verify/ess-conformance/tests/fixtures/related-guard-release.yaml");
+
+const NOT_ACCEPTED: &str =
+    "        when_related: {via: input.candidate, predicate: state != Accepted}\n";
+
+fn release_at(format: &str) -> String {
+    replaced(RELEASE, "format: ess/20\n", &format!("format: {format}\n"))
+}
+
+#[test]
+fn issue_229_a_related_guard_reads_the_related_rows_held_state_under_ess_20() {
+    let spec = assemble_as(RELEASE, "release.yaml").unwrap_or_else(|errors| panic!("{errors}"));
+    let command = &spec.commands()[&"demo.release.PublishRelease".parse().unwrap()];
+    let refusal = command
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.name.as_str() == "not-accepted")
+        .unwrap();
+    let OutcomeCondition::Related { via, test, .. } = &refusal.condition else {
+        panic!("expected a related guard: {:?}", refusal.condition)
+    };
+    assert_eq!(via, "candidate");
+    let RelatedTest::Holds(predicate) = test else {
+        panic!("expected a predicate: {test:?}")
+    };
+    assert_eq!(predicate.to_string(), "state != Accepted");
+    assert!(refusal.subject.is_none());
+    assemble_as(&as_json(RELEASE), "release.json").unwrap_or_else(|errors| panic!("{errors}"));
+}
+
+#[test]
+fn issue_229_state_in_a_related_guard_is_refused_below_ess_20_naming_it() {
+    for format in ["ess/19", "ess/18"] {
+        let text = release_at(format);
+        for (form, file, text) in [
+            ("yaml", "release.yaml", text.clone()),
+            ("json", "release.json", as_json(&text)),
+        ] {
+            let errors = assemble_as(&text, file)
+                .err()
+                .unwrap_or_else(|| panic!("{form} at {format} must refuse"));
+            assert!(
+                has(&errors, ValidationCode::UnsupportedFormatVersion, "ess/20"),
+                "{form} at {format}: {errors}"
+            );
+            assert!(
+                has(
+                    &errors,
+                    ValidationCode::UnsupportedFormatVersion,
+                    "when_related"
+                ),
+                "{form} at {format} names the key: {errors}"
+            );
+            assert!(
+                !has(&errors, ValidationCode::UnobservableFact, "state"),
+                "{form} at {format}: the header is wrong, not the document: {errors}"
+            );
+        }
+    }
+}
+
+#[test]
+fn issue_229_the_related_state_is_typed_by_the_related_lifecycle() {
+    let errors = assemble_as(
+        &replaced(
+            RELEASE,
+            NOT_ACCEPTED,
+            "        when_related: {via: input.candidate, predicate: state != Published}\n",
+        ),
+        "release.yaml",
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a state of another lifecycle is refused"));
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.to_string().contains("Published")),
+        "{errors}"
+    );
+}
+
+#[test]
+fn issue_229_the_related_state_enters_the_partition() {
+    // Both branches over the state, and they overlap on `Proposed`.
+    let errors = assemble_as(
+        &replaced(
+            RELEASE,
+            "      - name: published\n",
+            "      - name: published\n        when_related: {via: input.candidate, predicate: state != Rejected}\n",
+        ),
+        "release.yaml",
+    )
+    .err()
+    .unwrap_or_else(|| panic!("an unknown state is refused"));
+    assert!(
+        errors
+            .as_slice()
+            .iter()
+            .any(|error| error.to_string().contains("Rejected")),
+        "{errors}"
+    );
+    let errors = assemble_as(
+        &replaced(
+            RELEASE,
+            "      - name: published\n",
+            "      - name: published\n        when_related: {via: input.candidate, predicate: state == Proposed}\n",
+        ),
+        "release.yaml",
+    )
+    .err()
+    .unwrap_or_else(|| panic!("two branches over one state are refused"));
+    assert!(
+        has(
+            &errors,
+            ValidationCode::ConflictingDeclaration,
+            "state = Proposed"
+        ),
+        "{errors}"
+    );
+    assert!(
+        has(
+            &errors,
+            ValidationCode::NonExhaustiveBranches,
+            "state = Accepted"
+        ),
+        "{errors}"
+    );
+}

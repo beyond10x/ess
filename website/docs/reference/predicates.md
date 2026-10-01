@@ -24,7 +24,7 @@ disagree with the page today, and fails once it agrees, so the marker cannot out
 |---|---|---|
 | a command outcome's `when` | the command's input fields | A branch without `when` is the default. |
 | a command outcome's `when_subject: {predicate: …}` (`ess/9`) | the declared stored fields of the entity the command addresses, read just before the command selects a branch; from `ess/15` also the command's input, as `input.<field>` | `state` from `ess/18`, the held lifecycle state; not before. The input only through the `input.` prefix; see [comparing with the input](#comparing-a-stored-field-with-the-input). Conjunctive with `when`. A refusal may carry it without naming a subject; it reads the one its sibling branches name. |
-| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | Keyed by that entity's identity only, one hop; a lookup by any other field is not expressible. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other; never beside a `when_subject*` guard. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
+| a command outcome's `when_related: {via: input.<field>, predicate: …}` (`ess/18`) | the declared stored fields of the row of another entity whose identity `input.<field>` carries, read just before the command selects a branch, and the command's input as `input.<field>` | `state` from `ess/20`, the related row's held lifecycle state; not before. Keyed by that entity's identity only, one hop; a lookup by any other field is not expressible. A missing row makes the predicate unknown, so it selects only the sibling `when_related: {via: …, exists: false}` branch, which the command must declare. Any branch may carry it, a `creates:` or a refusal naming no subject included; conjunctive with `when` except on the `exists: false` branch, which answers a missing row before any other; never beside a `when_subject*` guard. See [a guard over another entity's row](#a-guard-over-another-entitys-row). |
 | an entity's `invariants` | the entity's own fields | Checked after every branch that creates or changes the entity. A required field an invariant reads must be set by every `creates:` branch, or declared `Optional<…>`; otherwise validate refuses it with `ESS-COMMAND-018`. |
 | a struct type's `invariants` | the struct's own fields | Same grammar, checked against the type. |
 | a newtype's `invariants` | the wrapped value, as `value` | For example `value != ""` on a newtype of `String`. |
@@ -778,6 +778,22 @@ subject a branch names, a `creates:` included, and a refusal may carry it withou
 command reads one related row, declares at most one `exists: false` branch, and declares one
 wherever it has a predicate branch, because a missing row selects no predicate and never the
 default.
+
+From `ess/20`, the predicate may also read the related row's held lifecycle state as `state`, as a
+`when_subject` predicate reads the addressed subject's from `ess/18`: a release published only for
+a candidate in state `Accepted` refuses with `when_related: {via: input.candidate, predicate: state
+!= Accepted}` beside a default that publishes (beyond10x/ess#229). `state` is typed by the related
+entity's lifecycle, so a state it does not declare is refused, and it enters the same related-row
+× input partition as the stored fields. Under `ess/18` and `ess/19` it is refused as
+`unsupported_format_version`, naming `ess/20`. Synthesis drives the related row along its
+lifecycle to a state on each side of the predicate: the refusal is sent for a candidate still
+`Proposed` between two `Accepted` decoys, the default for an `Accepted` one between two `Proposed`
+decoys, so a target that checks only that the row exists, or reads another row's state, fails.
+Under `ess/20`, where accepting a candidate itself reads a related candidate — a parent that must
+not be accepted yet — synthesis arranges that parent one level deep, fresh in its initial state,
+and goes no deeper; a branch only a deeper arrangement could reach is refused with
+`ESS-SYNTH-003`, saying so. A document under an earlier header synthesizes the suite it did:
+there such a move is not arranged, and its branches are refused as before.
 
 A missing row is answered by the `exists: false` branch before any other branch, whatever the
 input: an `exists: false` branch therefore carries no `when:`, and an accepting `when:` branch may
