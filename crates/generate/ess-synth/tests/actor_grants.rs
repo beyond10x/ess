@@ -132,7 +132,10 @@ fn desk() -> EssIr {
 }
 
 fn scratch(label: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("actor-grants-{label}"))
+    // One directory per test process: nextest runs each test in its own process, and the
+    // served build rewrites its generated surface in place to make the mutant.
+    Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("actor-grants-{label}-{}", std::process::id()))
 }
 
 fn write(synthesis: &Synthesis, directory: &Path) {
