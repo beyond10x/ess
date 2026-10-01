@@ -1,0 +1,14 @@
+schema: b10x-change/v1
+id: ess/related-state-0.49.0
+repository: ess
+publishedAt: 2026-10-01T18:00:00Z
+title: A when_related guard reads the related row's lifecycle state
+summary: >-
+  `ess/20` lets a `when_related` predicate read the related row's held lifecycle state as `state`, and synthesis arranges a related row of an entity already being arranged one level deep; earlier formats refuse the path and keep their suites.
+kind: capability
+impact: notable
+source:
+  url: https://github.com/beyond10x/ess/releases/tag/0.49.0
+  version: 0.49.0
+journeys: [specify]
+affectedSurfaces: [ess/docs]
