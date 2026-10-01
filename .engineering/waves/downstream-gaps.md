@@ -19,7 +19,7 @@ Plan critics: rounds 1 and 2 recorded as `review-result:downstream-gaps-*-round-
 | 2 | feature-request-229 | impl/gaps-229 | gaps-229 | b10x-target/gaps-229 | ess-gaps/229 | merged |
 | 2 | feature-request-275 | impl/gaps-275 | gaps-275 | b10x-target/gaps-275 | ess-gaps/275 | merged |
 | 2 | feature-request-276 | impl/gaps-276 | gaps-276 | b10x-target/gaps-276 | ess-gaps/276 | merged |
-| 3 | feature-request-270 | impl/gaps-270 | gaps-270 | b10x-target/gaps-270 | ess-gaps/270 | dispatched |
+| 3 | feature-request-270 | impl/gaps-270 | gaps-270 | b10x-target/gaps-270 | ess-gaps/270 | merged |
 | 3 | feature-request-278 | impl/gaps-278 | gaps-278 | b10x-target/gaps-278 | ess-gaps/278 | dispatched |
 | 4 | feature-request-266 (after 265 and 278 merge: synthesize.rs, subject_fact.rs) | | | | | planned |
 | 4 | feature-request-267, -272 | | | | | planned |
