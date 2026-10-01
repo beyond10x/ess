@@ -153,8 +153,9 @@ new values in the views and exactly one row for the identity. For create-or-refu
 creates the record through each creating branch, snapshots it, sends the identity again with other
 values, and requires the declared error, no event and the row unchanged. An input-guarded refusal
 beside either form is checked twice: for an identity nothing stored, and for one a record carries. No new suite step is used. The served surface answers
-`existing_instance:` with `409`. Every generated code target (Rust, Go, Web, Clap) refuses both forms
-by name, and Entity Runtime lowering refuses them with `ExistenceSelectionUnsupported`. Below
+`existing_instance:` with `409`. The generated Rust behaviour looks the identity up in its storage
+port before it takes a branch. The Go, Web and Clap targets refuse both forms by name, and Entity
+Runtime lowering refuses them with `ExistenceSelectionUnsupported`. Below
 `ess/16` both are refused with `unsupported_format_version`.
 A system precondition cannot invoke a command of either form, because which branch it takes depends
 on a record it cannot observe before it runs.
