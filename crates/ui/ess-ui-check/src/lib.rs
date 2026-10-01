@@ -28,7 +28,9 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub use model::{load_model, model_from_sources, Model};
+pub use model::{
+    binding, compile_sources, load_model, model_from_sources, BindingError, Model, Refusal,
+};
 
 /// The format marker of the JSON report.
 pub const FORMAT: &str = "ess-ui-check/1";
@@ -133,6 +135,9 @@ pub const CHECKS: &[Check] = &[
     rule("command_in_model"),
     rule("event_in_model"),
     rule("section_readable"),
+    // With `--model`: a read binds a parameter its view does not declare, or leaves a required
+    // one unbound.
+    rule("read_params"),
 ];
 
 fn severity_of(id: &str) -> Severity {

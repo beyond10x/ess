@@ -720,6 +720,7 @@ name = "ess-ui"
 version = "0.50.0"
 dependencies = [
  "serde",
+ "serde_json",
  "serde_yaml",
 ]
 
@@ -730,6 +731,7 @@ dependencies = [
  "clap",
  "ess-compiler",
  "ess-domain",
+ "ess-gen",
  "ess-ui",
  "serde",
  "serde_json",

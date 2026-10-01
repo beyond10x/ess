@@ -9,7 +9,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use ess_ui_check::{
-    check_source, load_model, Finding, Model, Options, OutputFormat, Report, Severity, CHECKS,
+    check_source, load_model, model_from_sources, Finding, Model, Options, OutputFormat, Report,
+    Severity, CHECKS,
 };
 
 const BASE: &[(&str, &str)] = &[
@@ -641,6 +642,90 @@ fn section_readable() {
         public.findings
     );
     assert_eq!(tripped(&report, "section_readable").len(), 1);
+}
+
+/// The fixture model with one more view, `shop.stock.Labelled`, that declares a required and an
+/// optional parameter.
+fn param_model() -> Model {
+    let root = crate_dir().join("tests/fixtures/model");
+    let read = |file: &str| {
+        std::fs::read_to_string(root.join(file)).unwrap_or_else(|error| panic!("{file}: {error}"))
+    };
+    let mut stock = read("domains/stock.yaml");
+    stock.push_str(
+        "\n  - name: shop.stock.Labelled\n    source: shop.stock.Item\n    consistency: \
+         read_your_writes\n    params:\n      - name: wanted\n        type: String\n      - \
+         name: hint\n        type: Optional<String>\n    filter: {any: [label == param.wanted, \
+         label == param.hint]}\n    fields:\n      - name: item_id\n        type: \
+         shop.stock.ItemId\n",
+    );
+    let sources = [
+        ("system.yaml", read("system.yaml")),
+        ("components.yaml", read("components.yaml")),
+        ("domains/stock.yaml", stock),
+        ("domains/audit.yaml", read("domains/audit.yaml")),
+    ]
+    .map(|(label, text)| (label.to_owned(), text));
+    model_from_sources(&sources, Path::new("shop")).unwrap_or_else(|error| panic!("{error}"))
+}
+
+fn param_report(reads: &str) -> Report {
+    let text = doc(&[
+        ("model", "shop"),
+        (
+            "pages",
+            &format!(
+                "{{p: {{kind: detail_page, title: P, params: {{q: string}}, sections: \
+                 [{{name: summary, reads: stock.Items}}, \
+                 {{name: labelled, component: collection, reads: {reads}}}]}}}}"
+            ),
+        ),
+    ]);
+    report_with(&text, Some(&param_model()), &Options::default())
+}
+
+#[test]
+fn read_params() {
+    // Every declared parameter bound, the optional one too, and nothing else: nothing to report.
+    let report = param_report("{view: stock.Labelled, params: {wanted: params.q, hint: params.q}}");
+    assert!(
+        tripped(&report, "read_params").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+    // The optional parameter may be left unbound.
+    let report = param_report("{view: stock.Labelled, params: {wanted: params.q}}");
+    assert!(
+        tripped(&report, "read_params").is_empty(),
+        "{:#?}",
+        report.findings
+    );
+}
+
+#[test]
+fn a_read_binding_an_undeclared_view_param_is_an_error() {
+    let report = param_report("{view: stock.Labelled, params: {wanted: params.q, nope: params.q}}");
+    let finding = trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
+    assert_eq!(finding.severity, Severity::Error);
+    assert!(finding.message.contains("`nope`"), "{finding:?}");
+    assert!(
+        finding.message.contains("shop.stock.Labelled"),
+        "{finding:?}"
+    );
+    assert_eq!(tripped(&report, "read_params").len(), 1);
+    // A view that declares no parameter at all is bound with none.
+    let report = param_report("{view: stock.Items, params: {wanted: params.q}}");
+    trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
+}
+
+#[test]
+fn an_unbound_required_view_param_is_an_error() {
+    let report = param_report("{view: stock.Labelled, params: {hint: params.q}}");
+    let finding = trips_in(&report, "read_params", "pages/p/sections/labelled/reads");
+    assert_eq!(finding.severity, Severity::Error);
+    assert!(finding.message.contains("`wanted`"), "{finding:?}");
+    assert!(!finding.message.contains("`hint`"), "{finding:?}");
+    assert_eq!(tripped(&report, "read_params").len(), 1);
 }
 
 #[test]
