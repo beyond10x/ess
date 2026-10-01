@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:ui-binding-contract
 kind: story
-status: active
+status: implemented
 title: An ess-ui document binds to the served surface through a route table from the model
 refs:
 - provider: github
@@ -34,10 +34,11 @@ scope:
   path: crates/ui/ess-ui/tests/answers.rs
 - confidence: cited
   path: crates/ui/ess-ui/tests/vectors/answers.json
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":7}}}
 - {from: "proposed", to: "active", at: "2026-10-01T20:11:50Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":7}}}
+- {from: "active", to: "implemented", at: "2026-10-01T21:40:41Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"review_outcome":12}}}
 ---
 ## Outcome
 
