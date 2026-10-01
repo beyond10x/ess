@@ -1076,3 +1076,39 @@ test('the runtime admits the new suite majors and a fold in them', () => {
     /unsupported suite version/,
   );
 });
+
+// ---- a binder on the right of a comparison (beyond10x/ess#289) ------------------------------
+
+test('a bare word naming a binder in scope reads the binder, and every other spelling is text', () => {
+  // The vectors `tests/fixtures/binder-operand.go` and `tests/binder_operand.rs` answer.
+  const quantified = (that: Node): Node => ({
+    forall: { in: 'tags', as: 'tag', that: { forall: { in: 'banned', as: 'b', that } } },
+  });
+  const disjoint = quantified('tag != b');
+  const operator = quantified({ tag: { ne: 'b' } });
+  const quoted = quantified('tag != "b"');
+  const shorthand = quantified({ tag: 'b' });
+  const outOfScope: Node = {
+    all: [
+      { forall: { in: 'banned', as: 'b', that: 'b != x' } },
+      { forall: { in: 'tags', as: 'tag', that: 'tag != b' } },
+    ],
+  };
+  const row = (tags: string[], banned: string[]): Row => ({ tags, banned });
+  const vectors: [string, Node, Row, Truth][] = [
+    ['disjoint lists', disjoint, row(['x', 'y'], ['z']), TruthTrue],
+    ['a shared item', disjoint, row(['x'], ['x']), TruthFalse],
+    ['a shared item named like the binder', disjoint, row(['x', 'b'], ['b']), TruthFalse],
+    ['the operator spelling, disjoint', operator, row(['x'], ['z']), TruthTrue],
+    ['the operator spelling, shared', operator, row(['x'], ['x']), TruthFalse],
+    ['a quoted word is text', quoted, row(['x'], ['x']), TruthTrue],
+    ['a quoted word is text, matching', quoted, row(['b'], ['z']), TruthFalse],
+    ['the shorthand is text', shorthand, row(['b'], ['z']), TruthTrue],
+    ['the shorthand is text, not matching', shorthand, row(['x'], ['x']), TruthFalse],
+    ['out of scope is text', outOfScope, row(['b'], ['z']), TruthFalse],
+    ['out of scope is text, not matching', outOfScope, row(['x'], ['z']), TruthTrue],
+  ];
+  for (const [name, predicate, values, want] of vectors) {
+    assert.equal(parsePredicate(predicate).evaluate(facts(values)), want, name);
+  }
+});
