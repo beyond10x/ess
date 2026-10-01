@@ -35,6 +35,7 @@ use super::{
     ResolvedInstance, ResolvedOutcome, ResolvedPayloadValue, ResolvedSubject, ScenarioStep,
     ScenarioValue, Setup, Truth, Unreachable, ViewExpectation, ViewRef, WitnessGap,
 };
+use ess_domain::command::OutcomeName;
 use ess_domain::entity::Cardinality;
 use ess_primitives::facts::Number;
 use ess_primitives::node::Node;
@@ -1368,9 +1369,10 @@ fn reach_linked(
     entity: &EntityHandle,
     arrangement: &Arrangement,
     accept: &dyn Fn(&Arrangement, &BTreeMap<String, Node>) -> bool,
+    order: Order,
 ) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
     for input in linked_inputs(ir, command, entity, arrangement)? {
-        if selects(ir, command, entity, arrangement, &input)?
+        if selects(ir, command, entity, arrangement, &input, order)?
             .is_some_and(|branch| branch.name == outcome.name)
             && accept(arrangement, &input)
         {
@@ -1601,8 +1603,22 @@ fn row_under(
         })
 }
 
-/// Which branch this command selects for the row `arrangement` holds and this input, if exactly
-/// one does.
+/// How [`selects`] answers a row and input on which several guarded branches hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Order {
+    /// No branch: the search goes on to a row and input on which exactly one is selected, so a
+    /// witness never depends on the order a target reads its branches in. Every search runs this
+    /// way first.
+    Unique,
+    /// The first declared, as the precedence order states (`docs/design/cross-record-and-stored-
+    /// field-guards.md`, "The precedence order", steps 2 and 5; beyond10x/ess#217): only where no
+    /// row and input selects the branch alone — `held-for-promotion: result == Healthy` beside a
+    /// `when_subject:`, declared before `promoted: result == Healthy` (beyond10x/ess#278).
+    FirstDeclared,
+}
+
+/// Which branch this command selects for the row `arrangement` holds and this input: the only one
+/// selected, or under [`Order::FirstDeclared`] the first declared of several.
 ///
 /// A row whose state no move of the command starts from is the wrong-state family's
 /// ([`refusal_witness`]) and is not answered here, although its stored fields do select a guarded
@@ -1613,6 +1629,7 @@ fn selects<'a>(
     entity: &EntityHandle,
     arrangement: &Arrangement,
     input: &BTreeMap<String, Node>,
+    order: Order,
 ) -> Result<Option<&'a ResolvedOutcome>, RefusalCause> {
     let wrong = ir
         .wrong_states(command)
@@ -1661,10 +1678,12 @@ fn selects<'a>(
     {
         selected.retain(|branch| super::is_input_guarded_refusal(branch));
     }
-    let pick = match selected.as_slice() {
-        [] => command.outcomes.iter().find(|branch| state_default(branch)),
-        [only] => Some(*only),
-        _ => None,
+    // `selected` is in declaration order; under [`Order::FirstDeclared`] the first answers.
+    let pick = match (selected.as_slice(), order) {
+        ([], _) => command.outcomes.iter().find(|branch| state_default(branch)),
+        ([only], _) => Some(*only),
+        ([first, ..], Order::FirstDeclared) => Some(*first),
+        (_, Order::Unique) => None,
     };
     if wrong && !pick.is_some_and(reads_state) {
         return Ok(None);
@@ -1784,6 +1803,11 @@ pub(super) fn refusal_witness(
 /// The input [`refusal_witness`] sends to `arrangement`'s row, and the stored guards of the
 /// siblings it misses through that row rather than through its input: every row-only sibling's,
 /// and a mixed sibling's where its input half holds.
+///
+/// Where no candidate serves that way, a moving branch with a stored guard is tried as selected
+/// first on the row, which an accepting sibling declared after it then need not be refuted against
+/// (beyond10x/ess#278).
+#[allow(clippy::too_many_lines)]
 fn refusal_input(
     ir: &EssIr,
     entity: &EntityHandle,
@@ -1889,13 +1913,312 @@ fn refusal_input(
     if let Some(found) = through_row {
         return Ok(found);
     }
+    // Only where no candidate served above: `outcome` selected on this row answers before every
+    // accepting sibling declared after it (beyond10x/ess#278), so such a sibling whose input guard
+    // the candidate cannot refute — `promoted: result == Healthy` after `held-for-promotion:
+    // result == Healthy` beside `when_subject:` — need not be refuted at all.
+    //
+    // A guarded `outcome` is selected where its input guard holds, which every candidate here
+    // satisfies, and its stored guard, where it declares one, holds on the row; it then answers
+    // with the wrong-state answer only where its own move does not start from the row's state. Every
+    // input-guarded refusal is still refuted, since it is taken before any accepting branch
+    // whatever the order (beyond10x/ess#178), and so is every sibling declared before `outcome`.
+    let position = |branch: &ResolvedOutcome| {
+        command
+            .outcomes
+            .iter()
+            .position(|other| other.name == branch.name)
+    };
+    let answered_after =
+        |other: &ResolvedOutcome| other.error.is_none() && position(other) > position(outcome);
+    let own_stored = stored(&outcome.condition);
+    // Only a branch with a stored guard: Entity Runtime lowers no held-state guard onto a
+    // stored-field branch, so such a branch selected on a row in a state its move does not start
+    // from is the wrong-state answer, as a sibling's is above (`answered_by_state`). A branch with a
+    // stored guard is never the default, and [`refusal_witness`] is asked only for a state no move
+    // of the command starts from, so `outcome` is guarded and its move does not start from the
+    // row's state wherever this runs.
+    let first_declared =
+        on_row && own_stored.is_some() && branches.iter().any(|b| answered_after(b));
+    if first_declared {
+        debug_assert!(guarded(command).any(|branch| branch.name == outcome.name));
+        debug_assert!(answered_by_state(outcome));
+        'first_declared: for input in &inputs {
+            let facts = flatten(ir, command, input).map_err(RefusalCause::WitnessRejected)?;
+            if !decides(&facts, &own, true)? {
+                continue;
+            }
+            let mut relied = Vec::new();
+            if let Some(predicate) = &own_stored {
+                if guard_truth_with(
+                    ir,
+                    entity,
+                    &arrangement.settled,
+                    &arrangement.unwritten,
+                    Some(&arrangement.state),
+                    predicate,
+                    Some((command, input)),
+                ) != Truth::True
+                {
+                    continue;
+                }
+                relied.push(predicate.clone());
+            }
+            for branch in &row_only {
+                let Some(predicate) = falsified(branch, input) else {
+                    continue 'first_declared;
+                };
+                relied.push(predicate);
+            }
+            for branch in &branches {
+                let Some(guard) = input_guard(&branch.condition) else {
+                    continue;
+                };
+                if decides(&facts, &[guard], false)? || answered_after(branch) {
+                    continue;
+                }
+                if stored(&branch.condition).is_some() && answered_by_state(branch) {
+                    continue;
+                }
+                let Some(predicate) = falsified(branch, input) else {
+                    continue 'first_declared;
+                };
+                relied.push(predicate);
+            }
+            return Ok((input.clone(), relied));
+        }
+    }
+    // A sibling whose input guard admits exactly what one of `own` admits is selected by every
+    // candidate satisfying `own`, so it is no guard the input could refute. Declared after
+    // `outcome` and accepting, the search above passed it over where `outcome` was selected on the
+    // row; otherwise — declared before, or a refusal — it is what blocked every candidate.
+    let twin = |branch: &ResolvedOutcome| {
+        input_guard(&branch.condition)
+            .is_some_and(|guard| own.iter().any(|mine| admit_alike(ir, command, mine, guard)))
+    };
+    // A twin whose stored guard the row refutes for every candidate was passed over by the search,
+    // so it took nothing. Of the rest, one cause is named: an input-guarded refusal answers before
+    // any accepting branch whatever the order, so the first refusal twin, and only where there is
+    // none the first accepting twin declared before `outcome`.
+    let passed_over = |branch: &ResolvedOutcome| {
+        !inputs.is_empty()
+            && inputs
+                .iter()
+                .all(|input| falsified(branch, input).is_some())
+    };
+    let earlier: Vec<&ResolvedOutcome> = branches
+        .iter()
+        .copied()
+        .filter(|branch| twin(branch) && !answered_after(branch) && !passed_over(branch))
+        .collect();
+    let cause: Option<(&OutcomeName, &Predicate)> = earlier
+        .iter()
+        .find(|branch| branch.error.is_some())
+        .or_else(|| earlier.first())
+        .and_then(|branch| Some((&branch.name, input_guard(&branch.condition)?)));
+    let later = branches
+        .iter()
+        .any(|branch| twin(branch) && answered_after(branch));
+    let listed: Vec<&Predicate> = siblings
+        .iter()
+        .copied()
+        .filter(|sibling| {
+            !own.iter()
+                .any(|mine| admit_alike(ir, command, mine, sibling))
+        })
+        .collect();
+    let holding = own_stored
+        .as_ref()
+        .filter(|_| first_declared && later && earlier.is_empty());
     Err(refusal_unsatisfied(
         entity,
-        &own,
-        &siblings,
+        (&own, &siblings, &listed),
+        cause,
+        holding,
         lost_on_row.then_some(halves.as_slice()),
         inputs.len().min(super::MAX_CANDIDATES),
     ))
+}
+
+/// Whether two input guards admit the same inputs — `result in [Healthy]` and `result == Healthy`
+/// — answered `false` wherever that is not shown:
+///
+/// 1. equal once a one-value `in [x]` is written `== x` ([`one_value_equality`]);
+/// 2. never, where either reads the bare truthiness of a leaf that is not a `Boolean`: a text is
+///    falsy at values (`"false"`) no candidate is drawn at, so no candidate set shows it alike;
+/// 3. decided alike at every value of the leaves they read, where every one is a top-level input
+///    of a `Boolean` or enum type, or an `Optional` of one, absent included ([`finite_alike`]);
+/// 4. decided alike by every candidate over both, where those candidates cover every region the
+///    guards' literals divide the input into ([`crate::witness::exhausts`]).
+fn admit_alike(ir: &EssIr, command: &ResolvedCommand, left: &Predicate, right: &Predicate) -> bool {
+    let (left, right) = (&one_value_equality(left), &one_value_equality(right));
+    if left == right {
+        return true;
+    }
+    let mut truthy = Vec::new();
+    truthy_paths(left, &mut truthy);
+    truthy_paths(right, &mut truthy);
+    if truthy.iter().any(|path| {
+        !finite_leaf(ir, command, path).is_some_and(|values| {
+            values
+                .iter()
+                .all(|value| matches!(value, Some(Node::Bool(_))))
+        })
+    }) {
+        return false;
+    }
+    if let Some(alike) = finite_alike(ir, command, left, right) {
+        return alike;
+    }
+    let guards = [left, right];
+    if !crate::witness::exhausts(ir, command, &guards) {
+        return false;
+    }
+    let Ok(mut inputs) = candidates(ir, command, &guards, Distinction::PLAIN) else {
+        return false;
+    };
+    if let Ok(Some(between)) =
+        crate::witness::candidates_between(ir, command, &guards, Distinction::PLAIN)
+    {
+        inputs.extend(between);
+    }
+    !inputs.is_empty()
+        && inputs.iter().all(|input| {
+            let Ok(facts) = flatten(ir, command, input) else {
+                return false;
+            };
+            match (
+                decides(&facts, &[left], true),
+                decides(&facts, &[right], true),
+            ) {
+                (Ok(one), Ok(other)) => one == other,
+                _ => false,
+            }
+        })
+}
+
+/// `guard` with every one-value `in [x]` written `== x`, so two spellings of one comparison compare
+/// equal.
+fn one_value_equality(guard: &Predicate) -> Predicate {
+    match guard {
+        Predicate::AnyOf { path, values } if values.len() == 1 => Predicate::Compare {
+            left: Operand::Fact(path.clone()),
+            op: CompareOp::Eq,
+            right: Operand::Literal(values[0].clone()),
+        },
+        Predicate::All(children) => {
+            Predicate::All(children.iter().map(one_value_equality).collect())
+        }
+        Predicate::Any(children) => {
+            Predicate::Any(children.iter().map(one_value_equality).collect())
+        }
+        Predicate::Not(inner) => Predicate::Not(Box::new(one_value_equality(inner))),
+        other => other.clone(),
+    }
+}
+
+/// Every leaf `guard` reads the bare truthiness of.
+fn truthy_paths<'p>(guard: &'p Predicate, out: &mut Vec<&'p FactPath>) {
+    match guard {
+        Predicate::Truthy(path) => out.push(path),
+        Predicate::All(children) | Predicate::Any(children) => {
+            for child in children {
+                truthy_paths(child, out);
+            }
+        }
+        Predicate::Not(inner) => truthy_paths(inner, out),
+        _ => {}
+    }
+}
+
+/// Every value a top-level input leaf can take — `None` for absent where it is `Optional` — where
+/// its type is a `Boolean` or an enum, or an `Optional` of one; otherwise `None`.
+fn finite_leaf(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    path: &FactPath,
+) -> Option<Vec<Option<Node>>> {
+    use ess_compiler::ir::{ResolvedBody, ResolvedTypeRef};
+    let [name] = path.segments() else {
+        return None;
+    };
+    let field = command.input.iter().find(|field| &field.name == name)?;
+    let (type_ref, optional) = match &field.type_ref {
+        ResolvedTypeRef::Optional { of } => (of.as_ref(), true),
+        other => (other, false),
+    };
+    let mut values: Vec<Option<Node>> = match type_ref {
+        ResolvedTypeRef::Primitive {
+            name: ess_domain::types::Primitive::Boolean,
+        } => vec![Some(Node::Bool(true)), Some(Node::Bool(false))],
+        ResolvedTypeRef::Declared { name } => match &ir.named_type(name).body {
+            ResolvedBody::Enum { variants } => variants
+                .iter()
+                .map(|variant| Some(Node::Text(variant.name.clone())))
+                .collect(),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if optional {
+        values.push(None);
+    }
+    Some(values)
+}
+
+/// Whether two guards over finite top-level input leaves only ([`finite_leaf`]) decide alike at
+/// every combination of those leaves' values, absence included, on one candidate's other fields.
+/// `None` where they read another leaf, the combinations exceed the candidate bound, or a
+/// combination cannot be decided.
+fn finite_alike(
+    ir: &EssIr,
+    command: &ResolvedCommand,
+    left: &Predicate,
+    right: &Predicate,
+) -> Option<bool> {
+    let mut paths = left.fact_paths();
+    for path in right.fact_paths() {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    let leaves: Vec<(&FactPath, Vec<Option<Node>>)> = paths
+        .into_iter()
+        .map(|path| Some((path, finite_leaf(ir, command, path)?)))
+        .collect::<Option<_>>()?;
+    let combinations = leaves.iter().try_fold(1_usize, |product, (_, values)| {
+        product.checked_mul(values.len())
+    })?;
+    if leaves.is_empty() || combinations > super::MAX_CANDIDATES {
+        return None;
+    }
+    let base = candidates(ir, command, &[left, right], Distinction::PLAIN)
+        .ok()?
+        .into_iter()
+        .next()?;
+    for index in 0..combinations {
+        let mut input = base.clone();
+        let mut rest = index;
+        for (path, values) in &leaves {
+            let name = &path.segments()[0];
+            match &values[rest % values.len()] {
+                Some(value) => {
+                    input.insert(name.clone(), value.clone());
+                }
+                None => {
+                    input.remove(name);
+                }
+            }
+            rest /= values.len();
+        }
+        let facts = flatten(ir, command, &input).ok()?;
+        let one = decides(&facts, &[left], true).ok()?;
+        let other = decides(&facts, &[right], true).ok()?;
+        if one != other {
+            return Some(false);
+        }
+    }
+    Some(true)
 }
 
 /// The candidates [`refusal_input`] tries: over every branch's input guard, and over every stored
@@ -1923,25 +2246,49 @@ fn refusal_candidates(
 
 /// ESS-SYNTH-003 for [`refusal_input`]: the input guards no candidate satisfied, and — where some
 /// candidate was lost only to the row — the stored guards the row had to refute.
+///
+/// A sibling guard admitting what one of `own` admits is not among the input guards named after
+/// `none of:` (`listed` leaves it out): it holds of every candidate that satisfies `own`, so
+/// `c and none of: c, …` would state a contradiction rather than what was searched for
+/// (beyond10x/ess#278). Instead:
+///
+/// * the one twin selected first — the first refusal twin, or else the first accepting twin
+///   declared before the branch that the row did not refute — is named as what took every such
+///   input (`cause`);
+/// * where only twins declared after it were passed over, and only on a row selecting the branch
+///   first, the diagnostic names that row (`holding`, the branch's stored guard).
 fn refusal_unsatisfied(
     entity: &EntityHandle,
-    own: &[&Predicate],
-    siblings: &[&Predicate],
+    (own, siblings, listed): (&[&Predicate], &[&Predicate], &[&Predicate]),
+    cause: Option<(&OutcomeName, &Predicate)>,
+    holding: Option<&Predicate>,
     halves: Option<&[Predicate]>,
     tried: usize,
 ) -> RefusalCause {
     let mut named = own.to_vec();
     named.extend(siblings.iter().copied());
-    let mut rendered = match (own.is_empty(), siblings.is_empty()) {
+    let mut rendered = match (own.is_empty(), listed.is_empty()) {
         (true, true) => String::new(),
         (false, true) => super::rendered(own, true),
-        (true, false) => super::rendered(siblings, false),
+        (true, false) => super::rendered(listed, false),
         (false, false) => format!(
             "{} and {}",
             super::rendered(own, true),
-            super::rendered(siblings, false)
+            super::rendered(listed, false)
         ),
     };
+    if let Some((name, guard)) = cause {
+        rendered = format!("{rendered}, every such input taken first by `{name}` ({guard})");
+    }
+    if let Some(predicate) = holding {
+        named.push(predicate);
+        let row = format!("a `{entity}` row in this state holding {predicate}");
+        rendered = if rendered.is_empty() {
+            row
+        } else {
+            format!("{rendered}, on {row}")
+        };
+    }
     if let Some(halves) = halves {
         named.extend(halves.iter());
         let row = format!(
@@ -2718,10 +3065,17 @@ fn successors(
             inputs.extend(more);
         }
         for input in inputs {
-            if selects(ir, driver.command, entity, arrangement, &input)
-                .ok()
-                .flatten()
-                .is_some_and(|branch| branch.name == driver.outcome.name)
+            if selects(
+                ir,
+                driver.command,
+                entity,
+                arrangement,
+                &input,
+                Order::Unique,
+            )
+            .ok()
+            .flatten()
+            .is_some_and(|branch| branch.name == driver.outcome.name)
             {
                 out.push(advanced(
                     ir,
@@ -3089,7 +3443,7 @@ fn reach_at(
     arrangement: &Arrangement,
 ) -> Result<Option<BTreeMap<String, Node>>, RefusalCause> {
     for input in inputs_for(ir, command, entity, arrangement)? {
-        if selects(ir, command, entity, arrangement, &input)?
+        if selects(ir, command, entity, arrangement, &input, Order::Unique)?
             .is_some_and(|branch| branch.name == outcome.name)
         {
             return Ok(Some(input));
@@ -3254,6 +3608,20 @@ enum Found {
     Plain,
     /// An input-guarded refusal taken before the row is read (beyond10x/ess#234).
     BeforeRow,
+    /// The plain search under [`Order::FirstDeclared`], where no row and input selects the branch
+    /// alone (beyond10x/ess#278); every later refinement keeps that order.
+    FirstDeclared,
+}
+
+impl Found {
+    /// The order every refinement of a witness found this way selects under.
+    fn order(self) -> Order {
+        if self == Self::FirstDeclared {
+            Order::FirstDeclared
+        } else {
+            Order::Unique
+        }
+    }
 }
 
 /// The row [`prepare`] arranges for `outcome` and the input that selects it there.
@@ -3286,7 +3654,7 @@ fn arranged_row(
             hints,
             Distinction::PLAIN,
             label,
-            |node| reach_linked(ir, command, outcome, entity, node, &strict),
+            |node| reach_linked(ir, command, outcome, entity, node, &strict, Order::Unique),
         ) {
             return Ok((found, Found::Elementwise));
         }
@@ -3300,7 +3668,15 @@ fn arranged_row(
         Distinction::PLAIN,
         label,
         |node| {
-            let found = reach_linked(ir, command, outcome, entity, node, &|_, _| true)?;
+            let found = reach_linked(
+                ir,
+                command,
+                outcome,
+                entity,
+                node,
+                &|_, _| true,
+                Order::Unique,
+            )?;
             if found.is_none() {
                 shadowed_at(ir, command, outcome, entity, node, &mut shadow)?;
             }
@@ -3319,6 +3695,31 @@ fn arranged_row(
             |node| refusal_first(ir, command, outcome, entity, node),
         )
         .map(|found| (found, Found::BeforeRow))
+        .map_err(|_| cause),
+        // Only where no row and input selects the branch alone: the first declared of several
+        // answers (beyond10x/ess#278), so a branch declared before a sibling it cannot be told
+        // apart from by its input is witnessed on a row its stored guard admits. A branch the
+        // search found before is found as it was.
+        Err(cause) => search(
+            ir,
+            entity,
+            actors,
+            hints,
+            Distinction::PLAIN,
+            label,
+            |node| {
+                reach_linked(
+                    ir,
+                    command,
+                    outcome,
+                    entity,
+                    node,
+                    &|_, _| true,
+                    Order::FirstDeclared,
+                )
+            },
+        )
+        .map(|found| (found, Found::FirstDeclared))
         .map_err(|_| cause),
         searched => searched.map(|found| (found, Found::Plain)),
     }
@@ -3372,6 +3773,7 @@ pub(super) fn prepare(
     // and every refinement below keeps that.
     let ((arrangement, input), found) =
         arranged_row(ir, command, outcome, entity, actors, &hints, &label)?;
+    let order = found.order();
     let strict = |node: &Arrangement, input: &BTreeMap<String, Node>| {
         witnesses_elements(ir, command, entity, &hints, node, input)
     };
@@ -3400,9 +3802,11 @@ pub(super) fn prepare(
             let Ok((row, input)) =
                 search(ir, entity, actors, &hints, distinction, &label, |node| {
                     Ok(
-                        reach_linked(ir, command, outcome, entity, node, accept)?.filter(|input| {
-                            super::unchanged_writes(ir, outcome, input, &node.settled) < bound
-                        }),
+                        reach_linked(ir, command, outcome, entity, node, accept, order)?.filter(
+                            |input| {
+                                super::unchanged_writes(ir, outcome, input, &node.settled) < bound
+                            },
+                        ),
                     )
                 })
             else {
@@ -3416,7 +3820,7 @@ pub(super) fn prepare(
     // The pair a `sets-retarget` mutant joins is sent apart on the chosen row too, where the row
     // still selects the branch and no more of its writes are left unchanged (beyond10x/ess#202).
     let keeps = |next: &BTreeMap<String, Node>| {
-        selects(ir, command, entity, &arrangement, next)
+        selects(ir, command, entity, &arrangement, next, order)
             .ok()
             .flatten()
             .is_some_and(|branch| branch.name == outcome.name)
@@ -3478,22 +3882,29 @@ pub(super) fn step(
 ) -> Option<Arrangement> {
     let inputs = inputs_for(ir, driver.command, entity, arrangement).ok()?;
     inputs.into_iter().find_map(|input| {
-        selects(ir, driver.command, entity, arrangement, &input)
-            .ok()
-            .flatten()
-            .filter(|branch| branch.name == driver.outcome.name)
-            .map(|_| {
-                advanced(
-                    ir,
-                    driver,
-                    arrangement,
-                    actors,
-                    &input,
-                    Vec::new(),
-                    false,
-                    &Follow::default(),
-                )
-            })
+        selects(
+            ir,
+            driver.command,
+            entity,
+            arrangement,
+            &input,
+            Order::Unique,
+        )
+        .ok()
+        .flatten()
+        .filter(|branch| branch.name == driver.outcome.name)
+        .map(|_| {
+            advanced(
+                ir,
+                driver,
+                arrangement,
+                actors,
+                &input,
+                Vec::new(),
+                false,
+                &Follow::default(),
+            )
+        })
     })
 }
 
@@ -4529,7 +4940,7 @@ fn answer_at<'a>(
     arrangement: &Arrangement,
 ) -> Result<Option<Answer<'a>>, RefusalCause> {
     for input in inputs_for(ir, command, entity, arrangement)? {
-        if let Some(branch) = selects(ir, command, entity, arrangement, &input)?
+        if let Some(branch) = selects(ir, command, entity, arrangement, &input, Order::Unique)?
             .filter(|branch| routes(command, branch))
         {
             return Ok(Some((input, branch)));
@@ -4579,7 +4990,7 @@ fn goal_input(
             *undecided |= names;
             continue;
         }
-        if selects(ir, command, entity, node, &input)?
+        if selects(ir, command, entity, node, &input, Order::Unique)?
             .is_some_and(|branch| branch.name == outcome.name)
         {
             return Ok(Some(input));

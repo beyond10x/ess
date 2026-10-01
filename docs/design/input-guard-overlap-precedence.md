@@ -170,6 +170,74 @@ equality, Booleans and enums, and the regions fit within the candidate bound) an
 the overlap is then shown empty. The check reads the finished suite rather than the generators, so a
 path that forgets to send an overlap is noted whichever path it is.
 
+### A stored-field guard beside a sibling with the same input guard (beyond10x/ess#278)
+
+```yaml
+outcomes:
+  - name: held-for-promotion
+    when: result == Healthy
+    when_subject: {predicate: {any: ["not defined(auto_promote)", auto_promote == false]}}
+    moves: demo.rollout.Deployment.hold
+  - name: promoted
+    when: result == Healthy
+    moves: demo.rollout.Deployment.promote
+```
+
+No input separates the two branches: every input `held-for-promotion` admits, `promoted` admits
+too. Only the row does, and on a row whose `auto_promote` is unset or false both are selected. The
+rule is the one above, with no tiebreak of its own: **the first declared whose guards hold
+answers**, so `held-for-promotion` is taken there, and declared after `promoted` it is never taken.
+A stored-field guard is not a tiebreak; it is part of the branch's guard, and declaration order
+decides between branches whose guards both hold, as Entity Runtime's lowering and
+[the precedence order](cross-record-and-stored-field-guards.md#the-precedence-order) (step 5)
+already do.
+
+Synthesis used to require exactly one selected branch on the arranged row, so it refused
+`held-for-promotion`, its transition scenario and every wrong-state scenario of the command it is
+the first mover of (`ESS-SYNTH-003`). Two searches in
+`crates/verify/ess-conformance/src/synthesize/subject_fact.rs` now apply the order, and each does
+so **only where its first pass, unchanged, finds nothing**, so a witness found before is the one it
+always was:
+
+1. **The stored-row search** (`arranged_row`, through `selects` with `Order::FirstDeclared`): a row
+   and input on which the branch is the first declared of those selected. The refinements of the
+   chosen witness (`prepare`) keep the same order.
+2. **The wrong-state witness** (`refusal_input`): where the moving branch declares a stored guard,
+   an accepting sibling declared after it need not be refuted where the moving branch is itself
+   selected on the row — its input guard holds and its stored guard holds on the row, which the
+   scenario then observes — and its move does not start from the row's state. A default moving
+   branch is never selected before a guarded sibling. A moving branch with no stored guard is left
+   as it was: Entity Runtime lowers no held-state guard onto a stored-field branch, which is what
+   makes the stored one the wrong-state answer, and no such statement is made here for the other. Input-guarded refusals and every sibling declared
+   before it are refuted as before.
+
+A refused wrong-state witness never names, among the guards it had to refute, a sibling's guard
+that admits what the branch's own admits: `result == Healthy and none of: result == Healthy, …`
+stated a contradiction rather than the search. Two guards admit alike (`admit_alike`) where any of
+these shows it, and are otherwise treated as different:
+
+1. they are equal once a one-value `in [x]` is written `== x` — `result in [Healthy]` beside
+   `result == Healthy`, over a required or an `Optional` input;
+2. every leaf they read is a top-level `Boolean` or enum input, or an `Optional` of one, and they
+   decide alike at every value of those leaves, absence included;
+3. the candidates over both cover every region their literals divide the input into
+   (`witness::exhausts`) and decide each alike.
+
+A guard reading the bare truthiness of a leaf that is not a `Boolean` (`code` over a `String`) is
+never alike another: a text is falsy at values (`"false"`) no candidate is drawn at.
+
+In place of such a twin the refusal names one cause of the search failing:
+
+| twin | refusal says |
+|---|---|
+| a refusal twin, or else an accepting twin declared before the branch, whose stored guard the row does not refute | `…, every such input taken first by \`<twin>\` (<guard>)`, naming the first refusal twin, or else the first such accepting twin |
+| only twins declared after it, the search above ran | `… on a row in this state holding <stored guard>` |
+
+Whether this changed any other suite was measured by synthesizing every specification in the
+repository before and after: 209 (the `examples/` and `models/` systems, every single-document
+`.yaml` fixture, and every raw-string fixture in the crates' sources). All were byte-identical,
+and `cargo xtask generate --check` holds.
+
 ### A command whose branches read the held state
 
 In a command with a `SubjectState` or `StateChange` sibling, a plain accepting branch is witnessed in
