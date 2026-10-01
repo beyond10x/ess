@@ -1,12 +1,14 @@
-//! Generates a Vite + React + TypeScript application from an `ess-ui/1` document.
+//! Generates a plain React + TypeScript application from an `ess-ui/1` document: `react` and
+//! `react-dom` are its only runtime dependencies, its routing is generated into it, and one
+//! esbuild step builds it.
 //!
 //! [`render`] turns a loaded [`Document`] into the project's files in memory; [`generate`] writes
-//! them. The project has one route per page nested under its shell, one component per page,
-//! section and overlay, a small component set for the composite kinds and primitives (plain CSS,
-//! no UI library), state placed where each state's `store` says, reads answered from the
-//! document's fixtures behind a replaceable data adapter, and live channels that play their
-//! fixture scripts until pointed at a server. Every rendered node carries
-//! `data-ui-path="<canonical node path>"`.
+//! them. The project has a generated History-API router that renders the page a path matches
+//! under its shell, one component per page, section and overlay, a small component set for the
+//! composite kinds and primitives (plain CSS, no UI library), state placed where each state's
+//! `store` says, reads answered from the document's fixtures behind a replaceable data adapter,
+//! and live channels that play their fixture scripts until pointed at a server. Every rendered
+//! node carries `data-ui-path="<canonical node path>"`.
 //!
 //! Output is deterministic: the same document and fixtures give the same bytes. A construct the
 //! document does not use contributes no code — a runtime module is emitted only when a generated

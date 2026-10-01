@@ -10,6 +10,12 @@ npm install
 npm run dev
 ```
 
+`npm run dev` serves the app at `http://localhost:5173`, bundling on each request. Every page
+path is answered with `www/index.html`, so a reload or a link to any page opens the app.
+`npm run build` type-checks and bundles into `www/assets/`; `npm run preview` serves the built
+`www/` at `http://localhost:4173`. The only runtime dependencies are `react` and `react-dom`;
+esbuild is the only build step.
+
 Every read is answered from the document's fixtures and every live channel plays its fixture
 script, so the application runs without a backend. To use a real one, call
 `setDataAdapter(httpAdapter("<base url>"))` from `src/runtime/data.ts` and
@@ -21,22 +27,23 @@ before rendering, in `src/main.tsx`.
 `npm run typecheck` checks against the real packages `npm install` brings.
 
 `npm run typecheck:offline` (`tsc -p tsconfig.offline.json --noEmit`) checks without
-`node_modules`: `tsconfig.offline.json` maps `react`, `react/jsx-runtime`, `react-dom/client`
-and `react-router` onto the minimal declarations in `types/`. Once `npm install` has run,
-`tsconfig.json` uses the real packages and `types/` is not read.
+`node_modules`: `tsconfig.offline.json` maps `react`, `react/jsx-runtime` and `react-dom/client`
+onto the minimal declarations in `types/`. Once `npm install` has run, `tsconfig.json` uses the
+real packages and `types/` is not read.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `src/App.tsx` | routes: one per page, nested under the page's shell |
-| `src/routes.ts` | page paths and navigation |
+| `www/index.html` | the page every path is answered with; it loads `www/assets/main.js` and `main.css` |
+| `src/App.tsx` | the router: the page a path matches, under its shell; any other path goes home |
+| `src/routes.ts` | page paths, path matching and navigation |
 | `src/shells/` | one component per shell, its regions, guards and state |
 | `src/pages/` | one file per page: the page, one component per section, one per overlay |
 | `src/model.ts` | the document's types |
 | `src/fixtures.ts` | fixture rows per view and event scripts per channel |
 | `src/channels.ts` | the document's channels and their transports |
-| `src/runtime/` | the component set, state placement, data adapter and live channels |
+| `src/runtime/` | the component set, the router, state placement, data adapter and live channels |
 
 Every rendered node carries a `data-ui-path` attribute holding its canonical node path, so tests
 select by path.

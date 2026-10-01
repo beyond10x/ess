@@ -143,7 +143,48 @@ fn schema_profiles() -> BTreeMap<String, BTreeMap<String, Store>> {
     out
 }
 
-/// The react-router path pattern of a page: its name's segments, then one `:param` per param.
+/// The end of `src/routes.ts`: `matchPage` over the route table written before it, and
+/// `pageAt`.
+const MATCH_PAGE: &str = r#"/** The page a pathname reaches; case-insensitive, a trailing slash optional. */
+export function matchPage(pathname: string): PageMatch | undefined {
+  const trimmed = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  const segments = trimmed.split("/").slice(1);
+  for (const [pattern, page] of table) {
+    const parts = pattern.split("/").slice(1);
+    if (parts.length !== segments.length) {
+      continue;
+    }
+    const params: Record<string, string> = {};
+    let matches = true;
+    for (let index = 0; index < parts.length && matches; index += 1) {
+      const part = parts[index];
+      const segment = segments[index];
+      if (!part.startsWith(":")) {
+        matches = part.toLowerCase() === segment.toLowerCase();
+      } else if (segment === "") {
+        matches = false;
+      } else {
+        try {
+          params[part.slice(1)] = decodeURIComponent(segment);
+        } catch {
+          matches = false;
+        }
+      }
+    }
+    if (matches) {
+      return { page, params };
+    }
+  }
+  return undefined;
+}
+
+/** The page whose route matches a pathname. */
+export function pageAt(pathname: string): string | undefined {
+  return matchPage(pathname)?.page;
+}
+"#;
+
+/// The path pattern of a page: its name's segments, then one `:param` per param.
 pub fn route_pattern(name: &str, page: &Page) -> String {
     let mut path = format!("/{}", name.replace('.', "/"));
     for param in page.params.keys() {
@@ -2244,7 +2285,7 @@ impl<'d> Gen<'d> {
         } else {
             frame_lines.push("const __preloaded = true;".to_owned());
         }
-        let outlet = self.import("react-router", "Outlet");
+        let outlet = self.import("runtime/router", "Outlet");
         let outlet = if blocked {
             format!(
                 "{{__refusal !== undefined || !__preloaded ? <p className=\"ui-state\">{{__refusal ?? \"Loading…\"}}</p> : <{outlet} />}}"
@@ -2311,92 +2352,136 @@ impl<'d> Gen<'d> {
 
     // ── app, routes, channels, model ─────────────────────────────────────────────────────
 
-    /// `src/App.tsx`.
+    /// `src/App.tsx`: the router around the app root, and `Pages`, which renders the page the
+    /// path matches at its shell's outlet. Every page of one shell renders under the same shell
+    /// element, so the shell stays mounted from one of its pages to the next; a page whose shell
+    /// the document does not define renders directly. Any other path redirects home.
     pub(crate) fn app(&mut self) -> String {
         let doc = self.doc;
-        let router = self.import("react-router", "BrowserRouter");
-        let routes_tag = self.import("react-router", "Routes");
-        let route = self.import("react-router", "Route");
-        let navigate = self.import("react-router", "Navigate");
+        let router = self.import("runtime/router", "Router");
+        let matched = self.import("runtime/router", "Matched");
+        let redirect = self.import("runtime/router", "Redirect");
+        let use_location = self.import("runtime/router", "useLocation");
         let href = self.import("routes", "hrefFor");
+        let match_page = self.import("routes", "matchPage");
         let root = self.import("runtime/core", "AppRoot");
         self.import("react", "type ReactNode");
         let actor = match doc.actor {
             Some(ess_ui::ActorSource::FromSession) => "from_session",
             _ => "anonymous",
         };
-        let home = format!("{href}({}, {{}})", ts::string(&doc.navigation.home));
-        let page_route = |gen: &mut Self, name: &str, page: &Page| -> Vec<String> {
-            let component = format!("{}Page", ts::pascal(name));
-            gen.import(&format!("pages/{}", ts::pascal(name)), &component);
-            let mut out = vec![format!(
-                "<{route} path={} element={{<{component} />}} />",
-                ts::string(&route_pattern(name, page))
-            )];
-            for alias in &page.aliases {
-                out.push(format!(
-                    "<{route} path={} element={{<{component} />}} />",
-                    ts::string(&route_pattern(alias, page))
-                ));
-            }
-            out
-        };
-        let mut children = vec![format!(
-            "<{route} path=\"/\" element={{<{navigate} to={{{home}}} replace />}} />"
-        )];
-        let mut by_shell: BTreeMap<&str, Vec<(&String, &Page)>> = BTreeMap::new();
-        for (name, page) in &doc.pages {
-            by_shell
-                .entry(page.shell.as_str())
-                .or_default()
-                .push((name, page));
-        }
-        for (shell, pages) in by_shell {
-            let mut routes_of_shell = Vec::new();
-            for (name, page) in pages {
-                routes_of_shell.extend(page_route(self, name, page));
-            }
-            if doc.shells.contains_key(shell) {
-                let component = format!("{}Shell", ts::pascal(shell));
-                self.import(&format!("shells/{component}"), &component);
-                children.push(
-                    El::new(&route)
-                        .expr("element", format!("<{component} />"))
-                        .children(routes_of_shell)
-                        .render(),
-                );
-            } else {
-                children.extend(routes_of_shell);
-            }
-        }
-        children.push(format!(
-            "<{route} path=\"*\" element={{<{navigate} to={{{home}}} replace />}} />"
-        ));
         let tree = El::new(&router)
             .child(
                 El::new(&root)
                     .expr("actor", ts::string(actor))
-                    .child(El::new(&routes_tag).children(children).render())
+                    .child("<Pages />")
                     .render(),
             )
             .render();
+        let mut body = Writer::default();
+        body.open("export function App(): ReactNode {");
+        body.line("return (");
+        body.line(format!("  {}", indent(&tree, 4)));
+        body.line(");");
+        body.close("}");
+        body.line("");
+        body.line(
+            "/** The page the current path matches, at its shell's outlet; any other path goes home. */",
+        );
+        body.open("export function Pages(): ReactNode {");
+        body.line(format!("const location = {use_location}();"));
+        body.line(format!("const matched = {match_page}(location.pathname);"));
+        body.open("if (matched === undefined) {");
+        body.line(format!(
+            "return <{redirect} to={{{href}({}, {{}})}} />;",
+            ts::string(&doc.navigation.home)
+        ));
+        body.close("}");
+        body.line("let page: ReactNode = null;");
+        body.open("switch (matched.page) {");
+        for name in doc.pages.keys() {
+            let component = format!("{}Page", ts::pascal(name));
+            self.import(&format!("pages/{}", ts::pascal(name)), &component);
+            body.line(format!("case {}:", ts::string(name)));
+            body.line(format!("  page = <{component} />;"));
+            body.line("  break;");
+        }
+        body.close("}");
+        let shells: BTreeSet<&str> = doc
+            .pages
+            .values()
+            .map(|page| page.shell.as_str())
+            .filter(|shell| doc.shells.contains_key(*shell))
+            .collect();
+        if !shells.is_empty() {
+            let table = self.import("routes", "pages");
+            body.open(format!("switch ({table}[matched.page]?.shell) {{"));
+            for shell in shells {
+                let component = format!("{}Shell", ts::pascal(shell));
+                self.import(&format!("shells/{component}"), &component);
+                body.line(format!("case {}:", ts::string(shell)));
+                body.line(format!(
+                    "  return <{matched} params={{matched.params}} outlet={{page}}><{component} /></{matched}>;"
+                ));
+            }
+            body.close("}");
+        }
+        body.line(format!(
+            "return <{matched} params={{matched.params}}>{{page}}</{matched}>;"
+        ));
+        body.close("}");
         let mut w = Writer::default();
         w.line("// Generated by ess-ui-react. Do not edit.");
         for line in self.take_imports(0).lines() {
             w.line(line);
         }
         w.line("");
-        w.open("export function App(): ReactNode {");
-        w.line("return (");
-        w.line(format!("  {}", indent(&tree, 4)));
-        w.line(");");
-        w.close("}");
-        w.finish()
+        let mut text = w.finish();
+        text.push_str(&body.finish());
+        text
+    }
+
+    /// Every path pattern a page answers on — its own, then its aliases' — ordered so that at
+    /// the first segment two patterns differ in, a static segment comes before a param. Two
+    /// pages whose patterns have the same shape (the same static segments, case-insensitively,
+    /// and params at the same places) would answer the same paths: that is a refusal.
+    fn route_table(&mut self) -> Vec<(String, &'d str)> {
+        let doc = self.doc;
+        let mut shapes: BTreeMap<Vec<(bool, String)>, (String, &'d str)> = BTreeMap::new();
+        for (name, page) in &doc.pages {
+            let patterns = std::iter::once(name)
+                .chain(&page.aliases)
+                .map(|path| route_pattern(path, page));
+            for pattern in patterns {
+                let shape: Vec<(bool, String)> = pattern
+                    .split('/')
+                    .skip(1)
+                    .map(|segment| {
+                        if segment.starts_with(':') {
+                            (true, String::new())
+                        } else {
+                            (false, segment.to_lowercase())
+                        }
+                    })
+                    .collect();
+                match shapes.get(&shape) {
+                    Some((_, owner)) if *owner == name.as_str() => {}
+                    Some((other, owner)) => self.errors.push(GenerateError::new(format!(
+                        "pages/{name}: its route {pattern} answers the same paths as {other} of pages/{owner}"
+                    ))),
+                    None => {
+                        shapes.insert(shape, (pattern, name.as_str()));
+                    }
+                }
+            }
+        }
+        shapes.into_values().collect()
     }
 
     /// `src/routes.ts`.
-    pub(crate) fn routes(&self) -> String {
+    pub(crate) fn routes(&mut self) -> String {
         let doc = self.doc;
+        let table = self.route_table();
         let mut w = Writer::default();
         w.line(
             "// Generated by ess-ui-react from the document's pages and navigation. Do not edit.",
@@ -2447,16 +2532,22 @@ impl<'d> Gen<'d> {
         w.line("return route.path.replace(/:([A-Za-z0-9_]+)/g, (_, name: string) => encodeURIComponent(String(params[name] ?? \"\")));");
         w.close("}");
         w.line("");
-        w.line("/** The page whose route matches a pathname. */");
-        w.open("export function pageAt(pathname: string): string | undefined {");
-        w.open("for (const [name, route] of Object.entries(pages)) {");
-        w.line("const pattern = new RegExp(`^${route.path.replace(/\\./g, \"\\\\.\").replace(/:[A-Za-z0-9_]+/g, \"[^/]+\")}$`);");
-        w.open("if (pattern.test(pathname)) {");
-        w.line("return name;");
-        w.close("}");
-        w.close("}");
-        w.line("return undefined;");
-        w.close("}");
+        w.line("/** The page a path matched, and its path params, decoded. */");
+        w.line("export interface PageMatch {");
+        w.line("  page: string;");
+        w.line("  params: Record<string, string>;");
+        w.line("}");
+        w.line("");
+        w.line("/** Every pattern a page answers on, its aliases' too; a static segment before a param. */");
+        w.open("const table: [pattern: string, page: string][] = [");
+        for (pattern, page) in &table {
+            w.line(format!("[{}, {}],", ts::string(pattern), ts::string(page)));
+        }
+        w.close("];");
+        w.line("");
+        for line in MATCH_PAGE.lines() {
+            w.line(line);
+        }
         w.finish()
     }
 
