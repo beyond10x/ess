@@ -673,6 +673,11 @@ fn canonical_reader_refuses_bad_versions_fields_paths_owners_root_and_checksums_
         "duplicate",
     ] {
         let (_f, root) = prepare();
+        if case == "root" {
+            // A settled checkpoint is rebound to a new root (ess#306, `ownership_relocation`);
+            // the binding still refuses a checkpoint holding a transaction.
+            interrupt_prepared(&root);
+        }
         let state_path = root.join(".ess-output/state.json");
         let original = fs::read(&state_path).unwrap();
         let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
