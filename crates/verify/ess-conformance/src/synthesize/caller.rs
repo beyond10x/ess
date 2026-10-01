@@ -166,11 +166,29 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
     let mut whole = run(ir, &callers, &|_| Who::First);
     let swapped = run(ir, &callers, &|_| Who::Second);
     let mut identities = Identities::of(ir, whole.suite.scenarios.values());
+    // The model read with one command sent as `second` and every other as `first`, by command:
+    // read only for a scenario acting on the one row of a singleton entity.
+    let mut acted_on_as_second: BTreeMap<String, Synthesis> = BTreeMap::new();
     for (id, scenario) in &mut whole.suite.scenarios {
-        if sends_any(scenario, &reading) {
-            if let Some(again) = swapped.suite.scenarios.get(id) {
-                append(ir, (id, scenario), again, &mut identities, &mut whole.notes);
-            }
+        if !sends_any(scenario, &reading) {
+            continue;
+        }
+        let Some(again) = swapped.suite.scenarios.get(id) else {
+            continue;
+        };
+        let Err(exhausted) = append(ir, scenario, again, &mut identities) else {
+            continue;
+        };
+        match one_row_acted_on(
+            ir,
+            &callers,
+            id,
+            &exhausted,
+            &identities,
+            &mut acted_on_as_second,
+        ) {
+            Some(steps) => scenario.steps = steps,
+            None => whole.notes.push(unswapped(id, exhausted)),
         }
     }
     for command in &reading {
@@ -189,13 +207,9 @@ pub(super) fn synthesize(ir: &EssIr) -> Synthesis {
             }
             if let Some(again) = back.suite.scenarios.get(&id) {
                 identities.take(&scenario.steps);
-                append(
-                    ir,
-                    (&id, &mut scenario),
-                    again,
-                    &mut identities,
-                    &mut whole.notes,
-                );
+                if let Err(exhausted) = append(ir, &mut scenario, again, &mut identities) {
+                    whole.notes.push(unswapped(&id, exhausted));
+                }
             }
             whole
                 .refusals
@@ -468,14 +482,13 @@ fn about(id: &ScenarioId, command: &QualifiedName) -> bool {
 /// `again`'s steps after `scenario`'s own, with every instance and instant it binds renamed apart
 /// from the first run's and every caller-supplied identity it sends drawn afresh, where both runs
 /// can share one scenario. A swapped run left out because no fresh identity could be drawn for it
-/// is named in `notes`, as an obligation the suite does not hold.
+/// is answered as [`Exhausted`], which the caller names in a note or answers otherwise.
 fn append(
     ir: &EssIr,
-    (id, scenario): (&ScenarioId, &mut ConformanceScenario),
+    scenario: &mut ConformanceScenario,
     again: &ConformanceScenario,
     identities: &mut Identities<'_>,
-    notes: &mut Vec<Note>,
-) {
+) -> Result<(), Exhausted> {
     let once = |steps: &[ScenarioStep]| {
         steps.iter().any(|step| {
             matches!(
@@ -488,29 +501,92 @@ fn append(
         })
     };
     if once(&scenario.steps) || once(&again.steps) || reads_every_row(ir, &again.steps) {
-        return;
+        return Ok(());
     }
-    let drawn = match identities.drawn(&scenario.steps, &again.steps) {
-        Ok(drawn) => drawn,
-        Err(Exhausted { input, type_ref }) => {
-            notes.push(Note::UnswappedCallers {
-                scenario: id.clone(),
-                input,
-                type_ref,
-            });
-            return;
-        }
-    };
+    let drawn = identities.drawn(&scenario.steps, &again.steps)?;
     let Ok(mut value) = serde_json::to_value(&again.steps) else {
-        return;
+        return Ok(());
     };
     rename(&mut value);
     redraw(&mut value, &identities.keys, &drawn);
     let Some(value) = recaptured(ir, value) else {
-        return;
+        return Ok(());
     };
     if let Ok(steps) = serde_json::from_value::<Vec<ScenarioStep>>(value) {
         scenario.steps.extend(steps);
+    }
+    Ok(())
+}
+
+/// The note for a swapped run left out of the scenario `id`.
+fn unswapped(
+    id: &ScenarioId,
+    Exhausted {
+        input, type_ref, ..
+    }: Exhausted,
+) -> Note {
+    Note::UnswappedCallers {
+        scenario: id.clone(),
+        input,
+        type_ref,
+    }
+}
+
+/// The run that stands for both caller orders of a scenario acting on the one row of a singleton
+/// entity it did not create (beyond10x/ess#287): every step sent as `first` but the command under
+/// test's, sent as `second` — the row arranged by one caller and acted on by the other — read from
+/// the model under that assignment, `acted_on_as_second` caching it by command.
+///
+/// A swapped run would arrange the row a second time, which the one row cannot be, and draws no
+/// other identity; with it left out, a target keeping one row per caller passed every scenario.
+/// Two runs in one scenario cannot both start from no row, so this one replaces the first, and
+/// still sends both callers. `None` — the note — where the identity is the one the command under
+/// test creates, which has no row to act on, or where that assignment has no such scenario.
+fn one_row_acted_on(
+    ir: &EssIr,
+    callers: &Callers,
+    id: &ScenarioId,
+    exhausted: &Exhausted,
+    identities: &Identities<'_>,
+    acted_on_as_second: &mut BTreeMap<String, Synthesis>,
+) -> Option<Vec<ScenarioStep>> {
+    if !exhausted.one_value {
+        return None;
+    }
+    let command = under_test(id)?;
+    let creates_it = identities
+        .creating
+        .get(&command)
+        .is_some_and(|(_, fields)| fields.contains(&exhausted.input));
+    if creates_it {
+        return None;
+    }
+    let mixed = acted_on_as_second
+        .entry(command.clone())
+        .or_insert_with(|| {
+            run(ir, callers, &|name| {
+                if name.to_string() == command {
+                    Who::Second
+                } else {
+                    Who::First
+                }
+            })
+        });
+    mixed
+        .suite
+        .scenarios
+        .get(id)
+        .map(|scenario| scenario.steps.clone())
+}
+
+/// The command the scenario `id` names is about.
+fn under_test(id: &ScenarioId) -> Option<String> {
+    match id {
+        ScenarioId::Outcome { outcome } => Some(outcome.command.to_string()),
+        ScenarioId::Transition { by, .. } => Some(by.command.to_string()),
+        ScenarioId::Refusal { command, .. } => Some(command.to_string()),
+        ScenarioId::Invariant { after, .. } => Some(after.command.to_string()),
+        _ => None,
     }
 }
 
@@ -694,10 +770,12 @@ struct Identities<'a> {
     next: usize,
 }
 
-/// Why a swapped run could not be given a fresh identity: the input and its type.
+/// Why a swapped run could not be given a fresh identity: the input and its type, and whether that
+/// type has one value — the one row of a singleton entity (beyond10x/ess#287).
 struct Exhausted {
     input: String,
     type_ref: String,
+    one_value: bool,
 }
 
 impl<'a> Identities<'a> {
@@ -824,6 +902,7 @@ impl<'a> Identities<'a> {
                     .find(|input| input.name == field)
                     .map(|input| input.type_ref.to_string())
                     .unwrap_or_default(),
+                one_value: super::singleton::names_the_one_row(self.ir, command, field),
             };
             // Every step of the run sending this identity, each of which must take the branch it
             // took with the old one.
