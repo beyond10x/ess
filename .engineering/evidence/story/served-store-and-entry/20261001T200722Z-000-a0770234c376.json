@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T20:07:22Z",
+  "actor": "human:timo",
+  "artifact": "story:served-store-and-entry",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "plan revision after round 1",
+    "reference": "review-result:ui-live-apps-design-round-1#finding-7",
+    "review": "review-result:ui-live-apps-design-round-1",
+    "outcome": "fixed"
+  }
+}
