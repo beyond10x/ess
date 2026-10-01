@@ -14,6 +14,18 @@
   `read_params`: a read binding a parameter the view does not declare, and a required parameter
   left unbound (beyond10x/ess#311).
 
+### Changed
+
+- **Breaking for a generated React project**: `ess generate ui --target react` emits a plain React
+  project. Its only runtime dependencies are `react` and `react-dom`; `react-router`, Vite and
+  `@vitejs/plugin-react` are gone. Routing is a generated `runtime/router.tsx` over the History API
+  (`Link`, `Redirect`, `Outlet`, `useLocation`, `useNavigate`, `useSearchParams` with
+  react-router's signatures), and `routes.ts` gains `matchPage`. `dev`, `build` and `preview` run
+  esbuild 0.28 (`tsc --noEmit` stays the checker), serve on `127.0.0.1` and keep serving without
+  stdin; `index.html` moves to `www/`. Aliases written as paths and aliases with encoded segments
+  route as before, and the image primitive type-checks against `@types/react` 19.3
+  (beyond10x/ess#315).
+
 ## [0.50.0] — 2026-10-01
 
 ### Fixed
