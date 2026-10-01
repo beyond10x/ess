@@ -120,7 +120,7 @@ pub fn diff(before: &EssIr, after: &EssIr) -> Result<EssDelta, DiffRefusal> {
     component_changes(before, after, &mut changes);
     binding_changes(before, after, &mut changes);
 
-    if residual(before) != residual(after) || unclassified_order_moved(before, after) {
+    if residual_differs(before, after) || unclassified_order_moved(before, after) {
         changes.push(SemanticChange::System {
             subject: before.system().clone(),
             changed: SystemChange::UnclassifiedChanged,
@@ -2063,23 +2063,63 @@ fn written_sets(fields: &[ess_compiler::ir::ResolvedPayloadField]) -> Vec<String
         .collect()
 }
 
+/// The serialized declaration families, each keyed by declaration name.
+const RESIDUAL_FAMILIES: [&str; 9] = [
+    "types",
+    "entities",
+    "commands",
+    "events",
+    "errors",
+    "views",
+    "actors",
+    "bindings",
+    "components",
+];
+
+/// Whether the two revisions differ in content no typed comparison accounts for.
+///
+/// Only declarations both revisions carry are compared. A declaration in one revision only is
+/// already `<family>/<name>/added|removed`, and that change stands for all of its content; leaving
+/// it in the residual raised `unclassified-changed` for whatever the typed comparisons of a
+/// two-sided declaration would have named (beyond10x/ess#276).
+fn residual_differs(before: &EssIr, after: &EssIr) -> bool {
+    let mut was = serde_json::to_value(before).expect("the canonical IR serializes");
+    let mut is = serde_json::to_value(after).expect("the canonical IR serializes");
+    for family in RESIDUAL_FAMILIES {
+        let shared: BTreeSet<String> = match (declarations(&was, family), declarations(&is, family))
+        {
+            (Some(old), Some(new)) => old
+                .keys()
+                .filter(|name| new.contains_key(*name))
+                .cloned()
+                .collect(),
+            _ => BTreeSet::new(),
+        };
+        for value in [&mut was, &mut is] {
+            if let Some(declarations) = value
+                .get_mut(family)
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                declarations.retain(|name, _| shared.contains(name));
+            }
+        }
+    }
+    residual(was) != residual(is)
+}
+
+fn declarations<'a>(
+    value: &'a serde_json::Value,
+    family: &str,
+) -> Option<&'a serde_json::Map<String, serde_json::Value>> {
+    value.get(family).and_then(serde_json::Value::as_object)
+}
+
 /// Content not accounted for by the typed comparisons. Removing named coverage leaves newly
 /// introduced serialized fields visible by default, even beside an already classified edit.
 /// This value is internal equality evidence; it is never persisted as a change/property bag.
-fn residual(ir: &EssIr) -> serde_json::Value {
-    let mut value = serde_json::to_value(ir).expect("the canonical IR serializes");
+fn residual(mut value: serde_json::Value) -> serde_json::Value {
     remove_keys(&mut value, &["system", "version", "summary"]);
-    for family in [
-        "types",
-        "entities",
-        "commands",
-        "events",
-        "errors",
-        "views",
-        "actors",
-        "bindings",
-        "components",
-    ] {
+    for family in RESIDUAL_FAMILIES {
         if let Some(declarations) = value
             .get_mut(family)
             .and_then(serde_json::Value::as_object_mut)
