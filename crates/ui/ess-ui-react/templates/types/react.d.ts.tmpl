@@ -48,7 +48,20 @@ export type MouseEvent<T = Element> = SyntheticEvent<T> & {
   shiftKey: boolean;
 };
 export type KeyboardEvent<T = Element> = SyntheticEvent<T> & { key: string };
+type ObjectFit =
+  | "contain"
+  | "cover"
+  | "fill"
+  | "none"
+  | "scale-down"
+  | "-moz-initial"
+  | "inherit"
+  | "initial"
+  | "revert"
+  | "revert-layer"
+  | "unset";
 export interface CSSProperties {
+  objectFit?: ObjectFit;
   [property: string]: string | number | undefined;
 }
 
@@ -64,6 +77,7 @@ export function StrictMode(props: { children?: ReactNode }): ReactNode;
 
 interface IntrinsicProps {
   [attribute: string]: unknown;
+  style?: CSSProperties;
   children?: ReactNode;
 }
 

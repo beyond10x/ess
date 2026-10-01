@@ -145,7 +145,16 @@ fn schema_profiles() -> BTreeMap<String, BTreeMap<String, Store>> {
 
 /// The end of `src/routes.ts`: `matchPage` over the route table written before it, and
 /// `pageAt`.
-const MATCH_PAGE: &str = r#"/** The page a pathname reaches; case-insensitive, a trailing slash optional. */
+const MATCH_PAGE: &str = r#"/** A pathname segment decoded; a malformed % sequence stays as written. */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/** The page a pathname reaches; case-insensitive, a trailing slash optional. */
 export function matchPage(pathname: string): PageMatch | undefined {
   const trimmed = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   const segments = trimmed.split("/").slice(1);
@@ -160,7 +169,7 @@ export function matchPage(pathname: string): PageMatch | undefined {
       const part = parts[index];
       const segment = segments[index];
       if (!part.startsWith(":")) {
-        matches = part.toLowerCase() === segment.toLowerCase();
+        matches = part.toLowerCase() === decodeSegment(segment).toLowerCase();
       } else if (segment === "") {
         matches = false;
       } else {
@@ -184,9 +193,10 @@ export function pageAt(pathname: string): string | undefined {
 }
 "#;
 
-/// The path pattern of a page: its name's segments, then one `:param` per param.
+/// The path pattern of a page: its name's segments (an alias written as a path loses its
+/// leading and trailing `/`), then one `:param` per param.
 pub fn route_pattern(name: &str, page: &Page) -> String {
-    let mut path = format!("/{}", name.replace('.', "/"));
+    let mut path = format!("/{}", name.trim_matches('/').replace('.', "/"));
     for param in page.params.keys() {
         path.push_str("/:");
         path.push_str(param);
