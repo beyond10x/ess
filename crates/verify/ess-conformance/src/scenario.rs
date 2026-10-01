@@ -176,6 +176,7 @@ impl ConformanceSuite {
             || crate::caller_values::used_by(self)
             || crate::view_paging::used_by(self)
             || crate::bounded_retry::used_by(self)
+            || crate::grant::used_by(self)
         {
             SuiteFormat::parse(&format!(
                 "ess-conformance/{}",
@@ -747,6 +748,32 @@ pub enum ScenarioId {
         /// The aggregate view.
         view: ViewRef,
     },
+    /// A command sent as an actor the specification does not grant it, answered with the standard
+    /// refusal: `billing.invoice.IssueInvoice/grant/denied` (beyond10x/ess#265).
+    ///
+    /// One per command some declared actor lacks the grant for, in a model that serves a component
+    /// (`reached_by: network`), and none where every actor holds
+    /// it. Which ungranted actor sends it is content, chosen by synthesis: re-keying the check when
+    /// an actor is declared would rot every stored result. Carried by suite majors
+    /// [`crate::grant::ORDINARY`] and [`crate::grant::COVERAGE`].
+    Grant {
+        /// The command no grant admits the sender to.
+        command: CommandRef,
+    },
+    /// A command sent as one of the actors the specification grants it, and accepted:
+    /// `desk.ops.Tally/grant/admitted/desk.ops.Watcher` (beyond10x/ess#265).
+    ///
+    /// Every granted actor sends each command it is granted at least once: the command's other
+    /// scenarios are sent by its granted actors in turn, and one of these is added only for an
+    /// actor no other scenario of the command is sent as, so a surface whose grant table drops a
+    /// grant fails. The scenario is the command's simplest accepting one, sent as that actor.
+    /// Carried by suite majors [`crate::grant::ORDINARY`] and [`crate::grant::COVERAGE`].
+    GrantAdmitted {
+        /// The command.
+        command: CommandRef,
+        /// The granted actor that sends it.
+        actor: ActorRef,
+    },
 }
 
 impl ScenarioId {
@@ -758,6 +785,7 @@ impl ScenarioId {
     const BINDING: &'static str = "binding";
     const AUTHORED: &'static str = "authored";
     const AGGREGATE: &'static str = "aggregate";
+    const GRANT: &'static str = "grant";
 
     /// Reads an id back from its rendered form.
     ///
@@ -819,6 +847,13 @@ impl ScenarioId {
             [view, Self::AGGREGATE] => Ok(Self::Aggregate {
                 view: ViewRef::new(name(view)?),
             }),
+            [command, Self::GRANT, "denied"] => Ok(Self::Grant {
+                command: CommandRef::new(name(command)?),
+            }),
+            [command, Self::GRANT, "admitted", actor] => Ok(Self::GrantAdmitted {
+                command: CommandRef::new(name(command)?),
+                actor: ActorRef::new(name(actor)?),
+            }),
             [domain, Self::AUTHORED, authored] => Ok(Self::Authored {
                 domain: DomainRef::new(name(domain)?),
                 name: AuthoredName::new(authored)
@@ -842,7 +877,8 @@ impl ScenarioId {
                  `<entity>/state/<state>/refuses/<command>`, \
                  `<entity>/invariant/after/<command>/<outcome>`, \
                  `<type>/invariant/at/<view>/<field>`, `<binding>/binding/<aspect>`, \
-                 `<view>/aggregate` or `<domain>/authored/<name>`",
+                 `<view>/aggregate`, `<command>/grant/denied`, `<command>/grant/admitted/<actor>` or \
+                 `<domain>/authored/<name>`",
             )),
         }
     }
@@ -895,6 +931,10 @@ impl fmt::Display for ScenarioId {
                 write!(f, "{domain}/{}/{name}", Self::AUTHORED)
             }
             Self::Aggregate { view } => write!(f, "{view}/{}", Self::AGGREGATE),
+            Self::Grant { command } => write!(f, "{command}/{}/denied", Self::GRANT),
+            Self::GrantAdmitted { command, actor } => {
+                write!(f, "{command}/{}/admitted/{actor}", Self::GRANT)
+            }
         }
     }
 }
@@ -2014,6 +2054,25 @@ pub enum ScenarioStep {
         /// The branch.
         outcome: OutcomeRef,
     },
+    /// Require that the immediately preceding command was refused before it ran, with the standard
+    /// refusal for an actor no grant admits, naming this actor (beyond10x/ess#265).
+    ///
+    /// Not an outcome: the refusal is the served contract's, the same for every command, and no
+    /// branch the specification declares. A target answers it as
+    /// [`TargetError::NotGranted`](crate::target::TargetError::NotGranted). Carried by suite majors
+    /// [`crate::grant::ORDINARY`] and [`crate::grant::COVERAGE`].
+    ExpectNotGranted {
+        /// The actor the command was sent as, and the refusal names.
+        actor: ActorRef,
+        /// Events no occurrence of which may appear anywhere in the target's log after the refused
+        /// send: each is observed once, and an occurrence the scenario had not seen before fails
+        /// the step.
+        ///
+        /// The whole log, not the refused command's direct events: a refusal has none, so a claim
+        /// about those could not fail a target that ran the command and refused afterwards.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unpublished: Vec<EventRef>,
+    },
     /// Require that the immediately preceding command returned without an error.
     ExpectNoError,
     /// Capture exactly one row from the preceding query, selected by subject identity.
@@ -2809,6 +2868,15 @@ mod tests {
                     QualifiedName::new("metrics.session.TalkTimeByAgent").expect("valid"),
                 ),
             },
+            ScenarioId::Grant {
+                command: command("billing.invoice.IssueInvoice"),
+            },
+            ScenarioId::GrantAdmitted {
+                command: command("billing.invoice.IssueInvoice"),
+                actor: ActorRef::new(
+                    QualifiedName::new("billing.invoice.Customer").expect("valid"),
+                ),
+            },
         ];
         ids.extend(BindingAspect::ALL.map(|(aspect, _)| ScenarioId::Binding {
             binding: BindingRef::new(BindingName::new("notify-on-invoice-created").expect("valid")),
@@ -2816,7 +2884,7 @@ mod tests {
         }));
         assert_eq!(
             ids.len(),
-            10,
+            12,
             "six id shapes, and every aspect a binding scenario can be filed under"
         );
 

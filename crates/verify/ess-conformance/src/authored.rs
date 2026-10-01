@@ -417,6 +417,12 @@ pub struct Act {
     /// The declared branch it must take.
     #[serde(default)]
     pub outcome: Option<String>,
+    /// The refusal it must meet instead of running, where it expects one: `refused: not_granted`,
+    /// the standard refusal for an actor no grant admits (beyond10x/ess#265). Available in
+    /// ess-scenario/4. The act's `actor:` must then name a declared actor the specification does
+    /// not grant the command, and the act claims nothing only a command that ran could answer.
+    #[serde(default)]
+    pub refused: Option<Refused>,
     /// Literal assertions over the actual direct return; `{}` checks its closed shape only.
     /// Available in ess-scenario/4. Values never come from the target's own post-state.
     #[serde(default, deserialize_with = "deserialize_response_claim")]
@@ -446,6 +452,15 @@ pub struct Act {
     /// no width and the claim in it cannot fail.
     #[serde(default)]
     pub mark: Option<InstantName>,
+}
+
+/// A refusal an act expects in place of any branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Refused {
+    /// The standard refusal for an actor no grant admits, answered before the command runs
+    /// (beyond10x/ess#265).
+    NotGranted,
 }
 
 fn deserialize_response_claim<'de, D: serde::Deserializer<'de>>(
@@ -1208,6 +1223,31 @@ pub enum Cause {
         /// order the act reaches them.
         branches: Vec<String>,
     },
+    /// The act expects the refusal an ungranted actor gets, and the specification grants the actor
+    /// the command (beyond10x/ess#265).
+    ActorGranted {
+        /// Who.
+        actor: ActorRef,
+        /// What.
+        command: CommandRef,
+    },
+    /// The act expects the refusal an ungranted actor gets, and names no actor to refuse or claims
+    /// what only a command that ran could answer (beyond10x/ess#265).
+    RefusalContradicted {
+        /// The command the act invokes.
+        command: CommandRef,
+        /// What contradicts the refusal, as a reader sees it: a missing `actor:`, and each key
+        /// only a command that ran answers — `outcome:`, `error:`, `response:`, `events:`,
+        /// `capture:` — in that order.
+        claims: Vec<String>,
+    },
+    /// The act sends with no `actor:` a command a served component accepts and the specification
+    /// grants to no actor, so every caller is refused it (beyond10x/ess#265), and the act requires
+    /// what no conforming surface does.
+    UngrantedOnServedSurface {
+        /// The command.
+        command: CommandRef,
+    },
 }
 
 /// Whether `code` is one a refusal of one authored file can carry: every cause [`Cause::code`]
@@ -1218,6 +1258,23 @@ pub(crate) fn names_file_refusal(code: &str) -> bool {
         .iter()
         .filter(|entry| entry.key != 36)
         .any(|entry| code == Code::new(Cause::FAMILY, entry.key).to_string())
+}
+
+/// Whether a served component (`reached_by: network`) accepts `command` and no declared actor is
+/// granted it: every caller is refused it (beyond10x/ess#265).
+fn ungranted_on_served_surface(ir: &EssIr, command: &ess_domain::name::QualifiedName) -> bool {
+    let served = ir.components().values().any(|component| {
+        component.reached_by == ess_domain::component::Reach::Network
+            && component
+                .accepts
+                .iter()
+                .any(|accepted| accepted.name() == command)
+    });
+    served
+        && !ir
+            .actors()
+            .values()
+            .any(|actor| actor.may.iter().any(|granted| granted.name() == command))
 }
 
 /// Whether no input decides `outcome` (§12): the test strategy an `external:` branch carries.
@@ -1287,7 +1344,7 @@ impl Cause {
     }
 }
 
-// One arm per cause, and long because there are thirty-seven of them. A reader comparing two
+// One arm per cause, and long because there are forty of them. A reader comparing two
 // repairs reads them side by side or not at all, and splitting the list would put half of it
 // somewhere else. The meaning is the variant's own first line of documentation.
 diagnostic_catalogue! {
@@ -1322,7 +1379,8 @@ diagnostic_catalogue! {
             "name an actor the specification declares, or drop `actor:`";
         Self::ActorMayNot { .. } => 9,
             "The actor is declared, and the specification does not grant it this command.",
-            "grant the command to this actor with `may:`, or act as one that already has it";
+            "grant the command to this actor with `may:`, act as one that already has it, or \
+             write `refused: not_granted` where the act expects the refusal";
         Self::UndeclaredEvent { .. } => 10,
             "The model declares no such event.",
             "name an event the specification declares";
@@ -1429,6 +1487,21 @@ diagnostic_catalogue! {
              under `outcome:` and the suite configures that answer for its call; an answer a \
              command invoked through a binding must give cannot be stated in an authored act, \
              so drop the claim there and leave it to synthesis";
+        Self::ActorGranted { .. } => 38,
+            "An act expects the refusal an ungranted actor gets, and the actor holds the grant.",
+            "act as an actor the specification does not grant the command, or drop `refused: \
+             not_granted` and claim what the command answers";
+        Self::RefusalContradicted { .. } => 39,
+            "An act expects the refusal an ungranted actor gets, and names no actor or claims \
+             what only a command that ran answers.",
+            "a refused command takes no branch, reports no declared error and returns nothing: \
+             keep `actor:` beside `refused: not_granted`, drop `outcome`, `error`, `response`, \
+             `events` and `capture`, and list under `no_events:` what must not appear anywhere in \
+             the target's log after the refused send";
+        Self::UngrantedOnServedSurface { .. } => 40,
+            "An act sends a served command no actor is granted, which every caller is refused.",
+            "grant the command to an actor with `may:` and send the act as that actor, or write \
+             `refused: not_granted` with an `actor:` the specification declares";
     }
 }
 
@@ -1479,6 +1552,20 @@ impl fmt::Display for Cause {
             Self::ActorMayNot { actor, command } => {
                 write!(f, "`{actor}` is not granted `{command}`")
             }
+            Self::ActorGranted { actor, command } => write!(
+                f,
+                "`{actor}` is granted `{command}`, so it is not refused as not granted"
+            ),
+            Self::UngrantedOnServedSurface { command } => write!(
+                f,
+                "`{command}` is accepted by a served component and no declared actor is granted \
+                 it, so every caller is refused it and it cannot run"
+            ),
+            Self::RefusalContradicted { command, claims } => write!(
+                f,
+                "`{command}` is expected refused as not granted, which contradicts {}",
+                claims.join(", ")
+            ),
             Self::UndeclaredEvent { event } => {
                 write!(f, "`{event}` is not an event this specification declares")
             }
@@ -1847,6 +1934,13 @@ fn document_format_refusal(document: &Document) -> Option<Cause> {
             detail: "direct response assertions require type: ess-scenario/4".into(),
         });
     }
+    if document.format != "ess-scenario/4"
+        && document.timeline.iter().any(|act| act.refused.is_some())
+    {
+        return Some(Cause::Unreadable {
+            detail: "`refused: not_granted` requires type: ess-scenario/4".into(),
+        });
+    }
     None
 }
 
@@ -2013,10 +2107,11 @@ impl Compiler<'_> {
             command.outcomes.iter().map(|it| it.name.clone()).collect();
         self.reach(&input_fields);
 
-        let actor = act
-            .actor
-            .as_ref()
-            .and_then(|written| self.actor(written, &command_ref));
+        if act.refused == Some(Refused::NotGranted) {
+            self.refused_act(act, &command_ref, &input_fields);
+            return;
+        }
+        let actor = self.sender(act, &command_ref);
         let input = self.values(
             &act.input,
             &input_fields,
@@ -2471,6 +2566,116 @@ impl Compiler<'_> {
                 elapsed,
             }
         });
+    }
+
+    /// An act that expects the refusal an ungranted actor gets (beyond10x/ess#265): the command sent
+    /// as that actor, [`ExpectNotGranted`](ScenarioStep::ExpectNotGranted), and whatever it claims
+    /// absent.
+    ///
+    /// The one place an actor the specification does not grant the command is accepted, and only
+    /// because the act says it must be refused. Everything only a command that ran could answer is
+    /// refused beside it, and so is an act that names no actor to refuse: a suite step sent as no
+    /// actor is sent as whoever the target is configured to be, which says nothing about a grant.
+    fn refused_act(
+        &mut self,
+        act: &Act,
+        command_ref: &CommandRef,
+        input_fields: &[ess_compiler::ir::ResolvedField],
+    ) {
+        let mut claims = Vec::new();
+        if act.actor.is_none() {
+            claims.push("a missing `actor:`".to_owned());
+        }
+        for (key, written) in [
+            ("outcome", act.outcome.is_some()),
+            ("error", act.error.is_some()),
+            ("response", act.response.is_some()),
+            ("events", !act.events.is_empty()),
+            ("capture", act.capture.is_some()),
+        ] {
+            if written {
+                claims.push(format!("`{key}:`"));
+            }
+        }
+        if !claims.is_empty() {
+            self.refuse(Cause::RefusalContradicted {
+                command: command_ref.clone(),
+                claims,
+            });
+        }
+        let actor = act
+            .actor
+            .as_ref()
+            .and_then(|written| self.ungranted(written, command_ref));
+        let input = self.values(
+            &act.input,
+            input_fields,
+            &Surface::Input(command_ref.clone()),
+            Completeness::Total,
+        );
+        self.steps.push(ScenarioStep::ExecuteCommand {
+            caller: std::collections::BTreeMap::new(),
+            command: command_ref.clone(),
+            actor: actor.clone(),
+            input,
+        });
+        // `no_events:` here is about the whole log, not the refused send's direct events: a refusal
+        // has none, so only the log can show a command that ran before it was refused.
+        let mut unpublished = Vec::new();
+        for written in &act.no_events {
+            if let Some((name, _)) = self.declared(written, self.ir.events(), |event| {
+                Cause::UndeclaredEvent { event }
+            }) {
+                let event = EventRef::new(name);
+                self.source.insert(event.clone().into());
+                unpublished.push(event);
+            }
+        }
+        if let Some(actor) = actor {
+            self.steps
+                .push(ScenarioStep::ExpectNotGranted { actor, unpublished });
+        }
+        self.mark(act);
+    }
+
+    /// The actor an act that expects its command to run is sent as, where the specification grants
+    /// it the command.
+    ///
+    /// An act sent as no actor whose served command no actor is granted is refused: every caller is
+    /// refused that command (beyond10x/ess#265), so the act requires what no conforming surface
+    /// does.
+    fn sender(&mut self, act: &Act, command: &CommandRef) -> Option<ActorRef> {
+        let Some(written) = act.actor.as_ref() else {
+            if ungranted_on_served_surface(self.ir, command.name()) {
+                self.refuse(Cause::UngrantedOnServedSurface {
+                    command: command.clone(),
+                });
+            }
+            return None;
+        };
+        self.actor(written, command)
+    }
+
+    /// The actor an act expecting the refusal is sent as, where the specification declares it and
+    /// does not grant it the command.
+    fn ungranted(&mut self, written: &str, command: &CommandRef) -> Option<ActorRef> {
+        let (name, declared) = self.declared(written, self.ir.actors(), |actor| {
+            Cause::UndeclaredActor { actor }
+        })?;
+        let granted = declared
+            .may
+            .iter()
+            .any(|handle| handle.name() == command.name());
+        let actor = ActorRef::new(name);
+        if granted {
+            self.refuse(Cause::ActorGranted {
+                actor,
+                command: command.clone(),
+            });
+            return None;
+        }
+        self.source.insert(actor.clone().into());
+        Some(actor)
     }
 
     /// The actor an act runs as, where the specification grants it the command.

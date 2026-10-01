@@ -101,6 +101,24 @@ impl TargetRefusals {
                     .to_owned(),
             );
         }
+        // A grant is enforced by the served surface (beyond10x/ess#265), and this target serves
+        // none, so it enforces no grant.
+        for actor in ir.actors().keys() {
+            let source = actor.to_string();
+            if !plan.is_generated(CapabilityKind::ActorGrants, &source) {
+                continue;
+            }
+            refused.insert(
+                Capability {
+                    kind: CapabilityKind::ActorGrants,
+                    source,
+                },
+                "a grant is enforced by the served surface, on the caller it is handed before a \
+                 command runs, and this target is a page holding the system in one tab, which \
+                 serves nothing"
+                    .to_owned(),
+            );
+        }
         Self { refused }
     }
 

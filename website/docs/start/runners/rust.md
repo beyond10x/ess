@@ -17,6 +17,8 @@ pages:
 ```shell-session ess-tutorial
 $ cd ~/tasks
 $ ess verify conform synthesize --path . --out suite.json
+note: every declared actor may invoke `tasks.list.AddTask`, so no actor is refused it and no `tasks.list.AddTask/grant/denied` scenario is owed
+note: every declared actor may invoke `tasks.list.CompleteTask`, so no actor is refused it and no `tasks.list.CompleteTask/grant/denied` scenario is owed
 6 scenario(s) (0 authored), 0 refusal(s), written to suite.json
 ```
 

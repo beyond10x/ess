@@ -17,6 +17,8 @@ From the `tasks` project of the earlier pages:
 ```shell-session ess-tutorial
 $ cd ~/tasks
 $ ess verify conform synthesize --path . --target typescript --out typescript
+note: every declared actor may invoke `tasks.list.AddTask`, so no actor is refused it and no `tasks.list.AddTask/grant/denied` scenario is owed
+note: every declared actor may invoke `tasks.list.CompleteTask`, so no actor is refused it and no `tasks.list.CompleteTask/grant/denied` scenario is owed
 6 scenario(s) (0 authored), 0 refusal(s), 13 file(s) written to typescript
 ```
 

@@ -425,10 +425,25 @@ impl<C: Clock> Runner<C> {
                 &error,
             ));
         } else {
-            for step in scenario.steps.iter().skip(usize::from(matches!(
+            let first = usize::from(matches!(
                 scenario.steps.first(),
                 Some(ScenarioStep::ResolveFixtures { .. })
-            ))) {
+            ));
+            for (index, step) in scenario.steps.iter().enumerate().skip(first) {
+                // A send the next step requires refused is preceded by a count of what its
+                // refusal must not add to the log (beyond10x/ess#265).
+                if let (
+                    ScenarioStep::ExecuteCommand { .. }
+                    | ScenarioStep::ExecuteCommandWithoutInput { .. },
+                    Some(ScenarioStep::ExpectNotGranted { unpublished, .. }),
+                ) = (step, scenario.steps.get(index + 1))
+                {
+                    let now = self.clock.now();
+                    if count_before(unpublished, Deadline::at(now), &mut run, target) == Flow::Stop
+                    {
+                        break;
+                    }
+                }
                 if self.step(step, &mut run, target) == Flow::Stop {
                     break;
                 }
@@ -524,6 +539,10 @@ impl<C: Clock> Runner<C> {
                 caller,
             } => execute_command_without_input(command, (actor.as_ref(), caller), run, target),
             ScenarioStep::ExpectOutcome { outcome } => expect_outcome(outcome, run),
+            ScenarioStep::ExpectNotGranted { actor, unpublished } => {
+                let now = self.clock.now();
+                expect_not_granted(actor, unpublished, Deadline::at(now), run, target)
+            }
             ScenarioStep::ExpectNoError => expect_no_error(run),
             ScenarioStep::SnapshotSubject { view, subject } => {
                 snapshot_subject(view, Some(subject), None, run)
@@ -1194,6 +1213,18 @@ fn execute_command<T: ConformanceTarget>(
                 actor: actor.cloned(),
                 input: resolved,
                 result,
+                not_granted: None,
+            });
+            Flow::Continue
+        }
+        // The command's answer, not the target's failure (beyond10x/ess#265).
+        Err(TargetError::NotGranted { actor: named }) => {
+            run.last_command = Some(Executed {
+                command: command.to_string(),
+                actor: actor.cloned(),
+                input: resolved,
+                result: SemanticCommandResult::undeclared(),
+                not_granted: Some(NotGranted { actor: named }),
             });
             Flow::Continue
         }
@@ -1238,6 +1269,17 @@ fn execute_command_without_input<T: ConformanceTarget>(
                 actor: actor.cloned(),
                 input: BTreeMap::new(),
                 result,
+                not_granted: None,
+            });
+            Flow::Continue
+        }
+        Err(TargetError::NotGranted { actor: named }) => {
+            run.last_command = Some(Executed {
+                command: command.to_string(),
+                actor: actor.cloned(),
+                input: BTreeMap::new(),
+                result: SemanticCommandResult::undeclared(),
+                not_granted: Some(NotGranted { actor: named }),
             });
             Flow::Continue
         }
@@ -1262,20 +1304,168 @@ fn expect_outcome(outcome: &OutcomeRef, run: &mut Run) -> Flow {
     if executed.result.outcome.as_ref() == Some(outcome) {
         run.record(CheckResult::passed(CheckCode::Outcome, about));
     } else {
-        let seen = executed.result.outcome.as_ref().map_or_else(
-            || {
-                "no declared outcome was reached; the target refused for a reason the \
-                 specification does not model"
-                    .to_owned()
-            },
-            |reached| format!("outcome = {}", reached.outcome),
-        );
+        let seen = match (&executed.not_granted, executed.result.outcome.as_ref()) {
+            (Some(named), _) => not_granted_seen(named.actor.as_deref()),
+            (None, Some(reached)) => format!("outcome = {}", reached.outcome),
+            (None, None) => "no declared outcome was reached; the target refused for a reason \
+                             the specification does not model"
+                .to_owned(),
+        };
         let diagnostic = Diagnostic::new(CheckCode::Outcome, run.id.clone())
             .declared_by(outcome.clone())
             .executing(executed.quoted())
             .expected(format!("outcome = {}", outcome.outcome))
             .observed(seen);
         run.record(CheckResult::failed(about, diagnostic));
+    }
+    Flow::Continue
+}
+
+/// What a report says a command answered when the target refused it as not granted.
+fn not_granted_seen(named: Option<&str>) -> String {
+    match named {
+        Some(actor) => {
+            format!("the standard refusal for an actor no grant admits, naming `{actor}`")
+        }
+        None => "the standard refusal for an actor no grant admits, naming no actor".to_owned(),
+    }
+}
+
+/// Requires that the last command was refused before it ran, with the standard refusal for an
+/// actor no grant admits, naming the actor it was sent as (beyond10x/ess#265).
+///
+/// The refusal must name that actor: a surface that refused a command sent as the ungranted actor
+/// while naming another — or none — refused a request the scenario did not send.
+fn expect_not_granted<T: ConformanceTarget>(
+    actor: &ActorRef,
+    unpublished: &[EventRef],
+    deadline: Deadline,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    let Some(executed) = run.last_command.as_ref() else {
+        run.record(no_command(&run.id, "the refusal an ungranted actor gets"));
+        return Flow::Stop;
+    };
+    let about = format!("not granted to {actor}");
+    let expected = not_granted_seen(Some(&actor.to_string()));
+    match &executed.not_granted {
+        Some(NotGranted { actor: Some(named) }) if *named == actor.to_string() => {
+            run.record(CheckResult::passed(CheckCode::Outcome, about));
+            // Only a refused send is held to having set nothing in motion; one that ran has
+            // already failed, and the Go and TypeScript runners stop there too.
+            return nothing_published_after(unpublished, deadline, run, target);
+        }
+        refused => {
+            let seen = match refused {
+                Some(named) => not_granted_seen(named.actor.as_deref()),
+                None => executed.result.outcome.as_ref().map_or_else(
+                    || "the command ran and reached no declared outcome".to_owned(),
+                    |reached| {
+                        format!(
+                            "the command ran and took outcome = {}; the target checked no grant",
+                            reached.outcome
+                        )
+                    },
+                ),
+            };
+            let diagnostic = Diagnostic::new(CheckCode::Outcome, run.id.clone())
+                .declared_by(actor.clone())
+                .executing(executed.quoted())
+                .expected(expected)
+                .observed(seen);
+            run.record(CheckResult::failed(about, diagnostic));
+        }
+    }
+    Flow::Continue
+}
+
+/// How many occurrences of `event` the target's log holds, observed once with a deadline already
+/// passed: the claim is about what a send did, not about waiting for something that should never
+/// come. `None` where the target cannot say, recorded against the scenario.
+fn log_count<T: ConformanceTarget>(
+    event: &EventRef,
+    when: &str,
+    deadline: Deadline,
+    run: &mut Run,
+    target: &T,
+) -> Option<usize> {
+    let request = EventObservationRequest {
+        event: event.clone(),
+        correlation: run.context.correlation.clone(),
+        deadline,
+    };
+    match target.observe_events(request) {
+        Ok(observed) => {
+            let count = observed.iter().filter(|seen| &seen.event == event).count();
+            run.remember(&observed);
+            Some(count)
+        }
+        Err(error) => {
+            run.record(target_failure(
+                &run.id,
+                &format!("observing `{event}` {when} the refused send"),
+                &error,
+            ));
+            None
+        }
+    }
+}
+
+/// Counts, just before a send the next step requires refused, the occurrences of each event the
+/// refusal must not add to the target's log (beyond10x/ess#265).
+fn count_before<T: ConformanceTarget>(
+    unpublished: &[EventRef],
+    deadline: Deadline,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    run.log_before.clear();
+    for event in unpublished {
+        let Some(count) = log_count(event, "before", deadline, run, target) else {
+            return Flow::Stop;
+        };
+        run.log_before.insert(event.clone(), count);
+    }
+    Flow::Continue
+}
+
+/// Requires that the target's log holds no more occurrences of any of `unpublished` after the
+/// refused send than just before it: what the send must not have set in motion anywhere
+/// (beyond10x/ess#265).
+///
+/// Counted, not matched: a refused command that ran and published an occurrence equal to an earlier
+/// one has still added one, and that is the claim this checks.
+fn nothing_published_after<T: ConformanceTarget>(
+    unpublished: &[EventRef],
+    deadline: Deadline,
+    run: &mut Run,
+    target: &T,
+) -> Flow {
+    for event in unpublished {
+        let Some(after) = log_count(event, "after", deadline, run, target) else {
+            return Flow::Stop;
+        };
+        let before = run.log_before.get(event).copied().unwrap_or(0);
+        let about = format!("no event {event} after the refused send");
+        if after <= before {
+            run.record(CheckResult::passed(CheckCode::Event, about));
+        } else {
+            let mut diagnostic = Diagnostic::new(CheckCode::Event, run.id.clone())
+                .declared_by(event.clone())
+                .expected(format!(
+                    "a refused command sets nothing in motion, so the log holds as many {event} \
+                     as before it ({before})"
+                ))
+                .observed(format!(
+                    "{after} occurrence(s) of {event} in the target's log after the send, {before} \
+                     before it; the command ran before it was refused"
+                ));
+            if let Some(executed) = run.last_command.as_ref() {
+                diagnostic = diagnostic.executing(executed.quoted());
+            }
+            run.record(CheckResult::failed(about, diagnostic));
+        }
     }
     Flow::Continue
 }
@@ -2416,6 +2606,16 @@ struct Executed {
     actor: Option<ActorRef>,
     input: BTreeMap<String, Node>,
     result: SemanticCommandResult,
+    /// The standard refusal the target answered instead of running the command, naming its actor
+    /// (beyond10x/ess#265); `None` where the command ran. A refused command's `result` is
+    /// [`SemanticCommandResult::undeclared`]: it took no branch and published nothing.
+    not_granted: Option<NotGranted>,
+}
+
+/// The standard refusal a target answered for a command (beyond10x/ess#265).
+struct NotGranted {
+    /// The actor it names; `None` where it names none.
+    actor: Option<String>,
 }
 
 impl Executed {
@@ -2481,6 +2681,9 @@ struct Run {
     /// The instant each `now_offset` resolved to in this scenario (beyond10x/ess#171).
     now: crate::now_offset::Resolved,
     seen: Vec<ObservedEvent>,
+    /// How many occurrences of each event a refused send must not add were in the target's log just
+    /// before that send (beyond10x/ess#265).
+    log_before: BTreeMap<EventRef, usize>,
     checks: Vec<CheckResult>,
 }
 
@@ -2502,6 +2705,7 @@ impl Run {
             marked: BTreeSet::new(),
             now: crate::now_offset::Resolved::default(),
             seen: Vec::new(),
+            log_before: BTreeMap::new(),
             checks: Vec::new(),
         }
     }

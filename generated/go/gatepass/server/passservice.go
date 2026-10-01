@@ -54,7 +54,7 @@ var RoutesPassService = [][2]string{
 // `runtime` is the same in every language this plan is emitted into, and `cargo xtask synth
 // --check` starts both and compares them.
 var StartupPassService = []string{
-	"{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba\",\"contract_digest\":\"a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":26,\"obligations\":1,\"refused\":2}",
+	"{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"gatepass\",\"version\":\"v1\",\"model_digest\":\"f8ccea748a49e127ca2e18f725481394cc0eab1787fafd77d16c52485bf2abba\",\"contract_digest\":\"a6fdd92f3a88ac0abbe59789406f3001df466e87f222e4aad1a8348c17f91d7c\",\"components\":[\"pass-service\"],\"capabilities\":{\"generated\":28,\"obligations\":1,\"refused\":0}",
 	"{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"pass-service\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":7,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/visits/commands/admit-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.AdmitVisitor\"},{\"method\":\"POST\",\"path\":\"/visits/commands/register-visit\",\"serves\":\"command\",\"name\":\"gatepass.visit.RegisterVisit\"},{\"method\":\"POST\",\"path\":\"/visits/commands/sign-out-visitor\",\"serves\":\"command\",\"name\":\"gatepass.visit.SignOutVisitor\"},{\"method\":\"GET\",\"path\":\"/visits/views/by-id\",\"serves\":\"view\",\"name\":\"gatepass.visit.VisitById\"},{\"method\":\"GET\",\"path\":\"/visits/views/expected\",\"serves\":\"view\",\"name\":\"gatepass.visit.ExpectedVisits\"}]",
 	"{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"gatepass\",\"surfaces\":1",
 }
@@ -77,7 +77,11 @@ func announcePassService(address *net.TCPAddr) {
 //
 // It chooses no realization. Every command reaches the port, and a port over unimplemented
 // obligations answers the typed refusal this surface reports as 501.
-func ServePassService(system *system.System, address string) error {
+//
+// authenticate is the realization's: it says who each request was sent by, or nil, and every
+// command checks that caller's grant before it runs. Nothing here reads an actor from the
+// request itself.
+func ServePassService(system *system.System, address string, authenticate func(*http.Request) *Caller) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -88,7 +92,7 @@ func ServePassService(system *system.System, address string) error {
 	}
 	announcePassService(bound)
 	return http.Serve(listener, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		answer := dispatchPassService(system, request)
+		answer := dispatchPassService(system, authenticate(request), request)
 		answer.write(writer)
 	}))
 }
@@ -99,7 +103,11 @@ func ServePassService(system *system.System, address string) error {
 // it holds under a different method is a 405 naming the one it answers. Neither is a status
 // the contract declares, and neither should be: both are facts about a transport rather than
 // about any command.
-func dispatchPassService(system *system.System, request *http.Request) response {
+//
+// caller is who the realization authenticated the request as, or nil. Every command checks
+// its grant before it runs, and answers the standard refusal when the caller is nil or is
+// an actor the specification does not grant the command.
+func dispatchPassService(system *system.System, caller *Caller, request *http.Request) response {
 	body, refused := readBody(request)
 	if refused != nil {
 		return *refused
@@ -123,15 +131,24 @@ func dispatchPassService(system *system.System, request *http.Request) response 
 		if request.Method != "POST" {
 			return methodNotAllowed("POST")
 		}
+		if refused := admit(caller, "gatepass.visit.AdmitVisitor"); refused != nil {
+			return *refused
+		}
 		return serveGatepassVisitAdmitVisitor(system, body)
 	case "/visits/commands/register-visit":
 		if request.Method != "POST" {
 			return methodNotAllowed("POST")
 		}
+		if refused := admit(caller, "gatepass.visit.RegisterVisit"); refused != nil {
+			return *refused
+		}
 		return serveGatepassVisitRegisterVisit(system, body)
 	case "/visits/commands/sign-out-visitor":
 		if request.Method != "POST" {
 			return methodNotAllowed("POST")
+		}
+		if refused := admit(caller, "gatepass.visit.SignOutVisitor"); refused != nil {
+			return *refused
 		}
 		return serveGatepassVisitSignOutVisitor(system, body)
 	case "/visits/views/by-id":

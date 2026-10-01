@@ -261,15 +261,48 @@ another type than it computes. The Go target keeps each generated query as an ow
 this as a weakening. See the
 [view query tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/generated_view_queries.rs).
 
-## Actor grants are generated as data
+## Actor grants are generated as data, and a served surface enforces them
 
 Which actors exist and which commands each may invoke is fully determined, so the Rust target
-generates it as data: an `actor` module with an `Actor` enum, one variant per declared actor, and
-`may(actor)`, the qualified names of the commands that actor may invoke. Enforcing a grant is not
-generated: it is checked against a caller identity, which the types do not carry, so the plan keeps
-the `actor grants` row refused with that reason and enforcement stays with the caller. The module is
-emitted only for a model that declares an actor. The Go target emits no grant table and lists that
-as a weakening. See the
+generates it as data: an `actor` module with an `Actor` enum, one variant per declared actor,
+`may(actor)`, the qualified names of the commands that actor may invoke, and `Caller`, who a request
+was authenticated as. The module is emitted only for a model that declares an actor.
+
+Where the specification serves a component (`reached_by: network`), the generated server enforces
+the grant. Its `dispatch` and `handle` (Rust) and `dispatch` (Go) take the caller your realization
+authenticated the request as, or none, and `serve` takes the function that authenticates one. How a
+request proves who sent it is yours; the server reads no actor from the request itself. Before the
+command runs, a caller that is none, or is an actor without the grant, gets one standard refusal,
+the same for every command: `403` with `{"refused": "not granted", "actor": <name or null>}`. The
+contract declares it on every command. A `403` a caller-decided branch answers carries `outcome` and
+the declared `error` instead, so a client tells the two apart by the members present. A command no
+declared actor may invoke is refused to every caller. Views are not grant-checked. The plan marks
+the `actor grants` row generated. The Go server carries its own grant table, and both servers
+export the check (`admit` in Rust, `Admit` in Go) for code that drives the system in process.
+
+Where the specification serves no component, nothing generated sees a caller, so the plan keeps the
+`actor grants` row refused and enforcement stays with the caller. The Go target then emits no grant
+table and lists that as a weakening.
+
+For each command a served component accepts, the synthesized suite holds the grant to it:
+
+- `<command>/grant/denied` sends the command as a declared actor the specification does not grant
+  it, reusing the arrangement of one of the command's own scenarios whose send the command
+  accepts. It requires the refusal, and that the target's event log holds no more of any declared
+  event after the send than just before it. Where no scenario sends the command into an accepting
+  branch, the denied scenario is withheld and a note names the command. A command every declared
+  actor may invoke gets no such scenario, and synthesis says so in a note.
+- A command no declared actor may invoke is refused to every caller, so no scenario sends it
+  expecting it to run: those are withheld and named in a note, and its refusal is the only witness.
+  An authored act sending it with no `actor:` is refused (`ESS-AUTHOR-040`).
+- Every actor granted a command sends it at least once: the command's scenarios are sent by its
+  granted actors in turn, and `<command>/grant/admitted/<actor>` is added only where it has fewer
+  scenarios than granted actors. A command an actor carrying attributes holds keeps the actor
+  synthesis chose, and a note names it.
+
+A command no served component accepts gets none of these, and a specification that serves nothing
+gets one note saying enforcement is the caller's. A server that skips the check runs the command
+instead and fails the denied scenarios. See the
 [actor grant tests](https://github.com/beyond10x/ess/blob/main/crates/generate/ess-synth/tests/actor_grants.rs).
 
 ## Honest limits

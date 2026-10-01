@@ -148,6 +148,9 @@ type recordedResult struct {
 	Consistency  *string         `json:"consistency"`
 	DirectEvents []recordedEvent `json:"direct_events"`
 	Response     map[string]Node `json:"response"`
+	// NotGranted is the standard refusal for an actor no grant admits (beyond10x/ess#265).
+	NotGranted      bool    `json:"not_granted"`
+	NotGrantedActor *string `json:"not_granted_actor"`
 }
 
 func (r recordedResult) result() CommandResult {
@@ -163,6 +166,10 @@ func (r recordedResult) result() CommandResult {
 	}
 	for _, event := range r.DirectEvents {
 		result.DirectEvents = append(result.DirectEvents, ObservedEvent{Event: event.Event, Payload: event.Payload})
+	}
+	result.NotGranted = r.NotGranted
+	if r.NotGrantedActor != nil {
+		result.NotGrantedActor = *r.NotGrantedActor
 	}
 	return result
 }

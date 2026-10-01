@@ -88,7 +88,43 @@ pub const NO_INPUT: &str = "400";
 /// The caller is not one the branch admits: its guard compares the authenticated caller with the
 /// input or the record (`caller.<attribute>`, ess/16). A `403` and not a `409` or a `422`: the
 /// request and the record are fine, and the same request from the record's own agent is accepted.
+///
+/// It is also the status of the standard refusal for an actor no grant admits (beyond10x/ess#265,
+/// [`NOT_GRANTED`]). One status for both, because both answer the same question — *this caller
+/// may not do this* — and a client acts on both the same way: send it as someone else. `401`
+/// would claim the credential is missing or wrong, and how a caller proves who it is belongs to
+/// the realization, not to this contract. The two are told apart by the body: a declared branch
+/// carries `outcome` and the declared `error`, the standard refusal carries `refused` and `actor`
+/// and neither of those.
 pub const FORBIDDEN: &str = "403";
+
+/// The `refused` member of the standard refusal for an actor no grant admits (beyond10x/ess#265).
+///
+/// One refusal for every command, answered with [`FORBIDDEN`] before the command runs: the caller
+/// the realization authenticated the request as is none, or is an actor the specification does not
+/// grant the command. Its body is `{"refused": "not granted", "actor": <the actor's qualified name,
+/// or null>}`. The contract states which actors may invoke a command (`x-ess-may-invoke`) and never
+/// how a request proves it is one of them: the served surface is handed the authenticated caller,
+/// and derives nothing about it from the request.
+pub const NOT_GRANTED: &str = "not granted";
+
+/// Whether any served surface checks grants: the model declares an actor and serves a component
+/// (`reached_by: network`).
+///
+/// A model that declares no actor says nothing about who may invoke what, and one that serves
+/// nothing has no surface to check a grant on — enforcement is then the caller's, against the
+/// generated grant table — so neither checks anything and its contract keeps its bytes.
+pub fn checks_grants(ir: &EssIr) -> bool {
+    ir.components()
+        .values()
+        .any(|component| grants_checked_on(ir, component))
+}
+
+/// Whether `component`'s surface checks grants: the model declares an actor and the component is
+/// served (`reached_by: network`).
+pub fn grants_checked_on(ir: &EssIr, component: &ResolvedComponent) -> bool {
+    !ir.actors().is_empty() && component.reached_by == Reach::Network
+}
 
 /// The command could not be carried through because the realization is unfinished: a port it runs
 /// reported an unmet obligation, or the command's effect was committed and delivering what it
