@@ -9891,21 +9891,14 @@ pub enum OverlapGap {
     Unsent,
 }
 
-/// A [`Note::UnwitnessedOverlap`] for every [`Overlap`] whose `first` has a scenario that sends no
-/// input in it, unless the candidates show the overlap empty (beyond10x/ess#217).
-///
-/// This is the check, not a second generator: it reads the suite the passes above built, so a path
-/// that forgets to send an overlap is recorded whichever path it is. An input a scenario sends is
-/// read by its literal values; a value that names an arranged row stands in as the plain witness's
-/// placeholder, which no input guard of these reads.
 /// Every scenario of `suite` with a step that requires a branch for an input an input-guarded
 /// refusal answers first, one [`RefusalCause::PrecedenceContradicted`] each, naming the first such
 /// step (beyond10x/ess#280).
 ///
-/// Read off the finished suite, as [`unwitnessed_overlaps`] is, so every family that sends a command
+/// Read off the finished suite, as `unwitnessed_overlaps` is, so every family that sends a command
 /// is held to it whichever generator chose the input. Under the precedence order
 /// (`docs/design/cross-record-and-stored-field-guards.md`) an input-guarded refusal is taken before
-/// every accepting branch and every refusal declared after it ([`sibling_refusals`]); a step
+/// every accepting branch and every refusal declared after it (`sibling_refusals`); a step
 /// requiring one of those for an input such a refusal's guard decidedly holds of fails every target
 /// that honours the specification. #280's `set` scenario sent `{scope: Budget, provider:
 /// "provider"}`, which `provider-not-allowed: {scope: Budget, provider: {exists: true}}` claims.
@@ -10029,6 +10022,13 @@ fn sent_as_text(input: &BTreeMap<String, ScenarioValue>) -> String {
     format!("{{{}}}", fields.join(", "))
 }
 
+/// A [`Note::UnwitnessedOverlap`] for every [`Overlap`] whose `first` has a scenario that sends no
+/// input in it, unless the candidates show the overlap empty (beyond10x/ess#217).
+///
+/// This is the check, not a second generator: it reads the suite the passes above built, so a path
+/// that forgets to send an overlap is recorded whichever path it is. An input a scenario sends is
+/// read by its literal values; a value that names an arranged row stands in as the plain witness's
+/// placeholder, which no input guard of these reads.
 fn unwitnessed_overlaps(ir: &EssIr, suite: &ConformanceSuite) -> Vec<Note> {
     let mut notes = Vec::new();
     for command in ir.commands().values() {
