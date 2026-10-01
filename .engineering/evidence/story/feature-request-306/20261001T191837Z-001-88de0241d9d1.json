@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T19:18:37Z",
+  "actor": "human:timo",
+  "artifact": "story:feature-request-306",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "coordinator rerun: ownership_relocation_adversary_p2 10/10; output_ownership 51/51"
+  }
+}

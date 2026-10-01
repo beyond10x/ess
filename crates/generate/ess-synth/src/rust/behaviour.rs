@@ -835,18 +835,21 @@ impl Writer<'_> {
                 );
             }
         }
+        if let Some(existing) = determined::existing_instance(command) {
+            out.push_str(&self.existing_lookup(existing));
+        }
         let guarded = determined::subject_guarded(command);
         let held = if guarded {
             let subject = determined::selection_subject(command)
                 .expect("a subject-guarded command the plan generates reads one subject");
             let entity = self.ir.entity(&subject.entity);
             let storage = self.storage(&entity.name);
-            let unknown = self.unknown_answer();
+            let unknown = self.unknown_arm(12);
             let _ = writeln!(
                 out,
                 "        // The addressed row, read before the branches that select by it.\n        \
-                 let Some(held) = {storage}::get(&self.ports, &input.{}) else {{\n            \
-                 return {unknown};\n        }};\n        let _ = &held;",
+                 let Some(held) = {storage}::get(&self.ports, &input.{}) else {{\n{unknown}        \
+                 }};\n        let _ = &held;",
                 name::value_ident(&subject.instance.field().name)
             );
             for outcome in &command.outcomes {
@@ -927,6 +930,43 @@ impl Writer<'_> {
             );
         }
         out
+    }
+
+    /// The `existing_instance:` refusal, answered for an identity a record already carries: the
+    /// storage lookup of the identity the command's creation would take, after the input-guarded
+    /// refusals and before any branch is taken (beyond10x/ess#310). An optional identity input the
+    /// request leaves out names a new identity, which no record carries.
+    fn existing_lookup(&mut self, existing: &ResolvedOutcome) -> String {
+        let command = self.command;
+        let (creation, (field, optional)) = command
+            .outcomes
+            .iter()
+            .find_map(|outcome| {
+                determined::identity_input(outcome).map(|identity| (outcome, identity))
+            })
+            .expect("the plan admits `existing_instance:` beside a creation read from the input");
+        let entity = &creation
+            .subject
+            .as_ref()
+            .expect("a creation names its subject")
+            .entity;
+        let ir = self.ir;
+        let storage = self.storage(&ir.entity(entity).name);
+        let answer = self.variant(existing, Held::None, None);
+        let field = name::value_ident(field);
+        let found = if optional {
+            format!(
+                "input.{field}.as_ref().is_some_and(|identity| {storage}::get(&self.ports, \
+                 identity).is_some())"
+            )
+        } else {
+            format!("{storage}::get(&self.ports, &input.{field}).is_some()")
+        };
+        format!(
+            "        // `{}`: an identity a record already carries, before any branch is taken.\n        \
+             if {found} {{\n            return Ok({answer});\n        }}\n",
+            existing.name
+        )
     }
 
     /// The storage trait of an entity, recorded as used and as a bound of this impl.
@@ -1040,6 +1080,98 @@ impl Writer<'_> {
         }
     }
 
+    /// The statements answering an identity no record carries, each line indented by `depth`
+    /// spaces and ending in a `return`: the creation of create-or-update where the command
+    /// declares one (beyond10x/ess#310), else the answer [`Self::unknown_answer`] names.
+    fn unknown_arm(&mut self, depth: usize) -> String {
+        let command = self.command;
+        if let Some(creation) = command
+            .outcomes
+            .iter()
+            .find(|outcome| determined::creates_unknown(outcome))
+        {
+            let pad = " ".repeat(depth.saturating_sub(12));
+            return self.create(creation, Held::None).lines().fold(
+                String::new(),
+                |mut out, line| {
+                    let _ = writeln!(out, "{pad}{line}");
+                    out
+                },
+            );
+        }
+        let unknown = self.unknown_answer();
+        format!("{}return {unknown};\n", " ".repeat(depth))
+    }
+
+    /// The statements of a creation, at the indentation of a branch block, ending in its `return`.
+    ///
+    /// The new identity is assigned by the context, except on a creation selected by existence,
+    /// whose identity is the input the lookup read (beyond10x/ess#310).
+    fn create(&mut self, outcome: &ResolvedOutcome, held: Held) -> String {
+        let mut out = String::new();
+        let subject = outcome
+            .subject
+            .as_ref()
+            .expect("a creation names its subject");
+        let entity = self.ir.entity(&subject.entity);
+        let storage = self.storage(&entity.name);
+        let module_entity = declared_path(self.layout, &entity.name);
+        let any = format!(
+            "crate::{}::Any{}",
+            self.layout.module(self.layout.owner(&entity.name)),
+            self.layout.type_name(&entity.name)
+        );
+        let identity_type = &entity.identity.type_ref;
+        let by_existence = determined::creates_unknown(outcome)
+            || determined::existing_instance(self.command).is_some();
+        let assigned = match determined::identity_source(outcome).filter(|_| by_existence) {
+            Some(source) => self.value(source, None),
+            None => self.generate(identity_type),
+        };
+        let _ = writeln!(
+            out,
+            "            let identity: {} = {assigned};",
+            self.layout.absolute_type(identity_type)
+        );
+        let mut fields = vec![format!(
+            "                {}: identity.clone(),",
+            name::value_ident(&entity.identity.name)
+        )];
+        for field in &entity.fields {
+            let value = match outcome.sets.iter().find(|set| set.target == field.name) {
+                Some(set) => self.value(set, None),
+                None => "None".to_owned(),
+            };
+            fields.push(format!(
+                "                {}: {value},",
+                name::value_ident(&field.name)
+            ));
+        }
+        let _ = writeln!(
+            out,
+            "            let data = {module_entity}Data {{\n{}\n            }};",
+            fields.join("\n")
+        );
+        out.push_str(&Self::invariant_check(entity, "data"));
+        let state = subject
+            .into
+            .clone()
+            .unwrap_or_else(|| entity.lifecycle.initial.clone());
+        let constructor = if state == entity.lifecycle.initial {
+            "new".to_owned()
+        } else {
+            name::value_ident(&format!("new-{state}"))
+        };
+        let _ = writeln!(
+            out,
+            "            {storage}::put(&mut self.ports, \
+             {any}::{state}({module_entity}::{constructor}(data)).snapshot());"
+        );
+        let answer = self.variant(outcome, held, Some("identity"));
+        let _ = writeln!(out, "            return Ok({answer});");
+        out
+    }
+
     /// The answer for a move from a state it does not start in.
     fn wrong_state_answer(&mut self) -> String {
         let command = self.command;
@@ -1067,7 +1199,6 @@ impl Writer<'_> {
         };
         let entity = self.ir.entity(&subject.entity);
         let storage = self.storage(&entity.name);
-        let module_entity = declared_path(self.layout, &entity.name);
         let any = format!(
             "crate::{}::Any{}",
             self.layout.module(self.layout.owner(&entity.name)),
@@ -1075,58 +1206,15 @@ impl Writer<'_> {
         );
         match (&subject.effect, &subject.instance) {
             (ResolvedEffect::Creates, ResolvedInstance::Observed { .. }) => {
-                let identity_type = &entity.identity.type_ref;
-                let generate = self.generate(identity_type);
-                let _ = writeln!(
-                    out,
-                    "            let identity: {} = {generate};",
-                    self.layout.absolute_type(identity_type)
-                );
-                let mut fields = vec![format!(
-                    "                {}: identity.clone(),",
-                    name::value_ident(&entity.identity.name)
-                )];
-                for field in &entity.fields {
-                    let value = match outcome.sets.iter().find(|set| set.target == field.name) {
-                        Some(set) => self.value(set, None),
-                        None => "None".to_owned(),
-                    };
-                    fields.push(format!(
-                        "                {}: {value},",
-                        name::value_ident(&field.name)
-                    ));
-                }
-                let _ = writeln!(
-                    out,
-                    "            let data = {module_entity}Data {{\n{}\n            }};",
-                    fields.join("\n")
-                );
-                out.push_str(&Self::invariant_check(entity, "data"));
-                let state = subject
-                    .into
-                    .clone()
-                    .unwrap_or_else(|| entity.lifecycle.initial.clone());
-                let constructor = if state == entity.lifecycle.initial {
-                    "new".to_owned()
-                } else {
-                    name::value_ident(&format!("new-{state}"))
-                };
-                let _ = writeln!(
-                    out,
-                    "            {storage}::put(&mut self.ports, \
-                     {any}::{state}({module_entity}::{constructor}(data)).snapshot());"
-                );
-                let answer = self.variant(outcome, held, Some("identity"));
-                let _ = writeln!(out, "            return Ok({answer});");
+                out.push_str(&self.create(outcome, held));
             }
             (effect, ResolvedInstance::Supplied { field }) => {
-                let unknown = self.unknown_answer();
                 let identity = name::value_ident(&field.name);
+                let unknown = self.unknown_arm(16);
                 let _ = writeln!(
                     out,
                     "            let Some(held) = {storage}::get(&self.ports, &input.{identity}) \
-                     else {{\n                return {unknown};\n            }};\n            let \
-                     _ = &held;"
+                     else {{\n{unknown}            }};\n            let _ = &held;"
                 );
                 let reads_before = outcome_reads_before(outcome);
                 match effect {

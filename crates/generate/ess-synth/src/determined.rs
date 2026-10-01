@@ -116,6 +116,7 @@ pub(crate) fn command(ir: &EssIr, command: &ResolvedCommand) -> Result<(), Strin
             );
         }
     }
+    existence_identity(command)?;
     for outcome in &command.outcomes {
         self::outcome(ir, command, outcome, guarded, selection)
             .map_err(|construct| format!("{construct}, in `{}`", outcome.name))?;
@@ -146,7 +147,6 @@ fn outcome(
     match &outcome.condition {
         ResolvedCondition::Related { .. } => return Err("`when_related:`".to_owned()),
         ResolvedCondition::InputAbsent => return Err("`input_absent:`".to_owned()),
-        ResolvedCondition::ExistingInstance => return Err("`existing_instance:`".to_owned()),
         ResolvedCondition::When { predicate }
         | ResolvedCondition::ExternalWhen { predicate, .. } => {
             supported(ir, &Env::Input(command), predicate)?;
@@ -180,12 +180,15 @@ fn outcome(
         ResolvedCondition::Otherwise
         | ResolvedCondition::External { .. }
         | ResolvedCondition::WrongState
-        | ResolvedCondition::UnknownInstance => {}
+        | ResolvedCondition::UnknownInstance
+        // Selected by the storage lookup before any branch is taken (beyond10x/ess#310).
+        | ResolvedCondition::ExistingInstance => {}
     }
+    // The creating half of create-or-update acts: it is the creation an unknown identity takes.
     let answered_for_subject = matches!(
         outcome.condition,
         ResolvedCondition::WrongState | ResolvedCondition::UnknownInstance
-    );
+    ) && !creates_unknown(outcome);
     if answered_for_subject
         && (!outcome.emits.is_empty() || !outcome.sets.is_empty() || outcome.subject.is_some())
     {
@@ -928,4 +931,112 @@ pub(crate) fn generated(ir: &EssIr, command: &ResolvedCommand) -> bool {
 /// `true` where any command of the model has a generated behaviour.
 pub(crate) fn any_generated(ir: &EssIr) -> bool {
     ir.commands().values().any(|command| generated(ir, command))
+}
+
+// ---- selection by existence (ess/16, beyond10x/ess#164, #310) -----------------------------------
+
+/// `true` for the creating half of create-or-update: a `creates:` branch marked
+/// `unknown_instance: true`.
+pub(crate) fn creates_unknown(outcome: &ResolvedOutcome) -> bool {
+    outcome.condition == ResolvedCondition::UnknownInstance
+        && outcome
+            .subject
+            .as_ref()
+            .is_some_and(|subject| subject.effect == ResolvedEffect::Creates)
+}
+
+/// The command's `existing_instance:` refusal, where it declares one.
+pub(crate) fn existing_instance(command: &ResolvedCommand) -> Option<&ResolvedOutcome> {
+    command
+        .outcomes
+        .iter()
+        .find(|outcome| outcome.condition == ResolvedCondition::ExistingInstance)
+}
+
+/// The payload source of the event field a creation publishes its identity in, or `None` where
+/// the outcome creates nothing or declares no source for it.
+pub(crate) fn identity_source(outcome: &ResolvedOutcome) -> Option<&ResolvedPayloadField> {
+    let subject = outcome
+        .subject
+        .as_ref()
+        .filter(|subject| subject.effect == ResolvedEffect::Creates)?;
+    let ResolvedInstance::Observed { event, field } = &subject.instance else {
+        return None;
+    };
+    outcome
+        .payload
+        .iter()
+        .filter(|payload| &payload.event == event)
+        .flat_map(|payload| &payload.fields)
+        .find(|entry| entry.target == field.name)
+}
+
+/// The input field a creation selected by existence takes its identity from, and whether the
+/// field is optional (`{input: f, else: {generated: true}}`, where an absent `f` names a new
+/// identity no record carries). `None` where the identity is not read from the input.
+pub(crate) fn identity_input(outcome: &ResolvedOutcome) -> Option<(&str, bool)> {
+    match &identity_source(outcome)?.value {
+        ResolvedPayloadValue::InputField { field, type_ref } if !type_ref.is_optional() => {
+            Some((field.as_str(), false))
+        }
+        ResolvedPayloadValue::InputOrGenerated {
+            field,
+            otherwise: None,
+            ..
+        } => Some((field.as_str(), true)),
+        _ => None,
+    }
+}
+
+/// Every creation the existence lookup decides, checked: on a command with an `existing_instance:`
+/// refusal, every creation reads its identity from one input field, the one the lookup reads; the
+/// creating half of create-or-update reads it from a required input field. Anything else keeps the
+/// command an obligation, since the lookup would read an identity the creation does not take.
+fn existence_identity(command: &ResolvedCommand) -> Result<(), String> {
+    for outcome in command.outcomes.iter().filter(|it| creates_unknown(it)) {
+        if !matches!(identity_input(outcome), Some((_, false))) {
+            return Err(format!(
+                "a creation selected by existence whose identity is not a required input field, \
+                 in `{}`",
+                outcome.name
+            ));
+        }
+    }
+    if existing_instance(command).is_some() {
+        let mut read: Option<(&str, bool)> = None;
+        let mut entity = None;
+        for outcome in &command.outcomes {
+            let Some(subject) = outcome
+                .subject
+                .as_ref()
+                .filter(|subject| subject.effect == ResolvedEffect::Creates)
+            else {
+                continue;
+            };
+            // The generated lookup reads one entity's storage, so every creation it decides
+            // creates that entity (beyond10x/ess#310).
+            if entity.is_some_and(|first| first != &subject.entity) {
+                return Err(
+                    "creations of different entities beside `existing_instance:`".to_owned(),
+                );
+            }
+            entity = Some(&subject.entity);
+            let Some(field) = identity_input(outcome) else {
+                return Err(format!(
+                    "a creation beside `existing_instance:` whose identity is not read from the \
+                     input, in `{}`",
+                    outcome.name
+                ));
+            };
+            if read.is_some_and(|first| first != field) {
+                return Err(
+                    "creations beside `existing_instance:` reading their identity from different \
+                     input fields"
+                        .to_owned(),
+                );
+            }
+            read = Some(field);
+        }
+    }
+    Ok(())
 }

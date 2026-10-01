@@ -13,7 +13,7 @@ refs:
 relations:
 - decomposes: epic:downstream-reported-gaps
 - serves: vision:O2
-revision: 1
+revision: 2
 ---
 ## Outcome
 
@@ -30,3 +30,7 @@ UI spec: lower priority than every base-spec story (operator, 2026-10-01).
 ## Fit review
 
 Pending.
+
+## Ownership
+
+- Handed to the uilab session (epic on branch `plan/ess-ui-live-apps`, operator-approved), 2026-10-01. The downstream-gaps coordinator no longer edits this story.
