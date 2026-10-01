@@ -1,11 +1,21 @@
+//+plain
 // Reads, commands and server-held state go through one `DataAdapter`. The default answers
 // every read from the document's fixtures; `setDataAdapter(httpAdapter(base))` swaps in a real
 // backend without touching a page.
+//-plain
+//+bound
+// Reads, commands and server-held state go through one `DataAdapter`. The default answers
+// every read from the document's fixtures; `main.tsx` swaps in `httpAdapter(binding)`, which
+// reads and commands the paths the served surface answers, from `src/binding.ts`.
+//-bound
 
 import { useEffect, useState } from "react";
 import { fixtures, type FixtureView } from "../fixtures";
 import { evaluate } from "./expr";
 import { getPath, isObject, stableKey, type Json, type JsonObject } from "./json";
+//+bound
+import { classify, type Answer } from "./answer";
+//-bound
 
 /** A read as a section or composite declares it. */
 export interface ReadSpec {
@@ -143,6 +153,7 @@ export const fixtureAdapter: DataAdapter = {
 
 const memoryState = new Map<string, Json>();
 
+//+plain
 async function answer(response: Response): Promise<Json> {
   if (!response.ok) {
     throw new DataError(`${response.status} ${response.statusText}`, response.status);
@@ -188,6 +199,193 @@ export function httpAdapter(base: string): DataAdapter {
     },
   };
 }
+//-plain
+//+bound
+/** Every route the document's views and commands bind to, by served component (`ess_ui::binding`). */
+export interface Binding {
+  system: string;
+  components: Record<string, ServedComponent>;
+  /** Every view and command name as the document writes it, to its qualified name. */
+  names: Record<string, string>;
+}
+
+/** What one served component answers for the document. */
+export interface ServedComponent {
+  views: Record<string, ViewRoute>;
+  commands: Record<string, CommandRoute>;
+}
+
+/** A view read by `GET` on `path`, its parameters in the query. */
+export interface ViewRoute {
+  path: string;
+  params: QueryParam[];
+}
+
+/** One view parameter: the name a read binds it by and the query key it travels under. */
+export interface QueryParam {
+  name: string;
+  wire: string;
+  required: boolean;
+  scalar: string;
+}
+
+/** A command sent by `POST` on `path`, and the errors it can answer with. */
+export interface CommandRoute {
+  path: string;
+  body_required: boolean;
+  errors: Record<string, ErrorRoute>;
+}
+
+/** One declared error: the status its branch answers with and what it is shown as. */
+export interface ErrorRoute {
+  status: number;
+  display: string;
+}
+
+/**
+ * A command the served surface did not accept: its classified answer, and for a declared
+ * error the text the binding shows it as. Rejected by `httpAdapter`'s `send`.
+ */
+export class CommandRefused extends DataError {
+  constructor(
+    readonly command: string,
+    status: number,
+    readonly answer: Exclude<Answer, { answer: "accepted" }>,
+    readonly display: string,
+  ) {
+    super(`${command}: ${display}`, status);
+  }
+}
+
+let authorization: string | undefined;
+
+/**
+ * Sets the `Authorization` header every request carries, as configured; never derived. How the
+ * server authenticates it is the realization's. `undefined` sends none.
+ */
+export function setAuthorization(value: string | undefined): void {
+  authorization = value;
+}
+
+/**
+ * The base URL a served component is reached at: the `content` of
+ * `<meta name="ess-base-url:<component>">` in `www/index.html`; the page's own origin when the
+ * tag is absent or empty.
+ */
+export function baseUrl(component: string): string {
+  const meta = typeof document === "undefined" ? null : document.querySelector(`meta[name="ess-base-url:${component}"]`);
+  return (meta?.getAttribute("content") ?? "").replace(/\/+$/, "");
+}
+
+function headers(json: boolean): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (json) {
+    out["content-type"] = "application/json";
+  }
+  if (authorization !== undefined) {
+    out.authorization = authorization;
+  }
+  return out;
+}
+
+function served<K extends "views" | "commands">(
+  binding: Binding,
+  kind: K,
+  name: string,
+): { component: string; route: ServedComponent[K][string] } | undefined {
+  const qualified = binding.names[name] ?? name;
+  for (const [component, routes] of Object.entries(binding.components)) {
+    const route = routes[kind][qualified];
+    if (route !== undefined) {
+      return { component, route: route as ServedComponent[K][string] };
+    }
+  }
+  return undefined;
+}
+
+function shown(answer: Exclude<Answer, { answer: "accepted" }>, route: CommandRoute): string {
+  switch (answer.answer) {
+    case "refused":
+      return route.errors[answer.error]?.display ?? answer.error;
+    case "not_granted":
+      return answer.actor === null ? "Not signed in as anyone this may be done by" : `Not permitted for ${answer.actor}`;
+    case "malformed":
+      return `Not accepted: ${answer.refused}`;
+    case "unfinished":
+      return answer.committed
+        ? "Done, but not every effect was delivered: do not send it again"
+        : "Not available yet: nothing was done";
+    case "transport":
+      return "No answer from the server";
+  }
+}
+
+/**
+ * The adapter for the served surface `binding` describes: a read is `GET <base><path>` with its
+ * parameters under their query keys, a command `POST <base><path>` with its input as the body,
+ * answered as `classify` reads the answer. `base` gives each served component's base URL.
+ */
+export function httpAdapter(binding: Binding, base: (component: string) => string = baseUrl): DataAdapter {
+  return {
+    async read(request) {
+      const found = served(binding, "views", request.view);
+      if (found === undefined) {
+        throw new DataError(`no served component answers ${request.view}`, 404);
+      }
+      const query = new URLSearchParams();
+      for (const param of found.route.params) {
+        const value = request.params[param.name];
+        if (value !== undefined && value !== null && value !== "") {
+          query.set(param.wire, typeof value === "object" ? JSON.stringify(value) : String(value));
+        }
+      }
+      const search = query.toString();
+      const response = await fetch(`${base(found.component)}${found.route.path}${search ? `?${search}` : ""}`, {
+        headers: headers(false),
+      });
+      const text = await response.text();
+      if (response.status < 200 || response.status >= 300) {
+        throw new DataError(`${response.status} ${request.view}`, response.status);
+      }
+      const body = JSON.parse(text) as Json;
+      if (isObject(body) && Array.isArray(body.rows)) {
+        return { rows: body.rows, total: typeof body.total === "number" ? body.total : undefined };
+      }
+      return { rows: Array.isArray(body) ? body : [body] };
+    },
+    async send(command, input) {
+      const found = served(binding, "commands", command);
+      if (found === undefined) {
+        throw new DataError(`no served component accepts ${command}`, 404);
+      }
+      let status = 0;
+      let text = "";
+      try {
+        const response = await fetch(`${base(found.component)}${found.route.path}`, {
+          method: "POST",
+          headers: headers(true),
+          body: JSON.stringify(input),
+        });
+        status = response.status;
+        text = await response.text();
+      } catch {
+        // No answer at all: classified as a transport failure below.
+      }
+      const answer = classify(status, text);
+      if (answer.answer === "accepted") {
+        return JSON.parse(text) as Json;
+      }
+      throw new CommandRefused(command, status, answer, shown(answer, found.route));
+    },
+    loadState(store) {
+      return Promise.reject(new DataError(`the served surface holds no ${store} state`, 404));
+    },
+    saveState(store) {
+      return Promise.reject(new DataError(`the served surface holds no ${store} state`, 404));
+    },
+  };
+}
+//-bound
 
 let current: DataAdapter = fixtureAdapter;
 let version = 0;
@@ -297,6 +495,22 @@ export function useRead(
   }, [key, enabled, seen, nonce]);
   return { ...state, params, refetch: () => setNonce((value) => value + 1) };
 }
+//+bound
+
+/**
+ * Reads again every `every` milliseconds while mounted: a `live:` section's fallback, since no
+ * served surface streams events.
+ */
+export function usePoll(read: ReadState, every: number): ReadState {
+  const refetch = read.refetch;
+  useEffect(() => {
+    const timer = setInterval(() => refetch(), every);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [every]);
+  return read;
+}
+//-bound
 
 /** The signed-in actor, as `actor.<field>` reads it. */
 export interface Actor {

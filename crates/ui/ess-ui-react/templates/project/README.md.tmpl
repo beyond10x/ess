@@ -16,11 +16,37 @@ path is answered with `www/index.html`, so a reload or a link to any page opens 
 `www/` at `http://127.0.0.1:4173`. The only runtime dependencies are `react` and `react-dom`;
 esbuild is the only build step.
 
+//+plain
 Every read is answered from the document's fixtures and every live channel plays its fixture
 script, so the application runs without a backend. To use a real one, call
 `setDataAdapter(httpAdapter("<base url>"))` from `src/runtime/data.ts` and
 `useNetworkChannels("<base url>")` from `src/runtime/live.ts` (when the document has channels)
 before rendering, in `src/main.tsx`.
+//-plain
+//+bound
+## The served surface
+
+This project was generated with `--model`: it is bound to the HTTP surface the model's
+`reached_by: network` components serve. `src/binding.ts` holds every path the document's views
+and commands bind to, computed from the model; `src/main.tsx` switches on `httpAdapter(binding)`
+from `src/runtime/data.ts`, so reads are `GET` on the view's path with its parameters as query
+parameters, and commands are `POST` on the command's path. Generate again when the model changes.
+
+- **Base URL.** Each served component is reached at the `content` of its
+  `<meta name="ess-base-url:<component>">` tag in `www/index.html`; empty or absent means the
+  page's own origin. The server sends no CORS headers, so serve the app from the same origin, or
+  allow it in a proxy in front of both.
+- **Caller.** Call `setAuthorization("<value>")` from `src/runtime/data.ts` before rendering:
+  every request carries it as its `Authorization` header, unchanged. How the server authenticates
+  it is the realization's.
+- **Refusals.** A command's answer is classified as `ess_ui::binding::classify` classifies it
+  (`src/runtime/answer.ts`). A refusal is shown on the form, confirm or action that sent it, with
+  the error's display text and fields; the form keeps its draft, a change saved on change is
+  reverted, and reads are read again after an accepted command and after a `409` refusal.
+- **Live sections.** The served surface streams no events: a section with `live:` reads again
+  every `refresh:` interval of its read (5 seconds when it gives none), unless its
+  `degrades: {no_live: refuse}` refuses, in which case the project is not generated.
+//-bound
 
 ## Type-check
 
@@ -42,6 +68,9 @@ real packages and `types/` is not read.
 | `src/pages/` | one file per page: the page, one component per section, one per overlay |
 | `src/model.ts` | the document's types |
 | `src/fixtures.ts` | fixture rows per view and event scripts per channel |
+//+bound
+| `src/binding.ts` | the served paths the document's views and commands bind to, from the model |
+//-bound
 | `src/channels.ts` | the document's channels and their transports |
 | `src/runtime/` | the component set, the router, state placement, data adapter and live channels |
 

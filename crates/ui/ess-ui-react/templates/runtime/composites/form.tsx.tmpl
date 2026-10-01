@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useUiPath } from "../core";
 import { ActionControl, runCommand, type ActionSpec } from "../actions";
+//+bound
+import { RefusalNote, type Refusal } from "../actions";
+//-bound
 import { ScopeLayer, useScope } from "../core";
 import { useRead, type ReadSpec } from "../data";
 import { FieldInput, Tabs, type FieldSpec, type TabSpec } from "../fields";
@@ -54,6 +57,10 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
   const scope = useScope();
   const loaded = useRead(props.loads, scope.values, props.loads !== undefined);
   const [sent, setSent] = useState(false);
+//+bound
+  // A refused command is shown here and keeps the draft.
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+//-bound
   const draft = isObject(scope.values.draft) ? scope.values.draft : {};
   const prefilled = useRef(false);
   useEffect(() => {
@@ -66,7 +73,12 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
   }, [loaded.status]);
   const params = isObject(scope.values.params) ? scope.values.params : {};
   const submit = async (command: string) => {
+//+plain
     const ok = await runCommand(scope, command, { ...params, ...draft });
+//-plain
+//+bound
+    const ok = await runCommand(scope, command, { ...params, ...draft }, false, setRefusal);
+//-bound
     if (ok) {
       setSent(true);
       if (props.submit?.closes !== false) {
@@ -98,7 +110,18 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
                 ? {
                     draft: (next: unknown) => {
                       scope.set("draft", next);
+//+plain
                       void runCommand(scope, group.does ?? props.does, { ...params, ...(isObject(next) ? next : {}) }, true);
+//-plain
+//+bound
+                      // Shown at once; reverted when the command is refused.
+                      void runCommand(scope, group.does ?? props.does, { ...params, ...(isObject(next) ? next : {}) }, true, (refused) => {
+                        setRefusal(refused);
+                        if (refused) {
+                          scope.set("draft", draft);
+                        }
+                      });
+//-bound
                     },
                   }
                 : {}
@@ -138,6 +161,9 @@ function FormBody(props: Parameters<typeof FormView>[0]): ReactNode {
           </button>
         )}
       </div>
+//+bound
+      <RefusalNote refusal={refusal} />
+//-bound
       {sent && props.result ? <div className="ui-form-result">{props.result}</div> : null}
       {props.record}
     </form>

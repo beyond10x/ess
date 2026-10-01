@@ -121,7 +121,12 @@ pub(crate) struct Gen<'d> {
     locals: Vec<BTreeSet<String>>,
     /// Component names of the file being written.
     components: BTreeSet<String>,
+    /// The project is bound to a served surface, which streams nothing: a `live:` section polls.
+    bound: bool,
 }
+
+/// How often a bound `live:` section reads again when its read declares no `refresh:` duration.
+const POLL_MS: u64 = 5000;
 
 /// `constructs.PlacementProfile.profiles.<profile>.defaults` of the schema this crate was built
 /// with: the store each profile gives each state class.
@@ -216,7 +221,7 @@ fn nav_label(name: &str, page: Option<&Page>) -> String {
 }
 
 impl<'d> Gen<'d> {
-    pub(crate) fn new(doc: &'d Document) -> Self {
+    pub(crate) fn new(doc: &'d Document, bound: bool) -> Self {
         Self {
             doc,
             types: Types::new(&doc.types),
@@ -230,6 +235,7 @@ impl<'d> Gen<'d> {
             section_profile: None,
             locals: Vec::new(),
             components: BTreeSet::new(),
+            bound,
         }
     }
 
@@ -1728,7 +1734,29 @@ impl<'d> Gen<'d> {
             lines.push(format!(
                 "const __read = {use_read}({reads}, __scope.values, {enabled});"
             ));
-            let data = if let Some(live) = &section.live {
+            let data = if let (Some(_), true) = (&section.live, self.bound) {
+                // No served surface streams: the section takes its `no_live` fallback, polling
+                // unless it says `refuse`.
+                let fallback = section
+                    .common
+                    .degrades
+                    .get("no_live")
+                    .map_or("poll", String::as_str);
+                if fallback == "refuse" {
+                    self.refuse(
+                        &at.child("live"),
+                        "the served surface streams no events, and this section's \
+                         `degrades: {no_live: refuse}` refuses to poll instead",
+                    );
+                }
+                let every = Self::section_reads(&section.body)
+                    .and_then(|reads| reads.refresh.as_ref())
+                    .and_then(|refresh| millis(&refresh.0))
+                    .unwrap_or(POLL_MS);
+                let use_poll = self.import("runtime/data", "usePoll");
+                lines.push(format!("const __data = {use_poll}(__read, {every});"));
+                "__data"
+            } else if let Some(live) = &section.live {
                 let use_live = self.import("runtime/live", "useLive");
                 let session = match self.session_expr(at, Some(page), &live.channel) {
                     Some(session) => {
@@ -2038,9 +2066,11 @@ impl<'d> Gen<'d> {
             .as_ref()
             .map(|h| h.live.clone())
             .unwrap_or_default();
+        // A bound project's live sections poll, and hold no channel open.
         live.extend(
             page.sections
                 .iter()
+                .filter(|_| !self.bound)
                 .filter_map(|s| s.live.as_ref().map(|l| l.channel.clone())),
         );
         let scanned = format!("{}\n{hosted}", self.hoisted.join("\n"));

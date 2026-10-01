@@ -753,6 +753,7 @@ version = "0.50.0"
 dependencies = [
  "clap",
  "ess-ui",
+ "ess-ui-check",
  "serde_json",
  "serde_yaml",
 ]

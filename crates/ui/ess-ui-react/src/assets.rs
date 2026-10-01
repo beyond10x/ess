@@ -3,6 +3,9 @@
 //! modules are emitted only when something imports them.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
+
+use ess_ui::binding::Binding;
 
 /// A runtime module: its id (path under `src/` without extension), output file and text.
 struct Module {
@@ -25,6 +28,7 @@ const RUNTIME: &[Module] = &[
     module!("runtime/json", "ts"),
     module!("runtime/expr", "ts"),
     module!("runtime/data", "ts"),
+    module!("runtime/answer", "ts"),
     module!("runtime/core", "tsx"),
     module!("runtime/router", "tsx"),
     module!("runtime/actions", "tsx"),
@@ -100,15 +104,39 @@ fn imports(id: &str, text: &str) -> Vec<String> {
     found
 }
 
+/// A template's text for a bound or a plain project.
+///
+/// A line reading `//+bound` opens lines only a project bound to a served surface carries, and
+/// `//-bound` closes them; `//+plain` … `//-plain` hold the lines they replace. The marker lines
+/// themselves are never emitted, so a plain project is the template with every bound block
+/// removed — byte for byte what it was before the blocks were written.
+pub(crate) fn select(text: &str, bound: bool) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut keep = true;
+    for line in text.split_inclusive('\n') {
+        match line.trim() {
+            "//+bound" => keep = bound,
+            "//+plain" => keep = !bound,
+            "//-bound" | "//-plain" => keep = true,
+            _ if keep => out.push_str(line),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The runtime files for the modules used, closed over their imports.
-pub(crate) fn runtime(used: &BTreeSet<String>) -> BTreeMap<String, String> {
-    let table: BTreeMap<&str, &Module> = RUNTIME.iter().map(|module| (module.id, module)).collect();
+pub(crate) fn runtime(used: &BTreeSet<String>, bound: bool) -> BTreeMap<String, String> {
+    let table: BTreeMap<&str, (&Module, String)> = RUNTIME
+        .iter()
+        .map(|module| (module.id, (module, select(module.text, bound))))
+        .collect();
     let mut wanted: BTreeSet<String> = used.clone();
     wanted.extend(ALWAYS.iter().map(|id| (*id).to_owned()));
     let mut queue: Vec<String> = wanted.iter().cloned().collect();
     while let Some(id) = queue.pop() {
-        if let Some(module) = table.get(id.as_str()) {
-            for dependency in imports(module.id, module.text) {
+        if let Some((module, text)) = table.get(id.as_str()) {
+            for dependency in imports(module.id, text) {
                 if dependency.starts_with("runtime/") && wanted.insert(dependency.clone()) {
                     queue.push(dependency);
                 }
@@ -117,8 +145,8 @@ pub(crate) fn runtime(used: &BTreeSet<String>) -> BTreeMap<String, String> {
     }
     let mut files = BTreeMap::new();
     for id in wanted {
-        if let Some(module) = table.get(id.as_str()) {
-            files.insert(module.file.to_owned(), module.text.to_owned());
+        if let Some((module, text)) = table.get(id.as_str()) {
+            files.insert(module.file.to_owned(), text.clone());
         }
     }
     files.insert(
@@ -128,9 +156,28 @@ pub(crate) fn runtime(used: &BTreeSet<String>) -> BTreeMap<String, String> {
     files
 }
 
-/// Configuration, entry point and offline declarations, with the app's name and title filled in.
-pub(crate) fn project(app: &str, title: &str) -> BTreeMap<String, String> {
-    let fill = |text: &str| text.replace("{{app}}", app).replace("{{title}}", title);
+/// Configuration, entry point and offline declarations, with the app's name and title filled in;
+/// bound to the served surface when `binding` is given, with one base-URL `<meta>` per served
+/// component in `www/index.html`.
+pub(crate) fn project(
+    app: &str,
+    title: &str,
+    binding: Option<&Binding>,
+) -> BTreeMap<String, String> {
+    let mut metas = String::new();
+    for component in binding.iter().flat_map(|binding| binding.components.keys()) {
+        let _ = writeln!(
+            metas,
+            "    <meta name=\"ess-base-url:{}\" content=\"\" />",
+            html_attribute(component)
+        );
+    }
+    let fill = |text: &str| {
+        select(text, binding.is_some())
+            .replace("{{app}}", app)
+            .replace("{{title}}", title)
+            .replace("    {{base_url_metas}}\n", &metas)
+    };
     let mut files = BTreeMap::new();
     for (file, text) in [
         (
@@ -177,4 +224,26 @@ pub(crate) fn project(app: &str, title: &str) -> BTreeMap<String, String> {
         files.insert(file.to_owned(), fill(text));
     }
     files
+}
+
+/// `src/binding.ts`: the binding as data, for the `httpAdapter` `main.tsx` switches on. The
+/// literal is the binding's JSON, so what the adapter reads is what `ess_ui_check::binding`
+/// computed, member for member.
+pub(crate) fn binding(binding: &Binding) -> String {
+    let json = serde_json::to_string_pretty(binding).unwrap_or_else(|_| "{}".to_owned());
+    format!(
+        "// Generated by ess-ui-react from the served surface of model `{}` (`ess generate ui\n\
+         // --model`). Do not edit: generate again when the model changes.\n\
+         import type {{ Binding }} from \"./runtime/data\";\n\n\
+         export const binding: Binding = {json};\n",
+        binding.system.replace('\n', " ")
+    )
+}
+
+/// `text` safe inside a double-quoted HTML attribute.
+fn html_attribute(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
