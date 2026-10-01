@@ -408,24 +408,42 @@ fn issue_275_a_narrow_identity_type_still_gives_the_swapped_run_an_unused_value(
     assert_ne!(sent[0], sent[1], "the swapped run arranges its own record");
 }
 
-/// A type of one value: no identity is left for the swapped run, so the scenario runs once — it
-/// does not send the identity again — and a note says so.
+/// A type of one value: no identity is left for a swapped run, so the scenario runs once — it does
+/// not send the identity again. `Amend` acts on the one record without creating it, so that run
+/// arranges the record as one caller and amends it as the other (beyond10x/ess#287) and carries no
+/// note; `RecordEntry` creates the identity, so its own scenario keeps the note.
 #[test]
 fn issue_275_an_exhausted_identity_type_drops_the_swap_with_a_note() {
     use ess_conformance::synthesize::Note;
     let synthesis = synthesize(&narrow(1));
-    let sent = recorded_identities(scenario(&synthesis.suite, AMENDED_SCENARIO));
-    assert_eq!(sent.len(), 1, "the first run only: {sent:#?}");
-    let named = synthesis.notes.iter().any(|note| {
-        matches!(
-            note,
-            Note::UnswappedCallers { scenario, input, type_ref }
-                if scenario.to_string() == AMENDED_SCENARIO
-                    && input == "record_id"
-                    && type_ref == "demo.records.RecordId"
-        )
-    });
-    assert!(named, "{:#?}", synthesis.notes);
+    let amended = sends(scenario(&synthesis.suite, AMENDED_SCENARIO));
+    let sent: Vec<&Node> = amended
+        .iter()
+        .filter_map(|(id, _, _)| id.as_ref())
+        .collect();
+    assert_eq!(sent.len(), 1, "the record is arranged once: {amended:#?}");
+    let callers: BTreeSet<String> = amended
+        .iter()
+        .map(|(_, caller, _)| serde_json::to_string(caller).unwrap())
+        .collect();
+    assert_eq!(
+        callers.len(),
+        2,
+        "arranged and amended by two callers: {amended:#?}"
+    );
+    let noted = |id: &str| {
+        synthesis.notes.iter().any(|note| {
+            matches!(
+                note,
+                Note::UnswappedCallers { scenario, input, type_ref }
+                    if scenario.to_string() == id
+                        && input == "record_id"
+                        && type_ref == "demo.records.RecordId"
+            )
+        })
+    };
+    assert!(!noted(AMENDED_SCENARIO), "{:#?}", synthesis.notes);
+    assert!(noted(RECORDED_SCENARIO), "{:#?}", synthesis.notes);
 }
 
 /// `RECORDS` with an integer identity that `recorded` takes only when it is `7`: one value inside

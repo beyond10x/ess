@@ -189,6 +189,7 @@ mod paging;
 mod related;
 mod related_guard;
 mod set_effects;
+mod singleton;
 mod subject_fact;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -1658,6 +1659,9 @@ pub fn synthesize(ir: &EssIr) -> Synthesis {
     } else {
         synthesize_plain(ir)
     };
+    // Read off the finished suite: no scenario expects the one row of a singleton entity created
+    // twice in a run, whichever family built it (beyond10x/ess#287).
+    singleton::withdraw_second_creations(ir, &mut synthesis);
     // A note about an unseparated pair is recorded with its branch's scenario, and later passes
     // (fixtures, clock offsets, caller readings) may drop that scenario; a note naming a scenario
     // the suite does not hold points at nothing, so it goes with it (beyond10x/ess#202).
@@ -8835,6 +8839,10 @@ pub(super) fn unguided(command: &ResolvedCommand, field: &str) -> RefusalCause {
 /// Where that witness would change the branch `input` takes — a guard reads the identity — the
 /// first value inside the guards that no arrangement sends is taken instead
 /// ([`guided_identity`]), and the scenario is refused where there is none (beyond10x/ess#275).
+///
+/// An identity whose type has one value is that value, unchecked against the arrangements: the one
+/// row of a singleton entity is unknown in a scenario that arranged none (beyond10x/ess#287,
+/// [`singleton`]).
 fn fresh_identity(
     ir: &EssIr,
     command: &ResolvedCommand,
@@ -8872,6 +8880,11 @@ fn fresh_identity(
             return guided_identity(ir, command, field, input, 0)
                 .ok_or_else(|| unguided(command, field));
         }
+    }
+    // The one row of a singleton entity is unknown wherever the scenario arranged none
+    // (beyond10x/ess#287): its isolation, not a value apart from every other scenario's, keeps it so.
+    if singleton::names_the_one_row(ir, command, field) {
+        return Ok(fresh);
     }
     for nth in 0..=MAX_CANDIDATES {
         if at(Distinction::further(nth))?.as_ref() == Some(&fresh) {

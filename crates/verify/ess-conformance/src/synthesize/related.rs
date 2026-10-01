@@ -179,7 +179,13 @@ pub(super) fn arrange_except(
                 }
                 (referenced, true)
             };
-        let (before, after) = (row(first - 1), row(first + 1));
+        // A singleton entity has no row beside the referenced one to read instead
+        // (beyond10x/ess#287).
+        let (before, after) = if super::singleton::is_singleton(ir, read.entity) {
+            (None, None)
+        } else {
+            (row(first - 1), row(first + 1))
+        };
         let decoys: Vec<&BTreeMap<String, Determined>> = before
             .iter()
             .chain(after.iter())
